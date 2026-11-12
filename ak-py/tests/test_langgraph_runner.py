@@ -769,8 +769,12 @@ class TestLangGraphStreamStateReadBack:
         assert agent.agent.aget_state.call_args.args[0] == expected
 
 
-def _gated_graph(question=None, second=False):
-    """A graph whose node stops on interrupt() and reports the value it was resumed with."""
+def _gated_graph(question=None, second=False, parallel=False):
+    """A graph whose node stops on interrupt() and reports the value it was resumed with.
+
+    ``parallel`` builds a different shape: two interrupting nodes fanning out from ``START``, which
+    is how `examples/api/hitl`'s planner asks both its questions in one pause.
+    """
     from operator import add
     from typing import Annotated, TypedDict
 
@@ -789,7 +793,22 @@ def _gated_graph(question=None, second=False):
             return {"answer": repr(got), "second": repr(again)}
         return {"answer": repr(got)}
 
+    def ask_method(state: S):
+        return {"answer": repr(interrupt({"question": "how?", "options": ["card", "credit"]}))}
+
+    def ask_note(state: S):
+        return {"second": repr(interrupt({"question": "anything to tell them?"}))}
+
     graph = StateGraph(S)
+    if parallel:
+        graph.add_node("ask_method", ask_method)
+        graph.add_node("ask_note", ask_note)
+        graph.add_edge(START, "ask_method")
+        graph.add_edge(START, "ask_note")
+        graph.add_edge("ask_method", END)
+        graph.add_edge("ask_note", END)
+        return graph.compile()
+
     graph.add_node("ask", ask)
     graph.add_edge(START, "ask")
     graph.add_edge("ask", END)
@@ -914,6 +933,29 @@ class TestLangGraphResume:
         await runner.resume(agent, session, requests, decisions, record)
 
         assert (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values["answer"] == "'cancelled'"
+
+    @pytest.mark.asyncio
+    async def test_an_unanswered_question_comes_back_under_the_same_id(self):
+        """A partial resume re-asks what it left out — a new record, the same interruption id.
+
+        The id is LangGraph's own, derived from a task that has not run, so it survives the re-ask
+        while the record around it does not: `_paused_reply` clears the runner's previous one
+        before adding this one. `examples/api/hitl` documents the behaviour and tests it against a
+        live model; this pins it offline.
+        """
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph(parallel=True))
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        method = next(i for i in paused.interruptions if "options" in i.payload)
+        note = next(i for i in paused.interruptions if "options" not in i.payload)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=method.id, payload="card"))
+
+        reply = await runner.resume(agent, session, requests, decisions, record)
+
+        assert isinstance(reply, AgentPausedReplyAny)
+        assert [i.id for i in reply.interruptions] == [note.id]
+        assert reply.run_id != paused.run_id
 
     @pytest.mark.asyncio
     async def test_the_resume_clears_its_own_record(self):
@@ -1087,6 +1129,18 @@ class TestCheckPointerDurability:
 
         assert cp._pending_writes("t", "", "c") == [("task-1", "messages", "one")]
 
+    def test_get_tuple_hands_back_a_copy_of_the_checkpoint(self):
+        """`get_state()` writes to the checkpoint it is given, and the stored one must not move."""
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        config = {"configurable": {"thread_id": "t"}}
+        cp.put(config, {"id": "c", "versions_seen": {}}, {}, {})
+
+        cp.get_tuple(config).checkpoint["versions_seen"]["ask"] = {"start": 1}
+
+        assert cp.get_tuple(config).checkpoint["versions_seen"] == {}
+
     def test_delete_thread_clears_its_writes(self):
         from agentkernel.framework.langgraph.langgraph import CheckPointer
 
@@ -1199,6 +1253,29 @@ class TestLangGraphStreamingPause:
         assert again.run_id != first.run_id
         assert again.interruptions[0].payload == {"question": "anything else?"}
         assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
+
+    @pytest.mark.asyncio
+    async def test_answering_the_second_question_still_runs_the_graph(self):
+        """Three streamed turns, because the second resume is where the read-back used to bite.
+
+        Every streamed turn reads the state back to find a pause, and `get_state()` edits the
+        checkpoint it is handed. While the checkpointer handed out the stored object itself, that
+        read marked the parked node as already run — so this third turn resumed a graph with
+        nothing left to do and ended with neither a reply nor a pause.
+        """
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph(second=True))
+        first = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="start")])][-1]
+        requests, decisions = _resume_requests(ResumeDecision(id=first.interruptions[0].id, message="yes"))
+        again = [e async for e in runner.resume_stream(agent, session, requests, decisions, PausedRunState.get(session, first.run_id))][-1]
+        requests, decisions = _resume_requests(ResumeDecision(id=again.interruptions[0].id, message="nothing else"))
+
+        finished = [e async for e in runner.resume_stream(agent, session, requests, decisions, PausedRunState.get(session, again.run_id))]
+
+        assert not any(isinstance(e, RunPaused) for e in finished)
+        assert PausedRunState.list(session) == []
+        values = (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values
+        assert (values["answer"], values["second"]) == ("'yes'", "'nothing else'")
 
     @pytest.mark.asyncio
     async def test_an_ordinary_stream_emits_no_run_paused(self):

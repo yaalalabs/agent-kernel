@@ -9,7 +9,7 @@ Integrate OpenAI's official Agents SDK with Agent Kernel.
 ## Installation
 
 ```bash
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 ```
 
 ## Basic Usage

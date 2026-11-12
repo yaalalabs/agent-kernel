@@ -154,7 +154,7 @@ When [conversation threads](../advanced/threads.md) are enabled by mounting `Age
 }
 ```
 
-**`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`).
+**`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`). A message's `content` is text and carries no other key; one recording a [paused run](../advanced/human-in-the-loop.md) or the decision answering it carries the object itself plus a `media_type` naming its format (see [Message Content](../advanced/threads.md#message-content)).
 
 A message's `content` is text, exactly as before — unless the reply was labelled (see [A2UI](../advanced/a2ui.md)), in which case it is the payload object with `media_type` beside it, the same shape `result` has on a live reply. The key is absent on every unlabelled message:
 

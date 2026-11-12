@@ -21,7 +21,7 @@ AWS Bedrock Guardrails enable:
 Install Agent Kernel with AWS support:
 
 ```bash
-pip install agentkernel[aws]
+uv add "agentkernel[aws]"
 ```
 
 This installs the required `boto3` library for AWS integration.
@@ -320,7 +320,7 @@ guardrail:
 
 Ensure `boto3` is installed:
 ```bash
-pip install agentkernel[aws]
+uv add "agentkernel[aws]"
 ```
 
 ### Authentication Errors
