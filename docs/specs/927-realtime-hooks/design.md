@@ -55,9 +55,10 @@ flowchart LR
 ### Hook contract
 
 - Caller text (`AgentRequestText`, one per typed message).
-  - The pool runs the agent's pre-hooks, then the system pre-hooks, through the same loop `run()` and `stream()` use, before `send_text`.
+  - The pool runs the agent's pre-hooks, then the **whole** list of system pre-hooks (input guardrail, multimodal, sandbox), through the same loop `run()` and `stream()` use, before `send_text`. One owner of hook order; the sandbox hook's task-completion ingestion therefore also runs on a call's typed text.
   - A hook returning requests: the (possibly modified) text is sent to the model.
   - A hook returning an `AgentReply`: nothing is sent to the model; the edge gets `StreamChunk(error=<reply text>, done=True)`, the same chunk `Runtime.stream` yields on a pre-hook halt. The call continues.
+  - A hook that raises: the edge gets one generic error chunk (the exception is logged, not sent) and the call continues.
 - Caller audio (`AgentRequestVoice`, one per chunk).
   - New optional `PreHook.on_stream_input`, default returns the request unchanged. Existing hooks are not affected and still need only `on_run`.
   - Returns the request (same type) to pass it on, a modified one, a list to emit several, or `None` to drop it. Same rules as `on_stream_event` (`core/hooks.py:94`).
@@ -65,21 +66,27 @@ flowchart LR
   - Agent hooks run first, then system hooks, matching `_prepare_requests`.
   - A text item (`AgentRequestText`) in a hook's returned list is handled like typed text: it leaves the audio chain (later audio hooks do not see it) and goes through the caller-text path above.
   - A dropped chunk never reaches the model.
+  - A hook that raises, or returns a wrong type, drops the chunk and the call continues. The first failure of a call is logged at `ERROR` and later ones at `DEBUG`: one error chunk per audio chunk would flood the edge.
+  - `on_stream_input` has its own return validation; the type check on `on_run` results (`core/runtime.py:253`) does not list `AgentRequestVoice` and is unchanged.
 - Model output (every event the pool builds, after resampling to the edge rate, before it is emitted).
   - The pool passes each event through each post-hook's `on_stream_event`, system hooks first then agent hooks (`core/runtime.py:515`), with the same return rules: event, same-`type` rewrite, `None` to drop, list to replace.
   - A hook returning a different `type` for a single event raises `TypeError`, as in `Runtime.stream` (`core/runtime.py:531-535`).
   - Events include `AudioDelta`, `TextDelta`, `InputTranscript`, `Interrupt`, `AgentChanged`.
   - Turn end: at the model's `done`, the pool passes a `MessageEnd` (`core/event.py:58`) through the post-hooks, then sends the `done` chunk. This is the closing event delta-mode runners already send, so the hold-and-release pattern `on_stream_event` documents (hold pieces, release them at the boundary, `core/hooks.py:94`) works on a call.
+    - `MessageEnd.message_id` is the last output event's id, or a fresh one when the turn had no output. It is not one id per turn on every framework (ADK gives each event its own). A call sends no `MessageStart`.
     - `MessageEnd` is sent on to the edge. LiveKit ignores event types it does not handle (`integration/livekit/adapter.py:424`).
-  - An `Interrupt` reaches the hooks in order, so a hook holding events drops them on a barge-in.
+  - An `Interrupt` reaches the hooks in order, so a hook holding events drops them on a barge-in. Audio a hook holds does not count as playing audio for detecting a barge-in (`_queued_audio` counts audio queued before the hooks); the model's own `interrupt` still reaches the hooks.
+  - Pacing is applied to every audio event that is emitted, whichever event released it, one event at a time. Audio a hook holds and releases on `MessageEnd` therefore leaves at playback speed, not in a burst; audio a hook drops is not paced.
   - `StreamHalt` ends the call with the existing `_fail` (`pipeline/realtime_pool.py:192`): one error chunk to the edge, connection closed, next input reconnects.
 - The `requests` argument of `on_stream_event` is the last text turn sent to the model (after pre-hooks), as delta mode passes the turn's requests; an empty list when no text turn was sent yet (audio-only call).
 - Hook context.
   - `Session.current()` and `Agent.current()` are set around every hook call. The pacing task starts after the connect-time context is reset (`pipeline/realtime_pool.py:132`, `:140`), so it has none.
   - One hook instance serves every concurrent call, as in text modes. A hook keeps state in the session's volatile cache, not on `self` (rule already in `core/hooks.py:94`).
+  - The volatile cache is cleared when the call closes, as `Runtime` clears it when a run ends (`core/runtime.py:464`), also when the native session fails to close. It is not cleared per turn (session part of #885).
 - Order of system hooks is owned by `Runtime`, in one place, for every mode.
   - `Runtime` gets a public method for the pre-hook loop and one for the per-event post-hook loop, both extracted from existing code, so the pool calls them instead of copying them.
   - `run()` and `stream()` behave exactly as before.
+- Existing realtime apps: hooks registered on a realtime agent start running. This is intended (#885 asks for it) and is not opt-in. A call with no hooks differs only by the `MessageEnd` event at each turn end.
 
 ### Honest limits (stated in docs and enforced by a startup warning)
 
@@ -121,15 +128,3 @@ flowchart LR
 - Session lock per turn, storing the session after a turn, clearing the volatile cache per turn (session part of #885).
 - System tools and prompt guidance, tracing (later sub-issues).
 - Changes to the OpenAI or ADK adapters.
-
-## Open questions
-
-- Name of the audio method: `on_stream_input` (pairs with `on_stream_event`). Alternatives welcome.
-- `StreamHalt` in realtime: end the call (`_fail`, proposed) or end only the turn. Ending the turn needs new state to discard the rest of the model's reply.
-- System pre-hooks on typed text: run the whole list (input guardrail, multimodal, sandbox) through the shared loop (proposed, one owner of order), or only the agent hooks and the input guardrail. The sandbox hook ingests task-completion events, which would now run on a call's typed text.
-- A raising pre-hook on audio: log and drop the chunk (proposed; one error chunk per audio chunk would flood the edge), or fail the call. For typed text the proposal is an error chunk and the call continues.
-- Volatile cache and call end: the pool never clears it (no `finally` as in `core/runtime.py:464`), so hook state lives for the whole call. Clear it when the call closes, the way `Runtime` clears it when a run ends (proposed), or leave it to the session part of #885?
-- `MessageEnd` at turn end: which `message_id` it carries (the turn's last `TextDelta` id, or a new one when the turn had no text), and whether a matching `MessageStart` is also needed for the shape delta-mode clients expect.
-- Barge-in while a hook holds audio: the pool counts only queued audio (`_queued_audio`), so `speech_started` after the model's `done` is not a barge-in while a hook still holds audio. Count held audio, or rely on the model's own `interrupt`?
-- Behaviour change for existing apps: agent hooks on a realtime agent start running. Intended (#885 asks for it), but should it be opt-in?
-- `AgentRequestVoice` is rejected from a pre-hook's returned list by the type check (`core/runtime.py:253`). `on_stream_input` returns its own type and does not go through that check, so the tuple stays unchanged; confirm this is the intended separation.

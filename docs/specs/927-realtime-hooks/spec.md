@@ -82,10 +82,12 @@ async def _emit_event(self, event: StreamEvent) -> list[StreamEvent]:
 - Each emitted event becomes `StreamChunk(delta=event.content if TextDelta else None, event=event)`, the shape `Runtime.stream` yields (`core/runtime.py:544`) and the shape `_pacing_loop` already builds. It then goes to `_emit` unchanged.
 - `_pacing_loop` (`:220`) changes as follows:
   - `transcript_delta`, `input_transcript`, `interrupt`, `agent_changed`: build the same event as now (`:229`, `:232`, `:238`, `:241`) and call `_emit_event` instead of `_emit`.
-  - `audio_delta`: after the resample (`:251`), build `AudioDelta`, call `_emit_event`, and pace by the audio actually emitted:
-    - `emitted_ms` = the sum over emitted `AudioDelta` of `(len(pcm16_bytes) / 2) / (EDGE_SAMPLE_RATE / 1000)`.
-    - When the emitted list is exactly the original event, the byte length is `len(pcm16)` (no second decode); otherwise the content is decoded.
-    - `audio_played_ms += emitted_ms`; the sleep rule (`:258-261`) is unchanged. A dropped chunk adds no time and sleeps nothing extra.
+  - `audio_delta`: after the resample (`:251`), build `AudioDelta` and call `_emit_event(audio, len(pcm16))`.
+  - Pacing is applied inside `_emit_event` to **every** `AudioDelta` it emits, whichever event released it, one event at a time (a private method, `_pace`):
+    - Before an audio event is emitted, when the window is empty (`_pace_played_ms == 0.0`) its start time is set; after it is emitted, its playback time `(bytes / 2) / (EDGE_SAMPLE_RATE / 1000)` is added to `_pace_played_ms` and the loop sleeps until the audio is no more than `playback_lead_ms` ahead of real time (the rule at `:258-261`, unchanged).
+    - So audio a hook holds and releases on `MessageEnd` (or on any other event) leaves at playback speed, like audio passed straight through: a burst would reach the edge before a barge-in could drop it, and `_queued_audio` would already be 0, so `speech_started` would not count as one.
+    - The byte length is the one the loop already knows when the emitted event is the original (`out is event`, no second decode); otherwise the content is decoded. A dropped chunk adds no time and sleeps nothing.
+    - The window and its start time are two instance attributes (`_pace_start`, `_pace_played_ms`), not loop locals, because `_emit_event` paces. The `done`, `interrupt` and `agent_changed` branches reset `_pace_played_ms` after `_emit_event` returns, so audio they released has been paced first.
   - `done`: build `MessageEnd(message_id=self._turn_message_id or uuid4().hex)`, call `_emit_event`, set `_turn_message_id = None`, then emit `StreamChunk(done=True)` as now (`:236`).
   - `_turn_message_id` is set from each dequeued `audio_delta` / `transcript_delta` whose `message_id` is non-empty. It is the id of the **last** output event of the turn, not a turn id: ADK gives every event its own id (`framework/adk/adk.py:1060-1069`, `event.id`), OpenAI uses the item id (`framework/openai/openai.py:756`, `:777`). Realtime sends no `MessageStart` (the native session reports pieces, not boundaries); `MessageEnd` marks the turn end.
   - `except StreamHalt as halt:` is added before the existing `except Exception` (`:265`): `await self._fail(halt.reason)` then `return`. Other exceptions keep today's handling (logged, loop continues).
@@ -123,7 +125,7 @@ def send_text(self, request: AgentRequestText) -> None: ...       # was (text: s
 
 #### 3.5 Volatile cache at call end (`close`, `:330`)
 
-- After `await self.adapter.disconnect()` and the existing `_unpublish_run()` (`:346-347`), `close()` clears the session's volatile cache (`session.get_volatile_cache()._clear_all()`, the call `Runtime` makes at `core/runtime.py:464`). Hook state kept there (section 1) ends with the call.
+- `close()` clears the session's volatile cache (`session.get_volatile_cache()._clear_all()`, the call `Runtime` makes at `core/runtime.py:464`). Hook state kept there (section 1) ends with the call. It runs, with the existing `_unpublish_run()`, in a `finally` around `adapter.disconnect()`: a native session that fails to close must not leave the state behind, because the session store hands the next call this same `Session`.
 - The cache is not cleared per turn (non-goal: session part of #885).
 
 #### 3.6 Startup warning (`RealtimeConnectionPool.initialize`, `:364`)
@@ -157,7 +159,7 @@ No config changes. No `AKConfig` field, extra, factory or provider is added. The
 3. The edge receives a `MessageEnd` event before each `done` chunk, on every call, including calls with no hooks. Existing assertions on the output sequence change (Testing). *Intentional: hold-and-release needs a turn end.*
 4. A blocked typed turn sends `StreamChunk(error=..., done=True)` to the edge. On LiveKit this clears the playing audio (`deliver_chunk`, `integration/livekit/adapter.py:430-434`). *Accepted: it is the existing terminal-error chunk.*
 5. Caller audio is resampled to the model's rate on the pool loop instead of on the consumer thread. *Accepted: small CPU cost at the chunk rate; hooks need the loop.*
-6. Pacing is computed from the audio emitted after the hooks. With no hooks the figure is identical.
+6. Pacing is applied to the audio emitted after the hooks, event by event, whichever event released it. With no hooks the timing is identical.
 7. A raising post-hook, or `StreamHalt`, ends the call through `_fail`; `_fail` no longer cancels the pacing task when called from it.
 8. `close()` clears the session's volatile cache.
 9. A startup `WARNING` per realtime agent when `guardrail.input.enabled`.
@@ -165,9 +167,9 @@ No config changes. No `AKConfig` field, extra, factory or provider is added. The
 
 **Non-changes:** adapters and their `append_audio(str)` / `send_text(str)`; queue message format (`message_end` is already a member of the `StreamEvent` union, `core/event.py:58`); hook order; `Runtime.run()` / `stream()` results; tools, principal publication, the session lock (not held) and session storage (not stored); the pool's reconnect back-off, eviction and shutdown.
 
-### Decisions taken for the design's open questions
+### Decisions taken for the design's former open questions
 
-These were open in `design.md`; this spec assumes the recommendation. Reviewers confirm or change them, which changes `design.md` first.
+These were open in `design.md` and were confirmed by the author, then moved into `design.md`'s Requirements. They are kept here as a reading aid.
 
 1. Method name: `on_stream_input`.
 2. `StreamHalt` in realtime ends the call (`_fail`).
@@ -200,9 +202,9 @@ New files:
 
 - `tests/test_runtime_hook_api.py`: `Runtime.run_pre_hooks` (order agent then system, halt returns the reply, wrong type `TypeError`, unchanged from `run()`); `run_stream_input_hooks` (default pass-through, `None` drops, a list ends the chain and splits voice/text, wrong single type and wrong list item raise naming the hook, agent hooks before system hooks); `run_stream_event_hooks` (same chain semantics as `Runtime.stream`: `None` drops, a list ends the chain, a different `type` raises, system hooks before agent hooks); `Runtime.stream` still warns when a post-hook drops `RunPaused` (the `last_hook` name reaches the warning).
 - `tests/test_realtime_hooks.py`, built on the fakes of `tests/test_realtime_pool.py` (`_Adapter`, `_Agent`, `_connection`, `_drain_output`, `_kinds`, the `asyncio.to_thread` patch):
-  - Output: a recording post-hook sees every event type in order; rewriting a `TextDelta`; dropping audio; a list replacing an event; `MessageEnd` reaches hooks before `done`, with the last event's `message_id` or a fresh one; a hold-and-release hook releases at `MessageEnd`; an `Interrupt` reaches a holding hook before later events; pacing follows emitted audio (dropped audio does not sleep, longer replacement audio sleeps longer); `StreamHalt` and a raising hook send one error chunk and close the connection with the pacing task not cancelling itself.
+  - Output: a recording post-hook sees every event type in order; rewriting a `TextDelta`; dropping audio; a list replacing an event; `MessageEnd` reaches hooks before `done`, with the last event's `message_id` or a fresh one; a hold-and-release hook releases at `MessageEnd`; an `Interrupt` reaches a holding hook before later events; pacing follows emitted audio (dropped audio does not sleep, longer replacement audio sleeps longer, and three audio events a hook holds and releases at `MessageEnd` are paced rather than sent in a burst, with `done` after them); `StreamHalt` and a raising hook send one error chunk and close the connection with the pacing task not cancelling itself.
   - Input: a recording pre-hook sees audio with its `name`; `None` drops (the adapter gets nothing); a returned list of voice goes to the adapter at the model's rate; a returned `AgentRequestText` goes through `run_pre_hooks` and is sent once; typed text runs agent then system hooks; a pre-hook halt sends the error chunk and nothing to the adapter; a raising text hook sends the generic error chunk; a raising audio hook drops the chunk and logs once at `ERROR`; `Session.current()` and `Agent.current()` are set inside every hook call.
-  - `close()` clears the volatile cache; `initialize()` warns once per realtime agent when `guardrail.input.enabled` (config stubbed with a real `_GuardrailConfig`, never a bare namespace) and stays silent when it is off.
+  - `close()` clears the volatile cache, also when `adapter.disconnect()` raises (the cache clear and the unpublish run in a `finally`); `initialize()` called twice warns once per realtime agent when `guardrail.input.enabled` (config stubbed with a real `_GuardrailConfig`, never a bare namespace) and stays silent when it is off.
 
 Existing tests that change:
 

@@ -71,6 +71,9 @@ class RealtimeConnection:
         self._audio_queue: asyncio.Queue = asyncio.Queue(maxsize=1024)
         # Audio not yet emitted: while it is non-zero, the user starting to speak is a barge-in.
         self._queued_audio = 0
+        # The pacing window: when it opened and how much audio it has emitted (milliseconds of playback).
+        self._pace_start = 0.0
+        self._pace_played_ms = 0.0
         # The message_id of the turn's last output event, which the MessageEnd that closes the turn carries.
         self._turn_message_id: str | None = None
         # The last text turn sent to the model (after pre-hooks): the `requests` argument post-hooks receive.
@@ -240,10 +243,14 @@ class RealtimeConnection:
         finally:
             Session.current_session.reset(token)
 
-    async def _emit_event(self, event: StreamEvent) -> list[StreamEvent]:
-        """Run one output event through the post-hooks and emit each resulting event.
+    async def _emit_event(self, event: StreamEvent, audio_bytes: int | None = None) -> list[StreamEvent]:
+        """Run one output event through the post-hooks, emit each resulting event, and pace every audio event emitted.
+
+        Pacing is applied to whatever audio leaves, whichever event released it: a hook that held audio and releases it on
+        the turn end gets the same playback-speed delivery as audio passed straight through.
 
         :param event: The event the native session produced, at the edge's sample rate when it is audio.
+        :param audio_bytes: Byte length of ``event``'s audio when it is an ``AudioDelta``, which spares a decode.
         :return: The events that were emitted (empty when a hook dropped it).
         :raises StreamHalt: When a hook ends the call; any other hook failure is logged and raised as one.
         """
@@ -256,25 +263,27 @@ class RealtimeConnection:
             _log.exception(f"Realtime session {self.session_id}: a post-hook failed on a '{event.type}' event")
             raise StreamHalt("Realtime output hook failed") from e
         for out in emitted:
+            if isinstance(out, AudioDelta) and self._pace_played_ms == 0.0:
+                self._pace_start = time.time()
             await self._emit(StreamChunk(delta=out.content if isinstance(out, TextDelta) else None, event=out))
+            if isinstance(out, AudioDelta):
+                await self._pace(out, audio_bytes if out is event else None)
         return emitted
 
-    @staticmethod
-    def _audio_ms(emitted: list[StreamEvent], original: AudioDelta, original_bytes: int) -> float:
-        """Playback time of the audio in ``emitted``; ``original_bytes`` spares a decode when it is the event as built."""
-        total_bytes = 0
-        for out in emitted:
-            if isinstance(out, AudioDelta):
-                total_bytes += original_bytes if out is original else len(base64.b64decode(out.content))
-        return (total_bytes / 2) / (EDGE_SAMPLE_RATE / 1000.0)
+    async def _pace(self, audio: AudioDelta, known_bytes: int | None) -> None:
+        """Wait until the audio just emitted is no more than ``playback_lead_ms`` ahead of real time."""
+        size = known_bytes if known_bytes is not None else len(base64.b64decode(audio.content))
+        self._pace_played_ms += (size / 2) / (EDGE_SAMPLE_RATE / 1000.0)
+        elapsed_ms = (time.time() - self._pace_start) * 1000.0
+        sleep_ms = (self._pace_played_ms - self._playback_lead_ms) - elapsed_ms
+        if sleep_ms > 0:
+            await asyncio.sleep(sleep_ms / 1000.0)
 
     async def _pacing_loop(self) -> None:
         """Emit queued audio at playback rate; other events follow the audio queued before them.
 
         Every event goes through the post-hooks first. Pacing follows the audio that is actually emitted.
         """
-        item_start_time = 0.0
-        audio_played_ms = 0.0
         while True:
             try:
                 event_type, data = await self._audio_queue.get()
@@ -298,25 +307,16 @@ class RealtimeConnection:
                             AgentChanged(agent=data["agent"], previous_agent=data.get("previous_agent"), agents=data.get("agents"))
                         )
                     # A new pacing window, so a gap before the next audio is not paid back as a burst.
-                    audio_played_ms = 0.0
+                    self._pace_played_ms = 0.0
                     continue
 
                 self._queued_audio = max(0, self._queued_audio - 1)
-                if audio_played_ms == 0.0:
-                    item_start_time = time.time()
 
                 pcm16 = PCM16Resampler.resample(base64.b64decode(data["delta"]), self.adapter.output_sample_rate, EDGE_SAMPLE_RATE)
                 message_id = data.get("message_id") or ""
                 self._turn_message_id = message_id or self._turn_message_id
                 audio = AudioDelta(message_id=message_id, content=base64.b64encode(pcm16).decode("utf-8"))
-                emitted = await self._emit_event(audio)
-
-                audio_played_ms += self._audio_ms(emitted, audio, len(pcm16))
-
-                elapsed_ms = (time.time() - item_start_time) * 1000.0
-                sleep_ms = (audio_played_ms - self._playback_lead_ms) - elapsed_ms
-                if sleep_ms > 0:
-                    await asyncio.sleep(sleep_ms / 1000.0)
+                await self._emit_event(audio, len(pcm16))
 
             except asyncio.CancelledError:
                 break
@@ -448,11 +448,14 @@ class RealtimeConnection:
         if self._pacing_task:
             self._pacing_task.cancel()
             self._pacing_task = None
-        await self.adapter.disconnect()
-        if self._principal_published:
-            self.session._unpublish_run()
-        # Hook state kept in the volatile cache ends with the call, as it does when a Runtime run ends.
-        self.session.get_volatile_cache()._clear_all()
+        try:
+            await self.adapter.disconnect()
+        finally:
+            if self._principal_published:
+                self.session._unpublish_run()
+            # Hook state kept in the volatile cache ends with the call, as it does when a Runtime run ends,
+            # also when the native session fails to close: the session store hands the next call this same Session.
+            self.session.get_volatile_cache()._clear_all()
 
 
 class RealtimeConnectionPool:

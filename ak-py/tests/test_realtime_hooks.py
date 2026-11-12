@@ -284,6 +284,52 @@ class TestOutputHooks:
         assert time.monotonic() - started > 1.5  # the 2 s the hook emitted, less the playback lead, though the model's audio was 3 bytes
 
     @pytest.mark.asyncio
+    async def test_audio_a_hook_releases_at_the_turn_end_is_paced_not_sent_in_a_burst(self):
+        """Hold-and-release is the documented pattern: released audio must still leave at playback speed, or a barge-in cannot drop it."""
+
+        class HoldAudio(PostHook):
+            async def on_run(self, session, requests, agent, agent_reply):
+                return agent_reply
+
+            async def on_stream_event(self, session, requests, agent, event):
+                cache = session.get_volatile_cache()
+                if isinstance(event, AudioDelta):
+                    cache.set("held", [*(cache.get("held") or []), event])
+                    return None
+                if isinstance(event, MessageEnd):
+                    held = cache.get("held") or []
+                    cache.set("held", [])
+                    return [*held, event]
+                return event
+
+            def name(self):
+                return "hold-audio"
+
+        half_second = base64.b64encode(b"\x00\x00" * 12000).decode()  # 0.5 s at 24 kHz
+        agent = _Agent()
+        agent.post_hooks.append(HoldAudio())
+        conn = _connection(agent)
+        await conn.connect()
+        started = time.monotonic()
+        for _ in range(3):
+            await conn.handle_framework_event("audio_delta", {"delta": half_second, "message_id": "m1"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+
+        await asyncio.sleep(0.3)
+        early = _chunks(_transport())
+        assert _kinds(early).count("audio_delta") < 3, "1.5 s of released audio was emitted in a burst"
+        assert "done" not in _kinds(early)
+
+        collected = list(early)
+        while not any(c.done for c in collected) and time.monotonic() - started < 4.0:
+            await asyncio.sleep(0.05)
+            collected += _chunks(_transport())
+        conn._pacing_task.cancel()
+
+        assert _kinds(collected).count("audio_delta") == 3 and any(c.done for c in collected)
+        assert time.monotonic() - started > 1.2  # 1.5 s of audio less the playback lead
+
+    @pytest.mark.asyncio
     async def test_the_turn_end_carries_the_last_output_events_message_id(self):
         agent = _Agent()
         conn = _connection(agent)
@@ -588,8 +634,27 @@ class TestCallEnd:
 
         assert conn.session.get_volatile_cache().get("hook-state") is None
 
+    @pytest.mark.asyncio
+    async def test_a_failing_disconnect_still_clears_the_volatile_cache(self):
+        class FailingAdapter(_Adapter):
+            async def disconnect(self):
+                raise RuntimeError("network error closing the native session")
+
+        conn = _connection(_Agent(realtime_runner_cls=FailingAdapter))
+        conn.session.get_volatile_cache().set("hook-state", "left over")
+        with pytest.raises(RuntimeError):
+            await conn.close()
+
+        # The in-memory store hands the next call this same Session, so leftover hook state would leak into it.
+        assert conn.session.get_volatile_cache().get("hook-state") is None
+
 
 class TestStartupWarning:
+    @staticmethod
+    def _pool_warnings(caplog):
+        """Warnings the pool logged. Not every record: other loggers (Runtime.register logs at DEBUG) depend on test order."""
+        return [r for r in caplog.records if r.name == "ak.pipeline.realtime_pool" and r.levelno >= logging.WARNING]
+
     @staticmethod
     def _config(monkeypatch, input_enabled):
         class _Cfg:
@@ -610,7 +675,7 @@ class TestStartupWarning:
         with caplog.at_level(logging.WARNING, logger="ak.pipeline.realtime_pool"):
             RealtimeConnectionPool()._warn_unchecked_audio()
 
-        [warning] = [r for r in caplog.records if r.levelno == logging.WARNING]
+        [warning] = self._pool_warnings(caplog)
         assert "'voice'" in warning.getMessage() and "typed text only" in warning.getMessage()
 
     def test_stays_silent_when_the_input_guardrail_is_off(self, monkeypatch, caplog):
@@ -619,4 +684,14 @@ class TestStartupWarning:
         with caplog.at_level(logging.WARNING, logger="ak.pipeline.realtime_pool"):
             RealtimeConnectionPool()._warn_unchecked_audio()
 
-        assert caplog.records == []
+        assert self._pool_warnings(caplog) == []
+
+    def test_initialize_warns_once_per_realtime_agent(self, monkeypatch, caplog):
+        self._config(monkeypatch, True)
+        self._runtime(monkeypatch)
+        with caplog.at_level(logging.WARNING, logger="ak.pipeline.realtime_pool"):
+            RealtimeConnectionPool.initialize()
+            RealtimeConnectionPool.initialize()  # the second call returns the pool and must not warn again
+
+        warnings = self._pool_warnings(caplog)
+        assert len(warnings) == 1 and "'voice'" in warnings[0].getMessage()
