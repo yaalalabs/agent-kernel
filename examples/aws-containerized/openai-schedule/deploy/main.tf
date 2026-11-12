@@ -26,7 +26,9 @@ module "containerized_agents" {
     health_check_endpoint         = "/health"
     command                       = ["python", "app_rest_service.py"]
     environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
+      OPENAI_API_KEY  = var.openai_api_key
+      # The credential of the static identity provider in config.yaml (identity.provider.static.principals).
+      DEMO_AUTH_TOKEN = var.demo_auth_token
     }
   }
 

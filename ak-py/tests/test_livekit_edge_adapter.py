@@ -18,6 +18,7 @@ import pytest
 import agentkernel.integration.livekit.adapter as livekit_adapter
 from agentkernel.core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, TextDelta
 from agentkernel.core.model import AgentRequestText, AgentRequestVoice, StreamChunk
+from agentkernel.integration.adapter.base import Source
 from agentkernel.integration.livekit.adapter import LiveKitEdgeAdapter
 
 
@@ -31,8 +32,8 @@ class _Producer:
     def __init__(self):
         self.calls = []
 
-    def enqueue(self, adapter_name, request):
-        self.calls.append({"adapter_name": adapter_name, "request": request})
+    def enqueue(self, adapter_name, request, source=None):
+        self.calls.append({"adapter_name": adapter_name, "request": request, "source": source})
 
 
 class _AudioSource:
@@ -225,11 +226,12 @@ class TestInboundStaging:
     @pytest.mark.asyncio
     async def test_enqueue_stages_and_the_sender_delivers_to_the_producer(self):
         edge = _edge()
+        edge._api_key = "lk-key"
         edge._producer = _Producer()
         edge._pending = asyncio.Queue(maxsize=4)
         sender = asyncio.create_task(edge._drain_requests())
         try:
-            edge._stage_request(AgentRequestText(prompt="hi"))
+            edge._stage_request(AgentRequestText(prompt="hi"), "human")
             for _ in range(50):
                 if edge._producer.calls:
                     break
@@ -242,6 +244,10 @@ class TestInboundStaging:
         assert call["request"].session_id == "s1"
         assert call["request"].agent == "general"
         assert call["request"].reply_context == {"session_id": "s1"}
+        # The participant LiveKit asserts is the subject, the API key id its scope, and the edge
+        # tells the producer it is a realtime source so the principal gets the realtime prefix (#603).
+        assert (call["request"].user_id, call["request"].namespace) == ("human", "lk-key")
+        assert call["source"] == Source.REALTIME
 
     def test_enqueue_carries_no_agent_when_none_is_configured(self):
         edge = _edge()
@@ -283,13 +289,15 @@ class TestInboundStaging:
     async def test_chat_message_parses_json_and_plain_text(self, monkeypatch):
         edge = _edge()
         seen = []
-        monkeypatch.setattr(edge, "_stage_request", lambda request: seen.append(request))
+        monkeypatch.setattr(edge, "_stage_request", lambda request, participant_identity=None: seen.append((request, participant_identity)))
 
         edge._handle_chat_message(_packet('{"message": "hello"}'))
         edge._handle_chat_message(_packet("plain text", topic="chat"))
         edge._handle_chat_message(_packet("ignored", topic="some-other-topic"))
 
-        assert [request.prompt for request in seen] == ["hello", "plain text"]
+        assert [request.prompt for request, _ in seen] == ["hello", "plain text"]
+        # The packet's sender is the participant the request runs as (#603).
+        assert [identity for _, identity in seen] == ["human", "human"]
 
 
 class TestInboundAudioBatching:
@@ -300,11 +308,13 @@ class TestInboundAudioBatching:
         edge = _edge()
         edge._input_batch_bytes = 0
         seen = []
-        edge._stage_request = lambda request: seen.append(request)
+        edge._stage_request = lambda request, participant_identity=None: seen.append((request, participant_identity))
 
-        await edge._process_incoming_audio(object())
+        await edge._process_incoming_audio(object(), "human")
 
-        assert [base64.b64decode(request.audio_data) for request in seen] == frames
+        assert [base64.b64decode(request.audio_data) for request, _ in seen] == frames
+        # Every frame is staged as the participant whose track it came from (#603).
+        assert {identity for _, identity in seen} == {"human"}
 
     @pytest.mark.asyncio
     async def test_batches_frames_to_the_configured_size_and_flushes_the_tail(self, monkeypatch):
@@ -313,7 +323,7 @@ class TestInboundAudioBatching:
         edge = _edge()
         edge._input_batch_bytes = 6
         seen = []
-        edge._stage_request = lambda request: seen.append(request)
+        edge._stage_request = lambda request, participant_identity=None: seen.append(request)
 
         await edge._process_incoming_audio(object())
 
@@ -322,7 +332,7 @@ class TestInboundAudioBatching:
     def test_enqueue_audio_base64_encodes_a_voice_request(self):
         edge = _edge()
         seen = []
-        edge._stage_request = lambda request: seen.append(request)
+        edge._stage_request = lambda request, participant_identity=None: seen.append(request)
 
         edge._stage_request(edge._enqueue_audio(b"\x01\x02\x03\x04"))
 
@@ -687,8 +697,8 @@ class TestMultiAgentInbound:
         edge = _edge("supervisor", "billing")
         heard = []
 
-        async def listen(track):
-            heard.append(("audio", track))
+        async def listen(track, participant_identity):
+            heard.append(("audio", track, participant_identity))
 
         edge._process_incoming_audio = listen
         track = types.SimpleNamespace(kind="audio")
@@ -696,7 +706,8 @@ class TestMultiAgentInbound:
         edge._on_track_subscribed(track, types.SimpleNamespace(set_subscribed=None), types.SimpleNamespace(identity="caller"))
         await asyncio.sleep(0)
 
-        assert heard == [("audio", track)]
+        # The track is listened to as the participant it belongs to (#603).
+        assert heard == [("audio", track, "caller")]
 
     @pytest.mark.asyncio
     async def test_a_participant_joining_opens_the_conversation_whether_or_not_their_mic_is_published(self, monkeypatch):
@@ -727,7 +738,7 @@ class TestMultiAgentInbound:
     def test_an_agent_participants_chat_is_ignored(self, monkeypatch):
         edge = _edge("supervisor", "billing")
         seen = []
-        monkeypatch.setattr(edge, "_stage_request", seen.append)
+        monkeypatch.setattr(edge, "_stage_request", lambda request, participant_identity=None: seen.append(request))
 
         edge._handle_chat_message(
             types.SimpleNamespace(topic="lk-chat", data=b"Billing here.", participant=types.SimpleNamespace(identity="agent-billing"))
@@ -1101,9 +1112,9 @@ class TestSessionEnd:
         release = threading.Event()
 
         class _Slow(_Producer):
-            def enqueue(self, adapter_name, request):
+            def enqueue(self, adapter_name, request, source=None):
                 release.wait(5)
-                super().enqueue(adapter_name, request)
+                super().enqueue(adapter_name, request, source)
 
         producer = _Slow()
         edge._producer = producer

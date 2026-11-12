@@ -161,6 +161,7 @@ The landing page (`docs/src/pages/index.tsx`) and the features page (`docs/src/p
 | A schedule provider | Cloud & infrastructure, `Scheduler` | (none) | Scheduled Tasks (Scale): `tags` | (none) |
 | A secret provider | Cloud & infrastructure, `Secrets` | (none) | Secret Resolution (Guard): `tags` and `description` | (none) |
 | A guardrail provider | Observability, safety & testing, `Guardrail` | (none) | Content Guardrails (Guard): `tags` and `description` | the `with:` cells in the Problem section's `rows` that name the built-in guardrail providers |
+| An identity provider, or an issuer documented as an `oidc` configuration | Observability, safety & testing, `Identity` (an `oidc` configuration says so in `title`) | (none) | Identity & Access (Guard): `tags` and `description` | the highlights on the Identity & Access card |
 | A tracing provider | Observability, safety & testing, `Tracing` | Clouds & observability (optional) | Tracing (Observe): `tags` and `description` | the Observability card highlights; the `with:` cells in the Problem section's `rows` |
 | A test evaluator | Observability, safety & testing, `Evaluator` | (none) | Pluggable Evaluators (Observe): `tags` and `description` | `approaches` / `modes` under Testing & Evaluation |
 | A bundled user skill (`ak-py/src/agentkernel/skills/`) | (none) | (none) | (none) | (none); only `docs/docs/agent-skills.md` lists individual skills |

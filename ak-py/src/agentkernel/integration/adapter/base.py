@@ -62,7 +62,17 @@ class InboundRequest(BaseModel):
     requests: list[AgentRequestUnion]
     prompt: str = ""
     agent: str | None = None
+    # The platform's own id for the sender (a Slack user id, a WhatsApp phone number, an email
+    # address). It becomes ``Principal.subject`` with ``messaging:<platform>`` as the provider.
     user_id: str | None = None
+    # The platform scope ``user_id`` is unique within, which becomes ``Principal.namespace``: a Slack
+    # team id, a Teams tenant id, the Gmail inbox address, a WhatsApp ``phone_number_id``, a
+    # Messenger or Instagram page id, a Telegram bot id, a LiveKit API key id. The same sender id
+    # seen under two scopes is two different principals.
+    namespace: str | None = None
+    # Platform facts about the sender worth carrying on the principal's ``claims`` (Gmail's
+    # ``Authentication-Results`` header); empty for platforms that vouch for the sender themselves.
+    claims: dict[str, Any] = Field(default_factory=dict)
     group_id: str | None = None
     reply_context: dict[str, str] = Field(default_factory=dict)
     end_session: bool = False
@@ -288,16 +298,25 @@ class StatefulEdgeAdapter(ABC):
 
         self._producer = IntegrationProducer()
 
-    def _enqueue(self, request: AgentRequestUnion | None = None) -> InboundRequest:
-        """Build the inbound request for one platform message, for :meth:`IntegrationProducer.enqueue`.
+    def _enqueue(self, request: AgentRequestUnion | None = None, user_id: str | None = None, namespace: str | None = None) -> InboundRequest:
+        """Build the normalized inbound request for one platform message.
 
-        :param request: The message; ``None`` builds the empty request that carries the end-of-session control.
+        The caller hands it to :meth:`IntegrationProducer.enqueue`, which stamps the integration
+        and reply-context attributes, so every integration shares one producer.
+
+        :param request: The request the participant made; ``None`` builds the empty request that carries the end-of-session control.
+        :param user_id: The participant the edge asserts made it, which the producer turns into a
+            ``realtime:`` principal; None when the edge cannot name one (#603).
+        :param namespace: The scope ``user_id`` is unique within, such as the edge's API key id.
+        :return: The request, carrying this edge's session and (if set) its configured agent.
         """
         return InboundRequest(
             session_id=self.session_id,
             request_id=str(uuid.uuid4()),
             requests=[request] if request is not None else [],
             agent=self.agent,
+            user_id=user_id,
+            namespace=namespace,
             reply_context={"session_id": self.session_id},
             end_session=request is None,
         )

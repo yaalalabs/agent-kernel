@@ -463,13 +463,22 @@ settings drive this:
 
 - `profile.identity.mode` — `agent` (default) or `user`.
 - `sandbox.principal_resolver` — a dotted path to a `PrincipalResolver` that maps the current
-  session/agent to a `SandboxPrincipal`. Omitted → the built-in `AgentPrincipalResolver` (the
-  agent's own identity).
+  session/agent to a `SandboxPrincipal`. Omitted → the built-in `AgentPrincipalResolver`: the run's
+  principal when the surface authenticated one (an `identity` block in `config.yaml` makes every
+  surface do so; see [Identity and Access](./identity-and-access.md)), as a `user`-mode principal
+  carrying the caller's subject and groups, else the agent's own identity. So `identity.mode: user`
+  works with no custom resolver; supply one to map the caller onto provider credentials (a role ARN,
+  an impersonation user), which the default deliberately leaves to the application. A user-mode
+  principal reaches the provider only under a `user`-mode profile: an `agent`-mode profile runs as
+  the agent whoever calls, and an operation driven outside any session resolves to the agent too.
+  So does a run for a messaging or realtime sender (a `messaging:` or `realtime:` principal, whose
+  subject is a platform id rather than a user a provider can map), like an anonymous run, so a
+  `user`-mode profile refuses it.
 
 ```yaml
 sandbox:
   enabled: true
-  principal_resolver: myapp.identity.SessionUserPrincipalResolver
+  principal_resolver: myapp.identity.SessionUserPrincipalResolver   # optional: the default already resolves the authenticated caller
   profiles:
     secure:
       type: myapp.providers.MyIdentityProvider   # a provider that declares principal_user=True
@@ -502,7 +511,9 @@ resolver that actually returned a user-mode principal — otherwise the executio
 user-scoped request can never silently fall back to the agent identity.
 
 See the [end-to-end identity example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity)
-for a REST app that authenticates each request and runs code under the caller's identity.
+for a REST app that runs code under the caller's identity with a bring-your-own resolver mapping the
+caller onto provider credentials (with an `identity` block, the default resolver covers the
+no-credentials case without code).
 
 ## Providers
 
@@ -770,7 +781,7 @@ sandbox:
   enabled: false                 # master switch
   agents: null                   # list of agent names to attach to; null = all agents
   default_profile: default       # profile used when a call omits profile=
-  principal_resolver: null       # dotted path to a PrincipalResolver; null = AgentPrincipalResolver
+  principal_resolver: null       # dotted path to a PrincipalResolver; null = AgentPrincipalResolver (the authenticated caller, else the agent)
   tool_output_max_chars: 8000    # truncation limit for tool output
 
   broker:
@@ -872,7 +883,7 @@ and `AK_SANDBOX__PROFILES__BUILDER__DOCKER__LANGUAGE_RUNTIMES='{"python":["pytho
 - [`sandbox/docker`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/docker) — the `docker` provider: container-isolated execution with policy actually enforced (`network_egress: deny` → no network).
 - [`sandbox/daytona`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/daytona) — the `daytona` provider: cloud container sandboxes with enforced network and resource policy (needs a Daytona API key).
 - [`sandbox/e2b`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/e2b) — the `e2b` provider: Firecracker micro-VM sandboxes with a stateful Jupyter kernel and enforced network policy (needs an E2B API key).
-- [`sandbox/identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity) — a REST app running sandboxed code under the authenticated end user's identity, end-to-end.
+- [`sandbox/identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity): a REST app running sandboxed code under the authenticated end user's identity, end-to-end, with a bring-your-own resolver mapping the caller onto provider credentials.
 - [`sandbox/ec2-ssm`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/ec2-ssm) — the `ec2_ssm` provider attaching to an existing EC2 instance over SSM (manual; needs a real instance).
 - [`sandbox/broker-kafka`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/broker-kafka) — the `queue` broker flavor over Kafka: a worker running read-only kubectl pods in kind, RBAC as the boundary, bounded waits and `check_sandbox_task` recovery (needs Docker, kind, kubectl).
 - [`sandbox/broker-nats`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/broker-nats) — the `queue` broker fully in-cluster: pipeline plus sandbox worker deployed by the ak-k8s chart over NATS, sandbox pods in a hardened namespace (needs a micro-cluster and Helm).

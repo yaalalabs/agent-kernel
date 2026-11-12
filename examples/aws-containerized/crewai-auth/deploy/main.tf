@@ -34,10 +34,11 @@ module "containered_agents" {
     # Environment variables passed to container
     environment_variables = {
       OPENAI_API_KEY     = var.openai_api_key,
+      # The credential of the static identity provider in config.yaml (identity.provider.static.principals).
+      DEMO_AUTH_TOKEN    = var.demo_auth_token,
       CREWAI_STORAGE_DIR = "/tmp/crewai",
       EMBEDCHAIN_DB_PATH = "/tmp/crewai/embedchain.db",
-      HOME               = "/tmp",
-      SOME_OTHER_KEY     = "Some Other Value"
+      HOME               = "/tmp"
     }
   }
 }

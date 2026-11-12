@@ -98,7 +98,7 @@ class InstagramInboundAdapter(InboundAdapter):
             if not text and not attachments:
                 self._log.warning("Message has no text content or attachments")
                 return None
-            return await self._build(sender_id, message_id, text, attachments)
+            return await self._build(sender_id, message_id, text, attachments, self._recipient_id(event))
 
         if "postback" in event:
             postback = event["postback"]
@@ -108,7 +108,7 @@ class InstagramInboundAdapter(InboundAdapter):
                 return None
             # A postback carries no message id of its own; the sender plus the payload is what
             # distinguishes one button press from the next.
-            return await self._build(sender_id, f"{NAME}:{sender_id}:{postback.get('payload') or text}", text, [])
+            return await self._build(sender_id, f"{NAME}:{sender_id}:{postback.get('payload') or text}", text, [], self._recipient_id(event))
 
         if "read" in event:
             self._log.debug(f"Message read receipt: {event['read']}")
@@ -116,7 +116,12 @@ class InstagramInboundAdapter(InboundAdapter):
             self._log.debug(f"Reaction received: {event['reaction']}")
         return None
 
-    async def _build(self, sender_id: str, request_id: str, text: str, attachments: list) -> InboundRequest | None:
+    @staticmethod
+    def _recipient_id(event: dict) -> str | None:
+        """The business account the event was delivered to: the scope a business account-scoped sender id is unique within (#603)."""
+        return (event.get("recipient") or {}).get("id") or None
+
+    async def _build(self, sender_id: str, request_id: str, text: str, attachments: list, namespace: str | None) -> InboundRequest | None:
         requests: list[AgentRequest] = []
         if text:
             requests.append(AgentRequestText(prompt=text))
@@ -140,6 +145,7 @@ class InstagramInboundAdapter(InboundAdapter):
             prompt=text,
             agent=self._agent,
             user_id=sender_id,
+            namespace=namespace,
             reply_context={"recipient_id": sender_id},
         )
 

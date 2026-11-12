@@ -4,6 +4,7 @@ import { VscAzure } from "react-icons/vsc";
 import { TbPlugConnected } from "react-icons/tb";
 import {
   SiApachekafka,
+  SiAuth0,
   SiClaude,
   SiCrewai,
   SiCursor,
@@ -13,11 +14,14 @@ import {
   SiGithubcopilot,
   SiGooglecloud,
   SiHelm,
+  SiKeycloak,
   SiKubernetes,
   SiLanggraph,
   SiModelcontextprotocol,
   SiNatsdotio,
   SiNeo4J,
+  SiOkta,
+  SiOpenid,
   SiOpentelemetry,
   SiPydantic,
   SiRedis,
@@ -62,6 +66,8 @@ const TRACE = "/docs/advanced/traceability";
 const TESTING = "/docs/testing/automated-testing";
 const SKILLS = "/docs/agent-skills";
 const K8S = "/docs/deployment/onprem-kubernetes";
+// The identity page is only in the unreleased docs until the next release; drop `next` once it ships.
+const IDENTITY = "/docs/next/advanced/identity-and-access";
 
 export const INTEGRATION_ROWS: IntegrationRow[] = [
   {
@@ -158,6 +164,13 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "OpenAI Guardrails", role: "Guardrail", href: "/docs/advanced/guardrails-openai", logo: "/img/integrations/openai.svg", mono: true },
       { name: "Amazon Bedrock Guardrails", role: "Guardrail", href: "/docs/advanced/guardrails-bedrock", logo: "/img/integrations/bedrock.png" },
       { name: "Walled AI", role: "Guardrail", href: "/docs/advanced/guardrails-walledai", logo: "/img/integrations/walledai.svg" },
+      { name: "OpenID Connect", role: "Identity", href: IDENTITY, icon: <SiOpenid />, title: "OpenID Connect: any OIDC issuer through the oidc identity provider" },
+      { name: "Auth0", role: "Identity", href: IDENTITY, icon: <SiAuth0 />, title: "Auth0: an oidc identity provider configuration" },
+      { name: "Okta", role: "Identity", href: IDENTITY, icon: <SiOkta />, title: "Okta: an oidc identity provider configuration" },
+      { name: "Keycloak", role: "Identity", href: IDENTITY, icon: <SiKeycloak />, title: "Keycloak: an oidc identity provider configuration" },
+      { name: "Amazon Cognito", role: "Identity", href: IDENTITY, icon: <FaAws /> },
+      { name: "Microsoft Entra ID", role: "Identity", href: IDENTITY, icon: <FaMicrosoft /> },
+      { name: "Firebase Authentication", role: "Identity", href: IDENTITY, icon: <SiFirebase /> },
       { name: "DeepEval", role: "Evaluator", href: TESTING, logo: "/img/integrations/deepeval.svg" },
       { name: "Opik", role: "Evaluator", href: TESTING, logo: "/img/integrations/opik.svg", wide: true },
       { name: "TypeSafe JEV", role: "Evaluator", href: TESTING, logo: "/img/integrations/typesafe.png" },

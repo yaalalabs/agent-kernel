@@ -236,7 +236,7 @@
         "AGUIRequestHandler",
         "agentkernel[",
         "agui",
-        "Authoriser"
+        "identity:"
       ],
       "must_not_contain": [
         "type: bedrock"
@@ -384,9 +384,49 @@
         "AgentThreadRequestHandler",
         "thread:",
         "type: in_memory",
-        "user_id",
+        "identity:",
         "session_id",
         "GET /api/v1/threads"
+      ],
+      "must_not_contain": [
+        "Authoriser",
+        "\"user_id\""
+      ]
+    },
+    {
+      "id": "cap-identity-static",
+      "name": "Authenticate callers with the static identity provider",
+      "input": "Add authentication to my project so each caller is identified by a bearer token and my tools know who is calling",
+      "expected_outputs": [
+        "identity:",
+        "provider:",
+        "type: static",
+        "principals:",
+        "subject:",
+        "ToolContext.get().principal"
+      ],
+      "must_not_contain": [
+        "agentkernel.auth",
+        "AuthValidator",
+        "Authoriser"
+      ]
+    },
+    {
+      "id": "cap-identity-auth0",
+      "name": "Authenticate callers with Auth0",
+      "input": "Validate Auth0 access tokens on my REST API and expose the caller to my agent",
+      "expected_outputs": [
+        "identity:",
+        "type: oidc",
+        "issuer:",
+        "auth0.com/",
+        "audience:",
+        "agentkernel[",
+        "auth"
+      ],
+      "must_not_contain": [
+        "agentkernel.auth",
+        "AuthValidator"
       ]
     },
     {

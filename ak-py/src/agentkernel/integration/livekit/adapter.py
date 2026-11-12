@@ -248,7 +248,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
                 return
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue()),
+                asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue(), self.source),
                 timeout=self.SESSION_END_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
@@ -291,7 +291,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
             publication.set_subscribed(False)
             return
         _log.info(f"Subscribed to audio track from {participant.identity}")
-        asyncio.create_task(self._process_incoming_audio(track))
+        asyncio.create_task(self._process_incoming_audio(track, participant.identity))
 
     async def _greet(self, participant_identity: str) -> None:
         """Kick off the conversation once a participant joins the room."""
@@ -302,7 +302,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         if not prompt:
             return
         _log.info(f"Triggering auto-greeting for {participant_identity}")
-        self._stage_request(AgentRequestText(prompt=prompt))
+        self._stage_request(AgentRequestText(prompt=prompt), participant_identity)
 
     def opening_prompt(self, participant_identity: str) -> str | None:
         """The prompt sent when a caller joins the room; override it to open the call differently, or return ``None`` to send nothing.
@@ -326,12 +326,15 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
             if not text:
                 return
             _log.info(f"Text chat received from {data_packet.participant.identity}: {text}")
-            self._stage_request(AgentRequestText(prompt=text))
+            self._stage_request(AgentRequestText(prompt=text), getattr(data_packet.participant, "identity", None))
         except Exception as e:
             _log.error(f"Failed to process chat: {e}")
 
-    async def _process_incoming_audio(self, track: "rtc.Track") -> None:
-        """Pass the caller's audio to the queue, batched per ``execution.realtime.input_batch_ms``."""
+    async def _process_incoming_audio(self, track: "rtc.Track", participant_identity: str | None = None) -> None:
+        """Pass the caller's audio to the queue, batched per ``execution.realtime.input_batch_ms``.
+
+        Every frame is staged as the participant whose track it is, so the turn runs as them (#603).
+        """
         audio_stream = rtc.AudioStream(track, sample_rate=EDGE_SAMPLE_RATE, num_channels=1)
         _log.info(f"Listening for audio stream (batching at {self._input_batch_ms} ms; 0 = pass-through)...")
 
@@ -343,25 +346,30 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
                 if not raw_bytes:
                     continue
                 if self._input_batch_bytes == 0:
-                    self._stage_request(self._enqueue_audio(raw_bytes))
+                    self._stage_request(self._enqueue_audio(raw_bytes), participant_identity)
                     continue
                 buffer.extend(raw_bytes)
                 if len(buffer) >= self._input_batch_bytes:
-                    self._stage_request(self._enqueue_audio(buffer))
+                    self._stage_request(self._enqueue_audio(buffer), participant_identity)
                     buffer.clear()
             except Exception as e:
                 _log.error(f"Failed to process incoming audio frame: {e}")
 
         if buffer:
-            self._stage_request(self._enqueue_audio(buffer))
+            self._stage_request(self._enqueue_audio(buffer), participant_identity)
 
-    def _stage_request(self, request: AgentRequestText | AgentRequestVoice) -> None:
-        """Stage one request for the sender task; a full queue drops it with a warning."""
+    def _stage_request(self, request: AgentRequestText | AgentRequestVoice, participant_identity: str | None = None) -> None:
+        """Stage one request for the sender task; a full queue drops it with a warning.
+
+        :param participant_identity: The LiveKit participant it came from, which becomes the
+            ``realtime:livekit`` principal's subject with the API key id as its scope (spec #603,
+            section 8.4); None stages it anonymous.
+        """
         if self._producer is None or self._pending is None or self._ending:
             return
 
         try:
-            self._pending.put_nowait(self._enqueue(request))
+            self._pending.put_nowait(self._enqueue(request, user_id=participant_identity, namespace=self._api_key))
         except asyncio.QueueFull:
             _log.warning(f"Realtime input queue is full for session {self.session_id}; dropping a frame (broker slow or unreachable?)")
 
@@ -371,7 +379,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         while True:
             inbound = await self._pending.get()
             try:
-                await asyncio.to_thread(self._producer.enqueue, self.name, inbound)
+                await asyncio.to_thread(self._producer.enqueue, self.name, inbound, self.source)
             except Exception as e:
                 _log.error(f"Failed to enqueue request for session {self.session_id}: {e}")
             finally:

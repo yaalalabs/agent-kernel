@@ -6,7 +6,7 @@ sidebar_position: 8
 
 Agent Kernel can serve agents over **[AG-UI](https://github.com/ag-ui-protocol/ag-ui)**, an
 event-based protocol for talking to a user-facing frontend. Where the standard chat routes return one
-reply, an AG-UI run streams the whole shape of the work — the answer as it arrives, the agent's
+reply, an AG-UI run streams the whole shape of the work: the answer as it arrives, the agent's
 reasoning, each tool call with its arguments and result, and a shared state object both sides read and
 write.
 
@@ -16,23 +16,28 @@ it; there is deliberately no `enabled` flag.
 ```python
 from agentkernel.agui import AGUIRequestHandler
 from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
 from agentkernel.openai import OpenAIModule
 from agents import Agent
-
-
-class MyAuthoriser(Authoriser):
-    """Validate the Bearer token and return the caller's user id, or None to reject."""
-
-    def authorise(self, token: str) -> str | None:
-        return "demo-user" if token == "demo-token" else None
-
 
 agent = Agent(name="planner", instructions="You are a helpful assistant.")
 OpenAIModule([agent])
 
 if __name__ == "__main__":
-    RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=MyAuthoriser())])
+    RESTAPI.run(handlers=[AGUIRequestHandler()])
+```
+
+Who may run an agent is configuration: the `identity` block in `config.yaml` names the identity
+provider that turns each request's Bearer token into the run's principal. The example below uses the
+`static` provider with one credential whose value is resolved from the environment when the app starts:
+
+```yaml
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_TOKEN:          # names a secret; the value is never in the file
+          subject: demo-user
 ```
 
 A complete working demo, including a React frontend that renders every event kind, lives in
@@ -60,24 +65,24 @@ modest traffic, and it stays supported for deployments that want no queue.
 Mount `AGUIPipelineRequestHandler` instead to run the agent on the
 [queue pipeline](../advanced/queue-mode-guide.md). The handler keeps the caller's connection,
 enqueues the run, and streams the reply back as a separate process produces it. **Your frontend does
-not change** — same routes, same events, same order:
+not change**: same routes, same events, same order:
 
 ```python
 from agentkernel.agui import AGUIPipelineRequestHandler
 from agentkernel.pipeline import IOHandler
 
-IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
+IOHandler.run(handlers=[AGUIPipelineRequestHandler()])
 ```
 
-It needs a response store that can carry a chunk stream — everywhere, not only on a broker — and on
+It needs a response store that can carry a chunk stream, everywhere, not only on a broker, and on
 a broker transport a session store and an attachment store the agent runner can read:
 
 | Setting | Local (`in_memory` transport) | On a broker (sqs, kafka, nats) |
 |---|---|---|
-| `execution.response_store.type` | `in_memory`, `redis` or `valkey` — `dynamodb` has no blocking read | `redis` or `valkey` |
+| `execution.response_store.type` | `in_memory`, `redis` or `valkey`: `dynamodb` has no blocking read | `redis` or `valkey` |
 | `session.type` | anything, or unset | `redis`, `valkey`, `dynamodb`, `cosmosdb` or `firestore` |
 | `multimodal.storage_type` (when `multimodal.enabled`) | anything but `session_cache`, or unset | `redis` or `dynamodb` |
-| `execution.response_store.retry_count` x `delay` | how long the edge waits for each *next* chunk — 25s by default | the same; this budget does not depend on the transport |
+| `execution.response_store.retry_count` x `delay` | how long the edge waits for each *next* chunk: 25s by default | the same; this budget does not depend on the transport |
 
 The handler checks the three store settings at startup and refuses to boot with a message naming the
 setting to change, rather than accepting a request whose answer could never come back. The chunk
@@ -85,21 +90,25 @@ budget it cannot check, because only the run knows how long it will be quiet: it
 token's wait as well as the gap between a tool call and its result, so raise it when a turn can go
 quiet for longer than the product of the two values.
 
-Mounting, authorization and the `agui` config block are the same either way — see
+Mounting, authorization and the `agui` config block are the same either way, see
 [AG-UI Server](../api/agui-server.md).
 
-Discovery publishes **names only** — deliberately not each agent's description, because several
+Discovery publishes **names only**, deliberately not each agent's description, because several
 framework adapters return the agent's *instructions* from `get_description()`, which would publish
 your system prompt to every authorised caller.
 
 ## Authorization
 
-**AG-UI has no open mode.** `AGUIRequestHandler` refuses to construct without an `Authoriser` or an
-`AuthValidator`, because its routes run agents on a caller's behalf. Agent Kernel does not
-authenticate users itself: you supply an `Authoriser` that validates the Bearer token against your own
-provider and resolves the caller's `user_id`, which becomes the run's acting user.
+**AG-UI has no open mode.** `AGUIRequestHandler` refuses to construct without an `identity` block
+(`AKConfigError`), because its routes run agents on a caller's behalf. The identity provider the block
+names (`static` for a demo; `oidc` for Auth0, Keycloak, Okta or any OpenID Connect issuer; `cognito`,
+`entra` or `firebase`; or your own `IdentityProvider` by dotted path) validates the Bearer token and
+yields the caller's `Principal`, which becomes the run's principal: the agent, its hooks and its tools
+read it through `session.get_principal()` and `ToolContext.get().principal`. A request without a
+credential, or with one the provider refuses, is a 401. See
+[Identity and access](../advanced/identity-and-access.md).
 
-An agent that `agui.agents` does not expose is treated exactly as an unknown agent — a 404 — so the
+An agent that `agui.agents` does not expose is treated exactly as an unknown agent, a 404, so the
 surface never confirms that a name exists but is hidden.
 
 ## Configuration
@@ -127,19 +136,19 @@ surface does not consult the execution mode or message type.
 
 AG-UI's shared state is a JSON object the frontend and the agent both read and write. It arrives on
 `RunAgentInput.state`, the agent may amend it during the run, and the amended copy is streamed back as
-a `StateSnapshot` — **only when it actually changed**, so a turn that touches nothing re-syncs nothing.
+a `StateSnapshot`: **only when it actually changed**, so a turn that touches nothing re-syncs nothing.
 
 With `agui.state.enabled`, agents gain two tools:
 
-- `get_agui_state()` — read the current object
-- `update_agui_state(updates)` — shallow-merge the given keys; `updates` is a JSON object string
+- `get_agui_state()`: read the current object
+- `update_agui_state(updates)`: shallow-merge the given keys; `updates` is a JSON object string
 
 The state lives in the session's **non-volatile cache** under `"agui_state"` for the **session's
 lifetime**, so it survives across turns and is separate from any framework's own context. It is
 deliberately *not* stored inside `framework_context`: that dict is per-run and adapter-owned, and the
 adapter's write-back would overwrite anything a tool put there mid-run.
 
-AG-UI has no "read the current state" request, and a `StateSnapshot` is only sent on change — so a
+AG-UI has no "read the current state" request, and a `StateSnapshot` is only sent on change, so a
 reloading client cannot ask the server what it holds. Keeping its own copy and echoing it back as
 `state` is the protocol's model, not a workaround.
 
@@ -147,16 +156,16 @@ reloading client cannot ask the server what it holds. Keeping its own copy and e
 
 The frontend can attach two things to a run, and **neither reaches the prompt**:
 
-- `forwardedProps` — free-form passthrough (the active page, a selected record, a feature flag)
-- `context` — `{description, value}` entries describing the user's situation
+- `forwardedProps`: free-form passthrough (the active page, a selected record, a feature flag)
+- `context`: `{description, value}` entries describing the user's situation
 
-With `agui.client_context.enabled`, the agent gains two **read-only** tools — `get_forwarded_props()`
-and `get_agui_context()` — and has to *pull* the data. That is the point: flattening client text into
+With `agui.client_context.enabled`, the agent gains two **read-only** tools: `get_forwarded_props()`
+and `get_agui_context()`, and has to *pull* the data. That is the point: flattening client text into
 the system prompt is what would turn a frontend into a prompt injector, so the entries land in the
 session's volatile cache and the model reads them as tool output instead of as instructions.
 
 Both are read-only by design. There is no `update_forwarded_props`, because AG-UI has no event to
-carry the field back — a write tool would mutate something nothing reads. Shared state has an update
+carry the field back: a write tool would mutate something nothing reads. Shared state has an update
 tool only because `StateSnapshot` exists to carry the result.
 
 Because they are pull-based, the model **may simply never call them**. If that matters for your
@@ -176,8 +185,8 @@ thinking block.
 | Pydantic AI | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Claude Agent SDK | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Microsoft Agent Framework | ✅ | ✅ | ✅ | ✅ | ❌ |
-| CrewAI | ❌ | — | — | — | — |
-| smolagents | ❌ | — | — | — | — |
+| CrewAI | ❌ | - | - | - | - |
+| smolagents | ❌ | - | - | - | - |
 
 Reading the table:
 
@@ -188,7 +197,7 @@ Reading the table:
   adapter capability, not a permanent SDK limit.
 - **Reasoning is available on all five streaming adapters**, and only when the model actually produces
   it. AK maps the model's reasoning *summary*, so a reasoning-capable model still emits nothing unless
-  the summary is requested — on LangGraph that means `ChatOpenAI(..., reasoning={"effort": ...,
+  the summary is requested: on LangGraph that means `ChatOpenAI(..., reasoning={"effort": ...,
   "summary": "auto"})`, and the equivalent on other providers. An empty thinking block is far more
   often an unrequested summary than a missing capability.
 - **No adapter emits `StepStart` / `StepEnd` today.** LangGraph's `on_chain_*` fires for every
@@ -198,30 +207,30 @@ Reading the table:
 - **Handoffs surface as tool calls**, because that is what they are in every framework that has them:
   the OpenAI SDK lifts them into their own run items and AK maps them back onto `ToolCall*`; ADK's
   `TransferToAgentTool` is an ordinary function tool; Pydantic AI has no handoff primitive, so
-  delegation is a tool calling another agent. LangGraph is the exception — it surfaces a handoff only
+  delegation is a tool calling another agent. LangGraph is the exception: it surfaces a handoff only
   when the application built it *as a tool*; a bare `Command(goto=...)` edge transition does not
   appear.
 
 ## Notes and limits
 
 - **`threadId` is Agent Kernel's `session_id`.** Conversation history is rebuilt from the session
-  store, so only the final `user` message in `messages` is read — there is no need to send the
+  store, so only the final `user` message in `messages` is read: there is no need to send the
   transcript, and any history you do send is ignored.
 - **Client-declared `tools` are ignored.** AK builds an agent's tool registry when the agent is
   constructed, so a tool named per-request has nothing to bind to.
 - **Audio and video content is rejected with a 400.** AK has no equivalent request type, and mapping
   them onto the generic file type produces misleading model output. Images and documents are accepted,
   from an inline base64 `data` source or a `url` source.
-- **A structured payload maps onto AG-UI's `CustomEvent`.** `DataMessage` — the one stream event
-  that carries an object rather than scalars — becomes a `CustomEvent` whose `name` is the media
+- **A structured payload maps onto AG-UI's `CustomEvent`.** `DataMessage`, the one stream event
+  that carries an object rather than scalars, becomes a `CustomEvent` whose `name` is the media
   type and whose `value` is the payload. Nothing in Agent Kernel emits one: a `PostHook` assembles
   it from what it has accumulated and returns it alongside the closing event, which is what
-  `on_stream_event`'s list form is for. Note the cost of that approach — a hook cannot know whether
+  `on_stream_event`'s list form is for. Note the cost of that approach: a hook cannot know whether
   a message is UI or prose until the closing boundary, so it holds every delta back, and such an
   agent streams nothing incrementally. See [A2UI](../advanced/a2ui.md).
 - **Tool-call payloads are inspectable, but only if you write a hook.** Every event an AG-UI run emits
   passes through `PostHook.on_stream_event`, including `ToolCallArgs` and `ToolCallResult`, so a hook
   can rewrite or drop them before they reach the client, or raise `StreamHalt` to end the run. The
   built-in guardrail providers do **not** implement it, so a configured output guardrail still does
-  nothing on a streamed run — the capability is there, the wiring for those providers is not. See
+  nothing on a streamed run: the capability is there, the wiring for those providers is not. See
   [Hooks](./hooks#streaming-hooks-on_stream_event).

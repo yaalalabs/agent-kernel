@@ -18,15 +18,18 @@ the normal execution path runs it.
 | **Provider** | Owns the timers and fires each occurrence — `local` (in-process thread) or `eventbridge` (AWS EventBridge Scheduler). |
 | **Store** | Persists the task records — `in_memory`, `redis`, `valkey`, or `dynamodb`. |
 | **Management** | `GET` / `PUT` / `DELETE /api/v1/schedules` for listing, amending, pausing and cancelling. |
-| **Ownership** | Every task belongs to a `user_id`; reads and changes are checked against it. |
+| **Ownership** | Every task belongs to the principal that created it, stored under its subject as `user_id`; reads and changes are checked against it, and each occurrence runs as that principal. |
 
 ### Key Design Decisions
 
 - **A schedule block means "not now".** The check runs at the top of all four `ChatService` entry points,
   before validation and agent selection, so every chat surface behaves identically. The caller gets an
   acknowledgement carrying the task id, not an agent reply.
-- **`user_id` is required.** It is the owner the task is stored under and the identity later reads and
-  changes are checked against. A creation without one is a 400.
+- **The owner is the authenticated principal.** A `schedule` block on a request nothing authenticated is
+  refused with 403 (`scheduling requires an authenticated principal`), so deferring needs an `identity`
+  block in `config.yaml` and a bearer credential on the request. The task is stored under the
+  principal's subject, every later read and change is checked against it, and the owner's principal is
+  frozen into the task so each occurrence runs as that caller. A `user_id` in the body is a 400.
 - **The occurrence is a plain chat request.** The fired trigger carries no `schedule` key — otherwise
   firing a schedule would register another one.
 - **Deferred requests create no thread.** `AgentThreadRequestHandler` checks for the `schedule` block
@@ -106,7 +109,8 @@ The three multipart chat routes take no `schedule` form field. Schedule a chat o
 ```bash
 curl -i -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1",
        "schedule": {"at": "2030-01-31T09:00:00", "timezone": "Asia/Colombo"}}'
 ```
 
@@ -135,7 +139,8 @@ with a 400.
 ```bash
 curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Send the weekly report", "session_id": "ses-2", "user_id": "alice",
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "Send the weekly report", "session_id": "ses-2",
        "schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"}}'
 ```
 
@@ -150,11 +155,11 @@ HTTP/1.1 400 Bad Request
 ## Managing Schedules
 
 ```bash
-# List a user's schedules, most recently updated first (cursor-paginated)
-curl "http://localhost:8000/api/v1/schedules?user_id=alice&limit=20"
+# List the caller's schedules, most recently updated first (cursor-paginated)
+curl -H "Authorization: Bearer $ALICE_TOKEN" "http://localhost:8000/api/v1/schedules?limit=20"
 
-# Read one
-curl http://localhost:8000/api/v1/schedules/{task_id}
+# Read one (403 when another principal owns it)
+curl -H "Authorization: Bearer $ALICE_TOKEN" http://localhost:8000/api/v1/schedules/{task_id}
 ```
 
 A task record reads back as:
@@ -163,6 +168,8 @@ A task record reads back as:
 {
   "task_id": "ae9a043b-27f7-480f-8655-5903fbfd200a",
   "user_id": "alice",
+  "principal": {"subject": "alice", "kind": "user", "provider": "static", "namespace": "static",
+                "groups": [], "roles": [], "claims": {}, "actor": null, "credential_ref": null},
   "prompt": "Send the weekly report",
   "agent": null,
   "session_id": "ses-2",
@@ -177,7 +184,9 @@ A task record reads back as:
 }
 ```
 
-`status` is one of `active`, `paused`, `completed` (a fired one-time task) or `cancelled`.
+`status` is one of `active`, `paused`, `completed` (a fired one-time task) or `cancelled`. `principal` is
+the owner as the identity provider established it (without the agent actor or the credential handle of the creating run), the
+identity every occurrence runs as; `user_id` is its subject.
 `trigger_count`, `last_triggered_at` and `last_request_id` track occurrences — `last_request_id`
 correlates a task with the run it produced.
 
@@ -190,6 +199,7 @@ switch — a paused schedule keeps its record but stops firing:
 ```bash
 curl -X PUT http://localhost:8000/api/v1/schedules/{task_id} \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
   -d '{"prompt": "Send the weekly report", "cron": "0 8 * * 1", "timezone": "Asia/Colombo",
        "session_mode": "new", "status": "paused"}'
 ```
@@ -209,7 +219,7 @@ to code holding the manager directly, not to `PUT`, whose body is a full represe
 ### Cancelling
 
 ```bash
-curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
+curl -X DELETE -H "Authorization: Bearer $ALICE_TOKEN" http://localhost:8000/api/v1/schedules/{task_id}
 ```
 
 The record survives as the audit trail, so the response is the task with `"status": "cancelled"`.
@@ -225,54 +235,56 @@ tools themselves:
 ```bash
 curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
   -d '{"prompt": "Every weekday at 8am in Asia/Colombo, remind me to review the overnight alerts.",
-       "session_id": "ses-3", "user_id": "alice"}'
+       "session_id": "ses-3"}'
 ```
 
-Every tool acts as the **acting user** — the `user_id` of the run that invoked it — so an agent can
-never reach another user's schedules. A run with no user identity gets an error result rather than an
-anonymous create. Scope the tools to specific agents with `schedule.agents`:
+Every tool acts as the **run's principal** (what `Session.get_principal()` returns inside the run), so an
+agent can never reach another user's schedules. An anonymous run gets the error result
+`scheduling requires an authenticated principal` rather than an anonymous create. Scope the tools to
+specific agents with `schedule.agents`:
 
 ```yaml
 schedule:
   agents: [planner]   # omitted = all agents
 ```
 
-## Authorization
+## Authentication and Ownership
 
-The management routes are **open** until an `Authoriser` is configured. Supply a subclass that validates
-the Bearer token against your authentication provider and resolves the caller's `user_id`, then pass it to
-the handler you mount:
+The management routes serve authenticated callers only, and authentication is configuration: the
+`identity` block in `config.yaml` names the provider that validates the `Authorization: Bearer
+<credential>` header, and `ScheduleRESTRequestHandler()` refuses to start without that block.
 
 ```python
-from agentkernel.auth import Authoriser
 from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
 
 
-class MyAuthoriser(Authoriser):
-    def authorise(self, token: str) -> str | None:
-        return resolve_user_from(token)  # None rejects the token
-
-
 if __name__ == "__main__":
-    IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=MyAuthoriser())])
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
 ```
 
-With an `Authoriser` configured, listings are forced to the resolved user and reading or changing another
-user's schedule is rejected with 403. If you already have an `AuthValidator`, wrap it rather than writing
-a second implementation:
-
-```python
-from agentkernel.auth import AuthValidatorAuthoriser
-
-IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=AuthValidatorAuthoriser(MyValidator()))])
+```yaml
+identity:
+  provider:
+    type: static            # demos; oidc (Auth0, Keycloak, Okta, ...), cognito, entra, firebase, or a dotted path
+    static:
+      principals:
+        ALICE_TOKEN:        # a secret key, resolved through the secret capability (the environment by default)
+          subject: alice
 ```
 
-:::caution Open until configured
-Without an `Authoriser`, any caller can list and change any user's schedules by passing `user_id`. Expose
-these routes publicly only behind one.
-:::
+- A request without a credential gets 401 `Authentication required`; one with a credential the provider
+  refuses gets 401 `Unauthorized` (the provider's reason goes to the logs, not the response).
+- Listings are always the caller's own, and reading or changing another principal's task is a 403.
+- The same block authenticates the chat routes, where a request's `schedule` block is accepted or
+  refused (403 for a request nothing authenticated).
+- A task from before the deployment had an `identity` block carries no principal and cannot be
+  amended (400): cancel it and create it again.
+
+See [Identity and Access](./identity-and-access.md) for the providers (Auth0 and the other OIDC
+issuers, Cognito, Entra ID, Firebase, static, bring-your-own) and the role mapper.
 
 ## Providers
 
@@ -394,7 +406,9 @@ Each occurrence arrives on the input queue as a plain chat request. The manager 
 task at create/amend time and the provider substitutes the occurrence placeholders when it fires:
 
 ```json
-{"prompt": "...", "agent": null, "user_id": "alice",
+{"prompt": "...", "agent": null,
+ "principal": {"subject": "alice", "kind": "user", "provider": "static", "namespace": "static",
+               "groups": [], "roles": [], "claims": {}, "actor": null, "credential_ref": null},
  "session_id": "ses-2",
  "scheduled_task_id": "<task_id>",
  "request_id": "<per-occurrence id>",
@@ -403,9 +417,12 @@ task at create/amend time and the provider substitutes the occurrence placeholde
 
 - With `session_mode: new`, `session_id` becomes `ak-sched-<task_id>-<occurrence_time>`.
 - **No `schedule` key** — the occurrence runs, it does not register another schedule.
+- **The occurrence runs as the owner.** `principal` is the owner's principal as stored on the task; the
+  runner publishes it for the run, so tools and hooks see the caller who scheduled it, and takes the
+  queue's routing `user_id` from its subject.
 - **Metadata travels in the body, not in message attributes.** EventBridge Scheduler cannot set SQS
   message attributes, and the local provider deliberately matches that, so both exercise the runners'
-  body-fallback path for `request_id` and `user_id`.
+  body-fallback path for `request_id` and the routing `user_id` (read from `principal.subject`).
 - `schedule`, `scheduled_task_id` and `scheduled_time` never reach the agent as unknown context.
 
 ## Examples

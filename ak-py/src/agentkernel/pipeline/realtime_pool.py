@@ -13,7 +13,7 @@ from ..core.base import Agent as BaseAgent
 from ..core.base import Session
 from ..core.config import AKConfig
 from ..core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, TextDelta
-from ..core.model import StreamChunk
+from ..core.model import Principal, StreamChunk
 from ..core.realtime import EDGE_SAMPLE_RATE, PCM16Resampler
 from ..core.realtime import RealtimeRunner as BaseRealtimeRunner
 from ..core.runtime import Runtime
@@ -57,6 +57,10 @@ class RealtimeConnection:
         self.user_id: str | None = None
         self.integration: str | None = None
         self.reply_context: dict = {}
+        # The principal of the last input dispatched here, published on the session for the tool
+        # calls the native session makes in reply (spec #603, section 8.4). None runs them anonymous.
+        self.principal: Principal | None = None
+        self._principal_published = False
         # Failed or closed: the pool evicts it and the next input reconnects.
         self.closed = False
         # A session that produced output restarts the reconnect back-off count when it fails.
@@ -75,6 +79,24 @@ class RealtimeConnection:
             raise ValueError(f"Agent {self.agent.name} has no realtime_runner_cls configured")
 
         self.adapter: "BaseRealtimeRunner" = self.agent.realtime_runner_cls()
+
+    def publish_principal(self, principal: Principal | None) -> None:
+        """Publish the principal of the input just dispatched, for the tool calls the model makes in reply.
+
+        The framework's native session runs its own tools (#810), with no ``Runtime.run`` around a
+        call, so the identity ``Runtime`` publishes for a turn is published on the session here, where
+        ``ToolContext.principal`` and ``session.get_principal()`` read it, and the session's owner is
+        recorded as on a turn (spec #603, section 8.4). It runs on the connection's loop, ahead of the
+        input's audio or text, and only a changed principal is republished, since every audio chunk
+        is an input.
+
+        :param principal: The input's principal, or None when it named nobody (anonymous).
+        """
+        if self._principal_published and principal == self.principal:
+            return
+        self.principal = principal
+        self._principal_published = True
+        self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal)
 
     def update_delivery_context(self, request_id: str | None, user_id: str | None, integration: str | None, reply_context: dict) -> None:
         """Called before pushing audio to ensure callbacks route output to the right place."""
@@ -317,6 +339,8 @@ class RealtimeConnection:
             self._pacing_task.cancel()
             self._pacing_task = None
         await self.adapter.disconnect()
+        if self._principal_published:
+            self.session._unpublish_run()
 
 
 class RealtimeConnectionPool:
@@ -533,9 +557,10 @@ class RealtimeConnectionPool:
 
         The one path both realtime runners (pipeline and ECS) take. Input is dropped during shutdown.
 
-        :param body: The input message's run request.
+        :param body: The input message's run request; its principal becomes the connection's.
         :param request_id: The resolved request id, stamped on the output.
-        :param user_id: The input's user id, if any.
+        :param user_id: The input's user id attribute, if any: the WebSocket routing marker the
+            output is stamped with, not an identity (that is ``body.principal``).
         :param attributes: The input message's attributes, carrying the integration return address.
         :param chat_service: Resolves the agent and session when the connection is created.
         """
@@ -561,6 +586,7 @@ class RealtimeConnectionPool:
             conn = self.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session, **delivery)
 
         conn.update_delivery_context(**delivery)
+        conn.publish_principal(body.principal)
         for request in body.requests:
             if getattr(request, "type", None) == "voice":
                 conn.append_audio(request.audio_data)

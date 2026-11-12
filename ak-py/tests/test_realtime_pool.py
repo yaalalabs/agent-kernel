@@ -10,7 +10,7 @@ import pytest
 from agentkernel import Agent, Runner, Session
 from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _OutputQueueConfig, _QueuesConfig, _RealtimeConfig
 from agentkernel.core.event import TextDelta
-from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, ExecutionMode, StreamChunk
+from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, ExecutionMode, Principal, StreamChunk
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -364,6 +364,111 @@ class TestRealtimeCloseDuringConnect:
             if caller.ident:
                 caller.join(5)
             pool_thread.join(5)
+
+
+HUMAN = Principal(subject="human", provider="realtime:livekit", namespace="lk-key")
+
+
+class TestRealtimePrincipal:
+    """The native session runs its own tools with no ``Runtime.run`` around a call (#810), so the
+    connection publishes the input's principal on the session, where ``ToolContext.principal`` and
+    ``session.get_principal()`` read it (spec #603, section 8.4)."""
+
+    @pytest.fixture(autouse=True)
+    def _transport(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+
+    @pytest.mark.asyncio
+    async def test_a_tool_reads_the_inputs_principal_with_the_agent_as_actor(self):
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        conn.publish_principal(HUMAN)
+        await asyncio.sleep(0)  # published on the connection's loop, ahead of the input it came with
+
+        published = ToolContext(conn.runtime, conn.agent, conn.session, []).principal
+        assert (published.subject, published.provider, published.namespace) == ("human", "realtime:livekit", "lk-key")
+        assert (published.actor.kind, published.actor.subject) == ("agent", "general")
+        assert (conn.session.get_owner().subject, conn.session.get_owner().provider) == ("human", "realtime:livekit")
+
+    @pytest.mark.asyncio
+    async def test_an_input_naming_nobody_publishes_the_anonymous_principal(self):
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        conn.publish_principal(None)
+        await asyncio.sleep(0)
+
+        published = conn.session.get_principal()
+        assert published.is_anonymous and published.actor.subject == "general"
+        assert conn.session.get_owner() is None
+
+    @pytest.mark.asyncio
+    async def test_only_a_changed_principal_is_republished(self, monkeypatch):
+        """Every audio chunk is an input, so an unchanged principal is not republished per chunk."""
+        conn = _connection(loop=asyncio.get_running_loop())
+        published = []
+        monkeypatch.setattr(conn.runtime, "_publish", lambda agent, session, principal: published.append(principal))
+        other = Principal(subject="guest", provider="realtime:livekit", namespace="lk-key")
+
+        for principal in (HUMAN, HUMAN, other, other, None):
+            conn.publish_principal(principal)
+        await asyncio.sleep(0)
+
+        assert published == [HUMAN, other, None]
+
+    @pytest.mark.asyncio
+    async def test_closing_unpublishes_the_identity(self):
+        conn = _connection(loop=asyncio.get_running_loop())
+        conn.publish_principal(HUMAN)
+        await asyncio.sleep(0)
+
+        await conn.close()
+
+        assert conn.session.get_principal() is None
+
+
+class TestDispatchPrincipal:
+    class _Conn:
+        """Stands in for a live connection: records what dispatch hands it."""
+
+        def __init__(self):
+            self.principal = "untouched"
+            self.delivery = None
+            self.texts = []
+
+        def update_delivery_context(self, **delivery):
+            self.delivery = delivery
+
+        def publish_principal(self, principal):
+            self.principal = principal
+
+        def append_audio(self, audio):
+            pass
+
+        def send_text(self, text):
+            self.texts.append(text)
+
+    def _dispatch(self, monkeypatch, principal):
+        from unittest.mock import MagicMock
+
+        pool = RealtimeConnectionPool.initialize()
+        conn = self._Conn()
+        monkeypatch.setattr(pool, "get_connection", lambda session_id: conn)
+        body = BaseRunRequest(prompt="", session_id="s1", requests=[AgentRequestText(prompt="hi")], principal=principal)
+        pool.dispatch(body, "r1", "human", {"integration": "livekit"}, MagicMock())
+        return conn
+
+    def test_the_inputs_principal_is_the_connections_until_the_next_input(self, monkeypatch):
+        conn = self._dispatch(monkeypatch, HUMAN)
+
+        assert conn.principal == HUMAN
+        assert conn.texts == ["hi"]
+        # user_id stays the WebSocket routing marker; the principal rides beside it (#603).
+        assert conn.delivery["user_id"] == "human"
+
+    def test_an_input_naming_nobody_clears_the_connections_principal(self, monkeypatch):
+        conn = self._dispatch(monkeypatch, None)
+
+        assert conn.principal is None
 
 
 class TestRealtimeConnectionPool:

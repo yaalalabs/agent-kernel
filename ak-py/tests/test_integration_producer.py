@@ -56,12 +56,13 @@ def test_the_reply_context_is_stamped_with_the_reserved_prefix():
     assert attributes["reply_thread_ts"] == "111.222"
 
 
-def test_the_user_id_stays_in_the_body():
+def test_the_sender_id_is_neither_stamped_nor_a_body_field():
     # ATTR_USER_ID is the WebSocket-entered marker the runner and Response Handler branch on;
-    # integration traffic is neither, so it must not be stamped.
+    # integration traffic is neither, so it must not be stamped. user_id is not a request field
+    # either: the sender reaches the body as its principal once the edge builds one (#603).
     message = _enqueue(_request())
     assert ATTR_USER_ID not in message.attributes
-    assert json.loads(message.body)["user_id"] == "U123"
+    assert "user_id" not in json.loads(message.body)
 
 
 def test_the_platform_ids_become_the_ordering_and_dedup_keys():

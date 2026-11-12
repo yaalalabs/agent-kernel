@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 import uvicorn
 
 from ..api.handler import RESTRequestHandler
-from ..auth.handler import AuthValidator
 from ..core.config import AKConfig
 from ..core.model import ExecutionMode
 from ..core.util.factory import AKConfigError
@@ -27,8 +26,8 @@ class IOHandler:
 
     - ``in_memory``: single-process: all five pipeline components in one process (this is what
       a plain ``RESTAPI.run()`` boots on a laptop), co-hosting the WebSocket gateway handlers
-      in async mode when a validator is passed, since a separate gateway process cannot share
-      an in-process queue.
+      in async mode, which needs an ``identity`` block for the handshake, since a separate
+      gateway process cannot share an in-process queue.
     - broker transports: this process serves the plain-REST API and delivers responses;
       ``AgentRunner.run()`` and, in WS modes, ``WebSocketGateway.run()`` are their own
       containers.
@@ -39,18 +38,17 @@ class IOHandler:
     @classmethod
     def run(
         cls,
-        auth_validator: AuthValidator | None = None,
         handlers: list[RESTRequestHandler] | None = None,
         pollers: list["PollerRunner"] | None = None,
         request_handler: RequestHandler | None = None,
     ) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
 
-        :param auth_validator: Only meaningful on the ``in_memory`` transport, where it co-hosts
-            the WebSocket gateway (the ``/ws`` route plus the push endpoint) in async mode, with
-            either message type; mandatory there. Broker topologies authenticate at their standalone
-            gateway instead (``WebSocketGateway.run(auth_validator=...)``). Claims must include
-            a ``userId``.
+        On the ``in_memory`` transport in async mode the WebSocket gateway (the ``/ws`` route plus
+        the push endpoint) is co-hosted here, which requires an ``identity`` block: the connection
+        is keyed by the subject the configured provider authenticates. Broker topologies
+        authenticate at their standalone gateway instead (``WebSocketGateway.run()``).
+
         :param handlers: Optional REST handlers mounted **alongside** the pipeline's chat route,
             which is always served (a queue producer is not optional — see ``request_handler`` to
             substitute a different one). Mounting an optional surface is the application's job
@@ -72,7 +70,7 @@ class IOHandler:
         execution = config.execution
         mode = execution.mode
         transport_type = QueueTransportFactory.resolve_type()
-        cls._validate_topology(transport_type, config, auth_validator)
+        cls._validate_topology(transport_type, config)
         cls._warn_if_no_agents(config)
 
         single_process = transport_type == "in_memory"
@@ -88,7 +86,7 @@ class IOHandler:
                 raise AKConfigError(
                     "WebSocket delivery over a broker transport needs a shared connection store: " "configure session.type redis, valkey or dynamodb"
                 )
-        ws_cohosted = single_process and auth_validator is not None and execution.is_websocket
+        ws_cohosted = single_process and execution.is_websocket
         cls._log.info(
             f"IOHandler starting: mode={(mode or ExecutionMode.REST_SYNC).value}, message_type={execution.resolved_message_type.value}, "
             f"transport={transport_type}, "
@@ -102,13 +100,7 @@ class IOHandler:
             from .ws.endpoint import PushEndpointHandler
             from .ws.handler import PipelineWebSocketHandler
 
-            handlers += [PipelineWebSocketHandler(auth_validator=auth_validator), PushEndpointHandler()]
-        elif auth_validator is not None:
-            cls._log.warning(
-                f"auth_validator ignored: WebSocket handling is co-hosted here only on the in_memory transport "
-                f"in async mode (mode={mode}, transport={transport_type}); on broker transports start "
-                "WebSocketGateway.run(auth_validator=...) as its own process"
-            )
+            handlers += [PipelineWebSocketHandler(), PushEndpointHandler()]
 
         # Serve through our own uvicorn.Server (not RESTAPI.run/uvicorn.run) so the main-thread
         # signal handlers below can stop it: uvicorn only installs its own handlers when it runs
@@ -203,13 +195,12 @@ class IOHandler:
         )
 
     @classmethod
-    def _validate_topology(cls, transport_type: str, config, auth_validator: AuthValidator | None = None) -> None:
+    def _validate_topology(cls, transport_type: str, config) -> None:
         """Fail fast on unsupported/incoherent topology combinations (spec §9, §10)."""
         execution = config.execution
-        if execution.is_websocket and transport_type == "in_memory" and auth_validator is None:
+        if execution.is_websocket and transport_type == "in_memory" and getattr(config, "identity", None) is None:
             raise AKConfigError(
-                "async (WebSocket) mode on the in_memory transport co-hosts the gateway here: call "
-                "IOHandler.run(auth_validator=...) with a validator whose claims include a 'userId'"
+                "async (WebSocket) mode co-hosts the gateway here: add an identity block, the connection is keyed by the authenticated subject"
             )
         # REALTIME is deliberately absent: its replies go through the integration adapter, not
         # the WebSocket push endpoint, so it needs no push token.

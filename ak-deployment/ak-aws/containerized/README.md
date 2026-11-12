@@ -116,7 +116,7 @@ module "containerized_agents" {
 
   # Session storage
   create_redis_cluster = true
-  # Or provision a Valkey (ElastiCache) cluster instead — set session.type: valkey in config.yaml.
+  # Or provision a Valkey (ElastiCache) cluster instead: set session.type: valkey in config.yaml.
   # create_valkey_cluster = true
 }
 ```
@@ -182,8 +182,9 @@ module "containerized_agents" {
 
   # Conversation threads: provisions a DynamoDB thread table and injects its name as
   # AK_THREAD__DYNAMODB__TABLE_NAME into the rest-service and agent-runner tasks.
-  # Declare `thread: {type: dynamodb}` in config.yaml to actually enable threads —
-  # this flag alone leaves them in-memory. Makes user_id required on every chat request.
+  # Declare `thread: {type: dynamodb}` in config.yaml to actually enable threads;
+  # this flag alone leaves them in-memory. Threads need an authenticated caller: an
+  # identity block in config.yaml and a bearer token on every chat request.
   create_dynamodb_thread_table = true
 }
 ```
@@ -273,7 +274,7 @@ scaling_config = {
 }
 ```
 
-`queue_config.batch_size` is injected into both the REST service and Agent Runner ECS tasks as `AK_EXECUTION__QUEUES__BATCH_SIZE`. It only applies to ECS containerized deployments (never serverless/Lambda, which controls batch size via the Event Source Mapping) and is intentionally controlled only via Terraform — it must never be set in `config.yaml`.
+`queue_config.batch_size` is injected into both the REST service and Agent Runner ECS tasks as `AK_EXECUTION__QUEUES__BATCH_SIZE`. It only applies to ECS containerized deployments (never serverless/Lambda, which controls batch size via the Event Source Mapping) and is intentionally controlled only via Terraform; it must never be set in `config.yaml`.
 
 ### API Gateway Access Logging
 
@@ -289,7 +290,7 @@ enable_api_gateway_logs = true
   - **REST/queue modes:** no `/aws/apigateway/{prefix}-http-api` log group is created and the HTTP API stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
   - **WebSocket modes:** no `/aws/apigateway/{prefix}-ws-api` log group is created, the WebSocket API stage carries no `access_log_settings`, and the account-level CloudWatch role (`aws_iam_role.apigw_cloudwatch` / `aws_api_gateway_account.this`) is not created; the `websocket_api_cloudwatch_log_group_arn` / `websocket_api_cloudwatch_log_group_name` outputs return `null`.
 - When `true`, the relevant log group is created with 90-day retention (tagged with `var.tags`). REST/queue modes log request ID, source IP, request time, protocol, HTTP method, route key, status, response length, and integration error message; WebSocket modes log the same fields plus `connectionId` in place of HTTP method.
-- Unlike the serverless REST API, the HTTP API (`aws_apigatewayv2_*` with `protocol_type = "HTTP"`) does **not** require the account-level `aws_api_gateway_account` CloudWatch role for access logging, so enabling it there does not contend with other deployments in the same account/region. The WebSocket API (`protocol_type = "WEBSOCKET"`) **does** require that account-level role — it is created only when `enable_api_gateway_logs = true` in a WebSocket mode, and it is a region-wide singleton shared with any other API Gateway in the account that also enables access logging.
+- Unlike the serverless REST API, the HTTP API (`aws_apigatewayv2_*` with `protocol_type = "HTTP"`) does **not** require the account-level `aws_api_gateway_account` CloudWatch role for access logging, so enabling it there does not contend with other deployments in the same account/region. The WebSocket API (`protocol_type = "WEBSOCKET"`) **does** require that account-level role; it is created only when `enable_api_gateway_logs = true` in a WebSocket mode, and it is a region-wide singleton shared with any other API Gateway in the account that also enables access logging.
 - **Upgrade note:** deployments created before this toggle existed always had logging on. Applying with the new default (`false`) removes the stage's access log settings and destroys the log group (and, in WebSocket modes, the account-level CloudWatch role resources). Set `enable_api_gateway_logs = true` to keep the existing behaviour.
 - **Upgrade note (keeping logging on):** the log groups (and, in WebSocket modes, the IAM role/policy attachment/account resources) are now gated by `count`, so their state addresses gained a `[0]` index. Before the first apply with `enable_api_gateway_logs = true`, move each affected resource, e.g.:
 
@@ -339,7 +340,7 @@ agent_runner = {
 }
 ```
 
-Each of the three is independent — you may provide any subset of them and let the module create the
+Each of the three is independent: you may provide any subset of them and let the module create the
 rest. Useful when the deploying pipeline can't create security groups (no `ec2:CreateSecurityGroup`),
 when org policy disallows the default `0.0.0.0/0` egress these modules create, or when a downstream
 resource (e.g. RDS, ElastiCache) already has ingress rules referencing a specific, pre-approved
@@ -366,7 +367,7 @@ time.
 | Variable | Description | Type | Default | Required |
 |---|---|---|---|---|
 | `enable_scheduling` | Create the EventBridge Scheduler schedule group and the execution role Scheduler assumes to deliver triggers to the Input Queue, grant both ECS task roles `scheduler:*Schedule` + `iam:PassRole` on them, and inject their coordinates. **Requires `queue_mode = true`.** | `bool` | `false` | no |
-| `ssm_enabled` | Grant the ECS task role that runs the agent (the agent runner when `queue_mode = true`, otherwise the REST service) `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>`. The capability is enabled by the application declaring `secret.provider.type: aws_ssm` in `config.yaml`, which then resolves a key such as `OPENAI_API_KEY` from `/ak/<prefix>/openai_api_key` whenever the environment variable of that name is unset or empty. **Terraform does not create the parameters** — create them yourself as `SecureString` (AWS-managed `alias/aws/ssm` key). | `bool` | `false` | no |
+| `ssm_enabled` | Grant the ECS task role that runs the agent (the agent runner when `queue_mode = true`, otherwise the REST service) `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>`. The capability is enabled by the application declaring `secret.provider.type: aws_ssm` in `config.yaml`, which then resolves a key such as `OPENAI_API_KEY` from `/ak/<prefix>/openai_api_key` whenever the environment variable of that name is unset or empty. **Terraform does not create the parameters**: create them yourself as `SecureString` (AWS-managed `alias/aws/ssm` key). | `bool` | `false` | no |
 | `create_dynamodb_schedule_table` | Create the DynamoDB schedule store table (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) and inject its generated name as `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` | `bool` | `false` | no |
 
 ```hcl
@@ -377,7 +378,7 @@ create_dynamodb_schedule_table = true
 
 - Off by default; every resource is `count`-gated, so leaving both `false` provisions nothing and
   injects nothing.
-- **You must also declare the backends in the application's `config.yaml`** — Terraform injects the
+- **You must also declare the backends in the application's `config.yaml`**: Terraform injects the
   group/role/queue/table coordinates but never `schedule.provider.type` or `schedule.store.type`
   (the same rule as `thread.type`):
 
@@ -474,23 +475,23 @@ curl -X GET ".../chat?request_id=..."
 ### WebSocket Mode (`async`)
 
 Creates a **WebSocket API Gateway** that proxies frames to the ECS ingress service over a
-dedicated VPC Link (V1) and an internal NLB that fronts the same internal ALB — WebSocket
+dedicated VPC Link (V1) and an internal NLB that fronts the same internal ALB; WebSocket
 private integrations require a V1, NLB-backed link, so the HTTP API's V2 link is not created
 in these modes. The ingress service handles the connection lifecycle
 (`$connect`/`$disconnect`) and pushes replies back to the client via `PostToConnection`.
 
 Both `queue_mode` settings are supported:
 
-- `queue_mode = true` — chat frames are forwarded to the input queue, and the output-queue
+- `queue_mode = true`: chat frames are forwarded to the input queue, and the output-queue
   consumer pushes the reply over the socket. Adds the agent-runner service and queues.
-- `queue_mode = false` — the ingress service runs the agent inline and pushes the reply
+- `queue_mode = false`: the ingress service runs the agent inline and pushes the reply
   itself. No queues and no agent-runner service.
 
 Message types (`message_type`):
 
-- `complete` (or `null`) — the full response is delivered in one `CHAT_RESPONSE` WebSocket
+- `complete` (or `null`): the full response is delivered in one `CHAT_RESPONSE` WebSocket
   message once the agent finishes.
-- `delta` — the agent's stream events are pushed as they're generated, each as its own
+- `delta`: the agent's stream events are pushed as they're generated, each as its own
   `STREAM_CHUNK` WebSocket message, ending with a chunk carrying `done: true`. Every chunk
   carries `event`; the `delta` key appears only on a `text_delta`, so a client must test for
   the key rather than assume it. With `queue_mode = false`, the ingress service streams
@@ -498,18 +499,21 @@ Message types (`message_type`):
   `queue_mode = true`, `ECSStreamAgentRunner` fans out each chunk as its own Output Queue
   message and `ECSOutputConsumer` broadcasts every one as a `STREAM_CHUNK`.
 
-**What gets created (in addition to the base — and, with `queue_mode = true`, queue-mode — resources):**
+**What gets created (in addition to the base resources and, with `queue_mode = true`, the queue-mode ones):**
 
 - WebSocket API Gateway (`route_selection_expression = "$request.body.route"`)
 - Predefined routes `$connect`, `$disconnect`, `$default`, a configurable chat route (`ws_chat_route`, default `chat`), and any `ws_routes`
 - An internal NLB in front of the existing ALB, plus a dedicated API Gateway VPC Link (V1) targeting it
-- A DynamoDB `websocket-connections` table (hash `user_id`, range `connection_id`, GSI `connection_id-index`, TTL `expiry_time`)
+- A DynamoDB `websocket-connections` table (hash `user_id`, the authenticated principal's subject, range `connection_id`, GSI `connection_id-index`, TTL `expiry_time`)
 - IAM for the REST service task role: `execute-api:ManageConnections` + connections-table access
 
 **Not used in WebSocket mode:** the DynamoDB response store and `gateway_endpoints`
-(rejected by validation) — responses are pushed over the connection instead of stored.
-Authentication is handled in-app on `$connect` (bearer token with a `userId` claim);
-there is no API Gateway authorizer.
+(rejected by validation): responses are pushed over the connection instead of stored.
+Authentication is handled in-app on `$connect`: the `?token=` query parameter is authenticated
+through the `identity` block in the application's `config.yaml` (the service refuses to start
+without one) and the connection is keyed by the principal's subject; there is no API Gateway
+authorizer. Pass the static provider's credential to the REST service through
+`environment_variables` (the examples use a sensitive `demo_auth_token` variable).
 
 **Configuration:**
 
@@ -705,7 +709,7 @@ output "agent_runner_security_group_id" # Agent Runner security group ID (queue 
 output "api_gateway_cloudwatch_log_group_arn"   # API Gateway log group ARN (null when logging disabled)
 output "api_gateway_cloudwatch_log_group_name"  # API Gateway log group name (null when logging disabled)
 
-# WebSocket mode only (`execution_mode = "async"`) — null otherwise
+# WebSocket mode only (`execution_mode = "async"`); null otherwise
 output "websocket_api_endpoint_url"       # WebSocket API Gateway connect URL (wss://...)
 output "websocket_api_id"                 # WebSocket API Gateway ID
 output "websocket_api_execution_arn"      # WebSocket API Gateway execution ARN
@@ -714,7 +718,7 @@ output "websocket_endpoint_url"           # Management API endpoint used for Pos
 output "websocket_connection_table_name"  # DynamoDB connections table name
 output "websocket_connection_table_arn"   # DynamoDB connections table ARN
 
-# Scheduling only (`enable_scheduling` / `create_dynamodb_schedule_table`) — null otherwise
+# Scheduling only (`enable_scheduling` / `create_dynamodb_schedule_table`); null otherwise
 output "schedule_group_name"           # EventBridge Scheduler schedule-group name
 output "schedule_group_arn"            # EventBridge Scheduler schedule-group ARN
 output "scheduler_execution_role_arn"  # Role Scheduler assumes to deliver triggers to the Input Queue
@@ -725,7 +729,7 @@ output "schedule_table_arn"            # DynamoDB schedule store table ARN
 ## Requirements
 
 - **Terraform**: >= 1.9.5
-- **AWS Provider**: 6.70.0 (pinned; 6.69.0 breaks zip-packaged Lambdas, fixed in 6.69.1 — [hashicorp/terraform-provider-aws#50474](https://github.com/hashicorp/terraform-provider-aws/issues/50474))
+- **AWS Provider**: 6.70.0 (pinned; 6.69.0 breaks zip-packaged Lambdas, fixed in 6.69.1, see [hashicorp/terraform-provider-aws#50474](https://github.com/hashicorp/terraform-provider-aws/issues/50474))
 - **Docker Provider**: 3.6.2
 
 ## Providers

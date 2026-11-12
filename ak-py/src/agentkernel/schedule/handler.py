@@ -7,11 +7,12 @@ process that never serves HTTP never loads it.
 
 Mount it beside a chat handler on any REST surface::
 
-    RESTAPI.run(handlers=[AgentRESTRequestHandler(), ScheduleRESTRequestHandler(authoriser=...)])
+    RESTAPI.run(handlers=[AgentRESTRequestHandler(), ScheduleRESTRequestHandler()])
 
 Nothing mounts it implicitly: an app that wants the management surface passes it to the REST
 entry point it already uses, exactly as it does for a Slack or thread handler. Mounting it also
-validates the configured provider and store, so a broken pairing fails the app build.
+validates the configured provider and store, so a broken pairing fails the app build. The routes
+serve authenticated callers only, so the app needs an ``identity`` block.
 """
 
 import logging
@@ -21,7 +22,6 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..api.handler import AuthorisedRESTRequestHandler
-from ..auth.authoriser import Authoriser
 from .errors import ScheduleError
 from .manager import ScheduleManager
 
@@ -62,17 +62,18 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
     There is deliberately no create route: a task is created by a chat request carrying a
     ``schedule`` block, which keeps one creation path for callers and agents alike.
 
-    When an Authoriser is supplied, every request must carry a Bearer token that the Authoriser
-    resolves to a user_id (the inherited ``_resolve_user``); listings are scoped to that user and
-    the single-task routes enforce ownership. Without an Authoriser, the routes are open.
+    Every request is authenticated by the identity dependency ``RESTAPI`` installs (the inherited
+    ``_resolve_user`` refuses the anonymous principal with a 401): listings are the caller's own
+    tasks and the single-task routes enforce ownership on the principal's subject, the key the
+    manager's owner-scoped reads take.
     """
 
-    def __init__(self, authoriser: Authoriser | None = None):
+    def __init__(self):
         """Initializes a ScheduleRESTRequestHandler instance.
 
-        :param authoriser: Optional user-supplied Authoriser protecting the schedule routes.
+        :raises AKConfigError: If no identity provider is configured.
         """
-        super().__init__(authoriser)
+        super().__init__()
         self._log = logging.getLogger("ak.schedule.handler")
 
     def get_router(self) -> APIRouter:
@@ -90,14 +91,12 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
         @router.get("/api/v1/schedules")
         def list_schedules(
             request: Request,
-            user_id: str | None = None,
             limit: int | None = None,
             cursor: str | None = None,
         ):
             manager = self._require_manager()
-            resolved_user_id = self._resolve_user(request)
-            if resolved_user_id is not None:
-                user_id = resolved_user_id  # listings are forced to the authorised user
+            # The listing is the caller's own: there is no query parameter that widens it.
+            user_id = self._resolve_user(request).subject
             try:
                 page = manager.list_tasks(user_id=user_id, limit=limit, cursor=cursor)
             except (ValueError, ScheduleError) as e:
@@ -110,9 +109,9 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
         @router.get("/api/v1/schedules/{task_id}")
         def get_schedule(task_id: str, request: Request):
             manager = self._require_manager()
-            resolved_user_id = self._resolve_user(request)
+            user_id = self._resolve_user(request).subject
             try:
-                task = manager.get_task(task_id, user_id=resolved_user_id)
+                task = manager.get_task(task_id, user_id=user_id)
             except PermissionError as e:
                 raise self._as_http_error(e, task_id)
             if task is None:
@@ -122,9 +121,9 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
         @router.put("/api/v1/schedules/{task_id}")
         def update_schedule(task_id: str, amendment: ScheduleAmendment, request: Request):
             manager = self._require_manager()
-            resolved_user_id = self._resolve_user(request)
+            user_id = self._resolve_user(request).subject
             try:
-                task = manager.update(task_id, amendment.model_dump(), user_id=resolved_user_id)
+                task = manager.update(task_id, amendment.model_dump(), user_id=user_id)
             except (KeyError, PermissionError, ValueError, ScheduleError) as e:
                 raise self._as_http_error(e, task_id)
             return task.model_dump(mode="json")
@@ -132,9 +131,9 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
         @router.delete("/api/v1/schedules/{task_id}")
         def delete_schedule(task_id: str, request: Request):
             manager = self._require_manager()
-            resolved_user_id = self._resolve_user(request)
+            user_id = self._resolve_user(request).subject
             try:
-                task = manager.cancel(task_id, user_id=resolved_user_id)
+                task = manager.cancel(task_id, user_id=user_id)
             except (KeyError, PermissionError, ValueError, ScheduleError) as e:
                 raise self._as_http_error(e, task_id)
             return task.model_dump(mode="json")

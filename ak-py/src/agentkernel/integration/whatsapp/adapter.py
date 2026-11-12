@@ -39,6 +39,10 @@ class _WhatsAppClient:
         return self._app_secret
 
     @property
+    def phone_number_id(self) -> str:
+        return self._phone_number_id
+
+    @property
     def verify_token(self) -> str:
         return self._verify_token
 
@@ -208,6 +212,8 @@ class WhatsAppInboundAdapter(InboundAdapter):
             prompt=text,
             agent=self._agent,
             user_id=from_number,
+            # The business number the message was sent to is the scope the sender is seen under (#603).
+            namespace=self._client.phone_number_id,
             reply_context={"to": from_number, "reply_to_message_id": message_id},
         )
 
