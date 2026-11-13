@@ -45,6 +45,8 @@ export AK_LIVEKIT__API_KEY="your_api_key"
 export AK_LIVEKIT__API_SECRET="your_api_secret"
 ```
 
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials).
+
 ## Implementation
 
 Like every Agent Kernel integration, each conversation gets its own session. For LiveKit, a conversation is a room: Agent Kernel starts an edge for each room from LiveKit's own room webhooks, as it hosts a Slack webhook, and the room name is the AK session id. It runs in `realtime` mode on every queue transport.

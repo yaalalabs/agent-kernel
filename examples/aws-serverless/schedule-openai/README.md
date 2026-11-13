@@ -150,6 +150,15 @@ takes precedence.
 
 ## Deploy
 
+Store the OpenAI key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`.
+The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the
+agent runner reads the key from SSM at startup; no secret passes through Terraform:
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+```
+
 Set the deployment identifiers in `deploy/terraform.tfvars`, then:
 
 ```bash
@@ -158,7 +167,7 @@ cd deploy
 ./deploy.sh                # packages all four functions, terraform init + apply
 ```
 
-`deploy.sh` prompts for `openai_api_key`, `demo_auth_token`, `vpc_id` and `private_subnet_ids` unless
+`deploy.sh` prompts for `demo_auth_token`, `vpc_id` and `private_subnet_ids` unless
 you add them to `terraform.tfvars` or pass them as `-var` flags.
 
 `deploy.sh` zips the request and response handlers into `dist_request_handler.zip` /

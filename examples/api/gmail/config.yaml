@@ -2,6 +2,10 @@ gmail:
   agent: general
   poll_interval: 30                     # Check for emails every 30 seconds
   label_filter: "INBOX"                 # Monitor INBOX label
+  # Keys the Gmail OAuth2 credentials are read from through the secret manager when the matching
+  # field (client_id, ...) is unset: the environment first, then the configured secret provider
+  client_id_key: AK_GMAIL__CLIENT_ID
+  client_secret_key: AK_GMAIL__CLIENT_SECRET
 
 logging:
   ak:

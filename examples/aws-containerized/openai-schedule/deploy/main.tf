@@ -13,6 +13,10 @@ module "containerized_agents" {
   vpc_id             = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   # ---- REST Service Configuration ----
   # Serves chat ingress (enqueue + poll) and the schedule management routes.
   rest_service = {
@@ -26,7 +30,6 @@ module "containerized_agents" {
     health_check_endpoint         = "/health"
     command                       = ["python", "app_rest_service.py"]
     environment_variables = {
-      OPENAI_API_KEY  = var.openai_api_key
       # The credential of the static identity provider in config.yaml (identity.provider.static.principals).
       DEMO_AUTH_TOKEN = var.demo_auth_token
     }
@@ -105,9 +108,6 @@ module "containerized_agents" {
     desired_count     = 1
     package_path      = "../dist-agent-runner"
     command           = ["python", "app_agent_runner.py"]
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 
   # ---- Agent Runner Auto Scaling ----

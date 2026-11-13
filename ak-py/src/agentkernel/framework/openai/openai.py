@@ -53,6 +53,7 @@ from ...core.model import (
 )
 from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
+from ...secret import SecretManager
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -687,6 +688,12 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         self._roster = self.team(agent)
         runner_options, session_options = await self._options(agent, session)
         self._check_agents(root)
+        # Resolved so the key can come from the secret provider; a model_config api_key wins, and None
+        # leaves the SDK's own lookup. Off the loop: a provider miss is a blocking network call, and
+        # this loop is shared by every live connection in the pool.
+        api_key = await asyncio.to_thread(lambda: SecretManager.current().get("OPENAI_API_KEY", default=None))
+        if api_key:
+            session_options["model_config"] = {"api_key": api_key, **(session_options.get("model_config") or {})}
 
         try:
             native = RealtimeRunner(root, **runner_options)

@@ -592,8 +592,8 @@ class ChatService:
                 self._log.warning(f"Trigger of scheduled task {task_id} arrived while scheduling is not configured")
                 return
             # The principal is passed so the manager can reject a request that named someone
-            # else's task: this metadata arrives on a client-bindable chat request, not a channel
-            # only a provider can reach.
+            # else's task: the public chat routes reject this metadata, but a custom route that
+            # parses BaseRunRequest can still carry it, so it is not a channel only a provider can reach.
             manager.record_trigger(
                 task_id,
                 req.principal,
@@ -796,7 +796,8 @@ class ChatService:
                          optional but the list must be non-empty
         :return: None
         :raises ValueError: If session_id is missing, prompt is missing on the built path,
-                            or a prebuilt request list is empty
+                            a prebuilt request list is empty, or it omits the request's resume
+                            block (the run would otherwise drop the decision silently)
         """
         if not req.session_id:
             raise ValueError("No session_id is provided in the request")
@@ -805,3 +806,5 @@ class ChatService:
                 raise ValueError("No prompt provided in the request")
         elif not requests:
             raise ValueError("No requests provided in the request")
+        elif req.resume is not None and not any(isinstance(r, AgentResumeRequestAny) for r in requests):
+            raise ValueError("The request carries a resume block, but the prebuilt request list has no resume decisions")

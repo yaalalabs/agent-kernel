@@ -11,6 +11,7 @@ from livekit import api, rtc
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
+from ...secret import SecretManager
 from ..adapter.base import EdgeLifecycleAdapter, EdgeLifecycleEvent, StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
@@ -105,8 +106,9 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         self._input_batch_ms = config.execution.realtime.input_batch_ms
         self._input_batch_bytes = int(EDGE_SAMPLE_RATE * 2 * (self._input_batch_ms / 1000))
 
-        self._api_key = api_key or config.livekit.api_key
-        self._api_secret = api_secret or config.livekit.api_secret
+        # An empty field falls back to the secret provider, keyed by the field's own AK_* name.
+        self._api_key = api_key or config.livekit.api_key or self._provider_credential("AK_LIVEKIT__API_KEY")
+        self._api_secret = api_secret or config.livekit.api_secret or self._provider_credential("AK_LIVEKIT__API_SECRET")
         # The first participant hears the caller and speaks for the starting agent.
         self._participants = [self._single_participant()]
         self._by_agent: dict[str, LiveKitEdgeAdapter._AgentParticipant] = {}
@@ -136,9 +138,23 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         # Set once the end-of-session control is under way: no input is staged after it.
         self._end_sent = False
 
+    @staticmethod
+    def _provider_credential(key: str) -> str:
+        """``key`` from the secret provider, or "" when it has none.
+
+        :raises SecretError: If the provider failed.
+        """
+        return SecretManager.current().get(key, default="")
+
+    @staticmethod
+    def _missing_credentials_message() -> str:
+        """Names every place the API key and secret can be set, for the error a missing one raises."""
+        secrets = SecretManager.current()
+        return f"set {secrets.describe('AK_LIVEKIT__API_KEY', 'livekit.api_key')}; and {secrets.describe('AK_LIVEKIT__API_SECRET', 'livekit.api_secret')}"
+
     def _single_participant(self) -> _AgentParticipant:
         if not (self._api_key and self._api_secret):
-            raise ValueError("Both 'api_key' and 'api_secret' must be provided in code or config")
+            raise ValueError(f"Both 'api_key' and 'api_secret' must be provided in code or config: {self._missing_credentials_message()}")
         name = self.agent or "general"
         return self._AgentParticipant(self.agent, f"{self.AGENT_IDENTITY_PREFIX}{name}", self._mint_token(name))
 
@@ -658,14 +674,16 @@ class LiveKitLifecycleAdapter(EdgeLifecycleAdapter):
 
     def __init__(self, api_key: str | None = None, api_secret: str | None = None):
         """
-        :param api_key: The LiveKit API key that signs the webhooks; defaults to ``livekit.api_key``.
+        :param api_key: The LiveKit API key that signs the webhooks; defaults to ``livekit.api_key``, then the secret provider.
         :param api_secret: The LiveKit API secret; defaults to ``livekit.api_secret``.
         :raises ValueError: If the key or secret is missing.
         """
         config = AKConfig.get().livekit
-        key, secret = api_key or config.api_key, api_secret or config.api_secret
+        # An empty field falls back to the secret provider, as the edge's own credentials do.
+        key = api_key or config.api_key or LiveKitEdgeAdapter._provider_credential("AK_LIVEKIT__API_KEY")
+        secret = api_secret or config.api_secret or LiveKitEdgeAdapter._provider_credential("AK_LIVEKIT__API_SECRET")
         if not (key and secret):
-            raise ValueError("LiveKitLifecycleAdapter needs the LiveKit API key and secret (AK_LIVEKIT__API_KEY, AK_LIVEKIT__API_SECRET)")
+            raise ValueError(f"LiveKitLifecycleAdapter needs the LiveKit API key and secret: {LiveKitEdgeAdapter._missing_credentials_message()}")
         self._api_key, self._api_secret = key, secret
         self._receiver = api.WebhookReceiver(api.TokenVerifier(key, secret))
 

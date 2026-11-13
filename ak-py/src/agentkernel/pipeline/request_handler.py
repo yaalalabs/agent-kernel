@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from ..api.handler import AgentRESTRequestHandler
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
-from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
+from ..core.model import BaseRunRequest, ChatRunRequest, ExecutionMode, FileData, ImageData
 from .envelope import ATTR_PROTOCOL
 from .producer import RequestProducer
 from .response_store.base import ResponseStore
@@ -233,7 +233,7 @@ class RestHandler(AgentRESTRequestHandler):
             return Response(content=json.dumps(body), media_type="application/json", status_code=status_code)
         return body
 
-    async def enqueue_and_wait(self, body: BaseRunRequest, request: Request):
+    async def enqueue_and_wait(self, body: ChatRunRequest, request: Request):
         """Enqueue request; REST_SYNC waits for the response, REST_ASYNC returns request_id immediately."""
         # The surface decides who is calling: a principal the client put in the body is overwritten
         # with the one the identity dependency RESTAPI installs put on the request (the anonymous
@@ -381,7 +381,7 @@ class RequestHandler(RestHandler):
             router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart_chat, methods=["POST"])
         return router
 
-    async def run_chat(self, body: BaseRunRequest, request: Request):
+    async def run_chat(self, body: ChatRunRequest, request: Request):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
         # The surface assigns the principal; a client value is overwritten (see enqueue_and_wait).
         body.principal = getattr(request.state, "principal", None)
