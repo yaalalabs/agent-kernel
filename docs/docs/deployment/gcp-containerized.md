@@ -27,7 +27,7 @@ Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous J
 ## Prerequisites
 
 - GCP CLI configured: `gcloud auth application-default login`
-- Terraform >= 1.9.5
+- Terraform >= 1.9.5, <= 1.16.7
 - Docker installed
 - An existing GCP project with billing enabled
 - Required APIs enabled:

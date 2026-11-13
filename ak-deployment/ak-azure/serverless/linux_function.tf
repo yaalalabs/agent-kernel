@@ -26,12 +26,12 @@ data "azurerm_subnet" "private" {
 resource "azurerm_storage_account" "function_storage" {
   # Storage account names allow lowercase alphanumerics only, so any separators in the prefix are stripped.
   # The 14 characters appended here are what the length validation on var.prefix budgets for.
-  name                          = lower(replace("${var.prefix}${substr(data.azurerm_client_config.current.subscription_id, 0, 4)}deployment", "/[^a-zA-Z0-9]/", ""))
-  resource_group_name           = data.azurerm_resource_group.rg.name
-  location                      = var.region
-  account_tier                  = "Standard"
-  account_replication_type      = "LRS"
-  public_network_access_enabled = true
+  name                     = lower(replace("${var.prefix}${substr(data.azurerm_client_config.current.subscription_id, 0, 4)}deployment", "/[^a-zA-Z0-9]/", ""))
+  resource_group_name      = data.azurerm_resource_group.rg.name
+  location                 = var.region
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  public_network_access    = "Enabled"
 
   network_rules {
     default_action = "Allow"
@@ -48,11 +48,10 @@ resource "azurerm_storage_container" "function_deployment" {
 
 # Upload the function package zip to the container, this is to refer later on
 resource "azurerm_storage_blob" "function_package" {
-  name                   = "app-${filemd5(var.package_path)}.zip" # versioned name
-  storage_account_name   = azurerm_storage_account.function_storage.name
-  storage_container_name = azurerm_storage_container.function_deployment.name
-  type                   = "Block"
-  source                 = var.package_path
+  name                 = "app-${filemd5(var.package_path)}.zip" # versioned name
+  storage_container_id = azurerm_storage_container.function_deployment.id
+  type                 = "Block"
+  source               = var.package_path
 }
 
 # Give the function app's system identity permission to read the deployment container

@@ -22,10 +22,24 @@ Perfect for microservices, web applications, APIs requiring persistent connectio
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
-| Google Provider | >= 6.8.0 |
-| Google Beta Provider | >= 6.8.0 |
+| Terraform | >= 1.9.5, <= 1.16.7 |
+| Google Provider | 8.8.1 |
+| Google Beta Provider | 8.8.1 |
 | Docker Provider | 3.6.2 |
+| Null Provider | 3.2.4 |
+| Random Provider | 3.9.1 |
+| Time Provider | 0.14.2 |
+
+### Version pinning
+
+Providers are pinned to exact versions, so `terraform init` resolves the same, tested providers on every machine and a new upstream release cannot break a deploy until the pin is moved on purpose. To bump a version:
+
+1. Change the `version` in every file that declares the provider (or, for the Terraform CLI, the `<=` cap in `required_version`): `ak-gcp/common/versions.tf`, `ak-gcp/common/modules/*/main.tf`, `ak-gcp/serverless/main.tf`, `ak-gcp/containerized/main.tf` and each GCP example's `deploy/providers.tf`.
+2. Check the provider changelog for regressions in the resources these modules use, and avoid releases that are only days old.
+3. Run `terraform init -upgrade` and `terraform validate` in each example's `deploy/` directory, and commit the regenerated `.terraform.lock.hcl`.
+4. Run `terraform plan` against an existing stack (expect no replacements), deploy at least one example, then release the modules.
+
+Lock files: the examples (root configurations you run) commit `.terraform.lock.hcl`; the modules do not, because Terraform ignores a child module's lock file and the registry release does not publish it.
 
 ## 🔌 Providers
 

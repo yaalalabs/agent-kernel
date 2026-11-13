@@ -32,11 +32,10 @@ resource "azurerm_private_dns_zone" "containerapp" {
 
 # Link the Private DNS zone to the VNet where APIM resides
 resource "azurerm_private_dns_zone_virtual_network_link" "apim_to_containerapp" {
-  name                  = "${var.prefix}-apim-containerapp-dns-link"
-  resource_group_name   = data.azurerm_resource_group.rg.name
-  private_dns_zone_name = azurerm_private_dns_zone.containerapp.name
-  virtual_network_id    = local.vnet_id
-  registration_enabled  = false
+  name                 = "${var.prefix}-apim-containerapp-dns-link"
+  private_dns_zone_id  = azurerm_private_dns_zone.containerapp.id
+  virtual_network_id   = local.vnet_id
+  registration_enabled = false
   
   depends_on = [
     azurerm_private_dns_zone.containerapp,
@@ -47,8 +46,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "apim_to_containerapp" 
 # Create DNS A record for the Container App
 resource "azurerm_private_dns_a_record" "containerapp" {
   name                = azurerm_container_app.app.name
-  zone_name           = azurerm_private_dns_zone.containerapp.name
-  resource_group_name = data.azurerm_resource_group.rg.name
+  private_dns_zone_id = azurerm_private_dns_zone.containerapp.id
   ttl                 = 300
   records             = [azurerm_container_app_environment.env.static_ip_address]
   
@@ -63,8 +61,7 @@ resource "azurerm_private_dns_a_record" "containerapp" {
 # Create wildcard DNS record for Container App revisions
 resource "azurerm_private_dns_a_record" "containerapp_wildcard" {
   name                = "*.${azurerm_container_app.app.name}"
-  zone_name           = azurerm_private_dns_zone.containerapp.name
-  resource_group_name = data.azurerm_resource_group.rg.name
+  private_dns_zone_id = azurerm_private_dns_zone.containerapp.id
   ttl                 = 300
   records             = [azurerm_container_app_environment.env.static_ip_address]
   

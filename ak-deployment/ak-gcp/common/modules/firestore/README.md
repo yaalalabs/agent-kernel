@@ -18,8 +18,8 @@ Perfect for agent session storage, document data, key-value storage, and any wor
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
-| Google Provider | >= 6.8.0 |
+| Terraform | >= 1.9.5, <= 1.16.7 |
+| Google Provider | 8.8.1 |
 
 ## Usage
 

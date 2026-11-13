@@ -15,8 +15,8 @@ This package provides the following Terraform modules:
 
 ### Prerequisites
 
-- Terraform >= 1.9.5
-- Azure Provider >= 4.57.0, < 5.0.0
+- Terraform >= 1.9.5, <= 1.16.7
+- Azure Provider 5.11.0
 - Docker (for ACR module)
 
 ### Basic Usage
@@ -80,9 +80,11 @@ Each module has its own comprehensive documentation:
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
-| Azure Provider | >= 4.0.0 |
+| Terraform | >= 1.9.5, <= 1.16.7 |
+| Azure Provider | 5.11.0 |
 | Docker Provider | 3.6.2 (for ACR) |
+
+Provider versions are pinned exactly. See [Version pinning](../serverless/README.md#version-pinning) for how to bump them and for the known API Management issue.
 
 ## 💡 Common Patterns
 

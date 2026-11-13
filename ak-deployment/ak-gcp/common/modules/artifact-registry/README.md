@@ -18,9 +18,9 @@ Perfect for serverless Cloud Functions, Cloud Run services, and any containerize
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
-| Google Provider | >= 6.8.0 |
-| Docker Provider | >= 3.6.2 |
+| Terraform | >= 1.9.5, <= 1.16.7 |
+| Google Provider | 8.8.1 |
+| Docker Provider | 3.6.2 |
 
 ## Usage
 

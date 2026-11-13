@@ -2,22 +2,22 @@
 # Manual edits may be lost in future updates.
 
 provider "registry.terraform.io/hashicorp/azurerm" {
-  version     = "4.81.0"
-  constraints = ">= 4.57.0, >= 4.75.0, < 5.0.0"
+  version     = "5.11.0"
+  constraints = "5.11.0"
   hashes = [
-    "h1:XhToZua4gtih1Kv8RdStcfND83G4Tmb6GZFT4jEUhDU=",
-    "zh:0732e7b74264ddfa2b90ba69d01c283d3cbae9f72ed3e506c6ac92529fed7fd3",
-    "zh:12afb524e232fe4e3d6161927724af5dfa4831d71edd9c174917ca9b7377bfae",
-    "zh:169d619ae202c4145e02fb706fb7c3679445ab3e3ff722edbf89597517a8c92e",
-    "zh:6beb95a3ef2f2d9c76abaa48e5450e90686a3fb6a47f1cb0ff7c5e94b6960151",
-    "zh:705e075fb5ffc4bf66fd7cbabf1a65007a41621e80030a2c158a4c83b6046216",
+    "h1:QldFxdezZrp3E1bKnWS7xcU63Zmol1K7siWsXS2S3pg=",
+    "zh:2345a6104bb485141afb8f0047a48a5f27c3bb4e6eeb360c7955f381227d88dd",
+    "zh:34e86c5ceeba746fed119775cd37d7314ea8b7c2196ed8b8da8d8d71e10b96df",
+    "zh:358f30581df0670719fc8511066ef9d05eb2612934c147bfe1b1b1d67712d2f0",
+    "zh:3edb6681e17535f16ad1f2b7588325d86d7af57df9eed82fa4a607fc03e8afc7",
+    "zh:6a5b9d6dd86a759f8bfd81e15e7e688531c85ee9660bd5923f99e993a1f15c62",
     "zh:78d5eefdd9e494defcb3c68d282b8f96630502cac21d1ea161f53cfe9bb483b3",
-    "zh:79a8d17fefe647040fcb9ee8821a4f09f395427c4fd49493489b9a93a9a1038e",
-    "zh:8cc3f900b3774c0ae37ae42365c4579a199cf9e5edf88e476fdf5ab1048f84ea",
-    "zh:dec373b9390fa95e257291acd018ed65a7d512b428645d35e22cdbe8b245a08b",
-    "zh:e60f1e9fb45df6defade2855ed6e68547409ea75d30655c556adb0c08579749b",
-    "zh:f901d12ec82f3f8b5880a27b5cbcd7bd0d97e60c9367a2d7ed82fdd1157b39ff",
-    "zh:facf68ea5bf0f2b8ba720e7fba5f86492e1d4c591100460bb91c3f79f391f4b6",
+    "zh:a470dc95f15dcded2e06dd45c44c3b50a22a45b87c9ba7bd19dc6b25022660b7",
+    "zh:b179f04830c1d8d7ec15ae4be4434042d87679bb23b7d60d7ebd751420bf646c",
+    "zh:b183835acbcf39047d195f933caebd1902065d2437df17e964ceb4a358441f41",
+    "zh:b3d3555ac1f16a59baaab894fe9e839baedc809aef05a6d8e6c0cdaba9c92749",
+    "zh:cc29f59113d468757e9f1a3db774c73d8827f8359816216b7b82ddef5ff02d66",
+    "zh:e37d3649320c50110675156174f476b3b12ca5c1f267f1cadb56ad26e7f3553e",
   ]
 }
 
@@ -25,7 +25,6 @@ provider "registry.terraform.io/kreuzwerker/docker" {
   version     = "3.6.2"
   constraints = "3.6.2"
   hashes = [
-    "h1:/Oe7tViXf/xyQ4Pg8cDifMlD3RthOYkslwQiRgx7BTE=",
     "h1:1K3j0xUY2D0+E+DBDQc6k1u6Al9MkuNWrIC9rnvwFSM=",
     "zh:22b51a8fb63481d290bdad9a221bc8c9e45d66d1a0cd45beed3f3627bf1debd8",
     "zh:2b902eb80a1ae033af1135cc165d192668820a7f8ea15beb5472f811c18bea1f",
