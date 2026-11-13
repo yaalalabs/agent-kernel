@@ -1,6 +1,6 @@
 module "containerd_agent" {
   source              = "yaalalabs/ak-containerized/azurerm"
-  version             = "0.9.5"
+  version             = "0.10.0"
   providers           = { azurerm = azurerm }
   prefix              = var.prefix
   resource_group_name = var.resource_group_name

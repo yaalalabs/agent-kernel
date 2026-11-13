@@ -15,7 +15,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.9.5"
+  version: "0.10.0"
   category: user
 ---
 
@@ -62,7 +62,7 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.9.5`) unless user requests another.
+Use current module version (`0.10.0`) unless user requests another.
 
 Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
 Agent Kernel repository and is published as an OCI artifact
@@ -91,7 +91,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.9.5"
+  "agentkernel[openai,api,redis]>=0.10.0"
 ]
 ```
 
@@ -118,7 +118,7 @@ OSS engine. Agent Kernel treats it as a first-class session and response store b
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.9.5"
+  "agentkernel[openai,api,aws,valkey]>=0.10.0"
 ]
 ```
 
@@ -146,7 +146,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.5"
+  "agentkernel[openai,api,aws]>=0.10.0"
 ]
 ```
 
@@ -167,7 +167,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.9.5"
+  "agentkernel[openai,api,azure]>=0.10.0"
 ]
 ```
 
@@ -189,7 +189,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.9.5"
+  "agentkernel[openai,api,gcp]>=0.10.0"
 ]
 ```
 
@@ -438,7 +438,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   product_display_name = "AK Serverless"
@@ -489,7 +489,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix             = var.prefix
   region             = var.region
@@ -624,7 +624,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.5"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.10.0"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -637,7 +637,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -780,7 +780,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis]>=0.9.5"   # add the auth extra for oidc, cognito, entra or firebase
+  "agentkernel[openai,api,aws,redis]>=0.10.0"   # add the auth extra for oidc, cognito, entra or firebase
 ]
 ```
 
@@ -793,7 +793,7 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -987,7 +987,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -1066,7 +1066,7 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix        = var.prefix
   region        = var.region
@@ -1126,7 +1126,7 @@ module "containerized_agents" {
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.5"
+  "agentkernel[openai,api,aws]>=0.10.0"
 ]
 ```
 
@@ -1187,7 +1187,7 @@ registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunne
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { aws = aws, docker = docker }
 
@@ -1250,7 +1250,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -1292,7 +1292,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -1334,7 +1334,7 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1363,7 +1363,7 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1388,8 +1388,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.9.5"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.9.5"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.10.0"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.10.0"  # for Redis sessions
 ]
 ```
 
@@ -1414,7 +1414,7 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1500,8 +1500,8 @@ also cross-installs Linux wheels so builds work from macOS).
 **Install:**
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.0 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.0 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag> \

@@ -5,12 +5,12 @@ description = "Demo of Claude Agent SDK based agents running in Agent Kernel wit
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,claude]>=0.9.5",
+    "agentkernel[cli,claude]>=0.10.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.5",
+    "agentkernel[test]>=0.10.0",
     "black==26.10.1",
     "isort>=5.0.0,<10.0.0",
     "mypy>=1.0.0,<3.0.0",
