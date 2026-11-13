@@ -12,6 +12,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified, capability-declaring `KnowledgeBase` interface with ChromaDB, Neo4j, Starburst/Trino and Open Knowledge Format bundle (local directory or S3) backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
+- **Identity and Access**: One configured identity provider (any OIDC issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft Entra ID, Firebase, a static credential map, or your own by dotted path) authenticates every surface; tools, hooks, threads and scheduled tasks see the same `Principal`, and a role mapper derives roles from groups and claims
 - **Secret Resolution**: `SecretManager` resolves API keys and passwords environment-first, falling back to a pluggable provider (`env`, `aws_ssm` for AWS SSM Parameter Store, `kubernetes` for Kubernetes Secrets mounted into the pod, or your own) with a TTL'd process cache
 - **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
 - **Human in the Loop**: Pause a run for a person's approval or answer and resume from their decision — `status: "PAUSED"` with HTTP 202, a `resume` block carrying `approved`/`denied`/`cancelled` decisions, supported on OpenAI Agents SDK, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework over REST, streaming and AG-UI
@@ -234,7 +235,7 @@ handler = Lambda.handler
 
 **Note that this is just the simple serverless version. A more advanced serverless deployment mode, which uses queues for scalability, is also available. For queue-backed execution modes and response-store configuration, see the [AWS Serverless Deployment](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/aws-serverless.md) guide.**
 
-The AWS serverless handler accepts both a direct `BaseRunRequest` payload and the normalized `BaseRequest` envelope. If a flat run payload is provided, Agent Kernel generates a `request_id` and normalizes it before processing. 
+The AWS serverless handler accepts both a direct `BaseRunRequest` payload and the normalized `BaseRequest` envelope. If a flat run payload is provided, Agent Kernel generates a `request_id` and normalizes it before processing. The caller is never named in the payload: the API Gateway authorizer (`handler = APIGatewayAuthorizer().handle`, configured by the `identity` block) establishes the principal and the handler puts it on the request; see [Identity and Access](https://kernel.yaala.ai/docs/advanced/identity-and-access).
 
 Accepted payloads:
 
@@ -249,7 +250,6 @@ Accepted payloads:
 ```json
 {
   "request_id": "req-123",
-  "user_id": "user-123",
   "body": {
     "prompt": "Hello agent",
     "agent": "assistant",
@@ -280,7 +280,6 @@ handler = AzureFunctions.handler
 ```json
 {
   "request_id": "req-123",
-  "user_id": "user-123",
   "body": {
     "prompt": "Hello agent",
     "agent": "assistant",
@@ -397,6 +396,55 @@ Supported formats: `.yaml`, `.yml`, `.json`
 - **Description**: System/root logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
 - **Environment Variable**: `AK_LOGGING__SYSTEM__LEVEL`
 
+#### Identity
+
+The `identity` block selects the one identity provider every surface (REST, WebSocket, AG-UI, MCP, A2A,
+the CLI) authenticates through, and the role mapper that derives roles from what it asserts. Without the
+block every request runs as the anonymous principal. The thread, schedule and AG-UI handlers and the
+WebSocket modes refuse to start without it. Full reference: [Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access).
+
+Auth0 is an `oidc` configuration: the tenant's issuer with the trailing slash, the API identifier as
+the audience, and the namespaced claim an Auth0 Action sets as the groups path:
+
+```yaml
+identity:
+  provider:
+    type: oidc
+    issuer: https://<tenant>.<region>.auth0.com/   # or the custom domain; trailing slash included, as Auth0 issues it
+    audience: <the API identifier of your Auth0 API>
+    claims:
+      groups: https://<your namespace>/roles       # the namespaced claim an Auth0 Action sets; omit if you set none
+```
+
+- **Field**: `identity.provider.type`
+- **Type**: string
+- **Default**: `oidc`
+- **Description**: `oidc` (any OpenID Connect issuer: Auth0, Keycloak, Okta, ...), `cognito`, `entra`, `firebase`, `static`, or a dotted path to an `IdentityProvider` subclass. `oidc`, `cognito`, `entra` and `firebase` need the `auth` extra (`agentkernel[auth]`).
+- **Environment Variable**: `AK_IDENTITY__PROVIDER__TYPE`
+
+- **Field**: `identity.provider.issuer`, `identity.provider.audience`
+- **Type**: string
+- **Description**: The issuer URL and the audience a token must carry. Both are required by `oidc` (Auth0: `https://<tenant>.<region>.auth0.com/` with the trailing slash, and the API identifier); `cognito` and `entra` take the audience (the app client id, the application id) and derive the issuer; `firebase` derives both.
+- **Environment Variable**: `AK_IDENTITY__PROVIDER__ISSUER`, `AK_IDENTITY__PROVIDER__AUDIENCE`
+
+- **Field**: `identity.provider.jwks_uri`, `identity.provider.algorithms`, `identity.provider.leeway`, `identity.provider.required_claims`
+- **Description**: The JWK set URL (discovered from the issuer when omitted), the allowed signing algorithms (default `[RS256, ES256]`; an empty list, `none`, an unknown name or a symmetric one fails startup), the clock skew in seconds (default `30`) and extra claims a token must carry.
+
+- **Field**: `identity.provider.claims.subject`, `identity.provider.claims.groups`
+- **Type**: string (a claim name, a namespaced name such as `https://acme.com/roles`, or dotted segments such as `realm_access.roles`)
+- **Default**: `sub`, `groups`
+- **Description**: Where the provider reads the subject and the group list.
+
+- **Field**: `identity.provider.cognito` (`region`, `user_pool_id`, `token_use`), `identity.provider.entra` (`tenant_id`), `identity.provider.firebase` (`project_id`)
+- **Description**: The settings of the matching built-in provider. `token_use` is `access` (default) or `id`; any other value fails startup.
+
+- **Field**: `identity.provider.static.principals`
+- **Type**: mapping of secret key to principal (`subject`, `kind`, `groups`, `roles`, `claims`)
+- **Description**: The `static` provider's credentials. Each key names a secret resolved through the secret capability when the provider is built (the environment first), so no credential value is written in the file; a key with no secret, or an empty map, fails startup. An entry's `roles` are issued directly; a role mapper replaces them.
+
+- **Field**: `identity.role_mapper.type`, `identity.role_mapper.mapping`, `identity.role_mapper.claims`, `identity.role_mapper.pass_through`
+- **Description**: Optional. `mapping` (default) maps group names to roles, and the string or list values of the claim paths listed in `claims` (default `[]`: groups only, since a user sets many of their own claims), then appends the `pass_through` claim's value as roles; a dotted path selects a `RoleMapper` subclass, which reads settings of its own from `model_extra`. Without a mapper only a `static` entry's own roles exist. Nothing enforces roles yet.
+
 #### Session Store
 
 Configure where agent sessions are stored (supports multi-cloud storage backends).
@@ -458,9 +506,10 @@ available on AWS ElastiCache at a lower price point than the Redis OSS engine:
 Mounting `AgentThreadRequestHandler` (from `agentkernel.thread`) instead of the default REST handler
 enables persistent, named conversation threads keyed by `session_id`: it serves the standard chat routes
 with thread recording, plus the read routes (`GET /api/v1/threads` and
-`GET /api/v1/threads/{session_id}`, optionally protected by a pluggable `Authoriser`). The `thread`
-block in the configuration only selects the store backend and naming. On the thread handler's chat
-routes `user_id` is required, and a thread is auto-created on a session's first request. Sending
+`GET /api/v1/threads/{session_id}`). The handler requires an `identity` block: every thread belongs to the
+authenticated principal, an anonymous request is a 401, and the listing returns the caller's own threads
+(there is no `user_id` field or query parameter). The `thread` block in the configuration only selects
+the store backend and naming. A thread is auto-created on a session's first request. Sending
 `thread_name` on any chat request sets or renames the thread's display name and locks it against automatic
 naming. Threads created without an explicit `thread_name` are
 named by a pluggable naming strategy — by default an LLM call derives a concise title from the first prompt
@@ -600,9 +649,10 @@ execution pipeline. The block also injects five agent tools (`create_schedule`, 
 `get_schedule`, `update_schedule`, `delete_schedule`). The management routes
 (`GET`/`PUT`/`DELETE /api/v1/schedules`) are not mounted from config: the application mounts
 `ScheduleRESTRequestHandler` itself — `IOHandler.run(handlers=[ScheduleRESTRequestHandler()])` —
-passing an optional pluggable `Authoriser` to the handler to protect them. Every scheduling request
-needs a `user_id`: it is the owner the task is stored under and the identity later reads and changes
-are checked against. A bare `schedule:` block works for local development — its defaults are the
+and the handler requires an `identity` block. Every scheduling request needs an authenticated principal:
+it is the owner the task is stored under and that later reads and changes are checked against (an
+anonymous management request is a 401, an anonymous chat request with a `schedule` block a 403; there is
+no `user_id` field). A bare `schedule:` block works for local development: its defaults are the
 `local` provider and the `in_memory` store. See `examples/api/schedule-openai`.
 
 - **Provider Type**
@@ -1052,6 +1102,12 @@ Configure the REST API server (if using the API module).
   - **Description**: List of agent names to expose as MCP tools
   - **Environment Variable**: `AK_MCP__AGENTS` (comma-separated)
 
+- **URL**
+  - **Field**: `mcp.url`
+  - **Default**: `http://localhost:8000/mcp`
+  - **Description**: Public URL of the MCP endpoint. With an OpenID-family identity provider the 401 points at the RFC 9728 resource metadata the app serves at `<origin>/.well-known/oauth-protected-resource/mcp/`, naming this URL as the resource; set it to the address clients use (behind a proxy, the public one)
+  - **Environment Variable**: `AK_MCP__URL`
+
 - **Stateless HTTP**
   - **Field**: `mcp.stateless_http`
   - **Default**: `false`
@@ -1070,8 +1126,8 @@ surface; the `agui` block only parameterizes it, and it never switches the surfa
 Mount `AGUIPipelineRequestHandler` through `IOHandler.run(handlers=[...])` instead to run the agent
 on the queue pipeline rather than inside the SSE request; same routes and events, and it refuses to
 start unless the configured stores can serve a run from the runner process.
-`AGUIRequestHandler` refuses to construct without an `Authoriser` or `AuthValidator` — AG-UI runs
-agents on a caller's behalf and has no anonymous mode. Only agents whose runner declares
+`AGUIRequestHandler` refuses to construct without an `identity` block and answers an anonymous request
+with a 401, since AG-UI runs agents on a caller's behalf and has no anonymous mode. Only agents whose runner declares
 `supports_streaming = True` are reachable (currently OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI
 and Microsoft Agent Framework — not CrewAI or Smolagents). See `examples/api/agui`.
 
@@ -1538,7 +1594,8 @@ Key fields:
   A provider's `package_installers` sets the installer command per ecosystem (default `pip install`),
   and on `docker`/`kubernetes`/`ec2_ssm` its `language_runtimes` sets the interpreter per language (default `python -c`; on `ec2_ssm` each argv reads the code from stdin, default `python3 -`).
 - **`identity.mode`** + **`principal_resolver`** — run code under the agent's or the invoking
-  user's identity.
+  user's identity; the default resolver reads the run's `Principal`, so `user` mode needs no custom
+  resolver once an `identity` block authenticates the caller.
 - **`broker.flavor`** — `thread` (default, for CLI/REST), `embedded` (inline/synchronous), or
   `queue` (a separate `QueueBrokerWorker` fleet over a queue transport).
 

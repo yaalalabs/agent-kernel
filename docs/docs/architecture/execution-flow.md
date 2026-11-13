@@ -108,21 +108,22 @@ agent = runtime.agents().get("assistant")
 session = runtime.sessions().get("user-123") or runtime.sessions().new("user-123")
 ```
 
-When chat is served by the thread handler (`AgentThreadRequestHandler`), `user_id` is required and the user message (with any attachments) is recorded to the [conversation thread](../advanced/threads) before the run. AG-UI records the same way whenever a `thread` block is present; other surfaces do not record threads.
+When chat is served by the thread handler (`AgentThreadRequestHandler`), the request must be authenticated (the thread belongs to the caller's principal; see [Identity and Access](../advanced/identity-and-access.md)) and the user message (with any attachments) is recorded to the [conversation thread](../advanced/threads) before the run. AG-UI records the same way whenever a `thread` block is present; other surfaces do not record threads.
 
 ### 3. Agent Execution
 
 `Runtime.run()` acquires the session lock, runs the hook pipeline, and delegates to the framework-specific runner:
 
 ```python
-reply = await runtime.run(agent, session, requests)
+reply = await runtime.run(agent, session, requests, principal=principal)
 ```
 
 1. **Session lock**: `async with session` serializes concurrent requests per session and makes `Session.current()` available.
-2. **Pre-hooks**: agent hooks first, then system hooks (input guardrails, multimodal preprocessing). A pre-hook may rewrite the request list or halt by returning an `AgentReply`.
-3. **`Runner.run()`**: converts requests to the framework's native format, restores framework session state, executes, and converts the result back to an `AgentReply` (`AgentReplyText`, `AgentReplyImage`, or `AgentReplyAny` for structured output).
-4. **Post-hooks**: system hooks (output guardrails, then A2UI labelling) first, then agent hooks. Order matters within the system hooks: the guardrail sees the reply while it is still text, because A2UI labelling may replace an `AgentReplyText` with an `AgentReplyAny`.
-5. **Persistence**: the session store saves the session; the volatile cache is cleared in a `finally` block.
+2. **Principal**: the `Principal` the surface established (the anonymous principal when it authenticated nobody) is published for the run with the agent as its `actor`; tools read it through `ToolContext.principal`, hooks through `session.get_principal()`, and the session's owner is recorded on its first authenticated run.
+3. **Pre-hooks**: agent hooks first, then system hooks (input guardrails, multimodal preprocessing). A pre-hook may rewrite the request list or halt by returning an `AgentReply`.
+4. **`Runner.run()`**: converts requests to the framework's native format, restores framework session state, executes, and converts the result back to an `AgentReply` (`AgentReplyText`, `AgentReplyImage`, or `AgentReplyAny` for structured output).
+5. **Post-hooks**: system hooks (output guardrails, then A2UI labelling) first, then agent hooks. Order matters within the system hooks: the guardrail sees the reply while it is still text, because A2UI labelling may replace an `AgentReplyText` with an `AgentReplyAny`.
+6. **Persistence**: the session store saves the session; the volatile cache is cleared in a `finally` block.
 
 ### 4. Response Return
 
@@ -364,9 +365,9 @@ sequenceDiagram
     participant AR as Agent Runner Lambda
     participant RSH as Response Handler Lambda
 
-    Client->>WSGW: $connect (?token=JWT with userId claim)
+    Client->>WSGW: $connect (?token=credential)
     WSGW->>CH: $connect event
-    CH->>CT: store user_id ↔ connection_id
+    CH->>CT: authenticate via the identity provider, store principal (user_id = subject) ↔ connection_id
     Client->>WSGW: {"route": "chat", "prompt": ..., "session_id": ...}
     WSGW->>RH: route event
     RH->>AR: via Input Queue (or direct when queues disabled)

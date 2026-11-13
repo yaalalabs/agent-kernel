@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.model import AgentRequestText, StreamChunk
+from agentkernel.core.model import AgentRequestText, Principal, StreamChunk
 from agentkernel.integration.agui.recorder import AGUIThreadRecorder
 from agentkernel.integration.agui.run_input import AGUIRunInput
 from agentkernel.integration.thread import ConversationThreadManager, ThreadNamingStrategy
@@ -16,6 +16,7 @@ from agentkernel.integration.thread.recorder import StreamedReply, ThreadRecorde
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 PNG_B64 = "iVBORw0KGgo="
+U1 = Principal(subject="u1", provider="static", namespace="static")
 
 
 def body(content="hello", **overrides):
@@ -35,7 +36,7 @@ def body(content="hello", **overrides):
 def chat_request(raw: dict):
     run_input = AGUIRunInput.parse(raw)
     requests = AGUIRunInput.to_requests(run_input)
-    return AGUIThreadRecorder.chat_request(run_input, "u1", "planner", requests), requests
+    return AGUIThreadRecorder.chat_request(run_input, U1, "planner", requests), requests
 
 
 def image_part():
@@ -47,12 +48,6 @@ def text_reply(text: str) -> StreamedReply:
     reply.add(StreamChunk(delta=text))
     reply.add(StreamChunk(done=True))
     return reply
-
-
-def _no_threads() -> ConversationThreadManager:
-    manager = MagicMock(spec=ConversationThreadManager)
-    manager.get_thread.return_value = None
-    return manager
 
 
 class _FixedNaming(ThreadNamingStrategy):
@@ -87,7 +82,7 @@ class TestCreate:
 class TestChatRequest:
     def test_a_text_turn(self):
         req, _ = chat_request(body("plan my week"))
-        assert (req.session_id, req.user_id, req.agent, req.prompt, req.resume) == ("thread-1", "u1", "planner", "plan my week", None)
+        assert (req.session_id, req.principal, req.agent, req.prompt, req.resume) == ("thread-1", U1, "planner", "plan my week", None)
 
     def test_text_parts_are_joined(self):
         req, _ = chat_request(body([{"type": "text", "text": "look"}, image_part(), {"type": "text", "text": "at this"}]))
@@ -159,7 +154,7 @@ class TestPreRun:
         recorder.pre_run.return_value = (rebuilt, [])
         req, requests = chat_request(body())
 
-        assert AGUIThreadRecorder(recorder, _no_threads()).pre_run(req, requests) is rebuilt
+        assert AGUIThreadRecorder(recorder).pre_run(req, requests) is rebuilt
 
 
 class TestPostRun:
@@ -176,7 +171,7 @@ class TestPostRun:
         recorder = MagicMock(spec=ThreadRecorder)
         req, _ = chat_request(body())
 
-        AGUIThreadRecorder(recorder, _no_threads()).post_run(req, StreamedReply("thread-1"))
+        AGUIThreadRecorder(recorder).post_run(req, StreamedReply("thread-1"))
 
         recorder.post_run.assert_not_called()
 
@@ -186,6 +181,6 @@ class TestPostRun:
         req, _ = chat_request(body())
 
         with caplog.at_level(logging.ERROR, logger="ak.integration.agui.recorder"):
-            AGUIThreadRecorder(recorder, _no_threads()).post_run(req, text_reply("hi"))
+            AGUIThreadRecorder(recorder).post_run(req, text_reply("hi"))
 
         assert "thread-1" in caplog.text

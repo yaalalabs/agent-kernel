@@ -101,7 +101,10 @@ Rules:
    `ThreadRecorder.pre_run` gains `enforce_owner: bool = False`, passed to
    `ConversationThreadManager.get_or_create_thread(..., enforce_owner=...)`, which checks the owner
    of both the loaded thread (before any rename) and the one `create` returned. AG-UI sets it; every
-   other caller keeps today's behaviour. In the race, the loser's attachment bytes may already be
+   other caller keeps today's behaviour. Superseded by #603 (#918): `ThreadRecorder.pre_run` now
+   checks ownership itself before any write and `get_or_create_thread` always refuses another
+   user's thread, so the keyword and the early check here are gone; what remains from this rule is
+   `get_or_create_thread` re-checking the owner of the thread `create` returns. In the race, the loser's attachment bytes may already be
    stored before the 403; no message is written.
 
 ### 3. Direct path — `AGUIRequestHandler` (`integration/agui/handler.py`)
@@ -261,8 +264,8 @@ All intentional, all only when a `thread` block is present:
 
 **Non-changes:**
 
-- `ThreadMessage` layout, store data layouts, read-route responses. `ThreadRecorder.pre_run` and
-  `get_or_create_thread` gain only an optional `enforce_owner` keyword, off by default (§2 rule 6).
+- `ThreadMessage` layout, store data layouts, read-route responses, and every signature;
+  `get_or_create_thread` only re-checks the owner of the thread `create` returns (§2 rule 6).
 - AG-UI wire output: every event, its order and the terminal shapes are unchanged; recording emits nothing.
 - AG-UI routes: neither handler gains a route; the read routes stay app-mounted (§6).
 - The pre-existing uncaught `ValueError` from `AttachmentStorageManager.offload` on the queue path

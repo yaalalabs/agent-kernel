@@ -6,11 +6,12 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..api.handler import AgentRESTRequestHandler
+from ..core.chat_service import ChatService
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
 from .envelope import ATTR_PROTOCOL
@@ -170,7 +171,9 @@ class RestHandler(AgentRESTRequestHandler):
         store in every mode. A reply with an error status is returned, not raised: the caller
         checks ``is_error``.
 
-        :param body: The chat request; ``session_id`` and ``prompt`` are required.
+        :param body: The chat request; ``session_id`` and ``prompt`` are required. Its ``principal`` is the
+            caller's to establish (the executors authenticate their own protocol): this path never reads
+            one from a client and never overwrites one, so an unset principal runs anonymous.
         :param protocol: The surface's name, stamped as the ``protocol`` attribute.
         :return: The stored reply.
         :raises ValueError: If ``session_id``, ``prompt`` or ``protocol`` is empty; nothing is sent.
@@ -230,13 +233,22 @@ class RestHandler(AgentRESTRequestHandler):
             return Response(content=json.dumps(body), media_type="application/json", status_code=status_code)
         return body
 
-    async def enqueue_and_wait(self, body: BaseRunRequest):
+    async def enqueue_and_wait(self, body: BaseRunRequest, request: Request):
         """Enqueue request; REST_SYNC waits for the response, REST_ASYNC returns request_id immediately."""
+        # The surface decides who is calling: a principal the client put in the body is overwritten
+        # with the one the identity dependency RESTAPI installs put on the request (the anonymous
+        # principal without an identity block). The default covers a router mounted on a bare app.
+        body.principal = getattr(request.state, "principal", None)
         try:
             if not body.session_id:
                 raise HTTPException(status_code=400, detail="session_id is required")
             if not body.prompt and body.resume is None:
                 raise HTTPException(status_code=400, detail="prompt is required")
+            try:
+                # What the runner's ChatService would refuse on arrival is refused here, before the queue.
+                ChatService.reject_unprocessable(body)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
             # Unique request_id, distinct from session_id.
             request_id = str(uuid.uuid4())
@@ -369,19 +381,37 @@ class RequestHandler(RestHandler):
             router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart_chat, methods=["POST"])
         return router
 
-    async def run_chat(self, body: BaseRunRequest):
+    async def run_chat(self, body: BaseRunRequest, request: Request):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
+        # The surface assigns the principal; a client value is overwritten (see enqueue_and_wait).
+        body.principal = getattr(request.state, "principal", None)
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
         if not body.prompt and body.resume is None:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
-
+        self._reject_unprocessable(body)
         self._reject_unroutable(body)
         if self._config.execution.is_sse:
             return await self._run_chat_stream(body)
-        return await self.enqueue_and_wait(body)
+        return await self.enqueue_and_wait(body, request)
+
+    @staticmethod
+    def _reject_unprocessable(body: BaseRunRequest) -> None:
+        """Run the service's first guard at the edge, in the direct-mode error shape.
+
+        A request the runner's ChatService would refuse on arrival (a ``user_id`` extra, a schedule
+        beside a resume) is refused before it is recorded or enqueued, so the refusal costs no
+        queue trip and leaves no thread write behind.
+
+        :param body: The chat request.
+        :raises HTTPException: 400 with the service's message.
+        """
+        try:
+            ChatService.reject_unprocessable(body)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail={"error": str(e), "session_id": body.session_id})
 
     def _reject_unroutable(self, body: BaseRunRequest) -> None:
         """Reject a request this topology cannot answer on this route, before anything is written.
@@ -476,10 +506,10 @@ class RequestHandler(RestHandler):
 
     async def run_multipart_chat(
         self,
+        request: Request,
         prompt: str = Form(...),
         agent: str | None = Form(None),
         session_id: str | None = Form(None),
-        user_id: str | None = Form(None),
         group_id: str | None = Form(None),
         thread_name: str | None = Form(None),
         files: list[UploadFile] | None = File(None),
@@ -487,6 +517,7 @@ class RequestHandler(RestHandler):
     ):
         """POST /api/v1/chat-multipart: uploads become base64 FileData/ImageData and flow as JSON."""
         try:
+            await self._reject_user_id_form(request)
             file_data = [
                 FileData(file_data=await self._read_upload(upload), name=upload.filename or "unknown", mime_type=upload.content_type)
                 for upload in files or []
@@ -501,17 +532,16 @@ class RequestHandler(RestHandler):
         except ValueError as e:
             raise HTTPException(status_code=400, detail={"error": str(e), "session_id": session_id})
 
-        request = BaseRunRequest(
+        body = BaseRunRequest(
             prompt=prompt,
             agent=agent,
             session_id=session_id,
-            user_id=user_id,
             group_id=group_id,
             thread_name=thread_name,
             files=file_data or None,
             images=image_data or None,
         )
-        return await self.run_chat(request)
+        return await self.run_chat(body, request)
 
     async def _read_upload(self, upload: UploadFile) -> str:
         content = await upload.read()

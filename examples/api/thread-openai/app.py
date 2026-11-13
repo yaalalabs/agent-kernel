@@ -1,5 +1,4 @@
 from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.thread import AgentThreadRequestHandler
 from agents import Agent
@@ -24,25 +23,6 @@ assistant_agent = Agent(
     model="openai/gpt-4.1-mini",
 )
 
-
-class DemoAuthoriser(Authoriser):
-    """
-    Demo Authoriser protecting the thread read endpoints (GET /api/v1/threads*).
-
-    A real subclass would validate the Bearer token against your own authentication
-    provider (e.g. verify a JWT signature) and return the subject's user_id, or None
-    to reject the request. Here a static token map stands in for that provider.
-    """
-
-    _TOKENS = {
-        "alice-token": "alice",
-        "bob-token": "bob",
-    }
-
-    def authorise(self, token: str) -> str | None:
-        return self._TOKENS.get(token)
-
-
 OpenAIModule([assistant_agent])
 
 if __name__ == "__main__":
@@ -50,4 +30,9 @@ if __name__ == "__main__":
     # enables Conversation Thread Support: it serves the standard chat routes with
     # thread recording plus the thread read routes. The `thread` block in
     # config.yaml only selects the store backend and naming.
-    RESTAPI.run(handlers=[AgentThreadRequestHandler(authoriser=DemoAuthoriser())])
+    #
+    # Who is calling comes from the `identity` block in config.yaml: every route runs
+    # the identity dependency, which turns the bearer token into the request's
+    # principal, and a thread belongs to that principal. The handler refuses to build
+    # without the block, since its routes serve authenticated callers only.
+    RESTAPI.run(handlers=[AgentThreadRequestHandler()])

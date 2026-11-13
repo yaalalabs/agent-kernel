@@ -5,7 +5,7 @@ from typing import Any
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
 from ..core.event import PausedInterruption
-from ..core.model import AgentPausedReplyAny, BaseRunRequest, ExecutionMode, StreamChunk
+from ..core.model import AgentPausedReplyAny, BaseRunRequest, ExecutionMode, Principal, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
 from .envelope import (
@@ -129,7 +129,7 @@ class AgentRunner:
             from ..integration.thread.recorder import StreamedReply
 
             reply = StreamedReply(body.session_id)
-        for chunk in handler.run_stream_sync(body.requests or [], acting_user_id=body.user_id):
+        for chunk in handler.run_stream_sync(body.requests or [], principal=body.principal):
             if reply is not None:
                 reply.add(chunk)
             payload = json.loads(chunk.model_dump_json())
@@ -329,8 +329,9 @@ class AgentRunner:
             raise ValueError("request_id is required in queue message attributes or body")
 
         message.attributes[ATTR_REQUEST_ID] = request_id
-        if body.user_id:
-            message.attributes.setdefault(ATTR_USER_ID, body.user_id)
+        subject = Principal.subject_of(body.principal)
+        if subject:
+            message.attributes.setdefault(ATTR_USER_ID, subject)
         return request_id
 
     def _send_to_output(self, source: QueueMessage, response_body, status_code: int | None = None, dedup_suffix: str | None = None) -> None:

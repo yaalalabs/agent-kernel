@@ -1,12 +1,15 @@
 """StreamedReply: what a streamed run leaves in a conversation thread (#836)."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.event import DataMessage, PausedInterruption, RunPaused
-from agentkernel.core.model import AgentPausedReplyAny, AgentReplyAny, AgentReplyText, BaseRunRequest, StreamChunk
+from agentkernel.core.model import AgentPausedReplyAny, AgentReplyAny, AgentReplyText, BaseRunRequest, Principal, StreamChunk
 from agentkernel.core.runtime import Runtime
+from agentkernel.identity import IdentityProviderFactory
 from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy
 from agentkernel.integration.thread.model import HITL_MEDIA_TYPE
 from agentkernel.integration.thread.recorder import StreamedReply, ThreadRecorder
@@ -154,13 +157,18 @@ def agent():
 
 
 @pytest.mark.asyncio
-async def test_a_pause_is_stored_as_the_same_bytes_as_the_rest_stream(thread_store, agent):
+async def test_a_pause_is_stored_as_the_same_bytes_as_the_rest_stream(thread_store, agent, monkeypatch):
     """Parity with the threaded REST SSE path, which builds its own paused reply inline."""
     chunks = [StreamChunk(delta="Let me check"), StreamChunk(event=paused_event(agent.name)), StreamChunk(done=True)]
+    monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: MagicMock()))
     handler = AgentThreadRequestHandler()
     handler.chat_service = _FakeChatService(chunks)
 
-    gen = await handler._stream_with_recording(BaseRunRequest(prompt="refund it", session_id="s1", user_id="u1", agent=agent.name))
+    gen = await handler._stream_with_recording(
+        BaseRunRequest(
+            prompt="refund it", session_id="s1", principal=Principal(subject="u1", provider="static", namespace="static"), agent=agent.name
+        )
+    )
     _ = [frame async for frame in gen]
     stored = thread_store.get_messages("s1").messages[1]
 

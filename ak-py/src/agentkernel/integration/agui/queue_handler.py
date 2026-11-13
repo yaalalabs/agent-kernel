@@ -9,8 +9,6 @@ from uuid import uuid4
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
-from ...auth.authoriser import Authoriser
-from ...auth.handler import AuthValidator
 from ...core.config import AKConfig
 from ...core.event import RunPaused
 from ...core.model import StreamChunk
@@ -54,14 +52,13 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
 
     requires_pipeline = True
 
-    def __init__(self, authoriser: Authoriser | None = None, auth_validator: AuthValidator | None = None):
+    def __init__(self):
         """
-        :param authoriser: Authoriser for the AG-UI routes.
-        :param auth_validator: Wrapped as an Authoriser when `authoriser` is omitted.
-        :raises ValueError: Everything AGUIRequestHandler rejects (missing extra, no authoriser).
-        :raises AKConfigError: If the configured stores cannot serve a run from another process.
+        :raises ValueError: Everything AGUIRequestHandler rejects (missing extra, a hidden default agent).
+        :raises AKConfigError: If no identity provider is configured, or the configured stores cannot
+            serve a run from another process.
         """
-        super().__init__(authoriser, auth_validator)
+        super().__init__()
         self._log = logging.getLogger("ak.integration.agui.queue_handler")
         self._validate_topology()
         self._store = ResponseStoreFactory.create()
@@ -126,7 +123,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         """
         from ag_ui.encoder import EventEncoder
 
-        user_id, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
+        principal, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
         envelope = AGUIRunEnvelope.build(run_input)
         envelope.reject_if_oversized()
         self._warn_if_unreadable(agent, run_input)
@@ -134,7 +131,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         # Bytes must not ride the queue: brokers cap a message far below api.max_file_size.
         attributes = {ATTR_AGUI: "1"}
         if self._recorder is not None:
-            chat_request = AGUIThreadRecorder.chat_request(run_input, user_id, agent.name, requests)
+            chat_request = AGUIThreadRecorder.chat_request(run_input, principal, agent.name, requests)
             requests = await asyncio.to_thread(self._recorder.pre_run, chat_request, requests)
             attributes[ATTR_THREAD] = "1"
         else:
@@ -149,7 +146,8 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         # Offload the sync send so it doesn't block the event loop, as the REST handler does.
         await asyncio.to_thread(
             self._producer.enqueue,
-            AGUIRunRequest(session_id=run_input.thread_id, agent=agent.name, user_id=user_id, requests=requests, agui=envelope),
+            # The caller's principal rides the body: the runner publishes it for the run (#603).
+            AGUIRunRequest(session_id=run_input.thread_id, agent=agent.name, requests=requests, agui=envelope, principal=principal),
             request_id=request_id,
             attributes=attributes,
             group_id=run_input.thread_id,

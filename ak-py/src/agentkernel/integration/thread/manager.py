@@ -89,30 +89,29 @@ class ConversationThreadManager:
         group_id: str | None = None,
         name: str | None = None,
         first_prompt: str | None = None,
-        enforce_owner: bool = False,
     ) -> Thread:
         """
         Load the thread for a session_id, creating it on the session's first request.
         group_id is applied only at creation and ignored for existing threads. name
         applies on any request: at creation it is used verbatim, and on an existing
         thread it renames it; either way an explicitly supplied name locks the name
-        against automatic naming. A blank name is ignored.
+        against automatic naming. A blank name is ignored. An existing thread is one
+        user's conversation: a request from another user neither loads nor renames it.
         :param session_id: Unique identifier for the thread (same as the session id).
-        :param user_id: Owning user id, stored at creation.
+        :param user_id: Owning user id, stored at creation and matched on every later request.
         :param group_id: Optional group/project scope, fixed at creation.
         :param name: Optional display name; when given it sets/renames the thread
                      name and locks it, otherwise the naming strategy derives one
                      from first_prompt at creation.
         :param first_prompt: The prompt of the creating request, used by the naming strategy.
-        :param enforce_owner: Refuse a thread another user owns, including one a concurrent request
-                              created first (every store's ``create`` returns the existing thread).
         :return: The existing (possibly renamed) or newly created thread.
-        :raises PermissionError: If ``enforce_owner`` is set and the thread belongs to another user.
+        :raises PermissionError: If the thread belongs to another user, including one a concurrent
+            request created first (every store's ``create`` returns the existing thread).
         """
         name = (name or "").strip() or None
         thread = self._store.load_metadata(session_id)
         if thread is not None:
-            self._check_owner(thread, user_id, enforce_owner)
+            self._check_owner(thread, user_id)
             # Skip the store write when the resent name is already in place and locked.
             if name is not None and (name != thread.name or not thread.name_locked):
                 self._log.info(f"Renaming thread for session {session_id}")
@@ -127,13 +126,13 @@ class ConversationThreadManager:
         )
         self._log.info(f"Creating thread for session {session_id} (user {user_id})")
         created = self._store.create(thread)
-        self._check_owner(created, user_id, enforce_owner)
+        self._check_owner(created, user_id)
         return created
 
     @staticmethod
-    def _check_owner(thread: Thread, user_id: str, enforce_owner: bool) -> None:
-        """:raises PermissionError: If ``enforce_owner`` is set and ``thread`` belongs to another user."""
-        if enforce_owner and thread.user_id != user_id:
+    def _check_owner(thread: Thread, user_id: str) -> None:
+        """:raises PermissionError: If ``thread`` belongs to another user."""
+        if thread.user_id != user_id:
             raise PermissionError(f"Thread {thread.session_id} is not owned by user {user_id}")
 
     def append_message(
@@ -204,7 +203,7 @@ class ConversationThreadManager:
         Load a thread's metadata by session_id, optionally enforcing ownership.
         Messages are fetched separately and paginated via get_messages.
         :param session_id: Unique identifier for the thread.
-        :param user_id: When provided (resolved by an Authoriser), the thread's
+        :param user_id: When provided (the caller's principal subject), the thread's
                         owner must match or a PermissionError is raised.
         :return: The thread metadata, or None if it does not exist.
         :raises PermissionError: If user_id is provided and does not own the thread.

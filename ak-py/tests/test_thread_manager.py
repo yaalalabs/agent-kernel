@@ -64,12 +64,21 @@ class TestConversationThreadManager:
         assert created.user_id == "u1"
         assert created.group_id == "g1"
 
-        # Second call: user_id/group_id are fixed at creation; only an explicit name applies
-        loaded = thread_enabled.get_or_create_thread("s1", "u2", group_id="g2", name="other")
+        # Second call: group_id is fixed at creation; only an explicit name applies
+        loaded = thread_enabled.get_or_create_thread("s1", "u1", group_id="g2", name="other")
         assert loaded.user_id == "u1"
         assert loaded.group_id == "g1"
         assert loaded.name == "other"
         assert loaded.name_locked is True
+
+    def test_get_or_create_refuses_another_users_thread(self, thread_enabled):
+        """A thread is one user's conversation: a second user neither loads nor renames it (#603)."""
+        thread_enabled.get_or_create_thread("s1", "u1", first_prompt="Hello")
+
+        with pytest.raises(PermissionError, match="Thread s1 is not owned by user u2"):
+            thread_enabled.get_or_create_thread("s1", "u2", name="other")
+
+        assert thread_enabled.get_thread("s1").name == "Hello"
 
     def test_explicit_name_wins_over_prompt(self, thread_enabled):
         thread = thread_enabled.get_or_create_thread("s1", "u1", name="My thread", first_prompt="Hello world")
@@ -380,26 +389,21 @@ class TestLLMThreadNaming:
         assert "agentkernel[thread]" in caplog.text
 
 
-class TestEnforceOwner:
-    """`enforce_owner` refuses another user's thread, including one a concurrent request created first."""
+class TestOwnerCheck:
+    """`get_or_create_thread` refuses another user's thread, including one a concurrent request created first (#836)."""
 
     def test_a_loaded_thread_of_another_user_is_refused_before_any_rename(self, thread_enabled):
         thread_enabled.get_or_create_thread("s1", "owner", first_prompt="mine")
         with pytest.raises(PermissionError):
-            thread_enabled.get_or_create_thread("s1", "intruder", name="hijacked", enforce_owner=True)
+            thread_enabled.get_or_create_thread("s1", "intruder", name="hijacked")
         assert thread_enabled.get_thread("s1").name != "hijacked"
 
     def test_the_race_loser_is_refused(self, thread_enabled, monkeypatch):
         thread_enabled.get_or_create_thread("s1", "owner", first_prompt="mine")
         monkeypatch.setattr(thread_enabled._store, "load_metadata", lambda session_id: None)
         with pytest.raises(PermissionError):
-            thread_enabled.get_or_create_thread("s1", "intruder", first_prompt="theirs", enforce_owner=True)
-
-    def test_off_by_default(self, thread_enabled, monkeypatch):
-        thread_enabled.get_or_create_thread("s1", "owner", first_prompt="mine")
-        monkeypatch.setattr(thread_enabled._store, "load_metadata", lambda session_id: None)
-        assert thread_enabled.get_or_create_thread("s1", "intruder", first_prompt="theirs").user_id == "owner"
+            thread_enabled.get_or_create_thread("s1", "intruder", first_prompt="theirs")
 
     def test_the_owner_is_let_through(self, thread_enabled):
         thread_enabled.get_or_create_thread("s1", "owner", first_prompt="mine")
-        assert thread_enabled.get_or_create_thread("s1", "owner", enforce_owner=True).user_id == "owner"
+        assert thread_enabled.get_or_create_thread("s1", "owner").user_id == "owner"
