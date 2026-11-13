@@ -313,11 +313,12 @@ class ScheduleManager:
         """Check that a run claiming to be a task's occurrence is entitled to say so.
 
         The trigger metadata (``scheduled_task_id``) rides on the ordinary chat request that
-        providers deliver, and the chat request is a client-bindable model — so any caller can name
-        any task id. A genuine trigger always matches, because the manager froze the owner's
-        principal into the body; a forged one names a task it does not own, and would otherwise
-        inflate another user's occurrence counters and complete their one-time task out from under
-        them (after which no amendment or cancellation is accepted).
+        providers deliver. The public chat routes reject it (``ChatRunRequest``), but a custom route
+        parsing ``BaseRunRequest`` still accepts it, so a caller there can name any task id. A genuine
+        trigger always matches, because the manager froze the owner's principal into the body; a
+        forged one names a task it does not own, and would otherwise inflate another user's occurrence
+        counters and complete their one-time task out from under them (after which no amendment or
+        cancellation is accepted).
 
         Stricter than :meth:`_check_ownership`: an absent or anonymous principal is a mismatch
         rather than an unauthenticated caller to wave through, since running anonymous would
