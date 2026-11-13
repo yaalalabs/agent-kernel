@@ -80,7 +80,6 @@ name = "agentkernel"
 version = "0.9.5"
 source = { editable = "." }
 dependencies = [
-    { name = "deprecated" },
     { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
     { name = "pydantic", version = "2.14.3", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-11-agentkernel-crewai' or extra == 'extra-11-agentkernel-test'" },
     { name = "pydantic-settings" },
@@ -313,7 +312,6 @@ requires-dist = [
     { name = "cryptography", marker = "extra == 'auth'", specifier = ">=42.0,<51.0.0" },
     { name = "daytona", marker = "extra == 'daytona'", specifier = ">=0.198.0,<0.199" },
     { name = "deepeval", marker = "extra == 'test'", specifier = ">=4.1.4,<5.0.0" },
-    { name = "deprecated", specifier = ">=1.2.18,<2.0.0" },
     { name = "docker", marker = "extra == 'sandbox-docker'", specifier = ">=7.0.0,<8.0.0" },
     { name = "e2b-code-interpreter", marker = "extra == 'e2b'", specifier = ">=2.8.0,<3.0.0" },
     { name = "fastapi", marker = "extra == 'a2a'", specifier = ">=0.118.0,<0.142.0" },
