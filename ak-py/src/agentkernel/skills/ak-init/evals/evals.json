@@ -1,7 +1,7 @@
 {
   "skill": "ak-init",
   "description": "Evaluations for the ak-init (project scaffolding) skill",
-  "version": "0.9.5",
+  "version": "0.10.0",
   "evals": [
     {
       "id": "init-openai-cli",
@@ -200,7 +200,7 @@
         "[project]",
         "requires-python",
         "agentkernel[",
-        ">=0.9.5"
+        ">=0.10.0"
       ]
     }
   ]

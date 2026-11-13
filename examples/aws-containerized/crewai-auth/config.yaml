@@ -6,6 +6,12 @@ session:
   redis:
     prefix: "ak:crewai-auth-ecs:example:"
     url: "redis://ak-openai-serverless-dev-examples-redis.rhjs7r.0001.use2.cache.amazonaws.com:6379"
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX
+
 # Who may call. Every REST route runs the identity dependency, which authenticates the bearer token
 # through this provider and puts the resulting principal on the request. The static provider maps one
 # credential to the `demo-user` principal; the value is never written here: Terraform passes it to the

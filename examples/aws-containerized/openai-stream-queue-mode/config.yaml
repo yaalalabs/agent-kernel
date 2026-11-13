@@ -22,6 +22,11 @@ execution:
       url: "" # injected by Terraform via AK_EXECUTION__QUEUES__OUTPUT__URL
       max_receive_count: 4
 
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX
+
 # Who may connect. The $connect handshake validates the `?token=` query parameter through this
 # provider and keys the connection by the principal's subject; WebSocket mode refuses to start
 # without the block. The static provider maps one credential to the `demo-user` principal. The
