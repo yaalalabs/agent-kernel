@@ -4,7 +4,8 @@ description: >
   Step-by-step guide for adding a new observability/tracing provider to Agent Kernel.
   Use this skill when you need to integrate a new tracing backend (beyond Langfuse,
   OpenLLMetry/Traceloop, Pydantic Logfire, and AWS CloudWatch). Covers implementing the BaseTrace interface, creating
-  framework-specific traced runners, configuration, and testing.
+  framework-specific traced runners, tracing realtime voice calls (traced realtime runners and the optional
+  openai_realtime/adk_realtime methods), configuration, and testing.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -19,7 +20,7 @@ This guide walks through adding a new observability/tracing provider to Agent Ke
 
 Agent Kernel's tracing system:
 
-1. **`BaseTrace`** (`trace/base.py`) defines the interface — one method per supported framework that returns a traced `Runner` (or `None`)
+1. **`BaseTrace`** (`trace/base.py`) defines the interface — one method per supported framework that returns a traced `Runner` (or `None`), plus two optional, non-abstract methods, `openai_realtime()` and `adk_realtime()` (#928), that return a traced **realtime runner class** (default `None`: a call is not traced). A traced realtime runner subclasses `TracedRealtimeRunner` before the framework's realtime runner and implements `_start_call_span` over a `RealtimeCallSpan` (opened around `connect`, `fail`, `end`); a provider whose backend exports every OpenTelemetry span can use `trace/otel.py`'s `OTelRealtimeCallSpan` and override `_tagged()` for its session tagging, but Langfuse needs its own client's observation because its export filter drops a span with no `gen_ai.*` attribute from a foreign tracer
 2. **`Trace`** (`trace/trace.py`) is a factory that creates the appropriate trace instance based on `AKConfig.trace.type`
 3. Each **framework Module** checks for a trace runner at initialization — if tracing is enabled, it uses the traced runner instead of the default
 4. Traced runners **extend the base framework runner** and wrap execution with spans/traces
@@ -183,6 +184,36 @@ class <Provider>LangGraphRunner(LangGraphRunner):
 
 Follow the same pattern for CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and Claude Agent SDK runners (see `trace/langfuse/smolagents.py` and `trace/openllmetry/smolagents.py` for reference).
 
+#### Realtime call tracing (optional, OpenAI and ADK)
+
+A realtime call (`execution.mode: realtime`) runs a native live session, not `Runner.run`, so the runners above never see it. A provider traces calls with one more class per framework and two optional methods on its main class (#928). Skip it and a call is simply untraced, as for a bring-your-own tracer.
+
+```python
+# ak-py/src/agentkernel/trace/<provider>/openai.py  (and adk.py, with GoogleADKRealtimeRunner)
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
+from ...framework.openai.openai import OpenAIRealtimeRunner
+
+
+class <Provider>OpenAIRealtimeRunner(TracedRealtimeRunner, OpenAIRealtimeRunner):  # traced base first
+    SPAN_NAME = "Agent Kernel OpenAI realtime"
+
+    def _start_call_span(self, session, agent) -> RealtimeCallSpan:
+        return <Provider>RealtimeCallSpan(self.SPAN_NAME, session.id)  # tagged as this provider's run() span is
+
+
+# ak-py/src/agentkernel/trace/<provider>/<provider>.py
+def openai_realtime(self):
+    from .openai import <Provider>OpenAIRealtimeRunner
+    return <Provider>OpenAIRealtimeRunner  # a class: the pool builds it with no arguments, once per call
+```
+
+- `TracedRealtimeRunner` opens the span around `connect`, marks it failed on a raising connect or an `error` event, and ends it once in `disconnect`; you write only the span.
+- `RealtimeCallSpan` has `opened()` (a context manager that starts the span and makes it current, with the session tagging, so the native session's tasks inherit it), `fail(message)` and `end()`. The span outlives the task that opens it, so it cannot be one `with` block.
+- A backend that exports every OpenTelemetry span of the provider it installs (Logfire, OpenLLMetry, CloudWatch) subclasses `trace/otel.py`'s `OTelRealtimeCallSpan` and overrides `_tagged()` for its session tagging. Do not use a plain OTel span where the backend filters spans: Langfuse drops one with no `gen_ai.*` attribute from a foreign tracer (`langfuse/_client/span_filter.py`), so it uses its client's observation with `end_on_exit=False`.
+- The `Module` picks the class (`Module._traces_realtime`): only in realtime mode with `trace.enabled`, and never over a class the app passed.
+- Native spans: ADK's own `invoke_agent` / `execute_tool` nest under the call span; the OpenAI SDK's realtime session creates none, so an OpenAI call shows one span with no model or tool spans inside (an SDK limit, not rebuilt by AK).
+- Hooks run outside the span, as post-hooks run outside a `run()` span.
+
 ### 4. Update the `__init__.py`
 
 ```python
@@ -315,6 +346,7 @@ Create `ak-py/tests/test_trace_<provider>.py`, and add a missing-extra test to `
 - Test that traced runners properly wrap execution with spans
 - Test that errors are recorded in spans
 - Use mocks for the tracing client
+- For realtime call tracing: the provider returns its two classes (non-abstract, `SPAN_NAME` set), and its call span carries the session id as its `run()` span does; `tests/test_trace_realtime.py` holds the generic cases (`TracedRealtimeRunner`, `OTelRealtimeCallSpan` on a local provider, `Module` selection, ADK spans nesting under the call span), so a provider adds only its own tagging and class checks
 
 ### 11. Add Documentation
 
@@ -341,13 +373,14 @@ class OpenAIModule(Module):
         self.load(agents)
 ```
 
-This means tracing is **transparent** — users don't change their agent code, they just add `trace` config.
+This means tracing is **transparent** — users don't change their agent code, they just add `trace` config. `OpenAIModule` and `GoogleADKModule` also pick the tracer's realtime class (`tracer.openai_realtime()` / `adk_realtime()`) when `execution.mode` is `realtime`, asking `Trace.get()` once per module.
 
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/trace/<provider>/` directory with `__init__.py` and main class
 - [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK)
 - [ ] Optional: `fetch_spans` on the main class and `<provider>/fetch.py` (step 6), with a `TraceFetchContract` subclass where the backend can be faked
+- [ ] Optional: realtime call tracing: `openai_realtime()` / `adk_realtime()` on the main class and a `<Provider>OpenAIRealtimeRunner` / `<Provider>ADKRealtimeRunner` (each a `TracedRealtimeRunner` over a `RealtimeCallSpan`)
 - [ ] Registration in `trace/trace.py` factory
 - [ ] Configuration via `type: "<provider>"` in `config.yaml`
 - [ ] Optional dependencies in `pyproject.toml`

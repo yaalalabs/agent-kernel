@@ -585,6 +585,21 @@ The batch span processor normally exports in the background, but Lambda freezes 
 2. Go to **Application Signals → Transaction Search** and filter spans by `session.id` or by service `AgentKernel`. Open a trace to see the run span with its agent, LLM, and tool spans nested under it.
 3. Optionally, check **GenAI Observability**. Agent Kernel sets the `aws.service.type=gen_ai_agent` resource attribute and `session.id` that the AWS Distro for OpenTelemetry sets, but AWS does not document whether its agent and session views list agents that export without the distro, so treat Transaction Search as the supported view.
 
+## Realtime Calls
+
+With `trace.enabled: true` and `execution.mode: realtime`, each live call is one span named `Agent Kernel OpenAI realtime` or `Agent Kernel ADK realtime`, opened when the native session connects and ended when the call closes. Every built-in provider tags it with the session id the way it tags a normal run's span (Langfuse `session_id` with the `agentkernel` tag, Logfire and OpenLLMetry `session_id`, CloudWatch `session.id`). A native error during the call, or a failed connect, marks the span as an error. Text-mode apps are unchanged.
+
+What is inside the call span depends on the framework:
+
+| Framework | Inside the call span |
+|---|---|
+| Google ADK | ADK's own spans: one `invoke_agent <agent>` for the call and an `execute_tool <tool>` for each tool call, as children of the call span |
+| OpenAI Agents SDK | Nothing: the SDK's realtime session creates no spans, so a call shows as one span with its session, duration and errors, but no model or tool spans |
+
+OpenAI offers its own tracing for realtime sessions, shown in OpenAI's dashboard rather than your backend. Turn it on through the agent's run options (the `tracing` model setting inside `config`).
+
+Hooks run outside the call span, as post-hooks run outside a normal run's span. A bring-your-own tracer adds realtime spans by implementing `BaseTrace.openai_realtime()` and `BaseTrace.adk_realtime()`, which return a `TracedRealtimeRunner` subclass; both are optional, and by default a call is not traced.
+
 ## Fetching Spans Back
 
 Traces stay in your provider's cloud, but you can read them back into Python (for example, to run evaluations
