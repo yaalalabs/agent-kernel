@@ -1609,14 +1609,14 @@ Each Lambda package must include a `config.yaml`. Most runtime values (`executio
 ### Azure
 
 - Azure CLI logged in (`az login`)
-- Terraform >= 1.9.5
+- Terraform >= 1.9.5, <= 1.16.7
 - Resource group and subscription permissions
 - Storage for remote Terraform state (optional but recommended)
 
 ### GCP
 
 - GCP CLI configured (`gcloud auth application-default login`)
-- Terraform >= 1.9.5
+- Terraform >= 1.9.5, <= 1.16.7
 - Docker installed (for local image building and push to Artifact Registry)
 - An existing GCP project with appropriate permissions
 - Required APIs enabled: Cloud Run, API Gateway, Artifact Registry, VPC Access
