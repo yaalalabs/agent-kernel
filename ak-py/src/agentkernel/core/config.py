@@ -159,14 +159,23 @@ class _MCPConfig(BaseModel):
 
 class _SlackConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Slack interactions")
+    bot_token: str = Field(
+        default="",
+        description="Slack bot token. When empty, resolved through SecretManager under bot_token_key (the environment, then the configured secret provider)",
+    )
     bot_token_key: str = Field(
         default="SLACK_BOT_TOKEN",
-        description="Secret key (an environment-variable-style name) holding the Slack bot token, "
+        description="Secret key (an environment-variable-style name) holding the Slack bot token when bot_token is empty, "
         "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    signing_secret: str = Field(
+        default="",
+        description="Slack signing secret for request verification. When empty, resolved through SecretManager under signing_secret_key "
+        "(the environment, then the configured secret provider)",
     )
     signing_secret_key: str = Field(
         default="SLACK_SIGNING_SECRET",
-        description="Secret key (an environment-variable-style name) holding the Slack signing secret, "
+        description="Secret key (an environment-variable-style name) holding the Slack signing secret when signing_secret is empty, "
         "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     agent_acknowledgement: str = Field(
@@ -348,14 +357,22 @@ class _TeamsConfig(BaseModel):
 
 class _GmailConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Gmail")
+    client_id: str = Field(
+        default="",
+        description="Gmail OAuth2 client ID. When empty, resolved through SecretManager under client_id_key (the environment, then the configured secret provider)",
+    )
     client_id_key: str = Field(
         default="AK_GMAIL__CLIENT_ID",
-        description="Secret key (an environment-variable-style name) holding the Gmail OAuth2 client ID, "
+        description="Secret key (an environment-variable-style name) holding the Gmail OAuth2 client ID when client_id is empty, "
         "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    client_secret: str = Field(
+        default="",
+        description="Gmail OAuth2 client secret. When empty, resolved through SecretManager under client_secret_key (the environment, then the configured secret provider)",
     )
     client_secret_key: str = Field(
         default="AK_GMAIL__CLIENT_SECRET",
-        description="Secret key (an environment-variable-style name) holding the Gmail OAuth2 client secret, "
+        description="Secret key (an environment-variable-style name) holding the Gmail OAuth2 client secret when client_secret is empty, "
         "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")

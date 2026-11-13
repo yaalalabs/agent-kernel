@@ -51,11 +51,19 @@ class SlackInboundAdapter(InboundAdapter):
 
         # Passed explicitly so both resolve through the secret provider; Bolt would read only the environment.
         # Checked here too, because Bolt's own errors name only the environment variable.
+        # An empty field falls back to the secret provider, under the key its *_key field names.
         secrets = SecretManager.current()
-        token_key, signing_secret_key = config.slack.bot_token_key, config.slack.signing_secret_key
-        token = secrets.get(token_key, default=None)
-        signing_secret = secrets.get(signing_secret_key, default=None)
-        missing = [secrets.describe(key) for key, value in ((token_key, token), (signing_secret_key, signing_secret)) if not value]
+        slack = config.slack
+        token = slack.bot_token or secrets.get(slack.bot_token_key, default=None)
+        signing_secret = slack.signing_secret or secrets.get(slack.signing_secret_key, default=None)
+        missing = [
+            secrets.describe(key, field)
+            for field, key, value in (
+                ("slack.bot_token", slack.bot_token_key, token),
+                ("slack.signing_secret", slack.signing_secret_key, signing_secret),
+            )
+            if not value
+        ]
         if missing:
             message = f"Incomplete Slack configuration: set {'; '.join(missing)}."
             self._log.error(message)
@@ -246,7 +254,7 @@ class SlackOutboundAdapter(OutboundAdapter):
     def __init__(self):
         config = AKConfig.get().slack
         self._acknowledgement = config.agent_acknowledgement or None
-        self._token = SecretManager.current().get(config.bot_token_key, default=None)
+        self._token = config.bot_token or SecretManager.current().get(config.bot_token_key, default=None)
 
     async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         """Post the "thinking" message, if one is configured, and remember where it went."""

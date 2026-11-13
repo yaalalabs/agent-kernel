@@ -10,8 +10,9 @@ session:
 # The agent that answers Slack messages.
 slack:
   agent: assistant
-  # Keys the Slack credentials are read from through the secret manager: the environment first,
-  # then SSM /ak/<prefix>/<key lowercased> (the `secret:` block below; see the README).
+  # Keys the Slack credentials are read from through the secret manager when the matching field
+  # (bot_token, ...) is unset: the environment first, then SSM /ak/<prefix>/<key lowercased>
+  # (the `secret:` block below; see the README).
   bot_token_key: SLACK_BOT_TOKEN
   signing_secret_key: SLACK_SIGNING_SECRET
 

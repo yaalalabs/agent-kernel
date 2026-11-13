@@ -553,24 +553,44 @@ class TestConfigFieldsResolveLazily:
         finally:
             AKConfig._reset()
 
-    def test_configured_value_wins_without_asking_the_provider(self, monkeypatch, tmp_path):
-        """A value from config.yaml is used as-is; only an empty field falls back."""
-        from agentkernel.integration.whatsapp.adapter import _WhatsAppClient
-
+    @pytest.mark.parametrize(
+        ("config_yaml", "resolve"),
+        [
+            pytest.param(
+                "whatsapp:\n  access_token: from-yaml\n  verify_token: from-yaml\n  app_secret: from-yaml\n  phone_number_id: '123'\n",
+                _whatsapp("_access_token"),
+                id="whatsapp",
+            ),
+            pytest.param("slack:\n  bot_token: from-yaml\n  signing_secret: from-yaml\n", _slack_inbound_token, id="slack-bot-token"),
+            pytest.param("slack:\n  bot_token: from-yaml\n  signing_secret: from-yaml\n", _slack_inbound_signing_secret, id="slack-signing-secret"),
+            pytest.param("slack:\n  bot_token: from-yaml\n", _slack_outbound_token, id="slack-outbound"),
+            pytest.param("gmail:\n  client_id: from-yaml\n  client_secret: from-yaml\n", _gmail("_client_id"), id="gmail-client-id"),
+            pytest.param("gmail:\n  client_id: from-yaml\n  client_secret: from-yaml\n", _gmail("_client_secret"), id="gmail-client-secret"),
+        ],
+    )
+    def test_configured_value_wins_without_asking_the_provider(self, config_yaml, resolve, monkeypatch, tmp_path):
+        """A value from config.yaml is used as-is; the secret key is looked up only when the field is empty."""
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("whatsapp:\n  access_token: from-yaml\n  verify_token: from-yaml\n  app_secret: from-yaml\n  phone_number_id: '123'\n")
+        config_file.write_text(config_yaml)
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(config_file))
-        for name in ("AK_WHATSAPP__ACCESS_TOKEN", "AK_WHATSAPP__VERIFY_TOKEN", "AK_WHATSAPP__APP_SECRET"):
+        for name in (
+            "AK_WHATSAPP__ACCESS_TOKEN",
+            "AK_WHATSAPP__VERIFY_TOKEN",
+            "AK_WHATSAPP__APP_SECRET",
+            "SLACK_BOT_TOKEN",
+            "SLACK_SIGNING_SECRET",
+            "AK_GMAIL__CLIENT_ID",
+            "AK_GMAIL__CLIENT_SECRET",
+        ):
             monkeypatch.delenv(name, raising=False)
-        provider = _DictSecretProvider({"AK_WHATSAPP__ACCESS_TOKEN": PROVIDER_VALUE})
+        provider = _DictSecretProvider({})
         _install(monkeypatch, provider)
         AKConfig._reset()
         try:
-            client = _WhatsAppClient()
+            assert resolve(monkeypatch) == "from-yaml"
         finally:
             AKConfig._reset()
 
-        assert client._access_token == "from-yaml"
         assert provider.calls == []
 
 

@@ -197,8 +197,10 @@ secret:
 slack:
   agent: ""  # Default agent for Slack
   agent_acknowledgement: ""  # Acknowledgement message
-  bot_token_key: "SLACK_BOT_TOKEN"  # Secret key holding the bot token
-  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key holding the signing secret
+  bot_token: ""  # Bot token
+  bot_token_key: "SLACK_BOT_TOKEN"  # Secret key used when bot_token is empty
+  signing_secret: ""  # Signing secret for request verification
+  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key used when signing_secret is empty
 
 whatsapp:
   agent: ""  # Default agent for WhatsApp
@@ -885,8 +887,10 @@ mcp:
 slack:
   agent: ""                     # Default agent for Slack interactions
   agent_acknowledgement: ""     # Acknowledgement message when message received
-  bot_token_key: "SLACK_BOT_TOKEN"            # Secret key holding the Slack bot token
-  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key holding the Slack signing secret
+  bot_token: ""                 # Slack bot token
+  bot_token_key: "SLACK_BOT_TOKEN"  # Secret key used when bot_token is empty
+  signing_secret: ""            # Slack signing secret for request verification
+  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key used when signing_secret is empty
 
 whatsapp:
   agent: ""                     # Default agent for WhatsApp interactions

@@ -236,8 +236,6 @@ needs it:
 | Component | Key | `aws_ssm` parameter |
 | --- | --- | --- |
 | Walled AI guardrail | `WALLED_API_KEY` | `/ak/<prefix>/walled_api_key` |
-| Slack integration (webhook verification and replies) | the keys named by `slack.bot_token_key`, `slack.signing_secret_key` (defaults `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`) | `/ak/<prefix>/slack_bot_token`, `/ak/<prefix>/slack_signing_secret` |
-| Gmail integration | the keys named by `gmail.client_id_key`, `gmail.client_secret_key` (defaults `AK_GMAIL__CLIENT_ID`, `AK_GMAIL__CLIENT_SECRET`) | `/ak/<prefix>/ak_gmail__client_id`, `/ak/<prefix>/ak_gmail__client_secret` |
 | Neo4j knowledge base (no `password` argument) | `NEO4J_PASSWORD` | `/ak/<prefix>/neo4j_password` |
 | Starburst knowledge base (no `password` argument) | `STARBURST_PASSWORD` | `/ak/<prefix>/starburst_password` |
 | E2B sandbox provider | the key named by `api_key_env` (default `E2B_API_KEY`) | `/ak/<prefix>/e2b_api_key` |
@@ -250,17 +248,19 @@ needs it:
 **Secret-valued configuration fields.** A value set in `config.yaml` or through the field's `AK_*`
 environment variable is used as-is. When the field is empty, it is resolved through `SecretManager` at the
 point of use (never while `AKConfig` loads, since `SecretManager` is built from it). The messaging
-integrations look it up under the key their `<field>_key` field names (`whatsapp.access_token_key`,
-`telegram.bot_token_key`, `teams.app_password_key`, ...), which defaults to the field's own `AK_*` name; the
-LiveKit and WebSocket fields always use their `AK_*` name:
+integrations look it up under the key their `<field>_key` field names (`slack.bot_token_key`,
+`whatsapp.access_token_key`, `teams.app_password_key`, ...), which defaults to the key below; the LiveKit
+and WebSocket fields always use their `AK_*` name:
 
 | Field | Default key | `aws_ssm` parameter |
 | --- | --- | --- |
+| `slack.bot_token`, `signing_secret` | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` | `/ak/<prefix>/slack_bot_token`, `/ak/<prefix>/slack_signing_secret` |
 | `whatsapp.verify_token`, `access_token`, `app_secret` | `AK_WHATSAPP__VERIFY_TOKEN`, `AK_WHATSAPP__ACCESS_TOKEN`, `AK_WHATSAPP__APP_SECRET` | `/ak/<prefix>/ak_whatsapp__verify_token`, … |
 | `messenger.verify_token`, `access_token`, `app_secret` | `AK_MESSENGER__VERIFY_TOKEN`, `AK_MESSENGER__ACCESS_TOKEN`, `AK_MESSENGER__APP_SECRET` | `/ak/<prefix>/ak_messenger__verify_token`, … |
 | `instagram.verify_token`, `access_token`, `app_secret` | `AK_INSTAGRAM__VERIFY_TOKEN`, `AK_INSTAGRAM__ACCESS_TOKEN`, `AK_INSTAGRAM__APP_SECRET` | `/ak/<prefix>/ak_instagram__verify_token`, … |
 | `telegram.bot_token`, `webhook_secret` | `AK_TELEGRAM__BOT_TOKEN`, `AK_TELEGRAM__WEBHOOK_SECRET` | `/ak/<prefix>/ak_telegram__bot_token`, `/ak/<prefix>/ak_telegram__webhook_secret` |
 | `teams.app_password` | `AK_TEAMS__APP_PASSWORD` | `/ak/<prefix>/ak_teams__app_password` |
+| `gmail.client_id`, `client_secret` | `AK_GMAIL__CLIENT_ID`, `AK_GMAIL__CLIENT_SECRET` | `/ak/<prefix>/ak_gmail__client_id`, `/ak/<prefix>/ak_gmail__client_secret` |
 | `livekit.api_key`, `api_secret` | `AK_LIVEKIT__API_KEY`, `AK_LIVEKIT__API_SECRET` | `/ak/<prefix>/ak_livekit__api_key`, `/ak/<prefix>/ak_livekit__api_secret` |
 | `websocket_api.push_auth_token` | `AK_WEBSOCKET_API__PUSH_AUTH_TOKEN` | `/ak/<prefix>/ak_websocket_api__push_auth_token` |
 

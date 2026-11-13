@@ -72,7 +72,7 @@ export AK_CLIENT_NAME="Your Name"                 # Name for signatures
 export AK_GMAIL_SIGN_OFF="Best regards"           # Sign-off format
 ```
 
-> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials). The keys they are read under are set by `gmail.client_id_key` and `client_secret_key` in `config.yaml`, defaulting to the names above.
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials). The keys they are read under are set by `gmail.client_id_key` and `client_secret_key` in `config.yaml`, defaulting to the names above; `gmail.client_id` and `client_secret`, when set, are used first.
 
 **Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
 

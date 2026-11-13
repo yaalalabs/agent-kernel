@@ -75,13 +75,17 @@ class _GmailService:
     def __init__(self):
         config = AKConfig.get().gmail
         self._token_file = config.token_file or "token.pickle"
+        # An empty field falls back to the secret provider, under the key its *_key field names.
         secrets = SecretManager.current()
-        self._client_id = secrets.get(config.client_id_key, default=None)
-        self._client_secret = secrets.get(config.client_secret_key, default=None)
+        self._client_id = config.client_id or secrets.get(config.client_id_key, default=None)
+        self._client_secret = config.client_secret or secrets.get(config.client_secret_key, default=None)
         self._redirect_uris = os.environ.get("AK_GMAIL__REDIRECT_URIS", "http://localhost").split(",")
         missing = [
-            secrets.describe(key)
-            for key, value in ((config.client_id_key, self._client_id), (config.client_secret_key, self._client_secret))
+            secrets.describe(key, field)
+            for field, key, value in (
+                ("gmail.client_id", config.client_id_key, self._client_id),
+                ("gmail.client_secret", config.client_secret_key, self._client_secret),
+            )
             if not value
         ]
         if missing:
