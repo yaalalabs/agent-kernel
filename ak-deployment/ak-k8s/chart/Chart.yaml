@@ -6,9 +6,9 @@ name: agent-kernel
 # scripts/update_chart_versions.py pins the versions in it to each release.
 description: >-
   Agent Kernel queue-execution pipeline on Kubernetes. Install with Helm, not docker pull:
-  helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 --untar
+  helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.0 --untar
   (unpacks the flavor values files), then
-  helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5
+  helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.0
   -f agent-kernel/values-<flavor>.yaml (flavors: dev, baremetal, eks).
   Deploys an io-handler Deployment (Request + Response Handler), an agent-runner Deployment,
   and an optional WebSocket gateway tier, with condition-gated Valkey and NATS backing
@@ -18,8 +18,8 @@ type: application
 # scripts/update_chart_versions.py pins them to each release before the tag is cut, and
 # publish-chart.yaml stamps them from the tag at package time as well, so a checkout renders
 # the same chart labels and NOTES as the published artifact.
-version: 0.9.5
-appVersion: "0.9.5"
+version: 0.10.0
+appVersion: "0.10.0"
 kubeVersion: ">=1.29.0-0"
 home: https://github.com/yaalalabs/agent-kernel
 sources:
