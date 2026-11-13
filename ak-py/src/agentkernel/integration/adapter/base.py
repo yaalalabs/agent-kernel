@@ -285,8 +285,8 @@ class StatefulEdgeAdapter(ABC):
     async def start(self) -> None:
         """Connect and run the edge's loop until the process shuts down.
 
-        The edge runner calls it again on the same instance when it raises (up to ``_EdgeRunner.START_ATTEMPTS`` times), so it must
-        begin from a clean state: reset anything an earlier run left behind.
+        The edge runner calls it once per instance: an edge that fails to start is not retried, and the platform's next
+        lifecycle webhook builds a new one.
         """
 
     @abstractmethod
@@ -310,13 +310,13 @@ class StatefulEdgeAdapter(ABC):
 
         self._producer = IntegrationProducer()
 
-    def _enqueue(self, request: AgentRequestUnion | None = None, user_id: str | None = None, namespace: str | None = None) -> InboundRequest:
+    def _enqueue(self, request: AgentRequestUnion, user_id: str | None = None, namespace: str | None = None) -> InboundRequest:
         """Build the normalized inbound request for one platform message.
 
         The caller hands it to :meth:`IntegrationProducer.enqueue`, which stamps the integration
         and reply-context attributes, so every integration shares one producer.
 
-        :param request: The request the participant made; ``None`` builds the empty request that carries the end-of-session control.
+        :param request: The request the participant made.
         :param user_id: The participant the edge asserts made it, which the producer turns into a
             ``realtime:`` principal; None when the edge cannot name one (#603).
         :param namespace: The scope ``user_id`` is unique within, such as the edge's API key id.
@@ -325,12 +325,22 @@ class StatefulEdgeAdapter(ABC):
         return InboundRequest(
             session_id=self.session_id,
             request_id=str(uuid.uuid4()),
-            requests=[request] if request is not None else [],
+            requests=[request],
             agent=self.agent,
             user_id=user_id,
             namespace=namespace,
             reply_context={"session_id": self.session_id},
-            end_session=request is None,
+        )
+
+    def _enqueue_end(self) -> InboundRequest:
+        """Build the end-of-session control for this edge's session: no requests, and the realtime session closes at once."""
+        return InboundRequest(
+            session_id=self.session_id,
+            request_id=str(uuid.uuid4()),
+            requests=[],
+            agent=self.agent,
+            reply_context={"session_id": self.session_id},
+            end_session=True,
         )
 
     def _enqueue_audio(self, raw_bytes: bytes) -> AgentRequestVoice:

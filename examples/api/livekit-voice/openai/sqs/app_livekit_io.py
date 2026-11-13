@@ -1,6 +1,5 @@
 import hmac
 import logging
-import os
 
 from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
 from agentkernel.integration.livekit import LiveKitLifecycleAdapter
@@ -38,7 +37,7 @@ class LiveKitTokenHandler(RESTRequestHandler):
         if not hmac.compare_digest(request.headers.get("x-livekit-token-secret", ""), secret):
             raise HTTPException(status_code=401, detail="Unauthorized")
         allowed = {
-            name.strip() for name in os.environ.get("LIVEKIT_ALLOWED_ROOMS", "call_01").split(",") if name.strip()
+            name.strip() for name in SecretManager.current().get("LIVEKIT_ALLOWED_ROOMS", "call_01").split(",") if name.strip()
         }
         if room not in allowed:
             raise HTTPException(status_code=403, detail=f"Room '{room}' is not in LIVEKIT_ALLOWED_ROOMS")

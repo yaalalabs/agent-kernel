@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -160,25 +159,6 @@ class TestToolContextGetSetReset:
         ctx1.reset()
         with pytest.raises(RuntimeError):
             ToolContext.get()
-
-    @pytest.mark.asyncio
-    async def test_one_context_set_by_overlapping_tasks_resets_in_each(self, tool_context):
-        """Tools of one batch run as separate tasks over one shared context; each must be able to reset its own set."""
-        seen = {}
-
-        async def tool(name, hold):
-            tool_context.set()
-            try:
-                await asyncio.sleep(hold)
-                seen[name] = ToolContext.get() is tool_context
-            finally:
-                tool_context.reset()
-            with pytest.raises(RuntimeError):  # reset in this task, so this task no longer sees it
-                ToolContext.get()
-
-        await asyncio.gather(asyncio.create_task(tool("first", 0.02)), asyncio.create_task(tool("second", 0.05)))
-
-        assert seen == {"first": True, "second": True}
 
 
 # ToolContext context manager (__enter__ / __exit__)

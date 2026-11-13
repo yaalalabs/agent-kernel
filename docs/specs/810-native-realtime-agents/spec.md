@@ -263,19 +263,19 @@ def opening_prompt(self, participant_identity: str) -> Optional[str]:
 
 `_release()` starts with `await self._send_session_end()`. That method runs once per gateway:
 
-1. Set `_ending = True`. From now on, `_stage_request` drops new frames.
+1. Set `_end_sent = True`. From now on, `_stage_request` drops new frames.
 2. Wait, for up to `SESSION_END_TIMEOUT_SECONDS = 2.0`, for `_pending` to drain. `_drain_requests` now calls
    `self._pending.task_done()` after each send, so `_pending.join()` can be awaited. If staged input is still unsent after
    that, **do not send the control**: it would pass that input, and the pool would end the session and drop the input as
    late. Log a WARNING; the connection then ends by idle eviction, as it does today.
 3. Send the control with
-   `await asyncio.wait_for(asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue()), timeout=SESSION_END_TIMEOUT_SECONDS)`.
+   `await asyncio.wait_for(asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue_end()), timeout=SESSION_END_TIMEOUT_SECONDS)`.
    The same bound applies, so a broker that does not answer cannot hold up a stopping gateway (the thread finishes on its own).
 4. A failure or timeout here is logged at WARNING. The connection then ends by idle eviction, as it does today.
 
 The rest of `_release` is unchanged.
 
-`StatefulEdgeAdapter._enqueue(request=None)` builds it: with no message the request carries `requests=[]`.
+`StatefulEdgeAdapter._enqueue_end()` builds it: the request carries `requests=[]` and `end_session=True`.
 Any edge can use it.
 
 #### 3.3 Receiving it (`pipeline/realtime_pool.py`)
@@ -306,6 +306,7 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
 - **Reset:** `RealtimeConnection.produced_output` is set by its first `audio_delta`, `transcript_delta` or `done`. When a
   connection that produced output later fails, the count restarts at 1; one that never did adds 1.
 - `end_session` clears the session's entry, as does pool shutdown; the idle sweep prunes entries whose retry time passed more than the idle timeout ago.
+- The pool loop sweeps every `_SWEEP_INTERVAL_SECONDS` (5 s) and wakes at once on process shutdown through `ThreadRunner.call_on_shutdown`, which hands the shutdown to the loop with `call_soon_threadsafe`; nothing polls the flag.
 - **A failed connect is reported.** `_discard_failed` schedules `RealtimeConnection.fail_to_connect(error)`, which
   emits one terminal `StreamChunk(error="Realtime session could not start: ...", done=True)` with the connection's
   delivery context and then closes what the connect opened. Without it the room would hear nothing: the consumer nacks
@@ -344,18 +345,19 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
 
 #### 4.4 `EdgeLifecycleRESTRequestHandler` (`integration/adapter/lifecycle.py`)
 
-- The generic host, the sibling of `WebhookRESTRequestHandler`, in its own module so `gateway.py` stays FastAPI-free.
+- The generic host, the sibling of `WebhookRESTRequestHandler`, in its own module beside the other hosts (`webhook.py`, `poller.py`).
   `RESTRequestHandler`, `requires_pipeline = True`; refuses an adapter with no `webhook_path`.
 - `handle`: `parse`; a start with `should_start` true → `_start`; an end → `_stop`; `None` → logged at DEBUG.
   Answers `{"status": "ok"}`.
+- Declares `authenticates_itself = True`, like `WebhookRESTRequestHandler`: the adapter's `parse` verifies the platform's signature, so `RESTAPI` mounts the route without the identity dependency (LiveKit's signed `Authorization` carries no `Bearer ` prefix).
 - `_start`: under a lock, a session already in `_runners` is left alone (a platform may resend a webhook); otherwise
   `_EdgeRunner(adapter.create_edge(session_id))` starts on a thread of its own, kept with the runner in `_runners`.
   The thread removes its own entry when `start()` returns, only if the entry is still that runner. Once
   `ThreadRunner.shutdown_event` is set, no new edge starts.
 - A start for a session whose runner `adapter.ending` is true is recorded in `_restart`; when that runner's thread exits it starts a new edge for the session.
 - `_stop`: drops any `_restart` entry, then `runner.stop()` for the session, if any.
-- `_EdgeRunner` retries a failed `adapter.start()` up to `START_ATTEMPTS = 3` times, waiting `START_RETRY_BASE_SECONDS * 2 ** (attempt - 1)`, on the same adapter instance. `StatefulEdgeAdapter.start` documents that it must begin from a clean state (`LiveKitEdgeAdapter._reset_run_state`).
-- No shutdown wait: each live edge's `_EdgeRunner` already watches `ThreadRunner.shutdown_event` and stops, and the process does not wait for it. A session whose end control was not sent closes by idle eviction (300 s). `RESTRequestHandler` and `IOHandler` are unchanged.
+- `_EdgeRunner` runs `adapter.start()` once. A failure is logged by the host, frees the session, and is not retried: the platform's next lifecycle webhook builds a new edge, so no adapter has to support a second `start()`.
+- Shutdown without polling: the first `_start` registers `ThreadRunner.call_on_shutdown(self._stop_all)`, one daemon thread that blocks on `ThreadRunner.shutdown_event` and then calls `stop()` on every live runner; `stop()` wakes the edge's loop through `call_soon_threadsafe`, so no edge polls. The process does not wait for the edges. A session whose end control was not sent closes by idle eviction (300 s). `RESTRequestHandler` and `IOHandler` are unchanged.
 
 #### 4.5 `LiveKitLifecycleAdapter` (`integration/livekit/adapter.py`)
 
@@ -374,7 +376,7 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
   are unchanged.
 - **`integration/livekit/adapter.py`:** sections 2, 3.2, 4.2 and 4.5.
 - **`integration/adapter/base.py`, new `integration/adapter/lifecycle.py`, `integration/adapter/__init__.py`:** 4.3, 4.4 and their lazy exports.
-- **`integration/adapter/{base,lifecycle,registry,producer}.py`:** `_enqueue()` with no message (`end_session=True`), the producer stamping it (3.1) and the
+- **`integration/adapter/{base,lifecycle,registry,producer}.py`:** `_enqueue_end()` (`end_session=True`), the producer stamping it (3.1) and the
   identity-safe `unregister` (3.3); `_EdgeRunner` passes its adapter to `unregister` and gains `stop()` (4.1).
 - **`pipeline/io_handler.py`:** drops the `gateways=` parameter and thread loop (4.1); `api/handler.py` is unchanged.
 - **`pipeline/response_handler.py`, `pipeline/agent_runner.py`, ECS `akagentrunner.py`:** no change. Verified: both

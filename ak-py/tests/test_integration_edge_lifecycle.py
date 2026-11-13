@@ -12,7 +12,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import agentkernel.integration.adapter.lifecycle as lifecycle_module
+from agentkernel.api.http import RESTAPI
 from agentkernel.core.model import AgentReply
+from agentkernel.identity.errors import AuthenticationError
+from agentkernel.identity.provider.base import IdentityProvider
+from agentkernel.identity.provider.request import RequestAuthenticator
 from agentkernel.integration.adapter import EdgeLifecycleAdapter, EdgeLifecycleEvent, EdgeLifecycleRESTRequestHandler
 from agentkernel.integration.adapter.base import Source, StatefulEdgeAdapter
 from agentkernel.integration.adapter.lifecycle import _EdgeRunner
@@ -221,6 +225,39 @@ def test_needs_a_webhook_path():
         EdgeLifecycleRESTRequestHandler(NoRoute())
 
 
+class _RefusingProvider(IdentityProvider):
+    name = "refusing"
+
+    async def authenticate(self, credential, context=None):
+        raise AuthenticationError(f"not one of ours: {credential}")
+
+
+def test_the_handler_declares_that_it_authenticates_its_callers():
+    assert EdgeLifecycleRESTRequestHandler(_Lifecycle()).authenticates_itself is True
+
+
+def test_a_platform_signed_webhook_reaches_the_adapter_when_identity_is_configured(monkeypatch):
+    # LiveKit signs its webhook in ``Authorization`` without a ``Bearer `` prefix: the identity dependency would refuse it.
+    monkeypatch.setattr(RequestAuthenticator, "from_config", classmethod(lambda cls: RequestAuthenticator(_RefusingProvider())))
+    client = TestClient(RESTAPI.build_app([EdgeLifecycleRESTRequestHandler(_Lifecycle())]))
+
+    response = client.post("/fake/webhook", json={"action": "start", "session": "call_1"}, headers={"Authorization": "signed-by-platform"})
+
+    assert response.status_code == 200
+    assert len(_Runner.created) == 1
+
+
+def test_process_shutdown_stops_every_live_edge():
+    _, client = _client(_Lifecycle())
+    _send(client, "start", session="call_1")
+    _send(client, "start", session="call_2")
+    assert all(runner.started.wait(5) for runner in _Runner.created)
+
+    ThreadRunner.shutdown_event.set()
+
+    assert all(runner.stopped.wait(5) for runner in _Runner.created)
+
+
 def test_no_edge_starts_once_the_process_is_shutting_down():
     _, client = _client(_Lifecycle())
     ThreadRunner.shutdown_event.set()
@@ -341,33 +378,7 @@ def test_a_hanging_stop_is_bounded_and_the_edge_is_cancelled(monkeypatch):
     assert StatefulEdgeRegistry.get(adapter.session_id) is None
 
 
-def test_a_transient_start_failure_is_retried(monkeypatch):
-    monkeypatch.setattr(_EdgeRunner, "START_RETRY_BASE_SECONDS", 0)
-    adapter = FakeStatefulEdgeAdapter()
-    attempts = []
-    running = threading.Event()
-
-    async def flaky_start():
-        attempts.append(True)
-        if len(attempts) < 3:
-            raise RuntimeError("transient")
-        running.set()
-        await asyncio.Event().wait()
-
-    adapter.start = flaky_start
-    runner = _EdgeRunner(adapter)
-    thread = threading.Thread(target=runner.start, daemon=True)
-    thread.start()
-    assert running.wait(5)
-
-    assert len(attempts) == 3
-    runner.stop()
-    thread.join(_EdgeRunner.GRACEFUL_STOP_TIMEOUT_SECONDS + 5)
-    assert not thread.is_alive()
-
-
-def test_a_start_that_keeps_failing_is_given_up_on(monkeypatch):
-    monkeypatch.setattr(_EdgeRunner, "START_RETRY_BASE_SECONDS", 0)
+def test_a_failed_start_is_not_retried_and_frees_the_session():
     adapter = FakeStatefulEdgeAdapter()
     attempts = []
 
@@ -380,8 +391,52 @@ def test_a_start_that_keeps_failing_is_given_up_on(monkeypatch):
     with pytest.raises(RuntimeError, match="bad credentials"):
         _EdgeRunner(adapter).start()
 
-    assert len(attempts) == _EdgeRunner.START_ATTEMPTS
+    assert len(attempts) == 1
     assert StatefulEdgeRegistry.get(adapter.session_id) is None
+
+
+def test_an_edge_that_ends_by_itself_is_noticed_at_once():
+    adapter = FakeStatefulEdgeAdapter()
+    running = threading.Event()
+
+    async def ends_soon():
+        running.set()
+        await asyncio.sleep(0.05)
+
+    adapter.start = ends_soon
+    thread = threading.Thread(target=_EdgeRunner(adapter).start, daemon=True)
+    thread.start()
+
+    assert running.wait(5)
+    thread.join(5)  # nothing polls: the runner was woken by the edge ending
+    assert not thread.is_alive()
+    assert StatefulEdgeRegistry.get(adapter.session_id) is None
+
+
+def test_a_stop_request_is_noticed_at_once():
+    adapter = FakeStatefulEdgeAdapter()
+    running = threading.Event()
+    gate = {}
+
+    async def run_until_stopped():
+        gate["event"] = asyncio.Event()
+        running.set()
+        await gate["event"].wait()
+
+    async def stop():
+        gate["event"].set()
+
+    adapter.start = run_until_stopped
+    adapter.stop = stop
+    runner = _EdgeRunner(adapter)
+    thread = threading.Thread(target=runner.start, daemon=True)
+    thread.start()
+    assert running.wait(5)
+
+    runner.stop()
+    thread.join(5)  # nothing polls: stop() woke the runner
+
+    assert not thread.is_alive()
 
 
 def test_an_edge_stopped_before_it_starts_never_starts_its_adapter():

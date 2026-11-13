@@ -21,10 +21,6 @@ class _EdgeRunner:
     _log = logging.getLogger("ak.integration.edge_lifecycle")
     GRACEFUL_STOP_TIMEOUT_SECONDS: float = 10.0
     """Bound on the adapter's own teardown before it is force-cancelled."""
-    START_ATTEMPTS: int = 3
-    """How many times a failed start is retried before the edge is given up on."""
-    START_RETRY_BASE_SECONDS: float = 1.0
-    """First retry delay; doubles on each later attempt."""
 
     def __init__(self, adapter: StatefulEdgeAdapter):
         """
@@ -37,6 +33,9 @@ class _EdgeRunner:
             )
         self._adapter = adapter
         self._stop_requested = threading.Event()
+        # Set from ``stop()`` on another thread to wake the runner at once; created on the edge's loop by ``_run_until_shutdown``.
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._wake: asyncio.Event | None = None
 
     @property
     def adapter(self) -> StatefulEdgeAdapter:
@@ -44,8 +43,14 @@ class _EdgeRunner:
         return self._adapter
 
     def stop(self) -> None:
-        """Ask this edge to stop, as process shutdown would; ``start()`` then returns. Safe from any thread."""
+        """Ask this edge to stop; ``start()`` then returns. Safe from any thread: the handler calls it on an end event and at process shutdown."""
         self._stop_requested.set()
+        loop, wake = self._loop, self._wake
+        if loop is not None and wake is not None:
+            try:
+                loop.call_soon_threadsafe(wake.set)
+            except RuntimeError:
+                pass  # the edge's loop has closed: the edge already ended
 
     def start(self) -> None:
         """Register the adapter by its ``session_id``, then run the edge's blocking loop."""
@@ -63,28 +68,24 @@ class _EdgeRunner:
             self._log.info(f"Edge {self._adapter.name} stopped before it started")
             return
 
-        for attempt in range(1, self.START_ATTEMPTS + 1):
-            if ThreadRunner.shutdown_event.is_set() or self._stop_requested.is_set():
-                return
-            task = asyncio.create_task(self._adapter.start())
-            try:
-                await self._run_edge(task)
-                return
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                if attempt >= self.START_ATTEMPTS:
-                    raise
-                delay = self.START_RETRY_BASE_SECONDS * (2 ** (attempt - 1))
-                self._log.warning(f"Edge {self._adapter.name} failed to start (attempt {attempt}/{self.START_ATTEMPTS}); retrying in {delay}s")
-                await asyncio.sleep(delay)
+        self._wake = asyncio.Event()
+        self._loop = asyncio.get_running_loop()
+        # A stop() that ran before the loop was published could not wake it: catch it here instead.
+        if self._stop_requested.is_set():
+            self._wake.set()
+        await self._run_edge(asyncio.create_task(self._adapter.start()))
 
     async def _run_edge(self, task: asyncio.Task) -> None:
-        while not (ThreadRunner.shutdown_event.is_set() or self._stop_requested.is_set()):
-            if task.done():
-                task.result()  # raise if exception occurred
-                return
-            await asyncio.sleep(0.5)
+        """Wait until the edge ends by itself or ``stop()`` is called, then stop it cleanly. Nothing is polled."""
+        assert self._wake is not None
+        woken = asyncio.ensure_future(self._wake.wait())
+        try:
+            await asyncio.wait({task, woken}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            woken.cancel()
+        if task.done():
+            task.result()  # raise if exception occurred
+            return
 
         self._log.info(f"Edge {self._adapter.name} stopping")
 
@@ -118,12 +119,15 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
     The sibling of ``WebhookRESTRequestHandler``: it mounts the adapter's webhook route, and for each lifecycle event
     runs the edge for the session on a thread of its own (:class:`_EdgeRunner`), or stops it. Edges must run in the
     process that hosts the Response Handler, so it is mounted inside a pipeline topology. At process shutdown it starts
-    no new edges; each live edge sees the shutdown itself and stops::
+    no new edges and stops every live one, through ``ThreadRunner.call_on_shutdown``, so no edge polls for it::
 
         IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])
     """
 
     requires_pipeline = True
+    # The adapter's ``parse`` verifies the platform's signature, as a messaging webhook's ``verify`` does; mounted behind
+    # the identity dependency, the platform's own ``Authorization`` header would be refused before it is checked.
+    authenticates_itself = True
 
     _log = logging.getLogger("ak.integration.edge_lifecycle")
 
@@ -139,6 +143,8 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
         # Sessions whose start arrived while their edge was ending: a new edge starts once that one has ended.
         self._restart: set[str] = set()
         self._lock = threading.Lock()
+        # Started with the first edge; stops every live edge the moment the process starts shutting down.
+        self._shutdown_watcher: threading.Thread | None = None
 
     @property
     def adapter(self) -> EdgeLifecycleAdapter:
@@ -175,6 +181,8 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
                 if self._runners[session_id][0].adapter.ending:
                     self._restart.add(session_id)
                 return
+            if self._shutdown_watcher is None:
+                self._shutdown_watcher = ThreadRunner.call_on_shutdown(self._stop_all, name=f"{self._adapter.name}-shutdown")
             runner = _EdgeRunner(self._adapter.create_edge(session_id))
             thread = threading.Thread(target=self._run, args=(session_id, runner), daemon=True, name=f"{self._adapter.name}-{session_id}")
             self._runners[session_id] = (runner, thread)
@@ -198,6 +206,17 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
                     f"A start arrived while the edge was ending; starting a new one: integration={self._adapter.name}, session_id={session_id}"
                 )
                 self._start(session_id)
+
+    def _stop_all(self) -> None:
+        """Stop every live edge; run once the process starts shutting down (a signal or a failed task).
+
+        Edges started after this reads the runners are refused by ``_start``, which checks the same flag under the same lock.
+        """
+        with self._lock:
+            runners = [runner for runner, _ in self._runners.values()]
+        self._log.info(f"Shutting down; stopping {len(runners)} live edge(s): integration={self._adapter.name}")
+        for runner in runners:
+            runner.stop()
 
     def _stop(self, session_id: str) -> None:
         with self._lock:
