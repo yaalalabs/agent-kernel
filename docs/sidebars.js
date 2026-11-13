@@ -150,6 +150,7 @@ const sidebars = {
         'advanced/human-in-the-loop',
         'advanced/sandbox',
         'advanced/secrets',
+        'advanced/identity-and-access',
         'advanced/a2ui',
         'advanced/knowledge-bases',
         'advanced/queue-mode-guide',

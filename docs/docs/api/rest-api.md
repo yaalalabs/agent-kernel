@@ -58,8 +58,8 @@ output returns its content as a JSON string, which is what every example on this
 }
 ```
 
-When a reply **is** labelled — by the [A2UI capability](../advanced/a2ui.md) or by an application
-post-hook that sets `media_type` — `result` carries the object itself and the format travels beside
+When a reply **is** labelled, by the [A2UI capability](../advanced/a2ui.md) or by an application
+post-hook that sets `media_type`, `result` carries the object itself and the format travels beside
 it:
 
 ```json
@@ -76,7 +76,7 @@ sees the object form, because no framework adapter sets a media type.
 
 #### Pausing for a human
 
-An agent can stop mid-run to ask a person something — a gated tool awaiting approval, or a question
+An agent can stop mid-run to ask a person something: a gated tool awaiting approval, or a question
 needing an answer. The request then answers **HTTP 202** with a top-level discriminator, so a client
 branches on the outcome without parsing `result`:
 
@@ -93,7 +93,7 @@ branches on the outcome without parsing `result`:
 }
 ```
 
-`202` now means two things — a deferred request and a paused one — and the `status` key is what
+`202` now means two things, a deferred request and a paused one, and the `status` key is what
 separates them: a scheduled acknowledgement carries `"SCHEDULED"`, a pause carries `"PAUSED"`.
 
 Answer it by sending `resume` **instead of** a prompt; `prompt` is optional and a decision can stand
@@ -109,7 +109,7 @@ alone:
 
 A decision takes `status` (`approved` | `denied` | `cancelled`), an optional `message` carrying the
 human's own words, and an optional `payload` for a structured answer. `run_id` on the `resume` block
-is optional — the run is resolved from the interruption ids when it is absent.
+is optional: the run is resolved from the interruption ids when it is absent.
 
 A request carrying **both** `schedule` and `resume` is rejected with a 400: a decision deferred to a
 later occurrence is no longer a decision.
@@ -145,7 +145,7 @@ Health check endpoint.
 
 When [conversation threads](../advanced/threads.md) are enabled by mounting `AgentThreadRequestHandler` (which serves the standard chat routes with thread recording), it also serves two read-only routes:
 
-**`GET /api/v1/threads`** lists threads, filterable by `user_id`/`group_id`, cursor-paginated (`limit`, `cursor`):
+**`GET /api/v1/threads`** lists the caller's threads, filterable by `group_id`, cursor-paginated (`limit`, `cursor`):
 
 ```json
 {
@@ -156,7 +156,7 @@ When [conversation threads](../advanced/threads.md) are enabled by mounting `Age
 
 **`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`). A message's `content` is text and carries no other key; one recording a [paused run](../advanced/human-in-the-loop.md) or the decision answering it carries the object itself plus a `media_type` naming its format (see [Message Content](../advanced/threads.md#message-content)).
 
-A message's `content` is text, exactly as before — unless the reply was labelled (see [A2UI](../advanced/a2ui.md)), in which case it is the payload object with `media_type` beside it, the same shape `result` has on a live reply. The key is absent on every unlabelled message:
+A message's `content` is text, exactly as before, unless the reply was labelled (see [A2UI](../advanced/a2ui.md)), in which case it is the payload object with `media_type` beside it, the same shape `result` has on a live reply. The key is absent on every unlabelled message:
 
 ```json
 {
@@ -169,7 +169,7 @@ A message's `content` is text, exactly as before — unless the reply was labell
 }
 ```
 
-On the thread handler's chat routes, `user_id` is **required**; the default handler's routes are unaffected. An optional `Authoriser` can protect the read routes by resolving the Bearer token to a `user_id`; requests for another user's thread then return 403. Without an `Authoriser`, the routes are open.
+Every thread route, the chat routes included, serves authenticated callers only: `AgentThreadRequestHandler` refuses to construct without an `identity` block (`AKConfigError`), the identity provider that block names turns the request's Bearer token into the caller's principal, and a request nothing authenticated is a `401 Authentication required`. A thread belongs to the principal that first used it, so another principal's request for it is a 403. A body carrying `user_id` is a 400: the acting user comes from the credential, not from the client. See [Identity and access](../advanced/identity-and-access.md).
 
 ## Error Handling
 
@@ -194,17 +194,19 @@ On the thread handler's chat routes, `user_id` is **required**; the default hand
 
 You can pass additional properties in the request body. These will be automatically passed to the PreHooks with the key name, to be handled by the your code. These will not be passed to the Agents as input.
 
-In the following example,  **user_id (string)** and **additional_context (dict)** will be passed PreHooks as two **AgentRequestAny** objects with names "user_id"and "additional_context". A complete example is provided [here](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
+In the following example, **locale (string)** and **additional_context (dict)** will be passed to PreHooks as two **AgentRequestAny** objects with names "locale" and "additional_context". A complete example is provided [here](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
 
 ```json
 {
   "agent": "assistant",
   "prompt": "What is 2 + 2?",
   "session_id": "user-123",
-  "user_id" : "anne",
-  "additional_context": { "ui_selections"=[], profile_name="custom"}
+  "locale": "en-GB",
+  "additional_context": { "ui_selections": [], "profile_name": "custom" }
 }
 ```
+
+`user_id` is the one extra key a body may not carry: who the request acts as comes from the credential (see [Authentication](#authentication)), and a body with a `user_id` is a 400.
 
 Please study the [Hooks documentation](/docs/integrations/hooks) for the use of hooks to implement various use cases.
 
@@ -449,7 +451,7 @@ data: {"done": true, "session_id": "user-123"}
 
 ```
 
-`event` carries the full typed stream event the runner emitted — a discriminated union of message boundaries (`message_start`/`message_end`), text (`text_delta`), tool calls (`tool_call_start`/`tool_call_args`/`tool_call_end`/`tool_call_result`), steps (`step_start`/`step_end`), and reasoning (`reasoning_start`/`reasoning_delta`/`reasoning_end`). `delta` is populated **only** when `event.type` is `text_delta`, and always equals `event.content`; every other frame omits `delta` entirely, so accumulate the full response by concatenating `delta` where present rather than by frame position. The final chunk has `"done": true` and carries neither `delta` nor `event`. If an unrecoverable error occurs mid-stream, the final chunk contains `"error"` instead.
+`event` carries the full typed stream event the runner emitted: a discriminated union of message boundaries (`message_start`/`message_end`), text (`text_delta`), tool calls (`tool_call_start`/`tool_call_args`/`tool_call_end`/`tool_call_result`), steps (`step_start`/`step_end`), and reasoning (`reasoning_start`/`reasoning_delta`/`reasoning_end`). `delta` is populated **only** when `event.type` is `text_delta`, and always equals `event.content`; every other frame omits `delta` entirely, so accumulate the full response by concatenating `delta` where present rather than by frame position. The final chunk has `"done": true` and carries neither `delta` nor `event`. If an unrecoverable error occurs mid-stream, the final chunk contains `"error"` instead.
 
 **Client example (Python):**
 
@@ -473,30 +475,43 @@ For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverles
 
 ## Authentication
 
-Agent Kernel REST API supports authentication through custom validators. You can implement authentication to secure your endpoints.
+Authentication is configuration, not code. An `identity` block names the identity provider, and the dependency `RESTAPI` installs on every router turns each request's `Authorization: Bearer <credential>` header into the caller's `Principal` before any route runs. A messaging webhook's routes are the exception: the platform's own signature or token is their check, so they are mounted without it. The agent, its hooks and its tools then read who is calling through `session.get_principal()` and `ToolContext.get().principal`.
 
-### Implementing Authentication
-
-Create a custom auth validator by extending `AuthValidator`:
-
-```python
-from agentkernel.api import RESTAPI
-from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
-
-class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
-        """Validate authentication token and return result."""
-        if token == "your-secret-token":
-            return ValidationResult(is_valid=True, subject="api_user")
-        return ValidationResult(is_valid=False, error_msg="Invalid token")
-
-# Add authentication to REST API
-RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
+```yaml
+identity:
+  provider:
+    type: static   # static | oidc | cognito | entra | firebase, or a dotted path to your own IdentityProvider
+    static:
+      principals:
+        ALICE_TOKEN:   # names a secret resolved through the secret capability; the value is never in the file
+          subject: alice
+          groups: [ops]
 ```
+
+The `static` provider suits demos and tests. Real deployments validate tokens against an issuer: `oidc` serves any OpenID Connect issuer (Auth0, Keycloak and Okta are configurations of it), and `cognito`, `entra` and `firebase` derive the issuer from the user pool, tenant or project. Those four need the `auth` extra (`uv add "agentkernel[auth]"`). Auth0, for example:
+
+```yaml
+identity:
+  provider:
+    type: oidc
+    issuer: https://<tenant>.<region>.auth0.com/   # or the custom domain; trailing slash included, as Auth0 issues it
+    audience: <the API identifier of your Auth0 API>
+    claims:
+      groups: https://<your namespace>/roles       # the namespaced claim an Auth0 Action sets; omit if you set none
+```
+
+### What the routes do with the principal
+
+- **No `identity` block**: every request is the anonymous principal and an `Authorization` header is ignored, a malformed or non-bearer one included.
+- **With a block**: a request without a credential is anonymous; a credential that is present must validate, or the response is a 401 (`Unauthorized`, or `Invalid authorization header` for a malformed header). The provider's reason goes to the logs only.
+- The chat and streaming routes accept an anonymous caller, and the agent runs as the anonymous principal. The thread, schedule and AG-UI routes serve authenticated callers only: their handlers refuse to construct without an `identity` block, and an anonymous request to them is a `401 Authentication required`.
+- A body or envelope carrying `user_id` is a 400: the acting user comes from the credential, never from the client.
+
+Groups, roles (through a `role_mapper`), the principal on every other surface and the deployment adapters are covered in [Identity and access](../advanced/identity-and-access.md).
 
 ### Example Implementation
 
-See [examples/aws-containerized/crewai-auth](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai-auth) for a complete authentication example with custom token validation.
+See [examples/aws-serverless/openai-auth](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-auth) for the `static` provider on an API Gateway authorizer, with an Auth0 configuration documented beside it, and [examples/aws-containerized/crewai-auth](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai-auth) for the same on ECS.
 
 ## Best Practices
 
@@ -504,5 +519,5 @@ See [examples/aws-containerized/crewai-auth](https://github.com/yaalalabs/agent-
 - Handle errors gracefully
 - Implement rate limiting in production
 - Use HTTPS in production
-- **Add authentication for production deployments**
+- **Configure an identity provider for production deployments**
 - Monitor API performance

@@ -13,7 +13,7 @@ from threading import RLock
 from typing import Any, ClassVar, Optional
 
 from ..core.config import AKConfig
-from ..core.model import BaseChatRequest, ScheduleSpec
+from ..core.model import BaseChatRequest, Principal, ScheduleSpec
 from ..core.service import AgentService
 from ..core.util.factory import AKConfigError
 from ..core.util.pagination import DEFAULT_PAGE_SIZE, clamp_limit, decode_cursor, encode_cursor
@@ -98,12 +98,13 @@ class ScheduleManager:
         :param req: The chat request carrying the schedule block.
         :return: The created task.
         :raises ValueError: If the request carries no schedule block, or the schedule is unusable.
+        :raises PermissionError: If the request carries no authenticated principal.
         :raises ScheduleError: If the provider rejected the registration.
         """
         if req.schedule is None:
             raise ValueError("The request carries no 'schedule' block")
         return self.create(
-            user_id=req.user_id,
+            principal=req.principal or Principal.anonymous(),
             prompt=req.prompt,
             spec=req.schedule,
             agent=req.agent,
@@ -112,7 +113,7 @@ class ScheduleManager:
 
     def create(
         self,
-        user_id: str | None,
+        principal: Principal | None,
         prompt: str | None,
         spec: ScheduleSpec,
         agent: str | None = None,
@@ -123,17 +124,20 @@ class ScheduleManager:
         The record is written before the provider registration and rolled back (hard-deleted) if
         that registration fails, so a stored active task always has a live registration behind it.
 
-        :param user_id: Owning user; required, since every later mutation is checked against it.
+        :param principal: The owner; must be authenticated, since every later mutation is checked
+            against its subject and every occurrence runs as it.
         :param prompt: The prompt each occurrence runs.
         :param spec: The occurrence rule.
         :param agent: The agent each occurrence runs on, or None for the default.
         :param session_id: Originating session of the task.
         :return: The created task, carrying its provider reference.
-        :raises ValueError: If the owner, prompt, session, agent or occurrence rule is unusable.
+        :raises PermissionError: If the principal is missing or anonymous.
+        :raises ValueError: If the prompt, session, agent or occurrence rule is unusable.
         :raises ScheduleError: If the provider rejected the registration.
         """
-        if not user_id:
-            raise ValueError("Scheduling requires a user identity: include user_id on the chat request")
+        if principal is None or principal.is_anonymous:
+            raise PermissionError("scheduling requires an authenticated principal")
+        user_id = principal.subject
         if not prompt:
             raise ValueError("Scheduling requires a prompt to run at the scheduled time")
         if not session_id:
@@ -147,9 +151,14 @@ class ScheduleManager:
         OccurrenceCalculator.validate(spec)
 
         now = utc_now_iso()
+        # The owner is the user alone: the actor is the agent of the run that created the task, and
+        # the credential handle dies with that run, so neither belongs in a record every occurrence
+        # of the task is going to run as.
+        owner = principal.model_copy(update={"actor": None, "credential_ref": None})
         task = ScheduledTask(
             task_id=str(uuid.uuid4()),
             user_id=user_id,
+            principal=owner.model_dump(mode="json"),
             prompt=prompt,
             agent=agent,
             session_id=session_id,
@@ -210,10 +219,16 @@ class ScheduleManager:
         :return: The amended task.
         :raises KeyError: If the task does not exist.
         :raises PermissionError: If user_id is provided and does not own the task.
-        :raises ValueError: If the task is closed, or the amendment is unusable.
+        :raises ValueError: If the task is closed, predates principal ownership, or the amendment
+            is unusable.
         :raises ScheduleError: If the provider rejected the amendment.
         """
         previous = self._require_amendable_task(task_id, user_id)
+        if previous.principal is None:
+            # An amendment re-freezes the trigger body. With no stored owner that body would carry
+            # no principal, and its occurrences would run anonymous and go unrecorded, so a task
+            # from before principal ownership is cancelled and created again, never amended.
+            raise ValueError(f"Scheduled task {task_id} predates principal ownership and cannot be amended; cancel it and create it again")
         unknown_fields = set(amendment) - _AMENDABLE_FIELDS
         if unknown_fields:
             raise ValueError(f"Cannot amend {sorted(unknown_fields)} of a scheduled task; amendable fields are {sorted(_AMENDABLE_FIELDS)}")
@@ -264,7 +279,7 @@ class ScheduleManager:
         self._log.info(f"Cancelled scheduled task {task_id}")
         return cancelled
 
-    def record_trigger(self, task_id: str, user_id: str | None, request_id: str | None = None, occurred_at: str | None = None) -> None:
+    def record_trigger(self, task_id: str, principal: Principal | None, request_id: str | None = None, occurred_at: str | None = None) -> None:
         """Record that an occurrence of a task fired, and complete a one-time task.
 
         Never raises: the occurrence fields are advisory bookkeeping, and a store that cannot
@@ -272,7 +287,8 @@ class ScheduleManager:
         non-event — the run itself is legitimate, only its claim to be someone's occurrence is not.
 
         :param task_id: Identifier of the task that fired.
-        :param user_id: The user the run acts for; must own the task or nothing is recorded.
+        :param principal: The principal the run acts as; its subject must own the task or nothing
+            is recorded.
         :param request_id: Request id of the run the occurrence produced, when known.
         :param occurred_at: Occurrence timestamp reported by the provider; now when omitted.
         """
@@ -281,7 +297,7 @@ class ScheduleManager:
             if task is None:
                 self._log.warning(f"Trigger received for unknown scheduled task {task_id}")
                 return
-            if not self._owns_occurrence(task, user_id):
+            if not self._owns_occurrence(task, principal):
                 return
             # A one-time schedule has no further occurrences, so the trigger closes it.
             self._store.record_trigger(
@@ -293,27 +309,35 @@ class ScheduleManager:
         except Exception as exc:
             self._log.error(f"Failed to record trigger of scheduled task {task_id}: {exc}")
 
-    def _owns_occurrence(self, task: ScheduledTask, user_id: str | None) -> bool:
+    def _owns_occurrence(self, task: ScheduledTask, principal: Principal | None) -> bool:
         """Check that a run claiming to be a task's occurrence is entitled to say so.
 
         The trigger metadata (``scheduled_task_id``) rides on the ordinary chat request that
         providers deliver. The public chat routes reject it (``ChatRunRequest``), but a custom route
         parsing ``BaseRunRequest`` still accepts it, so a caller there can name any task id. A genuine
-        trigger always matches, because the manager froze ``user_id`` into the body from the task's
-        own owner; a forged one names a task it does not own, and would
-        otherwise inflate another user's occurrence counters and complete their one-time task out
-        from under them (after which no amendment or cancellation is accepted).
+        trigger always matches, because the manager froze the owner's principal into the body; a
+        forged one names a task it does not own, and would otherwise inflate another user's occurrence
+        counters and complete their one-time task out from under them (after which no amendment or
+        cancellation is accepted).
 
-        Stricter than :meth:`_check_ownership`: an absent identity is a mismatch rather than an
-        unauthenticated caller to wave through, since omitting ``user_id`` would reopen the hole.
+        Stricter than :meth:`_check_ownership`: an absent or anonymous principal is a mismatch
+        rather than an unauthenticated caller to wave through, since running anonymous would
+        reopen the hole. A subject is unique only within its namespace, so the frozen owner is
+        matched on namespace and subject together; only a task from before the owner's principal
+        was stored falls back to the subject alone.
 
         :param task: The task the run claims to be an occurrence of.
-        :param user_id: The user the run acts for.
+        :param principal: The principal the run acts as.
         :return: True when the occurrence may be recorded.
         """
-        if user_id is not None and task.user_id == user_id:
-            return True
-        self._log.warning(f"Ignoring trigger for scheduled task {task.task_id}: user {user_id} does not own it")
+        subject = Principal.subject_of(principal)
+        if subject is not None and principal is not None:
+            if task.principal is not None:
+                if (task.principal.get("namespace"), task.principal.get("subject")) == (principal.namespace, subject):
+                    return True
+            elif task.user_id == subject:
+                return True
+        self._log.warning(f"Ignoring trigger for scheduled task {task.task_id}: subject {subject} does not own it")
         return False
 
     def _validate_transport_compatibility(self) -> None:
@@ -482,7 +506,8 @@ class ScheduleManager:
         body = {
             "prompt": task.prompt,
             "agent": task.agent,
-            "user_id": task.user_id,
+            # The occurrence runs as the owner: the runner publishes this principal for the run.
+            "principal": task.principal,
             "session_id": task.session_id if reuses_session else f"ak-sched-{task.task_id}-{TOKEN_OCCURRENCE_TIME}",
             "scheduled_task_id": task.task_id,
             "request_id": TOKEN_REQUEST_ID,

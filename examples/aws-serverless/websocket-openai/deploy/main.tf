@@ -71,6 +71,10 @@ module "serverless_agents" {
     memory_size          = 256
     handler_path         = "lambda_ws_connection_handler.handler"
     package_path         = "../dist_ws_connection_handler.zip"
+    environment_variables = {
+      # The credential of the static identity provider in config.yaml, validated on $connect.
+      "DEMO_AUTH_TOKEN" = var.demo_auth_token
+    }
   }
 
   # Queue configuration for scalable processing

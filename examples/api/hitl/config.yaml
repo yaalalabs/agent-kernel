@@ -24,3 +24,16 @@ agui:
 
 api:
   custom_router_prefix: "" # the approval console at GET / instead of GET /custom/
+
+# Who may call over AG-UI. The handler refuses to build without this block, since AG-UI runs agents
+# on a caller's behalf. The static provider maps one credential to the `demo-user` principal; its
+# value is resolved through the secret capability at startup (the environment by default), so export
+# DEMO_TOKEN before starting the app. The approval console sends it as the bearer token; the REST
+# chat route accepts a request without one.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_TOKEN:
+          subject: demo-user

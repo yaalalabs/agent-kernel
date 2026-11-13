@@ -6,12 +6,13 @@ BaseRunRequest would accept the fields again and fail here.
 """
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from agentkernel.api.handler import AgentRESTRequestHandler
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.model import ChatRunRequest
+from agentkernel.core.model import ChatRunRequest, Principal
+from agentkernel.identity import IdentityProvider, IdentityProviderFactory, RequestAuthenticator
 from agentkernel.integration.thread.manager import ConversationThreadManager
 from agentkernel.integration.thread.thread_chat import AgentThreadRequestHandler, ThreadRequestHandler
 from agentkernel.pipeline.request_handler import RequestHandler, RestHandler
@@ -34,10 +35,21 @@ HANDLERS = {
 }
 
 INTERNAL_VALUES = {"requests": [{"type": "text", "prompt": "x"}], "scheduled_task_id": "t1", "scheduled_time": "2026-01-01T00:00:00Z"}
+AUTH = {"Authorization": "Bearer u1-token"}
+
+
+class _Provider(IdentityProvider):
+    """Accepts any token as user u1: the thread handlers need a configured provider to build."""
+
+    name = "test"
+
+    async def authenticate(self, credential, context=None):
+        return Principal(subject="u1", provider=self.name, namespace="test")
 
 
 @pytest.fixture(autouse=True)
 def _config(monkeypatch):
+    monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: _Provider()))
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     monkeypatch.delenv("AK_EXECUTION__MODE", raising=False)
     AKConfig._reset()
@@ -51,17 +63,18 @@ def _config(monkeypatch):
 
 
 def _app(name: str) -> FastAPI:
+    """The handler's routes behind the identity dependency, as ``RESTAPI`` mounts them."""
     app = FastAPI()
-    app.include_router(HANDLERS[name]().get_router())
+    app.include_router(HANDLERS[name]().get_router(), dependencies=[Depends(RequestAuthenticator(_Provider()).dependency())])
     return app
 
 
 @pytest.mark.parametrize("name", HANDLERS)
 @pytest.mark.parametrize("field", sorted(ChatRunRequest.INTERNAL_FIELDS))
 def test_the_chat_route_rejects_an_internal_field(name, field):
-    body = {"prompt": "hi", "session_id": "s1", "user_id": "u1", field: INTERNAL_VALUES[field]}
+    body = {"prompt": "hi", "session_id": "s1", field: INTERNAL_VALUES[field]}
 
-    response = TestClient(_app(name)).post(AgentRESTRequestHandler.CHAT_PATH, json=body)
+    response = TestClient(_app(name)).post(AgentRESTRequestHandler.CHAT_PATH, json=body, headers=AUTH)
 
     assert response.status_code == 422
     assert field in response.text
@@ -80,9 +93,9 @@ def test_the_chat_route_schema_does_not_advertise_them(name):
 @pytest.mark.parametrize("name", HANDLERS)
 def test_a_null_internal_field_reaches_the_route_unrejected(name):
     """Null means "not set": the body passes the model and gets the route's own answer (no prompt here)."""
-    body = {"session_id": "s1", "user_id": "u1", **dict.fromkeys(ChatRunRequest.INTERNAL_FIELDS)}
+    body = {"session_id": "s1", **dict.fromkeys(ChatRunRequest.INTERNAL_FIELDS)}
 
-    response = TestClient(_app(name)).post(AgentRESTRequestHandler.CHAT_PATH, json=body)
+    response = TestClient(_app(name)).post(AgentRESTRequestHandler.CHAT_PATH, json=body, headers=AUTH)
 
     assert response.status_code == 400
     assert "prompt" in response.text.lower()

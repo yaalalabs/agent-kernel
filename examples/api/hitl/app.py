@@ -4,7 +4,6 @@ from typing import Annotated, Any, TypedDict
 
 from agentkernel.agui import AGUIPipelineRequestHandler
 from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
 from agentkernel.langgraph import LangGraphModule
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.pipeline import IOHandler
@@ -131,20 +130,6 @@ _graph.add_edge("confirm", END)
 LangGraphModule([_graph.compile(name="planner")])
 
 
-class DemoAuthoriser(Authoriser):
-    """Maps a static demo token to a user id. AG-UI has no anonymous mode."""
-
-    _TOKENS = {"demo-token": "demo-user"}
-
-    def authorise(self, token: str) -> str | None:
-        """Resolve a bearer token to a user id.
-
-        :param token: Bearer token from the Authorization header.
-        :return: The acting user id, or None to reject the request.
-        """
-        return self._TOKENS.get(token)
-
-
 DIST = Path(__file__).parent / "frontend" / "dist"
 
 BUILD_HINT = (
@@ -186,6 +171,8 @@ if __name__ == "__main__":
     # IOHandler always serves the REST chat route, and `handlers=` mounts AG-UI alongside it. Both
     # surfaces run the agent on the queue pipeline against the same session, so the same pause can
     # be answered from either one:
-    #   AG-UI  POST /agui/support   — streamed, ends with an interrupt outcome
-    #   REST   POST /api/v1/chat    — answers 202 with status: "PAUSED"
-    IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=DemoAuthoriser())])
+    #   AG-UI  POST /agui/support   streamed, ends with an interrupt outcome
+    #   REST   POST /api/v1/chat    answers 202 with status: "PAUSED"
+    # AG-UI has no anonymous mode: the handler refuses to build without the `identity` block in
+    # config.yaml, whose provider turns the console's bearer token into the run's principal.
+    IOHandler.run(handlers=[AGUIPipelineRequestHandler()])

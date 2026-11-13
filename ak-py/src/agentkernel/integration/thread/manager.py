@@ -95,19 +95,23 @@ class ConversationThreadManager:
         group_id is applied only at creation and ignored for existing threads. name
         applies on any request: at creation it is used verbatim, and on an existing
         thread it renames it; either way an explicitly supplied name locks the name
-        against automatic naming. A blank name is ignored.
+        against automatic naming. A blank name is ignored. An existing thread is one
+        user's conversation: a request from another user neither loads nor renames it.
         :param session_id: Unique identifier for the thread (same as the session id).
-        :param user_id: Owning user id, stored at creation.
+        :param user_id: Owning user id, stored at creation and matched on every later request.
         :param group_id: Optional group/project scope, fixed at creation.
         :param name: Optional display name; when given it sets/renames the thread
                      name and locks it, otherwise the naming strategy derives one
                      from first_prompt at creation.
         :param first_prompt: The prompt of the creating request, used by the naming strategy.
         :return: The existing (possibly renamed) or newly created thread.
+        :raises PermissionError: If the thread exists and user_id does not own it.
         """
         name = (name or "").strip() or None
         thread = self._store.load_metadata(session_id)
         if thread is not None:
+            if thread.user_id != user_id:
+                raise PermissionError(f"Thread {session_id} is not owned by user {user_id}")
             # Skip the store write when the resent name is already in place and locked.
             if name is not None and (name != thread.name or not thread.name_locked):
                 self._log.info(f"Renaming thread for session {session_id}")
@@ -191,7 +195,7 @@ class ConversationThreadManager:
         Load a thread's metadata by session_id, optionally enforcing ownership.
         Messages are fetched separately and paginated via get_messages.
         :param session_id: Unique identifier for the thread.
-        :param user_id: When provided (resolved by an Authoriser), the thread's
+        :param user_id: When provided (the caller's principal subject), the thread's
                         owner must match or a PermissionError is raised.
         :return: The thread metadata, or None if it does not exist.
         :raises PermissionError: If user_id is provided and does not own the thread.

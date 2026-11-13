@@ -4,7 +4,17 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from agentkernel.core.config import AKConfig, _ExecutionConfig, _ScheduleConfig, _SecretConfig, _ThreadStoreConfig, _ThreadValkeyConfig
+from agentkernel.core.config import (
+    AKConfig,
+    _ExecutionConfig,
+    _IdentityConfig,
+    _IdentityProviderConfig,
+    _ScheduleConfig,
+    _SecretConfig,
+    _StaticProviderConfig,
+    _ThreadStoreConfig,
+    _ThreadValkeyConfig,
+)
 from agentkernel.core.model import ExecutionMode, ReplyMessageType
 from agentkernel.core.util.factory import AKConfigError
 
@@ -560,3 +570,65 @@ class TestExecutionMessageType:
 
     def test_execution_mode_has_no_stream_member(self):
         assert "stream" not in {m.value for m in ExecutionMode}
+
+
+class TestIdentityConfig:
+    """The `identity` block (#603): absent by default, present means configured, and a block that cannot
+    authenticate anyone fails at load time rather than on the first request."""
+
+    def test_absent_by_default(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        assert AKConfig.get().identity is None
+
+    def test_a_static_block_parses_from_yaml(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "identity:\n"
+            "  provider:\n"
+            "    type: static\n"
+            "    static:\n"
+            "      principals:\n"
+            "        ALICE_TOKEN:\n"
+            "          subject: alice\n"
+            "          groups: [ops]\n"
+            "  role_mapper:\n"
+            "    mapping:\n"
+            "      ops: [operator]\n"
+        )
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        identity = AKConfig.get().identity
+
+        assert identity is not None and identity.provider.type == "static"
+        assert identity.provider.static.principals["ALICE_TOKEN"].groups == ["ops"]
+        assert identity.provider.static.principals["ALICE_TOKEN"].kind == "user"
+        assert identity.role_mapper.type == "mapping" and identity.role_mapper.mapping == {"ops": ["operator"]}
+
+    def test_the_default_provider_is_oidc_and_needs_issuer_and_audience(self):
+        assert _IdentityProviderConfig(issuer="https://issuer.example", audience="ak").type == "oidc"
+        with pytest.raises(AKConfigError, match="identity.provider.issuer and identity.provider.audience"):
+            _IdentityConfig()
+
+    @pytest.mark.parametrize("name", ["cognito", "entra", "firebase", "static"])
+    def test_a_named_provider_needs_its_block(self, name):
+        with pytest.raises(AKConfigError, match=f"identity.provider.{name}"):
+            _IdentityProviderConfig(type=name)
+
+    def test_a_dotted_provider_validates_its_own_settings(self):
+        assert _IdentityProviderConfig(type="my.module.Provider").type == "my.module.Provider"
+
+    def test_a_static_block_without_principals_still_parses(self):
+        """An empty map parses; StaticIdentityProvider refuses it at construction (test_identity_providers)."""
+        assert _IdentityProviderConfig(type="static", static=_StaticProviderConfig()).static.principals == {}
+
+    def test_an_identity_env_var_materializes_the_block_and_fails_fast(self, monkeypatch):
+        """Any AK_IDENTITY__* variable creates the block; the default oidc type without an issuer is the intended startup failure."""
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_IDENTITY__PROVIDER__LEEWAY", "10")
+        with pytest.raises(AKConfigError, match="identity.provider.issuer"):
+            AKConfig.get()
+
+    def test_claim_paths_and_algorithms_default(self):
+        provider = _IdentityProviderConfig(issuer="https://issuer.example", audience="ak")
+        assert (provider.claims.subject, provider.claims.groups) == ("sub", "groups")
+        assert (provider.algorithms, provider.leeway, provider.required_claims) == (["RS256", "ES256"], 30, [])

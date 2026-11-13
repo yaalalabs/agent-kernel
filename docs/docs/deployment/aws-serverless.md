@@ -183,7 +183,7 @@ uv pip install --force-reinstall --no-deps agentkernel[api,aws] --target=auth_di
 
 Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) for configuration details.
 
-The module is provider-agnostic — it does not configure the `aws`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
+The module is provider-agnostic: it does not configure the `aws`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
 
 ```hcl
 provider "aws" {
@@ -245,6 +245,11 @@ def custom_app_info_handler(event, context):
 handler = Lambda.handler
 ```
 
+A registered route receives the raw API Gateway event. It reads the caller with
+`Lambda.principal(event)`: the principal the API Gateway authorizer established (from the
+authorizer context), or the anonymous principal when the API has no authorizer or a webhook bypass
+let the request through. See [Identity and Access](../advanced/identity-and-access.md).
+
 ## Lambda Environment Variables
 
 The Lambda router automatically reads the following environment variables to correctly map incoming API paths:
@@ -262,7 +267,7 @@ These environment variables are automatically configured by the Terraform module
 
 ## API Gateway Authentication
 
-Authentication is now **mandatory** for WebSocket mode and recommended for REST modes. The serverless module supports custom token validation with Lambda authorizers.
+Authentication is configuration, not code. The `identity` block in `config.yaml` names the identity provider: `static` (credentials mapped to principals, the values resolved through the secret capability), `oidc` for Auth0, Keycloak, Okta or any other OpenID Connect issuer, `cognito`, `entra`, `firebase`, or a dotted path to your own `IdentityProvider`. The framework's Lambda entry points authenticate through it: the API Gateway authorizer Lambda for the REST modes, and the WebSocket connection handler Lambda for the `async` WebSocket mode, which keys every connection by the authenticated subject and therefore cannot start without the block. REST modes without an `authorizer` object stay public: every request runs as the anonymous principal. See [Identity and Access](../advanced/identity-and-access.md) for the block's fields and the supported providers.
 
 ### When Authentication is Enabled
 
@@ -284,61 +289,59 @@ Authentication infrastructure will only be created if you define an `authorizer`
 
 **Important Notes**:
 - For the WebSocket mode (`execution_mode = "async"`, either `message_type`), the `authorizer` object **cannot** be set; authentication is handled exclusively by the WebSocket connection handler Lambda
-- The bearer token must include a `userId` claim for WebSocket connections
+- In WebSocket mode the connection handler authenticates the `?token=` query parameter of `$connect` through the identity provider and keys the connection by the principal's subject
 - If the `authorizer` object is not provided or any required field is missing, no authorizer infrastructure will be created and your REST endpoints will be publicly accessible
-- In WebSocket mode, the connection handler Lambda implements its own authentication logic via `WebsocketConnectionHandler.set_auth_validator()`
+- In WebSocket mode the connection handler Lambda needs the `identity` block in the `config.yaml` packaged with it (`WebsocketConnectionHandler.handler` raises `AKConfigError` without one)
 
 ### Auth Lambda Handler
 
-You need to create a separate auth lambda logic by extending the `AuthValidator` class:
+The authorizer Lambda is one line. There is no validator to write: `APIGatewayAuthorizer` authenticates every request's bearer token through the identity provider named by the `identity` block in the `config.yaml` packaged beside it, and raises `AKConfigError` at startup when that block is missing.
 
 ```python
-from agentkernel.api import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.aws import APIGatewayAuthorizer
-import jwt
 
-class CustomAuthTokenValidator(AuthValidator):
-    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
-        """Validate JWT token and return validation result."""
-        payload = jwt.decode(token, options={"verify_signature": False})
-        print("Payload", payload)
-        email = payload.get("email", "")
-        if email == "test@test.com":
-            return ValidationResult(is_valid=True)
-        return ValidationResult(is_valid=False)
-
-# APIGatewayAuthorizer defines the auth lambda handler
-handler = APIGatewayAuthorizer(validator=CustomAuthTokenValidator()).handle
+handler = APIGatewayAuthorizer().handle
 ```
+
+An accepted token yields an Allow policy whose `principalId` is the principal's subject and whose context carries the whole principal as JSON; the request-handler Lambda rebuilds it onto the request, so the agent, its tools and its hooks know who is calling. A refused, expired or malformed token gets a 401 (the authorizer raises `Unauthorized`, which API Gateway answers with 401, the status an OAuth client refreshes its token on); a request with no token, or one the authorizer cannot evaluate, is a Deny (403). The provider's reason stays in the authorizer's logs and nothing is in the response.
+
+The `identity` block decides what a valid token is. The examples ship the `static` provider, one credential mapped to a principal; the credential's value is not in the file, the key names a secret the secret capability resolves when the authorizer starts (the environment first), which Terraform passes to the authorizer Lambda from a sensitive variable:
+
+```yaml
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user
+```
+
+Swap the block for a real issuer and nothing else changes. Auth0, Keycloak, Okta and any other OpenID Connect issuer are served by the `oidc` provider, which validates the token's signature against the issuer's JWKS, its issuer, audience and expiry; Cognito, Entra ID and Firebase have providers of their own (`cognito`, `entra`, `firebase`). The Auth0 block:
+
+```yaml
+identity:
+  provider:
+    type: oidc
+    issuer: https://<tenant>.<region>.auth0.com/   # or the custom domain; trailing slash included, as Auth0 issues it
+    audience: <the API identifier of your Auth0 API>
+    claims:
+      groups: https://<your namespace>/roles       # the namespaced claim an Auth0 Action sets; omit if you set none
+```
+
+The `oidc`, `cognito`, `entra` and `firebase` providers need the `auth` extra (`agentkernel[auth]`: PyJWT, cryptography, httpx) in the authorizer package; `static` needs nothing extra. See [examples/aws-serverless/openai-auth](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-auth) for the static block, the documented Auth0 block and a test that takes a token from the tenant.
 
 ### WebSocket Connection Handler Authentication
 
-For WebSocket mode, authentication is handled by the WebSocket connection handler Lambda. The connection handler validates the bearer token during the `$connect` route:
+For WebSocket mode, authentication is handled by the WebSocket connection handler Lambda, which is also one line. On `$connect` it authenticates the `?token=` query parameter through the identity provider named by the `identity` block in its `config.yaml`, keys the connection by the principal's subject and stores the whole principal beside it for the frames that follow; a missing or refused token closes the connection before it opens, and `$disconnect` removes the record:
 
 ```python
-import jwt
 from agentkernel.aws import WebsocketConnectionHandler
-from agentkernel.auth import AuthValidator, ValidationResult
 
-class CustomAuthTokenValidator(AuthValidator):
-    def validate(self, token: str) -> ValidationResult:
-        """Validate JWT token and return validation result."""
-        try:
-            # WARNING: Signature verification is disabled here for documentation purposes only.
-            # This makes the example auth trivially forgeable; use real JWT verification in production.
-            payload = jwt.decode(token, options={"verify_signature": False})
-            email = payload.get("email", "")
-            user_id = payload.get("userId", "")
-            if user_id in ["user-1", "user-2"] and email in ["test1@test.com", "test2@test.com"]:
-                return ValidationResult(is_valid=True, claims={"userId": user_id})
-            return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
-        except Exception as e:
-            return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
-
-handler = WebsocketConnectionHandler.set_auth_validator(CustomAuthTokenValidator()).handler
+handler = WebsocketConnectionHandler.handler
 ```
 
-**Important: The bearer token must include a `userId` claim for WebSocket connections. This `userId` is used to map WebSocket connections to users in the DynamoDB connection table. The `userId` should be returned in the `claims` dictionary of the `ValidationResult`.**
+**Important: the connection handler package must carry the `config.yaml` with the `identity` block, and the handler raises `AKConfigError` without it. The DynamoDB connections table keeps its `user_id` hash key, which now holds the authenticated principal's subject.**
 
 ### Terraform Configuration
 
@@ -358,12 +361,16 @@ module "serverless_agents" {
     
     # Optional authorizer settings
     # result_ttl_in_seconds = 0
-    # environment_variables = {
-    #   "SOME_OTHER_KEY" = "Some Other Value"
-    # }
+    environment_variables = {
+      # What the identity provider in the authorizer's config.yaml needs: the static provider's
+      # credential here (a sensitive variable); nothing for an oidc block.
+      "DEMO_AUTH_TOKEN" = var.demo_auth_token
+    }
   }
 }
 ```
+
+The Terraform module is unchanged by the identity layer: `handler_path` still names your authorizer entry point, and the authorizer package carries `config.yaml` beside it.
 
 **Required Authorizer Fields (for auth infrastructure creation):**
 - `function_name` - Name for the authorizer Lambda function
@@ -440,7 +447,8 @@ create_auth_deployment_package() {
         uv pip install --force-reinstall --no-deps agentkernel[api,aws,auth] --target=dist_auth --find-links ../../../ak-py/dist
     fi
     uv pip install --group auth --target=dist_auth
-    cp -r lambda_auth.py dist_auth/
+    # The authorizer reads the identity block from config.yaml.
+    cp -r lambda_auth.py config.yaml dist_auth/
     cd dist_auth && zip -r ../dist_auth.zip .
     popd || exit 1
 }
@@ -487,6 +495,9 @@ def custom_app_info_handler(event, context):
 handler = Lambda.handler
 ```
 
+The custom routes read the caller with `Lambda.principal(event)`, the principal the API Gateway
+authorizer put in the authorizer context (anonymous without an authorizer).
+
 The AWS Lambda entrypoint accepts both of the following payload shapes.
 
 ```json
@@ -500,7 +511,6 @@ The AWS Lambda entrypoint accepts both of the following payload shapes.
 ```json
 {
   "request_id": "req-123",
-  "user_id": "user-123",
   "body": {
     "prompt": "Hello agent",
     "agent": "assistant",
@@ -575,27 +585,12 @@ See [examples/aws-serverless/scalable-openai/lambda_response_handler.py](https:/
 
 #### 4. WebSocket Connection Handler (for the async WebSocket mode)
 
-This Lambda handles WebSocket connection lifecycle events (`$connect` and `$disconnect` routes), stores connection metadata in DynamoDB, and validates authentication tokens.
+This Lambda handles WebSocket connection lifecycle events (`$connect` and `$disconnect` routes), authenticates the `$connect` token through the identity provider in its `config.yaml`, and stores the connection and its principal in DynamoDB. There is no validator to write:
 
 ```python
-import jwt
 from agentkernel.aws import WebsocketConnectionHandler
-from agentkernel.auth import AuthValidator, ValidationResult
 
-class CustomAuthTokenValidator(AuthValidator):
-    def validate(self, token: str) -> ValidationResult:
-        """Validate JWT token and return validation result."""
-        try:
-            payload = jwt.decode(token, options={"verify_signature": False})
-            email = payload.get("email", "")
-            user_id = payload.get("userId", "")
-            if user_id == "user-1" and email == "test@test.com":
-                return ValidationResult(is_valid=True, claims={"userId": user_id})
-            return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
-        except Exception as e:
-            return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
-
-handler = WebsocketConnectionHandler.set_auth_validator(CustomAuthTokenValidator()).handler
+handler = WebsocketConnectionHandler.handler
 ```
 
 See [examples/aws-serverless/websocket-openai/lambda_ws_connection_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai/lambda_ws_connection_handler.py) for the `message_type: complete` reference implementation, and [examples/aws-serverless/streaming-openai/lambda_ws_connection_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai/lambda_ws_connection_handler.py) for the `message_type: delta` reference implementation.
@@ -857,7 +852,7 @@ same `request_id` so clients can retry.
 Connect to the WebSocket endpoint with a bearer token in the connection URL. The endpoint URL is constructed by combining the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs from the serverless module:
 
 ```bash
-{websocket_api_endpoint_url}/{websocket_api_stage_name}?token=your-jwt-token
+{websocket_api_endpoint_url}/{websocket_api_stage_name}?token=<credential>
 ```
 
 For example, if the outputs are:
@@ -866,10 +861,10 @@ For example, if the outputs are:
 
 The connection URL would be:
 ```bash
-wss://abc123.execute-api.us-east-1.amazonaws.com/prod?token=your-jwt-token
+wss://abc123.execute-api.us-east-1.amazonaws.com/prod?token=<credential>
 ```
 
-The bearer token must include a `userId` claim for authentication.
+The connection handler authenticates the token through the identity provider in its `config.yaml` and keys the connection by the principal's subject.
 
 **Sending Messages**
 
@@ -898,7 +893,7 @@ With `message_type: complete` (the default) the agent completes, then the full r
 
 **Receiving Responses (`message_type: delta`)**
 
-With `message_type: delta` each stream event arrives as a separate `STREAM_CHUNK` message. Every chunk carries `event` — the typed event it was built from — while `delta` appears **only** on a `text_delta`, so boundary and tool-call chunks have no `delta` key at all and the terminal chunk has neither. Reassemble by testing for the key rather than by position. The chunk with `"done": true` signals the end of the stream; if an unrecoverable error occurs, the final chunk contains an `error` field instead. Every chunk also carries the `session_id` from the original request.
+With `message_type: delta` each stream event arrives as a separate `STREAM_CHUNK` message. Every chunk carries `event`, the typed event it was built from, while `delta` appears **only** on a `text_delta`, so boundary and tool-call chunks have no `delta` key at all and the terminal chunk has neither. Reassemble by testing for the key rather than by position. The chunk with `"done": true` signals the end of the stream; if an unrecoverable error occurs, the final chunk contains an `error` field instead. Every chunk also carries the `session_id` from the original request.
 
 ```json
 {"type": "STREAM_CHUNK", "event": {"type": "message_start", "message_id": "m1", "role": "assistant"}, "done": false, "session_id": "user-123"}
@@ -943,11 +938,15 @@ module "websocket_deployment" {
 
 **2. Register handlers in your Lambda code:**
 ```python
+import json
+
 from agentkernel.aws import Lambda
 
 @Lambda.register("custom_handler")
 def custom_handler(event, context):
-    return {"response": "Custom route response"}
+    principal = Lambda.principal(event)  # the connection's principal, authenticated at $connect
+    frame = json.loads(event.get("body") or "{}")  # the frame as the client sent it
+    return {"response": f"Custom route response for {principal.subject}: {frame.get('data')}"}
 
 @Lambda.register("notifications")
 def notifications_handler(event, context):
@@ -963,6 +962,11 @@ def notifications_handler(event, context):
 ```
 
 **Note**: Custom routes must be defined in both Terraform (`ws_routes`) and registered in your Lambda handler code to function properly.
+A custom WebSocket route reads the caller with `Lambda.principal(event)`: WebSocket events carry no
+authorizer context, so the router puts there the principal the `$connect` handshake stored with the
+connection. The frame is the route's own payload, any JSON object: the router selects the route by
+API Gateway's `routeKey` and hands the raw event over without reading the frame as a chat request,
+as the ECS and Kubernetes WebSocket gateways do for their custom routes.
 
 ### Execution Modes and Response Store
 
@@ -1072,7 +1076,7 @@ export AK_WEBSOCKET_API__CHAT_ROUTE=chat
 ```
 
 **WebSocket Configuration Parameters**:
-- `connection_table.table_name` - DynamoDB table name for storing WebSocket connection mappings. Keyed on `user_id` (partition key) and `connection_id` (sort key), with a GSI on `connection_id` for reverse lookups.
+- `connection_table.table_name` - DynamoDB table name for storing WebSocket connection mappings. Keyed on `user_id` (partition key, the authenticated principal's subject) and `connection_id` (sort key), with a GSI on `connection_id` for reverse lookups.
 - `connection_table.ttl` - TTL in seconds for automatic cleanup of stale connections (DynamoDB TTL attribute `expiry_time`)
 - `chat_route` - The default route name for chat messages (default: "chat")
 
@@ -1148,6 +1152,8 @@ module "serverless_agents" {
 
 Only `LocalZip` package type is supported for the WebSocket connection handler.
 
+The package must carry the `config.yaml` with the `identity` block; pass whatever its provider needs through `environment_variables` (the examples pass the static provider's credential as `DEMO_AUTH_TOKEN` from a sensitive `demo_auth_token` variable).
+
 ### Queue Configuration (`queue_config`)
 
 When `queue_mode = true`, the `queue_config` block controls SQS queue behaviour. All fields are optional and have defaults:
@@ -1208,7 +1214,7 @@ module "serverless_agents" {
 ### Scheduling (EventBridge Scheduler)
 
 Deferred and recurring chats run on AWS EventBridge Scheduler, which delivers each occurrence as a
-trigger message to the Input Queue. **Scheduling requires `queue_mode = true`** — there is no
+trigger message to the Input Queue. **Scheduling requires `queue_mode = true`**: there is no
 non-queue path for it.
 
 | Variable | Description | Type | Default |
@@ -1235,13 +1241,13 @@ schedule:
 ```
 
 Setting the flags without that block leaves scheduling on the in-process `local` provider and
-`in_memory` store — which does not survive between Lambda invocations — and the provisioned group and
+`in_memory` store, which does not survive between Lambda invocations, and the provisioned group and
 table sit unused with no error.
 
 `enable_scheduling` also flips the **Input Queue** to `content_based_deduplication = true`. EventBridge
 Scheduler cannot set a `MessageDeduplicationId`, so without it two occurrences carrying an otherwise
 identical trigger body would collapse into one inside the 5-minute dedup window. Application senders
-are unaffected — they always send an explicit `MessageDeduplicationId`, which takes precedence.
+are unaffected: they always send an explicit `MessageDeduplicationId`, which takes precedence.
 
 Relevant outputs: `schedule_group_name`, `schedule_group_arn`, `scheduler_execution_role_arn`,
 `schedule_table_name`, `schedule_table_arn` (each `null` unless the matching flag is set).
@@ -1393,7 +1399,7 @@ Platforms send no bearer token, so an authorizer would deny their webhooks. Give
 from agentkernel.aws import APIGatewayAuthorizer
 from agentkernel.integration.adapter import WebhookRouteMatcher
 
-handler = APIGatewayAuthorizer(validator=MyValidator(), bypass=WebhookRouteMatcher.for_integrations("slack")).handle
+handler = APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("slack")).handle
 ```
 
 The bypass matches the request's method and path only, never a header: the authorizer event carries
@@ -1670,11 +1676,11 @@ CloudWatch metrics automatically available:
 - Use DynamoDB for session storage (serverless-native)
 - Alternatively, use Redis for session storage if already using ElastiCache
 - Set appropriate timeout (30-60s for LLM calls)
-- **Security**: Authentication is mandatory for WebSocket mode and recommended for REST modes - implement Lambda authorizers for REST API authentication
+- **Security**: Authentication is mandatory for WebSocket mode and recommended for REST modes - configure an `identity` block and deploy the authorizer Lambda for the REST API
 - **Performance**: If using authentication, cache authorizer results with appropriate TTL
 - **Monitoring**: Monitor authorizer latency and error rates separately
 - **Deployment**: Always create separate packages for each Lambda function (request handler, agent runner, response handler, WebSocket connection handler if applicable)
-- **WebSocket**: Ensure your bearer token includes a `userId` claim for WebSocket connections
+- **WebSocket**: Package `config.yaml` with the connection handler; connections are keyed by the authenticated principal's subject
 - **WebSocket**: Configure appropriate TTL for DynamoDB connection table to clean up stale connections
 - **WebSocket**: Use custom routes to organize different message types in WebSocket mode
 

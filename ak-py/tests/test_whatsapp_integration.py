@@ -91,6 +91,7 @@ class TestParse:
         # WhatsApp has no thread: the sender's number is the conversation.
         assert request.session_id == FROM
         assert request.user_id == FROM
+        assert request.namespace == "phone-1", "the business number is the scope the sender's number is unique within (#603)"
         assert request.request_id == "wamid.1", "the platform message id dedupes a retry"
         assert request.reply_context == {"to": FROM, "reply_to_message_id": "wamid.1"}
         assert isinstance(request.requests[0], AgentRequestText)

@@ -18,7 +18,8 @@ OpenAIModule([assistant_agent])
 if __name__ == "__main__":
     # config.yaml selects the in_memory queue transport, so this call boots the whole
     # single-process pipeline. The schedule management routes (GET/PUT/DELETE /api/v1/schedules)
-    # are mounted by the app, the way a Slack handler is: pass
-    # ScheduleRESTRequestHandler(authoriser=MyAuthoriser()) to protect them with your own
-    # Authoriser. Deferring and the agent tools work without mounting anything.
+    # are mounted by the app, the way a Slack handler is. Who is calling comes from the `identity`
+    # block in config.yaml: a task belongs to the principal whose request created it, so the
+    # handler refuses to build without the block and every route serves the caller's own tasks.
+    # Deferring and the agent tools work without mounting anything.
     IOHandler.run(handlers=[ScheduleRESTRequestHandler()])

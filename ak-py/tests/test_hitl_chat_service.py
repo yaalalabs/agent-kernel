@@ -112,7 +112,7 @@ class TestAmbiguousCombinations:
         req = BaseChatRequest(session_id="s1", prompt="later", schedule=ScheduleSpec(at="2030-01-01T00:00:00"), resume=_resume())
 
         with pytest.raises(ValueError, match="cannot carry both 'schedule' and 'resume'"):
-            ChatService._reject_ambiguous(req)
+            ChatService.reject_unprocessable(req)
 
     @pytest.mark.parametrize("entry_point", ["execute", "execute_sync", "execute_stream", "execute_stream_sync"])
     def test_the_guard_runs_before_scheduling_on_every_entry_point(self, entry_point):
@@ -124,11 +124,11 @@ class TestAmbiguousCombinations:
         import inspect
 
         body = inspect.getsource(getattr(ChatService, entry_point))
-        assert body.index("_reject_ambiguous") < body.index("_maybe_schedule")
+        assert body.index("reject_unprocessable") < body.index("_maybe_schedule")
 
     def test_prompt_plus_resume_is_allowed(self):
         """Not blocked: three of the four frameworks carry new content beside a decision."""
-        ChatService._reject_ambiguous(BaseChatRequest(session_id="s1", prompt="and the weather?", resume=_resume()))
+        ChatService.reject_unprocessable(BaseChatRequest(session_id="s1", prompt="and the weather?", resume=_resume()))
 
 
 class TestPausedResponse:

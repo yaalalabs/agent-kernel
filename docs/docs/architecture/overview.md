@@ -129,7 +129,7 @@ carries the full request envelope, and agent/session resolution happens fresh pe
 | | `AgentService` | `ChatService` |
 |---|----------------|---------------|
 | Statefulness | Stateful: holds the selected agent and session across calls (`select()`, `new()`, `clear()`, `load()`) | Stateless: a fresh agent/session resolution on every call |
-| Input | A prompt string (`run`) or an `AgentRequest` list (`run_multi`/`stream_multi`) | A `BaseChatRequest` envelope (prompt, agent, session_id, user_id, ...), optionally with a prebuilt `AgentRequest` list |
+| Input | A prompt string (`run`) or an `AgentRequest` list (`run_multi`/`stream_multi`) | A `BaseChatRequest` envelope (prompt, agent, session_id, principal, ...), optionally with a prebuilt `AgentRequest` list |
 | Validation and building | None: the caller prepares everything | Validates the envelope; builds the request list from the payload, or accepts a prebuilt one |
 | Output | Typed `AgentReply` / raw `StreamChunk`s | Execution core: typed reply plus session id. Presentation wrappers: JSON dicts, SSE frames, `HTTPException` |
 | Error handling | Exceptions propagate | Core: exceptions propagate. Wrappers: `ValueError` maps to 400, anything else to 500 |

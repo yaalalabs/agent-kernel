@@ -13,15 +13,17 @@ import pytest
 from fastapi.responses import JSONResponse
 
 from agentkernel.core.chat_service import ChatService, RequestBuilder
-from agentkernel.core.model import AgentReplyText, AgentRequestAny, BaseRunRequest, ScheduleSpec
+from agentkernel.core.model import AgentReplyText, AgentRequestAny, BaseRunRequest, Principal, ScheduleSpec
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.model import ScheduledTask
 
 FUTURE_AT = "2030-06-01T09:00:00"
+PRINCIPAL = Principal(subject="u1", provider="static", namespace="static")
+SOMEONE_ELSE = Principal(subject="someone-else", provider="static", namespace="static")
 
 
 def _scheduled_request(**overrides) -> BaseRunRequest:
-    fields = {"prompt": "send the weekly report", "session_id": "s1", "user_id": "u1", "schedule": ScheduleSpec(at=FUTURE_AT)}
+    fields = {"prompt": "send the weekly report", "session_id": "s1", "principal": PRINCIPAL, "schedule": ScheduleSpec(at=FUTURE_AT)}
     fields.update(overrides)
     return BaseRunRequest(**fields)
 
@@ -168,13 +170,57 @@ class TestStatusPlumbing:
         assert status_code == 400
         assert "must be in the future" in body["error"]
 
+    @pytest.mark.asyncio
+    async def test_a_schedule_block_without_a_principal_is_a_403(self, manager, handler):
+        """The manager's refusal is a PermissionError; the wrappers map it beside the 400, not to a 500 (#603)."""
+        manager.create_from_request.side_effect = PermissionError("scheduling requires an authenticated principal")
+
+        status_code, body = await ChatService().process_async_chat_request(_scheduled_request(principal=None))
+
+        assert status_code == 403
+        assert body["error"] == "scheduling requires an authenticated principal"
+
+    def test_the_sync_wrapper_answers_403_too(self, manager, handler):
+        manager.create_from_request.side_effect = PermissionError("scheduling requires an authenticated principal")
+
+        status_code, body = ChatService().process_chat_request(_scheduled_request(principal=None))
+
+        assert status_code == 403
+        assert body["error"] == "scheduling requires an authenticated principal"
+
+
+class TestUserIdIsRefusedBeforeAnySideEffect:
+    """``_validate`` runs after scheduling and trigger recording, so the refusal has to sit ahead of both."""
+
+    @pytest.mark.asyncio
+    async def test_a_scheduled_request_carrying_user_id_creates_no_task(self, manager, handler):
+        with pytest.raises(ValueError, match="user_id is not a request field"):
+            await ChatService().execute(_scheduled_request(user_id="u-1"))
+
+        manager.create_from_request.assert_not_called()
+
+    def test_the_sync_path_creates_no_task_either(self, manager, handler):
+        with pytest.raises(ValueError, match="user_id is not a request field"):
+            ChatService().execute_sync(_scheduled_request(user_id="u-1"))
+
+        manager.create_from_request.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_trigger_carrying_user_id_records_no_occurrence(self, manager, handler):
+        request = BaseRunRequest(prompt="hi", session_id="s1", principal=PRINCIPAL, scheduled_task_id="t1", user_id="u-1")
+
+        with pytest.raises(ValueError, match="user_id is not a request field"):
+            await ChatService().execute(request)
+
+        manager.record_trigger.assert_not_called()
+
 
 class TestTriggerRecording:
     def _trigger_request(self, **overrides) -> BaseRunRequest:
         fields = {
             "prompt": "send the weekly report",
             "session_id": "s1",
-            "user_id": "u1",
+            "principal": PRINCIPAL,
             "scheduled_task_id": "t1",
             "scheduled_time": "2030-06-01T09:00:00Z",
             "request_id": "r1",
@@ -186,15 +232,15 @@ class TestTriggerRecording:
     async def test_occurrence_is_recorded_and_the_request_runs(self, manager, handler):
         result, _ = await ChatService().execute(self._trigger_request())
 
-        manager.record_trigger.assert_called_once_with("t1", "u1", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
+        manager.record_trigger.assert_called_once_with("t1", PRINCIPAL, request_id="r1", occurred_at="2030-06-01T09:00:00Z")
         assert str(result) == "agent ran"
 
     @pytest.mark.asyncio
-    async def test_the_acting_user_is_forwarded_so_the_manager_can_reject_a_foreign_task(self, manager, handler):
+    async def test_the_principal_is_forwarded_so_the_manager_can_reject_a_foreign_task(self, manager, handler):
         """The trigger metadata rides on a client-bindable request, so ownership is the manager's call."""
-        await ChatService().execute(self._trigger_request(user_id="someone-else"))
+        await ChatService().execute(self._trigger_request(principal=SOMEONE_ELSE))
 
-        manager.record_trigger.assert_called_once_with("t1", "someone-else", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
+        manager.record_trigger.assert_called_once_with("t1", SOMEONE_ELSE, request_id="r1", occurred_at="2030-06-01T09:00:00Z")
 
     def test_occurrence_is_recorded_on_the_sync_path(self, manager, handler):
         ChatService().execute_sync(self._trigger_request())
@@ -229,7 +275,7 @@ class TestAdditionalContext:
         req = BaseRunRequest(
             prompt="send the weekly report",
             session_id="s1",
-            user_id="u1",
+            principal=PRINCIPAL,
             schedule=ScheduleSpec(at=FUTURE_AT),
             scheduled_task_id="t1",
             scheduled_time="2030-06-01T09:00:00Z",

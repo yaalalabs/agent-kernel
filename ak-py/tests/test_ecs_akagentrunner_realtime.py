@@ -1,3 +1,4 @@
+import contextlib
 import json
 import threading
 from types import SimpleNamespace
@@ -167,7 +168,8 @@ def test_consumer_loop_starts_real_pool_processes_requests_and_closes_connection
     monkeypatch.setattr(ECSRealtimeAgentRunner, "num_consumers", 1)
 
     session = Session("room_01")
-    agent = SimpleNamespace(name="general", realtime_runner_cls=_RecordingRealtimeRunner)
+    # The pool activates the agent for the call, as it does a real one (Agent._activate).
+    agent = SimpleNamespace(name="general", realtime_runner_cls=_RecordingRealtimeRunner, _activate=contextlib.nullcontext)
     service = SimpleNamespace(agent=agent, runtime=Runtime(InMemorySessionStore()), session=session)
     chat_service = MagicMock()
     chat_service.prepare_agent_handler.return_value = SimpleNamespace(service=service)

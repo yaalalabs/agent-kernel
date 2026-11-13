@@ -80,7 +80,6 @@ name = "agentkernel"
 version = "0.9.5"
 source = { editable = "." }
 dependencies = [
-    { name = "deprecated" },
     { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
     { name = "pydantic", version = "2.14.3", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-11-agentkernel-crewai' or extra == 'extra-11-agentkernel-test'" },
     { name = "pydantic-settings" },
@@ -110,6 +109,8 @@ api = [
     { name = "uvicorn" },
 ]
 auth = [
+    { name = "cryptography" },
+    { name = "httpx" },
     { name = "pyjwt" },
 ]
 aws = [
@@ -308,9 +309,9 @@ requires-dist = [
     { name = "confluent-kafka", marker = "extra == 'kafka'", specifier = ">=2.15.0,<3.0.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15.0,<2.0.0" },
     { name = "croniter", marker = "extra == 'cron'", specifier = ">=3.0,<7.0.0" },
+    { name = "cryptography", marker = "extra == 'auth'", specifier = ">=42.0,<51.0.0" },
     { name = "daytona", marker = "extra == 'daytona'", specifier = ">=0.198.0,<0.199" },
     { name = "deepeval", marker = "extra == 'test'", specifier = ">=4.1.4,<5.0.0" },
-    { name = "deprecated", specifier = ">=1.2.18,<2.0.0" },
     { name = "docker", marker = "extra == 'sandbox-docker'", specifier = ">=7.0.0,<8.0.0" },
     { name = "e2b-code-interpreter", marker = "extra == 'e2b'", specifier = ">=2.8.0,<3.0.0" },
     { name = "fastapi", marker = "extra == 'a2a'", specifier = ">=0.118.0,<0.142.0" },
@@ -322,7 +323,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'telegram'", specifier = ">=0.118.0,<0.142.0" },
     { name = "fastapi", marker = "extra == 'whatsapp'", specifier = ">=0.118.0,<0.142.0" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.4.10,<4.0.0" },
-    { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.24.0,<3.0.0" },
+    { name = "google-adk", marker = "extra == 'adk'", specifier = ">=2.7.0,<3.0.0" },
     { name = "google-api-python-client", marker = "extra == 'gmail'", specifier = ">=2.0.0,<3.0.0" },
     { name = "google-auth", marker = "extra == 'gmail'", specifier = ">=2.0.0,<3.0.0" },
     { name = "google-auth-httplib2", marker = "extra == 'gmail'", specifier = ">=0.2.0,<0.5.0" },
@@ -330,6 +331,7 @@ requires-dist = [
     { name = "google-cloud-firestore", marker = "extra == 'gcp'", specifier = ">=2.19.0,<3.0.0" },
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0,<27.0.0" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27.0,<0.29.0" },
+    { name = "httpx", marker = "extra == 'auth'", specifier = ">=0.27.0,<0.29.0" },
     { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0,<0.29.0" },
     { name = "httpx", marker = "extra == 'logfire'", specifier = ">=0.27.0,<0.29.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0,<0.29.0" },
