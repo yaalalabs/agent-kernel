@@ -9,6 +9,11 @@ execution:
   mode: async
   message_type: delta
 
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX
+
 # Who may connect. The $connect handshake validates the `?token=` query parameter through this
 # provider and keys the connection by the principal's subject; WebSocket mode refuses to start
 # without the block. The static provider maps one credential to the `demo-user` principal. The

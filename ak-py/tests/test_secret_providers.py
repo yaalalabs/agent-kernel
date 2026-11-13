@@ -8,7 +8,7 @@ from test_secret_manager import _DictSecretProvider
 
 import agentkernel.secret
 from agentkernel.core.util.factory import AKConfigError
-from agentkernel.secret import EnvSecretProvider, SecretError
+from agentkernel.secret import EnvSecretProvider, SecretError, SecretProvider
 from agentkernel.secret.providers.aws_ssm import AWSSMSecretProvider
 from agentkernel.secret.providers.kubernetes import KubernetesSecretProvider
 from agentkernel.secret.testing import SecretProviderContract
@@ -148,6 +148,34 @@ def test_kubernetes_needs_no_sdk(tmp_path):
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=tmp_path)
     assert result.returncode == 0, result.stderr
+
+
+# -- describe() ------------------------------------------------------------------------------
+
+
+def test_env_provider_describes_nothing_beyond_the_environment():
+    assert EnvSecretProvider().describe("OPENAI_API_KEY") is None
+
+
+def test_aws_ssm_describes_the_parameter_path(ssm_client):
+    assert AWSSMSecretProvider(prefix=_PREFIX).describe("OPENAI_API_KEY") == f"SSM parameter /ak/{_PREFIX}/openai_api_key"
+    assert ssm_client.calls == []  # no I/O
+
+
+def test_kubernetes_describes_the_mount(tmp_path):
+    missing_mount = tmp_path / "not-mounted"
+
+    assert KubernetesSecretProvider(str(missing_mount)).describe("OPENAI_API_KEY") == (
+        f"a file named OPENAI_API_KEY in a Kubernetes Secret mounted under {missing_mount}"
+    )
+
+
+def test_bring_your_own_provider_inherits_a_generic_description():
+    class _Vault(SecretProvider):
+        def get_secret(self, key):
+            return None
+
+    assert _Vault().describe("OPENAI_API_KEY") == "the 'OPENAI_API_KEY' entry in _Vault"
 
 
 # -- AWSSMSecretProvider -------------------------------------------------------------------

@@ -11,15 +11,18 @@ module "containerized_agents" {
   private_subnet_ids   = var.private_subnet_ids
   product_display_name = "LiveKit Voice (SQS) - Gemini Live"
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves AK_LIVEKIT__API_KEY, AK_LIVEKIT__API_SECRET and GOOGLE_API_KEY from /ak/<prefix>/<key lowercased>
+  # (config.yaml `secret:` block)
+  ssm_enabled = true
+
   # IO Service (LiveKit Gateway): Connects out to LiveKit Cloud, pushes mic audio to SQS input queue.
   rest_service = {
     package_path = "../dist-livekit-io"
     desired_count = 1
     command      = ["python", "app_livekit_io.py"]
     environment_variables = {
-      AK_LIVEKIT__URL        = var.livekit_url
-      AK_LIVEKIT__API_KEY    = var.livekit_api_key
-      AK_LIVEKIT__API_SECRET = var.livekit_api_secret
+      AK_LIVEKIT__URL = var.livekit_url
     }
   }
 
@@ -45,9 +48,6 @@ module "containerized_agents" {
     desired_count = 1
     package_path  = "../dist-agent-runner"
     command       = ["python", "app_agent_runner.py"]
-    environment_variables = {
-      GOOGLE_API_KEY = var.GOOGLE_API_KEY
-    }
   }
 
   scaling_config = {

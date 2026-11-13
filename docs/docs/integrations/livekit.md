@@ -44,6 +44,8 @@ export AK_LIVEKIT__API_KEY="your_api_key"
 export AK_LIVEKIT__API_SECRET="your_api_secret"
 ```
 
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials).
+
 ## Implementation
 
 The gateway is hosted with `GatewayRunner` and passed to `IOHandler.run(gateways=...)`. One gateway serves one room, and its `session_id` is the room name.

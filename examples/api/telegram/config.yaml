@@ -1,3 +1,7 @@
 telegram:
   agent: "general"
   api_version: "bot"
+  # Keys the Telegram credentials are read from through the secret manager when the matching
+  # field (bot_token, ...) is unset: the environment first, then the configured secret provider
+  bot_token_key: AK_TELEGRAM__BOT_TOKEN
+  webhook_secret_key: AK_TELEGRAM__WEBHOOK_SECRET
