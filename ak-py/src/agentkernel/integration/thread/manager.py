@@ -105,13 +105,13 @@ class ConversationThreadManager:
                      from first_prompt at creation.
         :param first_prompt: The prompt of the creating request, used by the naming strategy.
         :return: The existing (possibly renamed) or newly created thread.
-        :raises PermissionError: If the thread exists and user_id does not own it.
+        :raises PermissionError: If the thread belongs to another user, including one a concurrent
+            request created first (every store's ``create`` returns the existing thread).
         """
         name = (name or "").strip() or None
         thread = self._store.load_metadata(session_id)
         if thread is not None:
-            if thread.user_id != user_id:
-                raise PermissionError(f"Thread {session_id} is not owned by user {user_id}")
+            self._check_owner(thread, user_id)
             # Skip the store write when the resent name is already in place and locked.
             if name is not None and (name != thread.name or not thread.name_locked):
                 self._log.info(f"Renaming thread for session {session_id}")
@@ -125,7 +125,15 @@ class ConversationThreadManager:
             name_locked=name is not None,
         )
         self._log.info(f"Creating thread for session {session_id} (user {user_id})")
-        return self._store.create(thread)
+        created = self._store.create(thread)
+        self._check_owner(created, user_id)
+        return created
+
+    @staticmethod
+    def _check_owner(thread: Thread, user_id: str) -> None:
+        """:raises PermissionError: If ``thread`` belongs to another user."""
+        if thread.user_id != user_id:
+            raise PermissionError(f"Thread {thread.session_id} is not owned by user {user_id}")
 
     def append_message(
         self,

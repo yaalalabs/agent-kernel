@@ -387,3 +387,23 @@ class TestLLMThreadNaming:
                 thread = thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="What is the refund policy?")
         assert thread.name == "What is the refund policy?"  # truncation fallback
         assert "agentkernel[thread]" in caplog.text
+
+
+class TestOwnerCheck:
+    """`get_or_create_thread` refuses another user's thread, including one a concurrent request created first (#836)."""
+
+    def test_a_loaded_thread_of_another_user_is_refused_before_any_rename(self, thread_enabled):
+        thread_enabled.get_or_create_thread("s1", "owner", first_prompt="mine")
+        with pytest.raises(PermissionError):
+            thread_enabled.get_or_create_thread("s1", "intruder", name="hijacked")
+        assert thread_enabled.get_thread("s1").name != "hijacked"
+
+    def test_the_race_loser_is_refused(self, thread_enabled, monkeypatch):
+        thread_enabled.get_or_create_thread("s1", "owner", first_prompt="mine")
+        monkeypatch.setattr(thread_enabled._store, "load_metadata", lambda session_id: None)
+        with pytest.raises(PermissionError):
+            thread_enabled.get_or_create_thread("s1", "intruder", first_prompt="theirs")
+
+    def test_the_owner_is_let_through(self, thread_enabled):
+        thread_enabled.get_or_create_thread("s1", "owner", first_prompt="mine")
+        assert thread_enabled.get_or_create_thread("s1", "owner").user_id == "owner"

@@ -1,5 +1,6 @@
 """AG-UI surface: discovery, run routes, and the run lifecycle."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -12,10 +13,12 @@ from ...core.base import Agent
 from ...core.chat_service import AgentHandler, ChatService
 from ...core.config import AKConfig
 from ...core.event import RunPaused
-from ...core.model import Principal
+from ...core.model import BaseChatRequest, Principal
 from ...core.runtime import Runtime
 from ...core.service import AgentService
+from ..thread.recorder import StreamedReply
 from .mapping import AGUIMapper
+from .recorder import AGUIThreadRecorder
 from .run_input import AGUIRunInput
 from .state import AGUIState
 
@@ -42,6 +45,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         super().__init__()
         self._log = logging.getLogger("ak.integration.agui")
         self._chat_service = ChatService()
+        self._recorder = AGUIThreadRecorder.create()
 
         config = AKConfig.get().agui
         if config.default_agent is not None and not self._is_exposed(config.default_agent):
@@ -201,13 +205,14 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         begins: authorisation, agent resolution, body parsing, and request mapping. `to_requests`
         runs before the session is written so a rejected part (audio, video) cannot leave state
         behind. Once `_events` starts yielding, the status is already sent and the only way to
-        report a failure is a `RunError` event.
+        report a failure is a `RunError` event. With threads on, the user turn is recorded last,
+        so none of these rejections leaves a thread behind.
 
         :param agent_name: Agent to run.
         :param request: Incoming request carrying the RunAgentInput body.
         :return: A streaming response of encoded AG-UI events.
-        :raises HTTPException: 400 for an unparsable or unusable body, 404/400 from agent
-                               resolution, 500 when no session could be created.
+        :raises HTTPException: 400 for an unparsable or unusable body or a refused attachment,
+                               404/400 from agent resolution, 500 when no session could be created.
         """
         from ag_ui.encoder import EventEncoder
 
@@ -221,12 +226,18 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
                 f"so no session was created. The two agent-resolution paths disagree."
             )
             raise HTTPException(status_code=500, detail=f"Agent '{agent_name}' could not be selected for this run")
+
+        chat_request: BaseChatRequest | None = None
+        if self._recorder is not None:
+            chat_request = AGUIThreadRecorder.chat_request(run_input, principal, agent_name, requests)
+            requests = await asyncio.to_thread(self._recorder.pre_run, chat_request, requests)
+
         AGUIRunInput.set_agui_session_keys(session, run_input)
         self._warn_if_unreadable(agent, run_input)
 
         state_before = AGUIState.snapshot_state(session)
         encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
-        stream = self._events(encoder, handler, requests, run_input, state_before, principal)
+        stream = self._events(encoder, handler, requests, run_input, state_before, principal, chat_request)
         return StreamingResponse(stream, media_type=encoder.get_content_type())
 
     async def _events(
@@ -237,6 +248,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         run_input: Any,
         state_before: dict | None,
         principal: Principal,
+        chat_request: BaseChatRequest | None = None,
     ) -> AsyncGenerator[str, None]:
         """Yield the run's encoded AG-UI events.
 
@@ -254,6 +266,8 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         :param run_input: The parsed RunAgentInput, for thread and run ids.
         :param state_before: Deep copy of the AG-UI state taken before the run.
         :param principal: The caller, published by Runtime for the run.
+        :param chat_request: The request to record under when threads are on; the reply is recorded
+                             before the terminal event, since a disconnect can skip code after the last yield.
         :return: An async generator of encoded SSE payloads.
         """
         from ag_ui.core import RunErrorEvent, RunFinishedEvent, RunStartedEvent, StateSnapshotEvent
@@ -270,8 +284,11 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         agent_name = agent.name
         error: str | None = None
+        reply = StreamedReply(run_input.thread_id) if chat_request is not None else None
         try:
             async for chunk in handler.run_stream_async(requests, principal=principal):
+                if reply is not None:
+                    reply.add(chunk)
                 if chunk.error:
                     error = chunk.error
                     continue
@@ -293,6 +310,9 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         if error is not None:
             yield encoder.encode(RunErrorEvent(message=error))
             return
+
+        if self._recorder is not None and chat_request is not None and reply is not None:
+            await asyncio.to_thread(self._recorder.post_run, chat_request, reply)
 
         # Before the terminal event, so a client resuming from the snapshot has it in hand.
         state_after = AGUIState.read_state(session)

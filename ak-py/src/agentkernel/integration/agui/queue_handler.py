@@ -14,12 +14,13 @@ from ...core.event import RunPaused
 from ...core.model import StreamChunk
 from ...core.multimodal.storage import AttachmentStorageManager
 from ...core.util.factory import AKConfigError
-from ...pipeline.envelope import ATTR_AGUI
+from ...pipeline.envelope import ATTR_AGUI, ATTR_THREAD
 from ...pipeline.producer import RequestProducer
 from ...pipeline.response_store.factory import ResponseStoreFactory
 from ...pipeline.transport.base import QueueTransportFactory
 from .handler import AGUIRequestHandler
 from .mapping import AGUIMapper
+from .recorder import AGUIThreadRecorder
 from .run_input import AGUIRunEnvelope, AGUIRunRequest
 
 # The key the runner uses for its end-of-run state snapshot, which is not a StreamChunk.
@@ -111,7 +112,9 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
 
         The edge half is the direct handler's verbatim (``_resolve_run_inputs``), so the 404/400
         contract cannot drift between the two. It writes no session: the runner owns that lifecycle,
-        and the client's inbound values travel on the body instead (spec #710 §5-6).
+        and the client's inbound values travel on the body instead (spec #710 §5-6). With threads on,
+        `pre_run` records the user turn and offloads the attachments in one step, and `ATTR_THREAD`
+        tells the runner to record the reply.
 
         :param agent_name: Agent to run.
         :param request: Incoming request carrying the RunAgentInput body.
@@ -126,12 +129,18 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         self._warn_if_unreadable(agent, run_input)
 
         # Bytes must not ride the queue: brokers cap a message far below api.max_file_size.
-        requests, _ = AttachmentStorageManager.offload(
-            run_input.thread_id,
-            requests,
-            attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,
-            session_cache_error=SESSION_CACHE_ERROR,
-        )
+        attributes = {ATTR_AGUI: "1"}
+        if self._recorder is not None:
+            chat_request = AGUIThreadRecorder.chat_request(run_input, principal, agent.name, requests)
+            requests = await asyncio.to_thread(self._recorder.pre_run, chat_request, requests)
+            attributes[ATTR_THREAD] = "1"
+        else:
+            requests, _ = AttachmentStorageManager.offload(
+                run_input.thread_id,
+                requests,
+                attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,
+                session_cache_error=SESSION_CACHE_ERROR,
+            )
 
         request_id = uuid4().hex
         # Offload the sync send so it doesn't block the event loop, as the REST handler does.
@@ -140,7 +149,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
             # The caller's principal rides the body: the runner publishes it for the run (#603).
             AGUIRunRequest(session_id=run_input.thread_id, agent=agent.name, requests=requests, agui=envelope, principal=principal),
             request_id=request_id,
-            attributes={ATTR_AGUI: "1"},
+            attributes=attributes,
             group_id=run_input.thread_id,
         )
         self._log.info(f"[AGUI ENQUEUED] request_id={request_id}, thread_id={run_input.thread_id}, agent={agent.name}")

@@ -96,6 +96,22 @@ thread:
   type: in_memory     # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
+**[AG-UI](../integrations/agui.md)** is the one surface that records without a thread handler: with a
+`thread` block present, both AG-UI handlers record every run under its `threadId`. They serve no read
+routes, so mount `ThreadRESTRequestHandler` beside them to read the history back:
+
+```python
+from agentkernel.agui import AGUIPipelineRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.thread import ThreadRESTRequestHandler
+
+IOHandler.run(handlers=[AGUIPipelineRequestHandler(), ThreadRESTRequestHandler()])
+```
+
+The queue split above applies here too: the agent-runner process needs the same `thread` block, and on a
+broker transport it must name a shared store (`redis`, `valkey`, `dynamodb`, ...). `in_memory` is per process,
+so the runner could not append the reply to the thread the edge created.
+
 :::caution Custom thread stores
 A message's `content` is a JSON object, not a string, when the reply was labelled (see
 [A2UI](a2ui.md)). Every built-in backend serialises the whole `ThreadMessage` as one blob and is

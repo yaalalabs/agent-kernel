@@ -21,7 +21,7 @@ export type Line =
  * unanswered has LangGraph throw it straight back as another pause. The run is the boundary because one
  * run produces one paused record, and Agent Kernel refuses a resume whose ids span two of them: OpenAI
  * appends its pauses, so one agent can hold several at once. */
-export type Staged = { verdict: Verdict; settled: string };
+export type Staged = { verdict: Verdict; pending: string; settled: string };
 
 /**
  * What the client sends back for one interrupt.

@@ -1,9 +1,4 @@
-/**
- * The types this client works in. Protocol events come from `@ag-ui/core`, AG-UI's own SDK, imported
- * as types only so neither it nor its `zod` dependency reaches the bundle. Everything else below is
- * this app's own, because the protocol deliberately does not specify how a client renders a
- * transcript or what an agent keeps in the shared state.
- */
+/** Client types. `@ag-ui/core` is imported as types only, so it stays out of the bundle. */
 import type {
   AGUIEvent,
   AudioInputContent,
@@ -20,12 +15,7 @@ export type Attachment = {
   data: string;
 };
 
-/**
- * One part of a multimodal user message. AG-UI models a message's content as either a plain string or
- * a list of typed parts. Audio and video are included even though Agent Kernel refuses them: sending
- * them under their own type is what produces that refusal, where mapping them onto `document` would
- * smuggle them through as generic files.
- */
+/** One part of a multimodal user message. Audio and video keep their own type so the server can refuse them. */
 export type OutboundPart =
   | TextInputContent
   | ImageInputContent
@@ -65,13 +55,15 @@ export type LocalAction = {
   line: Line;
 };
 
-export type AgUiAction = AGUIEvent | LocalAction;
+/** A past conversation loaded from the thread routes, replacing the transcript. */
+export type LoadAction = {
+  type: "__load";
+  lines: Line[];
+};
 
-/**
- * The shared state as this demo's agent writes it. AG-UI leaves the shape to the app — its own
- * `StateSchema` is `z.any()` — so a snapshot is asserted to be this, never checked. Hence every field
- * is optional and consumers read defensively.
- */
+export type AgUiAction = AGUIEvent | LocalAction | LoadAction;
+
+/** The shared state as this demo's agent writes it. Unchecked, so every field is optional. */
 export type Task = {
   title?: string;
   done?: boolean;

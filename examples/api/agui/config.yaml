@@ -31,6 +31,12 @@ agui:
 multimodal:
   enabled: true
 
+# Records every AG-UI run as a conversation thread keyed by threadId. app.py also mounts the thread
+# read routes, so GET /api/v1/threads/{threadId} returns the history. in_memory is fine here: the
+# single-process run records the user turn and the reply in the same process.
+thread:
+  type: in_memory
+
 api:
   custom_router_prefix: "" # demo UI at GET / instead of GET /custom/
 logging:

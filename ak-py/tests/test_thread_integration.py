@@ -475,6 +475,53 @@ class TestEndToEnd:
         assert listing.status_code == 200
         assert [t["session_id"] for t in listing.json()["threads"]] == ["s-e2e"]
 
+    def test_an_agui_run_reads_back_like_a_rest_run(self, thread_enabled):
+        """The same exchange through REST and AG-UI leaves the same history (#836)."""
+        from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
+        from agentkernel.integration.agui import AGUIRequestHandler
+
+        class EchoRunner(DummyRunner):
+            async def stream(self, agent, session, requests):
+                yield MessageStart(message_id="m1")
+                yield TextDelta(message_id="m1", content=f"ok:{requests[0].prompt}")
+                yield MessageEnd(message_id="m1")
+
+        class EchoAgent(DummyAgent):
+            def __init__(self):
+                Agent.__init__(self, "echo-agent", EchoRunner("EchoRunner"))
+
+        agent = EchoAgent()
+        Runtime.current().register(agent)
+        try:
+            app = FastAPI()
+            authenticate = [Depends(RequestAuthenticator(_Provider()).dependency())]
+            app.include_router(AgentThreadRequestHandler().get_router(), dependencies=authenticate)
+            app.include_router(AGUIRequestHandler().get_router(), dependencies=authenticate)
+            client = TestClient(app)
+
+            rest = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "via-rest", "agent": agent.name}, headers=AUTH)
+            run_input = {
+                "threadId": "via-agui",
+                "runId": "r1",
+                "messages": [{"id": "u1", "role": "user", "content": "hello"}],
+                "tools": [],
+                "context": [],
+            }
+            agui = client.post(f"/agui/{agent.name}", json=run_input, headers=AUTH)
+            assert (rest.status_code, agui.status_code) == (200, 200)
+
+            threads = [client.get(f"/api/v1/threads/{session_id}", headers=AUTH).json() for session_id in ("via-rest", "via-agui")]
+        finally:
+            Runtime.current().deregister(agent)
+
+        def comparable(thread):
+            messages = [{k: v for k, v in m.items() if k not in ("message_id", "timestamp")} for m in thread["messages"]]
+            meta = {k: v for k, v in thread.items() if k not in ("session_id", "created_at", "updated_at", "messages")}
+            return meta, messages
+
+        assert comparable(threads[0]) == comparable(threads[1])
+        assert [(m["role"], m["content"]) for m in threads[1]["messages"]] == [("user", "hello"), ("assistant", "ok:hello")]
+
     def test_another_user_cannot_continue_or_read_the_thread(self, thread_enabled, registered_agent):
         """Ownership holds on the chat route as on the read routes: a thread is one caller's conversation (#603)."""
         client = _client(AgentThreadRequestHandler())

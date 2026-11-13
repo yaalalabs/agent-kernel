@@ -376,6 +376,9 @@ pipeline). The `thread` config block only parameterizes the store backend and na
 `api/` contain no thread code, and `ChatService` has no thread knowledge. Threads are the history
 mechanism for clients that connect to the agent directly; messaging integrations never record
 threads (their platforms own the history), and neither do scheduled occurrences.
+AG-UI is the one surface outside the mounting rule (#836): both AG-UI handlers record whenever a
+`thread` block is present, and serve no read routes — the app mounts `ThreadRESTRequestHandler`
+beside them, since nothing in Agent Kernel mounts routes from configuration.
 
 ### Key Components
 
@@ -396,7 +399,8 @@ threads (their platforms own the history), and neither do scheduled occurrences.
   runner without one warns and drops the reply. Serves the read routes too, and inherits
   `requires_pipeline = True`
 - **`ThreadRecorder`** (`recorder.py`): the recording logic as a reusable class over `ConversationThreadManager`: `pre_run` (require an authenticated principal, store attachment bytes and rewrite to `AgentRequestAttachmentRef`, get-or-create thread, append user message; `store_attachments` runs first so config rejections leave no phantom thread) and `post_run` (append assistant message). `post_run` takes an optional `media_type` because the two callers hold the label differently: the direct handler passes an `AgentReply` carrying its own, while the queue runner has only the response body, where the label sits in a sibling key of `result`. `_as_thread_message` resolves both into the `(content, media_type)` pair the store holds: the object for a labelled reply, and otherwise every encoding it produced before, byte for byte (#763). Since #607 both sides also carry human-in-the-loop turns: `_as_user_message` records a `resume` block as `{"prompt"?, "resume": <ResumeSpec>}` instead of the empty `req.prompt` a decision-only request carries, and `_as_thread_message` checks `AgentPausedReplyAny` first (a subclass carrying no label of its own), storing its `content` under `HITL_MEDIA_TYPE`. Neither reads `ResumeDecision.status`: what is stored never depends on what a decision meant
-- **`ConversationThreadManager`** (`manager.py`): Service façade owning thread lifecycle (create/load/append/history) and, when multimodal is enabled, saving attachment bytes into the shared `AttachmentStore` before the agent runs. A single process-wide instance (`ConversationThreadManager.get()` / class-level singleton, guarded by an `RLock`) is used by `ThreadRecorder` and `ThreadRESTRequestHandler`: `None` when no `thread` config block is present
+- **`StreamedReply`** (`recorder.py`, #836): what a streamed run leaves in a thread, gathered chunk by chunk and written once at the end; built only when the run is recorded. Precedence: an error records nothing (a pause included), then a pause (replacing any text before it, built as `AgentThreadRequestHandler` builds it), then a `DataMessage` payload, then the joined text; an empty run records nothing. `paused` is what the queue runner reads to record under `202`. Used by both AG-UI paths; the REST SSE handler and `StreamAgentRunner` still accumulate inline
+- **`ConversationThreadManager`** (`manager.py`): Service façade owning thread lifecycle (create/load/append/history) and, when multimodal is enabled, saving attachment bytes into the shared `AttachmentStore` before the agent runs. A single process-wide instance (`ConversationThreadManager.get()` / class-level singleton, guarded by an `RLock`) is used by `ThreadRecorder` and `ThreadRESTRequestHandler`: `None` when no `thread` config block is present. Since #607 `append_message` takes a `media_type` and `str | JSONPayload` content, so a pause, a decision or a labelled reply is stored as the object; since #836 `get_or_create_thread` also re-checks the owner of the thread `create` returns, refusing one a concurrent request created first (every store's `create` returns the existing thread)
 - **`ThreadStore`** (`store/base.py`): Abstract base with backend persistence methods (create/get/append/list); pluggable per backend
 - **`ThreadStoreBuilder`** (`store/base.py`): Factory that constructs the configured `ThreadStore` from `AKConfig`'s `thread.type`
 - **`Thread` / `ThreadMessage` / `ThreadAttachment` / `ThreadPage` / `MessagePage`** (`model.py`): Pydantic models for thread metadata, individual messages, attachment references, and cursor-paginated listings, using the shared `core/util/pagination.py` cursor helpers (`encode_cursor`/`decode_cursor`/`clamp_limit`, `MAX_PAGE_SIZE`). `ThreadMessage.content` is `str | JSONPayload` with a `media_type` beside it (#763): the object form **only** when the reply was labelled, the two tied together by a model validator, so replayed history has the shape the live reply had (`result` on the REST surface, #706). `to_wire()` is what the read routes serialise through — it omits an unset `media_type` rather than sending `null`, and names that one field rather than using `exclude_none`, which would also drop an attachment's unset `name`/`mime_type`. No store backend is affected: all six serialise the whole model and none reads `content`. `role` stays `Literal["user", "assistant"]`: a human's decision is a `user` message because a person sent it (#607)
@@ -475,7 +479,9 @@ already receive survives to a frontend instead of being discarded at the text-on
   `ThreadRequestHandler` it joins the pipeline's routes rather than replacing one, and `IOHandler`
   needs no change. It subclasses the direct handler and shares its edge half verbatim
   (`_resolve_run_inputs`: authorise, resolve agent, parse, `to_requests`), then offloads attachments
-  (`AttachmentStorageManager.offload` — bytes must not ride the queue), enqueues with the `agui`
+  (`AttachmentStorageManager.offload` — bytes must not ride the queue; with a `thread` block,
+  `AGUIThreadRecorder.pre_run` records the user turn and does that offload in one step, and the
+  message also carries `ATTR_THREAD` so the runner records the reply), enqueues with the `agui`
   marker and `group_id = thread_id`, and drains `store.stream(request_id)` back onto the socket it
   never let go of. `requires_pipeline = True`. **It creates no session**: the client's `state`,
   `forwardedProps` and `context` travel in a typed `AGUIRunEnvelope` on the body, because
@@ -487,6 +493,15 @@ already receive survives to a frontend instead of being discarded at the text-on
   `session.type` is the literal `in_memory` there, and when `multimodal.enabled` is set with an
   attachment store that is not shared there (the reference the edge enqueues would be unresolvable in
   the runner).
+- **Conversation threads** (`recorder.py`, #836): `AGUIThreadRecorder` adapts an AG-UI run to
+  `ThreadRecorder` — `create()` is `None` without a `thread` block (the enabled-check),
+  `chat_request` builds the `BaseChatRequest` (prompt from the text parts, even `""`; decisions
+  copied onto `resume`), `pre_run` refuses another user's thread with 403 (`ThreadRecorder.pre_run` checks ownership
+  before any write, and `get_or_create_thread` re-checks the thread `create` returns, for one
+  created concurrently; the read routes' rule) and maps an attachment refusal to 400. The direct handler records the user turn
+  after every rejection and the reply before `RunFinished` (a disconnect can skip code after the last
+  yield), both via `asyncio.to_thread`; the queue edge records the user turn and marks the message,
+  and `_process_agui` records the reply after the terminal chunk through `_record_thread_reply`
 - **A pause is the third terminal shape** (#606): `RunFinishedEvent(outcome=RunFinishedInterruptOutcome(interrupts=[...]))`,
   with any `StateSnapshot` emitted **before** it so a client resuming from the snapshot has it in
   hand. It is an *outcome* of the run, not an event during it — so `to_agui` still returns `None`
@@ -1220,7 +1235,7 @@ Rules that govern the package:
    `IntegrationDelivery._outbound_adapter` (`IntegrationAdapterFactory`; shared with the serverless
    consumers, so a Lambda without integration traffic never imports `agentkernel.integration`),
    `AgentRunner._record_thread_reply` (`ConversationThreadManager`, `ThreadRecorder` — §14.9), and
-   `AgentRunner._process_agui` (`AGUIRunEnvelope`, `AGUIState` — #710 §4).
+   `AgentRunner._process_agui` (`AGUIRunEnvelope`, `AGUIState` — #710 §4; `StreamedReply` — #836).
    Same shape as `core/tool.py` reaching the AG-UI state helpers. Neither runner holds the reply
    a paused run produced, so both rebuild it (`AgentRunner._paused_reply`) from the pause keys
    their source carries — the `status: "PAUSED"` response body, or a `run_paused` stream chunk —
@@ -1354,7 +1369,8 @@ ak-py/src/agentkernel/
 │   ├── agui/                # AG-UI protocol surface: AGUIRequestHandler (routes), queue_handler.py
 │   │                        #   (AGUIPipelineRequestHandler, queue mode), mapping.py
 │   │                        #   (StreamEvent -> AG-UI events), run_input.py (RunAgentInput parsing),
-│   │                        #   state.py (shared-state accessors + the state/client-context tools)
+│   │                        #   state.py (shared-state accessors + the state/client-context tools),
+│   │                        #   recorder.py (AGUIThreadRecorder: thread recording, #836)
 │   │                        #   (alias: agentkernel.agui)
 │   ├── adapter/             # Messaging-integration seam (#524): base.py (InboundAdapter,
 │   │                        #   PollingInboundAdapter, OutboundAdapter, InboundRequest,
