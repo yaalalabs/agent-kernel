@@ -103,7 +103,9 @@ class OpenAIInputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, InputGuardrai
                     self._guardrails_client.chat.completions.create,
                     model=AKConfig.get().guardrail.input.model,
                     messages=[{"role": "user", "content": input_text}],
-                    max_tokens=1,  # We only need to check, not generate
+                    # We only need the checks, not the reply. Every OpenAI chat model accepts max_completion_tokens
+                    # (reasoning models reject max_tokens), and it caps reasoning tokens too.
+                    max_completion_tokens=1,
                 )
                 # If we get here, no guardrail was triggered
                 log.debug("Input passed guardrail validation")
@@ -188,7 +190,9 @@ class OpenAIOutputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, OutputGuardr
                         {"role": "user", "content": agent_reply.prompt if hasattr(agent_reply, "prompt") else ""},
                         {"role": "assistant", "content": output_text},
                     ],
-                    max_tokens=1,  # We only need to check, not generate
+                    # We only need the checks, not the reply. Every OpenAI chat model accepts max_completion_tokens
+                    # (reasoning models reject max_tokens), and it caps reasoning tokens too.
+                    max_completion_tokens=1,
                 )
                 # If we get here, no guardrail was triggered
                 log.debug("Output passed guardrail validation")

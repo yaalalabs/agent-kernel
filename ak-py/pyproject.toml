@@ -53,7 +53,9 @@ langgraph = [
     "langgraph-prebuilt~=1.1.0",
     "langchain~=1.3.10",
     "langchain_community~=0.4.1",
-    "litellm>=1.95.0,<1.96"
+    # >=1.100.3: first release that treats gpt-6-* as reasoning models. <1.106: 1.105 is the newest line the lock
+    # tests (opik needs litellm<1.106), and from 1.106.0 to 1.108.3 any litellm call with tools needs mcp 2.x.
+    "litellm>=1.100.3,<1.106"
 ]
 smolagents = [
     "smolagents>=1.26.0,<2.0.0",
@@ -102,7 +104,7 @@ nats = [
 ]
 
 thread = [
-    "litellm>=1.95.0,<2.0.0",
+    "litellm>=1.100.3,<2.0.0",
 ]
 
 agui = [
@@ -131,7 +133,7 @@ openai = [
 ]
 adk = [
     "google-adk>=2.7.0,<3.0.0",
-    "litellm>=1.95.0,<1.96",
+    "litellm>=1.100.3,<1.106",  # same bounds as the langgraph extra
     "openinference-instrumentation-google-adk>=0.1.6,<0.2.0",
 ]
 walledai = [
@@ -189,7 +191,7 @@ test = [
     "pytest-html>=4.1.1,<5.0.0",
     "pytest-order>=1.3.0,<2.0.0",
     "deepeval>=4.1.4,<5.0.0",
-    "litellm>=1.95.0,<2.0.0",
+    "litellm>=1.100.3,<2.0.0",
 ]
 a2a = [
     "a2a-sdk[http-server]==1.2.3",
@@ -200,7 +202,7 @@ mcp = [
     "fastmcp>=3.4.10,<4.0.0"
 ]
 multimodal = [
-    "litellm>=1.95.0,<2.0.0",
+    "litellm>=1.100.3,<2.0.0",
     "python-multipart>=0.0.12,<0.1.0",
 ]
 sandbox-docker = [
@@ -218,7 +220,7 @@ kubernetes = [
     "kubernetes>=29.0.0,<37.0.0",
 ]
 opik = [
-    "opik>=1.7.0,<3.0.0",
+    "opik>=1.10.0,<3.0.0",
 ]
 jev = [
     "typesafe-sdk>=0.7.2,<0.8",

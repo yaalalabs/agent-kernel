@@ -88,7 +88,7 @@ Create JSON configuration files that define your guardrail rules. You can use th
         "name": "Jailbreak",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4o-mini",
+          "model": "gpt-6-luna",
           "include_reasoning": false
         }
       },
@@ -96,7 +96,7 @@ Create JSON configuration files that define your guardrail rules. You can use th
         "name": "Off Topic Prompts",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4o-mini",
+          "model": "gpt-6-luna",
           "system_prompt_details": "You are a helpful assistant for customer service. Keep responses focused on customer service topics.",
           "include_reasoning": false
         }
@@ -105,7 +105,7 @@ Create JSON configuration files that define your guardrail rules. You can use th
         "name": "Custom Prompt Check",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4o-mini",
+          "model": "gpt-6-luna",
           "system_prompt_details": "You are a general knowledge assistant. Raise the guardrail if questions aren't focused on general knowledge.",
           "include_reasoning": false
         }
@@ -165,7 +165,7 @@ Create JSON configuration files that define your guardrail rules. You can use th
         "name": "Custom Prompt Check",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4o-mini",
+          "model": "gpt-6-luna",
           "system_prompt_details": "You are a general knowledge assistant. Raise the guardrail if the response isn't appropriate.",
           "include_reasoning": false
         }
@@ -174,7 +174,7 @@ Create JSON configuration files that define your guardrail rules. You can use th
         "name": "NSFW Text",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4o-mini",
+          "model": "gpt-6-luna",
           "include_reasoning": false
         }
       },
@@ -196,6 +196,10 @@ Create JSON configuration files that define your guardrail rules. You can use th
 
 ### Step 2: Configure Agent Kernel
 
+The `model` fields inside the guardrail JSON configure each LLM-based check
+independently. The input and output models below configure the outer validation
+call; changing them does not update the check models in the JSON files.
+
 Configure guardrails in your `config.yaml`:
 
 ```yaml
@@ -203,12 +207,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
 ```
 
@@ -218,13 +222,13 @@ Or via environment variables:
 # Input guardrails
 export AK_GUARDRAIL__INPUT__ENABLED=true
 export AK_GUARDRAIL__INPUT__TYPE=openai
-export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__INPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json
 
 # Output guardrails
 export AK_GUARDRAIL__OUTPUT__ENABLED=true
 export AK_GUARDRAIL__OUTPUT__TYPE=openai
-export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json
 ```
 
@@ -314,7 +318,7 @@ Detects prompt injection and jailbreak attempts.
   "name": "Jailbreak",
   "config": {
     "confidence_threshold": 0.7,
-    "model": "gpt-4o-mini",
+    "model": "gpt-6-luna",
     "include_reasoning": false
   }
 }
@@ -330,7 +334,7 @@ Ensures requests stay within the defined scope of your agent.
   "name": "Off Topic Prompts",
   "config": {
     "confidence_threshold": 0.7,
-    "model": "gpt-4o-mini",
+    "model": "gpt-6-luna",
     "system_prompt_details": "You are a customer service assistant. Raise the guardrail if questions aren't about customer service.",
     "include_reasoning": false
   }
@@ -347,7 +351,7 @@ Define custom validation logic based on your specific requirements.
   "name": "Custom Prompt Check",
   "config": {
     "confidence_threshold": 0.7,
-    "model": "gpt-4o-mini",
+    "model": "gpt-6-luna",
     "system_prompt_details": "Custom validation instructions here.",
     "include_reasoning": false
   }
@@ -383,7 +387,7 @@ Detects and blocks not-safe-for-work content in responses.
   "name": "NSFW Text",
   "config": {
     "confidence_threshold": 0.7,
-    "model": "gpt-4o-mini",
+    "model": "gpt-6-luna",
     "include_reasoning": false
   }
 }
@@ -411,7 +415,7 @@ Custom validation for agent responses.
   "name": "Custom Prompt Check",
   "config": {
     "confidence_threshold": 0.7,
-    "model": "gpt-4o-mini",
+    "model": "gpt-6-luna",
     "system_prompt_details": "Custom output validation instructions.",
     "include_reasoning": false
   }
@@ -425,7 +429,7 @@ Custom validation for agent responses.
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | `confidence_threshold` | float | Sensitivity level (0.0 - 1.0) | 0.7 |
-| `model` | string | LLM model for validation | gpt-4o-mini |
+| `model` | string | LLM model for validation | Required in JSON (example: `gpt-6-luna`) |
 | `include_reasoning` | boolean | Include explanation in logs | false |
 
 ### PII Detection Parameters
@@ -453,7 +457,7 @@ from agentkernel.langgraph import LangGraphModule
 
 # Define your agent
 def chatbot(state: MessagesState):
-    llm = ChatOpenAI(model="gpt-4o-mini")
+    llm = ChatOpenAI(model="gpt-6-luna")
     return {"messages": [llm.invoke(state["messages"])]}
 
 # Build graph
@@ -479,12 +483,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_input.json
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_output.json
 ```
 
@@ -560,7 +564,7 @@ uv add openai-guardrails
 
 1. **Use pre-flight checks first**: Faster and cheaper (PII, Moderation)
 2. **Adjust confidence thresholds**: Higher thresholds = fewer false positives but may miss edge cases
-3. **Choose appropriate models**: `gpt-4o-mini` provides good balance of cost/accuracy
+3. **Choose appropriate models**: `gpt-6-luna` matches the Agent Kernel default; evaluate cost and accuracy for your checks
 4. **Separate input/output configs**: Different rules for each direction
 
 ### Optimization Tips
@@ -570,12 +574,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini  # Cost-effective model
+    model: gpt-6-luna  # Cost-effective model
     config_path: guardrails_input.json
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_output.json
 ```
 
@@ -626,7 +630,7 @@ guardrail:
         "name": "Jailbreak",
         "config": {
           "confidence_threshold": 0.5,
-          "model": "gpt-4o-mini",
+          "model": "gpt-6-luna",
           "include_reasoning": false
         }
       }
@@ -664,7 +668,7 @@ guardrail:
         "name": "Jailbreak",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4o-mini",
+          "model": "gpt-6-luna",
           "include_reasoning": false
         }
       }

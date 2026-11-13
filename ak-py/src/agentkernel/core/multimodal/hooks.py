@@ -85,6 +85,10 @@ class MultimodalPreHook(PreHook):
                         }
                     ],
                     max_tokens=50,
+                    # Keep the short budget for the description: LiteLLM turns reasoning off where the model
+                    # can, and drop_params drops the setting for models that don't support it.
+                    reasoning_effort="none",
+                    drop_params=True,
                 )
                 description = response.choices[0].message.content.strip()
                 self._log.debug(f"Generated attachment description: {description}")
@@ -109,6 +113,10 @@ class MultimodalPreHook(PreHook):
                         }
                     ],
                     max_tokens=50,
+                    # Keep the short budget for the description: LiteLLM turns reasoning off where the model
+                    # can, and drop_params drops the setting for models that don't support it.
+                    reasoning_effort="none",
+                    drop_params=True,
                 )
                 return resp.choices[0].message.content.strip()
 

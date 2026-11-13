@@ -121,6 +121,10 @@ class ThreadNamingStrategy:
             model=AKConfig.get().thread.naming.model,
             messages=[{"role": "user", "content": instruction}],
             max_tokens=50,
+            # Keep the short budget for the title: LiteLLM turns reasoning off where the model can,
+            # and drop_params drops the setting for models that don't support it.
+            reasoning_effort="none",
+            drop_params=True,
         )
         return response.choices[0].message.content or ""
 

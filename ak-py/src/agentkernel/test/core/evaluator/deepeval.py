@@ -34,9 +34,12 @@ class DeepevalAKEvaluator(AKEvaluator):
         self._model: LiteLLMModel | None = None  # lazy: score mode never needs it
 
     def _llm_model(self) -> LiteLLMModel:
+        """Lazily build and cache the judge, asking for reasoning off so GEval's temperature and logprobs are accepted."""
         if self._model is None:
             llm = self._config.llm
-            self._model = LiteLLMModel(f"{llm.provider}/{llm.model}")
+            # Reasoning models only take GEval's temperature=0 and logprobs with reasoning off. LiteLLM turns it off where
+            # the model can, and drop_params drops whatever a model doesn't support instead of failing the call.
+            self._model = LiteLLMModel(f"{llm.provider}/{llm.model}", generation_kwargs={"reasoning_effort": "none", "drop_params": True})
         return self._model
 
     def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
@@ -75,6 +78,7 @@ class DeepevalAKEvaluator(AKEvaluator):
             ],
             model=self._llm_model(),
             threshold=None,
+            top_logprobs=5,  # GEval asks for 20 by default; newer OpenAI models reject more than 5
         )
         test_case = LLMTestCase(input=case.user_input, actual_output=case.actual, expected_output=case.expected)
         try:

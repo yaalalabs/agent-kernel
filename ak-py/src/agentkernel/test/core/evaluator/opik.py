@@ -1,4 +1,5 @@
 import os
+from typing import Any
 
 # Must be set before any metric is constructed: this stops the SDK from writing traces/spans to
 # Opik Cloud (or a self-hosted instance) by default, which would otherwise require an OPIK_API_KEY /
@@ -8,6 +9,7 @@ import os
 os.environ.setdefault("OPIK_TRACK_DISABLE", "True")
 
 from opik.evaluation.metrics import GEval, LevenshteinRatio
+from opik.evaluation.models import LiteLLMChatModel
 
 from agentkernel.test.config import AKTestConfig
 
@@ -32,15 +34,41 @@ _DEFAULT_EVALUATION_CRITERIA = (
 )
 
 
+class _TopLogprobsCappedModel(LiteLLMChatModel):
+    """opik's LiteLLM judge, capping the top_logprobs GEval asks for: always 20, and newer OpenAI models reject more than 5."""
+
+    MAX_TOP_LOGPROBS = 5
+
+    def generate_provider_response(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        return super().generate_provider_response(messages, **self._capped(kwargs))
+
+    async def agenerate_provider_response(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        return await super().agenerate_provider_response(messages, **self._capped(kwargs))
+
+    @classmethod
+    def _capped(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        top_logprobs = kwargs.get("top_logprobs")
+        if isinstance(top_logprobs, int) and top_logprobs > cls.MAX_TOP_LOGPROBS:
+            return {**kwargs, "top_logprobs": cls.MAX_TOP_LOGPROBS}
+        return kwargs
+
+
 class OpikAKEvaluator(AKEvaluator):
     def __init__(self, config: AKTestConfig) -> None:
         super().__init__(config)
-        self._model: str | None = None  # lazy: score mode never needs it
+        self._model: LiteLLMChatModel | None = None  # lazy: score mode never needs it
 
-    def _llm_model(self) -> str:
+    def _llm_model(self) -> LiteLLMChatModel:
+        """Lazily build and cache the judge, asking for reasoning off so GEval's temperature and logprobs are accepted."""
         if self._model is None:
             llm = self._config.llm
-            self._model = f"{llm.provider}/{llm.model}"
+            # Built here rather than by GEval so drop_params reaches LiteLLM (opik drops reasoning_effort itself only when
+            # LiteLLM reports it unsupported, which LiteLLM doesn't for "openai/<non-reasoning model>") and GEval's
+            # top_logprobs gets capped. A LiteLLM model for every provider, like the deepeval judge: opik's models_factory
+            # would hand anthropic/* to its own Anthropic client. temperature=0.0 is what GEval would use.
+            self._model = _TopLogprobsCappedModel(
+                model_name=f"{llm.provider}/{llm.model}", track=False, temperature=0.0, reasoning_effort="none", drop_params=True
+            )
         return self._model
 
     def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
