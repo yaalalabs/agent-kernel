@@ -7,6 +7,11 @@ session:
     prefix: "ak:openai-auth:example:"
     url: "redis://ak-openai-serverless-dev-examples-redis.rhjs7r.0001.use2.cache.amazonaws.com:6379"
 
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX
+
 # Who may call: the identity provider the authorizer Lambda authenticates every bearer token with.
 # The static provider maps one credential to the `demo-user` principal. The value is never written
 # here: Terraform passes it to the authorizer as the DEMO_AUTH_TOKEN environment variable

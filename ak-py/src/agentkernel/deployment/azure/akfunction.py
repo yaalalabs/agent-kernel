@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 import azure.functions as func
 
 from ...core.chat_service import ChatService
-from ...core.model import BaseRunRequest
+from ...core.model import ChatRunRequest
 from ...core.util.async_bridge import run_async_sync
 from ...identity.errors import AuthenticationError
 from ...identity.provider.base import RequestContext
@@ -63,9 +63,9 @@ class AzureFunctions:
                 raise ValueError("Invalid JSON in request body")
 
             if isinstance(body, dict) and body.get("body") is not None:
-                body = BaseRunRequest.model_validate(body["body"])
+                body = ChatRunRequest.model_validate(body["body"])
             elif isinstance(body, dict) and body:
-                body = BaseRunRequest.model_validate(body)
+                body = ChatRunRequest.model_validate(body)
             else:
                 raise ValueError("Invalid request, request body cannot be empty or null")
             body.principal = principal

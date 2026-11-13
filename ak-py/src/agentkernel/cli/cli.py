@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import logging
-import os
 import readline  # Enables line editing and history features for input() in the CLI
 import threading
 
@@ -10,6 +9,7 @@ from ..core.model import AgentRequestText, Principal
 from ..identity.errors import AuthenticationError
 from ..identity.provider.base import RequestContext
 from ..identity.provider.factory import IdentityProviderFactory
+from ..secret import SecretManager
 
 ak_cli_logger = logging.getLogger("ak.cli")
 
@@ -32,7 +32,7 @@ class CLI:
             Authenticated once when the REPL starts, and the resulting principal runs every prompt.
         """
         self._service = AgentService()
-        self._token = token or os.environ.get(self.TOKEN_ENV)
+        self._token = token or SecretManager.current().get(self.TOKEN_ENV, default=None)
         self._principal: Principal | None = None
 
     async def _authenticate(self) -> None:

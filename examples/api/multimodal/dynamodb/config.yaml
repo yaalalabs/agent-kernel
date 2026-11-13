@@ -3,3 +3,8 @@ multimodal:
   storage_type: dynamodb
   dynamodb:
     table_name: "ak-mm-ddb-dev-examples-mm-attachments"
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

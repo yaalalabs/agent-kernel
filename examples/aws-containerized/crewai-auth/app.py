@@ -1,7 +1,12 @@
 from agentkernel.api import RESTAPI
 from agentkernel.crewai import CrewAIModule
-from crewai import Agent
+from agentkernel.secret import SecretManager
+from crewai import LLM, Agent
 from fastapi import APIRouter
+
+# OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
+# handed to the CrewAI LLM in memory; it is never written back to os.environ.
+openai_key = SecretManager.current().get("OPENAI_API_KEY")
 
 math_agent = Agent(
     role="math",
@@ -9,7 +14,7 @@ math_agent = Agent(
     backstory="You provide help with math problems. Explain your reasoning at each step and include examples. \
         If prompted for anything else you refuse to answer.",
     verbose=False,
-    llm="openai/gpt-4.1-mini",
+    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
 )
 
 history_agent = Agent(
@@ -17,7 +22,7 @@ history_agent = Agent(
     goal="Specialist agent for historical questions",
     backstory="You provide assistance with historical queries. Explain important events and context clearly.",
     verbose=False,
-    llm="openai/gpt-4.1-mini",
+    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
 )
 
 router = APIRouter()

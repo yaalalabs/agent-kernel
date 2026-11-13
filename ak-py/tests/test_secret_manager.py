@@ -205,6 +205,45 @@ def test_provider_hit_is_cached_but_miss_is_not(manager, provider):
     assert provider.calls == [KEY, KEY]
 
 
+class _LocatedProvider(_DictSecretProvider):
+    """A dict provider that names where it looks, like aws_ssm does."""
+
+    def describe(self, key):
+        return f"SSM parameter /ak/test/{key.lower()}"
+
+
+def test_describe_lists_every_place_in_resolution_order():
+    manager = SecretManager(_LocatedProvider(), cache_ttl=0)
+
+    assert manager.describe(KEY) == f"the {KEY} environment variable or SSM parameter /ak/test/openai_api_key"
+    assert manager.describe("AK_WHATSAPP__ACCESS_TOKEN", "whatsapp.access_token") == (
+        "whatsapp.access_token, the AK_WHATSAPP__ACCESS_TOKEN environment variable or SSM parameter /ak/test/ak_whatsapp__access_token"
+    )
+
+
+def test_describe_omits_a_provider_that_reads_only_the_environment():
+    manager = SecretManager(EnvSecretProvider(), cache_ttl=0)
+
+    assert manager.describe(KEY) == f"the {KEY} environment variable"
+    assert manager.describe(KEY, "openai.key") == f"openai.key or the {KEY} environment variable"
+
+
+def test_describe_rejects_a_malformed_key():
+    with pytest.raises(ValueError):
+        SecretManager(EnvSecretProvider(), cache_ttl=0).describe("openai-key")
+
+
+def test_total_miss_names_where_to_set_the_key():
+    with pytest.raises(SecretNotFoundError) as exc_info:
+        SecretManager(_LocatedProvider(), cache_ttl=0).get(KEY)
+
+    assert str(exc_info.value) == f"secret '{KEY}' not found: set the {KEY} environment variable or SSM parameter /ak/test/openai_api_key"
+
+
+def test_secret_not_found_error_keeps_its_one_argument_form():
+    assert str(SecretNotFoundError(KEY)) == f"secret '{KEY}' not found: no '{KEY}' environment variable and no provider entry"
+
+
 def test_total_miss_raises_naming_key_not_value(manager, provider):
     provider.seed("OTHER_KEY", "s3cr3t-value")
     with pytest.raises(SecretNotFoundError) as exc_info:

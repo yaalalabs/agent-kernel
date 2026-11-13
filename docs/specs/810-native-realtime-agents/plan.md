@@ -119,7 +119,7 @@ Live captions (C2) are not part of Agent Kernel. C3 (an API for application code
 - **Goal:** Ending an edge closes its model session at once, and a native session that fails is not reopened by every
   frame.
 - **Files:**
-  - `ak-py/src/agentkernel/integration/adapter/base.py`: `_enqueue()` with no message builds the empty control request (spec §3.1).
+  - `ak-py/src/agentkernel/integration/adapter/base.py`: `_enqueue_end()` builds the empty control request (spec §3.1).
   - `ak-py/src/agentkernel/integration/adapter/registry.py`: an identity-safe `unregister`; `gateway.py` passes its own
     adapter (spec §3.3).
   - `ak-py/src/agentkernel/integration/adapter/producer.py`: stamps `InboundRequest.end_session` as `ATTR_REALTIME_END` (spec §3.1).

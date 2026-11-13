@@ -70,6 +70,7 @@ secret:
 | --- | --- |
 | `get(key)` | Resolve `key`; raises `SecretNotFoundError` when no layer has it. |
 | `get(key, default=None)` | Resolve `key`; returns `default` on a miss. A provider **failure** still raises `SecretError` — a default never masks it. |
+| `describe(key, field=None)` | Every place `key` can be set, in resolution order, for your own error messages: `field` (an `AKConfig` path) when given, the environment variable, then the provider's location — e.g. `the OPENAI_API_KEY environment variable or SSM parameter /ak/myapp-dev/openai_api_key`. |
 | `invalidate(key)` | Drop the cached value for `key` so the next `get` re-resolves it. |
 | `clear()` | Drop every cached value. |
 
@@ -78,7 +79,13 @@ Errors live in `agentkernel.secret.errors` and are re-exported from `agentkernel
 - **`SecretError`** — the backend failed (credentials, network, throttling, authorization). Never carries
   the value.
 - **`SecretNotFoundError`** (subclass of `SecretError`) — no layer had the key and no `default` was
-  supplied. Its `key` attribute names the missing key.
+  supplied. Its `key` attribute names the missing key, and its message names where to set it:
+  `secret 'OPENAI_API_KEY' not found: set the OPENAI_API_KEY environment variable or SSM parameter /ak/myapp-dev/openai_api_key`.
+
+The framework's own consumers word their missing-credential errors the same way, so a deployment on
+`aws_ssm` is told the exact parameter to create (`Incomplete WhatsApp configuration: set
+whatsapp.access_token, the AK_WHATSAPP__ACCESS_TOKEN environment variable or SSM parameter
+/ak/myapp-dev/ak_whatsapp__access_token.`).
 
 A required key resolved at module import time fails the process at startup rather than on the first model
 call. An optional one can degrade gracefully:
@@ -214,19 +221,107 @@ class VaultSecretProvider(SecretProvider):
 
     def get_secret(self, key: str) -> str | None:
         ...  # return the value, None on a miss, or raise SecretError on a backend failure
+
+    def describe(self, key: str) -> Optional[str]:
+        return f"Vault secret {self.mount}/{key.lower()}"  # named in "not found" errors; no I/O
 ```
 
 A provider owns its own addressing, must tolerate concurrent calls, and never caches or falls back — the
-manager does both. `agentkernel.secret.testing.SecretProviderContract` is a reusable pytest contract suite for provider
+manager does both. `describe` is optional: without it, errors name `the '<KEY>' entry in <ClassName>`. `agentkernel.secret.testing.SecretProviderContract` is a reusable pytest contract suite for provider
 implementations.
+
+## Framework-owned credentials
+
+The credentials listed in this section resolve through `SecretManager`, so a deployment can keep them in its
+secret provider instead of its environment. The environment still wins, so existing deployments that inject
+these variables behave exactly as before. Some components still read their credentials from the environment
+only; see [Environment only](#environment-only).
+
+**Keys read directly.** Each is resolved under its usual environment variable name when the component
+needs it:
+
+| Component | Key | `aws_ssm` parameter |
+| --- | --- | --- |
+| Walled AI guardrail | `WALLED_API_KEY` | `/ak/<prefix>/walled_api_key` |
+| Neo4j knowledge base (no `password` argument) | `NEO4J_PASSWORD` | `/ak/<prefix>/neo4j_password` |
+| Starburst knowledge base (no `password` argument) | `STARBURST_PASSWORD` | `/ak/<prefix>/starburst_password` |
+| E2B sandbox provider | the key named by `api_key_env` (default `E2B_API_KEY`) | `/ak/<prefix>/e2b_api_key` |
+| Daytona sandbox provider | the key named by `api_key_env` (default `DAYTONA_API_KEY`) | `/ak/<prefix>/daytona_api_key` |
+| CLI (`--token` omitted) | `AK_CLI_TOKEN` | `/ak/<prefix>/ak_cli_token` |
+| OpenAI realtime runner (`execution.mode: realtime`) | `OPENAI_API_KEY` | `/ak/<prefix>/openai_api_key` |
+| Logfire span fetching ([evaluation](traceability.md)) | `LOGFIRE_READ_TOKEN` | `/ak/<prefix>/logfire_read_token` |
+| OpenLLMetry span fetching ([evaluation](traceability.md)) | `TRACELOOP_API_KEY` | `/ak/<prefix>/traceloop_api_key` |
+
+**Secret-valued configuration fields.** A value set in `config.yaml` or through the field's `AK_*`
+environment variable is used as-is. When the field is empty, it is resolved through `SecretManager` at the
+point of use (never while `AKConfig` loads, since `SecretManager` is built from it). The messaging
+integrations look it up under the key their `<field>_key` field names (`slack.bot_token_key`,
+`whatsapp.access_token_key`, `teams.app_password_key`, ...), which defaults to the key below; the LiveKit
+and WebSocket fields always use their `AK_*` name:
+
+| Field | Default key | `aws_ssm` parameter |
+| --- | --- | --- |
+| `slack.bot_token`, `signing_secret` | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET` | `/ak/<prefix>/slack_bot_token`, `/ak/<prefix>/slack_signing_secret` |
+| `whatsapp.verify_token`, `access_token`, `app_secret` | `AK_WHATSAPP__VERIFY_TOKEN`, `AK_WHATSAPP__ACCESS_TOKEN`, `AK_WHATSAPP__APP_SECRET` | `/ak/<prefix>/ak_whatsapp__verify_token`, … |
+| `messenger.verify_token`, `access_token`, `app_secret` | `AK_MESSENGER__VERIFY_TOKEN`, `AK_MESSENGER__ACCESS_TOKEN`, `AK_MESSENGER__APP_SECRET` | `/ak/<prefix>/ak_messenger__verify_token`, … |
+| `instagram.verify_token`, `access_token`, `app_secret` | `AK_INSTAGRAM__VERIFY_TOKEN`, `AK_INSTAGRAM__ACCESS_TOKEN`, `AK_INSTAGRAM__APP_SECRET` | `/ak/<prefix>/ak_instagram__verify_token`, … |
+| `telegram.bot_token`, `webhook_secret` | `AK_TELEGRAM__BOT_TOKEN`, `AK_TELEGRAM__WEBHOOK_SECRET` | `/ak/<prefix>/ak_telegram__bot_token`, `/ak/<prefix>/ak_telegram__webhook_secret` |
+| `teams.app_password` | `AK_TEAMS__APP_PASSWORD` | `/ak/<prefix>/ak_teams__app_password` |
+| `gmail.client_id`, `client_secret` | `AK_GMAIL__CLIENT_ID`, `AK_GMAIL__CLIENT_SECRET` | `/ak/<prefix>/ak_gmail__client_id`, `/ak/<prefix>/ak_gmail__client_secret` |
+| `livekit.api_key`, `api_secret` | `AK_LIVEKIT__API_KEY`, `AK_LIVEKIT__API_SECRET` | `/ak/<prefix>/ak_livekit__api_key`, `/ak/<prefix>/ak_livekit__api_secret` |
+| `websocket_api.push_auth_token` | `AK_WEBSOCKET_API__PUSH_AUTH_TOKEN` | `/ak/<prefix>/ak_websocket_api__push_auth_token` |
+
+**Naming the keys yourself.** Every messaging integration reads its credentials in its adapter's
+constructor, under the keys its config block names, so the inbound and outbound adapters agree on them in
+every process. Store a credential under your own name by setting its `*_key` field:
+
+```yaml
+slack:
+  bot_token_key: MYAPP_SLACK_BOT_TOKEN            # environment, then /ak/<prefix>/myapp_slack_bot_token
+  signing_secret_key: MYAPP_SLACK_SIGNING_SECRET
+whatsapp:
+  access_token_key: MYAPP_WHATSAPP_TOKEN          # used when whatsapp.access_token is empty
+```
+
+A key must be an environment-variable-style name (`^[A-Z][A-Z0-9_]*$`); a malformed one fails when the
+adapter is constructed.
+
+A provider failure surfaces as `SecretError` from the component that needed the value — at adapter
+construction for the messaging integrations, on first use for the others — rather than as a missing
+credential. Model keys your own code passes to an SDK (`OPENAI_API_KEY` for a non-realtime agent, a CrewAI
+`LLM`, a LangChain chat model, LiteLLM for the multimodal and thread-naming models) are the application's
+to resolve, as in the [API](#api) example. A regression test fails the build if a framework module reads a
+credential straight from `os.environ`.
+
+### Environment only
+
+These components hand their credentials to an SDK that reads the environment itself, so the keys must stay
+environment variables even with a secret provider configured. A key moved only into the provider leaves the
+component disabled or not exporting, often with nothing more than a log line.
+
+| Component | Environment variables |
+| --- | --- |
+| OpenAI guardrails | `OPENAI_API_KEY` |
+| Google ADK realtime runner (Gemini Live): ADK builds its own Gemini client | `GOOGLE_API_KEY` (or the Vertex AI variables) |
+| Langfuse tracing (sending and span fetching) | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` |
+| Logfire tracing (sending) | `LOGFIRE_TOKEN` |
+| OpenLLMetry tracing (sending) | `TRACELOOP_API_KEY`: span fetching resolves it through `SecretManager`, sending does not |
+| DeepEval and Opik evaluators | the judge model's key, read by LiteLLM (for example `OPENAI_API_KEY`) |
 
 ## Deploying on AWS
 
 Both the serverless and containerized Terraform modules take an `ssm_enabled` flag (default `false`). When
-set, it grants `ssm:GetParameter` on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX = <prefix>` only
-for the tier that runs the agent: the agent runner when `queue_mode = true`, otherwise the request
-handler Lambda (serverless) or REST service (containerized). The response handler and WebSocket
-connection handler never receive SSM access.
+set, it grants `ssm:GetParameter` on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX = <prefix>` into every
+tier that resolves framework credentials:
+
+| Module | `queue_mode = false` | `queue_mode = true` |
+| --- | --- | --- |
+| Serverless | request handler | request handler (webhook verification), agent runner, response handler (integration delivery) |
+| Containerized | REST service | REST service (webhook verification and integration delivery), agent runner |
+
+The WebSocket connection handler never receives SSM access. In queue mode the request and response tiers
+need it only for messaging-integration credentials; an application without integrations reads nothing
+there.
 
 ```hcl
 ssm_enabled = true
@@ -236,6 +331,14 @@ ssm_enabled = true
 `config.yaml` declares `secret.provider.type: aws_ssm`. Terraform also does not create the parameters, so
 the key never passes through Terraform state. Do not also inject the key as an environment variable, or it
 wins over SSM.
+
+**Running the same app locally.** `aws_ssm` refuses to build without `secret.prefix`, even when the
+environment already holds every key. Override the provider for local runs instead of editing `config.yaml`:
+
+```bash
+export OPENAI_API_KEY=...
+export AK_SECRET__PROVIDER__TYPE=env
+```
 
 ### Rotation
 
@@ -260,3 +363,6 @@ Overwrite the parameter with `aws ssm put-parameter ... --overwrite`.
   — the OpenAI key read from SSM on Lambda.
 - [`examples/aws-containerized/openai-dynamodb-scalable`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb-scalable)
   — the OpenAI key read from SSM by the ECS agent runner.
+- [`examples/aws-serverless/slack-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/slack-openai)
+  — a Slack integration on Lambda with the OpenAI key and both Slack secrets in SSM and none in any Lambda's
+  environment. Every other AWS example reads its model key from SSM the same way.

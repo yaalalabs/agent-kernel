@@ -56,6 +56,30 @@ class ThreadRunner:
         for shutdown_signal in (signal.SIGTERM, signal.SIGINT):
             signal.signal(shutdown_signal, _handle_shutdown_signal)
 
+    @classmethod
+    def call_on_shutdown(cls, callback: Callable[[], None], name: str) -> threading.Thread:
+        """Run ``callback`` once, on a daemon thread of its own, the moment ``shutdown_event`` is set.
+
+        For asyncio code, which cannot block on ``shutdown_event`` without freezing its loop: the callback hands the
+        shutdown over to the loop (``loop.call_soon_threadsafe(event.set)``), so nothing polls the flag. It waits on the
+        flag itself, so it fires for a signal and for a failed task alike.
+
+        :param callback: Run once shutdown starts; an exception is logged, never raised.
+        :param name: The watcher thread's name.
+        :return: The started watcher thread.
+        """
+
+        def _wait_then_call() -> None:
+            cls.shutdown_event.wait()
+            try:
+                callback()
+            except Exception:
+                _log.exception(f"[{name}] shutdown callback failed")
+
+        thread = threading.Thread(target=_wait_then_call, daemon=True, name=name)
+        thread.start()
+        return thread
+
     @dataclass(eq=False)
     class Task:
         execution_function: Callable
