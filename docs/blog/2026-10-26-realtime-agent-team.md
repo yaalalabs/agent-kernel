@@ -31,8 +31,6 @@ Here is a flight disruption desk built on this path. A traveller whose flight wa
   A recording of a live flight disruption call: a caller whose flight was cancelled talks to a concierge, a rebooking specialist and a care specialist, hears each agent in its own voice, and watches the case board fill in as the agents work.
 </video>
 
-[Open the recording in its own page](/video/realtime-flight-desk.mp4)
-
 ## A Voice Call Is an Active Stream
 
 In a text chat, the agent can wait for a message and then return an answer. A voice call keeps moving: microphone audio arrives in small chunks, the model streams audio and text back, and the caller may speak before the response is finished.
