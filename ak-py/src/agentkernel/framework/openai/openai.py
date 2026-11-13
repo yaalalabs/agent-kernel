@@ -632,7 +632,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
     The wrapped agent must be a ``RealtimeAgent``; the SDK owns its tools, handoffs and guardrails.
     Run options: ``model`` and ``config`` reach ``RealtimeRunner(...)``, ``model_config`` reaches ``run(...)``.
-    Agent Kernel hooks and guardrails do not run on this path.
+    Agent Kernel hooks run on the call in the realtime pool, not in this adapter (see docs/specs/927-realtime-hooks).
     """
 
     RUNNER_OPTIONS: ClassVar[frozenset[str]] = frozenset({"model", "config"})

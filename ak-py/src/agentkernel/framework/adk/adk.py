@@ -928,7 +928,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
 
     ADK owns the conversation: its tools, transfers and workflows. The root is an ``LlmAgent`` or a ``Workflow``.
     Run options: ``run_config`` reaches ``run_live()``; the Runner constructor options reach the ``Runner``/``App``.
-    Agent Kernel hooks and guardrails do not run on this path.
+    Agent Kernel hooks run on the call in the realtime pool, not in this adapter (see docs/specs/927-realtime-hooks).
     """
 
     input_sample_rate = 16000

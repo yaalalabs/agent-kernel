@@ -14,7 +14,7 @@ from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .event import MessageEnd, ReasoningEnd, RunPaused, StepEnd, StreamEvent, TextDelta, ToolCallEnd
-from .hooks import StreamHalt
+from .hooks import PostHook, StreamHalt
 from .model import (
     AgentPausedReplyAny,
     AgentReply,
@@ -27,6 +27,7 @@ from .model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentRequestVoice,
     AgentResumeRequestAny,
     Principal,
     SessionOwner,
@@ -223,14 +224,16 @@ class Runtime:
         else:
             self._log.warning(f"Agent with name '{agent.name}' is not registered.")
 
-    async def _prepare_requests(
+    async def run_pre_hooks(
         self,
         agent: Agent,
         session: Session,
         requests: list[AgentRequest],
     ) -> list[AgentRequest] | AgentReply:
         """
-        Runs the shared pre-hook pipeline and validates hook responses.
+        Runs the shared pre-hook pipeline and validates hook responses. Public so a surface that runs
+        no `Runtime.run()` (a realtime call) applies the same hooks in the same order. It takes no session
+        lock and clears nothing; the caller owns both.
 
         :param agent: The agent to run.
         :param session: The session to use for the agent.
@@ -260,6 +263,89 @@ class Runtime:
             requests = reply
 
         return requests
+
+    async def run_stream_input_hooks(
+        self, agent: Agent, session: Session, request: AgentRequestVoice
+    ) -> tuple[list[AgentRequestVoice], list[AgentRequestText]]:
+        """
+        Runs one chunk of caller audio through `PreHook.on_stream_input`, agent hooks first then system hooks.
+
+        :param agent: The agent the call belongs to.
+        :param session: The call's session.
+        :param request: One chunk of caller audio.
+        :return: The audio for the model and the text items hooks produced (to be handled as typed text).
+                 Both are empty when a hook dropped the chunk.
+        :raises TypeError: If a hook returns a single request that is not `AgentRequestVoice`, or a list
+                           holding anything but `AgentRequestVoice` / `AgentRequestText`.
+        """
+        for hook in agent.pre_hooks + self._get_system_pre_hooks():
+            result = await hook.on_stream_input(session, agent, request)
+            if result is None:
+                return [], []
+            if isinstance(result, list):
+                voice: list[AgentRequestVoice] = []
+                text: list[AgentRequestText] = []
+                for item in result:
+                    if isinstance(item, AgentRequestVoice):
+                        voice.append(item)
+                    elif isinstance(item, AgentRequestText):
+                        text.append(item)
+                    else:
+                        raise TypeError(
+                            f"PreHook '{hook.name()}' returned an invalid type in the input list. Expected AgentRequestVoice or AgentRequestText, got {type(item)}"
+                        )
+                return voice, text
+            if not isinstance(result, AgentRequestVoice):
+                raise TypeError(
+                    f"PreHook '{hook.name()}' returned type '{type(result).__name__}' for an AgentRequestVoice. Return a list to emit a different type"
+                )
+            request = result
+        return [request], []
+
+    async def _run_event_chain(
+        self, post_hooks: list[PostHook], session: Session, requests: list[AgentRequest], agent: Agent, event: StreamEvent
+    ) -> tuple[list[StreamEvent], StreamEvent, PostHook | None]:
+        """
+        Runs one streamed event through `post_hooks` in order.
+
+        :return: The events to emit, the event after any same-type rewrites, and the last hook consulted
+                 (the one that dropped or replaced the event, or the final hook; None for an empty list).
+        :raises TypeError: If a hook returns a single event of a different type.
+        """
+        emitted: list[StreamEvent]
+        hook: PostHook | None = None
+        for hook in post_hooks:
+            result = await hook.on_stream_event(session, requests, agent, event)
+            if result is None:
+                emitted = []
+                break
+            if isinstance(result, list):
+                emitted = result
+                break
+            if result.type != event.type:
+                raise TypeError(
+                    f"PostHook '{hook.name()}' returned event type '{result.type}' for a '{event.type}'. Return a list to emit a different type"
+                )
+            event = result
+        else:
+            emitted = [event]
+        return emitted, event, hook
+
+    async def run_stream_event_hooks(self, agent: Agent, session: Session, requests: list[AgentRequest], event: StreamEvent) -> list[StreamEvent]:
+        """
+        Runs one streamed event through the post-hooks' `on_stream_event`, system hooks first then agent hooks,
+        with the rules `Runtime.stream()` applies. Takes no session lock and clears nothing.
+
+        :param agent: The agent the stream belongs to.
+        :param session: The stream's session.
+        :param requests: The requests the agent was given, after pre-hooks.
+        :param event: The event to process.
+        :return: The events to emit in its place; empty when a hook dropped it.
+        :raises TypeError: If a hook returns a single event of a different type.
+        :raises StreamHalt: If a hook ends the run.
+        """
+        emitted, _, _ = await self._run_event_chain(self._get_system_post_hooks() + agent.post_hooks, session, requests, agent, event)
+        return emitted
 
     @staticmethod
     def _extract_resume(requests: list[AgentRequest]) -> AgentResumeRequestAny | None:
@@ -430,7 +516,7 @@ class Runtime:
                 self._publish(agent, session, principal)
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
-                    requests_or_reply = await self._prepare_requests(agent, session, requests)
+                    requests_or_reply = await self.run_pre_hooks(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                         self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
                         if arrived_with_resume:
@@ -491,7 +577,7 @@ class Runtime:
                 self._publish(agent, session, principal)
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
-                    requests_or_reply = await self._prepare_requests(agent, session, requests)
+                    requests_or_reply = await self.run_pre_hooks(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                         self._log.debug(f"PreHook halted streaming for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
                         if arrived_with_resume:
@@ -518,25 +604,10 @@ class Runtime:
 
                     try:
                         async for ev in events:
-                            for hook in post_hooks:
-                                result = await hook.on_stream_event(session, requests, agent, ev)
-                                if result is None:
-                                    emitted: list[StreamEvent] = []
-                                    break
-                                if isinstance(result, list):
-                                    emitted = result
-                                    break
-                                if result.type != ev.type:
-                                    raise TypeError(
-                                        f"PostHook '{hook.name()}' returned event type '{result.type}' for a '{ev.type}'. "
-                                        "Return a list to emit a different type"
-                                    )
-                                ev = result
-                            else:
-                                emitted = [ev]
+                            emitted, ev, last_hook = await self._run_event_chain(post_hooks, session, requests, agent, ev)
 
-                            if isinstance(ev, RunPaused) and not any(isinstance(e, RunPaused) for e in emitted):
-                                self._warn_pause_dropped(agent, session, hook.name())
+                            if isinstance(ev, RunPaused) and not any(isinstance(e, RunPaused) for e in emitted) and last_hook is not None:
+                                self._warn_pause_dropped(agent, session, last_hook.name())
 
                             for event in emitted:
                                 if isinstance(event, RunPaused):

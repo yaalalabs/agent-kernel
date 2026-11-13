@@ -8,9 +8,9 @@ from concurrent.futures import CancelledError
 import pytest
 
 from agentkernel import Agent, Runner, Session
-from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _OutputQueueConfig, _QueuesConfig, _RealtimeConfig
+from agentkernel.core.config import _ExecutionConfig, _GuardrailConfig, _InputQueueConfig, _OutputQueueConfig, _QueuesConfig, _RealtimeConfig
 from agentkernel.core.event import TextDelta
-from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, ExecutionMode, Principal, StreamChunk
+from agentkernel.core.model import AgentReplyText, AgentRequestText, AgentRequestVoice, BaseRunRequest, ExecutionMode, Principal, StreamChunk
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -441,11 +441,11 @@ class TestDispatchPrincipal:
         def publish_principal(self, principal):
             self.principal = principal
 
-        def append_audio(self, audio):
+        def append_audio(self, request):
             pass
 
-        def send_text(self, text):
-            self.texts.append(text)
+        def send_text(self, request):
+            self.texts.append(request.prompt)
 
     def _dispatch(self, monkeypatch, principal):
         from unittest.mock import MagicMock
@@ -687,6 +687,7 @@ class TestRealtimeRunnerReuse:
         from agentkernel.pipeline.envelope import QueueMessage
 
         class _Cfg:
+            guardrail = _GuardrailConfig()
             execution = _ExecutionConfig(mode=ExecutionMode.REALTIME, queues=None, realtime=_RealtimeConfig(playback_lead_ms=50))
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
@@ -726,7 +727,7 @@ class TestRealtimeResampling:
         conn.adapter.input_sample_rate = 16000  # e.g. Gemini's input rate
 
         # 100 ms of edge-rate (24 kHz) audio; the pool must hand the adapter 16 kHz audio.
-        conn.append_audio(base64.b64encode(b"\x00\x00" * 2400).decode())
+        conn.append_audio(AgentRequestVoice(audio_data=base64.b64encode(b"\x00\x00" * 2400).decode(), name="clip"))
         for _ in range(50):  # the append is scheduled on the loop; let it run
             if conn.adapter.audio:
                 break
@@ -824,7 +825,7 @@ class TestRealtimeBargeIn:
         await asyncio.sleep(0.1)
         conn._pacing_task.cancel()
 
-        assert _kinds(_drain_output(transport)) == ["agent_changed", "audio_delta", "done"]
+        assert _kinds(_drain_output(transport)) == ["agent_changed", "audio_delta", "message_end", "done"]
 
 
 class TestRealtimeAgentChanged:
@@ -848,7 +849,7 @@ class TestRealtimeAgentChanged:
         conn._pacing_task.cancel()
 
         messages = _drain_output(transport)
-        assert _kinds(messages) == ["agent_changed", "audio_delta", "done"]
+        assert _kinds(messages) == ["agent_changed", "audio_delta", "message_end", "done"]
         assert json.loads(messages[0].body)["event"] == {"type": "agent_changed", "agent": "supervisor", "agents": ["supervisor"]}
 
     @pytest.mark.asyncio
@@ -884,8 +885,18 @@ class TestRealtimeAgentChanged:
         conn._pacing_task.cancel()
 
         messages = _drain_output(transport)
-        assert _kinds(messages) == ["agent_changed", "audio_delta", "done", "agent_changed", "text_delta", "audio_delta", "done"]
-        handoff, transcript = json.loads(messages[3].body), json.loads(messages[4].body)
+        assert _kinds(messages) == [
+            "agent_changed",
+            "audio_delta",
+            "message_end",
+            "done",
+            "agent_changed",
+            "text_delta",
+            "audio_delta",
+            "message_end",
+            "done",
+        ]
+        handoff, transcript = json.loads(messages[4].body), json.loads(messages[5].body)
         assert handoff["event"] == {"type": "agent_changed", "agent": "billing", "previous_agent": "supervisor"}
         assert transcript["delta"] == "Billing here."
 
@@ -1279,6 +1290,7 @@ class TestRealtimePermanentFailure:
         from agentkernel.pipeline.response_handler import ResponseHandler
 
         class _Cfg:
+            guardrail = _GuardrailConfig()
             execution = _ExecutionConfig(
                 mode=ExecutionMode.REALTIME,
                 queues=_QueuesConfig(type="in_memory", input=_InputQueueConfig(max_receive_count=3)),
@@ -1357,6 +1369,7 @@ class TestResponseHandlerRealtimeRouting:
         from agentkernel.pipeline.response_handler import ResponseHandler
 
         class _Cfg:
+            guardrail = _GuardrailConfig()
             execution = _ExecutionConfig(
                 mode=ExecutionMode.REALTIME,
                 queues=_QueuesConfig(type="in_memory", output=_OutputQueueConfig(max_receive_count=3)),
@@ -1383,6 +1396,7 @@ class TestBrokerRealtimeUserGate:
         from agentkernel.pipeline.envelope import QueueMessage
 
         class _Cfg:
+            guardrail = _GuardrailConfig()
             execution = _ExecutionConfig(mode=ExecutionMode.REALTIME, queues=None, realtime=_RealtimeConfig(playback_lead_ms=50))
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))

@@ -5,15 +5,17 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from concurrent.futures import Future
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ..core.base import Agent as BaseAgent
 from ..core.base import Session
 from ..core.config import AKConfig
-from ..core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, TextDelta
-from ..core.model import Principal, StreamChunk
+from ..core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, MessageEnd, StreamEvent, TextDelta
+from ..core.hooks import StreamHalt
+from ..core.model import AgentRequest, AgentRequestText, AgentRequestVoice, Principal, StreamChunk
 from ..core.realtime import EDGE_SAMPLE_RATE, PCM16Resampler
 from ..core.realtime import RealtimeRunner as BaseRealtimeRunner
 from ..core.runtime import Runtime
@@ -71,6 +73,15 @@ class RealtimeConnection:
         self._audio_queue: asyncio.Queue = asyncio.Queue(maxsize=1024)
         # Audio not yet emitted: while it is non-zero, the user starting to speak is a barge-in.
         self._queued_audio = 0
+        # The pacing window: when it opened and how much audio it has emitted (milliseconds of playback).
+        self._pace_start = 0.0
+        self._pace_played_ms = 0.0
+        # The message_id of the turn's last output event, which the MessageEnd that closes the turn carries.
+        self._turn_message_id: str | None = None
+        # The last text turn sent to the model (after pre-hooks): the `requests` argument post-hooks receive.
+        self._last_turn: list[AgentRequest] = []
+        # The first failing audio hook of a connection is logged at ERROR; later ones at DEBUG, since audio arrives at the chunk rate.
+        self._input_failure_logged = False
         self._pacing_task: asyncio.Task | None = None
         self._startup_task: asyncio.Task | None = None
         # Shutdown, eviction and failure can all close one connection; disconnect only once.
@@ -196,7 +207,9 @@ class RealtimeConnection:
         _log.error(f"Realtime session {self.session_id} failed: {message}")
         self.closed = True
         if self._pacing_task:
-            self._pacing_task.cancel()
+            # Called from the pacing loop itself (a post-hook halted the call), cancelling would drop the chunk below.
+            if self._pacing_task is not asyncio.current_task():
+                self._pacing_task.cancel()
             self._pacing_task = None
         try:
             await self._emit(StreamChunk(error=message, done=True))
@@ -219,51 +232,99 @@ class RealtimeConnection:
         finally:
             await self.close()
 
+    @contextmanager
+    def _hook_context(self) -> Iterator[None]:
+        """Set ``Session.current()`` and ``Agent.current()`` around a hook call.
+
+        The pacing task and an input coroutine start without them: ``_connect`` resets them before it creates the pacing task.
+        """
+        token = Session.current_session.set(self.session)
+        try:
+            with self.agent._activate():
+                yield
+        finally:
+            Session.current_session.reset(token)
+
+    async def _emit_event(self, event: StreamEvent, audio_bytes: int | None = None) -> list[StreamEvent]:
+        """Run one output event through the post-hooks, emit each resulting event, and pace every audio event emitted.
+
+        Pacing is applied to whatever audio leaves, whichever event released it: a hook that held audio and releases it on
+        the turn end gets the same playback-speed delivery as audio passed straight through.
+
+        :param event: The event the native session produced, at the edge's sample rate when it is audio.
+        :param audio_bytes: Byte length of ``event``'s audio when it is an ``AudioDelta``, which spares a decode.
+        :return: The events that were emitted (empty when a hook dropped it).
+        :raises StreamHalt: When a hook ends the call; any other hook failure is logged and raised as one.
+        """
+        try:
+            with self._hook_context():
+                emitted = await self.runtime.run_stream_event_hooks(self.agent, self.session, self._last_turn, event)
+        except StreamHalt:
+            raise
+        except Exception as e:
+            _log.exception(f"Realtime session {self.session_id}: a post-hook failed on a '{event.type}' event")
+            raise StreamHalt("Realtime output hook failed") from e
+        for out in emitted:
+            if isinstance(out, AudioDelta) and self._pace_played_ms == 0.0:
+                self._pace_start = time.time()
+            await self._emit(StreamChunk(delta=out.content if isinstance(out, TextDelta) else None, event=out))
+            if isinstance(out, AudioDelta):
+                await self._pace(out, audio_bytes if out is event else None)
+        return emitted
+
+    async def _pace(self, audio: AudioDelta, known_bytes: int | None) -> None:
+        """Wait until the audio just emitted is no more than ``playback_lead_ms`` ahead of real time."""
+        size = known_bytes if known_bytes is not None else len(base64.b64decode(audio.content))
+        self._pace_played_ms += (size / 2) / (EDGE_SAMPLE_RATE / 1000.0)
+        elapsed_ms = (time.time() - self._pace_start) * 1000.0
+        sleep_ms = (self._pace_played_ms - self._playback_lead_ms) - elapsed_ms
+        if sleep_ms > 0:
+            await asyncio.sleep(sleep_ms / 1000.0)
+
     async def _pacing_loop(self) -> None:
-        """Emit queued audio at playback rate; other events follow the audio queued before them."""
-        item_start_time = 0.0
-        audio_played_ms = 0.0
+        """Emit queued audio at playback rate; other events follow the audio queued before them.
+
+        Every event goes through the post-hooks first. Pacing follows the audio that is actually emitted.
+        """
         while True:
             try:
                 event_type, data = await self._audio_queue.get()
                 if event_type == "transcript_delta":
                     message_id = data.get("message_id") or ""
-                    await self._emit(StreamChunk(event=TextDelta(message_id=message_id, content=data["delta"]), delta=data["delta"]))
+                    self._turn_message_id = message_id or self._turn_message_id
+                    await self._emit_event(TextDelta(message_id=message_id, content=data["delta"]))
                     continue
                 if event_type == "input_transcript":
-                    await self._emit(StreamChunk(event=InputTranscript(message_id=data.get("message_id") or uuid.uuid4().hex, content=data["text"])))
+                    await self._emit_event(InputTranscript(message_id=data.get("message_id") or uuid.uuid4().hex, content=data["text"]))
                     continue
                 if event_type != "audio_delta":
                     if event_type == "done":
+                        await self._emit_event(MessageEnd(message_id=self._turn_message_id or uuid.uuid4().hex))
+                        self._turn_message_id = None
                         await self._emit(StreamChunk(done=True))
                     elif event_type == "interrupt":
-                        await self._emit(StreamChunk(event=Interrupt()))
+                        await self._emit_event(Interrupt())
                     elif event_type == "agent_changed":
-                        await self._emit(
-                            StreamChunk(event=AgentChanged(agent=data["agent"], previous_agent=data.get("previous_agent"), agents=data.get("agents")))
+                        await self._emit_event(
+                            AgentChanged(agent=data["agent"], previous_agent=data.get("previous_agent"), agents=data.get("agents"))
                         )
                     # A new pacing window, so a gap before the next audio is not paid back as a burst.
-                    audio_played_ms = 0.0
+                    self._pace_played_ms = 0.0
                     continue
 
                 self._queued_audio = max(0, self._queued_audio - 1)
-                if audio_played_ms == 0.0:
-                    item_start_time = time.time()
 
                 pcm16 = PCM16Resampler.resample(base64.b64decode(data["delta"]), self.adapter.output_sample_rate, EDGE_SAMPLE_RATE)
                 message_id = data.get("message_id") or ""
-                await self._emit(StreamChunk(event=AudioDelta(message_id=message_id, content=base64.b64encode(pcm16).decode("utf-8"))))
-
-                duration_ms = (len(pcm16) / 2) / (EDGE_SAMPLE_RATE / 1000.0)
-                audio_played_ms += duration_ms
-
-                elapsed_ms = (time.time() - item_start_time) * 1000.0
-                sleep_ms = (audio_played_ms - self._playback_lead_ms) - elapsed_ms
-                if sleep_ms > 0:
-                    await asyncio.sleep(sleep_ms / 1000.0)
+                self._turn_message_id = message_id or self._turn_message_id
+                audio = AudioDelta(message_id=message_id, content=base64.b64encode(pcm16).decode("utf-8"))
+                await self._emit_event(audio, len(pcm16))
 
             except asyncio.CancelledError:
                 break
+            except StreamHalt as halt:
+                await self._fail(halt.reason)
+                return
             except Exception as e:
                 _log.error(f"Error in realtime pacing loop: {e}")
 
@@ -281,17 +342,62 @@ class RealtimeConnection:
         message = QueueMessage(body=body, attributes=attributes, group_id=self.session_id, dedup_id=str(uuid.uuid4()))
         await asyncio.to_thread(self._transport.send, QueueName.OUTPUT, message)
 
-    def append_audio(self, audio_data: str) -> None:
-        """Thread-safe: convert edge-rate audio to the model's input rate, then schedule the append."""
+    def append_audio(self, request: AgentRequestVoice) -> None:
+        """Thread-safe: run one chunk of caller audio through the pre-hooks, then send what is left to the model."""
         self.last_activity_at = time.time()
-        pcm16 = PCM16Resampler.resample(base64.b64decode(audio_data), EDGE_SAMPLE_RATE, self.adapter.input_sample_rate)
-        converted = base64.b64encode(pcm16).decode("utf-8")
-        self._dispatch_send(self.adapter.append_audio(converted), "append_audio")
+        self._dispatch_send(self._process_audio(request), "append_audio")
 
-    def send_text(self, text: str) -> None:
-        """Thread-safe: schedule text send on the pool's event loop."""
+    def send_text(self, request: AgentRequestText) -> None:
+        """Thread-safe: run one typed caller message through the pre-hooks, then send what is left to the model."""
         self.last_activity_at = time.time()
-        self._dispatch_send(self.adapter.send_text(text), "send_text")
+        self._dispatch_send(self._process_text(request), "send_text")
+
+    async def _process_audio(self, request: AgentRequestVoice) -> None:
+        """Run a chunk through ``on_stream_input``; audio goes to the model, text a hook made goes the typed-text way.
+
+        A failing hook drops the chunk: an error chunk per audio chunk would flood the edge.
+        """
+        try:
+            with self._hook_context():
+                voice, text = await self.runtime.run_stream_input_hooks(self.agent, self.session, request)
+        except Exception:
+            if self._input_failure_logged:
+                _log.debug(f"Realtime session {self.session_id}: an input hook failed; chunk dropped", exc_info=True)
+            else:
+                self._input_failure_logged = True
+                _log.exception(f"Realtime session {self.session_id}: an input hook failed; chunk dropped (later failures are logged at DEBUG)")
+            return
+        for chunk in voice:
+            await self._send_audio_to_model(chunk.audio_data)
+        for item in text:
+            await self._process_text(item)
+
+    async def _send_audio_to_model(self, audio_data: str) -> None:
+        """Convert edge-rate audio to the model's input rate and send it."""
+        pcm16 = PCM16Resampler.resample(base64.b64decode(audio_data), EDGE_SAMPLE_RATE, self.adapter.input_sample_rate)
+        await self.adapter.append_audio(base64.b64encode(pcm16).decode("utf-8"))
+
+    async def _process_text(self, request: AgentRequestText) -> None:
+        """Run one typed message (one turn) through the pre-hooks and send the resulting text to the model once.
+
+        A hook that halts the turn, or fails, sends the edge one error chunk and the call continues.
+        """
+        try:
+            with self._hook_context():
+                result = await self.runtime.run_pre_hooks(self.agent, self.session, [request])
+        except Exception:
+            _log.exception(f"Realtime session {self.session_id}: a pre-hook failed on a typed message")
+            await self._emit(StreamChunk(error="Your message could not be processed.", done=True))
+            return
+        if not isinstance(result, list):
+            await self._emit(StreamChunk(error=str(result), done=True))
+            return
+        self._last_turn = result
+        prompts = [item.prompt for item in result if isinstance(item, AgentRequestText)]
+        if len(prompts) < len(result):
+            _log.debug(f"Realtime session {self.session_id}: dropped {len(result) - len(prompts)} non-text request(s) a pre-hook returned")
+        if prompts:
+            await self.adapter.send_text("\n".join(prompts))
 
     def _dispatch_send(self, coro, action: str) -> None:
         """Run a send on the pool loop, blocking (bounded) so the input is not acked before it reached the model.
@@ -344,9 +450,14 @@ class RealtimeConnection:
         if self._pacing_task:
             self._pacing_task.cancel()
             self._pacing_task = None
-        await self.adapter.disconnect()
-        if self._principal_published:
-            self.session._unpublish_run()
+        try:
+            await self.adapter.disconnect()
+        finally:
+            if self._principal_published:
+                self.session._unpublish_run()
+            # Hook state kept in the volatile cache ends with the call, as it does when a Runtime run ends,
+            # also when the native session fails to close: the session store hands the next call this same Session.
+            self.session.get_volatile_cache()._clear_all()
 
 
 class RealtimeConnectionPool:
@@ -368,6 +479,7 @@ class RealtimeConnectionPool:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls()
+                cls._instance._warn_unchecked_audio()
             return cls._instance
 
     @classmethod
@@ -388,6 +500,17 @@ class RealtimeConnectionPool:
         self._stopping = threading.Event()
         # Set on the pool's loop when the process starts shutting down, so the loop wakes at once instead of polling.
         self._shutdown_wake: asyncio.Event | None = None
+
+    def _warn_unchecked_audio(self) -> None:
+        """Warn once per realtime agent when the input guardrail is on: it checks typed text only, never caller audio."""
+        if not AKConfig.get().guardrail.input.enabled:
+            return
+        for name, agent in Runtime.current().agents().items():
+            if getattr(agent, "realtime_runner_cls", None):
+                _log.warning(
+                    f"Agent '{name}': guardrail.input is enabled, but on a realtime call it checks typed text only. "
+                    "Caller audio reaches the model unchecked unless a pre-hook turns it into text."
+                )
 
     def get_task(self) -> ThreadRunner.Task:
         """Returns the ThreadRunner.Task that runs this pool's event loop."""
@@ -614,9 +737,9 @@ class RealtimeConnectionPool:
         conn.publish_principal(body.principal)
         for request in body.requests:
             if getattr(request, "type", None) == "voice":
-                conn.append_audio(request.audio_data)
+                conn.append_audio(request)
             elif getattr(request, "type", None) == "text":
-                conn.send_text(request.prompt)
+                conn.send_text(request)
 
     @staticmethod
     def send_permanent_failure(

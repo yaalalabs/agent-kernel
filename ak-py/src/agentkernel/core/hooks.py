@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from .base import Agent, Session
 
 from .event import StreamEvent
-from .model import AgentReply, AgentRequest
+from .model import AgentReply, AgentRequest, AgentRequestText, AgentRequestVoice
 
 """
 PreHook and PostHook classes define the interface for hooks that can be executed before and after an agent's execution respectively.
@@ -58,6 +58,29 @@ class PreHook(ABC):
 
         """
         raise NotImplementedError
+
+    async def on_stream_input(
+        self, session: "Session", agent: "Agent", request: AgentRequestVoice
+    ) -> AgentRequestVoice | list[AgentRequestVoice | AgentRequestText] | None:
+        """
+        Hook method called for every caller audio chunk of a realtime call, before it reaches the model. Optional:
+        the default passes the chunk on, so a hook that only implements `on_run` is unaffected. Typed text on a
+        realtime call goes through `on_run`, like any other request.
+
+        The audio is base64 PCM16 at the edge rate (24 kHz). One hook instance serves every call, so keep per-call
+        state in `session.get_volatile_cache()`, not on `self`.
+
+        :param: session (Session): The session instance.
+        :param: agent (Agent): The agent the call belongs to.
+        :param: request (AgentRequestVoice): One chunk of caller audio.
+        :return:
+                - AgentRequestVoice: The chunk, or a modified one, to pass to the next hook and then the model. Any other
+                                     single type raises TypeError; use a list to emit another type.
+                - list: Emitted in place of the chunk and ends the chain for it. `AgentRequestVoice` items go to the model;
+                        `AgentRequestText` items are handled as typed text (pre-hooks, then the model).
+                - None: Drops the chunk.
+        """
+        return request
 
     @abstractmethod
     def name(self) -> str:
