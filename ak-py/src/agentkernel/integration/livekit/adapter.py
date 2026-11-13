@@ -4,51 +4,43 @@ import json
 import logging
 import threading
 import uuid
+from typing import Any
 
 from livekit import api, rtc
 
 from ...core.config import AKConfig
-from ...core.model import AgentReply, AgentRequestText, StreamChunk
+from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
-from ...secret import SecretError, SecretManager
-from ..adapter.base import StatefulEdgeAdapter
+from ...secret import SecretManager
+from ..adapter.base import EdgeLifecycleAdapter, EdgeLifecycleEvent, StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
 
-INTEGRATION_NAME = "livekit"
-# Cap on inbound requests staged for the sender task (~6 s of audio). A reachable broker drains
-# far faster than the edge produces, so this only bites when the broker is slow or down, where
-# dropping the oldest frame beats growing the queue without bound.
-_MAX_PENDING_REQUESTS = 64
+NAME = "livekit"
+WEBHOOK_PATH = "/livekit/webhook"
+# Cap on inbound requests staged for the sender task (~6 s of audio); only reached when the broker is slow or down.
+MAX_PENDING_REQUESTS = 64
 
 
-class LiveKitEdgeGateway(StatefulEdgeAdapter):
-    """Bridges a LiveKit WebRTC room with the Agent Kernel queue.
+class LiveKitEdgeAdapter(StatefulEdgeAdapter):
+    """Bridges a LiveKit WebRTC room with the Agent Kernel queue; ``LiveKitLifecycleAdapter`` builds one per room.
 
-    Unlike standard messaging webhook adapters which are stateless and split into Inbound/Outbound
-    halves, WebRTC requires a stateful, persistent connection to a room. This gateway owns that
-    connection: it pushes user audio and chat text to the input queue, and — as the ``livekit``
-    outbound adapter — plays the agent's streamed audio and transcript back to the room. It is
-    hosted by ``GatewayRunner``, which registers it as the ``livekit`` outbound adapter on start.
-
-    Every agent of the conversation is shown as a participant of its own, with nothing to
-    configure. The gateway joins the room as one agent participant, the one that hears the human;
-    when the conversation starts, its first ``AgentChanged`` names the whole team (every agent the
-    starting one can hand off to), and every other agent joins as a participant with its own
-    connection and audio track. Later ``AgentChanged`` events decide which of them is heard: the
-    others stay connected with their track muted, so a room client shows only the agent with the
-    call as unmuted. No agent participant's audio or chat is ever taken as input.
-    A single agent, with no handoffs, is one participant, as before.
+    Pushes the caller's audio and chat text to the input queue and plays the agent's streamed audio
+    and transcript back to the room. Each agent of the team joins as its own participant; the one
+    speaking is unmuted, the rest stay muted. Override :meth:`opening_prompt` to change how a call opens.
     """
 
-    name = INTEGRATION_NAME
+    name = NAME
     # Set on every agent participant: "true" on the one speaking, so a client UI can show who has the call.
     ACTIVE_ATTRIBUTE = "ak.active"
-    # On a change of speaker, how long the previous agent's queued audio may play out before the next
-    # agent is heard. Bounds how long a change can hold up the chunks behind it, an interrupt among them.
+    # Every agent participant's identity starts with this, which is how the lifecycle adapter tells them from callers.
+    AGENT_IDENTITY_PREFIX = "agent-"
+    # On a change of speaker, how long the previous agent's queued audio may play out before the next agent is heard.
     PLAYOUT_WAIT_SECONDS: float = 2.0
-    # How long LiveKit may take to confirm an ACTIVE_ATTRIBUTE update; nothing waits on it but a warning.
+    # How long LiveKit may take to confirm an ACTIVE_ATTRIBUTE update before a warning.
     ATTRIBUTE_TIMEOUT_SECONDS: float = 5.0
+    # How long a stopping edge waits for staged frames to reach the queue before the end-of-session control.
+    SESSION_END_TIMEOUT_SECONDS: float = 2.0
 
     class _AgentParticipant:
         """One agent participant in the room: its own connection, identity and published audio track."""
@@ -56,7 +48,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         def __init__(self, agent: str | None, identity: str | None, token: str):
             """
             :param agent: The agent it speaks for, or None for a single participant that speaks for every agent.
-            :param identity: Its identity in the room, when this gateway minted its token.
+            :param identity: Its identity in the room, when this edge minted its token.
             :param token: The access token it joins with.
             """
             self.agent = agent
@@ -71,8 +63,8 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
 
             :param room: The room, with its event handlers already registered.
             :param url: The LiveKit server URL.
-            :param listen: Subscribe to the room's tracks; only the participant that hears the human does.
-            :param muted: Publish the track muted: the agent is not the one heard.
+            :param listen: Subscribe to the room's tracks; only the participant that hears the caller does.
+            :param muted: Publish the track muted.
             """
             self.room = room
             await room.connect(url, self.token, options=rtc.RoomOptions(auto_subscribe=listen))
@@ -98,143 +90,145 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
 
     def __init__(
         self,
+        session_id: str,
         room_url: str | None = None,
         agent_name: str | None = None,
-        session_id: str | None = None,
-        token: str | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
     ):
         super().__init__()
         config = AKConfig.get()
         self.room_url = room_url or config.livekit.url
-        # Carried on every request so the runner binds this room's session to the configured agent;
-        # None (nothing configured) leaves selection to the runner's default agent.
+        # None leaves agent selection to the runner's default agent.
         self.agent = agent_name or config.livekit.agent or None
-        self.session_id = session_id or str(uuid.uuid4())
-        # Mic audio is accumulated to one input-queue message of this many bytes; 0 passes every
-        # frame LiveKit hands us straight through (lowest latency, many more queue messages).
+        self.session_id = session_id
+        # Mic audio per input-queue message; 0 sends every frame as it arrives.
         self._input_batch_ms = config.execution.realtime.input_batch_ms
         self._input_batch_bytes = int(EDGE_SAMPLE_RATE * 2 * (self._input_batch_ms / 1000))
 
-        # Kept to give each agent of the team a token of its own when the conversation announces it. An
-        # empty field falls back to the secret provider, keyed by the field's own AK_* name.
-        self._api_key = api_key or config.livekit.api_key or self._provider_credential("AK_LIVEKIT__API_KEY", token)
-        self._api_secret = api_secret or config.livekit.api_secret or self._provider_credential("AK_LIVEKIT__API_SECRET", token)
-        # The participant that hears the human; it speaks for the starting agent.
-        self._participants = [self._single_participant(token)]
-        # Each agent's participant, once it is in the room.
-        self._by_agent: dict[str, LiveKitEdgeGateway._AgentParticipant] = {}
-        # Known before a participant joins, so a track it publishes is never taken for the human's.
+        # An empty field falls back to the secret provider, keyed by the field's own AK_* name.
+        self._api_key = api_key or config.livekit.api_key or self._provider_credential("AK_LIVEKIT__API_KEY")
+        self._api_secret = api_secret or config.livekit.api_secret or self._provider_credential("AK_LIVEKIT__API_SECRET")
+        # The first participant hears the caller and speaks for the starting agent.
+        self._participants = [self._single_participant()]
+        self._by_agent: dict[str, LiveKitEdgeAdapter._AgentParticipant] = {}
+        # Known before a participant joins, so its track is never taken for the caller's.
         self._own_identities = {participant.identity for participant in self._participants if participant.identity}
-        # Heard until an AgentChanged names another agent.
         self._active = self._participants[0]
         self.token = self._active.token
-        # Agents of the team whose participant is joining now.
         self._joining: set[str] = set()
-        # Agents already warned about, once each: they have no participant of their own.
         self._warned_agents: set[str] = set()
-        # The agent the conversation says is speaking. Its participant may still be joining, in which
-        # case another participant speaks for it until the join completes.
+        # Callers already greeted, so a join racing the start snapshot is greeted only once.
+        self._greeted: set[str] = set()
+        # May differ from self._active while its participant is still joining.
         self._speaking_agent: str | None = None
-        # Work running on the gateway's loop (team joins, ACTIVE_ATTRIBUTE updates), cancelled on release.
         self._background_tasks: set[asyncio.Task] = set()
 
         self._loop: asyncio.AbstractEventLoop | None = None
+        # Created by start(), on the edge's own event loop.
+        self._stop_event: asyncio.Event | None = None
         self._connected = False
-        # A team announced while the first participant is still joining waits here until it is in the room.
-        # The announcement arrives on another thread than start() runs on, hence the lock.
+        # The team announcement arrives on the Response Handler thread, while start() may still be joining.
         self._team_lock = threading.Lock()
-        self._pending_team: Optional[tuple[str, list[str]]] = None
-        # Bounded staging queue drained by one sender task, so inbound frames never spawn an
-        # unbounded task per frame: a slow or unreachable broker applies backpressure here.
+        self._pending_team: tuple[str, list[str]] | None = None
         self._pending: "asyncio.Queue | None" = None
         self._sender_task: asyncio.Task | None = None
-        # Accumulated from TextDelta chunks; published as one chat message when the turn ends.
         self._transcript: list[str] = []
         self._interrupted = False
+        # Set once the end-of-session control is under way: no input is staged after it.
+        self._end_sent = False
 
     @staticmethod
-    def _provider_credential(key: str, token: str | None) -> str:
+    def _provider_credential(key: str) -> str:
         """``key`` from the secret provider, or "" when it has none.
 
-        With a ``token`` the credential only gives the team's other agents participants of their own,
-        so a provider failure is logged and the gateway starts on the token alone.
-
-        :raises SecretError: If the provider failed and no ``token`` was given.
+        :raises SecretError: If the provider failed.
         """
-        try:
-            return SecretManager.current().get(key, default="")
-        except SecretError as e:
-            if not token:
-                raise
-            _log.warning(f"Starting on the given token without {key}: {e}")
-            return ""
+        return SecretManager.current().get(key, default="")
 
-    def _single_participant(self, token: str | None) -> _AgentParticipant:
-        if token:
-            return self._AgentParticipant(self.agent, None, token)
+    @staticmethod
+    def _missing_credentials_message() -> str:
+        """Names every place the API key and secret can be set, for the error a missing one raises."""
+        secrets = SecretManager.current()
+        return f"set {secrets.describe('AK_LIVEKIT__API_KEY', 'livekit.api_key')}; and {secrets.describe('AK_LIVEKIT__API_SECRET', 'livekit.api_secret')}"
+
+    def _single_participant(self) -> _AgentParticipant:
         if not (self._api_key and self._api_secret):
-            secrets = SecretManager.current()
-            raise ValueError(
-                "Either 'token' or both 'api_key' and 'api_secret' must be provided in code or config: set "
-                f"{secrets.describe('AK_LIVEKIT__API_KEY', 'livekit.api_key')}; and "
-                f"{secrets.describe('AK_LIVEKIT__API_SECRET', 'livekit.api_secret')}"
-            )
-        # The name the agent appears under in the room; cosmetic, unlike ``self.agent``.
+            raise ValueError(f"Both 'api_key' and 'api_secret' must be provided in code or config: {self._missing_credentials_message()}")
         name = self.agent or "general"
-        return self._AgentParticipant(self.agent, f"agent-{name}", self._mint_token(name))
+        return self._AgentParticipant(self.agent, f"{self.AGENT_IDENTITY_PREFIX}{name}", self._mint_token(name))
 
     def _mint_token(self, name: str) -> str:
         # can_update_own_metadata lets the participant set its ACTIVE_ATTRIBUTE.
         grants = api.VideoGrants(room_join=True, room=self.session_id, can_update_own_metadata=True)
-        return api.AccessToken(self._api_key, self._api_secret).with_identity(f"agent-{name}").with_name(f"{name} Agent").with_grants(grants).to_jwt()
+        return (
+            api.AccessToken(self._api_key, self._api_secret)
+            .with_identity(f"{self.AGENT_IDENTITY_PREFIX}{name}")
+            .with_name(f"{name} Agent")
+            .with_grants(grants)
+            .to_jwt()
+        )
 
     async def start(self) -> None:
-        """Join the room as the participant that hears the human, and bridge audio until the pipeline shuts down.
+        """Join the room and bridge audio until the pipeline shuts down.
 
-        The rest of the conversation's team joins when the conversation announces it
-        (:meth:`_show_team`). If joining fails, the participant leaves before the error is raised:
-        ``GatewayRunner`` does not call :meth:`stop` for a start that failed.
+        On a failed join the participants leave before the error is raised: the edge runner does not call :meth:`stop` then.
         """
         _log.info(f"Connecting to LiveKit room at {self.room_url}")
 
         self._stop_event = asyncio.Event()
         self._loop = asyncio.get_running_loop()
         self._init_producer()
-        self._pending = asyncio.Queue(maxsize=_MAX_PENDING_REQUESTS)
+        self._pending = asyncio.Queue(maxsize=MAX_PENDING_REQUESTS)
         self._sender_task = asyncio.create_task(self._drain_requests())
 
+        already_here: list[str] = []
         try:
             for index, participant in enumerate(self._participants):
                 listen = index == 0
                 await participant.join(self._new_room(listen), self.room_url, listen)
+                if listen:
+                    # LiveKit raises participant_connected only for later joins, so callers already here are greeted below.
+                    already_here = self._callers_in(participant.room)
         except Exception:
             await self._release()
             raise
         with self._team_lock:
             self._connected = True
             pending, self._pending_team = self._pending_team, None
-        _log.info("LiveKit WebRTC connection established; AI audio published.")
-        self._show_speaking()
-        if pending is not None:
-            self._show_team(*pending)
+        if not already_here:
+            _log.info(f"No caller is in LiveKit room {self.session_id}; ending the edge")
+            self._stop_event.set()
+        else:
+            _log.info("LiveKit WebRTC connection established; AI audio published.")
+            self._show_speaking()
+            if pending is not None:
+                self._show_team(*pending)
+            for identity in already_here:
+                self._in_background(self._greet(identity))
 
         await self._stop_event.wait()
-        # One participant's room dropping ends the gateway; the others must not stay behind in the room.
+        # One participant's room dropping ends the edge; the others must not stay behind in the room.
         await self._release()
 
     def _new_room(self, listen: bool) -> "rtc.Room":
         """A room for one participant, with its handlers registered before it connects.
 
-        :param listen: The participant hears the human, so it handles the room's tracks and chat.
+        :param listen: The participant hears the caller, so it handles the room's tracks and chat.
         """
         room = rtc.Room()
         room.on("disconnected", self._on_disconnected)
         if listen:
+            room.on("participant_connected", self._on_participant_connected)
+            room.on("participant_disconnected", self._on_participant_disconnected)
             room.on("track_subscribed", self._on_track_subscribed)
             room.on("data_received", self._handle_chat_message)
         return room
+
+    @property
+    def ending(self) -> bool:
+        """Set once the edge has begun to stop: its last caller left, its room dropped, or it was told to stop."""
+        return self._stop_event is not None and self._stop_event.is_set()
 
     def _on_disconnected(self, *args, **kwargs) -> None:
         _log.info(f"LiveKit room {self.room_url} disconnected.")
@@ -243,14 +237,15 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
 
     async def stop(self) -> None:
         """Gracefully disconnect and release resources."""
-        _log.info("LiveKitEdgeGateway shutting down: disconnecting from room")
+        _log.info("LiveKitEdgeAdapter shutting down: disconnecting from room")
         await self._release()
-        if hasattr(self, "_stop_event"):
+        if self._stop_event is not None:
             self._stop_event.set()
-        _log.info("LiveKitEdgeGateway disconnected successfully")
+        _log.info("LiveKitEdgeAdapter disconnected successfully")
 
     async def _release(self) -> None:
-        """Stop the sender task and the background work, and take every agent participant out of the room."""
+        """Send the end-of-session control, stop the background work, and take every participant out of the room."""
+        await self._send_session_end()
         if self._sender_task:
             self._sender_task.cancel()
             self._sender_task = None
@@ -262,30 +257,93 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             except Exception:
                 _log.exception(f"Failed to disconnect agent participant {participant.identity or participant.agent}")
 
+    async def _send_session_end(self) -> None:
+        """Send the end-of-session control once, behind the frames already staged, so the pool closes the session now.
+
+        Skipped when staged input is still unsent after the wait (the pool would drop it as late input) or the broker
+        does not answer in time; the pool's idle eviction closes the session then.
+        """
+        if self._end_sent or self._producer is None or not self._connected:
+            return
+        self._end_sent = True
+        if self._pending is not None and self._sender_task is not None:
+            try:
+                await asyncio.wait_for(self._pending.join(), timeout=self.SESSION_END_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                _log.warning(
+                    f"Staged input for session {self.session_id} was not all sent within {self.SESSION_END_TIMEOUT_SECONDS}s; "
+                    "not sending the end-of-session control, which would pass it"
+                )
+                return
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue_end(), self.source),
+                timeout=self.SESSION_END_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            _log.warning(f"The end-of-session control for session {self.session_id} was not accepted within {self.SESSION_END_TIMEOUT_SECONDS}s")
+        except Exception as e:
+            _log.warning(f"Could not send the end-of-session control for session {self.session_id}: {e}")
+
     # -- inbound: room -> queue --------------------------------------------------------------
+
+    def _on_participant_connected(self, participant: "rtc.RemoteParticipant") -> None:
+        """Open the conversation when a caller joins, before their microphone is published."""
+        if participant.identity in self._own_identities:
+            return
+        self._in_background(self._greet(participant.identity))
+
+    def _on_participant_disconnected(self, participant: "rtc.RemoteParticipant") -> None:
+        """A participant left; the last caller leaving stops the edge, which ends the session.
+
+        The edge ends its own call rather than waiting for ``room_finished``: its own agent participants keep the room
+        open, so LiveKit would not finish it while the edge is still in it.
+        """
+        if participant.identity in self._own_identities or self._stop_event is None:
+            return
+        # A caller who rejoins while others stay gets greeted again.
+        self._greeted.discard(participant.identity)
+        # LiveKit removes the participant from the room before raising this event.
+        if not self._callers_in(self._participants[0].room):
+            _log.info(f"The last caller left room {self.session_id}; ending the session")
+            self._stop_event.set()
+
+    def _callers_in(self, room: "rtc.Room | None") -> list[str]:
+        """The identities of the callers already in ``room``."""
+        participants = getattr(room, "remote_participants", None) or {}
+        return [p.identity for p in participants.values() if p.identity not in self._own_identities]
 
     def _on_track_subscribed(self, track: "rtc.Track", publication: "rtc.RemoteTrackPublication", participant: "rtc.RemoteParticipant") -> None:
         if track.kind != rtc.TrackKind.KIND_AUDIO:
             return
         if participant.identity in self._own_identities:
-            # Another agent participant of this gateway: AI speech is never conversation input.
             publication.set_subscribed(False)
             return
         _log.info(f"Subscribed to audio track from {participant.identity}")
-        asyncio.create_task(self._greet(participant.identity))
         asyncio.create_task(self._process_incoming_audio(track, participant.identity))
 
     async def _greet(self, participant_identity: str) -> None:
-        """Kick off the conversation once a participant's mic appears."""
+        """Kick off the conversation once a participant joins the room."""
+        if participant_identity in self._greeted:
+            return
+        self._greeted.add(participant_identity)
+        prompt = self.opening_prompt(participant_identity)
+        if not prompt:
+            return
         _log.info(f"Triggering auto-greeting for {participant_identity}")
-        prompt = f"A user named {participant_identity} just connected their microphone. Say a very short hello to them and confirm you are connected!"
         self._stage_request(AgentRequestText(prompt=prompt), participant_identity)
+
+    def opening_prompt(self, participant_identity: str) -> str | None:
+        """The prompt sent when a caller joins the room; override it to open the call differently, or return ``None`` to send nothing.
+
+        :param participant_identity: The identity of the caller who joined.
+        """
+        return f"A user named {participant_identity} just connected. Say a very short hello to them and confirm you are connected!"
 
     def _handle_chat_message(self, data_packet: "rtc.DataPacket") -> None:
         if data_packet.topic not in ("chat", "lk-chat-topic", "lk-chat", ""):
             return
         if getattr(data_packet.participant, "identity", None) in self._own_identities:
-            # An agent participant's published transcript, not something the human typed.
             return
         try:
             payload_str = data_packet.data.decode("utf-8")
@@ -302,11 +360,9 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             _log.error(f"Failed to process chat: {e}")
 
     async def _process_incoming_audio(self, track: "rtc.Track", participant_identity: str | None = None) -> None:
-        """Pass continuous mic audio to the queue, batched per ``execution.realtime.input_batch_ms``.
+        """Pass the caller's audio to the queue, batched per ``execution.realtime.input_batch_ms``.
 
-        Batching keeps the input-queue message count (and broker cost/overhead) low; setting the
-        batch to 0 passes every incoming frame straight through. Every frame is staged as the
-        participant whose track it is, so the turn runs as them (#603).
+        Every frame is staged as the participant whose track it is, so the turn runs as them (#603).
         """
         audio_stream = rtc.AudioStream(track, sample_rate=EDGE_SAMPLE_RATE, num_channels=1)
         _log.info(f"Listening for audio stream (batching at {self._input_batch_ms} ms; 0 = pass-through)...")
@@ -331,18 +387,14 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         if buffer:
             self._stage_request(self._enqueue_audio(buffer), participant_identity)
 
-    def _stage_request(self, request, participant_identity: str | None = None) -> None:
-        """Stage one request for the sender task, tagged for this livekit session.
+    def _stage_request(self, request: AgentRequestText | AgentRequestVoice, participant_identity: str | None = None) -> None:
+        """Stage one request for the sender task; a full queue drops it with a warning.
 
-        Staging (rather than spawning a fire-and-forget task per frame) bounds what a stalled
-        broker can accumulate; a full queue drops the frame with a warning instead of growing.
-
-        :param request: The request to stage.
         :param participant_identity: The LiveKit participant it came from, which becomes the
             ``realtime:livekit`` principal's subject with the API key id as its scope (spec #603,
             section 8.4); None stages it anonymous.
         """
-        if self._producer is None or self._pending is None:
+        if self._producer is None or self._pending is None or self._end_sent:
             return
 
         try:
@@ -351,11 +403,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             _log.warning(f"Realtime input queue is full for session {self.session_id}; dropping a frame (broker slow or unreachable?)")
 
     async def _drain_requests(self) -> None:
-        """Send staged inbound requests to the input queue, one at a time, off the room loop.
-
-        ``producer.enqueue`` is synchronous and talks to the broker, so it runs in a worker thread
-        to keep the room's event loop responsive; doing it serially keeps the broker hop ordered.
-        """
+        """Send staged requests to the input queue in order, on a worker thread so the room loop never blocks."""
         assert self._pending is not None
         while True:
             inbound = await self._pending.get()
@@ -363,20 +411,18 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 await asyncio.to_thread(self._producer.enqueue, self.name, inbound, self.source)
             except Exception as e:
                 _log.error(f"Failed to enqueue request for session {self.session_id}: {e}")
+            finally:
+                self._pending.task_done()
 
     # -- outbound: queue -> room -------------------------------------------------------------
 
     async def deliver_chunk(self, chunk: StreamChunk, reply_context: dict[str, str]) -> None:
-        """Play one streamed ``StreamChunk`` back to the room, through the agent participant speaking.
+        """Play one streamed chunk back to the room through the participant speaking.
 
-        Audio deltas play immediately; transcript deltas are accumulated and published as one
-        chat message when the turn's ``done`` chunk arrives; a barge-in ``Interrupt`` clears
-        playback and drops the partial transcript; an ``AgentChanged`` hands the voice to that
-        agent's participant; an error chunk is surfaced to the room so it is never left silent.
+        The transcript is published as one chat message at the end of the turn. ``InputTranscript`` is ignored;
+        override this method to show it.
         """
         if chunk.error:
-            # A model/turn failure arrives as a terminal error chunk. Drop any half-accumulated
-            # transcript so a stale sentence is not published, then tell the user.
             self._transcript.clear()
             self._interrupted = False
             self._clear_playback()
@@ -384,7 +430,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             return
 
         event = chunk.event
-        if event is not None and event.type != "agent_changed":
+        if event is not None and event.type not in ("agent_changed", "input_transcript"):
             await self._catch_up_speaker()
         if event is not None:
             if event.type == "audio_delta":
@@ -401,7 +447,6 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             elif event.type == "text_delta":
                 self._transcript.append(event.content)
             elif event.type == "interrupt":
-                # Barge-in: stop buffered AI audio and don't publish a half-said sentence.
                 _log.info("Barge-in detected: clearing buffered AI audio")
                 self._interrupted = True
                 self._clear_playback()
@@ -421,16 +466,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 await self._publish_text(transcript)
 
     async def _change_speaker(self, agent: str) -> None:
-        """Make the participant of ``agent`` the one heard.
-
-        A single participant speaks for every agent, so nothing changes. Otherwise the previous
-        agent's words are published as its own, its queued audio plays out (bounded, so the change
-        cannot hold up an interrupt behind it for long) and its track is muted, and the new agent's
-        track is unmuted: it is heard, and shown as speaking, from here on.
-        An agent without a participant of its own in the room speaks through the first one rather
-        than going unheard: noted while it is still joining, and warned about once when it is not
-        (it could not join, or is not in the team).
-        """
+        """Make the participant of ``agent`` the one heard; an agent with no participant yet speaks through the first."""
         self._speaking_agent = agent
         if len(self._participants) == 1:
             return
@@ -438,8 +474,6 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         if speaker is None:
             fallback = self._participants[0]
             if agent in self._joining:
-                # Normal in the first second of a call: it takes over once in (_catch_up_speaker). Not a
-                # warning, so one is still left to give if the join then fails.
                 _log.info(f"Agent '{agent}' is still joining the room; it speaks through '{fallback.agent}' until it is in")
             elif agent not in self._warned_agents:
                 self._warned_agents.add(agent)
@@ -458,8 +492,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 await asyncio.wait_for(self._run_on_room(previous.audio_source.wait_for_playout()), timeout=self.PLAYOUT_WAIT_SECONDS)
             except asyncio.TimeoutError:
                 _log.warning(f"Agent '{previous.agent}' was still playing after {self.PLAYOUT_WAIT_SECONDS}s; '{speaker.agent}' speaks now")
-                # Still has audio queued past the bound: drop it rather than let it trail into the next
-                # agent's first words, the same hard cut a client barge-in gets (``_clear_playback``).
+                # Drop what is left so it does not trail into the next agent's first words.
                 if self._loop is not None:
                     try:
                         self._loop.call_soon_threadsafe(previous.audio_source.clear_queue)
@@ -473,16 +506,13 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         self._show_speaking()
 
     def _set_muted(self, participant: _AgentParticipant, muted: bool) -> None:
-        """Mute or unmute the participant's track on the gateway's loop, which owns it.
-
-        Queued ahead of the audio that follows, so the new speaker is unmuted before its first frame.
-        """
+        """Mute or unmute the participant's track on the edge's loop, ahead of the audio that follows."""
         if participant.track is None or self._loop is None:
             return
         try:
             self._loop.call_soon_threadsafe(self._apply_mute, participant, muted)
         except RuntimeError:
-            pass  # the gateway's loop has closed
+            pass  # the edge's loop has closed
 
     @staticmethod
     def _apply_mute(participant: _AgentParticipant, muted: bool) -> None:
@@ -495,33 +525,25 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             _log.warning(f"Could not {'mute' if muted else 'unmute'} agent participant {participant.identity}: {e}")
 
     async def _catch_up_speaker(self) -> None:
-        """Move the speaking agent onto its own participant once that participant is in the room.
-
-        A handoff to an agent still joining falls back to another participant; when the join has
-        completed since, the switch happens here, before the next output, as any change of speaker.
-        """
+        """Move the speaking agent onto its own participant once that participant has joined."""
         agent = self._speaking_agent
         speaker = self._by_agent.get(agent) if agent else None
         if speaker is not None and speaker is not self._active:
             await self._change_speaker(agent)
 
     def _show_team(self, starting: str, agents: list[str]) -> None:
-        """Give every agent of the conversation's team a participant of its own.
+        """Give every agent of the team a participant of its own, joining in the background.
 
-        The starting agent speaks through the participant that is already in the room; every other
-        agent joins in the background, so the voice never waits on a join, and is heard through its
-        own participant once it is in. Announced again after a reconnect, when only the agents not
-        in the room yet join. Each agent needs a token of its own, so without ``api_key`` and
-        ``api_secret`` the team speaks through the one participant, with a warning.
+        Without ``api_key`` and ``api_secret`` the team speaks through the one participant, with a warning.
 
         :param starting: The agent the conversation starts with.
         :param agents: Every agent the conversation can hand off to, the starting one first.
         """
-        self._by_agent.setdefault(starting, self._participants[0])
+        if self._participants[0] not in self._by_agent.values():
+            self._by_agent.setdefault(starting, self._participants[0])
         with self._team_lock:
             if not self._connected:
-                # The participant that hears the human is still joining. The team joins once it is in, not
-                # alongside it: joins that overlap have timed out and dropped the room.
+                # Joins that overlap the first one time out and drop the room, so the team waits for it.
                 self._pending_team = (starting, agents)
                 return
         missing = [name for name in agents if name not in self._by_agent and name not in self._joining]
@@ -536,16 +558,14 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         try:
             self._loop.call_soon_threadsafe(self._join_team, missing)
         except RuntimeError:
-            pass  # the gateway's loop has closed
+            pass  # the edge's loop has closed
 
     def _join_team(self, names: list[str]) -> None:
-        # The participant heard so far now has others beside it: mark it as the one speaking. Each
-        # joining participant marks itself once it is in.
         self._in_background(self._update_attribute(self._active))
         for name in names:
-            participant = self._AgentParticipant(name, f"agent-{name}", self._mint_token(name))
+            participant = self._AgentParticipant(name, f"{self.AGENT_IDENTITY_PREFIX}{name}", self._mint_token(name))
             self._own_identities.add(participant.identity)
-            # Listed before it joins, so a release while it is joining takes it out too.
+            # Listed before it joins, so a release mid-join takes it out too.
             self._participants.append(participant)
             self._in_background(self._join(participant))
 
@@ -564,29 +584,23 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         self._in_background(self._update_attribute(participant))
 
     def _in_background(self, coro) -> None:
-        """Run ``coro`` on the gateway's loop (the caller is on it), kept until done and cancelled on release."""
+        """Run ``coro`` on the edge's loop; cancelled on release."""
         task = asyncio.ensure_future(coro)
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
     def _show_speaking(self) -> None:
-        """Mark on every agent participant whether it is the one heard, without waiting for LiveKit.
-
-        LiveKit completes an attribute update only once the server confirms it, which can take long
-        or never come, so the updates run in the background on the gateway's loop, each bounded and a
-        failure logged: neither startup nor the voice ever waits on them. Each update reads who is
-        heard when it starts, not when it was asked for.
-        """
+        """Set ``ACTIVE_ATTRIBUTE`` on every participant in the background: LiveKit's confirmation can be slow or never come."""
         if self._loop is None or len(self._participants) == 1:
             return
         try:
             self._loop.call_soon_threadsafe(self._start_attribute_updates)
         except RuntimeError:
-            pass  # the gateway's loop has closed
+            pass  # the edge's loop has closed
 
     def _start_attribute_updates(self) -> None:
         for participant in self._participants:
-            if participant.audio_source is not None:  # in the room, not still joining
+            if participant.audio_source is not None:
                 self._in_background(self._update_attribute(participant))
 
     async def _update_attribute(self, participant: _AgentParticipant) -> None:
@@ -604,13 +618,13 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             _log.warning(f"Could not set {self.ACTIVE_ATTRIBUTE} on agent participant {participant.identity}: {e}")
 
     async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
-        """Publish a completed reply as chat text (used for the non-streamed fallback path)."""
+        """Publish a completed reply as chat text."""
         text = getattr(reply, "response", "") or str(reply)
         if text:
             await self._publish_text(text)
 
     async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
-        """Surface a failure to the room so the user is never left silent."""
+        """Publish a failure to the room as chat text."""
         await self._publish_text(message)
 
     async def _publish_text(self, text: str, participant: _AgentParticipant | None = None) -> None:
@@ -622,11 +636,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         await self._run_on_room(room.local_participant.publish_data(payload.encode("utf-8"), reliable=True, topic="lk-chat"))
 
     def _clear_playback(self) -> None:
-        """Drop AI audio still queued on every agent participant's source so a barge-in cuts it off.
-
-        Called from the Response Handler thread; ``clear_queue`` is synchronous and must run on
-        the gateway's own loop, so it is marshalled across with ``call_soon_threadsafe``.
-        """
+        """Drop the audio still queued on every participant; runs on the edge's loop, which owns the sources."""
         if self._loop is None:
             return
         for participant in self._participants:
@@ -638,11 +648,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 pass
 
     async def _run_on_room(self, coro) -> None:
-        """Await a room coroutine on the gateway's own loop.
-
-        Deliveries arrive on the Response Handler's thread (its own short-lived loop), but the
-        room and audio source are bound to the gateway's loop, so the call is marshalled across.
-        """
+        """Await a room coroutine on the edge's loop; deliveries arrive on the Response Handler's thread."""
         if self._loop is None:
             coro.close()
             return
@@ -651,3 +657,61 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             return
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         await asyncio.wrap_future(future)
+
+
+class LiveKitLifecycleAdapter(EdgeLifecycleAdapter):
+    """LiveKit's room webhooks as edge lifecycle events, so every room gets its own edge and session.
+
+    ``room_started`` starts a :class:`LiveKitEdgeAdapter` for the room (the room name is the session id); a
+    ``participant_joined`` also starts it, so a caller who rejoins during the edge's departure window gets a new edge. The edge
+    ends its session when the last caller leaves, and ``room_finished`` stops it if it is still running. Webhooks are verified with
+    LiveKit's own ``WebhookReceiver`` over the API key and secret that sign them. Override :meth:`should_start` to
+    choose the rooms, or :meth:`create_edge` to build the edge. Hosted by ``EdgeLifecycleRESTRequestHandler``.
+    """
+
+    name = NAME
+    webhook_path = WEBHOOK_PATH
+
+    def __init__(self, api_key: str | None = None, api_secret: str | None = None):
+        """
+        :param api_key: The LiveKit API key that signs the webhooks; defaults to ``livekit.api_key``, then the secret provider.
+        :param api_secret: The LiveKit API secret; defaults to ``livekit.api_secret``.
+        :raises ValueError: If the key or secret is missing.
+        """
+        config = AKConfig.get().livekit
+        # An empty field falls back to the secret provider, as the edge's own credentials do.
+        key = api_key or config.api_key or LiveKitEdgeAdapter._provider_credential("AK_LIVEKIT__API_KEY")
+        secret = api_secret or config.api_secret or LiveKitEdgeAdapter._provider_credential("AK_LIVEKIT__API_SECRET")
+        if not (key and secret):
+            raise ValueError(f"LiveKitLifecycleAdapter needs the LiveKit API key and secret: {LiveKitEdgeAdapter._missing_credentials_message()}")
+        self._api_key, self._api_secret = key, secret
+        self._receiver = api.WebhookReceiver(api.TokenVerifier(key, secret))
+
+    async def parse(self, raw: Any) -> EdgeLifecycleEvent | None:
+        """Verify one LiveKit webhook (the SDK checks the signature while parsing) and map its room event.
+
+        :raises HTTPException: 401 when the signature does not verify.
+        """
+        from fastapi import HTTPException
+
+        try:
+            body = (await raw.body()).decode("utf-8")
+            event = self._receiver.receive(body, raw.headers.get("Authorization", ""))
+        except Exception as e:
+            _log.warning(f"Rejected a LiveKit webhook: {e}")
+            raise HTTPException(status_code=401, detail="Invalid LiveKit webhook signature")
+        room = event.room.name if event.HasField("room") else ""
+        if not room:
+            return None
+        # The edge's own agent participants also raise participant_joined; they must not start another edge.
+        if event.event == "participant_joined" and event.participant.identity.startswith(LiveKitEdgeAdapter.AGENT_IDENTITY_PREFIX):
+            return None
+        if event.event in ("room_started", "participant_joined"):
+            return EdgeLifecycleEvent(room, start=True)
+        if event.event == "room_finished":
+            return EdgeLifecycleEvent(room, start=False)
+        return None
+
+    def create_edge(self, session_id: str) -> LiveKitEdgeAdapter:
+        """An edge for the room, signed with the same keys."""
+        return LiveKitEdgeAdapter(session_id=session_id, api_key=self._api_key, api_secret=self._api_secret)

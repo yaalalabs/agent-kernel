@@ -2,7 +2,7 @@
 
 This example demonstrates Agent Kernel's `REALTIME` execution pipeline for voice over WebRTC using LiveKit, powered by the **OpenAI Realtime API**.
 
-This is the absolute simplest way to test LiveKit voice on your local machine. Because it uses the `in_memory` queue transport, both the LiveKit Edge Gateway (the Front Door) and the Agent Runner (the Brain) run internally as threads inside a single Python process. No Docker, SQS, or Kafka required!
+This is the absolute simplest way to test LiveKit voice on your local machine. Because it uses the `in_memory` queue transport, both the LiveKit Edge (the Front Door) and the Agent Runner (the Brain) run internally as threads inside a single Python process. No Docker, SQS, or Kafka required!
 
 ## Quickstart
 
@@ -25,4 +25,4 @@ Because this is an in-memory setup, you only need one terminal window!
 python server.py
 ```
 
-That's it! Connect to `room_01` in your LiveKit Sandbox dashboard and speak. The `IOHandler` will automatically spin up the `AgentRunner` in the background to seamlessly process the audio chunks.
+That's it! Point LiveKit's webhook at the server (see the parent README), then join a room, for example `call_01`, in your LiveKit Sandbox dashboard and speak. Each room is its own call. The `IOHandler` will automatically spin up the `AgentRunner` in the background to seamlessly process the audio chunks.

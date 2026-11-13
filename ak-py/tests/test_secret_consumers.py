@@ -179,9 +179,19 @@ def _teams(monkeypatch) -> str:
 def _livekit(attribute: str) -> Callable:
     def resolve(monkeypatch) -> str:
         pytest.importorskip("livekit")
-        from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
+        from agentkernel.integration.livekit.adapter import LiveKitEdgeAdapter
 
-        return getattr(LiveKitEdgeGateway(agent_name="helper", session_id="room-1"), attribute)
+        return getattr(LiveKitEdgeAdapter(agent_name="helper", session_id="room-1"), attribute)
+
+    return resolve
+
+
+def _livekit_lifecycle(attribute: str) -> Callable:
+    def resolve(monkeypatch) -> str:
+        pytest.importorskip("livekit")
+        from agentkernel.integration.livekit.adapter import LiveKitLifecycleAdapter
+
+        return getattr(LiveKitLifecycleAdapter(), attribute)
 
     return resolve
 
@@ -290,6 +300,8 @@ CONSUMERS = [
     Consumer("AK_TEAMS__APP_PASSWORD", _teams, {"AK_TEAMS__APP_ID": "app-id"}, "AK_TEAMS__APP_PASSWORD_KEY"),
     Consumer("AK_LIVEKIT__API_KEY", _livekit("_api_key"), _without(_LIVEKIT, "AK_LIVEKIT__API_KEY")),
     Consumer("AK_LIVEKIT__API_SECRET", _livekit("_api_secret"), _without(_LIVEKIT, "AK_LIVEKIT__API_SECRET")),
+    Consumer("AK_LIVEKIT__API_KEY", _livekit_lifecycle("_api_key"), _without(_LIVEKIT, "AK_LIVEKIT__API_KEY")),
+    Consumer("AK_LIVEKIT__API_SECRET", _livekit_lifecycle("_api_secret"), _without(_LIVEKIT, "AK_LIVEKIT__API_SECRET")),
     Consumer("AK_WEBSOCKET_API__PUSH_AUTH_TOKEN", _push_auth_token),
     Consumer("OPENAI_API_KEY", _openai_realtime),
 ]
@@ -509,27 +521,26 @@ def no_livekit_credentials(monkeypatch):
     AKConfig._reset()
 
 
-class TestLiveKitTokenOnly:
-    def test_a_provider_failure_does_not_stop_a_gateway_given_a_token(self, no_livekit_credentials, monkeypatch):
-        """A given token joins on its own; the API credentials only give the team's other agents participants."""
+class TestLiveKitProviderFailure:
+    """With no key in config, a secret provider that fails stops both LiveKit adapters: neither can sign anything."""
+
+    def test_a_provider_failure_stops_the_edge(self, no_livekit_credentials, monkeypatch):
         pytest.importorskip("livekit")
-        from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
-
-        _install(monkeypatch, _FailingSecretProvider())
-
-        gateway = LiveKitEdgeGateway(agent_name="helper", session_id="room-1", token="given-token")
-
-        assert gateway.token == "given-token"
-        assert (gateway._api_key, gateway._api_secret) == ("", "")
-
-    def test_a_provider_failure_still_stops_a_gateway_that_mints_its_token(self, no_livekit_credentials, monkeypatch):
-        pytest.importorskip("livekit")
-        from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
+        from agentkernel.integration.livekit.adapter import LiveKitEdgeAdapter
 
         _install(monkeypatch, _FailingSecretProvider())
 
         with pytest.raises(SecretError, match="AK_LIVEKIT__API_KEY"):
-            LiveKitEdgeGateway(agent_name="helper", session_id="room-1")
+            LiveKitEdgeAdapter(agent_name="helper", session_id="room-1")
+
+    def test_a_provider_failure_stops_the_lifecycle_adapter(self, no_livekit_credentials, monkeypatch):
+        pytest.importorskip("livekit")
+        from agentkernel.integration.livekit.adapter import LiveKitLifecycleAdapter
+
+        _install(monkeypatch, _FailingSecretProvider())
+
+        with pytest.raises(SecretError, match="AK_LIVEKIT__API_KEY"):
+            LiveKitLifecycleAdapter()
 
 
 class TestConfigFieldsResolveLazily:

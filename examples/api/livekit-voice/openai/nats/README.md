@@ -46,7 +46,7 @@ export OPENAI_API_KEY="sk-..."
 python app.py runner
 ```
 
-### 3. Start the LiveKit Gateway (Terminal 3)
+### 3. Start the LiveKit Edge (Terminal 3)
 In a third terminal window, start the "Front Door". The `IOHandler` connects to LiveKit, catches user audio, and throws it onto the NATS stream.
 ```bash
 export AK_LIVEKIT__URL="wss://your-project.livekit.cloud"
@@ -59,7 +59,7 @@ python app.py io
 
 ## Testing and Cleanup
 
-Connect to `room_01` in your LiveKit Sandbox dashboard and speak. Your voice will route through NATS to OpenAI and back!
+Point LiveKit's webhook at the server (see the parent README), then join a room, for example `call_01`, in your LiveKit Sandbox dashboard and speak. Each room is its own call. Your voice will route through NATS to OpenAI and back!
 
 When finished, shut down Terminal 2 and 3 using `Ctrl + C`. Then in Terminal 1, run:
 ```bash

@@ -1,14 +1,12 @@
 import logging
 
-from agentkernel.core.config import AKConfig
 from agentkernel.framework.openai import OpenAIModule, OpenAIToolBuilder
-from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
+from agentkernel.integration.livekit import LiveKitLifecycleAdapter
 from agentkernel.pipeline import IOHandler
 from agents.realtime import RealtimeAgent
 
 logging.basicConfig(level=logging.INFO)
-_log = logging.getLogger(__name__)
 
 
 def get_weather(location: str) -> str:
@@ -27,8 +25,6 @@ OpenAIModule([general_agent]).run_options(
     general_agent, model_config={"initial_model_settings": {"model_name": "gpt-realtime", "voice": "alloy"}}
 )
 
-gateway = LiveKitEdgeGateway(session_id="room_01")
-
 
 if __name__ == "__main__":
-    IOHandler.run(gateways=[GatewayRunner(gateway)])
+    IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])

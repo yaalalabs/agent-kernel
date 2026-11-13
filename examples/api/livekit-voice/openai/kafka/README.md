@@ -39,7 +39,7 @@ export OPENAI_API_KEY="sk-..."
 python app.py runner
 ```
 
-### 3. Start the LiveKit Gateway (Terminal 3)
+### 3. Start the LiveKit Edge (Terminal 3)
 In a third terminal window, start the "Front Door". The `IOHandler` connects to LiveKit, catches user audio via WebRTC, and throws it onto the Kafka bullet train.
 ```bash
 export AK_LIVEKIT__URL="wss://your-project.livekit.cloud"
@@ -52,7 +52,7 @@ python app.py io
 
 ## Testing it Live
 
-Once all three terminals are running, open your LiveKit Sandbox dashboard or custom frontend. Connect to `room_01`. 
+Once all three terminals are running, open your LiveKit Sandbox dashboard or custom frontend. Point LiveKit's webhook at the server (see the parent README), then join a room, for example `call_01`. Each room is its own call. 
 When you speak, Terminal 3 grabs the audio, passes it to Terminal 2 via Kafka, OpenAI processes the speech, and the AI's voice is instantly streamed back to your headset!
 
 ## Clean Up

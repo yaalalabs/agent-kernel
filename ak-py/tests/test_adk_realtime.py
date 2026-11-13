@@ -14,9 +14,11 @@ from google.adk.events.event_actions import EventActions
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.base_llm_connection import BaseLlmConnection
 from google.adk.models.llm_response import LlmResponse
+from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.runners import Runner as ADKRunner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools import FunctionTool
+from google.adk.tools.base_toolset import BaseToolset
 from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.adk.workflow import Workflow
 from google.genai import types
@@ -92,7 +94,13 @@ class NativeRun:
         self.events = asyncio.Queue()
         self.calls = []
         self.closed = False
+        self.plugin_manager = None
+        self.session_service = SimpleNamespace(flush=self._flush)
         NativeRun.latest = self
+
+    async def _flush(self):
+        # A call's release flushes the session service (it does not call Runner.close(), which would close shared toolsets).
+        self.closed = True
 
     async def run_live(self, **kwargs):
         self.calls.append(kwargs)
@@ -101,9 +109,6 @@ class NativeRun:
             if event is None:
                 return
             yield event
-
-    async def close(self):
-        self.closed = True
 
 
 @pytest.mark.asyncio
@@ -176,6 +181,60 @@ async def test_a_live_tool_resolves_its_session_through_tool_context(monkeypatch
         await runner.disconnect()
         with pytest.raises(KeyError):  # disconnect() must not leak the connection's tool context
             AKToolContext.fetch(ak_tool_context.id)
+
+
+async def _run_user_events(monkeypatch, events):
+    """Connect a runner over a scripted native run, feed it ``events`` and return what it reported."""
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    monkeypatch.setattr("agentkernel.framework.adk.adk.Runner", NativeRun)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        module = GoogleADKModule([coordinator, billing])
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(Session("call-t"), module.get_agent("coordinator"), collect)
+        for event in events:
+            await NativeRun.latest.events.put(event)
+        # A marker turn after them: once it is reported, every earlier event has been handled.
+        await NativeRun.latest.events.put(
+            Event(author="coordinator", invocation_id="i", content=types.Content(parts=[types.Part(text="x")]), turn_complete=True)
+        )
+        for _ in range(300):
+            if any(kind == "done" for kind, _ in seen):
+                break
+            await asyncio.sleep(0.01)
+        await runner.disconnect()
+        return seen
+
+
+def _heard(text, finished, partial=False, event_id="u-1"):
+    return Event(
+        id=event_id,
+        author="user",
+        invocation_id="i",
+        partial=partial,
+        input_transcription=types.Transcription(text=text, finished=finished),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_finished_caller_transcription_is_reported_once(monkeypatch):
+    seen = await _run_user_events(monkeypatch, [_heard("we ", False, partial=True), _heard("we have 2000 patients ", True)])
+
+    assert [data for kind, data in seen if kind == "input_transcript"] == [{"text": "we have 2000 patients", "message_id": "u-1"}]
+
+
+@pytest.mark.asyncio
+async def test_partial_empty_and_history_user_events_are_not_reported(monkeypatch):
+    replayed = Event(author="user", invocation_id="i", content=types.Content(parts=[types.Part(text="earlier words")]))
+    seen = await _run_user_events(monkeypatch, [_heard("par", False, partial=True), _heard("   ", True), replayed])
+
+    assert [kind for kind, _ in seen if kind == "input_transcript"] == []
 
 
 @pytest.mark.asyncio
@@ -361,6 +420,64 @@ async def test_caller_audio_and_text_reach_the_native_queue(native):
         await runner.disconnect()
     assert audio.blob.data == b"\x00\x01\x02\x03" and audio.blob.mime_type == "audio/pcm;rate=16000"
     assert text.content.role == "user" and text.content.parts[0].text == "hello"
+
+
+class CountingToolset(BaseToolset):
+    """A toolset that counts its closes, standing in for an MCP toolset whose connections every call on the agent shares."""
+
+    def __init__(self):
+        super().__init__()
+        self.closed = 0
+
+    async def get_tools(self, readonly_context=None):
+        return []
+
+    async def close(self):
+        self.closed += 1
+
+
+class CountingPlugin(BasePlugin):
+    """A plugin that counts its closes, standing in for a client every call on the agent shares."""
+
+    def __init__(self):
+        super().__init__(name="counting")
+        self.closed = 0
+
+    async def close(self):
+        self.closed += 1
+
+
+@pytest.mark.asyncio
+async def test_ending_a_call_does_not_close_the_plugins_every_call_on_the_agent_shares(monkeypatch):
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    plugin = CountingPlugin()
+    native_agent = LlmAgent(name="voice", model="gemini-2.5-flash", mode="chat")
+    with Runtime(InMemorySessionStore()):
+        owner = GoogleADKModule([native_agent]).get_agent("voice")
+        call = GoogleADKRunner._native_runner(owner, GoogleADKRunner._session(Session("call-a")), {"plugins": [plugin]})
+
+        await GoogleADKRealtimeRunner._release(call)
+
+        assert plugin.closed == 0
+
+
+@pytest.mark.asyncio
+async def test_ending_a_call_does_not_close_the_toolsets_every_call_on_the_agent_shares(monkeypatch):
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    toolset = CountingToolset()
+    native_agent = LlmAgent(name="voice", model="gemini-2.5-flash", mode="chat", tools=[toolset])
+    with Runtime(InMemorySessionStore()):
+        owner = GoogleADKModule([native_agent]).get_agent("voice")
+        call_a = GoogleADKRunner._native_runner(owner, GoogleADKRunner._session(Session("call-a")), {})
+        call_b = GoogleADKRunner._native_runner(owner, GoogleADKRunner._session(Session("call-b")), {})
+
+        await GoogleADKRealtimeRunner._release(call_a)  # call A ends while call B is still using the agent
+
+        assert toolset.closed == 0
+        await call_b.close()  # what ADK's own Runner.close() does, and why a call does not use it
+        assert toolset.closed == 1
 
 
 @pytest.mark.asyncio

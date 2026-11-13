@@ -427,12 +427,12 @@ class RequestHandler(RestHandler):
         """
         mode = self._effective_mode()
         if mode == ExecutionMode.REALTIME:
-            # Realtime replies are delivered to the stateful edge (e.g. the LiveKit gateway) that
+            # Realtime replies are delivered to the stateful edge (e.g. the LiveKit edge) that
             # sent the request; a REST caller has no edge, so its reply could never reach it.
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": "REALTIME mode delivers responses through the realtime gateway: this route is not available",
+                    "error": "REALTIME mode delivers responses through the realtime edge: this route is not available",
                     "session_id": body.session_id,
                 },
             )

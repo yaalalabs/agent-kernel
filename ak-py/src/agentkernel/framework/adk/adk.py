@@ -1046,6 +1046,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await self._refuse_confirmation(event)
             return True
         if event.author == "user":
+            # ADK authors the caller's transcription as "user": partial pieces, then one finished aggregate.
+            transcription = event.input_transcription
+            if transcription is not None and transcription.finished and (transcription.text or "").strip():
+                await self._callback("input_transcript", {"text": transcription.text.strip(), "message_id": event.id})
             return False
         if event.interrupted:
             await self._callback("interrupt", {})
@@ -1105,10 +1109,21 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         await self._cancel_and_wait(task)
         runner, self._runner = self._runner, None
         if runner is not None:
-            await runner.close()
+            await self._release(runner)
         ctx, self._tool_context = self._tool_context, None
         if ctx is not None:
             ctx.__exit__(None, None, None)
+
+    @staticmethod
+    async def _release(runner: Runner) -> None:
+        """Flushes the session service, the one thing a call owns.
+
+        ``Runner.close()`` would also close the toolsets and the plugins. Both belong to the application and are shared by every
+        call on the agent (an MCP toolset's connections, a plugin's client), so ending one call would cut off what another call is
+        using. The unary path never closes them either.
+        """
+        if runner.session_service:
+            await runner.session_service.flush()
 
 
 class GoogleADKAgent(AKBaseAgent):

@@ -389,7 +389,7 @@ class _GmailConfig(BaseModel):
 
 
 class _LiveKitConfig(BaseModel):
-    """LiveKit realtime voice gateway settings.
+    """LiveKit realtime voice edge settings.
 
     Bound like every other block, from YAML or ``AK_LIVEKIT__<FIELD>`` env vars (e.g.
     ``AK_LIVEKIT__URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``).
@@ -842,7 +842,7 @@ class _ExecutionConfig(BaseModel):
         description=(
             "Invocation mode: rest_sync (REST, wait for the reply), rest_async (REST, submit then "
             "poll), async (WebSocket only), realtime (persistent realtime sockets, e.g. the LiveKit voice "
-            "gateway). Unset runs as rest_sync."
+            "edge). Unset runs as rest_sync."
         ),
     )
     message_type: ReplyMessageType | None = Field(
