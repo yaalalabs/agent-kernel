@@ -8,8 +8,10 @@ handing Bolt's own response back for the host to return.
 
 import base64
 import contextvars
+import json
 import logging
 import os
+import re
 import traceback
 
 import httpx
@@ -19,7 +21,18 @@ from slack_bolt.async_app import AsyncApp
 from slack_sdk.web.async_client import AsyncWebClient
 
 from ...core.config import AKConfig
-from ...core.model import AgentReply, AgentRequest, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core.event import PausedInterruption
+from ...core.model import (
+    AgentPausedReplyAny,
+    AgentReply,
+    AgentRequest,
+    AgentRequestAny,
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+    AgentResumeRequestAny,
+    ResumeDecision,
+)
 from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import (
     ATTACHMENTS_DISABLED_ERROR,
@@ -32,7 +45,31 @@ from ..adapter.base import (
 from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
 NAME = "slack"
+
+ACTION_PREFIX = "ak_decision:"
+"""Marks a Block Kit button as a decision on a paused run; the listener matches on it."""
+REASON_PREFIX = "ak_decision_reason:"
+"""Marks a button that opens the reason modal instead of deciding outright."""
+MODAL_CALLBACK_ID = "ak_decision_reason_modal"
+REASON_BLOCK_ID = "ak_reason"
+REASON_INPUT_ID = "ak_reason_input"
+BLOCK_PREFIX = "ak_pause:"
+"""Prefixes the ``block_id`` of an actions block, which Slack asks to be unique per message."""
+REVIEW_PREFIX = "ak_decision_review:"
+"""Marks the button that opens the review form, for a pause every question of which must be answered at once."""
+REVIEW_CALLBACK_ID = "ak_decision_review_modal"
+MAX_BLOCKS = 50
+"""Slack's per-message block budget."""
+MAX_VIEW_BLOCKS = 100
+"""Slack's per-view block budget; the review form spends two on each question."""
+BLOCK_ID_LIMIT = 255
+VALUE_LIMIT = 2000
+"""Slack's caps on a ``block_id`` and a button ``value``; over either, it rejects the whole message."""
+DECISION_VERBS = ("approved", "denied", "cancelled")
+
 _events: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("ak_slack_events")
+_presses: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("ak_slack_presses")
+_submissions: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("ak_slack_submissions")
 
 
 class SlackInboundAdapter(InboundAdapter):
@@ -62,6 +99,51 @@ class SlackInboundAdapter(InboundAdapter):
             if collected is not None:
                 collected.append(message)
 
+        @self._app.action(re.compile(f"^{re.escape(ACTION_PREFIX)}"))
+        async def _collect_press(ack, body):
+            """Collect a decision press. :meth:`parse` does the work, where no clock is running.
+
+            ``process_before_response=True`` holds the HTTP response until this returns, so
+            Slack's three seconds cover the whole listener, not merely the time before ``ack()``.
+            """
+            await ack()
+            collected = _presses.get(None)
+            if collected is not None:
+                collected.append(body)
+
+        @self._app.action(re.compile(f"^{re.escape(REASON_PREFIX)}"))
+        async def _open_reason_modal(ack, body, client):
+            """Ask why, instead of recording the denial from the press alone.
+
+            The one Slack call made inside a listener, so ``views_open`` has to land in the same
+            three seconds. A failure leaves the pause live: nothing was decided.
+            """
+            await ack()
+            try:
+                await client.views_open(trigger_id=body["trigger_id"], view=self._reason_modal(body))
+            except Exception as e:
+                self._log.error(f"Could not open the Slack reason modal: {e}")
+
+        @self._app.action(re.compile(f"^{re.escape(REVIEW_PREFIX)}"))
+        async def _open_review_modal(ack, body, client):
+            """Open the form for a pause whose questions have to be answered together.
+
+            One `views_open`, inside the same three seconds as :func:`_open_reason_modal`.
+            """
+            await ack()
+            try:
+                await client.views_open(trigger_id=body["trigger_id"], view=self._review_modal(body))
+            except Exception as e:
+                self._log.error(f"Could not open the Slack review modal: {e}")
+
+        @self._app.view(re.compile(f"^({re.escape(MODAL_CALLBACK_ID)}|{re.escape(REVIEW_CALLBACK_ID)})$"))
+        async def _collect_submission(ack, body):
+            """Collect a submitted modal, either kind. Does no work, for the reason given above."""
+            await ack()
+            collected = _submissions.get(None)
+            if collected is not None:
+                collected.append(body)
+
     async def parse(self, raw: Request) -> InboundParseResult:
         """Run Bolt's dispatch and normalize whatever message events it produced.
 
@@ -80,19 +162,288 @@ class SlackInboundAdapter(InboundAdapter):
             )
             return InboundParseResult()
 
-        token = _events.set([])
+        events_token, presses_token, submissions_token = _events.set([]), _presses.set([]), _submissions.set([])
         try:
             response = await self._handler.handle(raw)
-            events = _events.get()
+            events, presses, submissions = _events.get(), _presses.get(), _submissions.get()
         finally:
-            _events.reset(token)
+            _events.reset(events_token)
+            _presses.reset(presses_token)
+            _submissions.reset(submissions_token)
 
         requests = []
         for event in events:
             inbound = await self._to_request(event)
             if inbound is not None:
                 requests.append(inbound)
+        for press in presses:
+            decision = self._decision_from_press(press)
+            if decision is not None:
+                requests.append(decision)
+        for submission in submissions:
+            decision = self._decision_from_modal(submission)
+            if decision is not None:
+                requests.append(decision)
         return InboundParseResult(requests=requests, response=response)
+
+    def _decision_from_press(self, body: dict) -> InboundRequest | None:
+        """A Block Kit button press, as the decision it carries.
+
+        The request id is composed from the press, not Slack's per-click ``action_ts``, so a
+        second press by the same person deduplicates instead of reaching a pause already answered.
+        It names the presser too: an approval policy that rejects one press leaves the pause open,
+        and the authorized press that follows must not deduplicate against the rejected one. The
+        session is the thread the pause was posted into.
+
+        :param body: The ``block_actions`` payload.
+        :return: The decision as a request, or None when the payload does not carry one.
+        """
+        action = next(iter(body.get("actions") or []), {})
+        parsed = self._parse_action_value(action.get("value"))
+        channel = (body.get("channel") or {}).get("id")
+        container, message = body.get("container") or {}, body.get("message") or {}
+        message_ts = container.get("message_ts") or message.get("ts")
+        thread_ts = container.get("thread_ts") or message.get("thread_ts") or message_ts
+        if parsed is None or not channel or not thread_ts:
+            return None
+
+        interruption_id, status = parsed
+        user = (body.get("user") or {}).get("id")
+        reply_context = {"channel": channel, "thread_ts": thread_ts}
+        if user:
+            reply_context["user"] = user
+        return InboundRequest(
+            session_id=thread_ts,
+            request_id=self._bounded_request_id(f"{NAME}:{channel}:{message_ts}", ":".join(filter(None, (interruption_id, status, user)))),
+            requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status)])],
+            agent=self._agent,
+            user_id=user,
+            group_id=channel,
+            reply_context=reply_context,
+        )
+
+    def _reason_modal(self, body: dict) -> dict:
+        """The modal a denial opens, carrying everything the submission will need back.
+
+        A ``view_submission`` carries no channel and no message, so ``private_metadata`` carries
+        the whole return address. The reason is optional: a denial must stay possible.
+
+        :param body: The ``block_actions`` payload of the press that opened it.
+        :return: The Slack view to open.
+        """
+        action = next(iter(body.get("actions") or []), {})
+        container, message = body.get("container") or {}, body.get("message") or {}
+        message_ts = container.get("message_ts") or message.get("ts")
+        metadata = {
+            "value": action.get("value"),
+            "channel": (body.get("channel") or {}).get("id"),
+            "ts": message_ts,
+            "thread_ts": container.get("thread_ts") or message.get("thread_ts") or message_ts,
+            "user": (body.get("user") or {}).get("id"),
+        }
+        return {
+            "type": "modal",
+            "callback_id": MODAL_CALLBACK_ID,
+            "private_metadata": json.dumps(metadata),
+            "title": {"type": "plain_text", "text": "Deny this request"},
+            "submit": {"type": "plain_text", "text": "Submit"},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": [
+                {
+                    "type": "input",
+                    "block_id": REASON_BLOCK_ID,
+                    "optional": True,
+                    "label": {"type": "plain_text", "text": "Reason"},
+                    "element": {"type": "plain_text_input", "action_id": REASON_INPUT_ID, "multiline": True},
+                }
+            ],
+        }
+
+    def _decision_from_modal(self, body: dict) -> InboundRequest | None:
+        """A submitted modal, as the decision or decisions it carries.
+
+        Two kinds arrive here, told apart by the view's ``callback_id``: a denial's reason, and the
+        review form that answers a whole pause at once.
+
+        :param body: The ``view_submission`` payload.
+        :return: The decisions as a request, or None when the metadata does not parse.
+        """
+        view = body.get("view") or {}
+        if view.get("callback_id") == REVIEW_CALLBACK_ID:
+            return self._decisions_from_review(view)
+        try:
+            metadata = json.loads(view.get("private_metadata") or "")
+        except ValueError:
+            self._log.warning("Ignoring a modal submission whose private_metadata does not parse")
+            return None
+
+        parsed = self._parse_action_value(metadata.get("value"))
+        if parsed is None or not metadata.get("channel") or not metadata.get("thread_ts"):
+            return None
+
+        interruption_id, status = parsed
+        reason = ((view.get("state") or {}).get("values", {}).get(REASON_BLOCK_ID, {}).get(REASON_INPUT_ID, {}) or {}).get("value")
+        user = metadata.get("user")
+        reply_context = {"channel": metadata["channel"], "thread_ts": metadata["thread_ts"]}
+        if user:
+            reply_context["user"] = user
+        return InboundRequest(
+            session_id=metadata["thread_ts"],
+            request_id=self._bounded_request_id(
+                f"{NAME}:{metadata['channel']}:{metadata['ts']}", ":".join(filter(None, (interruption_id, status, user)))
+            ),
+            requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status, message=reason or None)])],
+            agent=self._agent,
+            user_id=user,
+            group_id=metadata["channel"],
+            reply_context=reply_context,
+        )
+
+    @staticmethod
+    def _offered(value: str | None) -> dict[str, str]:
+        """The verbs the pressed button offers, against the words it offered them in.
+
+        Written by the outbound half as JSON. A pause posted before that shape existed carries a
+        comma-separated list of verbs instead, and a message outlives a deploy, so that form is
+        still read — labelled with the verb itself, which is all it ever carried.
+
+        :param value: The button's ``value``.
+        :return: Each offered verb against its label, never empty.
+        """
+        try:
+            parsed = json.loads(value or "")
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            offered = {verb: str(label) for verb, label in parsed.items() if verb in DECISION_VERBS}
+        else:
+            offered = {verb: verb.capitalize() for verb in (value or "").split(",") if verb in DECISION_VERBS}
+        return offered or {"approved": "Approve", "denied": "Deny"}
+
+    def _review_modal(self, body: dict) -> dict:
+        """The form that answers every question of a pause at once.
+
+        Rebuilt from the pressed message rather than from state the adapter would have to keep:
+        each question's section carries ``ak_pause:<id>``, so the questions and their ids come back
+        in the ``block_actions`` payload. Each input block carries the same id, which is how
+        :meth:`_decisions_from_review` reads the answers back out of ``state.values``.
+
+        No input is `optional`, so Slack itself refuses a submit that leaves a question unanswered
+        — the constraint the framework imposes, enforced where the human can still act on it.
+
+        A denial here carries no reason, unlike the single-question path: a reason field per
+        question would cost a third of the view's block budget, and a reasonless denial reaches the
+        model as a refusal in its own words.
+
+        The verbs and their labels come off the pressed button rather than from any setting of this
+        half's own: see :meth:`SlackOutboundAdapter._review_button`.
+
+        :param body: The ``block_actions`` payload of the press that opened it.
+        :return: The Slack view to open.
+        """
+        action = next(iter(body.get("actions") or []), {})
+        offered = self._offered(action.get("value"))
+        container, message = body.get("container") or {}, body.get("message") or {}
+        message_ts = container.get("message_ts") or message.get("ts")
+        metadata = {
+            "channel": (body.get("channel") or {}).get("id"),
+            "ts": message_ts,
+            "thread_ts": container.get("thread_ts") or message.get("thread_ts") or message_ts,
+            "user": (body.get("user") or {}).get("id"),
+        }
+
+        blocks: list[dict] = []
+        for block in message.get("blocks") or []:
+            block_id = block.get("block_id") or ""
+            if not block_id.startswith(BLOCK_PREFIX) or block_id == f"{BLOCK_PREFIX}review":
+                continue
+            if len(blocks) + 2 > MAX_VIEW_BLOCKS:
+                break
+            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": (block.get("text") or {}).get("text", block_id)}})
+            blocks.append(
+                {
+                    "type": "input",
+                    "block_id": block_id,
+                    "label": {"type": "plain_text", "text": "Decision"},
+                    "element": {
+                        "type": "radio_buttons",
+                        "action_id": f"{ACTION_PREFIX}choice",
+                        "options": [{"text": {"type": "plain_text", "text": label}, "value": verb} for verb, label in offered.items()],
+                    },
+                }
+            )
+
+        return {
+            "type": "modal",
+            "callback_id": REVIEW_CALLBACK_ID,
+            "private_metadata": json.dumps(metadata),
+            "title": {"type": "plain_text", "text": "Review requests"},
+            "submit": {"type": "plain_text", "text": "Submit"},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": blocks,
+        }
+
+    def _decisions_from_review(self, view: dict) -> InboundRequest | None:
+        """Every answer the review form collected, as one resume.
+
+        One request carrying every decision is the whole point: the frameworks that set
+        ``answer_together`` refuse a resume that leaves any question unanswered.
+
+        The ``request_id`` goes through :meth:`_bounded_request_id`, which digests the answers
+        rather than joining them: a join would be unbounded, and the id becomes the queue's
+        deduplication key. The submitter is part of what is digested, for the reason given in
+        :meth:`_decision_from_press`.
+
+        :param view: The submitted view, carrying the return address and the answers.
+        :return: The decisions as one request, or None when nothing usable came back.
+        """
+        try:
+            metadata = json.loads(view.get("private_metadata") or "")
+        except ValueError:
+            self._log.warning("Ignoring a review submission whose private_metadata does not parse")
+            return None
+        if not metadata.get("channel") or not metadata.get("thread_ts"):
+            return None
+
+        decisions = []
+        for block_id, answers in ((view.get("state") or {}).get("values") or {}).items():
+            if not block_id.startswith(BLOCK_PREFIX):
+                continue
+            status = next((a.get("selected_option") or {}).get("value") for a in answers.values())
+            if status in DECISION_VERBS:
+                decisions.append(ResumeDecision(id=block_id.removeprefix(BLOCK_PREFIX), status=status))
+        if not decisions:
+            return None
+
+        user = metadata.get("user")
+        answers = "|".join(sorted(f"{d.id}:{d.status}" for d in decisions) + ([user] if user else []))
+        reply_context = {"channel": metadata["channel"], "thread_ts": metadata["thread_ts"]}
+        if user:
+            reply_context["user"] = user
+        return InboundRequest(
+            session_id=metadata["thread_ts"],
+            request_id=self._bounded_request_id(f"{NAME}:{metadata['channel']}:{metadata['ts']}:review", answers),
+            requests=[AgentResumeRequestAny(decisions=decisions)],
+            agent=self._agent,
+            user_id=user,
+            group_id=metadata["channel"],
+            reply_context=reply_context,
+        )
+
+    @classmethod
+    def _parse_action_value(cls, value: str | None) -> tuple[str, str] | None:
+        """Read a button's ``<interruption id>:<verb>`` value back into the pair it encodes.
+
+        Split from the right: an interruption id may contain a colon, a verb never does.
+
+        :param value: The pressed button's value.
+        :return: The interruption id and the decision's status, or None when either is missing.
+        """
+        interruption_id, _, status = (value or "").rpartition(":")
+        if not interruption_id or status not in DECISION_VERBS:
+            cls._log.warning(f"Ignoring a press whose button value does not parse: {value!r}")
+            return None
+        return interruption_id, status
 
     async def _to_request(self, body: dict) -> InboundRequest | None:
         """Normalize one Slack message event, or None when it is not for us."""
@@ -241,7 +592,12 @@ class SlackOutboundAdapter(OutboundAdapter):
     name = NAME
     MESSAGE_LIMIT = 3000
     MAX_CHUNKS = 5
+    BUTTON_STYLES = {"approved": "primary", "denied": "danger"}
+    """Block Kit's own colour words, so they stay here rather than in the seam's vocabulary."""
+    REVIEW_LABEL = "Review all"
     TRUNCATION_NOTICE = "Response is truncated due to size restrictions in Slack"
+    OVERFLOW_NOTICE = "{count} more question(s) did not fit in this message and cannot be answered here."
+    DENY_COLLECTS_REASON = True
 
     _log = logging.getLogger("ak.integration.slack")
 
@@ -279,6 +635,193 @@ class SlackOutboundAdapter(OutboundAdapter):
             blocks=self.split_reply(str(reply)),
             metadata={"event_type": "first_pass", "event_payload": {"id": thread_ts}},
         )
+
+    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: dict[str, str]) -> None:
+        """Post the pause with each question's controls directly beneath it.
+
+        Posted in the run's own thread, unlike :meth:`deliver`: a press carries the pause
+        message's ``thread_ts`` as its session id, so moving it would resume the wrong session.
+
+        The message's ``text`` is the whole pause rather than a heading, because Slack reads that
+        field to a screen reader in place of the blocks: a heading alone would ask somebody to
+        approve something unnamed.
+
+        :param reply: The paused reply to draw.
+        :param reply_context: The delivery coordinates resolved at the edge.
+        """
+        client = self._client()
+        if reply_context.get("ack_ts"):
+            await client.chat_update(
+                channel=reply_context.get("ack_channel") or reply_context["channel"],
+                ts=reply_context["ack_ts"],
+                text=f"Hi <@{reply_context.get('user')}>,",
+            )
+
+        await client.chat_postMessage(
+            channel=reply_context["channel"],
+            thread_ts=reply_context.get("thread_ts"),
+            text=self._escape_mrkdwn(self.format_pause(reply))[: self.MESSAGE_LIMIT],
+            blocks=self._pause_blocks(reply),
+        )
+
+    def _pause_blocks(self, reply: AgentPausedReplyAny) -> list:
+        """The pause as Block Kit: every question followed by whatever answers it.
+
+        Slack takes 50 blocks per message. Two are held back for the closing line and a possible
+        overflow notice; questions past what is left are counted rather than dropped silently.
+
+        A pause answered together whose review button could not be drawn — because a question fell
+        outside the block budget, carries an id Slack would refuse, or wants a typed answer no
+        verdict could give — carries
+        ``ANSWER_TOGETHER_NOTICE``: its questions have no controls of their own, so without it the
+        message would go out with nothing to press and no reason why.
+
+        :param reply: The paused reply to draw.
+        :return: The blocks to post.
+        """
+        opening, closing = self._pause_template(reply)
+        blocks = self.split_reply(opening.strip())
+        together = reply.answer_together and len(reply.interruptions) > 1
+        form = together and self._answerable_together(reply) and all(self._block_id(i) for i in reply.interruptions)
+        budget = MAX_BLOCKS - 2
+        skipped = 0
+
+        for interruption in reply.interruptions:
+            question = self._question_blocks(interruption, controls=not together)
+            if len(blocks) + len(question) > budget:
+                skipped += 1
+                continue
+            blocks.extend(question)
+
+        if form and not skipped:
+            blocks.append(self._review_button())
+        if skipped:
+            self._log.warning(f"{skipped} interruption(s) did not fit Slack's {MAX_BLOCKS}-block message and were left out")
+            blocks.append(self._notice(self.OVERFLOW_NOTICE.format(count=skipped)))
+        if together and (skipped or not form):
+            blocks.append(self._notice(self.ANSWER_TOGETHER_NOTICE))
+        blocks.extend(self.split_reply(closing.strip()))
+        return blocks
+
+    def _question_blocks(self, interruption: PausedInterruption, controls: bool = True) -> list:
+        """One question, and the controls or the note that goes under it.
+
+        A note stands in when :meth:`_decidable` rejects the question, or when its id would blow
+        Slack's ``block_id``/``value`` budget — which costs the **whole** message, not one row. The
+        note is drawn either way: a question wanting a typed answer has nothing to offer in a review
+        form either, and carries no ``block_id``, so the form never asks for a verdict on it.
+
+        :param interruption: The question to draw.
+        :param controls: False when the whole pause is answered through the review form instead,
+            which is also when the section carries the id, since no actions block will.
+        :return: Its section blocks, followed by its actions block or its note.
+        """
+        blocks = self.split_reply(self._escape_mrkdwn(self._format_interruption(interruption)))
+        if not self._decidable(interruption):
+            blocks.append(self._notice(self.TYPED_ANSWER_NOTICE))
+            return blocks
+        block_id = self._block_id(interruption)
+        if not controls:
+            if block_id:
+                blocks[0]["block_id"] = block_id
+            return blocks
+
+        longest_value = max((len(f"{interruption.id}:{verb}") for verb in self.DECISIONS), default=0)
+        if block_id is None or longest_value > VALUE_LIMIT:
+            self._log.warning(
+                f"Interruption '{interruption.id}' needs a {len(BLOCK_PREFIX) + len(interruption.id)}-character block_id and a "
+                f"{longest_value}-character value, over Slack's {BLOCK_ID_LIMIT}/{VALUE_LIMIT}; rendering it without buttons"
+            )
+            blocks.append(self._notice(self.UNPRESSABLE_NOTICE))
+            return blocks
+
+        blocks.append({"type": "actions", "block_id": block_id, "elements": [self._button(interruption.id, verb) for verb in self.DECISIONS]})
+        return blocks
+
+    @staticmethod
+    def _block_id(interruption: PausedInterruption) -> str | None:
+        """The ``block_id`` carrying this question's id, or None when Slack would refuse it.
+
+        Over the budget Slack rejects the **whole message**, not the one block, so an id this long
+        costs the entire pause — which is why the caller draws a notice instead of the controls,
+        and why a question with no usable id also costs the review form.
+
+        :param interruption: The question to identify.
+        :return: The block id, or None when it is over budget.
+        """
+        block_id = f"{BLOCK_PREFIX}{interruption.id}"
+        return block_id if len(block_id) <= BLOCK_ID_LIMIT else None
+
+    def _review_button(self) -> dict:
+        """The one control a pause answered together offers.
+
+        ``value`` carries the verbs this adapter offers **and the words it offers them in**,
+        because the form is built by the inbound half, which reads no outbound policy of its own —
+        the same reason a denial's modal is chosen by :data:`REASON_PREFIX` on the button rather
+        than by re-reading a setting. An application that retunes `DECISION_LABELS` therefore
+        retunes the form with it.
+
+        :return: The actions block holding it.
+        """
+        return {
+            "type": "actions",
+            "block_id": f"{BLOCK_PREFIX}review",
+            "elements": [
+                {
+                    "type": "button",
+                    "action_id": f"{REVIEW_PREFIX}open",
+                    "text": {"type": "plain_text", "text": self.REVIEW_LABEL},
+                    "style": "primary",
+                    "value": json.dumps({verb: self._label(verb) for verb in self.DECISIONS}),
+                }
+            ],
+        }
+
+    @staticmethod
+    def _escape_mrkdwn(text: str) -> str:
+        """Escape the three characters Slack reads as control syntax.
+
+        A question's tool name, arguments and message come from the model, and Slack treats
+        ``<...>`` as markup: an argument of ``<!channel>`` notifies everyone, and
+        ``<https://host|order A-10294>`` shows a label that is not the link — in the one message a
+        human reads before approving. The ampersand goes first, or the other two double-escape.
+
+        Only the pause path escapes. An ordinary reply's mrkdwn is the agent's own and intentional.
+
+        :param text: The model-controlled text.
+        :return: The text, safe to place in a section block.
+        """
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    @staticmethod
+    def _notice(text: str) -> dict:
+        """A line of small print, placed under the question it is about.
+
+        :param text: What it says.
+        :return: The context block to append.
+        """
+        return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
+
+    def _button(self, interruption_id: str, verb: str) -> dict:
+        """One decision button. ``value`` is the payload; ``action_id`` only selects the listener.
+
+        A denial carries :data:`REASON_PREFIX` when this adapter collects reasons, which is what
+        tells the press handler to open a modal rather than record the decision outright.
+
+        :param interruption_id: The interruption this button answers.
+        :param verb: The decision it records.
+        :return: The Block Kit button element.
+        """
+        prefix = REASON_PREFIX if verb == "denied" and self.DENY_COLLECTS_REASON else ACTION_PREFIX
+        button = {
+            "type": "button",
+            "action_id": f"{prefix}{verb}",
+            "text": {"type": "plain_text", "text": self._label(verb)},
+            "value": f"{interruption_id}:{verb}",
+        }
+        if verb in self.BUTTON_STYLES:
+            button["style"] = self.BUTTON_STYLES[verb]
+        return button
 
     async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         try:

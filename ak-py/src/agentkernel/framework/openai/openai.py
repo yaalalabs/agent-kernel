@@ -348,18 +348,26 @@ class OpenAIRunner(BaseRunner):
                 f"({type(e).__name__}: {e}). This usually means the SDK was upgraded while the run was paused."
             ) from e
 
-    def _apply(self, state: RunState, decisions: list[ResumeDecision]) -> None:
+    def _apply(self, state: RunState, decisions: list[ResumeDecision], run_config: Any = None) -> None:
         """
         Renders each decision onto the restored state.
 
-        `cancelled` reaches the model as a rejection carrying AK's own wording, because the SDK has
-        only approve and reject: without it, "nobody decided" would be indistinguishable from "the
-        human refused", which is the distinction the three-valued status exists to keep.
+        The SDK has only approve and reject, so both `denied` and `cancelled` reject — carrying
+        AK's own wording from :meth:`_rejection_text`, since `rejection_message` **becomes the
+        call's output**. Left to the SDK a refusal reads as approval still pending, and left to the
+        human's bare words it reads as what the tool returned.
+
+        An application that configured `RunConfig.tool_error_formatter` has said how a refused call
+        should read, so a denial carrying no reason of its own defers to it: the SDK consults the
+        formatter only when no explicit message is given. A denial that does carry a reason, and
+        `cancelled` in every case, keep AK's wording — nobody deciding is not a tool error.
 
         :param state: The restored state.
         :param decisions: The human's decisions, already validated against the record by Runtime.
+        :param run_config: The resolved run options' `run_config`, when one was declared.
         :raises ValueError: If a decision names an interruption the restored state does not hold.
         """
+        formatter = getattr(run_config, "tool_error_formatter", None)
         pending = {item.call_id: item for item in state.get_interruptions()}
         for decision in decisions:
             item = pending.get(decision.id)
@@ -370,10 +378,10 @@ class OpenAIRunner(BaseRunner):
                 )
             if decision.status == "approved":
                 state.approve(item)
-            elif decision.status == "denied":
-                state.reject(item, rejection_message=decision.message)
+            elif formatter is not None and decision.status == "denied" and not decision.message:
+                state.reject(item)
             else:
-                state.reject(item, rejection_message=self.CANCELLED_DECISION_MESSAGE)
+                state.reject(item, rejection_message=self._rejection_text(decision))
 
     async def resume(
         self,
@@ -403,9 +411,9 @@ class OpenAIRunner(BaseRunner):
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            self._apply(state, decisions)
-
             options = await agent.resolve_run_options(session, requests)
+            self._apply(state, decisions, options.get("run_config"))
+
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
             kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
@@ -455,9 +463,9 @@ class OpenAIRunner(BaseRunner):
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            self._apply(state, decisions)
-
             options = await agent.resolve_run_options(session, requests)
+            self._apply(state, decisions, options.get("run_config"))
+
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
             kwargs = self._native_kwargs(options, session=self._session(session), context=produced)

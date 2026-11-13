@@ -1,11 +1,17 @@
 [project]
 name = "api-slack"
 version = "0.1.0"
-description = "Demo of OpenAI SDK agent running with a Slack integration"
+description = "Demo of a Pydantic AI agent running with a Slack integration"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,slack]>=0.9.5",
+    "agentkernel[api,pydanticai,slack]>=0.9.5",
+    # agentkernel[pydanticai] installs the provider-agnostic pydantic-ai-slim core only — pick a
+    # model provider explicitly. This demo uses OpenAI; swap for [anthropic], [google], etc.
+    "pydantic-ai-slim[openai]>=2.13.0",
+    # The REST handler registers a multipart upload route whenever the transport is in_memory.
+    # agentkernel[api] does not declare it, and the OpenAI SDK is no longer here to pull it in.
+    "python-multipart>=0.0.12",
     "aiohttp>=3.14.4,<4.0.0",
 ]
 
