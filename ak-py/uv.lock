@@ -77,7 +77,7 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.5"
+version = "0.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
