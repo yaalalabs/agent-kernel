@@ -29,6 +29,10 @@ module "containerized_agents" {
     container_port                = 8000
     health_check_endpoint         = "/health"
     command                       = ["python", "app_rest_service.py"]
+    environment_variables = {
+      # The credential of the static identity provider in config.yaml (identity.provider.static.principals).
+      DEMO_AUTH_TOKEN = var.demo_auth_token
+    }
   }
 
   # ---- Agent Memory (Session Store) ----

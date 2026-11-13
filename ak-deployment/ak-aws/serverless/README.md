@@ -11,7 +11,7 @@ This module provides a complete serverless deployment solution:
 - 🔌 **WebSocket API**: Real-time bidirectional communication with connection lifecycle management
 - 📦 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
 - 🔒 **Security**: Code signing, IAM roles, and CloudWatch logging
-- 🔒 **Custom Authorization**: Lambda-based API Gateway authorizer support
+- 🔒 **Authorization**: Lambda-based API Gateway authorizer support; the framework's `APIGatewayAuthorizer` authenticates through the application's `identity` block
 - 📦 **Queue Mode**: SQS-driven async processing with agent runner and response handler functions
 - 🏷️ **Best Practices**: Automatic runtime selection and resource tagging
 - 📊 **Monitoring**: CloudWatch logs with configurable retention
@@ -419,7 +419,9 @@ module "serverless_api_auth" {
     }
   }
 
-  # Authorizer configuration
+  # Authorizer configuration: the package holds `auth.py` (one line, `APIGatewayAuthorizer().handle`)
+  # and the application's config.yaml with its `identity` block; the environment carries what that
+  # block's provider needs (the static provider's credential here, nothing for an oidc block).
   authorizer = {
     description           = "API Gateway Lambda Authorizer"
     function_name         = "api-authorizer"
@@ -428,8 +430,7 @@ module "serverless_api_auth" {
     package_type          = "LocalZip"
     result_ttl_in_seconds = 300
     environment_variables = {
-      JWT_SECRET = "your-secret-key"
-      API_URL    = "https://api.example.com"
+      DEMO_AUTH_TOKEN = var.demo_auth_token
     }
   }
 
@@ -469,15 +470,15 @@ module "serverless_api_auth" {
 | `create_redis_cluster` | Create a Redis cluster for Agent session memory | `bool` | `false` | no |
 | `create_valkey_cluster` | Create a Valkey (ElastiCache) cluster for Agent session memory | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
-| `create_dynamodb_thread_table` | Create a DynamoDB table for conversation thread storage and inject its generated name as `AK_THREAD__DYNAMODB__TABLE_NAME` into both Lambdas. Thread support is enabled by the application declaring `thread.type: dynamodb` in `config.yaml` — setting this flag alone leaves threads on the in-memory backend. Note that enabling threads makes `user_id` required on every chat request. | `bool` | `false` | no |
-| `enable_scheduling` | Create the EventBridge Scheduler schedule group and the execution role Scheduler assumes to deliver triggers to the Input Queue, grant both Lambda roles `scheduler:*Schedule` + `iam:PassRole` on them, and inject `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME` / `__ROLE_ARN` / `__QUEUE_ARN`. **Requires `queue_mode = true`**, and flips the Input Queue to content-based deduplication (Scheduler cannot set a `MessageDeduplicationId`). The capability is enabled by the application declaring `schedule.provider.type: eventbridge` in `config.yaml` — setting this flag alone leaves scheduling on the in-process `local` provider. | `bool` | `false` | no |
-| `ssm_enabled` | Grant the Lambdas that resolve framework credentials — the request handler (it runs the agent when `queue_mode = false`, and verifies messaging-integration webhooks) and, when `queue_mode = true`, the agent runner and the response handler (it delivers integration replies); never the WebSocket connection handler — `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>`. The capability is enabled by the application declaring `secret.provider.type: aws_ssm` in `config.yaml`, which then resolves a key such as `OPENAI_API_KEY` from `/ak/<prefix>/openai_api_key` whenever the environment variable of that name is unset or empty. **Terraform does not create the parameters** — create them yourself as `SecureString` (AWS-managed `alias/aws/ssm` key). | `bool` | `false` | no |
+| `create_dynamodb_thread_table` | Create a DynamoDB table for conversation thread storage and inject its generated name as `AK_THREAD__DYNAMODB__TABLE_NAME` into both Lambdas. Thread support is enabled by the application declaring `thread.type: dynamodb` in `config.yaml`; setting this flag alone leaves threads on the in-memory backend. Note that enabling threads requires an authenticated caller: an `identity` block in `config.yaml` and a bearer token on every chat request. | `bool` | `false` | no |
+| `enable_scheduling` | Create the EventBridge Scheduler schedule group and the execution role Scheduler assumes to deliver triggers to the Input Queue, grant both Lambda roles `scheduler:*Schedule` + `iam:PassRole` on them, and inject `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME` / `__ROLE_ARN` / `__QUEUE_ARN`. **Requires `queue_mode = true`**, and flips the Input Queue to content-based deduplication (Scheduler cannot set a `MessageDeduplicationId`). The capability is enabled by the application declaring `schedule.provider.type: eventbridge` in `config.yaml`; setting this flag alone leaves scheduling on the in-process `local` provider. | `bool` | `false` | no |
+| `ssm_enabled` | Grant the Lambdas that resolve framework credentials (the request handler, which runs the agent when `queue_mode = false` and verifies messaging-integration webhooks, and, when `queue_mode = true`, the agent runner and the response handler, which delivers integration replies; never the WebSocket connection handler) `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>`. The capability is enabled by the application declaring `secret.provider.type: aws_ssm` in `config.yaml`, which then resolves a key such as `OPENAI_API_KEY` from `/ak/<prefix>/openai_api_key` whenever the environment variable of that name is unset or empty. **Terraform does not create the parameters**: create them yourself as `SecureString` (AWS-managed `alias/aws/ssm` key). | `bool` | `false` | no |
 | `create_dynamodb_schedule_table` | Create a DynamoDB table for scheduled-task storage (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) and inject its generated name as `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` into both Lambdas. Requires the application to declare `schedule.store.type: dynamodb` in `config.yaml`. | `bool` | `false` | no |
 | `create_redis_response_store` | Create or reuse Redis for response storage. Must be `false` when `execution_mode = "async"` (Terraform validation enforces this). | `bool` | `false` | no |
 | `create_valkey_response_store` | Create or reuse Valkey for response storage. Must be `false` when `execution_mode = "async"` (Terraform validation enforces this). | `bool` | `false` | no |
 | `create_dynamodb_response_store` | Create a DynamoDB table for response storage. Must be `false` when `execution_mode = "async"` (Terraform validation enforces this). | `bool` | `false` | no |
 | `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory. The request handler gets the table in every mode, `queue_mode` included, because messaging integrations download and store attachments at the edge. | `bool` | `false` | no |
-| `authorizer` | Authorizer configuration object (see table below). **Cannot be set** in WebSocket mode (`async`) — authentication is handled by the connection handler Lambda. | `object` | `null` | no |
+| `authorizer` | Authorizer configuration object (see table below). **Cannot be set** in WebSocket mode (`async`): authentication is handled by the connection handler Lambda. | `object` | `null` | no |
 | `request_handler` | Request handler configuration object (see table below) | `object` | `{}` | no |
 | `ws_connection_handler` | WebSocket connection handler configuration object (see table below). `package_path` is required when `execution_mode` is `async`. | `object` | `{}` | no |
 | `response_handler` | Response handler configuration object (see table below) | `object` | `{}` | no |
@@ -655,7 +656,7 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 
 These three fields live on the `request_handler`, `agent_runner`, and `response_handler` config objects
 (see the object-structure tables above) alongside that Lambda's other settings, rather than as
-standalone top-level variables — one security group per pipeline stage, mirroring the containerized
+standalone top-level variables, one security group per pipeline stage, mirroring the containerized
 module's per-service SG split.
 
 | Field | Object | Description | Type | Default | Required |
@@ -681,7 +682,7 @@ response_handler = {
 }
 ```
 
-Each of the three is independent — you may provide any subset of them and let the module create the
+Each of the three is independent: you may provide any subset of them and let the module create the
 rest. Useful when the deploying pipeline can't create security groups (no `ec2:CreateSecurityGroup`),
 when org policy disallows the default `0.0.0.0/0` egress these modules create, or when a downstream
 resource (e.g. RDS, ElastiCache) already has ingress rules referencing a specific, pre-approved
@@ -689,7 +690,7 @@ security group. `agent_runner.security_group_id` and `response_handler.security_
 effect when `queue_mode = true`.
 
 A provided security group must permit the egress its Lambda needs (ElastiCache/Redis, DynamoDB, SQS,
-model APIs), since traffic fails at runtime (not at plan/apply) if it doesn't — the module-created SGs
+model APIs), since traffic fails at runtime (not at plan/apply) if it doesn't; the module-created SGs
 are egress-all:
 
 - `request_handler.security_group_id`: also used by the authorizer and WebSocket connection handler
@@ -804,7 +805,7 @@ When `queue_mode = true`, the module adds an asynchronous queue-driven path alon
 **Execution modes**:
 - `rest_sync`: synchronous REST requests
 - `rest_async`: chat path will have a POST and GET method, POST method would be to send the request, GET method is to get the response for that request (by `request_id`) via polling
-- `async`: WebSocket API — with `message_type` unset or `"complete"`, the full response is delivered in one `CHAT_RESPONSE` message after the agent finishes; with `message_type = "delta"`, it is streamed as one `STREAM_CHUNK` message per chunk, ending with `done: true`
+- `async`: WebSocket API; with `message_type` unset or `"complete"`, the full response is delivered in one `CHAT_RESPONSE` message after the agent finishes; with `message_type = "delta"`, it is streamed as one `STREAM_CHUNK` message per chunk, ending with `done: true`
 
 `execution_mode = "stream"` was removed: use `execution_mode = "async"` with `message_type = "delta"`.
 
@@ -837,8 +838,8 @@ When `execution_mode = "async"`, the module creates a WebSocket API Gateway for 
 - Support for custom routes beyond the default
 
 **Important notes**:
-- When `execution_mode = "async"`, the `authorizer` must be null — API Gateway authorizer is not used; authentication is handled by the connection handler Lambda
-- The bearer token must include a `userId` claim for WebSocket connections
+- When `execution_mode = "async"`, the `authorizer` must be null: the API Gateway authorizer is not used; authentication is handled by the connection handler Lambda
+- The connection handler authenticates the `$connect` token through the identity provider in the application's `config.yaml` (packaged with it) and keys the connection by the principal's subject
 - `ws_connection_handler.package_path` is required when `execution_mode` is `async`
 - Only LocalZip package type is supported for the WebSocket connection handler
 - The WebSocket API uses `$request.body.route` for route selection
@@ -852,7 +853,7 @@ When `execution_mode = "async"`, the module creates a WebSocket API Gateway for 
 
 The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
 
-- **Partition Key**: `user_id` (String) - User identifier
+- **Partition Key**: `user_id` (String) - the authenticated principal's subject
 - **Sort Key**: `connection_id` (String) - WebSocket connection ID
 - **GSI**: `connection_id-index` - Allows lookups by connection_id
 - **TTL Attribute**: `expiry_time` - Optional timestamp for automatic cleanup
@@ -883,7 +884,7 @@ The module supports the current Agent Kernel storage wiring for both session sta
 - **Code Signing**: Optional for production deployments
 - **VPC Support**: Compatible with VPC-based Lambda
 - **Encryption**: KMS encryption support for environment variables
-- **Custom Authorization**: Lambda-based API Gateway authorizer for request authentication and authorization
+- **Authorization**: Lambda-based API Gateway authorizer; the framework's `APIGatewayAuthorizer` authenticates every request through the application's identity provider
 
 ### 🏷️ Naming Conventions
 
@@ -1109,7 +1110,9 @@ Swap `create_redis_response_store = true` for `create_dynamodb_response_store = 
 
 ## 🔐 Custom Authorizer Configuration
 
-The module supports a Lambda-based API Gateway authorizer for custom authentication and authorization logic.
+The module supports a Lambda-based API Gateway authorizer. The authorizer Lambda runs the framework's `APIGatewayAuthorizer` (`handler = APIGatewayAuthorizer().handle`, the whole file), which authenticates every request's bearer token through the identity provider named by the `identity` block in the `config.yaml` packaged beside it (`static`, `oidc` for Auth0, Keycloak, Okta or any OpenID Connect issuer, `cognito`, `entra`, `firebase`, or a dotted path to your own provider); an accepted token yields an Allow policy whose context carries the principal for the request handler, a refused, expired or malformed token a 401 (the authorizer raises `Unauthorized`), and a request with no token a Deny (403). There is no validator code to write, and the module's contract is unchanged: `handler_path` names your entry point and `package_path` your package.
+
+Auth0 needs no provider of its own: it is an `oidc` configuration (the tenant's issuer with the trailing slash, the API identifier as the audience), with the `auth` extra in the authorizer package. See [Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access) for the block.
 
 ### Authorizer Setup
 
@@ -1120,12 +1123,11 @@ authorizer = {
   description           = "API Gateway Lambda Authorizer"  # Optional, defaults to this value
   function_name         = "api-authorizer"                 # Required
   handler_path          = "auth.handler"                   # Required
-  package_path          = "./dist/auth.zip"                # Required
+  package_path          = "./dist/auth.zip"                # Required: holds auth.py and config.yaml
   package_type          = "LocalZip"                       # Required
   result_ttl_in_seconds = 0                                # Optional, defaults to 150
   environment_variables = {                                # Optional, defaults to {}
-    JWT_SECRET = "your-secret-key"
-    API_URL    = "https://api.example.com"
+    DEMO_AUTH_TOKEN = var.demo_auth_token                  # what the identity provider needs (static credential; none for oidc)
   }
 }
 ```

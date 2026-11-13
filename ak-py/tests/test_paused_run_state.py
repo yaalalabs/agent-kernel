@@ -182,14 +182,14 @@ class TestDurability:
         with pytest.raises(TypeError, match="'handle'"):
             PausedRunState.add(Session("s1"), agent="a", interruptions=_interruptions("i1"), payload={"handle": lambda: None})
 
-    def test_clearing_the_non_volatile_cache_discards_pending_decisions(self):
-        """Accepted behaviour, pinned so it is known rather than discovered in production."""
+    def test_clearing_the_non_volatile_cache_keeps_pending_decisions(self):
+        """`clear()` is application space; the `ak.` keys are reserved and survive it (#603)."""
         session = Session("s1")
         PausedRunState.add(session, agent="a", interruptions=_interruptions("i1"))
 
         session.get_non_volatile_cache().clear()
 
-        assert PausedRunState.list(session) == []
+        assert len(PausedRunState.list(session)) == 1
 
     def test_warns_once_when_the_session_store_is_process_local(self, caplog):
         session = Session("s1")
@@ -206,7 +206,7 @@ class TestCorruptedCache:
     def test_an_unreadable_entry_is_dropped_not_raised(self, caplog):
         session = Session("s1")
         good = PausedRunState.add(session, agent="a", interruptions=_interruptions("i1"))
-        session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, [good, {"nonsense": True}])
+        session.get_non_volatile_cache()._set_reserved(AK_PAUSED_RUNS_KEY, [good, {"nonsense": True}])
 
         with caplog.at_level(logging.WARNING, logger="ak.paused_run"):
             records = PausedRunState.list(session)
@@ -216,7 +216,7 @@ class TestCorruptedCache:
 
     def test_a_non_list_value_is_ignored(self, caplog):
         session = Session("s1")
-        session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, "not a list")
+        session.get_non_volatile_cache()._set_reserved(AK_PAUSED_RUNS_KEY, "not a list")
 
         with caplog.at_level(logging.WARNING, logger="ak.paused_run"):
             assert PausedRunState.list(session) == []
@@ -225,7 +225,7 @@ class TestCorruptedCache:
         """Pickle round trips keep the model, but a hand-written or migrated entry may be a dict."""
         session = Session("s1")
         raw = PausedRun(id="r1", agent="a", created_at="2026-01-01T00:00:00+00:00", interruptions=_interruptions("i1"))
-        session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, [raw.model_dump()])
+        session.get_non_volatile_cache()._set_reserved(AK_PAUSED_RUNS_KEY, [raw.model_dump()])
 
         assert PausedRunState.get(session, "r1") == raw
 

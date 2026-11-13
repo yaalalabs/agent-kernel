@@ -7,8 +7,9 @@ whichever pod's Response Handler consumed them. The IO handler's API stays plain
 
 This entry point is broker-only: on the ``in_memory`` transport a separate gateway process
 cannot share the in-process queue, so it fails fast and points at the single-process topology
-(``IOHandler.run(auth_validator=...)``), which co-hosts these same handlers alongside the REST
-API, runner, and Response Handler for local testing.
+(``IOHandler.run()``), which co-hosts these same handlers alongside the REST API, runner, and
+Response Handler for local testing. Both require an ``identity`` block: the connection is keyed
+by the subject the configured provider authenticates.
 """
 
 import logging
@@ -16,7 +17,6 @@ import logging
 import uvicorn
 from fastapi import FastAPI
 
-from ...auth.handler import AuthValidator
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError
 from ..thread_runner import ThreadRunner
@@ -28,20 +28,21 @@ from .registry import LocalConnectionRegistry
 
 
 class WebSocketGateway:
-    """Container entry point for the gateway tier: ``WebSocketGateway.run(auth_validator=...)``."""
+    """Container entry point for the gateway tier: ``WebSocketGateway.run()``."""
 
     _log = logging.getLogger("ak.pipeline.ws.gateway")
 
     @classmethod
-    def run(cls, auth_validator: AuthValidator) -> None:
+    def run(cls) -> None:
         """Serve the gateway: ``/ws``, ``/internal/push``, and a ``/health`` probe.
 
-        :param auth_validator: Authenticates every ``/ws`` handshake; claims must include a
-            ``userId``. Mandatory.
+        Every ``/ws`` handshake is authenticated through the configured identity provider.
+
+        :raises AKConfigError: If the configuration cannot serve a gateway (see ``_validate``).
         """
         config = AKConfig.get()
         transport_type = QueueTransportFactory.resolve_type()
-        cls._validate(auth_validator, transport_type, config)
+        cls._validate(transport_type, config)
 
         registry = LocalConnectionRegistry.instance()
         connection_store = default_connection_store()  # raises AKConfigError on session backends without one
@@ -52,7 +53,7 @@ class WebSocketGateway:
             )
 
         app = cls._build_app(
-            PipelineWebSocketHandler(auth_validator=auth_validator, registry=registry, connection_store=connection_store),
+            PipelineWebSocketHandler(registry=registry, connection_store=connection_store),
             PushEndpointHandler(registry=registry),
         )
 
@@ -74,23 +75,20 @@ class WebSocketGateway:
         return app
 
     @classmethod
-    def _validate(cls, auth_validator: AuthValidator | None, transport_type: str, config) -> None:
+    def _validate(cls, transport_type: str, config) -> None:
         """Fail fast on an unusable gateway configuration (spec §9)."""
-        if auth_validator is None:
-            raise ValueError(
-                "auth_validator is required for the WebSocket gateway: authentication is mandatory. "
-                "Call WebSocketGateway.run(auth_validator=...) with a validator whose claims include a 'userId'."
-            )
         if transport_type == "in_memory":
             raise AKConfigError(
                 "a standalone WebSocket gateway cannot run on the in_memory transport (the queue is "
-                "process-local): run the single-process topology instead, IOHandler.run(auth_validator=...)"
+                "process-local): run the single-process topology instead, IOHandler.run()"
             )
         if not config.execution.is_websocket:
             raise AKConfigError(
                 f"the WebSocket gateway serves execution.mode async; execution.mode is {config.execution.mode}: "
                 "replies in REST modes go to the response store and would never reach a WebSocket client"
             )
+        if getattr(config, "identity", None) is None:
+            raise AKConfigError("the WebSocket gateway requires an identity block: the connection is keyed by the authenticated subject")
         if not push_auth_token(config):
             raise AKConfigError(
                 "the WebSocket gateway requires websocket_api.push_auth_token: Response Handlers authenticate their pushes "

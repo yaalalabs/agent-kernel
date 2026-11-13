@@ -1,13 +1,15 @@
 import logging
 
-from google.adk.agents import Agent as GoogleAgent
-
 from agentkernel.framework.adk import GoogleADKModule, GoogleADKToolBuilder
 from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
+from google.adk.agents import Agent as GoogleAgent
+from google.adk.models import Gemini
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"
+)
 _log = logging.getLogger(__name__)
 
 
@@ -18,7 +20,7 @@ def get_weather(location: str) -> str:
 
 general_agent = GoogleAgent(
     name="general",
-    model="gemini-3.1-flash-live-preview",
+    model=Gemini(model="gemini-3.1-flash-live-preview"),
     description="Agent for general questions",
     instruction="You provide assistance with general queries. Give short and direct answers.",
     tools=GoogleADKToolBuilder.bind([get_weather]),

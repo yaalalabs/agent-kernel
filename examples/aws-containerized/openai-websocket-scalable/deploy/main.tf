@@ -22,6 +22,9 @@ module "containerized_agents" {
   rest_service = {
     package_path = "../dist-rest-service"
     command      = ["python", "app_rest_service.py"]
+    environment_variables = {
+      DEMO_AUTH_TOKEN = var.demo_auth_token
+    }
   }
 
   # Queue mode + WebSocket

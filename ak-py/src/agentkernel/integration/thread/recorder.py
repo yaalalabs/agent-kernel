@@ -7,9 +7,9 @@ import json
 import logging
 from typing import Any
 
-from ...core.model import AgentReplyAny, AgentRequest, BaseChatRequest
+from ...core.model import AgentPausedReplyAny, AgentReplyAny, AgentRequest, BaseChatRequest
 from .manager import ConversationThreadManager
-from .model import ThreadAttachment
+from .model import HITL_MEDIA_TYPE, ThreadAttachment
 
 
 class ThreadRecorder:
@@ -30,8 +30,8 @@ class ThreadRecorder:
         self._manager = manager
 
     def pre_run(self, req: BaseChatRequest, requests: list[AgentRequest]) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
-        """Thread work done before the agent runs: enforce user_id, store attachment
-        bytes, create/load the thread, append the user message, and return the rebuilt
+        """Thread work done before the agent runs: require an authenticated principal, store
+        attachment bytes, create/load the thread, append the user message, and return the rebuilt
         request list in which stored attachments are replaced by in-band
         AgentRequestAttachmentRef entries for MultimodalPreHook to resolve.
 
@@ -42,20 +42,44 @@ class ThreadRecorder:
         :param req: The originating chat request
         :param requests: The built AgentRequest list (may carry attachments)
         :return: Tuple of (rebuilt request list, stored ThreadAttachment references)
-        :raises ValueError: If user_id is missing, or attachments are rejected by config
+        :raises PermissionError: If the request carries no authenticated principal, or the thread
+            exists and belongs to another principal (checked before any write)
+        :raises ValueError: If attachments are rejected by config
         """
-        if not req.user_id:
-            raise ValueError("No user_id is provided in the request — user_id is required when thread support is enabled")
+        principal = req.principal
+        if principal is None or principal.is_anonymous:
+            raise PermissionError("thread support requires an authenticated principal")
+        # Ownership before any write: a request naming another user's session_id must not leave its
+        # attachment bytes under that session before get_or_create_thread refuses it (spec 8.10).
+        self._manager.get_thread(req.session_id, user_id=principal.subject)
         requests, attachments = self._manager.store_attachments(session_id=req.session_id, requests=requests)
         self._manager.get_or_create_thread(
             session_id=req.session_id,
-            user_id=req.user_id,
+            user_id=principal.subject,
             group_id=req.group_id,
             name=req.thread_name,
             first_prompt=req.prompt,
         )
-        self._manager.append_message(req.session_id, "user", req.prompt, attachments=attachments)
+        content, media_type = self._as_user_message(req)
+        self._manager.append_message(req.session_id, "user", content, attachments=attachments, media_type=media_type)
         return requests, attachments
+
+    @staticmethod
+    def _as_user_message(req: BaseChatRequest) -> tuple[Any, str | None]:
+        """The turn as the request carried it: its text, or the decision it answered a pause with.
+
+        A resume-only request has no prompt, so recording ``req.prompt`` alone wrote an empty message
+        for every decision a human made. The ``ResumeSpec`` is nested whole under ``resume`` rather
+        than flattened, so a thread-owned ``prompt`` key can never collide with one of its fields, and
+        the pair is one literal because insertion order is key order in ``model_dump_json``.
+
+        :param req: The originating chat request.
+        :return: The message content, and its label when the turn carried a decision.
+        """
+        if req.resume is None:
+            return req.prompt, None
+        resume = {"resume": req.resume.model_dump(mode="json")}
+        return ({"prompt": req.prompt, **resume} if req.prompt else resume), HITL_MEDIA_TYPE
 
     def post_run(self, req: BaseChatRequest, result: Any, media_type: str | None = None) -> None:
         """Thread work done after a successful agent run: append the assistant message.
@@ -75,6 +99,9 @@ class ThreadRecorder:
     @staticmethod
     def _as_thread_message(result: Any, media_type: str | None = None) -> tuple[Any, str | None]:
         """Render a reply as the (content, media_type) pair the thread store holds.
+
+        A paused run is checked first: ``AgentPausedReplyAny`` subclasses ``AgentReplyAny`` and carries
+        no label of its own, so the branches below would store the question as a string of itself.
 
         The callers pass three different things, which is what makes a single ``str()`` wrong. The
         direct handlers pass an ``AgentReply``, whose ``__str__`` already yields JSON, and the
@@ -99,6 +126,8 @@ class ThreadRecorder:
         :param media_type: The label when the caller holds it separately from the result.
         :return: The thread message content, and its label when the reply carried one.
         """
+        if isinstance(result, AgentPausedReplyAny):
+            return result.content, HITL_MEDIA_TYPE
         if isinstance(result, AgentReplyAny) and result.media_type:
             return result.content, result.media_type
         if media_type and isinstance(result, (dict, list)):

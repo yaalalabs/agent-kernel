@@ -36,6 +36,13 @@ set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
 2. **Cache** — a value the provider returned within the last `cache_ttl` seconds.
 3. **Provider** — the configured backend. A hit is cached; a miss returns `None` to the manager.
 
+:::note Identity credentials
+The `static` identity provider resolves its credentials here too: each key under
+`identity.provider.static.principals` is a secret key, resolved through this order when the provider is
+built (so an environment variable wins), and a key with no value fails startup. Credential values
+therefore never live in `config.yaml`; see [Identity and Access](./identity-and-access.md).
+:::
+
 ## Configuration
 
 ```yaml
@@ -107,7 +114,7 @@ secret:
     type: aws_ssm
 ```
 
-- **Install:** `pip install "agentkernel[aws]"` (boto3). Region and credentials come from the standard
+- **Install:** `uv add "agentkernel[aws]"` (boto3). Region and credentials come from the standard
   boto3 environment chain.
 - **Addressing:** the key is lowercased under the prefix — `OPENAI_API_KEY` →
   `/ak/<prefix>/openai_api_key`.
@@ -134,7 +141,7 @@ secret:
 ```
 
 Reads one file per key from Kubernetes Secrets that are **mounted into the pod as volumes**. It never calls
-the Kubernetes API, so it needs no RBAC, no ServiceAccount and no extra (`pip install` nothing: it uses the
+the Kubernetes API, so it needs no RBAC, no ServiceAccount and no extra (nothing to install: it uses the
 standard library only).
 
 - **Layout:** each Secret is its own volume at `<mount_path>/<secret-name>/`, one file per data key —
@@ -240,8 +247,8 @@ needs it:
 | Starburst knowledge base (no `password` argument) | `STARBURST_PASSWORD` | `/ak/<prefix>/starburst_password` |
 | E2B sandbox provider | the key named by `api_key_env` (default `E2B_API_KEY`) | `/ak/<prefix>/e2b_api_key` |
 | Daytona sandbox provider | the key named by `api_key_env` (default `DAYTONA_API_KEY`) | `/ak/<prefix>/daytona_api_key` |
+| CLI (`--token` omitted) | `AK_CLI_TOKEN` | `/ak/<prefix>/ak_cli_token` |
 | OpenAI realtime runner (`execution.mode: realtime`) | `OPENAI_API_KEY` | `/ak/<prefix>/openai_api_key` |
-| Google ADK realtime runner (Gemini Live) | `GOOGLE_API_KEY` | `/ak/<prefix>/google_api_key` |
 | Logfire span fetching ([evaluation](traceability.md)) | `LOGFIRE_READ_TOKEN` | `/ak/<prefix>/logfire_read_token` |
 | OpenLLMetry span fetching ([evaluation](traceability.md)) | `TRACELOOP_API_KEY` | `/ak/<prefix>/traceloop_api_key` |
 
@@ -295,6 +302,7 @@ component disabled or not exporting, often with nothing more than a log line.
 | Component | Environment variables |
 | --- | --- |
 | OpenAI guardrails | `OPENAI_API_KEY` |
+| Google ADK realtime runner (Gemini Live): ADK builds its own Gemini client | `GOOGLE_API_KEY` (or the Vertex AI variables) |
 | Langfuse tracing (sending and span fetching) | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` |
 | Logfire tracing (sending) | `LOGFIRE_TOKEN` |
 | OpenLLMetry tracing (sending) | `TRACELOOP_API_KEY`: span fetching resolves it through `SecretManager`, sending does not |
@@ -346,6 +354,9 @@ Overwrite the parameter with `aws ssm put-parameter ... --overwrite`.
 
 - [`examples/cli/openai-secret`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai-secret)
   — the `env` provider locally, with a required model key and an optional tool key.
+- [`examples/api/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/thread-openai):
+  two identity credentials (`ALICE_TOKEN`, `BOB_TOKEN`) for the `static` identity provider, read from the
+  environment.
 - [`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
   — the OpenAI key read from a mounted Kubernetes Secret by the agent runner.
 - [`examples/aws-serverless/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai)

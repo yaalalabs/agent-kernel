@@ -55,7 +55,8 @@ module "serverless_agents" {
     package_type          = "LocalZip"
     result_ttl_in_seconds = 0
     environment_variables = {
-      "SOME_OTHER_KEY" = "Some Other Value"
+      # The credential of the static identity provider in config.yaml. Not needed with the oidc block.
+      "DEMO_AUTH_TOKEN" = var.demo_auth_token
     }
   }
 } 

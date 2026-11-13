@@ -15,7 +15,7 @@ Three topologies are supported:
 | **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` in Terraform (`message_type = "delta"` for chunks) | Real-time, bidirectional, connection-based interactions |
 
 :::note Protocol support
-ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks; `ECSIOHandler` refuses it at startup. **WebSocket mode** is also available on ECS via a WebSocket API Gateway — see [WebSocket Mode](#websocket-mode) below — as `execution_mode = "async"` with either `message_type = "complete"` (one `CHAT_RESPONSE` push per reply, the default) or `message_type = "delta"` (one `STREAM_CHUNK` push per stream event). `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"`.
+ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks; `ECSIOHandler` refuses it at startup. **WebSocket mode** is also available on ECS via a WebSocket API Gateway (see [WebSocket Mode](#websocket-mode) below) as `execution_mode = "async"` with either `message_type = "complete"` (one `CHAT_RESPONSE` push per reply, the default) or `message_type = "delta"` (one `STREAM_CHUNK` push per stream event). `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"`.
 :::
 
 ## Simple REST Architecture
@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
 Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
 
-The module is provider-agnostic — it does not configure the `aws`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
+The module is provider-agnostic: it does not configure the `aws`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
 
 ```hcl
 provider "aws" {
@@ -184,11 +184,12 @@ if __name__ == "__main__":
     runner()
 ```
 
-Pass `ECSIOHandler.run(auth_validator=CustomAuthValidator())` to secure the REST routes in queue
-mode: it is bound onto every REST route via `RESTAPI.add_auth_handlers` (the same mechanism shown
-in [Authentication](#authentication)) before the `rest-api` thread starts. The same
-`auth_validator` also authenticates the WebSocket `$connect` handshake when [WebSocket
-Mode](#websocket-mode) is enabled, so one validator covers both protocols.
+The REST routes authenticate through the `identity` block in `config.yaml`: the identity
+dependency is bound onto every REST route before the `rest-api` thread starts (see
+[Authentication](#authentication)), and `ECSIOHandler.run(handlers=[...])` only adds REST handlers
+beside the defaults. The same block authenticates the WebSocket `$connect` handshake when
+[WebSocket Mode](#websocket-mode) is enabled, so one configuration covers both protocols; WebSocket
+mode refuses to start without it.
 
 ### Container 2: Agent Runner (`ECSAgentRunner`)
 
@@ -252,7 +253,7 @@ For queue mode internals see [Queue Mode Guide](../advanced/queue-mode-guide.md)
 ## Scheduling (EventBridge Scheduler)
 
 Deferred and recurring chats run on AWS EventBridge Scheduler, which delivers each occurrence as a
-trigger message to the Input Queue. **Scheduling requires `queue_mode = true`** — there is no
+trigger message to the Input Queue. **Scheduling requires `queue_mode = true`**: there is no
 non-queue path for it.
 
 Two Terraform variables turn on the infrastructure, both `false` by default and fully `count`-gated:
@@ -269,7 +270,7 @@ create_dynamodb_schedule_table = true
 ```
 
 **Terraform is only half of it.** The module injects the group, role, queue and table coordinates but
-never `schedule.provider.type` or `schedule.store.type` — the same rule as `thread.type`. The
+never `schedule.provider.type` or `schedule.store.type`, the same rule as `thread.type`. The
 application's `config.yaml` must declare the backends:
 
 ```yaml
@@ -288,7 +289,7 @@ Two further consequences worth knowing:
 - `enable_scheduling` flips the **Input Queue** to `content_based_deduplication = true` (an in-place
   update on an existing queue). EventBridge Scheduler cannot set a `MessageDeduplicationId`, so
   without it two occurrences carrying an otherwise identical trigger body would collapse into one
-  inside the 5-minute dedup window. Application senders are unaffected — they always send an explicit
+  inside the 5-minute dedup window. Application senders are unaffected: they always send an explicit
   `MessageDeduplicationId`, which takes precedence. The Output Queue is untouched.
 - Both task roles get the schedule permissions: the REST service serves the `/api/v1/schedules`
   management routes (amend and cancel reach Scheduler), and the agent runner hosts the
@@ -342,14 +343,14 @@ Set `execution_mode = "async"` to front the ECS service with a **WebSocket API G
 instead of (or alongside) the HTTP API. Since WebSocket API Gateway only supports a
 **VPC Link V1** integration, and V1 requires a Network Load Balancer target, the
 `rest-service` module adds an internal NLB in front of the existing ALB whenever WebSocket
-mode is enabled — the same ECS service serves both REST and WebSocket ingress.
+mode is enabled: the same ECS service serves both REST and WebSocket ingress.
 
 Both queue topologies from above are supported:
 
 - **Direct** (`queue_mode = false`): the single container authenticates `$connect`, runs the
   agent inline via `ChatService`, and pushes the reply back over the same connection.
 - **Queue** (`queue_mode = true`): the same two-container split as [Scalable Queue
-  Mode](#scalable-queue-mode) — the IO container enqueues chat frames and its output-queue
+  Mode](#scalable-queue-mode): the IO container enqueues chat frames and its output-queue
   consumer pushes replies over the socket instead of writing to a response store; the Agent
   Runner is unchanged.
 
@@ -373,17 +374,19 @@ graph TB
 ### Connection Lifecycle and Wire Protocol
 
 1. Client connects to `wss://<websocket_api_endpoint_url>/<stage>?token=<jwt>`.
-2. API Gateway routes `$connect` to the container, which calls the registered `AuthValidator`
-   (mandatory for WebSocket mode — construction fails without one). The token must resolve a
-   `userId` claim; a non-2xx response rejects the socket. On success, `user_id` ↔
-   `connection_id` is stored in the DynamoDB connections table.
-3. The client sends JSON frames with a top-level `route` field — the API's
+2. API Gateway routes `$connect` to the container, which authenticates the token through the
+   identity provider in `config.yaml` (an `identity` block is mandatory for WebSocket mode:
+   `AWSWebsocketAPI` raises `AKConfigError` without one). A missing token is a 401
+   `Authentication token is required`, a refused one a 401 `Authentication failed`, and either
+   rejects the socket. On success the connection is stored in the DynamoDB connections table keyed
+   by the principal's subject (the table's `user_id` hash key), with the whole principal beside it.
+3. The client sends JSON frames with a top-level `route` field, the API's
    `route_selection_expression` is `$request.body.route`:
    ```json
    {"route": "chat", "body": {"session_id": "...", "agent": "triage", "prompt": "..."}}
    ```
-4. The framework resolves `user_id` from `connection_id` (no re-auth per frame), runs the route,
-   and pushes a reply via `PostToConnection` — `CHAT_RESPONSE` for the chat route, or
+4. The framework resolves the connection's principal from `connection_id` (no re-auth per
+   frame), runs the route, and pushes a reply via `PostToConnection`: `CHAT_RESPONSE` for the chat route, or
    `SYSTEM_RESPONSE` for custom routes that return a `dict`.
 5. `$disconnect` removes the connection record. Unmatched route keys fall through to
    `$default`, which returns a `SYSTEM_RESPONSE` error (`"Route not found"`).
@@ -395,17 +398,18 @@ Register additional routes beyond the built-in chat route with `AWSWebsocketAPI.
 ```python
 from agentkernel.aws import AWSWebsocketAPI
 
-@AWSWebsocketAPI.register("status")   # bare route name — no leading slash, no HTTP verb
+@AWSWebsocketAPI.register("status")   # bare route name: no leading slash, no HTTP verb
 async def status(ctx: dict) -> dict:
-    # ctx = {"message": <raw JSON body>, "user_id": ...} — no BaseRequest schema imposed
-    return {"status": "OK", "user_id": ctx["user_id"]}
+    # ctx = {"message": <raw JSON body>, "principal": <Principal>}: no BaseRequest schema imposed;
+    # the principal is the one the $connect handshake authenticated
+    return {"status": "OK", "subject": ctx["principal"].subject}
 ```
 
 A `dict` return is broadcast as a `SYSTEM_RESPONSE`; `None` broadcasts nothing. Raising
 `WSRouteError(status_code, message)` short-circuits with that HTTP status; any other exception
 is logged, an error is best-effort broadcast to the client, and 500 is returned. Every custom
-route must **also** be declared in Terraform via `ws_routes` — Python cannot create the API
-Gateway route/integration, so both sides must agree. `ws_chat_route` is Terraform-only — it
+route must **also** be declared in Terraform via `ws_routes`, since Python cannot create the API
+Gateway route/integration, so both sides must agree. `ws_chat_route` is Terraform-only: it
 names the API Gateway route key that forwards to the container's hardcoded `/ws/chat`
 endpoint; the container never reads it from config, so renaming it needs no Python change.
 
@@ -440,10 +444,10 @@ module "containerized_agents" {
 
 **What gets created in addition to the resources above:** a WebSocket API Gateway (routes
 `$connect`, `$disconnect`, `$default`, the configured chat route, and any `ws_routes`), an
-internal NLB + VPC Link V1, a DynamoDB connections table (hash `user_id`, range
+internal NLB + VPC Link V1, a DynamoDB connections table (hash `user_id`, the principal's subject, range
 `connection_id`, GSI `connection_id-index`, TTL), and IAM for the REST service task role
 (`execute-api:ManageConnections` + connections-table CRUD/Query). The DynamoDB response store
-is simply never created in WebSocket mode — replies are always pushed over the connection
+is simply never created in WebSocket mode: replies are always pushed over the connection
 instead of stored. `gateway_endpoints` specifically has a Terraform validation rule rejecting
 it in `async` mode.
 
@@ -685,52 +689,58 @@ Users can expose their own API endpoints alongside the Agent Kernel endpoints wi
 
 ## Authentication
 
-For production deployments, implement authentication to secure your Agent Kernel endpoints.
+Authentication is configuration, not code. The `identity` block in `config.yaml` names the identity provider, and every REST route authenticates the request's bearer token through it before the handler runs; the resulting `Principal` travels with the request into the agent, its tools and its hooks. Without the block every request runs as the anonymous principal and an `Authorization` header is ignored; with it, a request without a credential is anonymous and a present credential must validate (401 otherwise). The thread and schedule routes refuse anonymous callers. See [Identity and Access](../advanced/identity-and-access.md) for the full block and the anonymous rules.
 
-### Environment Variable Configuration
+### Configuration
 
-You can configure environment variables in your Terraform configuration like shown below:
+The examples use the `static` provider: one credential mapped to a principal. The credential's value is not in the file; the key names a secret the secret capability resolves when the service starts (the environment first):
+
+```yaml
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user
+```
+
+Terraform passes that value to the REST service task from a sensitive variable:
 
 ```hcl
 module "container_app" {
   source = "yaalalabs/ak-containerized/aws"
-  
+
   # ... other configuration ...
-  
+
   environment_variables = {
-    # Authentication configuration
-    SOME_VALUE = "some-value"
-    
-    # Other app configuration
-    OPENAI_API_KEY = var.openai_api_key
+    OPENAI_API_KEY  = var.openai_api_key
+    DEMO_AUTH_TOKEN = var.demo_auth_token   # the static provider's credential
   }
 }
 ```
 
-### Application Implementation
+To validate real tokens, swap the block for a real issuer; no code changes. Auth0, Keycloak, Okta and any other OpenID Connect issuer are served by the `oidc` provider; Cognito, Entra ID and Firebase have providers of their own (`cognito`, `entra`, `firebase`); a dotted path selects your own `IdentityProvider`. The Auth0 block:
 
-In your containerized application, implement your custom authentication logic by extending the `AuthValidator` class. You may use the environment variables:
+```yaml
+identity:
+  provider:
+    type: oidc
+    issuer: https://<tenant>.<region>.auth0.com/   # or the custom domain; trailing slash included, as Auth0 issues it
+    audience: <the API identifier of your Auth0 API>
+    claims:
+      groups: https://<your namespace>/roles       # the namespaced claim an Auth0 Action sets; omit if you set none
+```
 
-> NOTE: the `validate()` function must return a `ValidationResult` object.
+The `oidc`, `cognito`, `entra` and `firebase` providers need the `auth` extra (`agentkernel[auth]`) in the image; `static` needs nothing extra.
 
-```python
-import os
-import jwt
-from agentkernel.api import RESTAPI
-from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
+### Calling the API
 
-class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
-        """Validate authentication token and return result."""
-        payload = jwt.decode(token, options={"verify_signature": False})
-        print("Payload", payload)
-        email = payload.get("email", "")
-        if email == "test@test.com":
-            return ValidationResult(is_valid=True, subject="test_user")
-        return ValidationResult(is_valid=False, error_msg="Invalid token")
-
-# Add authentication to REST API
-RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
+```bash
+curl -X POST "$AGENT_INVOKE_URL" \
+  -H "Authorization: Bearer <the demo_auth_token value>" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What is 2 + 2?", "session_id": "ses-1", "agent": "math"}'
 ```
 
 ### Example Implementation

@@ -21,6 +21,9 @@ module "containerized_agents" {
   rest_service = {
     package_path   = "../dist"
     container_port = 8000
+    environment_variables = {
+      DEMO_AUTH_TOKEN = var.demo_auth_token
+    }
   }
 
   # WebSocket without a queue: REST service handles connect/disconnect and runs the agent inline.

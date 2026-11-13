@@ -14,3 +14,9 @@ variable "is_production" {
   default     = false
 }
 
+
+variable "demo_auth_token" {
+  description = "The one credential the static identity provider in config.yaml accepts on the WebSocket $connect handshake"
+  type        = string
+  sensitive   = true
+}

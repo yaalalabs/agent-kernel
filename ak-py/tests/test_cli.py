@@ -73,6 +73,12 @@ class StubService:
             raise self.error
         return self.reply
 
+    async def run_multi(self, requests, principal=None):
+        self.calls.append(("run_multi", requests[0].prompt, principal))
+        if self.error:
+            raise self.error
+        return self.reply
+
 
 @pytest.fixture
 def stub_service(monkeypatch):
@@ -171,7 +177,7 @@ class TestRunLoop:
 
         await CLI().run()
 
-        assert not [call for call in stub_service.calls if call[0] == "run"]
+        assert not [call for call in stub_service.calls if call[0] in ("run_multi", "run_multi", None)]
 
     @pytest.mark.asyncio
     async def test_prompt_is_dispatched_to_the_agent_and_printed(self, stub_service, monkeypatch, capsys):
@@ -180,7 +186,7 @@ class TestRunLoop:
 
         await CLI().run()
 
-        assert ("run", "hello") in stub_service.calls
+        assert ("run_multi", "hello", None) in stub_service.calls
         assert "the answer" in capsys.readouterr().out
         assert scripted.prompts[0] == "(demo) >> "
 
@@ -190,7 +196,7 @@ class TestRunLoop:
 
         await CLI().run()
 
-        assert not [call for call in stub_service.calls if call[0] == "run"]
+        assert not [call for call in stub_service.calls if call[0] in ("run_multi", "run_multi", None)]
 
     @pytest.mark.asyncio
     async def test_commands_dispatch_to_the_service(self, stub_service, monkeypatch, capsys):
@@ -241,8 +247,8 @@ class TestRunLoop:
 
         await CLI().run()
 
-        assert ("run", "first") in stub_service.calls
-        assert ("run", "second") in stub_service.calls
+        assert ("run_multi", "first", None) in stub_service.calls
+        assert ("run_multi", "second", None) in stub_service.calls
         assert capsys.readouterr().out.count("Error: boom") == 2
 
     @pytest.mark.asyncio

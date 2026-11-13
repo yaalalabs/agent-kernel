@@ -1,8 +1,8 @@
 import importlib.metadata
 from threading import RLock
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .model import ExecutionMode, ReplyMessageType
 from .util.config_yaml_util import YamlBaseSettingsModified
@@ -149,6 +149,10 @@ class _MCPConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable MCP")
     expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
     agents: list[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
+    url: str = Field(
+        default="http://localhost:8000/mcp",
+        description="Public URL of the MCP endpoint; with an OpenID identity provider it is the protected resource the RFC 9728 metadata names",
+    )
     stateless_http: bool = Field(
         default=False,
         description="Run MCP in stateless HTTP mode. Each request is independent (no Mcp-Session-Id). "
@@ -1348,6 +1352,129 @@ class _SecretConfig(BaseModel):
     )
 
 
+class _ClaimPathsConfig(BaseModel):
+    """Where the OIDC-family providers read the subject and the groups in a validated token."""
+
+    subject: str = Field(
+        default="sub", description="Claim path of the subject (a claim name, or dotted segments into a nested claim); a token without it is refused"
+    )
+    groups: str = Field(
+        default="groups",
+        description="Claim path of the group list: a claim name, dotted segments into a nested claim (realm_access.roles), or a "
+        "namespaced name containing dots such as Auth0's https://acme.com/roles, tried whole first; a missing claim yields no groups",
+    )
+
+
+class _CognitoProviderConfig(BaseModel):
+    """Settings of the `cognito` provider."""
+
+    region: str = Field(description="AWS region of the user pool, e.g. eu-west-1")
+    user_pool_id: str = Field(description="Cognito user pool id; the issuer is derived from region and pool")
+    token_use: Literal["access", "id"] = Field(default="access", description="Required token_use claim: access or id")
+
+
+class _EntraProviderConfig(BaseModel):
+    """Settings of the `entra` provider."""
+
+    tenant_id: str = Field(description="Entra ID tenant; the issuer is derived from it and the tid claim must match")
+
+
+class _FirebaseProviderConfig(BaseModel):
+    """Settings of the `firebase` provider."""
+
+    project_id: str = Field(description="Firebase project id; the issuer and audience are derived from it")
+
+
+class _StaticPrincipalConfig(BaseModel):
+    """One principal of the `static` provider: who a credential authenticates as."""
+
+    subject: str = Field(description="Stable identifier of the principal")
+    kind: Literal["user", "agent", "service"] = Field(default="user", description="What the subject is")
+    groups: list[str] = Field(default_factory=list, description="Group memberships the provider asserts")
+    roles: list[str] = Field(default_factory=list, description="Roles this provider issues directly; a configured role mapper replaces them")
+    claims: dict[str, Any] = Field(default_factory=dict, description="Further facts kept on the principal for authorizers and tools")
+
+
+class _StaticProviderConfig(BaseModel):
+    """Settings of the `static` provider: the development, test and CLI provider."""
+
+    principals: dict[str, _StaticPrincipalConfig] = Field(
+        default_factory=dict,
+        description="Credential secret key -> principal. The key names a secret resolved through the secret capability at "
+        "startup; the credential value itself is never written here",
+    )
+
+
+class _IdentityProviderConfig(BaseModel):
+    """Which identity provider authenticates inbound credentials, and its settings."""
+
+    # A bring-your-own provider (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(
+        default="oidc",
+        description="Identity provider: oidc, cognito, entra, firebase, static, or a dotted path to an IdentityProvider subclass",
+    )
+    issuer: str | None = Field(default=None, description="OIDC issuer URL; required by oidc, derived by the other built-ins")
+    audience: str | None = Field(default=None, description="Audience a token must carry; required by oidc")
+    jwks_uri: str | None = Field(default=None, description="JWK set URL; omitted, it is discovered from the issuer")
+    algorithms: list[str] = Field(default_factory=lambda: ["RS256", "ES256"], description="Allowed signing algorithms; symmetric ones are refused")
+    leeway: int = Field(default=30, ge=0, description="Clock skew in seconds tolerated on exp and nbf")
+    required_claims: list[str] = Field(default_factory=list, description="Claims a token must carry beyond the standard set")
+    claims: _ClaimPathsConfig = Field(default_factory=_ClaimPathsConfig, description="Claim paths of the subject and the groups")
+    cognito: _CognitoProviderConfig | None = Field(default=None, description="Settings of the cognito provider")
+    entra: _EntraProviderConfig | None = Field(default=None, description="Settings of the entra provider")
+    firebase: _FirebaseProviderConfig | None = Field(default=None, description="Settings of the firebase provider")
+    static: _StaticProviderConfig | None = Field(default=None, description="Settings of the static provider")
+
+    @model_validator(mode="after")
+    def _check_provider_settings(self) -> "_IdentityProviderConfig":
+        """Fail at load time when the named provider cannot be built from the block.
+
+        A dotted-path provider validates its own settings in its constructor.
+        """
+        key = self.type.lower()
+        if key == "oidc":
+            if not self.issuer or not self.audience:
+                raise AKConfigError("identity.provider.type oidc requires identity.provider.issuer and identity.provider.audience")
+        elif key in ("cognito", "entra", "firebase", "static"):
+            if getattr(self, key) is None:
+                raise AKConfigError(f"identity.provider.type {key} requires the identity.provider.{key} block")
+        return self
+
+
+class _RoleMapperConfig(BaseModel):
+    """How roles are derived from what the provider asserted; absent means no roles."""
+
+    # A bring-your-own mapper (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(default="mapping", description="Role mapper: mapping, or a dotted path to a RoleMapper subclass")
+    pass_through: str | None = Field(
+        default=None,
+        description="Claim path (a claim name, a namespaced name with dots, or dotted segments) whose string or list value becomes roles as it is",
+    )
+    mapping: dict[str, list[str]] = Field(
+        default_factory=dict, description="Group name, or a value of a claim listed in claims, -> the Agent Kernel roles it grants"
+    )
+    claims: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Claim paths whose string or list values are looked up in mapping beside the groups. Only groups are looked up "
+            "by default, since a user sets many of their own claims (a display name, a username, an email address)"
+        ),
+    )
+
+
+class _IdentityConfig(BaseModel):
+    """Identity capability: the provider that authenticates callers and the role mapper. Presence enables it."""
+
+    provider: _IdentityProviderConfig = Field(default_factory=_IdentityProviderConfig, description="The identity provider and its settings")
+    role_mapper: _RoleMapperConfig | None = Field(
+        default=None, description="Derives Principal.roles from the provider's facts; absent means no roles"
+    )
+
+
 class _AGUIStateConfig(BaseModel):
     """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
 
@@ -1419,6 +1546,10 @@ class AKConfig(YamlBaseSettingsModified):
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     sandbox: _SandboxConfig = Field(description="Sandbox capability configurations", default_factory=_SandboxConfig)
     secret: _SecretConfig = Field(description="Secret resolution configurations", default_factory=_SecretConfig)
+    identity: _IdentityConfig | None = Field(
+        default=None,
+        description="Identity capability configurations (the provider that authenticates callers, the role mapper). Absent = every request is the anonymous principal.",
+    )
     a2ui: _A2UIConfig = Field(description="A2UI labelling capability configurations", default_factory=_A2UIConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)

@@ -259,6 +259,8 @@ class TeamsInboundAdapter(InboundAdapter):
             prompt=text,
             agent=self._agent,
             user_id=activity.from_property.id if activity.from_property else None,
+            # The Entra tenant is the scope a Teams user id is unique within (#603).
+            namespace=self._credentials.resolve_tenant(activity),
             group_id=self._resolve_group(activity),
             reply_context={"conversation_reference": json.dumps(reference.serialize()), "user_name": user_name},
         )

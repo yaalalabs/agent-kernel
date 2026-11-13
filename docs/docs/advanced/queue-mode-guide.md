@@ -49,8 +49,8 @@ declared by the application rather than inferred from the queue URLs a deploymen
 |-----------|--------|--------------------------|
 | `in_memory` | ✅ the default when no `queues` block is declared | All five components as threads in one process (local, single-container) |
 | `sqs` | ✅ | Two-process topology on AWS; also the transport behind the Lambda and ECS deployment adapters below |
-| `kafka` | ✅ (`pip install agentkernel[kafka]`) | Kubernetes / on-prem two-process topology |
-| `nats` (recommended on-prem) | ✅ (`pip install agentkernel[nats]`) | Kubernetes / on-prem two-process topology |
+| `kafka` | ✅ (`uv add "agentkernel[kafka]"`) | Kubernetes / on-prem two-process topology |
+| `nats` (recommended on-prem) | ✅ (`uv add "agentkernel[nats]"`) | Kubernetes / on-prem two-process topology |
 
 Delivery sub-modes (`execution.mode` + `execution.message_type`):
 
@@ -77,7 +77,7 @@ topology.
 :::note
 [AG-UI](../integrations/agui.md#running-the-agent-off-the-web-tier) runs on the pipeline through
 `AGUIPipelineRequestHandler`, which joins the handler list rather than replacing the chat route:
-`IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=...)])`. The edge keeps the caller's
+`IOHandler.run(handlers=[AGUIPipelineRequestHandler()])`. The edge keeps the caller's
 SSE connection and drains the reply from the response store, so it needs a store that can stream
 chunks (the table below) whatever the transport. `AGUIRequestHandler` remains the direct-execution
 handler.
@@ -141,8 +141,9 @@ ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, message_type
 All three REST delivery options work locally: `rest_sync`, `rest_async` accept-then-poll, and
 `rest_sync` with `message_type: delta` over SSE: switchable per run with `AK_EXECUTION__MODE` and
 `AK_EXECUTION__MESSAGE_TYPE`. The WebSocket mode (`async`, either message type) works
-locally too: boot with `IOHandler.run(auth_validator=...)` instead of `RESTAPI.run()` (the gateway
-handlers are co-hosted in the single process) and see
+locally too: boot with `IOHandler.run()` instead of `RESTAPI.run()` (the gateway
+handlers are co-hosted in the single process; the mode needs an `identity` block in `config.yaml`,
+since the handshake authenticates through it) and see
 [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-async). See
 [`examples/api/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
 for curl walkthroughs of each, and [Local Deployment](../deployment/local) for the local flow
@@ -181,7 +182,7 @@ store it, whatever `execution.mode` is, because these callers wait for one whole
 
 ## Running Queue Mode on Kafka
 
-Install the extra (`pip install agentkernel[kafka]`) and configure the broker; topics are
+Install the extra (`uv add "agentkernel[kafka]"`) and configure the broker; topics are
 pre-provisioned by your cluster tooling (Strimzi CRs or the chart), never created by the app:
 
 ```yaml
@@ -249,7 +250,7 @@ dedicated topics for the pipeline, keep retention short (24-72 hours is plenty),
 ## Running Queue Mode on NATS JetStream
 
 The recommended on-prem broker: one static Go binary, an official Helm chart, and NACK CRDs for
-declarative streams. Install the extra (`pip install agentkernel[nats]`) and configure it:
+declarative streams. Install the extra (`uv add "agentkernel[nats]"`) and configure it:
 
 ```yaml
 execution:
@@ -282,7 +283,9 @@ sequence), is in
 To run the same two-process topology on a cluster, the [Helm chart](../deployment/onprem-kubernetes)
 deploys it with in-cluster NATS, NACK-managed streams, and KEDA autoscaling
 ([`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
-walks it end to end on a micro-cluster).
+walks it end to end on a micro-cluster; its `identity` block's one credential reaches the io handler and
+the gateway as `DEMO_AUTH_TOKEN` from a Kubernetes Secret through the chart's `extraEnv`, and its
+`ws_client.py` sends that value as the handshake token).
 
 JetStream is the closest fit of any backend here, because the server provides most of what the
 pipeline needs rather than the client rebuilding it: `ack_wait` is the visibility timeout,
@@ -320,7 +323,7 @@ On a multi-pod deployment the gateway is its own container:
 ```python
 from agentkernel.pipeline import WebSocketGateway
 
-WebSocketGateway.run(auth_validator=MyValidator())  # claims must include a 'userId'
+WebSocketGateway.run()  # the ?token= handshake authenticates through the identity block in config.yaml
 ```
 
 The standalone gateway is broker-only: on the `in_memory` transport a separate gateway
@@ -330,19 +333,22 @@ single-process topology instead, which co-hosts the same gateway handlers:
 ```python
 from agentkernel.pipeline import IOHandler
 
-IOHandler.run(auth_validator=MyValidator())  # REST + /ws + runner + responder in one process
+IOHandler.run()  # REST + /ws + runner + responder in one process
 ```
 
 The flow:
 
-1. Connect to `ws://gateway:port/ws?token=<jwt>`. The validator authenticates the token; the
-   gateway keeps the raw socket in pod-local memory and records
-   `connection -> (user, this pod's push endpoint)` in the connection store.
+1. Connect to `ws://gateway:port/ws?token=<credential>`. The gateway authenticates the token through
+   the identity provider named by the `identity` block (a missing token closes the socket with
+   `Authentication token is required`, a refused one with `Authentication failed`, and a gateway
+   without an `identity` block fails at startup); it keeps the raw socket in pod-local memory and
+   records `connection -> (principal, this pod's push endpoint)` in the connection store.
 2. Send chat frames: `{"route": "chat", "request_id": "...", "body": {"prompt": "...",
    "session_id": "..."}}` (the route key is `websocket_api.chat_route`, default `chat`; an
    omitted `route` also means chat). Each frame is acknowledged with a `CHAT_QUEUED` frame and
-   **enqueued directly to the transport**, stamped with the request id and the authenticated
-   user id: no return address travels on the message, and no REST hop is involved.
+   **enqueued directly to the transport**, carrying the authenticated principal and stamped with the
+   request id and the principal's subject as the routing user id: no return address travels on the
+   message, and no REST hop is involved.
 3. Whichever pod's Response Handler consumes the reply looks the user up in the connection
    store and POSTs one frame per connection to the owning gateway pod's `/internal/push`:
    full replies as `CHAT_RESPONSE` frames with `message_type: complete`, one `STREAM_CHUNK` frame
@@ -396,7 +402,7 @@ Custom routes use the same decorator surface as the ECS WebSocket API, keyed by 
 from agentkernel.pipeline import PipelineWebSocketHandler
 
 @PipelineWebSocketHandler.register("status")
-def status_route(msg):                      # msg = {"message": <raw frame dict>, "user_id": ...}
+def status_route(msg):                      # msg = {"message": <raw frame dict>, "principal": <Principal>}
     return {"status": "SUCCESS", "up": True}  # a dict reply is sent back as SYSTEM_RESPONSE
 ```
 
@@ -407,9 +413,9 @@ and is then dropped with an error log: bounded, never a crash loop.
 
 No single process serves SSE and WebSocket together: `rest_sync` with `message_type: delta`
 serves SSE only, and `async` (either message type) serves `/ws` only, its REST chat route
-answering `400`. On the `in_memory` transport `async` needs `IOHandler.run(auth_validator=...)`.
-`async` with `delta` on a broker requires the authenticated user id on the queue message
-(`USER_ID`); a message without it is retried, then fails permanently.
+answering `400`. On the `in_memory` transport `async` needs `IOHandler.run()` with an `identity` block.
+`async` with `delta` on a broker requires the authenticated principal's subject on the queue message
+(the `USER_ID` routing attribute); a message without it is retried, then fails permanently.
 
 SSE (`rest_sync` with `delta`) on a broker takes two things from the response store, not one — the
 store must be able to stream chunks, **and** a second process must be able to read what the runner
@@ -482,13 +488,14 @@ flows below changes. See the [scheduling guide](./scheduling.md).
 
 ### Request Metadata: Attributes, with a Body Fallback
 
-`request_id` and `user_id` normally travel as SQS **message attributes**, and the runners read them from
-there. When the attribute is absent they fall back to the same key in the **message body**, and inject
-the resolved value back into the attributes so output-side forwarding keeps working.
+`request_id` and the routing `user_id` normally travel as SQS **message attributes**, and the runners
+read them from there. When an attribute is absent they fall back to the **message body** (`request_id`
+from the same key, `user_id` from the body's `principal` subject), and inject the resolved value back
+into the attributes so output-side forwarding keeps working.
 
 That fallback is what makes scheduled triggers work: EventBridge Scheduler cannot set message
-attributes, so a scheduled occurrence carries its `request_id`, `user_id`, `scheduled_task_id` and
-`scheduled_time` in the body. A message missing the key in *both* places keeps the pre-existing error
+attributes, so a scheduled occurrence carries its `request_id`, the owner's `principal`,
+`scheduled_task_id` and `scheduled_time` in the body. A message missing the key in *both* places keeps the pre-existing error
 path (retry, then permanent-failure handling).
 
 ### Status Codes Travel Through the Queues
@@ -669,9 +676,10 @@ Set `execution_mode = "async"` (with `queue_mode = true`, and `message_type = "d
 chunk-by-chunk delivery) to combine the queue
 pipeline above with a WebSocket API Gateway instead of an HTTP API:
 
-1. Client connects to `wss://<endpoint>/<stage>?token=<jwt>`. Thread 1 runs `AWSWebsocketAPI`
-   instead of `AWSRestAPI`; `$connect` authenticates via the registered `AuthValidator`
-   (mandatory) and stores `user_id` ↔ `connection_id` in a DynamoDB connections table.
+1. Client connects to `wss://<endpoint>/<stage>?token=<credential>`. Thread 1 runs `AWSWebsocketAPI`
+   instead of `AWSRestAPI`; `$connect` authenticates the token through the identity provider (an
+   `identity` block is mandatory in this mode) and stores the principal, keyed `user_id` (its
+   subject) ↔ `connection_id`, in a DynamoDB connections table.
 2. A `chat` frame (`{"route": "chat", "body": {...}}`) is enqueued to the Input Queue exactly
    like REST Async: the framework never runs the agent inline in this mode.
 3. `ECSAgentRunner` processes it with `message_type: complete` exactly as in REST modes, then forwards the
@@ -805,7 +813,7 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | `sqs` | ✅ | Two-process topology on AWS, wire-compatible with the Lambda/ECS adapters below |
 | `kafka` | ✅ | confluent-kafka client, per-session ordering by record key, DLQ topics, Strimzi-provisioned clusters. Needs the `kafka` extra and an `execution.queues.kafka` block; see the notes below |
 | `nats` (recommended on-prem) | ✅ | JetStream work-queue streams, partitioned per-session ordering, server-side delivery counts and dedup. Needs the `nats` extra and an `execution.queues.nats` block |
-| WebSocket delivery (`async`, `complete` or `delta`) | ✅ | Gateway tier (`WebSocketGateway.run(auth_validator=...)`; co-hosted by `IOHandler` on `in_memory`) + session-backed shared connection store; see [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-async) |
+| WebSocket delivery (`async`, `complete` or `delta`) | ✅ | Gateway tier (`WebSocketGateway.run()`, authenticating the handshake through the `identity` block; co-hosted by `IOHandler` on `in_memory`) + session-backed shared connection store; see [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-async) |
 | Kubernetes Helm chart (baremetal + EKS) | ✅ | Two-Deployment topology (io-handler + agent-runner, optional ws-gateway), KEDA queue-depth autoscaling, NACK/Strimzi-provisioned brokers; see [On-Prem / Kubernetes](../deployment/onprem-kubernetes) |
 
 **AWS deployment components:**

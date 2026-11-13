@@ -48,6 +48,8 @@ class SlackInboundAdapter(InboundAdapter):
         self._agent = config.slack.agent or None
         self._max_file_size = config.api.max_file_size
         self._bot_id: str | None = None
+        # The workspace the bot authenticated to: the namespace for an event that does not carry its team.
+        self._team_id: str | None = None
 
         # Passed explicitly so both resolve through the secret provider; Bolt would read only the environment.
         # Checked here too, because Bolt's own errors name only the environment variable.
@@ -181,15 +183,28 @@ class SlackInboundAdapter(InboundAdapter):
             prompt=question,
             agent=self._agent,
             user_id=user,
+            # The workspace is the scope a Slack user id is unique within (#603).
+            namespace=await self._workspace_id(body),
             group_id=channel,
             reply_context={"channel": channel, "thread_ts": thread_ts, "user": user},
         )
 
     async def _bot_user_id(self) -> str | None:
-        """The bot's own user id, so its own messages are ignored. Resolved once."""
+        """The bot's own user id, so its own messages are ignored. Resolved once, with the workspace."""
         if self._bot_id is None:
-            self._bot_id = (await self._app.client.auth_test())["user_id"]
+            identity = await self._app.client.auth_test()
+            self._bot_id = identity["user_id"]
+            self._team_id = self._team_id or identity.get("team_id")
         return self._bot_id
+
+    async def _workspace_id(self, body: dict) -> str | None:
+        """The workspace an event belongs to: its ``team``, else the one the bot authenticated to."""
+        team = body.get("team")
+        if team:
+            return team
+        if self._team_id is None:
+            self._team_id = (await self._app.client.auth_test()).get("team_id")
+        return self._team_id
 
     async def _say(self, channel: str, thread_ts: str | None, text: str) -> None:
         """Post a rejection notice from the edge, where the user is still waiting."""

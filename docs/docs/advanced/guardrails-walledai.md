@@ -18,7 +18,7 @@ Walled AI guardrails provide safety validation and PII redaction for Agent Kerne
 Install Agent Kernel with Walled AI extras:
 
 ```bash
-pip install agentkernel[walledai]
+uv add "agentkernel[walledai]"
 ```
 
 Set required environment variables:

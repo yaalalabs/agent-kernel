@@ -20,7 +20,7 @@ second to start a run and a few hundred MB of memory per concurrent run; Anthrop
 ## Installation
 
 ```bash
-pip install agentkernel[claude]
+uv add "agentkernel[claude]"
 ```
 
 Authenticate with an Anthropic API key or a cloud provider. Anthropic does not allow third-party products to

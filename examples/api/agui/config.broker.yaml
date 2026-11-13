@@ -69,3 +69,15 @@ logging:
   # the runner's terminal are how you see the run leave the API process.
   ak:
     level: INFO
+
+# Who may call. AG-UI runs agents on a caller's behalf, so the handler refuses to build without this
+# block. The static provider maps one credential to the `demo-user` principal; its value is resolved
+# through the secret capability at startup (the environment by default), so export DEMO_TOKEN before
+# starting the app and have the frontend send it as the bearer token.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_TOKEN:
+          subject: demo-user

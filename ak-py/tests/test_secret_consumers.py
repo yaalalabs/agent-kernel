@@ -186,50 +186,42 @@ def _livekit(attribute: str) -> Callable:
     return resolve
 
 
-class _ClientBuilt(Exception):
-    """Raised by a stand-in SDK client to stop a realtime connect once the key is captured."""
+class _SessionStarted(Exception):
+    """Raised by a stand-in SDK runner to stop a realtime connect once the key is captured."""
 
 
-def _realtime_key(monkeypatch, client_path: str, runner_cls, sdk_agent) -> str:
-    """Connect a realtime runner just far enough for it to build its SDK client, and return the key it was given."""
+def _openai_realtime(monkeypatch) -> str | None:
+    """Connect the OpenAI realtime runner just far enough to start the SDK session, and return the key it was given."""
+    pytest.importorskip("agents")
     import types
 
+    from agents.realtime import RealtimeAgent
+
     from agentkernel.core import Session
+    from agentkernel.framework.openai import openai as ak_openai
 
     seen = {}
 
-    def client(*args, api_key=None, **kwargs):
-        seen["api_key"] = api_key
-        raise _ClientBuilt()
+    class _Runner:
+        def __init__(self, agent, **options):
+            pass
 
-    monkeypatch.setattr(client_path, client)
+        async def run(self, model_config=None, **options):
+            seen["api_key"] = (model_config or {}).get("api_key")
+            raise _SessionStarted()
+
+    monkeypatch.setattr(ak_openai, "RealtimeRunner", _Runner)
+
+    async def no_options(session, requests):
+        return {}
 
     async def callback(event_type, data):
         pass
 
-    agent = types.SimpleNamespace(name=sdk_agent.name, agent=sdk_agent)
-    with pytest.raises(_ClientBuilt):
-        asyncio.run(runner_cls().connect(Session("room-1"), agent, callback))
+    agent = types.SimpleNamespace(name="helper", agent=RealtimeAgent(name="helper"), resolve_run_options=no_options)
+    with pytest.raises(_SessionStarted):
+        asyncio.run(ak_openai.OpenAIRealtimeRunner().connect(Session("room-1"), agent, callback))
     return seen["api_key"]
-
-
-def _openai_realtime(monkeypatch) -> str:
-    pytest.importorskip("agents")
-    from agents import Agent
-
-    from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
-
-    return _realtime_key(monkeypatch, "openai.AsyncOpenAI", OpenAIRealtimeRunner, Agent(name="helper", model="gpt-realtime"))
-
-
-def _adk_realtime(monkeypatch) -> str:
-    pytest.importorskip("google.adk")
-    from google.adk.agents import LlmAgent
-
-    from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
-
-    sdk_agent = LlmAgent(name="helper", model="gemini-live-2.5-flash-preview", instruction="Help.")
-    return _realtime_key(monkeypatch, "google.genai.Client", GoogleADKRealtimeRunner, sdk_agent)
 
 
 def _push_auth_token(monkeypatch) -> str | None:
@@ -300,7 +292,6 @@ CONSUMERS = [
     Consumer("AK_LIVEKIT__API_SECRET", _livekit("_api_secret"), _without(_LIVEKIT, "AK_LIVEKIT__API_SECRET")),
     Consumer("AK_WEBSOCKET_API__PUSH_AUTH_TOKEN", _push_auth_token),
     Consumer("OPENAI_API_KEY", _openai_realtime),
-    Consumer("GOOGLE_API_KEY", _adk_realtime),
 ]
 
 
@@ -375,7 +366,7 @@ def configurable_required_consumer(request, monkeypatch):
 
 
 # Realtime runners connect on the pool's event loop, which every live connection shares.
-REALTIME = [consumer for consumer in CONSUMERS if consumer.resolve in (_openai_realtime, _adk_realtime)]
+REALTIME = [consumer for consumer in CONSUMERS if consumer.resolve is _openai_realtime]
 
 
 @pytest.fixture(params=REALTIME, ids=_consumer_id)

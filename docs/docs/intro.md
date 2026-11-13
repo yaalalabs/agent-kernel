@@ -8,6 +8,8 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+🪪 **Identity and Access** - One configured identity provider (Auth0, Keycloak or Okta over OIDC, Amazon Cognito, Microsoft Entra ID, Firebase, a static map, or your own) authenticates every surface, and tools, hooks, threads and scheduled tasks see the same `Principal`. [Learn more →](./advanced/identity-and-access.md)
+
 🧠 **Claude Agent SDK** - Run agents built on Anthropic's Claude Code harness (built-in file, shell and web tools, subagents, hooks) in Agent Kernel, with conversations that continue on any replica. [Learn more →](./frameworks/claude-agent-sdk.md)
 
 🔎 **Fetch spans back for evaluation** - Read agent, LLM and tool spans back from Langfuse, Logfire, OpenLLMetry or CloudWatch with one provider-neutral `Trace.fetch_spans()` or `Trace.fetch_traces()` filter, including each model call's tokens and cost, to grade production traffic. [Learn more →](./advanced/traceability.md#fetching-spans-back)

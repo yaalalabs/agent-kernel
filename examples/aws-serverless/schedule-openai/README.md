@@ -11,6 +11,9 @@ the whole switch.
 
 ## Architecture Overview
 
+- **Authorizer Lambda**: authenticates every request's bearer token through the identity provider
+  in `config.yaml` (`lambda_auth.py` is one line). A task belongs to the principal whose request
+  created it, so every route needs an authenticated caller (see [Who owns a task](#who-owns-a-task)).
 - **Request-handler Lambda** — chat ingress (enqueue + poll the response store) plus the custom
   scheduled-task management routes (see [Management routes are custom
   here](#management-routes-are-custom-here)).
@@ -40,8 +43,9 @@ POST /api/v1/chat  {"schedule": {...}}       POST /api/v1/chat  (no schedule)
 
 ## Deployed Resources
 
-- **Lambda functions**: request handler and response handler in **zip mode** (`LocalZip`), agent
-  runner in **image mode** (`Image`) with an ECR repository Terraform creates and pushes to
+- **Lambda functions**: authorizer, request handler and response handler in **zip mode**
+  (`LocalZip`), agent runner in **image mode** (`Image`) with an ECR repository Terraform creates and
+  pushes to
 - **SQS**: FIFO input and output queues. The input queue runs with **content-based deduplication** —
   see [Why the input queue changes](#why-the-input-queue-changes)
 - **EventBridge Scheduler**: a schedule group plus the execution role Scheduler assumes to send to
@@ -49,7 +53,8 @@ POST /api/v1/chat  {"schedule": {...}}       POST /api/v1/chat  (no schedule)
 - **DynamoDB**: session store, response store, schedule store (partition `task_id`, no sort key)
 - **IAM**: `scheduler:{Create,Update,Delete,Get}Schedule` + `iam:PassRole` on both the
   request-handler and agent-runner roles
-- **API Gateway**: REST API with the chat route and the four management routes
+- **API Gateway**: REST API with the chat route and the four management routes, every one behind the
+  authorizer
 
 ## The two-step enablement
 
@@ -96,19 +101,31 @@ Two consequences of the router matching paths exactly:
 
 | This example | Containerized / self-hosted equivalent |
 |---|---|
-| `GET /api/v1/schedules?user_id=` | `GET /api/v1/schedules` |
-| `GET /api/v1/schedules/get?user_id=&task_id=` | `GET /api/v1/schedules/{task_id}` |
+| `GET /api/v1/schedules` | `GET /api/v1/schedules` |
+| `GET /api/v1/schedules/get?task_id=` | `GET /api/v1/schedules/{task_id}` |
 | `POST /api/v1/schedules/amend` (task_id in body) | `PUT /api/v1/schedules/{task_id}` |
 | `POST /api/v1/schedules/cancel` (task_id in body) | `DELETE /api/v1/schedules/{task_id}` |
 
 Creation is deliberately absent from both, identically: a task is created by the `schedule` block on
 a chat request or by the agent's own `create_schedule` tool, so callers and agents share one path.
 
-**Ownership in this example is taken from the request**, not from a token — `user_id` is a query
-parameter or body field. That is fine for a demo and wrong for production: resolve the caller from
-an API Gateway authorizer (see `examples/aws-serverless/openai-auth`) and ignore any client-supplied
-`user_id`. On the containerized target this is what an `Authoriser` on
-`ScheduleRESTRequestHandler` does for you.
+## Who owns a task
+
+The caller. The API Gateway authorizer (`lambda_auth.py`, one line: `APIGatewayAuthorizer().handle`)
+authenticates every request's bearer token through the identity provider named by the `identity`
+block in `config.yaml`, and hands the resulting principal to the request handler in the authorizer
+context. The framework's chat route assigns it to the request body, so a task created by a `schedule`
+block (or by the agent's `create_schedule` tool) belongs to that principal; the custom management
+routes read the same principal with `Lambda.principal(event)` and serve that caller's own tasks. A
+client never names the owner: there is no `user_id` anywhere in a request, and a body carrying one
+is a 400.
+
+The block here selects the `static` provider with one credential mapped to the principal
+`demo-user`. The credential's value is the `demo_auth_token` Terraform variable, passed to the
+authorizer as the `DEMO_AUTH_TOKEN` environment variable the secret capability resolves at startup.
+To validate real tokens, swap the provider for `oidc` (Auth0, Keycloak, Okta or any other OIDC
+issuer), `cognito`, `entra` or `firebase`, and add the `auth` extra to the `authorizer` dependency
+set in `pyproject.toml`; [`../openai-auth`](../openai-auth/README.md) spells out an Auth0 block.
 
 ## Why the input queue changes
 
@@ -147,8 +164,11 @@ Set the deployment identifiers in `deploy/terraform.tfvars`, then:
 ```bash
 ./build.sh                 # or ./build.sh local to build against a local ak-py dist
 cd deploy
-./deploy.sh                # packages all three functions, terraform init + apply
+./deploy.sh                # packages all four functions, terraform init + apply
 ```
+
+`deploy.sh` prompts for `demo_auth_token`, `vpc_id` and `private_subnet_ids` unless
+you add them to `terraform.tfvars` or pass them as `-var` flags.
 
 `deploy.sh` zips the request and response handlers into `dist_request_handler.zip` /
 `dist_response_handler.zip`, and stages the agent runner into `dist_agent_runner/` (dependencies
@@ -167,21 +187,23 @@ warns if either one starts to approach the limit.
 
 ```bash
 export AK_TEST_ENDPOINT="$(terraform output -raw agent_invoke_url)"
+export AK_TEST_TOKEN=<the demo_auth_token value>
+AUTH="Authorization: Bearer $AK_TEST_TOKEN"
 SCHEDULES="${AK_TEST_ENDPOINT%/chat}/schedules"
 ```
 
 ## Try it
 
-Every scheduling request must carry a `user_id` — it is the owner the task is stored under and the
-identity later reads and changes are checked against.
+Every request carries the bearer token: the principal it authenticates is the owner the task is
+stored under and the identity later reads and changes are checked against.
 
 **Defer a chat to a one-time moment.** `at` is a local wall-clock timestamp read in `timezone`, and
 must be in the future:
 
 ```bash
 curl -i -X POST "$AK_TEST_ENDPOINT" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1",
        "schedule": {"at": "2035-01-31T09:00:00", "timezone": "Asia/Colombo"}}'
 ```
 
@@ -199,28 +221,28 @@ occurrence in its own fresh session:
 
 ```bash
 curl -X POST "$AK_TEST_ENDPOINT" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Send the weekly report", "session_id": "ses-2", "user_id": "alice",
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"prompt": "Send the weekly report", "session_id": "ses-2",
        "schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"}}'
 ```
 
 **List, read, amend, cancel:**
 
 ```bash
-curl "$SCHEDULES?user_id=alice"
-curl "$SCHEDULES/get?user_id=alice&task_id=<task_id>"
+curl "$SCHEDULES" -H "$AUTH"                            # always the caller's own tasks
+curl "$SCHEDULES/get?task_id=<task_id>" -H "$AUTH"
 
-# Full replacement rather than a merge — send every value, changed or not. `status` is the
+# Full replacement rather than a merge: send every value, changed or not. `status` is the
 # paused/active switch: a paused schedule keeps its record but stops firing.
 curl -X POST "$SCHEDULES/amend" \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "<task_id>", "user_id": "alice", "prompt": "Send the weekly report",
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"task_id": "<task_id>", "prompt": "Send the weekly report",
        "cron": "0 8 * * 1", "timezone": "Asia/Colombo", "session_mode": "new", "status": "paused"}'
 
 # The record survives as the audit trail, so this returns the task with "status": "cancelled".
 curl -X POST "$SCHEDULES/cancel" \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "<task_id>", "user_id": "alice"}'
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"task_id": "<task_id>"}'
 ```
 
 **Let the agent schedule the work itself.** This runs now; the agent calls `create_schedule` and
@@ -228,9 +250,9 @@ replies with the task id, which then shows up in the listing:
 
 ```bash
 curl -X POST "$AK_TEST_ENDPOINT" \
-  -H "Content-Type: application/json" \
+  -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"prompt": "Every weekday at 8am in Asia/Colombo, remind me to review the overnight alerts.",
-       "session_id": "ses-3", "user_id": "alice"}'
+       "session_id": "ses-3"}'
 ```
 
 The five tools (`create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`,

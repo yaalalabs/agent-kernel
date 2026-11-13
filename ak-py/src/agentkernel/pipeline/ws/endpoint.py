@@ -23,6 +23,10 @@ from .registry import LocalConnectionRegistry
 class PushEndpointHandler(RESTRequestHandler):
     """Mounts ``POST /internal/push`` over the gateway pod's local socket registry."""
 
+    # Pod-to-pod pushes carry the shared push token, never an application credential: the route
+    # checks that secret itself, so RESTAPI mounts it without the identity dependency (#603).
+    authenticates_itself = True
+
     class PushRequest(BaseModel):
         connection_id: str
         message: dict[str, Any]

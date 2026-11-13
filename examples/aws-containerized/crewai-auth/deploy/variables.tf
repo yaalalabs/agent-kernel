@@ -13,3 +13,9 @@ variable "is_production" {
   type        = bool
   default     = false
 }
+
+variable "demo_auth_token" {
+  description = "The one credential the static identity provider in config.yaml accepts as a bearer token"
+  type        = string
+  sensitive   = true
+}

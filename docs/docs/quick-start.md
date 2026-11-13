@@ -11,6 +11,17 @@ Build and run your first AI agent with Agent Kernel in under 5 minutes!
 **Cloud Platforms:** AWS, Azure, GCP (multi-cloud support)
 :::
 
+## Create a Project
+
+Agent Kernel installs into a [uv](https://docs.astral.sh/uv/getting-started/installation/) project. Create one and move into it:
+
+```bash
+uv init --python 3.12 my-agent
+cd my-agent
+```
+
+Run the framework steps below from inside this directory.
+
 ## Choose Your Framework
 
 Agent Kernel supports multiple frameworks. Pick the one you're most comfortable with:
@@ -26,7 +37,7 @@ import TabItem from '@theme/TabItem';
 ### 1. Install
 
 ```bash
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 ```
 
 ### 2. Create Your Agent
@@ -67,7 +78,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -78,7 +89,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[crewai]
+uv add "agentkernel[crewai]"
 ```
 
 ### 2. Create Your Agent
@@ -121,7 +132,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -132,7 +143,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[langgraph]
+uv add "agentkernel[langgraph]"
 ```
 
 ### 2. Create Your Agent
@@ -182,7 +193,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -193,7 +204,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[adk]
+uv add "agentkernel[adk]"
 ```
 
 ### 2. Create Your Agent
@@ -228,7 +239,7 @@ export GOOGLE_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -239,7 +250,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[smolagents]
+uv add "agentkernel[smolagents]"
 ```
 
 ### 2. Create Your Agent
@@ -276,7 +287,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -287,11 +298,11 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[pydanticai]
+uv add "agentkernel[pydanticai]"
 ```
 
 `agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only. Install the
-provider you intend to use, e.g. `pip install "pydantic-ai-slim[openai]"`.
+provider you intend to use, e.g. `uv add "pydantic-ai-slim[openai]"`.
 
 ### 2. Create Your Agent
 
@@ -326,7 +337,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -337,7 +348,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[maf] agent-framework-openai
+uv add "agentkernel[maf]" agent-framework-openai
 ```
 
 `agentkernel[maf]` installs the provider-agnostic `agent-framework-core` only. Install the MAF package for
@@ -377,7 +388,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -388,7 +399,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[claude]
+uv add "agentkernel[claude]"
 ```
 
 ### 2. Create Your Agent
@@ -429,7 +440,7 @@ export ANTHROPIC_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -512,7 +523,7 @@ Run your agent as a REST API server:
 
 ```bash
 # Install API dependencies
-pip install agentkernel[api]
+uv add "agentkernel[api]"
 ```
 Use the RESTAPI module run the agents
 
@@ -545,7 +556,7 @@ Run the agents
 
 ```bash
 # Run as API server
-python my_agent.py
+uv run python my_agent.py
 ```
 
 Configure the API port by editing `config.yaml`
@@ -569,7 +580,7 @@ Package and deploy to AWS Lambda:
 
 ```bash
 # Install AWS dependencies
-pip install agentkernel[aws]
+uv add "agentkernel[aws]"
 ```
 Use the Lambda module to run the agents
 
@@ -763,7 +774,7 @@ export GOOGLE_API_KEY=...
 Install the correct extras package:
 
 ```bash
-pip install agentkernel[your-framework]
+uv add "agentkernel[your-framework]"
 ```
 
 ## Learn More

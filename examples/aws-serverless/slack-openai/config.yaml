@@ -57,3 +57,16 @@ secret:
   provider:
     type: aws_ssm
   # prefix is injected by Terraform as AK_SECRET__PREFIX
+
+# Who may call the chat route: the identity provider the authorizer Lambda authenticates every
+# bearer token with. The static provider maps one credential to the `demo-user` principal; the value
+# is never written here: Terraform passes it to the authorizer as the DEMO_AUTH_TOKEN environment
+# variable (var.demo_auth_token), which the secret capability resolves at startup. Slack's webhook
+# bypasses the authorizer (see lambda_auth.py) and is authenticated by the adapter's signature check.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user

@@ -62,6 +62,7 @@ Terraform variables are declared in `deploy/variables.tf`:
 - `region`
 - `prefix`
 - `is_production`
+- `demo_auth_token` (sensitive; the credential the `$connect` handshake accepts, see [Using the WebSocket API](#using-the-websocket-api))
 
 Provide values via `terraform.tfvars` (recommended) or via `-var` flags.
 
@@ -110,18 +111,30 @@ See `deploy/outputs.tf`.
 Connect to the WebSocket API by combining the Terraform outputs:
 
 ```bash
-wss://{websocket_api_endpoint_url}/{websocket_api_stage_name}?token=your-jwt-token
+wss://{websocket_api_endpoint_url}/{websocket_api_stage_name}?token=<credential>
 ```
 
-The `$connect` route validates the JWT token via `CustomAuthTokenValidator` in `lambda_ws_connection_handler.py`.
+The `$connect` route authenticates the token through the identity provider named by the `identity`
+block in `config.yaml` (see `lambda_ws_connection_handler.py`, which is one line), and keys the
+connection by the principal's subject so replies route back to the right client.
 
-- The validator decodes a JWT without signature verification in this example.
-- **Warning:** this makes the sample auth trivially forgeable; use real JWT verification in production.
-- The connection is allowed only if the JWT payload contains `userId` set to `user-1` or `user-2` and `email` set to `test1@test.com` or `test2@test.com`.
+- The block selects the `static` provider with one credential mapped to the principal `demo-user`.
+- The credential's value is not in the file: the key `DEMO_AUTH_TOKEN` names a secret the secret
+  capability resolves at startup, and Terraform passes it to the connection-handler Lambda as an
+  environment variable from `var.demo_auth_token`.
+- A missing or refused token closes the connection before it opens.
 
 ### Example token
 
-Any JWT-formatted token with a matching allowlisted combination will pass validation, for example `userId: "user-1"` with `email: "test1@test.com"`.
+Connect with the `demo_auth_token` value the stack was deployed with:
+
+```bash
+wss://{websocket_api_endpoint_url}/{websocket_api_stage_name}?token=<the demo_auth_token value>
+```
+
+To validate real tokens, swap the provider for `oidc` (Auth0, Keycloak, Okta or any other OIDC
+issuer), `cognito`, `entra` or `firebase`; [`../openai-auth`](../openai-auth/README.md) shows an
+Auth0 block. No code changes: the handshake is the framework's.
 
 ### Receiving stream chunks
 

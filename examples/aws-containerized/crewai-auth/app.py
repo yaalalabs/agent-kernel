@@ -1,8 +1,4 @@
-import os
-
-import jwt
-from agentkernel.api import RESTAPI, AgentRESTRequestHandler
-from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
+from agentkernel.api import RESTAPI
 from agentkernel.crewai import CrewAIModule
 from agentkernel.secret import SecretManager
 from crewai import LLM, Agent
@@ -35,6 +31,8 @@ router = APIRouter()
 # Adding a custom route
 # Example custom route to support application-specific endpoints.
 # All custom routes are prefixed with "/custom" by default. Refer to the config documentation for more details.
+# Custom routes run the identity dependency too: a token, if sent, must be valid (a refused one is a
+# 401); without one the route runs as the anonymous principal.
 @router.get("/version")
 def get_app_name():
     return {"name": "my_custom_app", "version": "1.0.0"}
@@ -46,25 +44,12 @@ RESTAPI.add(router)
 CrewAIModule([math_agent, history_agent])
 
 
-# Defining the Custom Auth validator for auth token validation
-class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
-        """Validate JWT token and return validation result."""
-        try:
-            payload = jwt.decode(token, options={"verify_signature": False})
-            email = payload.get("email", "")
-            if email == "test@test.com":
-                return ValidationResult(is_valid=True)
-            return ValidationResult(is_valid=False, error_msg="Invalid token")
-        except jwt.DecodeError as e:
-            return ValidationResult(is_valid=False, error_msg=f"Token decode error: {str(e)}")
-        except Exception as e:
-            return ValidationResult(is_valid=False, error_msg=f"Token validation error: {str(e)}")
-
-
-# Adding Auth handlers to the REST API
-RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
-
-
 def main():
+    # Authentication is configuration, not code: the `identity` block in config.yaml names the
+    # provider every route authenticates the bearer token with (the static provider here; swap it
+    # for oidc, cognito, entra or firebase to validate real tokens).
     RESTAPI.run()
+
+
+if __name__ == "__main__":
+    main()

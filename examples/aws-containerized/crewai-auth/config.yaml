@@ -11,3 +11,17 @@ secret:
   provider:
     type: aws_ssm
   # prefix is injected by Terraform as AK_SECRET__PREFIX
+
+# Who may call. Every REST route runs the identity dependency, which authenticates the bearer token
+# through this provider and puts the resulting principal on the request. The static provider maps one
+# credential to the `demo-user` principal; the value is never written here: Terraform passes it to the
+# container as the DEMO_AUTH_TOKEN environment variable (var.demo_auth_token), which the secret
+# capability resolves at startup. A request without a token runs as the anonymous principal; a
+# request with a token the provider refuses is a 401.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user

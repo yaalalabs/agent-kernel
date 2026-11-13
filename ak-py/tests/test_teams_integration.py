@@ -159,6 +159,8 @@ async def test_a_message_becomes_a_normalized_request():
     assert request.agent == "helper"
     assert request.session_id == "conv-1"
     assert request.user_id == "user-1"
+    # The tenant is the scope the user id is unique within (#603).
+    assert request.namespace == "tenant-from-activity"
     assert request.group_id == "19:channel-1"
     assert request.request_id == "act-1", "the activity id is what dedupes an Azure redelivery"
     assert isinstance(request.requests[0], AgentRequestText) and request.requests[0].prompt == "hello"
