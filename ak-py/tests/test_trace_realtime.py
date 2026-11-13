@@ -515,3 +515,98 @@ class TestLogfireCallSpan:
 
         assert isinstance(span, OTelRealtimeCallSpan)
         assert span._attributes == {"session_id": "s1"}
+
+
+class TestADKSpansNestUnderTheCallSpan:
+    """With real ADK ``run_live()``: its own spans become children of the call span, because the native session's tasks
+    start inside ``connect``, which the call span wraps. ADK reads its tracer from ``google.adk.telemetry.tracing.tracer`` at call
+    time, so it is swapped for a local one; no global provider is installed."""
+
+    @pytest.mark.asyncio
+    async def test_invoke_agent_and_execute_tool_are_descendants_of_the_call_span(self, monkeypatch, otel):
+        from contextlib import asynccontextmanager
+
+        from google.adk.agents import LlmAgent
+        from google.adk.agents.run_config import RunConfig
+        from google.adk.models.base_llm import BaseLlm
+        from google.adk.models.base_llm_connection import BaseLlmConnection
+        from google.adk.models.llm_response import LlmResponse
+        from google.adk.telemetry import tracing
+        from google.genai import types
+
+        from agentkernel.core.runtime import Runtime
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+        from agentkernel.core.tool import SystemToolFactory
+        from agentkernel.framework.adk.adk import GoogleADKModule, GoogleADKRealtimeRunner
+
+        tracer, exporter = otel
+        monkeypatch.setattr(tracing, "tracer", tracer)
+        monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+        monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+
+        class Connection(BaseLlmConnection):
+            closed = False
+
+            async def send_history(self, history):
+                pass
+
+            async def send_content(self, content):
+                pass
+
+            async def send_realtime(self, blob):
+                pass
+
+            async def receive(self):
+                call = types.FunctionCall(id="c1", name="lookup_order", args={"order": "7"})
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=call)]))
+                while not self.closed:
+                    await asyncio.sleep(0.01)
+
+            async def close(self):
+                self.closed = True
+
+        class Model(BaseLlm):
+            model: str = "fake-live"
+
+            async def generate_content_async(self, llm_request, stream=False):
+                raise NotImplementedError("live only")
+                yield
+
+            @asynccontextmanager
+            async def connect(self, llm_request):
+                connection = Connection()
+                try:
+                    yield connection
+                finally:
+                    connection.closed = True
+
+        def lookup_order(order: str) -> str:
+            """Look up an order."""
+            return f"order {order}: shipped"
+
+        class TracedADK(TracedRealtimeRunner, GoogleADKRealtimeRunner):
+            SPAN_NAME = "Agent Kernel ADK realtime"
+
+            def _start_call_span(self, session, agent):
+                return OTelRealtimeCallSpan(tracer, self.SPAN_NAME, {"session_id": session.id})
+
+        with Runtime(InMemorySessionStore()):
+            module = GoogleADKModule([LlmAgent(name="voice", model=Model(), tools=[lookup_order])])
+            agent = module.get_agent("voice")
+            module.run_options(agent.agent, run_config=RunConfig(response_modalities=["AUDIO"]))
+            runner = TracedADK()
+            await runner.connect(Session("call-n"), agent, _noop)
+            for _ in range(300):
+                if any(s.name.startswith("execute_tool") for s in exporter.get_finished_spans()):
+                    break
+                await asyncio.sleep(0.01)
+            await runner.disconnect()
+
+        spans = _by_name(exporter)
+        call = spans["Agent Kernel ADK realtime"]
+        invoke = spans["invoke_agent voice"]
+        tool = spans["execute_tool lookup_order"]
+        assert invoke.parent.span_id == call.context.span_id
+        assert tool.parent.span_id == invoke.context.span_id
+        assert call.attributes["session_id"] == "call-n"
+        assert call.end_time >= invoke.end_time  # the call span ends last, in disconnect
