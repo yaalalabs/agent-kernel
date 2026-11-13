@@ -2,12 +2,16 @@
 
 evaluate_by_score is exercised against the real (offline, no-network) `LevenshteinRatio` metric.
 evaluate_by_llm mocks `GEval` in place (no real LLM/network call) since that's the one path that
-would otherwise hit a live provider.
+would otherwise hit a live provider. The top_logprobs tests run the real judge model (and the real
+`GEval`) against a fake `litellm.completion`, so they stay offline too.
 """
 
+import asyncio
+import math
 from typing import ClassVar
 
 import pytest
+from opik.evaluation.metrics import GEval
 
 from agentkernel.test import (
     AKEvaluationCase,
@@ -191,16 +195,16 @@ def test_llm_model_is_lazily_created_and_cached(evaluator):
     [("openai", "gpt-6-luna"), ("openai", "gpt-4.1-mini"), ("anthropic", "claude-sonnet-4-5"), ("gemini", "gemini-2.5-flash")],
 )
 def test_llm_model_sends_the_same_reasoning_params_for_any_model(monkeypatch, provider, model):
-    """No per-model branching: every judge gets plain LiteLLM params, which LiteLLM maps or drops per provider."""
+    """No per-model branching: every judge is the same LiteLLM model with plain LiteLLM params, which LiteLLM maps or drops per provider."""
     import agentkernel.test.core.evaluator.opik as ak_opik_module
 
     calls = []
 
-    def _fake_get(**kwargs):
+    def _fake_model(**kwargs):
         calls.append(kwargs)
         return object()
 
-    monkeypatch.setattr(ak_opik_module.models_factory, "get", _fake_get)
+    monkeypatch.setattr(ak_opik_module, "_TopLogprobsCappedModel", _fake_model)
     config = AKTestConfig()
     config.llm.provider = provider
     config.llm.model = model
@@ -208,3 +212,89 @@ def test_llm_model_sends_the_same_reasoning_params_for_any_model(monkeypatch, pr
     OpikAKEvaluator(config).evaluate_by_llm(AKEvaluationCase(user_input="q", actual="a", expected="e"))
 
     assert calls == [{"model_name": f"{provider}/{model}", "track": False, "temperature": 0.0, "reasoning_effort": "none", "drop_params": True}]
+
+
+# --- GEval's top_logprobs ------------------------------------------------------------------#
+
+
+def _judge_response(content, logprobs=None):
+    import litellm
+
+    choice = {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": content}}
+    if logprobs is not None:
+        choice["logprobs"] = logprobs
+    return litellm.ModelResponse(model="gpt-6-luna", choices=[choice])
+
+
+def _score_logprobs():
+    """Logprobs for '{"score":8,...}' whose score token puts 0.7 on 8, 0.2 on 9 and 0.1 on 7: GEval weighs that to 0.81."""
+    candidates = [{"token": digit, "logprob": math.log(p)} for digit, p in (("8", 0.7), ("9", 0.2), ("7", 0.1))]
+    tokens = ['{"', "score", '":', "8", ',"', "reason", '":"', "names the same city", '"}']
+    return {
+        "content": [
+            {"token": token, "logprob": math.log(0.7) if token == "8" else 0.0, "top_logprobs": candidates if token == "8" else []}
+            for token in tokens
+        ]
+    }
+
+
+def test_default_judge_scores_without_asking_for_more_top_logprobs_than_it_accepts(monkeypatch):
+    """Regression: opik's GEval asks for top_logprobs=20 and gpt-6-luna (the default judge) rejects more than 5, so with
+    opik up to 2.2.138 every llm-mode evaluation failed. Later versions drop logprobs for gpt-6 models themselves."""
+    import litellm
+
+    import agentkernel.test.core.evaluator.opik as ak_opik_module
+
+    monkeypatch.setattr(ak_opik_module, "GEval", GEval)  # the real metric, not the autouse fake
+    requests = []
+
+    def _gpt_6_luna(**kwargs):
+        requests.append(kwargs)
+        if "response_format" not in kwargs:  # GEval's chain-of-thought call
+            return _judge_response("1. List the facts the expected output asserts. 2. Check the actual output states each one.")
+        if kwargs.get("top_logprobs", 0) > 5:
+            raise litellm.BadRequestError(
+                message="Invalid 'top_logprobs': must be less than or equal to 5", model=kwargs["model"], llm_provider="openai"
+            )
+        return _judge_response('{"score":8,"reason":"names the same city"}', logprobs=_score_logprobs() if kwargs.get("logprobs") else None)
+
+    monkeypatch.setattr(litellm, "completion", _gpt_6_luna)  # read by the judge model when it is built
+
+    result = OpikAKEvaluator(AKTestConfig()).evaluate_by_llm(
+        AKEvaluationCase(user_input="capital of France?", actual="It's Paris.", expected="Paris")
+    )
+
+    (scoring,) = [r for r in requests if "response_format" in r]  # accepted the first time, so never retried
+    assert scoring["model"] == "openai/gpt-6-luna"
+    assert scoring.get("top_logprobs", 0) <= 5
+    # Weighed over the logprobs where opik asks for them (0.81), the text score where it drops them for gpt-6 (0.8).
+    assert result.score == pytest.approx(0.81 if scoring.get("logprobs") else 0.8)
+    assert result.passed is True
+
+
+@pytest.mark.parametrize("sent, expected", [(20, 5), (5, 5), (3, 3), (None, None)])
+def test_judge_caps_top_logprobs_on_sync_and_async_calls(monkeypatch, sent, expected):
+    """The cap is in the judge model, so it holds for any model; gpt-4.1-mini here, whose logprobs no opik version drops."""
+    import litellm
+
+    received = []
+
+    def _completion(**kwargs):
+        received.append(kwargs.get("top_logprobs"))
+        return _judge_response("ok")
+
+    async def _acompletion(**kwargs):
+        return _completion(**kwargs)
+
+    monkeypatch.setattr(litellm, "completion", _completion)
+    monkeypatch.setattr(litellm, "acompletion", _acompletion)
+    config = AKTestConfig()
+    config.llm.model = "gpt-4.1-mini"
+    judge = OpikAKEvaluator(config)._llm_model()
+    kwargs = {} if sent is None else {"logprobs": True, "top_logprobs": sent}
+    messages = [{"role": "user", "content": "q"}]
+
+    judge.generate_provider_response(messages, **kwargs)
+    asyncio.run(judge.agenerate_provider_response(messages, **kwargs))
+
+    assert received == [expected, expected]
