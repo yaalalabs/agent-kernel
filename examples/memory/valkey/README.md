@@ -25,6 +25,7 @@ Redis and available on AWS ElastiCache as a native engine. Agent Kernel selects 
     ```bash
     ./build.sh
     export OPENAI_API_KEY=<OPENAI_API_KEY>
+    export AK_SECRET__PROVIDER__TYPE=env  # config.yaml reads secrets from SSM on AWS; use the environment locally
     ```
 
 3. Run the agent locally:
@@ -48,10 +49,12 @@ The AWS deployment provisions the following resources:
 
 ## AWS Deployment Steps
 
-1. Configure environment variables:
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
     ```
+    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the app reads the key from SSM at startup; no secret passes through Terraform.
 
 2. Set the VPC and subnets to deploy into in `deploy/terraform.tfvars` (`vpc_id`,
    `private_subnet_ids`), and optionally `request_handler_security_group_id` to reuse an existing

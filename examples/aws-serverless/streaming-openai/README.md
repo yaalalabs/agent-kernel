@@ -62,10 +62,18 @@ Terraform variables are declared in `deploy/variables.tf`:
 - `region`
 - `prefix`
 - `is_production`
-- `openai_api_key` (sensitive)
 - `demo_auth_token` (sensitive; the credential the `$connect` handshake accepts, see [Using the WebSocket API](#using-the-websocket-api))
 
 Provide values via `terraform.tfvars` (recommended) or via `-var` flags.
+
+The OpenAI key is not a Terraform variable: store it in SSM Parameter Store, where `<prefix>` is
+`prefix` in `deploy/terraform.tfvars`. The deployment sets `ssm_enabled = true` and `config.yaml` selects
+the `aws_ssm` secret provider, so the agent runner reads it from SSM at startup:
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+```
 
 ## Deploy
 

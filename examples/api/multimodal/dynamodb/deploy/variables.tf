@@ -14,7 +14,3 @@ variable "is_production" {
   default     = false
 }
 
-variable "openai_api_key" {
-  description = "OpenAI API Key"
-  type        = string
-}

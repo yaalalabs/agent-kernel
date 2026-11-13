@@ -15,7 +15,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.9.5"
+  version: "0.10.0"
   category: user
 ---
 
@@ -62,7 +62,7 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.9.5`) unless user requests another.
+Use current module version (`0.10.0`) unless user requests another.
 
 Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
 Agent Kernel repository and is published as an OCI artifact
@@ -91,7 +91,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.9.5"
+  "agentkernel[openai,api,redis]>=0.10.0"
 ]
 ```
 
@@ -118,7 +118,7 @@ OSS engine. Agent Kernel treats it as a first-class session and response store b
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.9.5"
+  "agentkernel[openai,api,aws,valkey]>=0.10.0"
 ]
 ```
 
@@ -146,7 +146,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.5"
+  "agentkernel[openai,api,aws]>=0.10.0"
 ]
 ```
 
@@ -167,7 +167,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.9.5"
+  "agentkernel[openai,api,azure]>=0.10.0"
 ]
 ```
 
@@ -189,7 +189,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.9.5"
+  "agentkernel[openai,api,gcp]>=0.10.0"
 ]
 ```
 
@@ -307,11 +307,16 @@ Secret resolution (`ak-add-capabilities`) follows the same split: the app declar
 `SecretManager.current().get("OPENAI_API_KEY")`; Terraform grants read access and injects only the
 deployment scope. Terraform never sets `AK_SECRET__PROVIDER__TYPE`.
 
-- **AWS (serverless + containerized)**: `ssm_enabled = true` grants only the tier that runs the agent
-  (the agent runner when `queue_mode = true`; otherwise the serverless request handler / containerized
-  REST service) `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and
-  injects `AK_SECRET__PREFIX = <prefix>` (the module's own `prefix`). The response handler and
-  WebSocket connection handler never get SSM access, so resolve secrets in agent-runner code only.
+- **AWS (serverless + containerized)**: `ssm_enabled = true` grants every tier that resolves framework
+  credentials `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and
+  injects `AK_SECRET__PREFIX = <prefix>` (the module's own `prefix`): the serverless request handler /
+  containerized REST service always, plus the agent runner and (serverless) the response handler when
+  `queue_mode = true`. The WebSocket connection handler never gets SSM access.
+- **Framework credentials resolve the same way**: messaging tokens (`SLACK_BOT_TOKEN`,
+  `SLACK_SIGNING_SECRET`, and any empty `whatsapp`/`messenger`/`instagram`/`telegram`/`teams`/`livekit`
+  secret field under its `AK_*` name, e.g. `/ak/<prefix>/ak_telegram__bot_token`), `WALLED_API_KEY`, the
+  E2B/Daytona keys and the OpenAI realtime model key need no code — store them in SSM and drop them from
+  `environment_variables`. The full list is in the Secret Resolution docs.
 - **Terraform does not create the parameters** — create each one yourself as a `SecureString`
   (AWS-managed `alias/aws/ssm` key) at `/ak/<prefix>/<key lowercased>`, e.g.
   `aws ssm put-parameter --name /ak/<prefix>/openai_api_key --type SecureString --value sk-...`.
@@ -433,7 +438,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   product_display_name = "AK Serverless"
@@ -484,7 +489,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix             = var.prefix
   region             = var.region
@@ -619,7 +624,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.5"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.10.0"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -632,7 +637,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -775,7 +780,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis]>=0.9.5"   # add the auth extra for oidc, cognito, entra or firebase
+  "agentkernel[openai,api,aws,redis]>=0.10.0"   # add the auth extra for oidc, cognito, entra or firebase
 ]
 ```
 
@@ -788,7 +793,7 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -933,6 +938,8 @@ response_handler = {
   # ...
   environment_variables = { SLACK_BOT_TOKEN = var.slack_bot_token, SLACK_SIGNING_SECRET = var.slack_signing_secret }
 }
+# Or keep them out of the environment: ssm_enabled = true, `secret.provider.type: aws_ssm` in config.yaml,
+# and /ak/<prefix>/slack_bot_token + /ak/<prefix>/slack_signing_secret in SSM (examples/aws-serverless/slack-openai).
 ```
 
 - Package the request handler and the response handler with `agentkernel[aws,<platform>]`; keep the
@@ -980,7 +987,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -1059,7 +1066,7 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix        = var.prefix
   region        = var.region
@@ -1119,7 +1126,7 @@ module "containerized_agents" {
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.5"
+  "agentkernel[openai,api,aws]>=0.10.0"
 ]
 ```
 
@@ -1180,7 +1187,7 @@ registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunne
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { aws = aws, docker = docker }
 
@@ -1243,7 +1250,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -1285,7 +1292,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.9.5"
+  version = "0.10.0"
 
   prefix               = var.prefix
   region               = var.region
@@ -1327,7 +1334,7 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1356,7 +1363,7 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1381,8 +1388,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.9.5"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.9.5"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.10.0"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.10.0"  # for Redis sessions
 ]
 ```
 
@@ -1407,7 +1414,7 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1493,8 +1500,8 @@ also cross-installs Linux wheels so builds work from macOS).
 **Install:**
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.0 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.0 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag> \

@@ -1,7 +1,7 @@
 # OpenAI Agents over WebSocket, queue-based token streaming — see ../README.md
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { aws = aws, docker = docker }
 
@@ -14,12 +14,15 @@ module "containerized_agents" {
 
   create_dynamodb_memory_table = true
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   # REST/IO service (ECSIOHandler): auth, enqueue chat, push chunks over the connection
   rest_service = {
     package_path = "../dist-rest-service"
     command      = ["python", "app_rest_service.py"]
     environment_variables = {
-      OPENAI_API_KEY  = var.openai_api_key
       DEMO_AUTH_TOKEN = var.demo_auth_token
     }
   }
@@ -49,9 +52,6 @@ module "containerized_agents" {
     desired_count = 1
     package_path  = "../dist-agent-runner"
     command       = ["python", "app_agent_runner.py"]
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 
   # Agent Runner auto scaling: scale on SQS backlog per task (BacklogPerTask metric).

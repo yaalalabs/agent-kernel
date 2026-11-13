@@ -139,7 +139,6 @@ def _edge(*agents) -> LiveKitEdgeAdapter:
     edge._background_tasks = set()
     edge._transcript = []
     edge._interrupted = False
-    edge._ending = False
     edge._end_sent = False
     edge._connected = False
     edge._ready = threading.Event()
@@ -1039,6 +1038,15 @@ class TestSessionEnd:
         assert [call["request"].end_session for call in producer.calls] == [False, False, True]
         assert producer.calls[-1]["request"].session_id == "s1"
 
+    def test_the_end_control_is_an_empty_request_that_ends_the_session(self):
+        edge = _edge("coordinator")
+
+        control = edge._enqueue_end()
+
+        assert control.requests == [] and control.end_session is True
+        assert control.session_id == "s1" and control.reply_context == {"session_id": "s1"}
+        assert edge._enqueue(AgentRequestText(prompt="hi")).end_session is False
+
     @pytest.mark.asyncio
     async def test_frames_after_the_end_are_not_staged(self):
         edge = _edge("coordinator")
@@ -1199,23 +1207,6 @@ class TestSessionEnd:
         assert edge._connected
         await edge.stop()
         await asyncio.wait_for(task, 5)
-
-    def test_a_retried_start_begins_from_a_clean_state(self, monkeypatch):
-        _config(monkeypatch)
-        edge = LiveKitEdgeAdapter(session_id="room-r")
-        first = edge._participants[0]
-        edge._participants.append(edge._AgentParticipant("billing", "agent-billing", "t"))
-        edge._by_agent["billing"] = edge._participants[1]
-        edge._greeted.add("human-a")
-        edge._connected = True
-        edge._end_sent = True
-        edge._ending = True
-
-        edge._reset_run_state()
-
-        assert edge._participants == [first] and not edge._by_agent
-        assert not edge._greeted and not edge._connected and not edge._end_sent and not edge._ending
-        assert edge._active is first
 
     @pytest.mark.asyncio
     async def test_start_ends_the_edge_when_no_caller_is_in_the_room(self, monkeypatch):

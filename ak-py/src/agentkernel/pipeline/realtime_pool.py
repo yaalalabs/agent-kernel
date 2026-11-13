@@ -37,6 +37,8 @@ _SEND_TIMEOUT_SECONDS = 10.0
 _IDLE_TIMEOUT_SECONDS = 300.0
 # At shutdown, how long work still on the pool loop may finish before it is cancelled.
 _SHUTDOWN_GRACE_SECONDS = 2.0
+# How often idle connections and stale failure records are swept.
+_SWEEP_INTERVAL_SECONDS = 5.0
 # Reconnect back-off after a failed native session: BASE * 2 ** (failures - 1) seconds, capped at MAX.
 _RECONNECT_BASE_SECONDS = 1.0
 _RECONNECT_MAX_SECONDS = 30.0
@@ -496,6 +498,8 @@ class RealtimeConnectionPool:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._loop_ready = threading.Event()
         self._stopping = threading.Event()
+        # Set on the pool's loop when the process starts shutting down, so the loop wakes at once instead of polling.
+        self._shutdown_wake: asyncio.Event | None = None
 
     def _warn_unchecked_audio(self) -> None:
         """Warn once per realtime agent when the input guardrail is on: it checks typed text only, never caller audio."""
@@ -521,6 +525,8 @@ class RealtimeConnectionPool:
         """Blocking entry point: runs the pool's event loop until shutdown."""
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
+        self._shutdown_wake = asyncio.Event()
+        ThreadRunner.call_on_shutdown(self._wake_on_shutdown, name="realtime-pool-shutdown")
         self._loop_ready.set()
         try:
             self._loop.run_until_complete(self._wait_for_shutdown())
@@ -531,28 +537,42 @@ class RealtimeConnectionPool:
             self._loop.run_until_complete(self._loop.shutdown_asyncgens())
             self._loop.close()
 
-    async def _wait_for_shutdown(self) -> None:
-        last_sweep = time.time()
-        while not ThreadRunner.shutdown_event.is_set():
-            now = time.time()
-            if now - last_sweep > 5.0:
-                last_sweep = now
-                with self._conn_lock:
-                    for session_id in [sid for sid, (_, retry_at) in self._failures.items() if now - retry_at >= _IDLE_TIMEOUT_SECONDS]:
-                        del self._failures[session_id]
-                # Closed and removed under one lock, so a lookup cannot count the eviction as a failure.
-                idle: list[tuple[str, RealtimeConnection]] = []
-                with self._conn_lock:
-                    for session_id, conn in list(self._connections.items()):
-                        if not conn.closed and (now - conn.last_activity_at) > _IDLE_TIMEOUT_SECONDS:
-                            conn.closed = True
-                            del self._connections[session_id]
-                            idle.append((session_id, conn))
+    def _wake_on_shutdown(self) -> None:
+        """Wake the pool's loop from the shutdown watcher thread."""
+        loop, wake = self._loop, self._shutdown_wake
+        if loop is None or wake is None:
+            return
+        try:
+            loop.call_soon_threadsafe(wake.set)
+        except RuntimeError:
+            pass  # the loop has closed: the pool already stopped
 
-                for session_id, conn in idle:
-                    _log.info(f"Realtime session {session_id} idle for > {_IDLE_TIMEOUT_SECONDS}s; evicting.")
-                    conn.close_in_background(self._loop)
-            await asyncio.sleep(0.5)
+    async def _wait_for_shutdown(self) -> None:
+        """Sweep every ``_SWEEP_INTERVAL_SECONDS`` until the process shuts down; shutdown wakes it at once."""
+        assert self._shutdown_wake is not None
+        while not ThreadRunner.shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(self._shutdown_wake.wait(), timeout=_SWEEP_INTERVAL_SECONDS)
+            except asyncio.TimeoutError:
+                self._sweep(time.time())
+
+    def _sweep(self, now: float) -> None:
+        """Forget stale failure records and evict connections idle for longer than ``_IDLE_TIMEOUT_SECONDS``."""
+        with self._conn_lock:
+            for session_id in [sid for sid, (_, retry_at) in self._failures.items() if now - retry_at >= _IDLE_TIMEOUT_SECONDS]:
+                del self._failures[session_id]
+        # Closed and removed under one lock, so a lookup cannot count the eviction as a failure.
+        idle: list[tuple[str, RealtimeConnection]] = []
+        with self._conn_lock:
+            for session_id, conn in list(self._connections.items()):
+                if not conn.closed and (now - conn.last_activity_at) > _IDLE_TIMEOUT_SECONDS:
+                    conn.closed = True
+                    del self._connections[session_id]
+                    idle.append((session_id, conn))
+
+        for session_id, conn in idle:
+            _log.info(f"Realtime session {session_id} idle for > {_IDLE_TIMEOUT_SECONDS}s; evicting.")
+            conn.close_in_background(self._loop)
 
     async def _close_all(self) -> None:
         """Close every connection, including one a consumer thread registered while this ran."""

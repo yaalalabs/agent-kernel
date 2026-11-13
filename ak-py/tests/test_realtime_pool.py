@@ -1422,3 +1422,30 @@ class TestBrokerRealtimeUserGate:
         finally:
             ThreadRunner.shutdown_event.set()
             thread.join(timeout=5)
+
+
+class TestPoolLoop:
+    def test_shutdown_wakes_the_pool_at_once(self, monkeypatch):
+        monkeypatch.setattr("agentkernel.pipeline.realtime_pool._SWEEP_INTERVAL_SECONDS", 30)
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        assert pool._loop_ready.wait(5)
+
+        ThreadRunner.shutdown_event.set()
+        thread.join(5)  # far below the 30 s sweep interval: the shutdown woke the loop
+
+        assert not thread.is_alive()
+
+    def test_the_loop_sweeps_on_its_interval(self, monkeypatch):
+        monkeypatch.setattr("agentkernel.pipeline.realtime_pool._SWEEP_INTERVAL_SECONDS", 0.02)
+        pool = RealtimeConnectionPool.initialize()
+        swept = threading.Event()
+        monkeypatch.setattr(pool, "_sweep", lambda now: swept.set())
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        try:
+            assert swept.wait(5)
+        finally:
+            ThreadRunner.shutdown_event.set()
+            thread.join(5)

@@ -263,6 +263,22 @@ class TestRestAsync:
         assert "principal" not in json.loads(message.body)
 
 
+class TestInternalFieldsRejected:
+    """#884: a client cannot set the fields internal producers use, so a resume decision cannot be dropped."""
+
+    @pytest.mark.parametrize(
+        "field, value", [("requests", [{"type": "text", "prompt": "something else"}]), ("scheduled_task_id", "t1"), ("scheduled_time", "x")]
+    )
+    def test_rejected_with_422_before_anything_is_enqueued(self, monkeypatch, dummy_agent, field, value):
+        _configure(monkeypatch, mode="rest_async")
+        resume = {"decisions": [{"id": "call_1", "payload": "Store credit"}]}
+
+        response = _client().post(CHAT, json={"session_id": "s1", "agent": AGENT_NAME, "resume": resume, field: value})
+
+        assert response.status_code == 422
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
+
+
 class TestStreamSSE:
     def test_stream_yields_sse_chunks(self, monkeypatch, dummy_agent, workers):
         _configure(monkeypatch, mode="rest_sync", message_type="delta")

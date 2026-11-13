@@ -11,13 +11,15 @@ from livekit import api, rtc
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
+from ...secret import SecretManager
 from ..adapter.base import EdgeLifecycleAdapter, EdgeLifecycleEvent, StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
 
-INTEGRATION_NAME = "livekit"
+NAME = "livekit"
+WEBHOOK_PATH = "/livekit/webhook"
 # Cap on inbound requests staged for the sender task (~6 s of audio); only reached when the broker is slow or down.
-_MAX_PENDING_REQUESTS = 64
+MAX_PENDING_REQUESTS = 64
 
 
 class LiveKitEdgeAdapter(StatefulEdgeAdapter):
@@ -28,7 +30,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
     speaking is unmuted, the rest stay muted. Override :meth:`opening_prompt` to change how a call opens.
     """
 
-    name = INTEGRATION_NAME
+    name = NAME
     # Set on every agent participant: "true" on the one speaking, so a client UI can show who has the call.
     ACTIVE_ATTRIBUTE = "ak.active"
     # Every agent participant's identity starts with this, which is how the lifecycle adapter tells them from callers.
@@ -104,8 +106,9 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         self._input_batch_ms = config.execution.realtime.input_batch_ms
         self._input_batch_bytes = int(EDGE_SAMPLE_RATE * 2 * (self._input_batch_ms / 1000))
 
-        self._api_key = api_key or config.livekit.api_key
-        self._api_secret = api_secret or config.livekit.api_secret
+        # An empty field falls back to the secret provider, keyed by the field's own AK_* name.
+        self._api_key = api_key or config.livekit.api_key or self._provider_credential("AK_LIVEKIT__API_KEY")
+        self._api_secret = api_secret or config.livekit.api_secret or self._provider_credential("AK_LIVEKIT__API_SECRET")
         # The first participant hears the caller and speaks for the starting agent.
         self._participants = [self._single_participant()]
         self._by_agent: dict[str, LiveKitEdgeAdapter._AgentParticipant] = {}
@@ -132,12 +135,26 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         self._sender_task: asyncio.Task | None = None
         self._transcript: list[str] = []
         self._interrupted = False
-        self._ending = False
+        # Set once the end-of-session control is under way: no input is staged after it.
         self._end_sent = False
+
+    @staticmethod
+    def _provider_credential(key: str) -> str:
+        """``key`` from the secret provider, or "" when it has none.
+
+        :raises SecretError: If the provider failed.
+        """
+        return SecretManager.current().get(key, default="")
+
+    @staticmethod
+    def _missing_credentials_message() -> str:
+        """Names every place the API key and secret can be set, for the error a missing one raises."""
+        secrets = SecretManager.current()
+        return f"set {secrets.describe('AK_LIVEKIT__API_KEY', 'livekit.api_key')}; and {secrets.describe('AK_LIVEKIT__API_SECRET', 'livekit.api_secret')}"
 
     def _single_participant(self) -> _AgentParticipant:
         if not (self._api_key and self._api_secret):
-            raise ValueError("Both 'api_key' and 'api_secret' must be provided in code or config")
+            raise ValueError(f"Both 'api_key' and 'api_secret' must be provided in code or config: {self._missing_credentials_message()}")
         name = self.agent or "general"
         return self._AgentParticipant(self.agent, f"{self.AGENT_IDENTITY_PREFIX}{name}", self._mint_token(name))
 
@@ -158,12 +175,11 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         On a failed join the participants leave before the error is raised: the edge runner does not call :meth:`stop` then.
         """
         _log.info(f"Connecting to LiveKit room at {self.room_url}")
-        self._reset_run_state()
 
         self._stop_event = asyncio.Event()
         self._loop = asyncio.get_running_loop()
         self._init_producer()
-        self._pending = asyncio.Queue(maxsize=_MAX_PENDING_REQUESTS)
+        self._pending = asyncio.Queue(maxsize=MAX_PENDING_REQUESTS)
         self._sender_task = asyncio.create_task(self._drain_requests())
 
         already_here: list[str] = []
@@ -194,26 +210,6 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         await self._stop_event.wait()
         # One participant's room dropping ends the edge; the others must not stay behind in the room.
         await self._release()
-
-    def _reset_run_state(self) -> None:
-        """Start from a clean state, as the edge runner retries ``start()`` on this instance after a failure.
-
-        Only the first participant is kept: the team joins again when the pool announces it.
-        """
-        self._participants = self._participants[:1]
-        self._by_agent.clear()
-        self._joining.clear()
-        self._greeted.clear()
-        self._warned_agents.clear()
-        self._active = self._participants[0]
-        self._speaking_agent = None
-        with self._team_lock:
-            # ``_pending_team`` stays: an announcement can arrive before the first ``start()`` runs.
-            self._connected = False
-        self._transcript.clear()
-        self._interrupted = False
-        self._ending = False
-        self._end_sent = False
 
     def _new_room(self, listen: bool) -> "rtc.Room":
         """A room for one participant, with its handlers registered before it connects.
@@ -270,7 +266,6 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         if self._end_sent or self._producer is None or not self._connected:
             return
         self._end_sent = True
-        self._ending = True
         if self._pending is not None and self._sender_task is not None:
             try:
                 await asyncio.wait_for(self._pending.join(), timeout=self.SESSION_END_TIMEOUT_SECONDS)
@@ -282,7 +277,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
                 return
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue(), self.source),
+                asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue_end(), self.source),
                 timeout=self.SESSION_END_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
@@ -301,8 +296,8 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
     def _on_participant_disconnected(self, participant: "rtc.RemoteParticipant") -> None:
         """A participant left; the last caller leaving stops the edge, which ends the session.
 
-        The edge ends its own call rather than waiting for ``room_finished``: with several IOHandler replicas that webhook
-        can reach a process that never hosted this room.
+        The edge ends its own call rather than waiting for ``room_finished``: its own agent participants keep the room
+        open, so LiveKit would not finish it while the edge is still in it.
         """
         if participant.identity in self._own_identities or self._stop_event is None:
             return
@@ -399,7 +394,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
             ``realtime:livekit`` principal's subject with the API key id as its scope (spec #603,
             section 8.4); None stages it anonymous.
         """
-        if self._producer is None or self._pending is None or self._ending:
+        if self._producer is None or self._pending is None or self._end_sent:
             return
 
         try:
@@ -674,19 +669,21 @@ class LiveKitLifecycleAdapter(EdgeLifecycleAdapter):
     choose the rooms, or :meth:`create_edge` to build the edge. Hosted by ``EdgeLifecycleRESTRequestHandler``.
     """
 
-    name = "livekit"
-    webhook_path = "/livekit/webhook"
+    name = NAME
+    webhook_path = WEBHOOK_PATH
 
     def __init__(self, api_key: str | None = None, api_secret: str | None = None):
         """
-        :param api_key: The LiveKit API key that signs the webhooks; defaults to ``livekit.api_key``.
+        :param api_key: The LiveKit API key that signs the webhooks; defaults to ``livekit.api_key``, then the secret provider.
         :param api_secret: The LiveKit API secret; defaults to ``livekit.api_secret``.
         :raises ValueError: If the key or secret is missing.
         """
         config = AKConfig.get().livekit
-        key, secret = api_key or config.api_key, api_secret or config.api_secret
+        # An empty field falls back to the secret provider, as the edge's own credentials do.
+        key = api_key or config.api_key or LiveKitEdgeAdapter._provider_credential("AK_LIVEKIT__API_KEY")
+        secret = api_secret or config.api_secret or LiveKitEdgeAdapter._provider_credential("AK_LIVEKIT__API_SECRET")
         if not (key and secret):
-            raise ValueError("LiveKitLifecycleAdapter needs the LiveKit API key and secret (AK_LIVEKIT__API_KEY, AK_LIVEKIT__API_SECRET)")
+            raise ValueError(f"LiveKitLifecycleAdapter needs the LiveKit API key and secret: {LiveKitEdgeAdapter._missing_credentials_message()}")
         self._api_key, self._api_secret = key, secret
         self._receiver = api.WebhookReceiver(api.TokenVerifier(key, secret))
 

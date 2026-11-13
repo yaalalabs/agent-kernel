@@ -227,3 +227,24 @@ class TestRun:
             stop_task_on_failure=False,
         )
         ThreadRunner.run([task])  # should not raise
+
+
+class TestCallOnShutdown:
+    def test_the_callback_runs_once_shutdown_starts(self):
+        called = threading.Event()
+        ThreadRunner.call_on_shutdown(called.set, name="watcher")
+
+        assert not called.wait(0.05)
+        ThreadRunner.shutdown_event.set()
+
+        assert called.wait(5)
+
+    def test_a_failing_callback_is_logged_not_raised(self):
+        def boom():
+            raise RuntimeError("boom")
+
+        thread = ThreadRunner.call_on_shutdown(boom, name="watcher")
+        ThreadRunner.shutdown_event.set()
+        thread.join(5)
+
+        assert not thread.is_alive()
