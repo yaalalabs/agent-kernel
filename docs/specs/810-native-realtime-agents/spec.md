@@ -321,9 +321,9 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
 
 - `GatewayRunner` becomes `_EdgeRunner`, private, moved from `gateway.py` (deleted) into `lifecycle.py` beside its one caller; removed from
   `integration/adapter/__init__.py`'s exports, and `IOHandler.run` loses its `gateways=` parameter and thread loop. `EdgeLifecycleRESTRequestHandler` is the only host; every example mounts it.
-- A per-instance `threading.Event`, set by `stop()`; `_run_until_shutdown` loops while neither it nor
-  `ThreadRunner.shutdown_event` is set, then runs the same graceful stop (adapter `stop()`, bounded by
-  `GRACEFUL_STOP_TIMEOUT_SECONDS`). `start()` then unregisters the adapter as before.
+- A per-instance `threading.Event`, set by `stop()`, which also wakes the edge's loop through `call_soon_threadsafe`;
+  `_run_until_stopped` waits, without polling, for the adapter's `start()` to end or for that wake-up, then runs the same
+  graceful stop (adapter `stop()`, bounded by `GRACEFUL_STOP_TIMEOUT_SECONDS`). `start()` then unregisters the adapter as before.
 - A stop requested before the loop begins (or a shutdown already under way) returns at once, without calling the
   adapter's `start()`: an adapter cannot stop what it has not begun, so it would otherwise join and hang until the
   forced cancel.

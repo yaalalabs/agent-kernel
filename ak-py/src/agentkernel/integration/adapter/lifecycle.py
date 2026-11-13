@@ -29,11 +29,11 @@ class _EdgeRunner:
         """
         if adapter.source is not Source.REALTIME:
             raise ValueError(
-                f"{type(adapter).__name__} is a {adapter.source} adapter: host it with WebhookRESTRequestHandler or PollerRunner, not EdgeLifecycleRESTRequestHandler"
+                f"{type(adapter).__name__}.source is {adapter.source}: an EdgeLifecycleAdapter's create_edge() must return a realtime StatefulEdgeAdapter"
             )
         self._adapter = adapter
         self._stop_requested = threading.Event()
-        # Set from ``stop()`` on another thread to wake the runner at once; created on the edge's loop by ``_run_until_shutdown``.
+        # Set from ``stop()`` on another thread to wake the runner at once; created on the edge's loop by ``_run_until_stopped``.
         self._loop: asyncio.AbstractEventLoop | None = None
         self._wake: asyncio.Event | None = None
 
@@ -54,15 +54,15 @@ class _EdgeRunner:
 
     def start(self) -> None:
         """Register the adapter by its ``session_id``, then run the edge's blocking loop."""
-        session_id = getattr(self._adapter, "session_id", None)
+        session_id = self._adapter.session_id
         StatefulEdgeRegistry.register(self._adapter, session_id=session_id)
         try:
-            run_async_sync(self._run_until_shutdown())
+            run_async_sync(self._run_until_stopped())
         finally:
             if session_id:
                 StatefulEdgeRegistry.unregister(session_id, self._adapter)
 
-    async def _run_until_shutdown(self) -> None:
+    async def _run_until_stopped(self) -> None:
         # Stopped before it started (a connection that ended at once): an adapter cannot stop what it has not begun.
         if ThreadRunner.shutdown_event.is_set() or self._stop_requested.is_set():
             self._log.info(f"Edge {self._adapter.name} stopped before it started")
@@ -93,11 +93,7 @@ class _EdgeRunner:
             await asyncio.wait_for(self._adapter.stop(), timeout=self.GRACEFUL_STOP_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
             self._log.warning(f"Edge {self._adapter.name} stop() did not return within {self.GRACEFUL_STOP_TIMEOUT_SECONDS}s; cancelling")
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            await self._cancel(task)
             return
         except Exception:
             self._log.exception(f"Error calling stop() on Edge {self._adapter.name}")
@@ -106,11 +102,16 @@ class _EdgeRunner:
             await asyncio.wait_for(asyncio.shield(task), timeout=self.GRACEFUL_STOP_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
             self._log.warning(f"Edge {self._adapter.name} did not stop within {self.GRACEFUL_STOP_TIMEOUT_SECONDS}s; cancelling")
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            await self._cancel(task)
+
+    @staticmethod
+    async def _cancel(task: asyncio.Task) -> None:
+        """Cancel the edge's task and wait for it to finish."""
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
@@ -139,7 +140,7 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
         if not adapter.webhook_path:
             raise ValueError(f"{type(adapter).__name__} must declare a webhook_path for its platform's lifecycle webhooks")
         self._adapter = adapter
-        self._runners: dict[str, tuple[_EdgeRunner, threading.Thread]] = {}
+        self._runners: dict[str, _EdgeRunner] = {}
         # Sessions whose start arrived while their edge was ending: a new edge starts once that one has ended.
         self._restart: set[str] = set()
         self._lock = threading.Lock()
@@ -178,14 +179,14 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
                 self._log.info(f"Shutting down; not starting an edge: integration={self._adapter.name}, session_id={session_id}")
                 return
             if session_id in self._runners:
-                if self._runners[session_id][0].adapter.ending:
+                if self._runners[session_id].adapter.ending:
                     self._restart.add(session_id)
                 return
             if self._shutdown_watcher is None:
                 self._shutdown_watcher = ThreadRunner.call_on_shutdown(self._stop_all, name=f"{self._adapter.name}-shutdown")
             runner = _EdgeRunner(self._adapter.create_edge(session_id))
             thread = threading.Thread(target=self._run, args=(session_id, runner), daemon=True, name=f"{self._adapter.name}-{session_id}")
-            self._runners[session_id] = (runner, thread)
+            self._runners[session_id] = runner
         self._log.info(f"Starting an edge: integration={self._adapter.name}, session_id={session_id}")
         thread.start()
 
@@ -197,7 +198,7 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
         finally:
             restart = False
             with self._lock:
-                if self._runners.get(session_id, (None,))[0] is runner:
+                if self._runners.get(session_id) is runner:
                     del self._runners[session_id]
                     restart = session_id in self._restart
                     self._restart.discard(session_id)
@@ -213,7 +214,7 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
         Edges started after this reads the runners are refused by ``_start``, which checks the same flag under the same lock.
         """
         with self._lock:
-            runners = [runner for runner, _ in self._runners.values()]
+            runners = list(self._runners.values())
         self._log.info(f"Shutting down; stopping {len(runners)} live edge(s): integration={self._adapter.name}")
         for runner in runners:
             runner.stop()
@@ -221,6 +222,6 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
     def _stop(self, session_id: str) -> None:
         with self._lock:
             self._restart.discard(session_id)
-            entry = self._runners.get(session_id)
-        if entry is not None:
-            entry[0].stop()
+            runner = self._runners.get(session_id)
+        if runner is not None:
+            runner.stop()

@@ -297,7 +297,7 @@ def test_rejects_a_non_realtime_source():
     class WebhookGateway(FakeStatefulEdgeAdapter):
         source = Source.WEBHOOK
 
-    with pytest.raises(ValueError, match="not EdgeLifecycleRESTRequestHandler"):
+    with pytest.raises(ValueError, match="create_edge\\(\\) must return a realtime StatefulEdgeAdapter"):
         _EdgeRunner(WebhookGateway())
 
 
