@@ -125,6 +125,7 @@ def get_weather(city: str) -> str:
     runtime = ctx.runtime      # The runtime instance
     agent = ctx.agent          # The agent making the tool call
     requests = ctx.requests    # The list of requests being processed
+    principal = ctx.principal  # Who the run acts as (the authenticated caller, or anonymous)
 
     return f"Weather in {city}: sunny, 25°C"
 ```
@@ -140,10 +141,13 @@ The `ToolContext` is automatically set by the framework runner before each agent
 | `agent` | `Agent` | The agent instance making the tool call |
 | `session` | `Session` | The session associated with the current invocation |
 | `requests` | `list[AgentRequest]` | The list of requests being processed |
+| `principal` | `Principal \| None` | The principal the run acts as: the authenticated caller with the agent as its `actor`, or the anonymous principal when nobody authenticated; `None` outside a run |
 
 :::note
 `ToolContext.get()` raises a `RuntimeError` if called outside of an agent invocation (i.e., when no context has been set).
 :::
+
+`ctx.principal` is how a tool learns who is calling: its `subject`, `groups`, `roles` and `claims` come from the identity provider configured in the `identity` block, and `actor` is the agent acting on the caller's behalf. See [Identity and access](../advanced/identity-and-access.md).
 
 ## Binding Multiple Tools
 

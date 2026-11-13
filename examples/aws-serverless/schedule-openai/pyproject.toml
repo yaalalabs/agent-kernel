@@ -25,6 +25,11 @@ response_handler = [
 agent_runner = [
     "agentkernel[aws,openai,cron]>=0.9.5",
 ]
+# The authorizer only authenticates: the `aws` extra carries the API Gateway authorizer and the
+# static identity provider. Add `auth` here to validate OIDC tokens (Auth0, Keycloak, Okta).
+authorizer = [
+    "agentkernel[aws]>=0.9.5",
+]
 
 [dependency-groups]
 dev = [

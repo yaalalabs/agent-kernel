@@ -64,6 +64,7 @@ def _inbound(agent="helper", max_file_size=10 * 1024 * 1024):
     adapter._agent = agent
     adapter._max_file_size = max_file_size
     adapter._bot_id = BOT_ID
+    adapter._team_id = None
     adapter._app = MagicMock()
     adapter._app.client.chat_postMessage = AsyncMock()
     adapter._app.client.token = "xoxb-test-token"
@@ -77,7 +78,7 @@ def _outbound(acknowledgement=None):
 
 
 def _event(text=f"hello <@{BOT_ID}>", user="U123", channel="C9", ts="111.222", thread_ts=None, files=None):
-    event = {"user": user, "text": text, "channel": channel, "ts": ts}
+    event = {"user": user, "text": text, "channel": channel, "ts": ts, "team": "T1"}
     if thread_ts:
         event["thread_ts"] = thread_ts
     if files:
@@ -87,12 +88,23 @@ def _event(text=f"hello <@{BOT_ID}>", user="U123", channel="C9", ts="111.222", t
 
 class TestParse:
     @pytest.mark.asyncio
+    async def test_an_event_without_a_team_falls_back_to_the_workspace_auth_test_named(self):
+        adapter = _inbound()
+        adapter._team_id = "T9"
+        event = _event()
+        del event["team"]
+
+        assert (await adapter._to_request(event)).namespace == "T9"
+
+    @pytest.mark.asyncio
     async def test_a_message_becomes_a_normalized_request(self):
         request = await _inbound()._to_request(_event(thread_ts="000.111"))
 
         assert request.prompt == "hello"
         assert request.agent == "helper"
         assert request.user_id == "U123"
+        # The workspace is the scope the user id is unique within (#603).
+        assert request.namespace == "T1"
         assert request.group_id == "C9"
         # Slack's session key is the thread, so a threaded reply continues the conversation.
         assert request.session_id == "000.111"

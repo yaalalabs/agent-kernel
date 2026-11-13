@@ -10,9 +10,11 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Itera
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
+from pydantic import ValidationError
+
 from .event import StreamEvent
 from .hooks import PostHook, PreHook
-from .model import AgentReply, AgentRequest, ResumeDecision
+from .model import AgentReply, AgentRequest, Principal, ResumeDecision, SessionOwner, ToolFilter
 from .util.key_value_cache import KeyValueCache
 from .util.picklable import first_unpicklable_entry
 
@@ -23,6 +25,12 @@ if TYPE_CHECKING:  # pragma: no cover: typing only; avoids a base <-> realtime i
     from .realtime import RealtimeRunner
 
 _log = logging.getLogger("ak.core.runner")
+
+# Volatile-cache keys under which Runtime publishes the run's identity. Private to this module: the
+# Session accessors below are the only spellings, and the ``ak.`` prefix makes the keys read-only
+# for application code (see KeyValueCache).
+PRINCIPAL_CACHE_KEY = "ak.principal"
+TOOL_FILTER_CACHE_KEY = "ak.tool_filter"
 
 
 class Session:
@@ -44,6 +52,11 @@ class Session:
     (i.e., not persisted across runtime invocations) or non-volatile (i.e., persisted across runtime
     invocations). These caches can be used by application code to store data that is not part of the
     agent context but needs to be retained across multiple interactions within the same session.
+
+    Identity is read through accessors, never through the caches' keys: ``get_principal()`` and
+    ``get_tool_filter()`` return what the runtime published for the current run, and
+    ``get_owner()`` the principal the session was first used by. The runtime writes them through
+    the private ``_publish_run``, ``_unpublish_run`` and ``_record_owner``.
     """
 
     class Keys(Enum):
@@ -54,6 +67,9 @@ class Session:
         VOLATILE_CACHE = "v_cache"
         NON_VOLATILE_CACHE = "nv_cache"
         FRAMEWORK_CONTEXT = "framework_context"
+        # The durable owner record (a SessionOwner as plain data), persisted with the session by
+        # every store and kept by clear(): it is identity, not conversation state.
+        OWNER = "owner"
 
     current_session: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_session", default=None)
 
@@ -218,6 +234,70 @@ class Session:
         """
         self.delete(Session.Keys.FRAMEWORK_CONTEXT.value)
 
+    def get_principal(self) -> Principal | None:
+        """
+        Returns the principal the current run acts as, published by Runtime for the run's duration:
+        the authenticated user with the agent as its actor, or the anonymous principal when the
+        surface authenticated nobody.
+        :return: The run's Principal, or None outside a run.
+        """
+        return cast(Principal | None, self.get_volatile_cache().get(PRINCIPAL_CACHE_KEY))
+
+    def get_tool_filter(self) -> ToolFilter | None:
+        """
+        Returns the tool decision the access gate published for the current run.
+        :return: The run's ToolFilter, or None when no authorization block gates the run or outside a run.
+        """
+        return cast(ToolFilter | None, self.get_volatile_cache().get(TOOL_FILTER_CACHE_KEY))
+
+    def get_owner(self) -> SessionOwner | None:
+        """
+        Returns the principal this session was first used by, recorded for ownership checks.
+        :return: The SessionOwner, or None when no authenticated principal has run here yet.
+        """
+        stored = self.get(Session.Keys.OWNER.value)
+        if stored is None:
+            return None
+        if isinstance(stored, SessionOwner):
+            return stored
+        try:
+            return SessionOwner.model_validate(stored)
+        except ValidationError as exc:
+            _log.warning(f"Session '{self._id}': the stored owner is unreadable and is ignored. Error: {exc}")
+            return None
+
+    def _publish_run(self, principal: Principal, tool_filter: ToolFilter | None) -> None:
+        """
+        Publishes the identity of the run that is starting. Called by Runtime, and by the realtime
+        connection pool for the tool calls it owns; nothing else writes these keys.
+        :param principal: The principal the run acts as.
+        :param tool_filter: The gate's tool decision, or None when the run is not gated.
+        """
+        cache = self.get_volatile_cache()
+        cache._set_reserved(PRINCIPAL_CACHE_KEY, principal)
+        if tool_filter is None:
+            cache._delete_reserved(TOOL_FILTER_CACHE_KEY)
+        else:
+            cache._set_reserved(TOOL_FILTER_CACHE_KEY, tool_filter)
+
+    def _unpublish_run(self) -> None:
+        """
+        Removes the published identity when the run ends, so nothing is attributed to a later run.
+        """
+        cache = self.get_volatile_cache()
+        cache._delete_reserved(PRINCIPAL_CACHE_KEY)
+        cache._delete_reserved(TOOL_FILTER_CACHE_KEY)
+
+    def _record_owner(self, owner: SessionOwner) -> None:
+        """
+        Records the session's owner the first time; a later call is a no-op. Stored as plain data
+        rather than a model instance for the reason PausedRunState gives: a pickled model would
+        carry its class path into every persisted session.
+        :param owner: The principal to record.
+        """
+        if self.get(Session.Keys.OWNER.value) is None:
+            self.set(Session.Keys.OWNER.value, owner.model_dump())
+
     def set(self, key: str, value: Any) -> Any:
         """
         Sets a session data object for the specified key.
@@ -237,14 +317,20 @@ class Session:
 
     def clear(self) -> None:
         """
-        Clears all session data objects.
+        Clears all session data objects. Two things are kept because they are identity, not
+        conversation state: the owner record, and the run publication in the volatile cache (the
+        principal and tool filter a tool calling this mid-run still acts under; Runtime's finally
+        removes them when the run ends).
         """
+        owner = self.get(Session.Keys.OWNER.value)
         self._data = {
             Session.Keys.VOLATILE_CACHE.value: self.get_volatile_cache(),
             Session.Keys.NON_VOLATILE_CACHE.value: self.get_non_volatile_cache(),
         }
+        if owner is not None:
+            self._data[Session.Keys.OWNER.value] = owner
         self.get_volatile_cache().clear()
-        self.get_non_volatile_cache().clear()
+        self.get_non_volatile_cache()._clear_all()
 
 
 class Runner(ABC):

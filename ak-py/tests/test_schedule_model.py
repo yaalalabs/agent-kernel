@@ -69,7 +69,6 @@ class TestChatRequestEnvelope:
             {
                 "prompt": "send the weekly report",
                 "session_id": "s1",
-                "user_id": "u1",
                 "schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"},
             }
         )

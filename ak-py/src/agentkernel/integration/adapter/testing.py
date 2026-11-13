@@ -119,6 +119,13 @@ class IntegrationAdapterContract:
         assert request.request_id == self.expected_request_id
 
     @pytest.mark.asyncio
+    async def test_parse_names_the_platform_scope(self):
+        """The scope the sender id is unique within (workspace, tenant, page, bot, inbox) becomes the
+        principal's namespace (#603); a platform id alone could collide across installations."""
+        [request] = (await self._parse_valid()).requests
+        assert request.namespace, "parse must name the platform scope as the request's namespace"
+
+    @pytest.mark.asyncio
     async def test_parse_produces_a_runnable_request_list(self):
         [request] = (await self._parse_valid()).requests
         # ChatService rejects an empty prebuilt list: there would be nothing for the agent to read.

@@ -8,7 +8,8 @@ without them the A2A catalog and the MCP tool list would be empty. Both processe
 agents from app_agents.py. Nothing here runs a model, so no OpenAI key is set.
 
 For the WebSocket execution mode (async) the chart adds a separate gateway Deployment
-running WebSocketGateway.run(auth_validator=...); the io handler's API stays plain REST.
+running WebSocketGateway.run(); the io handler's API stays plain REST. Both authenticate through
+the identity provider in config.yaml, which is why this process needs DEMO_AUTH_TOKEN too.
 """
 
 from agentkernel.openai import OpenAIModule

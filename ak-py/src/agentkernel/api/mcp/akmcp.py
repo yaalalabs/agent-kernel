@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.tools.tool import ToolResult
 
@@ -10,6 +11,7 @@ from ...core import Agent
 from ...core.config import AKConfig
 from ...core.model import BaseRunRequest
 from ...core.runtime import Runtime
+from .auth import AKAccessToken, AKMCPAuthProvider
 
 if TYPE_CHECKING:  # pragma: no cover: annotation only; api reaches pipeline lazily
     from ...pipeline.request_handler import RestHandler
@@ -82,7 +84,10 @@ class MCP:
             from ...pipeline.request_handler import ReplyTimeoutError
 
             await ctx.info(f"Executing agent '{self.agent_name}' with prompt: {prompt} with session_id: {session_id}")
-            body = BaseRunRequest(prompt=prompt, agent=self.agent_name, session_id=session_id)
+            # The principal the verifier put on this call's access token; a server built without
+            # auth, or a token another verifier minted, authenticated nobody we know.
+            principal = AKAccessToken.principal_of(get_access_token())
+            body = BaseRunRequest(prompt=prompt, agent=self.agent_name, session_id=session_id, principal=principal)
             try:
                 reply = await MCP.get_client().request(body, protocol=MCP.PROTOCOL)
             except ReplyTimeoutError as e:
@@ -133,7 +138,8 @@ class MCP:
         if cls._built or not AKConfig.get().mcp.enabled:
             return
         if cls._fastmcp is None:
-            cls._fastmcp = FastMCP("Agent Kernel FastMCP Instance")
+            # None without an identity block: MCP stays open and every call runs anonymous.
+            cls._fastmcp = FastMCP("Agent Kernel FastMCP Instance", auth=AKMCPAuthProvider.from_config())
         if AKConfig.get().mcp.expose_agents:
             agents: dict[str, Agent] = Runtime.current().agents()
             for name, agent in agents.items():

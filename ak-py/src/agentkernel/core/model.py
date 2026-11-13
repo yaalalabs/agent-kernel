@@ -1,8 +1,8 @@
 import json
 import uuid
 from collections.abc import Callable
-from enum import Enum
-from typing import Annotated, Any, Literal
+from enum import Enum, StrEnum
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -356,10 +356,256 @@ class StreamChunk(BaseModel):
     error: str | None = None
 
 
+class AccessLevel(StrEnum):
+    """The capability tier a principal drives an agent at: ``read`` < ``write`` < ``admin``.
+
+    Levels are cumulative, so a principal granted ``write`` may use every tool tiered ``read`` or
+    ``write``. The order is defined over the three members only: comparing a level with a plain
+    string is refused rather than falling back to alphabetical order, which would put ``admin``
+    below ``read``.
+    """
+
+    READ = "read"
+    WRITE = "write"
+    ADMIN = "admin"
+
+    @property
+    def rank(self) -> int:
+        """The position of this level in the capability order, lowest first."""
+        return _ACCESS_LEVEL_RANK[self]
+
+    def _rank_of(self, other: object) -> int:
+        if not isinstance(other, AccessLevel):
+            raise TypeError(f"'{type(other).__name__}' cannot be ordered against AccessLevel; compare AccessLevel members")
+        return other.rank
+
+    def __lt__(self, other: object) -> bool:
+        return self.rank < self._rank_of(other)
+
+    def __le__(self, other: object) -> bool:
+        return self.rank <= self._rank_of(other)
+
+    def __gt__(self, other: object) -> bool:
+        return self.rank > self._rank_of(other)
+
+    def __ge__(self, other: object) -> bool:
+        return self.rank >= self._rank_of(other)
+
+
+_ACCESS_LEVEL_RANK: dict[AccessLevel, int] = {AccessLevel.READ: 0, AccessLevel.WRITE: 1, AccessLevel.ADMIN: 2}
+
+ANONYMOUS_PROVIDER = "anonymous"
+
+
+class Principal(BaseModel):
+    """Who a run acts as, established by the surface that authenticated the request.
+
+    subject: str : the stable identifier the identity provider resolved (an OIDC ``sub``, a
+        static-provider subject, a messaging platform's sender id)
+    kind: Literal["user", "agent", "service"] : what the subject is
+    provider: str : the identity provider's short name, ``messaging:<platform>`` or
+        ``realtime:<gateway>`` for an edge, or ``anonymous``
+    namespace: str | None : the scope the subject is unique within (an OIDC issuer, ``static``,
+        a platform scope such as a Slack team id); ``None`` only for the anonymous principal
+    groups, roles: list[str] : facts from the provider, and the roles a configured role mapper
+        derived from them; Agent Kernel stores neither
+    claims: dict[str, Any] : provider-specific facts kept for authorizers and tools
+    actor: Principal | None : the party acting on the subject's behalf (the agent running for the
+        user)
+    credential_ref: str | None : the handle under which the inbound credential is retained; never
+        the credential itself
+
+    The model is frozen: a hook or tool holding a principal cannot mutate it, and the copy helpers
+    are what the runtime and the surfaces use to derive one.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # Provider prefixes of the edge adapters whose sessions are the platform's own conversations,
+    # shared by everyone in them: the owner such a principal records binds the session to its
+    # platform scope, and the ownership gate admits any principal from the same provider and
+    # namespace rather than that one sender.
+    SHARED_CHANNEL_PREFIXES: ClassVar[tuple[str, ...]] = ("messaging:", "realtime:")
+
+    # The stable identifier the provider resolved: an OIDC ``sub``, a static-provider subject, a
+    # messaging platform's sender id. It is unique only within ``namespace``, never on its own.
+    subject: str
+    # What the subject is. A run's principal is the user; the agent running on their behalf is its
+    # ``actor``. An agent or service is a subject of its own only when it calls in directly.
+    kind: Literal["user", "agent", "service"] = "user"
+    # Who vouched for the subject: the configured provider's short name (``oidc``, ``cognito``,
+    # ``entra``, ``firebase``, ``static``), ``messaging:<platform>`` or ``realtime:<gateway>`` for
+    # an edge adapter, or ``anonymous`` when nothing authenticated the request.
+    provider: str
+    # The scope within which ``subject`` is unique. Every provider sets it from whatever issued the
+    # subject, so the same subject string under two namespaces is two different principals:
+    #   oidc / cognito / entra / firebase   the token's issuer (``iss``)
+    #   static                              the literal ``"static"``
+    #   messaging:slack                     the workspace's team id
+    #   messaging:teams                     the tenant id
+    #   messaging:gmail                     the inbox address the poller reads
+    #   messaging:whatsapp                  the business ``phone_number_id``
+    #   messaging:messenger / instagram     the page id of the delivery
+    #   messaging:telegram                  the bot id
+    #   realtime:livekit                    the API key id
+    # Ownership checks compare ``namespace`` and ``subject`` together, and the omnichannel link
+    # (#243) keys a person on provider + namespace + subject. ``None`` only for the anonymous
+    # principal.
+    namespace: str | None = None
+    # Group memberships exactly as the provider reported them (a ``groups`` claim, Cognito's
+    # ``cognito:groups``). Agent Kernel never stores or edits them.
+    groups: list[str] = Field(default_factory=list)
+    # Roles the configured role mapper derived from the provider's facts; empty without a mapper.
+    roles: list[str] = Field(default_factory=list)
+    # Provider-specific facts kept verbatim for authorizers and tools (selected token claims, a
+    # Gmail ``Authentication-Results`` header).
+    claims: dict[str, Any] = Field(default_factory=dict)
+    # The party acting on the subject's behalf (RFC 8693's ``act`` claim): during a run, the agent
+    # principal (``kind="agent"``, provider ``agentkernel``), set by Runtime, never by a surface.
+    actor: "Principal | None" = None
+    # The handle the inbound credential is retained under in the credential store. The token
+    # itself never rides on the principal, a queue body or a log line.
+    credential_ref: str | None = None
+
+    @classmethod
+    def anonymous(cls) -> "Principal":
+        """The principal of a request no provider authenticated."""
+        return cls(subject=ANONYMOUS_PROVIDER, provider=ANONYMOUS_PROVIDER)
+
+    @property
+    def is_anonymous(self) -> bool:
+        return self.provider == ANONYMOUS_PROVIDER
+
+    @property
+    def is_shared_channel(self) -> bool:
+        """Whether the principal arrived through a messaging or realtime edge, whose sessions any principal of the same platform scope may continue."""
+        return self.provider.startswith(self.SHARED_CHANNEL_PREFIXES)
+
+    @classmethod
+    def subject_of(cls, principal: "Principal | None") -> str | None:
+        """The subject of an authenticated principal, or None for a missing or anonymous one.
+
+        What the owner-keyed records (threads, schedules, the WebSocket routing attribute) store.
+        """
+        return None if principal is None or principal.is_anonymous else principal.subject
+
+    def with_actor(self, actor: "Principal") -> "Principal":
+        """A copy of this principal acting on behalf of ``actor``."""
+        return self.model_copy(update={"actor": actor})
+
+    def with_credential_ref(self, ref: str | None) -> "Principal":
+        """A copy of this principal carrying (or, with ``None``, dropping) a credential handle."""
+        return self.model_copy(update={"credential_ref": ref})
+
+
+class SessionOwner(BaseModel):
+    """The principal a session was first used by, recorded for ownership checks only.
+
+    Two subjects are the same owner only when their provider namespaces match too, since a
+    subject is unique within its namespace and not across providers.
+    """
+
+    # Copied from the first non-anonymous principal that ran in the session. Nothing else is kept:
+    # the owner is an enforcement key, not a profile.
+    subject: str
+    provider: str
+    # Same meaning as ``Principal.namespace``, compared together with ``subject``: an OIDC ``sub``
+    # and a Slack sender id that happen to be the same string are still different owners.
+    namespace: str | None = None
+
+
+class ToolFilter(BaseModel):
+    """The per-run tool decision the runtime publishes; adapters only read it.
+
+    level: AccessLevel : the level the current principal holds on the agent
+    allowed: frozenset[str] : the tool names the principal may call at that level
+    reasons: dict[str, str] : the reason a denied tool is denied, by tool name
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # The level the current principal holds on the agent being run.
+    level: AccessLevel
+    # The tool names callable at that level after the policy's allow and deny lists are applied.
+    allowed: frozenset[str]
+    # Why each denied tool is denied, by tool name; what the adapters hand back to the model.
+    reasons: dict[str, str] = Field(default_factory=dict)
+
+    def allows(self, name: str) -> bool:
+        return name in self.allowed
+
+    def reason(self, name: str) -> str:
+        """Why ``name`` is denied: the recorded reason, or a generic one for a name never listed."""
+        return self.reasons.get(name) or f"Tool '{name}' is not available to the current principal"
+
+
+class AgentSkillDescriptor(BaseModel):
+    """One skill an agent advertises in its catalog entry and A2A card."""
+
+    id: str
+    name: str
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+
+
+class AgentIdentitySpec(BaseModel):
+    """How an agent identifies itself when it acts as a principal.
+
+    subject: str | None : the agent's own subject; defaults to the descriptor id at build time
+    client_id, client_secret_key: str | None : the client credential the agent exchanges tokens
+        with, the secret named by key and resolved through the secret capability
+    """
+
+    subject: str | None = None
+    client_id: str | None = None
+    client_secret_key: str | None = None
+
+
+AgentSurface = Literal["rest", "a2a", "mcp", "agui"]
+
+
+class AgentDescriptor(BaseModel):
+    """The catalog entry of an agent: what the registry stores and the surfaces read.
+
+    description is catalog text for people and other agents, never the agent's instructions.
+    surfaces is the list of protocol surfaces the agent is exposed on; ``None`` means every
+    surface, an empty list none. updated_at is set by store-backed registries.
+    """
+
+    # The registry key; the agent's name as the framework reports it, unless an overlay renames it.
+    id: str
+    name: str
+    version: str = "0.0.0"
+    # Catalog text for people and other agents. Never the agent's instructions.
+    description: str = ""
+    # The subject that owns the agent, when the overlay names one.
+    owner: str | None = None
+    # Free-form labels; ``tag:<name>`` in a grant selects every agent carrying ``name``.
+    tags: list[str] = Field(default_factory=list)
+    # Who may see the agent in the catalog; a synthesized catalog permission that confers no level.
+    visibility: Literal["private", "internal", "public"] = "private"
+    # The protocol surfaces the agent is served on. ``None`` means every surface, ``[]`` none.
+    surfaces: list[AgentSurface] | None = None
+    skills: list[AgentSkillDescriptor] = Field(default_factory=list)
+    # The tool names the adapter reports for the agent, as the authorization policy names them.
+    tools: list[str] = Field(default_factory=list)
+    # The framework adapter's runner name (``openai``, ``langgraph``, ...).
+    runner: str = ""
+    supports_streaming: bool = True
+    identity: AgentIdentitySpec = Field(default_factory=AgentIdentitySpec)
+    # Set by store-backed registries on every write; ``None`` for the in-memory registry.
+    updated_at: str | None = None
+
+    def exposed_on(self, surface: str) -> bool:
+        """Whether the agent is served on ``surface`` (``rest``, ``a2a``, ``mcp`` or ``agui``)."""
+        return True if self.surfaces is None else surface in self.surfaces
+
+
 class SystemTool(BaseModel):
     name: str
     description: str
     func: Callable
+    tier: AccessLevel = AccessLevel.READ
 
 
 class FileData(BaseModel):
@@ -410,13 +656,18 @@ class ScheduleSpec(BaseModel):
 class BaseChatRequest(BaseModel):
     """Base model for chat requests with common fields.
 
-    user_id is required when Conversation Thread Support is enabled (a 'thread'
-    block is present in config.yaml); group_id and thread_name are optional and
-    applied only when the thread is auto-created on the session's first request.
+    principal is assigned by the surface after authentication, never read from the client; a
+    non-anonymous principal is required when Conversation Thread Support is enabled (a 'thread'
+    block is present in config.yaml). group_id and thread_name are optional and applied only
+    when the thread is auto-created on the session's first request.
 
     A schedule block defers the request: instead of running the agent, the request
     is registered as a scheduled task and acknowledged with HTTP 202. It requires
-    the scheduling capability (a 'schedule' block in config.yaml) and a user_id.
+    the scheduling capability (a 'schedule' block in config.yaml) and a non-anonymous
+    principal, who owns the task.
+
+    user_id is not a request field: a body or envelope carrying one is refused, since the acting
+    user comes from the credential the surface authenticated.
 
     A resume block answers a paused run instead of starting a new turn, so prompt
     defaults to empty rather than being required. ChatService rejects a request
@@ -426,7 +677,8 @@ class BaseChatRequest(BaseModel):
     prompt: str = ""
     agent: str | None = None
     session_id: str | None = None
-    user_id: str | None = None
+    principal: Principal | None = None
+    """Assigned by the surface after authentication; a value arriving from a client is overwritten, never read."""
     group_id: str | None = None
     thread_name: str | None = None
     schedule: ScheduleSpec | None = None
@@ -480,6 +732,9 @@ class BaseRunRequest(BaseChatRequest):
     model_config = ConfigDict(extra="allow")
 
 
+USER_ID_NOT_A_FIELD = "user_id is not a request field; the acting user comes from the credential"
+
+
 class BaseRequest(BaseModel):
     request_id: str | None = None
     route: str | None = None  # RouteKey of the Websocket, needed for WS implementation
@@ -488,6 +743,17 @@ class BaseRequest(BaseModel):
 
     @classmethod
     def from_payload(cls, payload: "BaseRequest | BaseRunRequest | dict[str, Any]") -> "BaseRequest":
+        """
+        Wraps a client payload in the envelope.
+
+        :param payload: An envelope, a bare run request, or a dict in either shape.
+        :return: The envelope, with the body validated when the payload carries one. A ``principal``
+            key in a dict payload is dropped: the surface assigns the principal after it has
+            parsed the payload, so a client cannot name one.
+        :raises ValueError: If the envelope or the body carries a ``user_id`` key: the acting user
+            is established by the surface from the credential, never taken from the client.
+        :raises TypeError: If the payload is of another type.
+        """
         if isinstance(payload, cls):
             return payload
 
@@ -495,28 +761,26 @@ class BaseRequest(BaseModel):
             return cls(request_id=str(uuid.uuid4()), body=payload)
 
         if isinstance(payload, dict):
+            if "user_id" in payload:
+                raise ValueError(USER_ID_NOT_A_FIELD)
             request_id = payload.get("request_id") or str(uuid.uuid4())
-            user_id = payload.get("user_id")
             route = payload.get("route")
 
             if "body" in payload and payload["body"] is not None:
                 body = payload["body"]
                 if isinstance(body, dict):
-                    body = {key: value for key, value in body.items() if key not in {"request_id", "user_id", "route"}}
+                    if "user_id" in body:
+                        raise ValueError(USER_ID_NOT_A_FIELD)
+                    body = {key: value for key, value in body.items() if key not in {"request_id", "route", "principal"}}
             else:
-                body = {key: value for key, value in payload.items() if key not in {"request_id", "user_id", "route", "body"}}
+                body = {key: value for key, value in payload.items() if key not in {"request_id", "route", "body", "principal"}}
 
             if not body:
-                return cls(request_id=request_id, user_id=user_id, route=route)
+                return cls(request_id=request_id, route=route)
 
             if not isinstance(body, BaseRunRequest):
                 body = BaseRunRequest.model_validate(body)
 
-            # The envelope user_id is authoritative — propagate it into the body so
-            # body-level consumers (e.g. Conversation Thread Support) can read it.
-            if user_id is not None:
-                body.user_id = user_id
-
-            return cls(request_id=request_id, user_id=user_id, route=route, body=body)
+            return cls(request_id=request_id, route=route, body=body)
 
         raise TypeError(f"Unsupported payload type for BaseRequest: {repr(type(payload))}")

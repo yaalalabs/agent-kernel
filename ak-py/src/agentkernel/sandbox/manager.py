@@ -321,7 +321,7 @@ class ExecutionManager:
         self._validate_payload(operation, payload, profile_name, profile_cfg)
 
         session, ephemeral, notice = await self._resolve_session(profile_name, sandbox_session_id, profile_cfg)
-        principal = await self._resolve_principal()
+        principal = await self._resolve_principal(profile_cfg)
         request = ExecutionRequest(
             task_id=uuid.uuid4().hex,
             operation=operation,  # type: ignore[arg-type]
@@ -406,9 +406,18 @@ class ExecutionManager:
 
     # -- principal / policy ------------------------------------------------- #
 
-    async def _resolve_principal(self) -> SandboxPrincipal:
-        """Resolve the execution identity from the current session and agent."""
-        return await self._resolver.resolve(Session.current(), self._current_agent())
+    async def _resolve_principal(self, profile_cfg: Any) -> SandboxPrincipal:
+        """Resolve the execution identity from the current session and agent, held to the profile's mode.
+
+        The default resolver returns a ``user`` principal for every authenticated run (#603), but
+        only a profile with ``identity.mode: user`` hands one to the provider. An ``agent``-mode
+        profile runs under the agent's own identity whoever the caller is, so ``ec2_ssm`` keeps its
+        default credential chain and ``kubernetes`` never impersonates the caller.
+        """
+        principal = await self._resolver.resolve(Session.current(), self._current_agent())
+        if principal.mode == "user" and profile_cfg.identity.mode != "user":
+            return SandboxPrincipal(mode="agent", subject=self._current_agent_name())
+        return principal
 
     @staticmethod
     def _current_agent():

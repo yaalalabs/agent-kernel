@@ -30,8 +30,8 @@ class ThreadRecorder:
         self._manager = manager
 
     def pre_run(self, req: BaseChatRequest, requests: list[AgentRequest]) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
-        """Thread work done before the agent runs: enforce user_id, store attachment
-        bytes, create/load the thread, append the user message, and return the rebuilt
+        """Thread work done before the agent runs: require an authenticated principal, store
+        attachment bytes, create/load the thread, append the user message, and return the rebuilt
         request list in which stored attachments are replaced by in-band
         AgentRequestAttachmentRef entries for MultimodalPreHook to resolve.
 
@@ -42,14 +42,20 @@ class ThreadRecorder:
         :param req: The originating chat request
         :param requests: The built AgentRequest list (may carry attachments)
         :return: Tuple of (rebuilt request list, stored ThreadAttachment references)
-        :raises ValueError: If user_id is missing, or attachments are rejected by config
+        :raises PermissionError: If the request carries no authenticated principal, or the thread
+            exists and belongs to another principal (checked before any write)
+        :raises ValueError: If attachments are rejected by config
         """
-        if not req.user_id:
-            raise ValueError("No user_id is provided in the request — user_id is required when thread support is enabled")
+        principal = req.principal
+        if principal is None or principal.is_anonymous:
+            raise PermissionError("thread support requires an authenticated principal")
+        # Ownership before any write: a request naming another user's session_id must not leave its
+        # attachment bytes under that session before get_or_create_thread refuses it (spec 8.10).
+        self._manager.get_thread(req.session_id, user_id=principal.subject)
         requests, attachments = self._manager.store_attachments(session_id=req.session_id, requests=requests)
         self._manager.get_or_create_thread(
             session_id=req.session_id,
-            user_id=req.user_id,
+            user_id=principal.subject,
             group_id=req.group_id,
             name=req.thread_name,
             first_prompt=req.prompt,

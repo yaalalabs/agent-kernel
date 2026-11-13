@@ -36,7 +36,7 @@ CHAT_ID = 4242
 @pytest.fixture(autouse=True)
 def _config(monkeypatch):
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
-    monkeypatch.setenv("AK_TELEGRAM__BOT_TOKEN", "bot-token")
+    monkeypatch.setenv("AK_TELEGRAM__BOT_TOKEN", "123456:ABC-secret")
     monkeypatch.setenv("AK_TELEGRAM__WEBHOOK_SECRET", SECRET)
     monkeypatch.setenv("AK_TELEGRAM__AGENT", "helper")
     AKConfig._reset()
@@ -50,8 +50,8 @@ def _config(monkeypatch):
 
 def _client_stub():
     client = object.__new__(_TelegramClient)
-    client._bot_token = "bot-token"
-    client._base_url = "https://api.telegram.org/botbot-token"
+    client._bot_token = "123456:ABC-secret"
+    client._base_url = "https://api.telegram.org/bot123456:ABC-secret"
     client._webhook_secret = SECRET
     client.send_message = AsyncMock()
     client.chat_action = AsyncMock()
@@ -119,6 +119,7 @@ class TestParse:
         # The chat is the conversation.
         assert request.session_id == str(CHAT_ID)
         assert request.user_id == "99"
+        assert request.namespace == "123456", "the bot id (the token's prefix) is the scope a Telegram user id is seen under (#603)"
         assert request.reply_context == {"chat_id": str(CHAT_ID)}
         assert isinstance(request.requests[0], AgentRequestText)
 

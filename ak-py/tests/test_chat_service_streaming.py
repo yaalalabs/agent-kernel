@@ -9,7 +9,7 @@ class _FakeService:
         self._chunks = chunks
         self.received_requests = None
 
-    async def stream_multi(self, requests, acting_user_id=None):
+    async def stream_multi(self, requests, principal=None):
         self.received_requests = requests
         for chunk in self._chunks:
             yield chunk
@@ -23,14 +23,14 @@ class _FakeHandler:
     def initialize(self, session_id, agent):
         self.initialized_with = (session_id, agent)
 
-    async def run_stream_async(self, requests, acting_user_id=None):
-        async for chunk in self.service.stream_multi(requests, acting_user_id=acting_user_id):
+    async def run_stream_async(self, requests, principal=None):
+        async for chunk in self.service.stream_multi(requests, principal=principal):
             yield chunk
 
-    def run_stream_sync(self, requests, acting_user_id=None):
+    def run_stream_sync(self, requests, principal=None):
         from agentkernel.core.util.async_bridge import iterate_async_sync
 
-        return iterate_async_sync(self.service.stream_multi(requests, acting_user_id=acting_user_id))
+        return iterate_async_sync(self.service.stream_multi(requests, principal=principal))
 
 
 @pytest.mark.asyncio
@@ -137,8 +137,8 @@ class _StreamingAgentService:
     def get_response_session_id(self, session_id):
         return session_id
 
-    def stream_multi(self, requests, acting_user_id=None):
-        return self._stream_multi(requests, acting_user_id)
+    def stream_multi(self, requests, principal=None):
+        return self._stream_multi(requests, principal)
 
 
 def _install_agent_service(monkeypatch, stream_multi):
@@ -151,7 +151,7 @@ def test_run_stream_sync_hands_over_each_chunk_before_the_next_is_produced():
     """The sync bridge streams: a buffering one could not interleave these."""
     timeline = []
 
-    async def _stream_multi(requests, acting_user_id=None):
+    async def _stream_multi(requests, principal=None):
         for index in range(3):
             timeline.append(f"produced-{index}")
             yield StreamChunk(delta=str(index))
@@ -168,7 +168,7 @@ def test_run_stream_sync_hands_over_each_chunk_before_the_next_is_produced():
 def test_process_stream_chat_sync_streams_chunks_as_the_run_produces_them(monkeypatch):
     timeline = []
 
-    async def _stream_multi(requests, acting_user_id=None):
+    async def _stream_multi(requests, principal=None):
         for index in range(2):
             timeline.append(f"produced-{index}")
             yield StreamChunk(delta=str(index))
@@ -195,7 +195,7 @@ def test_process_stream_chat_sync_streams_chunks_as_the_run_produces_them(monkey
 def test_process_stream_chat_sync_reports_a_mid_run_failure_after_the_chunks_already_sent(monkeypatch):
     """Error timing moved with the buffering: chunks are on the wire before the run raises."""
 
-    async def _stream_multi(requests, acting_user_id=None):
+    async def _stream_multi(requests, principal=None):
         yield StreamChunk(delta="par")
         raise RuntimeError("stream blew up")
 
@@ -233,7 +233,7 @@ def test_execute_stream_sync_closes_its_inner_iterator_by_contract(monkeypatch):
 
     monkeypatch.setattr(
         "agentkernel.core.chat_service.AgentHandler.run_stream_sync",
-        lambda self, requests, acting_user_id=None: held,
+        lambda self, requests, principal=None: held,
     )
     _install_agent_service(monkeypatch, None)
     monkeypatch.setattr("agentkernel.core.chat_service.ChatService.prepare_agent_handler", lambda self, session_id, agent: AgentHandler())

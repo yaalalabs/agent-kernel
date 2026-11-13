@@ -1,12 +1,30 @@
 import logging
 
+from a2a.server.context import ServerCallContext
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.request_handlers.response_helpers import agent_card_to_dict
 from a2a.server.routes import create_agent_card_routes, create_rest_routes
+from a2a.server.routes.common import DefaultServerCallContextBuilder
 from fastapi import APIRouter
+from starlette.requests import Request
 from starlette.routing import BaseRoute, Route
 
 from .a2a import A2A
+
+
+class AKCallContextBuilder(DefaultServerCallContextBuilder):
+    """Carries the request's principal into the SDK's call context.
+
+    The A2A routers are included by ``RESTAPI``, so the identity dependency has already put the
+    principal on ``request.state`` when the SDK builds the context for a call; the executor reads
+    it from ``call_context.state["principal"]`` (spec #603, section 8.7). The SDK's own state
+    (headers, the auth scope) is kept.
+    """
+
+    def build(self, request: Request) -> ServerCallContext:
+        context = super().build(request)
+        context.state["principal"] = getattr(request.state, "principal", None)
+        return context
 
 
 class A2ARESTRequestHandler:
@@ -56,7 +74,7 @@ class A2ARESTRequestHandler:
             )
             router = APIRouter(prefix=f"/a2a/{agent}")
             # A2A protocol mandated routes, then the agent's well-known (public) card
-            for route in [*create_rest_routes(request_handler), *create_agent_card_routes(card)]:
+            for route in [*create_rest_routes(request_handler, context_builder=AKCallContextBuilder()), *create_agent_card_routes(card)]:
                 cls._add_route(router, route)
             routers.append(router)
         return routers

@@ -5,7 +5,9 @@ description: >
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
   A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support,
   scheduled tasks (deferred and recurring chat execution), the sandbox capability
-  (isolated code execution), and secret resolution (environment first, then AWS SSM
+  (isolated code execution), identity and authentication (who may call: an identity
+  provider such as Auth0, Keycloak or Okta through oidc, Amazon Cognito, Microsoft Entra ID,
+  Firebase, static credentials or your own, plus role mapping), and secret resolution (environment first, then AWS SSM
   Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
@@ -48,6 +50,7 @@ Which capability would you like to add?
 13. **Secret Resolution** — Read API keys through `SecretManager` (environment first, then AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider)
 14. **Human in the Loop** — Pause a run for a person's approval or answer and resume from their decision (a gated tool or an interrupt, a `resume` block on the next request)
 15. **A2UI** — Let an agent answer with an interface instead of prose: its JSON reply is labelled so the client receives a document, not a string
+16. **Identity** - Authenticate callers through a configured identity provider (static credentials, any OIDC issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft Entra ID, Firebase, or your own) and read the caller as a `Principal` in tools and hooks
 
 ### Step 3: Generate Changes
 
@@ -547,7 +550,7 @@ mcp:
   # agents:                       # Or list specific agents
   #   - name: general
   #   - name: math
-  url: "http://localhost:8000"    # Base URL of your server
+  url: "http://localhost:8000/mcp"  # Public URL of the MCP endpoint (behind a proxy, the public one)
 ```
 
 3. No code changes needed. The MCP server endpoint is automatically available.
@@ -564,6 +567,12 @@ mcp:
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
      block); failures reach the client as a fixed message, with details in the logs only.
    - Tools you add yourself to `MCP.get()` are your own code and still run in the IO process.
+   - With an `identity` block (see Identity), FastMCP enforces the bearer token: a call without an
+     accepted token is a 401, and the tool runs as the token's principal. Without the block the
+     server stays open and every call runs anonymous. With an OpenID-family provider (`oidc`,
+     `cognito`, `entra`, `firebase`) the 401 points MCP clients at RFC 9728 resource metadata the app
+     serves at `<origin of mcp.url>/.well-known/oauth-protected-resource/mcp/`, naming `mcp.url` as
+     the resource and the issuer as the authorization server, so set `mcp.url` to the address clients use.
 
 ---
 
@@ -603,6 +612,8 @@ a2a:
      `execution.response_store` (redis, valkey or dynamodb) in every execution mode.
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
      block). `message:stream` is refused: the cards declare `streaming: false`.
+   - With an `identity` block (see Identity), a bearer token on the A2A routes is authenticated and
+     the message runs as its principal; a refused token is a 401, no token runs anonymous.
 
 ---
 
@@ -631,18 +642,23 @@ agui:
     enabled: true             # attaches read-only get_forwarded_props / get_agui_context
 ```
 
-3. Mount `AGUIRequestHandler` with an `Authoriser` (or `AuthValidator`) — AG-UI has no anonymous
-   mode, because a run executes an agent on the caller's behalf:
+3. Mount `AGUIRequestHandler`. AG-UI has no anonymous mode, because a run executes an agent on the
+   caller's behalf: the handler requires an `identity` block in `config.yaml` (it refuses to build
+   without one) and answers 401 to a request without an accepted bearer token (see Identity):
+```yaml
+identity:
+  provider:
+    type: static               # or oidc (Auth0, Keycloak, Okta), cognito, entra, firebase, a dotted path
+    static:
+      principals:
+        DEMO_TOKEN:            # names a secret, resolved from the environment first; never the value
+          subject: demo-user
+```
 ```python
 from agentkernel.agui import AGUIRequestHandler
 from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
 
-class MyAuthoriser(Authoriser):
-    def authorise(self, token: str) -> str | None:
-        ...  # validate the token, return the caller's user_id or None
-
-RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=MyAuthoriser())])
+RESTAPI.run(handlers=[AGUIRequestHandler()])
 ```
 
 4. Routes are served under `agui.prefix`: `GET {prefix}/agents`, `POST {prefix}/{agent_name}`, and
@@ -657,7 +673,7 @@ RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=MyAuthoriser())])
 from agentkernel.agui import AGUIPipelineRequestHandler
 from agentkernel.pipeline import IOHandler
 
-IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
+IOHandler.run(handlers=[AGUIPipelineRequestHandler()])
 ```
    It needs a response store that can stream chunks — `in_memory` locally, `redis` or `valkey` on a
    broker transport — and refuses to start otherwise, naming the setting to change. On a broker it
@@ -1044,9 +1060,11 @@ thread:
 ```
 
 4. When enabled:
-   - `user_id` becomes required on the thread handler's chat requests (other surfaces are unaffected)
+   - The thread handler requires an `identity` block (see Identity) and a credential on every request
+     (`Authorization: Bearer <credential>`): a thread belongs to the authenticated principal, an
+     anonymous request is a 401, and a `user_id` in the body is a 400 (the caller comes from the credential)
    - A thread is auto-created on a session's first request
-   - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` are served by the same handler for reading thread history (open by default, or protected by a pluggable `Authoriser`)
+   - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` are served by the same handler for reading thread history, scoped to the caller: the listing is the caller's own threads (no `user_id` query parameter) and another principal's thread is refused
    - Threads are auto-named by an LLM call deriving a concise title from the first prompt (falls back to a truncated prompt prefix without `litellm`/an API key)
    - Sending `thread_name` on any chat request sets/renames the thread and locks it against automatic naming
    - Structured messages carry a sibling `media_type` next to `content`; with Human in the Loop, a pause (`assistant`, `content.interruptions`) and its decision (`user`, `content.resume.decisions`) are recorded as `application/json` messages
@@ -1132,23 +1150,31 @@ thread:
     table_name: "akagentthreads"
 ```
 
-**Protecting the read endpoints with an Authoriser:**
+**Who owns a thread:** the `identity` block in `config.yaml` (see Identity). The static provider
+below maps two credentials to two users; the keys name secrets resolved from the environment
+(`ALICE_TOKEN=... BOB_TOKEN=... python app.py`), so no credential value lives in the file:
+
+```yaml
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        ALICE_TOKEN:
+          subject: alice
+        BOB_TOKEN:
+          subject: bob
+```
 
 ```python
 from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
 from agentkernel.thread import AgentThreadRequestHandler
 
-class DemoAuthoriser(Authoriser):
-    def authorise(self, token: str) -> str | None:
-        # Validate the ****** against your own auth provider, return the user_id or None.
-        return {"alice-token": "alice", "bob-token": "bob"}.get(token)
-
-RESTAPI.run(handlers=[AgentThreadRequestHandler(authoriser=DemoAuthoriser())])
+RESTAPI.run(handlers=[AgentThreadRequestHandler()])
 ```
 
-With an Authoriser configured, thread listings are scoped to the resolved `user_id` and reading another
-user's thread is rejected (403). Without one, the read routes are open.
+Thread listings are scoped to the authenticated principal, reading another user's thread is refused,
+and a request without a credential is a 401. The handler refuses to build without the block.
 
 **Attachments in thread mode:** require `multimodal.enabled: true` with a shared attachment store —
 `in_memory`, `redis`, or `dynamodb` (`session_cache` is rejected).
@@ -1158,7 +1184,8 @@ user's thread is rejected (403). Without one, the read routes are open.
 ```bash
 curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "What is the capital of France?", "session_id": "ses-1", "user_id": "alice", "thread_name": "Capitals quiz"}'
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "What is the capital of France?", "session_id": "ses-1", "thread_name": "Capitals quiz"}'
 ```
 
 See `examples/api/thread-openai` and `examples/api/multimodal/thread-openai`.
@@ -1228,12 +1255,14 @@ if __name__ == "__main__":
      timestamp, must be in the future) or `cron` (standard 5-field expression), plus `timezone`
      (IANA, default `UTC`) and `session_mode` (`reuse` the originating session, or `new` for a fresh
      session per occurrence)
-   - `user_id` becomes **required** on any request that schedules: it is the owner the task is stored
-     under and the identity later reads and changes are checked against
+   - A request that schedules must carry a credential (`Authorization: Bearer <credential>`, see
+     Identity): the task is stored under the authenticated principal, later reads and changes are
+     checked against it, and an anonymous scheduling request is a 403 (`scheduling requires an
+     authenticated principal`)
    - `GET /api/v1/schedules` (cursor-paginated) and `GET`/`PUT`/`DELETE /api/v1/schedules/{task_id}`
-     are mounted for listing, reading, amending and cancelling (open by default, or protected by a
-     pluggable `Authoriser`). There is deliberately no `POST` — creation is the chat block or the
-     agent tool
+     are mounted for listing, reading, amending and cancelling; they require the `identity` block,
+     answer 401 to an anonymous caller and serve the caller's own tasks (no `user_id` query
+     parameter). There is deliberately no `POST`: creation is the chat block or the agent tool
    - `PUT` is full-replacement: send every value, including the ones that are not changing. `status`
      covers the `active`/`paused` switch; a cancelled task keeps its record as the audit trail
    - The five schedule tools and their guidance are injected into every agent's system prompt; each
@@ -1247,7 +1276,8 @@ if __name__ == "__main__":
 # One-time
 curl -i -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1",
        "schedule": {"at": "2030-01-31T09:00:00", "timezone": "Asia/Colombo"}}'
 
 # HTTP/1.1 202 Accepted
@@ -1256,12 +1286,13 @@ curl -i -X POST http://localhost:8000/api/v1/chat \
 # Recurring, each occurrence in a fresh session
 curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Send the weekly report", "session_id": "ses-2", "user_id": "alice",
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "Send the weekly report", "session_id": "ses-2",
        "schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"}}'
 
-# Manage
-curl "http://localhost:8000/api/v1/schedules?user_id=alice"
-curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
+# Manage (the caller's own tasks)
+curl -H "Authorization: Bearer $ALICE_TOKEN" "http://localhost:8000/api/v1/schedules"
+curl -H "Authorization: Bearer $ALICE_TOKEN" -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
 ```
 
 **For production on AWS (EventBridge Scheduler + DynamoDB):**
@@ -1312,25 +1343,29 @@ schedule:
 | `in_memory` store + a broker transport | The records would be split across the runner and IO-handler processes |
 | `eventbridge` provider + a non-`sqs` transport | Delivery is baked into the schedule registration as an SQS target |
 
-**Protecting the management routes with an Authoriser:** the routes are mounted by the application,
-so pass the `Authoriser` to the `ScheduleRESTRequestHandler` constructor:
+**Who owns a task:** the `identity` block in `config.yaml` (see Identity); the management routes
+are mounted by the application and carry the identity dependency like every other route:
+
+```yaml
+identity:
+  provider:
+    type: static               # or oidc (Auth0, Keycloak, Okta), cognito, entra, firebase, a dotted path
+    static:
+      principals:
+        ALICE_TOKEN:           # names a secret resolved from the environment; never the value
+          subject: alice
+```
 
 ```python
-from agentkernel.auth import Authoriser
 from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
 
-class DemoAuthoriser(Authoriser):
-    def authorise(self, token: str) -> str | None:
-        # Validate the ****** against your own auth provider, return the user_id or None.
-        return {"alice-token": "alice", "bob-token": "bob"}.get(token)
-
 if __name__ == "__main__":
-    IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=DemoAuthoriser())])
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
 ```
 
-With an Authoriser configured, listings are scoped to the resolved `user_id` and reading or changing
-another user's schedule is rejected (403). Without one, the routes are open.
+Listings are scoped to the authenticated principal, reading or changing another user's task is
+refused (403), an anonymous caller is a 401, and the handler refuses to build without the block.
 
 See `examples/api/schedule-openai`.
 
@@ -1498,10 +1533,140 @@ the agent's instructions about *what* to do; the sandbox usage is injected.
 `docker` (or another isolating provider) in production.
 :::
 
-For per-user identity (running sandboxed code under the invoking user's identity), set
-`principal_resolver` to a dotted path and a profile's `identity.mode: user`; see the
+For per-user identity (running sandboxed code under the invoking user's identity), set a profile's
+`identity.mode: user`: the default resolver reads the principal the identity provider established
+for the run (see Identity; a profile left on `agent` mode keeps running as the agent), and `principal_resolver` (a dotted path) replaces it when the sandbox
+identity must be derived differently. A run for a messaging or realtime sender (a `messaging:` or
+`realtime:` principal, whose subject is a platform id) resolves to agent mode like an anonymous run,
+so a `user`-mode profile refuses it; see the
 [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) and the
 `examples/sandbox/identity` example.
+
+---
+
+#### Identity
+
+**What it does:** one identity provider per deployment, named by the `identity` block in `config.yaml`,
+turns a caller's credential into a `Principal` (`subject`, `kind`, `provider`, `namespace`, `groups`,
+`roles`, `claims`) that every surface carries into the run. No validator code: a bearer token on REST,
+AG-UI, MCP and A2A, `?token=` on a WebSocket handshake and `--token` (or `AK_CLI_TOKEN`) on the CLI
+all go through the same provider. Without the block every request runs as the anonymous principal
+and an `Authorization` header is ignored; with it, a request without a credential is anonymous and a
+present credential must validate (401 otherwise, with the provider's reason in the logs only).
+Threads, scheduled tasks and AG-UI refuse anonymous callers; chat routes allow them.
+
+**Ask:** Which provider? `static` (demo and service credentials named as secret keys), `oidc` (any
+OpenID Connect issuer: Auth0, Keycloak, Okta), `cognito`, `entra`, `firebase`, or a dotted path to
+your own `IdentityProvider` subclass.
+
+**1. Install the extra (JWT providers only; `static` needs nothing):**
+
+```bash
+uv add "agentkernel[auth]"
+```
+
+**2. Add an `identity` block to `config.yaml`:**
+
+```yaml
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        ALICE_TOKEN:               # names a secret: the environment first, then the secret provider
+          subject: alice
+          groups: [ops]            # optional facts: kind (user | agent | service), groups, roles, claims
+        SERVICE_KEY:
+          subject: reporting-job
+          kind: service
+```
+
+The credential values never go in the file: start the app with `ALICE_TOKEN=... SERVICE_KEY=...` (or
+put them in the configured secret provider); a key that resolves to nothing, or an empty
+`principals` map, is an `AKConfigError` at startup.
+
+Auth0 is an `oidc` block (so are Keycloak and Okta, with their own issuer, audience and groups claim):
+
+```yaml
+identity:
+  provider:
+    type: oidc
+    issuer: https://<tenant>.<region>.auth0.com/   # or the custom domain; trailing slash as Auth0 issues it
+    audience: <the API identifier of your Auth0 API>
+    claims:
+      groups: https://<your namespace>/roles       # the namespaced claim an Auth0 Action sets; omit if none
+```
+
+The `oidc` provider discovers the JWK set from the issuer (`jwks_uri` overrides it), accepts `RS256`
+and `ES256` by default (an empty list, `none`, an unknown name or a symmetric algorithm fails at
+startup), tolerates `leeway` seconds of clock skew
+and reads the subject and groups from `claims.subject` / `claims.groups` (a claim name, or dotted
+segments such as `realm_access.roles`). The cloud providers derive the issuer themselves:
+
+```yaml
+identity:
+  provider:
+    type: cognito                  # cognito: {region, user_pool_id, token_use: access | id}
+    cognito:
+      region: eu-west-1
+      user_pool_id: eu-west-1_abc123
+    # entra: {tenant_id}           # type: entra
+    # firebase: {project_id}       # type: firebase
+```
+
+Entra accepts v2.0 tokens only: set `requestedAccessTokenVersion: 2` on the app registration
+(Terraform `azuread_application`: `api { requested_access_token_version = 2 }`), or its access tokens
+carry the v1 issuer `https://sts.windows.net/<tid>/` and are refused.
+
+An optional `role_mapper` derives `Principal.roles` (`type: mapping` with `mapping: {ops: [admin]}`
+and/or `pass_through: <claim path>`; or a dotted path to a `RoleMapper`, whose own settings arrive in
+`config.model_extra`). `mapping` looks up only the principal's groups by default; list the claim paths
+whose values it should also look up in `claims: [...]` (e.g. `claims: [permissions]` for Auth0 RBAC).
+Map only claims the issuer controls: a user sets many of their own (a display name, a username, an
+email), and matching those would let one of them grant a role. Nothing enforces roles yet; read them
+in a hook or tool if you need them now.
+
+```yaml
+identity:
+  # provider: the Auth0 oidc block above
+  role_mapper:
+    type: mapping
+    mapping:
+      ops: [admin]                 # a group
+      "read:reports": [reader]     # a value of the listed claim
+    claims: [permissions]
+```
+
+**3. Read the principal where it matters:**
+
+```python
+from agentkernel.core import Agent, PreHook, Session, ToolContext
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest
+
+def whoami() -> str:
+    principal = ToolContext.get().principal        # the caller, with the agent as `actor`
+    return f"{principal.subject} in {principal.groups}"
+
+class OnlyOps(PreHook):
+    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
+        principal = session.get_principal()         # the run's principal; session.get_owner() is who opened the session
+        if "ops" not in principal.groups:
+            return AgentReplyText(response="This agent serves the ops group only.")  # a reply ends the run
+        return requests
+
+    def name(self) -> str:
+        return "only-ops"
+```
+
+Messaging integrations build the principal at the edge (`provider: messaging:<platform>`, the
+platform user as `subject`, the workspace or tenant as `namespace`), so the same tools work on
+Slack as on REST. A bring-your-own provider subclasses `agentkernel.identity.IdentityProvider`
+(`name`, `async authenticate(credential, context)` returning a `Principal` or raising
+`AuthenticationError`, `security_scheme()`), is selected by its dotted path in `identity.provider.type`,
+and can be checked with the `agentkernel.identity.provider.testing.IdentityProviderContract` pytest
+suite. See `examples/api/thread-openai` (two users), `examples/api/agui` (one credential),
+`examples/aws-serverless/openai-auth` (the static block and an Auth0 block in its README) and the
+`ak-cloud-deploy` skill for where the block lives on each deployment target.
 
 ---
 

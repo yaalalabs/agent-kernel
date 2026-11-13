@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import os
 import subprocess
 import sys
 import uuid
@@ -14,24 +15,28 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session 
 FUTURE_AT = "2030-01-31T09:00:00"
 PAST_AT = "2020-01-01T09:00:00"
 WEEKLY_CRON = "0 9 * * 1"
+# The credential value of the one principal in config.yaml; app.py is started with it below.
+ALICE_TOKEN = "alice-token"
 
 
 class APITestClient:
     def __init__(self, url):
         self.url = url
 
-    async def chat(self, prompt, session_id, user_id=None, schedule=None):
+    async def chat(self, prompt, session_id, token=ALICE_TOKEN, schedule=None):
         payload = {"prompt": prompt, "session_id": session_id, "agent": "assistant"}
-        if user_id is not None:
-            payload["user_id"] = user_id
         if schedule is not None:
             payload["schedule"] = schedule
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.post(f"{self.url}/api/v1/chat", json=payload)
+            return await client.post(f"{self.url}/api/v1/chat", json=payload, headers=self._headers(token))
 
-    async def request(self, method, path, json=None):
+    async def request(self, method, path, json=None, token=ALICE_TOKEN):
         async with httpx.AsyncClient(timeout=10.0) as client:
-            return await client.request(method, f"{self.url}{path}", json=json)
+            return await client.request(method, f"{self.url}{path}", json=json, headers=self._headers(token))
+
+    @staticmethod
+    def _headers(token):
+        return {"Authorization": f"Bearer {token}"} if token is not None else {}
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -40,6 +45,7 @@ async def http_client():
         ["python3", "app.py"],
         stdout=sys.stdout,
         stderr=sys.stderr,
+        env={**os.environ, "ALICE_TOKEN": ALICE_TOKEN},
     )
     await asyncio.sleep(5)
     try:
@@ -55,7 +61,6 @@ async def test_deferred_request_is_acknowledged_with_202(http_client):
     resp = await http_client.chat(
         "Send me the daily summary",
         session_id="ses-one-time",
-        user_id="alice",
         schedule={"at": FUTURE_AT, "timezone": "Asia/Colombo"},
     )
     assert resp.status_code == 202
@@ -69,7 +74,6 @@ async def test_recurring_request_is_acknowledged_with_202(http_client):
     resp = await http_client.chat(
         "Send the weekly report",
         session_id="ses-recurring",
-        user_id="alice",
         schedule={"cron": WEEKLY_CRON, "timezone": "Asia/Colombo", "session_mode": "new"},
     )
     assert resp.status_code == 202
@@ -78,19 +82,31 @@ async def test_recurring_request_is_acknowledged_with_202(http_client):
 @pytest.mark.asyncio
 async def test_past_timestamp_is_rejected_at_creation(http_client):
     print("test_past_timestamp_is_rejected_at_creation")
-    resp = await http_client.chat(
-        "Send me the daily summary", session_id="ses-past", user_id="alice", schedule={"at": PAST_AT}
-    )
+    resp = await http_client.chat("Send me the daily summary", session_id="ses-past", schedule={"at": PAST_AT})
     assert resp.status_code == 400
     assert "must be in the future" in resp.json()["detail"]["error"]
 
 
 @pytest.mark.asyncio
-async def test_scheduling_requires_a_user_id(http_client):
-    print("test_scheduling_requires_a_user_id")
-    resp = await http_client.chat("Send me the daily summary", session_id="ses-anon", schedule={"at": FUTURE_AT})
-    assert resp.status_code == 400
-    assert "user identity" in resp.json()["detail"]["error"]
+async def test_scheduling_requires_an_authenticated_caller(http_client):
+    print("test_scheduling_requires_an_authenticated_caller")
+    # A task belongs to someone: a request nothing authenticated cannot create one.
+    resp = await http_client.chat(
+        "Send me the daily summary", session_id="ses-anon", token=None, schedule={"at": FUTURE_AT}
+    )
+    assert resp.status_code == 403
+    assert "authenticated principal" in resp.json()["detail"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_the_management_routes_require_a_credential(http_client):
+    print("test_the_management_routes_require_a_credential")
+    resp = await http_client.request("GET", "/api/v1/schedules", token=None)
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Authentication required"
+
+    resp = await http_client.request("GET", "/api/v1/schedules", token="wrong-token")
+    assert resp.status_code == 401  # the identity provider refused the token
 
 
 @pytest.mark.asyncio
@@ -100,16 +116,17 @@ async def test_schedule_lifecycle_over_the_management_routes(http_client):
     resp = await http_client.chat(
         "Send the weekly report",
         session_id=session_id,
-        user_id="alice",
         schedule={"cron": WEEKLY_CRON, "timezone": "Asia/Colombo"},
     )
     assert resp.status_code == 202
 
-    listed = await http_client.request("GET", "/api/v1/schedules?user_id=alice")
+    # The listing is always the caller's own tasks: the owner is the principal the token authenticated.
+    listed = await http_client.request("GET", "/api/v1/schedules")
     assert listed.status_code == 200
     mine = [task for task in listed.json()["schedules"] if task["session_id"] == session_id]
     assert len(mine) == 1
     task_id = mine[0]["task_id"]
+    assert mine[0]["user_id"] == "alice"
     assert mine[0]["spec"]["cron"] == WEEKLY_CRON
     assert mine[0]["status"] == "active"
 
@@ -155,7 +172,7 @@ async def test_one_time_occurrence_fires_and_completes_the_task(http_client):
     fires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=10)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
-    resp = await http_client.chat("Say hello", session_id=str(uuid.uuid4()), user_id="alice", schedule={"at": fires_at})
+    resp = await http_client.chat("Say hello", session_id=str(uuid.uuid4()), schedule={"at": fires_at})
     assert resp.status_code == 202
     task_id = resp.json()["result"].split('"scheduled_task_id": "')[1].split('"')[0]
 
