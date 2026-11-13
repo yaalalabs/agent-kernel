@@ -6,6 +6,7 @@ import threading
 import logfire
 
 from ...core import Runner
+from ...core.realtime import RealtimeRunner
 from ..base import BaseTrace
 from ..fetch import FetchedSpan, TraceQuery
 
@@ -109,6 +110,22 @@ class Logfire(BaseTrace):
         from .claude import LogfireClaudeRunner
 
         return LogfireClaudeRunner()
+
+    def openai_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the Logfire OpenAI realtime runner class.
+        """
+        from .openai import LogfireOpenAIRealtimeRunner
+
+        return LogfireOpenAIRealtimeRunner
+
+    def adk_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the Logfire ADK realtime runner class.
+        """
+        from .adk import LogfireADKRealtimeRunner
+
+        return LogfireADKRealtimeRunner
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """

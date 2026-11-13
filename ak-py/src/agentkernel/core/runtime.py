@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
+from contextlib import contextmanager
 from threading import RLock
 from types import ModuleType
 
@@ -449,6 +450,33 @@ class Runtime:
             session._record_owner(SessionOwner(subject=principal.subject, provider=principal.provider, namespace=principal.namespace))
         return principal
 
+    @contextmanager
+    def activate(self, agent: Agent, session: Session) -> Iterator[None]:
+        """
+        Makes the session and the agent current (`Session.current()`, `Agent.current()`) for the block,
+        restoring the previous ones on exit. Takes no session lock: a surface that holds a session for
+        longer than one run (a realtime call) uses it where `Runtime.run()` would hold the lock.
+
+        :param agent: The agent to make current.
+        :param session: The session to make current.
+        """
+        token = Session.current_session.set(session)
+        try:
+            with agent._activate():
+                yield
+        finally:
+            Session.current_session.reset(token)
+
+    def end_run(self, session: Session) -> None:
+        """
+        Ends a run's identity and per-run state: unpublishes the principal and clears the volatile cache.
+        Called in the `finally` of `run()` and `stream()`, and when a realtime call closes.
+
+        :param session: The session the run used.
+        """
+        session._unpublish_run()
+        session.get_volatile_cache()._clear_all()
+
     def _warn_resume_dropped(self, agent: Agent, session: Session) -> None:
         """
         Warns that a pre-hook removed the decisions, so this run proceeds as an ordinary turn.
@@ -514,7 +542,7 @@ class Runtime:
         async with session:
             try:
                 self._publish(agent, session, principal)
-                with agent._activate():
+                with self.activate(agent, session):
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self.run_pre_hooks(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
@@ -546,8 +574,7 @@ class Runtime:
                     self.sessions().store(session)
                     return reply
             finally:
-                session._unpublish_run()
-                session.get_volatile_cache()._clear_all()
+                self.end_run(session)
 
     async def stream(
         self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None
@@ -575,7 +602,7 @@ class Runtime:
         async with session:
             try:
                 self._publish(agent, session, principal)
-                with agent._activate():
+                with self.activate(agent, session):
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self.run_pre_hooks(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
@@ -638,8 +665,7 @@ class Runtime:
                         # generator has run to completion.
                         await events.aclose()
             finally:
-                session._unpublish_run()
-                session.get_volatile_cache()._clear_all()
+                self.end_run(session)
 
     def sessions(self) -> SessionStore:
         """

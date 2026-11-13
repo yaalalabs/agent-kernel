@@ -344,7 +344,7 @@ On a realtime call the same hooks run in the process that serves the call, after
 - **Model output** goes through `on_stream_event`, one call per event (`AudioDelta`, `TextDelta`, `InputTranscript`, `Interrupt`, `AgentChanged`), with the rules in [Streaming Hooks](#streaming-hooks-on_stream_event). `StreamHalt`, or any other exception, ends the call: the edge receives one error chunk and the next input reconnects.
 - **Turn end:** when the model's turn finishes, the hooks receive a `MessageEnd` before the final `done`, so a hook that held pieces can release them there. Its `message_id` is the last output event's id, which is not one id per turn on every framework. A call sends no `MessageStart`.
 - **`requests`** is the last text turn sent to the model, or an empty list when none was sent yet.
-- **State:** `Session.current()` and `Agent.current()` are set around every hook call. One hook instance serves every call, so keep state in `session.get_volatile_cache()`; it is cleared when the call closes. The session lock is not held, and the session is not stored.
+- **State:** `Session.current()` and `Agent.current()` are set around every hook call. One hook instance serves every call, so keep state in `session.get_volatile_cache()`; it is cleared when the call closes, not per turn: a hook that wants per-turn state resets its own keys at `MessageEnd`. The session lock is not held. What a hook keeps in the non-volatile cache is stored with the session when the call ends normally.
 
 What a hook can not do:
 

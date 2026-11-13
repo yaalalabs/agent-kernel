@@ -3,6 +3,8 @@ from typing import Any, Self
 
 from ..core.hooks import PostHook, PreHook
 from .base import Agent, RunOptionsFactory
+from .config import AKConfig
+from .model import ExecutionMode
 from .runtime import Runtime
 
 
@@ -143,6 +145,17 @@ class Module(ABC):
         if wrapped is None:
             raise ValueError(f"Agent '{name}' is not loaded in this module")
         return wrapped
+
+    @staticmethod
+    def _traces_realtime(realtime_runner_cls: Any) -> bool:
+        """
+        Whether this module should pick the configured tracer's traced realtime runner: the app passed no class of its
+        own, and the deployment runs in realtime mode. Only realtime mode ever builds a realtime runner, so a text-mode
+        app never asks its tracer for one. Read only when tracing is enabled.
+        :param realtime_runner_cls: The realtime runner class the app passed, or None.
+        :return: True when the tracer's traced realtime runner replaces the default.
+        """
+        return realtime_runner_cls is None and AKConfig.get().execution.mode == ExecutionMode.REALTIME
 
     def _native_agent_name(self, agent: Any) -> str:
         """

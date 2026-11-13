@@ -5,9 +5,8 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from concurrent.futures import Future
-from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ..core.base import Agent as BaseAgent
@@ -82,6 +81,8 @@ class RealtimeConnection:
         self._last_turn: list[AgentRequest] = []
         # The first failing audio hook of a connection is logged at ERROR; later ones at DEBUG, since audio arrives at the chunk rate.
         self._input_failure_logged = False
+        # The call failed (a native error, a halt, a failed connect): its session is not stored when it closes.
+        self._failed = False
         self._pacing_task: asyncio.Task | None = None
         self._startup_task: asyncio.Task | None = None
         # Shutdown, eviction and failure can all close one connection; disconnect only once.
@@ -137,12 +138,10 @@ class RealtimeConnection:
         # Set once here: the SDK's tool tasks are created inside connect() and inherit these contextvars.
         # The session lock is not taken; holding it for a whole call would block every other run of the session.
         tool_context = ToolContext(self.runtime, self.agent, self.session, []).set()
-        session_token = Session.current_session.set(self.session)
         try:
-            with self.agent._activate():
+            with self.runtime.activate(self.agent, self.session):
                 await self.adapter.connect(self.session, self.agent, self.handle_framework_event)
         finally:
-            Session.current_session.reset(session_token)
             tool_context.reset()
         if self.closed:
             # end_session() may have closed this connection while the native session was still opening:
@@ -205,6 +204,7 @@ class RealtimeConnection:
     async def _fail(self, message: str) -> None:
         """Send the edge one terminal error chunk, mark the connection closed and close the adapter."""
         _log.error(f"Realtime session {self.session_id} failed: {message}")
+        self._failed = True
         self.closed = True
         if self._pacing_task:
             # Called from the pacing loop itself (a post-hook halted the call), cancelling would drop the chunk below.
@@ -225,25 +225,13 @@ class RealtimeConnection:
         :param error: What the connect raised (a timeout included).
         """
         _log.error(f"Realtime session {self.session_id} could not start: {error!r}")
+        self._failed = True
         try:
             await self._emit(StreamChunk(error=f"Realtime session could not start: {str(error) or type(error).__name__}", done=True))
         except Exception as e:
             _log.error(f"Realtime session {self.session_id}: could not report its failed start: {e}")
         finally:
             await self.close()
-
-    @contextmanager
-    def _hook_context(self) -> Iterator[None]:
-        """Set ``Session.current()`` and ``Agent.current()`` around a hook call.
-
-        The pacing task and an input coroutine start without them: ``_connect`` resets them before it creates the pacing task.
-        """
-        token = Session.current_session.set(self.session)
-        try:
-            with self.agent._activate():
-                yield
-        finally:
-            Session.current_session.reset(token)
 
     async def _emit_event(self, event: StreamEvent, audio_bytes: int | None = None) -> list[StreamEvent]:
         """Run one output event through the post-hooks, emit each resulting event, and pace every audio event emitted.
@@ -257,7 +245,7 @@ class RealtimeConnection:
         :raises StreamHalt: When a hook ends the call; any other hook failure is logged and raised as one.
         """
         try:
-            with self._hook_context():
+            with self.runtime.activate(self.agent, self.session):
                 emitted = await self.runtime.run_stream_event_hooks(self.agent, self.session, self._last_turn, event)
         except StreamHalt:
             raise
@@ -358,7 +346,7 @@ class RealtimeConnection:
         A failing hook drops the chunk: an error chunk per audio chunk would flood the edge.
         """
         try:
-            with self._hook_context():
+            with self.runtime.activate(self.agent, self.session):
                 voice, text = await self.runtime.run_stream_input_hooks(self.agent, self.session, request)
         except Exception:
             if self._input_failure_logged:
@@ -383,7 +371,7 @@ class RealtimeConnection:
         A hook that halts the turn, or fails, sends the edge one error chunk and the call continues.
         """
         try:
-            with self._hook_context():
+            with self.runtime.activate(self.agent, self.session):
                 result = await self.runtime.run_pre_hooks(self.agent, self.session, [request])
         except Exception:
             _log.exception(f"Realtime session {self.session_id}: a pre-hook failed on a typed message")
@@ -398,6 +386,18 @@ class RealtimeConnection:
             _log.debug(f"Realtime session {self.session_id}: dropped {len(result) - len(prompts)} non-text request(s) a pre-hook returned")
         if prompts:
             await self.adapter.send_text("\n".join(prompts))
+
+    async def _store_session(self) -> None:
+        """Store the call's session once it has ended, as ``Runtime.stream`` stores a stream that ended normally.
+
+        The write runs on a worker thread: every call in the process shares this loop, and a store can be
+        several network round trips. The call is over, so nothing is talking on the session while it is written.
+        A failure is logged, never raised, so the run still ends.
+        """
+        try:
+            await asyncio.to_thread(self.runtime.sessions().store, self.session)
+        except Exception:
+            _log.exception(f"Realtime session {self.session_id}: storing the session at the end of the call failed")
 
     def _dispatch_send(self, coro, action: str) -> None:
         """Run a send on the pool loop, blocking (bounded) so the input is not acked before it reached the model.
@@ -453,11 +453,15 @@ class RealtimeConnection:
         try:
             await self.adapter.disconnect()
         finally:
-            if self._principal_published:
-                self.session._unpublish_run()
-            # Hook state kept in the volatile cache ends with the call, as it does when a Runtime run ends,
-            # also when the native session fails to close: the session store hands the next call this same Session.
-            self.session.get_volatile_cache()._clear_all()
+            try:
+                # After the adapter's own writes (ADK flushes its session service), and not after a failure.
+                if not self._failed:
+                    await self._store_session()
+            finally:
+                # The call's identity and the hook state kept in the volatile cache end with the call, as when a
+                # Runtime run ends, also when the native session fails to close: the session store hands the next
+                # call this same Session.
+                self.runtime.end_run(self.session)
 
 
 class RealtimeConnectionPool:

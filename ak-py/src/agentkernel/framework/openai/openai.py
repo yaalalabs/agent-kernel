@@ -924,14 +924,19 @@ class OpenAIModule(Module):
         Initializes an OpenAIModule instance.
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
-        :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
+        :param realtime_runner_cls: Optional realtime runner class for ``execution.mode: realtime``; defaults to the
+            OpenAI realtime runner, or the configured tracer's traced one when tracing is enabled.
         """
         super().__init__()
-        self.realtime_runner_cls = realtime_runner_cls or OpenAIRealtimeRunner
+        # One tracer per module: Trace.get() builds and initialises a provider each time. A runner or realtime class the app
+        # passes is used as is, so the tracer is asked only for what the app left unset.
+        traces_realtime = AKConfig.get().trace.enabled and self._traces_realtime(realtime_runner_cls)
+        tracer = Trace.get() if AKConfig.get().trace.enabled and (runner is None or traces_realtime) else None
+        self.realtime_runner_cls = realtime_runner_cls or (tracer.openai_realtime() if traces_realtime else None) or OpenAIRealtimeRunner
         if runner is not None:
             self.runner = runner
-        elif AKConfig.get().trace.enabled:
-            self.runner = Trace.get().openai()
+        elif tracer is not None:
+            self.runner = tracer.openai()
         else:
             self.runner = OpenAIRunner()
         self.load(agents)

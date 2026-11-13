@@ -2,12 +2,51 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 
-from langfuse import Langfuse, get_client
+from langfuse import Langfuse, get_client, propagate_attributes
 
 from ... import Runner
-from ..base import BaseTrace
+from ...core.realtime import RealtimeRunner
+from ..base import BaseTrace, RealtimeCallSpan
 from ..fetch import FetchedSpan, TraceQuery
+
+
+class LangFuseRealtimeCallSpan(RealtimeCallSpan):
+    """
+    A realtime call's span through Langfuse's own client. Not a plain OpenTelemetry span: Langfuse's default export filter
+    drops a span that has no ``gen_ai.*`` attribute and does not come from its own tracer.
+    """
+
+    def __init__(self, client: Langfuse, name: str, session_id: str):
+        """
+        :param client: The Langfuse client.
+        :param name: The observation name.
+        :param session_id: The session the call belongs to, as the provider's ``run()`` span tags it.
+        """
+        self._client = client
+        self._name = name
+        self._session_id = session_id
+        self._observation = None
+        self._ended = False
+
+    @contextmanager
+    def opened(self) -> Iterator[None]:
+        with propagate_attributes(session_id=self._session_id, tags=["agentkernel"]):
+            # end_on_exit=False: the observation outlives this block and is ended by end(), from another task.
+            with self._client.start_as_current_observation(name=self._name, as_type="span", end_on_exit=False) as observation:
+                self._observation = observation
+                yield
+
+    def fail(self, message: str) -> None:
+        if self._observation is not None and not self._ended:
+            self._observation.update(level="ERROR", status_message=message)
+
+    def end(self) -> None:
+        if self._observation is not None and not self._ended:
+            self._ended = True
+            self._observation.end()
 
 
 class LangFuse(BaseTrace):
@@ -108,6 +147,22 @@ class LangFuse(BaseTrace):
         from .claude import LangFuseClaudeRunner
 
         return LangFuseClaudeRunner(self._client)
+
+    def openai_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the Langfuse OpenAI realtime runner class.
+        """
+        from .openai import LangFuseOpenAIRealtimeRunner
+
+        return LangFuseOpenAIRealtimeRunner
+
+    def adk_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the Langfuse ADK realtime runner class.
+        """
+        from .adk import LangFuseADKRealtimeRunner
+
+        return LangFuseADKRealtimeRunner
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """

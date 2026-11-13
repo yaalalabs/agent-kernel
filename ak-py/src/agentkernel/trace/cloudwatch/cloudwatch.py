@@ -16,9 +16,11 @@ from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from ...core import Runner, Session
+from ...core.realtime import RealtimeRunner
 from ...core.util.factory import AKConfigError
 from ..base import BaseTrace
 from ..fetch import FetchedSpan, TraceQuery
+from ..otel import OTelRealtimeCallSpan
 from .sigv4 import SigV4Session
 
 """
@@ -42,6 +44,29 @@ class SessionSpanProcessor(SpanProcessor):
         session_id = baggage.get_baggage(SESSION_ID, parent_context)
         if session_id is not None:
             span.set_attribute(SESSION_ID, session_id)
+
+
+class CloudWatchRealtimeCallSpan(OTelRealtimeCallSpan):
+    """
+    A realtime call's span carrying ``session.id`` as an attribute and as baggage, as :meth:`CloudWatch.span` does, so
+    ``SessionSpanProcessor`` stamps it onto the spans the framework instrumentors emit during the call.
+    """
+
+    def __init__(self, name: str, session_id: str):
+        """
+        :param name: The span name.
+        :param session_id: The session the call belongs to.
+        """
+        super().__init__(trace_api.get_tracer("agentkernel.trace.cloudwatch"), name, {SESSION_ID: session_id})
+        self._session_id = session_id
+
+    @contextmanager
+    def _tagged(self) -> Iterator[None]:
+        token = context.attach(baggage.set_baggage(SESSION_ID, self._session_id))
+        try:
+            yield
+        finally:
+            context.detach(token)
 
 
 class CloudWatch(BaseTrace):
@@ -218,6 +243,22 @@ class CloudWatch(BaseTrace):
         from .claude import CloudWatchClaudeRunner
 
         return CloudWatchClaudeRunner(self)
+
+    def openai_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the CloudWatch OpenAI realtime runner class.
+        """
+        from .openai import CloudWatchOpenAIRealtimeRunner
+
+        return CloudWatchOpenAIRealtimeRunner
+
+    def adk_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the CloudWatch ADK realtime runner class.
+        """
+        from .adk import CloudWatchADKRealtimeRunner
+
+        return CloudWatchADKRealtimeRunner
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
