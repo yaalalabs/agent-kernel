@@ -12,6 +12,8 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data
     else
       uv pip install -r requirements.txt --target=dist/data --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel || true
+      # The lock resolves agentkernel from PyPI, whose metadata may lack the unreleased pubsub extra.
+      uv pip install --target=dist/data "$(ls ../../../ak-py/dist/agentkernel-*.whl)[pubsub]"
     fi
     cp -r app.py config.yaml dist/data
     popd || exit 1
