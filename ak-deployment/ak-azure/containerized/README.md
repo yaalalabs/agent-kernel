@@ -304,6 +304,7 @@ The image's default command is the edge (`IOHandler.run()`); the runner override
 | `cosmosdb_table_name` | Cosmos DB table name (if enabled) | `myapp-prod-api-session_store` |
 | `cosmosdb_endpoint` | Cosmos DB endpoint (if enabled, sensitive) | `https://myapp-prod-api-cosmos.table.cosmos.azure.com` |
 | `servicebus_namespace` | Service Bus namespace FQDN (queue mode only) | `myapp-prod-api-queues.servicebus.windows.net` |
+| `servicebus_namespace_id` | Service Bus namespace resource ID (queue mode only) | `/subscriptions/.../namespaces/myapp-prod-api-queues` |
 | `servicebus_input_queue` | Service Bus input queue name (queue mode only) | `input` |
 | `servicebus_output_queue` | Service Bus output queue name (queue mode only) | `output` |
 | `agent_runner_name` | Agent runner Container App name (queue mode only) | `myapp-prod-api-runner` |

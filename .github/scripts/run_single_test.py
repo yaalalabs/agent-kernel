@@ -739,7 +739,26 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to retrieve agent_invoke_url output: {e}")
         return False
-    
+
+    # Queue-mode examples also expose their Service Bus namespace, for the live transport contract.
+    namespace = subprocess.run(
+        ['terraform', 'output', '-raw', 'servicebus_namespace'],
+        cwd=str(deploy_path), capture_output=True, text=True
+    ).stdout.strip()
+    pytest_cmd = ['uv', 'run', 'pytest']
+    if namespace:
+        test_env['AK_TEST_SERVICEBUS_NAMESPACE'] = namespace
+        # The contract authenticates as the CI principal through the az CLI; a long deploy can outlive
+        # the OIDC login, so refresh it the same way the serverless deploy does.
+        auth_cmd = os.environ.get('AK_PRE_DEPLOY_AUTH_CMD')
+        if auth_cmd and not run_command(['bash', '-c', auth_cmd], description="Refreshing Azure CLI login"):
+            return False
+        # The contract imports the transport under test, so the test venv needs the LOCAL wheel
+        # (same as the aws-containerized tests); --no-sync keeps uv.lock from reverting it.
+        if not run_command(['./build.sh', 'local'], cwd=path, description=f"Building {path} with local agentkernel"):
+            return False
+        pytest_cmd = ['uv', 'run', '--no-sync', 'pytest']
+
     #remove the config.yaml till the issue with it is being solved
     
     delete_config = run_command(
@@ -752,7 +771,7 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
+        pytest_cmd + ['-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env

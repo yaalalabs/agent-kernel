@@ -28,6 +28,9 @@ Found while detailing; each tightens the design rather than changing scope. `des
 6. **Found by `terraform plan` in iteration 3** (azurerm `v5.11.0`): the namespace is `<prefix>-queues`, not
    `-sb` (a reserved suffix); `identity_id` is `"System"`; the runner holds Data Owner, not Data Receiver, on
    `input` so the KEDA scaler can read the queue length; Terraform injects no `*__TYPE` env (AWS parity).
+7. **Found while building the example in iteration 4**: `app_test.py` covers `rest_sync` only, because
+   `execution.mode` is per deployment; sessions use the Redis that queue mode already needs instead of Cosmos DB;
+   the weekly test step installs the local wheel and refreshes the az login before the contract runs.
 
 ## Design
 
@@ -205,7 +208,8 @@ New file `queue_mode.tf`, all resources `count = var.queue_mode ? 1 : 0`:
     `ak-deployment/ak-k8s/chart/values.yaml:172`).
   - A `validation` on `queue_mode`: `!var.queue_mode || var.create_redis_cluster`, message naming the response
     store. Terraform 1.9+ cross-variable validation is within the module's `required_version` (`main.tf:2`).
-- `outputs.tf`: `servicebus_namespace` (FQDN, null when off), `servicebus_input_queue`, `servicebus_output_queue`,
+- `outputs.tf`: `servicebus_namespace` (FQDN, null when off), `servicebus_namespace_id` (scope for extra role
+  assignments, such as the example's deployer grant), `servicebus_input_queue`, `servicebus_output_queue`,
   `agent_runner_name`.
 - `ak-azure/serverless` and the `ak-common` modules: no changes. Example version pins are not hand-edited
   (release chore bumps them).
@@ -214,21 +218,31 @@ New file `queue_mode.tf`, all resources `count = var.queue_mode ? 1 : 0`:
 
 - Copied shape from `openai-cosmos` and `examples/k8s/openai-queue-mode/`: `app_agents.py` (the triage
   agents), `app_io_handler.py` (`IOHandler.run()`), `app_agent_runner.py` (`AgentRunner.run()`),
-  `config.yaml` (`execution.queues.type: servicebus`, `execution.mode: rest_sync`, `session.type: cosmosdb`),
-  `build.sh`, `pyproject.toml` (`agentkernel[openai,api,azure]`), `README.md`, `test-config.yaml`.
+  `config.yaml` (`execution.queues.type: servicebus`, `execution.mode: rest_sync`, `response_store.type: redis`,
+  `session.type: redis`), `build.sh`, `pyproject.toml` (`agentkernel[openai,api,azure,redis,test]`), `README.md`,
+  `test-config.yaml`.
 - `deploy/`: `main.tf` calls `ak-containerized/azurerm` with `queue_mode = true`, `create_redis_cluster = true`,
-  `create_cosmosdb_cluster = true`; Dockerfile `CMD ["python", "app_io_handler.py"]`; an extra
+  `create_cosmosdb_cluster = false` (the Redis that queue mode needs also holds sessions); Dockerfile `CMD ["python", "app_io_handler.py"]`; an extra
   `azurerm_role_assignment` granting the deploying principal (`data.azurerm_client_config.current`)
-  **Azure Service Bus Data Owner** on the namespace, for the contract test; outputs `agent_invoke_url` and
-  `servicebus_namespace`.
-- `app_test.py`: `rest_sync` multi-turn on one session, and `rest_async` submit then poll, both through APIM.
+  **Azure Service Bus Data Owner** on the namespace (via `servicebus_namespace_id`), for the contract test;
+  outputs `agent_invoke_url` and `servicebus_namespace`.
+- `app_test.py`: `rest_sync` multi-turn on one session through APIM. `execution.mode` is per deployment
+  (`pipeline/request_handler.py:137-139`), so one deploy cannot also serve `rest_async`; that path differs only
+  at the REST surface, which the `ak-py` request-handler tests already cover.
 - `servicebus_contract_test.py`: `QueueTransportContract` subclass, skipped unless
   `AK_TEST_SERVICEBUS_NAMESPACE` is set. Per test it creates two uniquely named session-enabled,
-  duplicate-detecting queues with `lock_duration = 5s` through `ServiceBusAdministrationClient`, and deletes them in
-  teardown. `ack_wait = 0.2`; `force_redelivery` sleeps past the 5-second lock.
+  duplicate-detecting queues with `lock_duration = 5s` and `auto_delete_on_idle = 5m` through
+  `ServiceBusAdministrationClient` (no teardown: idle queues delete themselves, and destroy removes the namespace).
+  `ack_wait = 1.0` (above the 0.5 s session-reuse wait, as in the fake subclass); `force_redelivery` sleeps
+  `2 * ack_wait + 5 + 2` s: the renewal ceiling, then the last lock. SDK imports sit inside the fixture so the
+  file collects on a published agentkernel without the Service Bus SDK.
 - `.github/scripts/run_single_test.py` `test_azure_deployment`: also read the optional `servicebus_namespace`
-  output and export it as `AK_TEST_SERVICEBUS_NAMESPACE` when present (other Azure examples have no such
-  output and are unaffected).
+  output and export it as `AK_TEST_SERVICEBUS_NAMESPACE` when present. Only then it also refreshes the az CLI
+  login through `AK_PRE_DEPLOY_AUTH_CMD` (a long deploy can outlive the OIDC login), runs `build.sh local`, and
+  runs `uv run --no-sync pytest`, so the contract imports the local transport (the aws-containerized pattern).
+  Other Azure examples have no such output and are unaffected.
+- `.github/workflows/integration-test-weekly.yaml`: the Test step gets the same `AK_PRE_DEPLOY_AUTH_CMD` env
+  the Deploy step has.
 - `.github/integration-test-config.yaml`: a weekly `azure-containerized` entry after `:106-108`.
 
 ### Behavioural changes

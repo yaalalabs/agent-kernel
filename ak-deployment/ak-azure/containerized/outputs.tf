@@ -99,6 +99,11 @@ output "servicebus_namespace" {
   value       = var.queue_mode ? "${local.servicebus_namespace}.servicebus.windows.net" : null
 }
 
+output "servicebus_namespace_id" {
+  description = "Service Bus namespace resource ID, for extra role assignments (queue_mode only)"
+  value       = var.queue_mode ? azurerm_servicebus_namespace.queues[0].id : null
+}
+
 output "servicebus_input_queue" {
   description = "Service Bus input queue name (queue_mode only)"
   value       = var.queue_mode ? azurerm_servicebus_queue.input[0].name : null

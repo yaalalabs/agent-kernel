@@ -151,7 +151,7 @@ flowchart LR
 - `ak-py/tests/test_pipeline_servicebus_transport.py`: factory branch and errors, wire mapping, and a
   `QueueTransportContract` subclass over a fake Service Bus client (the `FakeSQSClient` precedent).
 - `examples/azure-containerized/openai-queue-mode/`: `app_io_handler.py`, `app_agent_runner.py`,
-  `config.yaml`, `deploy/` with `queue_mode = true`, `app_test.py` covering `rest_sync` and `rest_async`, and
+  `config.yaml`, `deploy/` with `queue_mode = true`, `app_test.py` covering `rest_sync` (the mode is per deployment), and
   `servicebus_contract_test.py` (the live contract, skipped unless `AK_TEST_SERVICEBUS_NAMESPACE` is set).
   Registered as a weekly entry in `.github/integration-test-config.yaml` (next to `:106`); Azure examples
   have no `.github/test-config.yaml` entry.

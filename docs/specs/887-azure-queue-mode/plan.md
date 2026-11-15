@@ -44,16 +44,18 @@ Builds [spec.md](spec.md) in order. Each iteration leaves the branch green.
 
 ## Iteration 4: Example and weekly wiring
 
-- **Goal:** `examples/azure-containerized/openai-queue-mode/` deploys, answers `rest_sync` and `rest_async`
-  through APIM, and runs the live contract.
+- **Goal:** `examples/azure-containerized/openai-queue-mode/` deploys, answers `rest_sync` through APIM, and
+  runs the live contract.
 - **Files:** the example directory (spec §7), `.github/scripts/run_single_test.py`,
-  `.github/integration-test-config.yaml`.
+  `.github/integration-test-config.yaml`, `.github/workflows/integration-test-weekly.yaml`, and the module's
+  `servicebus_namespace_id` output.
 - **Steps:**
   1. Copy `openai-cosmos` and `examples/k8s/openai-queue-mode/` into the new shape; split the entry points.
   2. `deploy/` with `queue_mode = true`, the Data Owner grant for the deploying principal, the two outputs.
      Leave the registry `version` pin alone (the release chore bumps it).
-  3. `app_test.py` (rest_sync multi-turn, rest_async poll) and `servicebus_contract_test.py`.
-  4. Export `AK_TEST_SERVICEBUS_NAMESPACE` from `test_azure_deployment` when the output exists.
+  3. `app_test.py` (rest_sync multi-turn) and `servicebus_contract_test.py`.
+  4. Export `AK_TEST_SERVICEBUS_NAMESPACE` from `test_azure_deployment` when the output exists; then refresh the
+     az login, `build.sh local`, and `uv run --no-sync pytest`.
   5. Weekly entry in `integration-test-config.yaml`.
 - **Verify:** a manual `run_single_test.py --type azure-containerized --path examples/azure-containerized/openai-queue-mode`
   with `--action deploy`, `test`, then `destroy`, against the module by local path. The contract tests prove
