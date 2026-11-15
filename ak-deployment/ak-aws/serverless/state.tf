@@ -221,6 +221,8 @@ module "authorizer" {
   cloudwatch_kms_key_arn     = local.cloudwatch_kms_key_arn
   lambda_signer_profile_name = local.lambda_signer_profile_name
   lambda_signing_config_arn  = local.lambda_signing_config_arn
+  ssm_enabled                = var.ssm_enabled # the identity provider's credentials resolve via aws_ssm
+  account_id                 = data.aws_caller_identity.current.account_id
 }
 
 module "shared_api_gateway_resources" {
