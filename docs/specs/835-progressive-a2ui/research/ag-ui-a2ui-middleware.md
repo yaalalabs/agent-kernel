@@ -45,9 +45,39 @@ While parsing the **streamed** args (`index.ts`), the middleware also:
 - reads a repeated list's data key from `children: { componentId, path }`, the path minus its
   leading slash (default `"items"`)
 
+## The catalog is host-owned, and never a tool parameter
+
 `catalogId` appears in the streamed-args parser but **not** in the tool parameter schema quoted
-above. `design.md` resolves this by carrying `catalogId` as an optional tool parameter and placing
-it on the emitted `createSurface`, leaving the relay's own resolution order intact when it is absent.
+above. That gap is deliberate, and the source says so in three places:
+
+- `required: ["surfaceId", "components"]` over exactly three properties — there is no `catalogId`
+  property to fill (`tools.ts:26-45`).
+- The header comment: *"Uses structured parameters (surfaceId, components, data) — the catalog id"*
+  is host-side (`tools.ts:16`).
+- The guidelines shipped to the model: *"Note: the catalog id is set by the host, not by you. Do not
+  include a catalogId argument."* (`tools.ts:63`).
+
+The two host-side routes, in priority order (`index.ts:772-786`):
+
+1. **`defaultCatalogId`** — explicit relay configuration. An empty string is treated as unset, so it
+   cannot propagate `""` into `createSurface` and surface as *"Catalog not found: "*.
+2. **`frontendCatalogId`** — read from the A2UI schema context entry the renderer ships on every run
+   (`extractFrontendCatalogId`, `index.ts:110-122`). The entry is
+   `{description: A2UI_SCHEMA_CONTEXT_DESCRIPTION, value: JSON.stringify({catalogId, components})}`,
+   so the id is by construction one the renderer registered. This is what lets a zero-config
+   CopilotKit app — whose only catalog declaration is `<CopilotKit a2ui={{ catalog }}>` — never hit
+   *"Catalog not found"*.
+3. A streamed `catalogId`, explicitly commented *"(legacy)"* (`index.ts:763`), then A2UI's basic
+   catalog.
+
+**Resolution happens at the instant the components array closes.** A catalog id still arriving in
+the argument stream is therefore not in the running, and the `streamedSurfaceIds` dedup stops the
+later tool result from correcting the surface (`index.ts:1048-1062`).
+
+> **Correction.** An earlier revision of this file had `design.md` carry `catalogId` as an optional
+> tool parameter, reading branch 3 as a supported input. It is the legacy branch, it loses the race
+> against branch ordering, and upstream tells the model not to send one. The parameter was withdrawn
+> — see `design.md`, "Decided during review".
 
 ## The tool's result
 
@@ -76,8 +106,19 @@ emits them as activities (`index.ts:1036-1075`). Two consequences matter to Agen
   `streamedSurfaceIds` are filtered out; if that empties the list, nothing is emitted
   (`index.ts:1048-1062`). So returning the full envelope costs nothing when the streaming path
   already worked.
+- **No catalog resolution runs here either.** The operations are forwarded as the server wrote them,
+  so a `createSurface` on this path carries whatever catalog id the server put on it — none, in
+  Agent Kernel's case — and the renderer falls back to the catalog it registered. The resolution
+  order above applies only to the streaming path.
 
 A result that parses as neither an envelope nor a recovery failure is ignored entirely.
+
+**Agent Kernel deliberately lands in that last case**, returning `{"status": "sent"}`. The fallback
+exists for agents that emit A2UI through their own means; using it from a tool the middleware is
+already watching would only let a server result override the client's own validation. The adapters
+that send tool arguments whole do not need it either — the args handler simply accumulates
+(`streaming.args += argsEvent.delta`, `index.ts:703`) behind a gate that any complete JSON passes
+(`index.ts:741-747`), so a single delta parses like many.
 
 ## How it paints: components atomic, data incremental
 
@@ -92,11 +133,19 @@ The strategy is stated in the source (`index.ts:480-494`) and decides what "prog
 
 Each snapshot is cumulative and carries `replace: true`, so any one of them is self-sufficient.
 
-The emitted shape, from `index.ts:882-911`:
+4. **A final authoritative emit closes it out.** Once the whole `data` object closes, the middleware
+   re-emits all three operations with the complete data — *"Final authoritative data emit once the
+   whole data object closes"* (`index.ts:936-966`). It covers non-array data (form objects) and
+   guarantees the data model matches the model's intent. **Consequence for any test:** this last
+   snapshot can repeat the previous item count, so growth must be asserted across the snapshots
+   before the end, not as a strict increase over every one.
+
+The emitted shape, from `index.ts:882-911` (the `catalogId` here is the middleware's own resolved
+value, not one the server supplied):
 
 ```json
 {"a2ui_operations": [
-  {"version": "v0.9", "createSurface": {"surfaceId": "...", "catalogId": "..."}},
+  {"version": "v0.9", "createSurface": {"surfaceId": "...", "catalogId": "<resolved by the host>"}},
   {"version": "v0.9", "updateComponents": {"surfaceId": "...", "components": []}},
   {"version": "v0.9", "updateDataModel": {"surfaceId": "...", "path": "/", "value": {}}}
 ]}
