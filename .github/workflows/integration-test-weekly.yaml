@@ -27,6 +27,12 @@ on:
         required: false
         type: boolean
         default: false
+      cloud:
+        description: 'Cloud tests to run: all, or only aws / azure / gcp (the AWS base deployment runs only for all and aws)'
+        required: false
+        type: choice
+        options: [all, aws, azure, gcp]
+        default: all
 
 jobs:
   setup:
@@ -54,7 +60,7 @@ jobs:
       - name: Generate test matrices
         id: set-matrix
         run: |
-          python3 .github/scripts/generate_test_matrix.py --tier weekly --format github >> $GITHUB_OUTPUT
+          python3 .github/scripts/generate_test_matrix.py --tier weekly --cloud "${{ inputs.cloud || 'all' }}" --format github >> $GITHUB_OUTPUT
 
   build-ak-py:
     if: ${{ !inputs.e2e_messaging_only }}
@@ -84,6 +90,8 @@ jobs:
 
   deploy-openai:
     needs: [setup, build-ak-py]
+    # The AWS base deployment (shared VPC, subnets, security groups) only serves the AWS tests.
+    if: ${{ contains(fromJSON('["all", "aws"]'), inputs.cloud || 'all') }}
     runs-on: ubuntu-latest
     environment: ci-tests
     defaults:
@@ -226,6 +234,10 @@ jobs:
 
   run-tests:
     needs: [setup, build-ak-py, get-base-outputs]
+    # Azure-only and GCP-only runs skip the AWS base jobs, so allow a skipped get-base-outputs there.
+    if: >-
+      ${{ !cancelled() && needs.setup.result == 'success' && needs.build-ak-py.result == 'success' &&
+      (needs.get-base-outputs.result == 'success' || contains(fromJSON('["azure", "gcp"]'), inputs.cloud)) }}
     runs-on: ubuntu-latest
     environment: ci-tests
     strategy:
