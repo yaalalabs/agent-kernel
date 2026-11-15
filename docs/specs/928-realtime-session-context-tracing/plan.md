@@ -24,13 +24,13 @@ Builds [spec.md](spec.md) in five iterations. Each one leaves the branch green. 
 
 ## Iteration 3: Trace a call
 
-- **Goal:** in realtime mode with `trace.enabled`, each call has one AK span tagged with the session id; text mode is unchanged.
-- **Files:** `trace/base.py`, `trace/trace.py`, `trace/otel.py` (new), `trace/{langfuse,openllmetry,logfire,cloudwatch}/` (`<provider>.py`, `openai.py`, `adk.py`), `core/module.py`, `framework/openai/openai.py`, `framework/adk/adk.py`, `tests/test_trace_realtime.py` (new), `tests/test_trace_cloudwatch.py`, `tests/test_trace_logfire.py`.
+- **Goal:** with `trace.enabled`, each realtime call has one AK span tagged with the session id; text mode is unchanged.
+- **Files:** `trace/base.py`, `trace/trace.py`, `trace/otel.py` (new), `trace/{langfuse,openllmetry,logfire,cloudwatch}/` (`<provider>.py`, `openai.py`, `adk.py`), `framework/openai/openai.py`, `framework/adk/adk.py`, `tests/test_trace_realtime.py` (new), `tests/test_trace_cloudwatch.py`, `tests/test_trace_logfire.py`.
 - **Steps:**
   1. `RealtimeCallSpan`, `TracedRealtimeRunner` and the two optional `BaseTrace` methods; `Trace` delegation (spec 3.1).
   2. `OTelRealtimeCallSpan` (spec 3.2).
   3. Per provider: the call span (langfuse, openllmetry, cloudwatch), the two runner classes, `openai_realtime()` / `adk_realtime()` (spec 3.3).
-  4. `Module._traces_realtime` and the selection in both modules (spec 3.4).
+  4. The selection in both modules (spec 3.4).
 - **Verify:** `uv run pytest tests/test_trace_realtime.py tests/test_trace.py tests/test_trace_cloudwatch.py tests/test_trace_logfire.py tests/test_trace_langfuse_flush.py tests/test_openai_realtime.py tests/test_adk_realtime.py tests/test_module.py`.
 
 ## Iteration 4: Tests across the change

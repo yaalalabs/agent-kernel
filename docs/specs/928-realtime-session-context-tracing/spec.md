@@ -154,16 +154,16 @@ class OTelRealtimeCallSpan(RealtimeCallSpan):
 #### 3.4 `Module` selection (`framework/openai/openai.py:923-929`, `framework/adk/adk.py:1237-1243`)
 
 ```python
-tracer = Trace.get() if AKConfig.get().trace.enabled and (runner is None or self._traces_realtime(realtime_runner_cls)) else None
+tracer = Trace.get() if AKConfig.get().trace.enabled and (runner is None or realtime_runner_cls is None) else None
 self.runner = runner if runner is not None else (tracer.openai() if tracer else OpenAIRunner())
-self.realtime_runner_cls = realtime_runner_cls or (tracer.openai_realtime() if tracer and self._traces_realtime(None) else None) or OpenAIRealtimeRunner
+self.realtime_runner_cls = realtime_runner_cls or (tracer.openai_realtime() if tracer else None) or OpenAIRealtimeRunner
 ```
 
-- `_traces_realtime(cls)` is true when no class was passed and `execution.mode` is `realtime`. Only realtime mode ever builds the realtime runner (`pipeline/agent_runner.py:429-431`), so text-mode apps behave byte for byte as today and never import a traced realtime class.
-- `Trace.get()` is called at most once per `Module` (it builds and initialises a provider each time, `trace/trace.py:28-36`).
+- The class is picked on `trace.enabled` alone, as the traced runner is. The framework does not know the execution mode: the realtime class is attached unconditionally and only the pipeline, in realtime mode, ever builds it (`pipeline/agent_runner.py:429-431`), so a text-mode app never instantiates it.
+- `Trace.get()` is called at most once per `Module` (it builds and initialises a provider each time, `trace/trace.py:28-36`), and not at all when the app passed both a runner and a realtime class.
 - A class the app passes is used as is, as a `runner` the app passes is.
 - A tracer that returns `None` (a bring-your-own tracer without the methods) leaves the untraced default.
-- `_traces_realtime` is a `@staticmethod` on `Module` (`core/module.py`), shared by both modules.
+- `core/module.py` is not changed.
 
 ### Consumer changes
 

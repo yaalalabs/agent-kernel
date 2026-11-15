@@ -126,7 +126,7 @@ What a call gets today, measured (scratch experiment: each SDK's spans collected
 
 Requirements:
 
-- When `trace.enabled` and `execution.mode` is `realtime`, the `Module` picks a traced realtime runner from the configured tracer, the way it picks the traced runner (`framework/openai/openai.py:925-929`, `framework/adk/adk.py:1239-1241`). Only realtime mode ever builds a realtime runner, so text-mode apps are unchanged. A `realtime_runner_cls` the app passes is used as is, as a `runner` the app passes is.
+- When `trace.enabled`, the `Module` picks a traced realtime runner from the configured tracer, the way it picks the traced runner (`framework/openai/openai.py:925-929`, `framework/adk/adk.py:1239-1241`). The class is attached whatever the execution mode, as the default one is: only the pipeline, in realtime mode, builds it, so text-mode apps are unchanged. A `realtime_runner_cls` the app passes is used as is, as a `runner` the app passes is.
 - `BaseTrace` gets one optional method per realtime framework (OpenAI, ADK). Not abstract: by default it returns nothing and the untraced class is used, so bring-your-own tracers keep working (the `fetch_spans` precedent, `trace/base.py:71`).
 - A traced realtime runner opens one span when `connect` starts and ends it in `disconnect`.
   - It tags the session id the way that provider's `run()` span does.

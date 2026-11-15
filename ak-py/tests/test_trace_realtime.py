@@ -1,6 +1,6 @@
 """
 Tracing a realtime call (#928): a traced realtime runner opens one span when ``connect`` starts and ends it in
-``disconnect``; the ``Module`` picks it in realtime mode when tracing is enabled.
+``disconnect``; the ``Module`` picks it when tracing is enabled.
 
 Spans are recorded on a local SDK ``TracerProvider`` with an ``InMemorySpanExporter``: the global provider is settable once
 per process, so no test installs one.
@@ -446,7 +446,7 @@ def module_cls(request):
 
 
 class TestModuleSelection:
-    def test_realtime_mode_with_tracing_gets_the_traced_realtime_class_and_one_tracer(self, monkeypatch, module_cls):
+    def test_tracing_enabled_gets_the_traced_realtime_class_and_one_tracer(self, monkeypatch, module_cls):
         module, _, _, traced_realtime, traced_runner = module_cls
         built = _configure(monkeypatch, tracing=True, mode=ExecutionMode.REALTIME)
 
@@ -456,14 +456,15 @@ class TestModuleSelection:
         assert m.runner == traced_runner
         assert built == ["stub"]  # Trace.get() once per module
 
-    def test_text_mode_with_tracing_keeps_the_default_realtime_class(self, monkeypatch, module_cls):
-        module, _, default_realtime, _, traced_runner = module_cls
+    def test_the_traced_class_is_attached_whatever_the_execution_mode(self, monkeypatch, module_cls):
+        # As the default realtime class is: only the pipeline, in realtime mode, ever instantiates it.
+        module, _, _, traced_realtime, traced_runner = module_cls
         _configure(monkeypatch, tracing=True, mode=ExecutionMode.REST_SYNC)
 
         m = module([])
 
-        assert m.realtime_runner_cls is default_realtime
-        assert m.runner == traced_runner  # the text runner is traced as before
+        assert m.realtime_runner_cls is traced_realtime
+        assert m.runner == traced_runner
 
     def test_no_tracing_builds_no_tracer_and_uses_the_defaults(self, monkeypatch, module_cls):
         module, default_runner, default_realtime, _, _ = module_cls

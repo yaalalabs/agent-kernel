@@ -210,7 +210,7 @@ def openai_realtime(self):
 - `TracedRealtimeRunner` opens the span around `connect`, marks it failed on a raising connect or an `error` event, and ends it once in `disconnect`; you write only the span.
 - `RealtimeCallSpan` has `opened()` (a context manager that starts the span and makes it current, with the session tagging, so the native session's tasks inherit it), `fail(message)` and `end()`. The span outlives the task that opens it, so it cannot be one `with` block.
 - A backend that exports every OpenTelemetry span of the provider it installs (Logfire, OpenLLMetry, CloudWatch) subclasses `trace/otel.py`'s `OTelRealtimeCallSpan` and overrides `_tagged()` for its session tagging. Do not use a plain OTel span where the backend filters spans: Langfuse drops one with no `gen_ai.*` attribute from a foreign tracer (`langfuse/_client/span_filter.py`), so it uses its client's observation with `end_on_exit=False`.
-- The `Module` picks the class (`Module._traces_realtime`): only in realtime mode with `trace.enabled`, and never over a class the app passed.
+- The `Module` picks the class when `trace.enabled`, and never over a class the app passed. It attaches the class whatever the execution mode, as it does the default: only the pipeline, in realtime mode, builds it.
 - Native spans: ADK's own `invoke_agent` / `execute_tool` nest under the call span; the OpenAI SDK's realtime session creates none, so an OpenAI call shows one span with no model or tool spans inside (an SDK limit, not rebuilt by AK).
 - Hooks run outside the span, as post-hooks run outside a `run()` span.
 
@@ -373,7 +373,7 @@ class OpenAIModule(Module):
         self.load(agents)
 ```
 
-This means tracing is **transparent** — users don't change their agent code, they just add `trace` config. `OpenAIModule` and `GoogleADKModule` also pick the tracer's realtime class (`tracer.openai_realtime()` / `adk_realtime()`) when `execution.mode` is `realtime`, asking `Trace.get()` once per module.
+This means tracing is **transparent** — users don't change their agent code, they just add `trace` config. `OpenAIModule` and `GoogleADKModule` also pick the tracer's realtime class (`tracer.openai_realtime()` / `adk_realtime()`) when tracing is enabled, asking `Trace.get()` once per module.
 
 ## Checklist
 

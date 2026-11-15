@@ -1234,11 +1234,10 @@ class GoogleADKModule(Module):
             class to override. Only the pipeline (in REALTIME mode) ever instantiates it.
         """
         super().__init__()
-        # One tracer per module: Trace.get() builds and initialises a provider each time. A runner or realtime class the app
-        # passes is used as is, so the tracer is asked only for what the app left unset.
-        traces_realtime = AKConfig.get().trace.enabled and self._traces_realtime(realtime_runner_cls)
-        tracer = Trace.get() if AKConfig.get().trace.enabled and (runner is None or traces_realtime) else None
-        self.realtime_runner_cls = realtime_runner_cls or (tracer.adk_realtime() if traces_realtime else None) or GoogleADKRealtimeRunner
+        # One tracer per module: Trace.get() builds and initialises a provider each time, so it is asked only when the
+        # app left the runner or the realtime class unset. A class the app passes is used as is.
+        tracer = Trace.get() if AKConfig.get().trace.enabled and (runner is None or realtime_runner_cls is None) else None
+        self.realtime_runner_cls = realtime_runner_cls or (tracer.adk_realtime() if tracer else None) or GoogleADKRealtimeRunner
         if runner is not None:
             self.runner = runner
         elif tracer is not None:
