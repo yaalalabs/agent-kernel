@@ -6,6 +6,7 @@ specific instance are refused on a broker transport, because Cloud Run instances
 individually addressable.
 """
 
+import asyncio
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -139,6 +140,26 @@ class TestCloudRunAgentRunner:
     def test_a_receiver_error_is_answered_with_a_nack(self):
         client = TestClient(CloudRunAgentRunner.build_app(self._Receiver(error=ConnectionError("bookkeeping down"))))
         assert client.post("/pubsub/push", json={}).status_code == 500, "a nack, so Pub/Sub redelivers"
+
+    def test_every_delivery_runs_on_one_long_lived_event_loop(self):
+        """SDKs cache async clients on the first loop that used them, so a loop per delivery breaks the second run."""
+        from agentkernel.core.util.async_bridge import run_async_sync
+
+        loops = []
+
+        async def running_loop():
+            return asyncio.get_running_loop()
+
+        class _LoopReceiver:
+            def handle(self, body):
+                loops.append(run_async_sync(running_loop()))  # the same bridge AgentRunner.process uses
+                return 204
+
+        client = TestClient(CloudRunAgentRunner.build_app(_LoopReceiver()))
+        for _ in range(3):
+            assert client.post("/pubsub/push", json={}).status_code == 204
+
+        assert len(set(map(id, loops))) == 1 and not loops[0].is_closed()
 
     def test_the_health_route_serves_the_startup_probe(self):
         assert TestClient(CloudRunAgentRunner.build_app(self._Receiver())).get("/health").json() == {"status": "ok"}

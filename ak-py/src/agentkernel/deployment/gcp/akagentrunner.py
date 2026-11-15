@@ -7,7 +7,9 @@ runner needs no autoscaler of its own.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 from fastapi import Body, FastAPI, Response
@@ -87,9 +89,17 @@ class CloudRunAgentRunner:
     def build_app(cls, receiver: PubSubPushReceiver) -> FastAPI:
         """The runner's web app: the push route plus a health route for Cloud Run's startup probe.
 
-        The push route is a plain function, so FastAPI runs each delivery on its worker-thread pool
-        and the agent run never blocks the event loop.
+        Every delivery runs on one thread that keeps one event loop for the process's life, so the
+        agent run never blocks the server's loop. One loop, not one per delivery: framework SDKs
+        cache async clients (the OpenAI Agents SDK's shared httpx client) bound to the first loop
+        that used them, and a later run on another loop fails with "Event loop is closed". One
+        thread runs one agent at a time, so the service's concurrency defaults to 1, as on ECS.
         """
+        # shortcut: one run at a time per instance; Cloud Run scales out instead. Upgrade to a shared
+        # loop in core/util/async_bridge.py if per-instance concurrency is ever needed.
+        executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="ak-push", initializer=lambda: asyncio.set_event_loop(asyncio.new_event_loop())
+        )
         app = FastAPI(title="Agent Kernel agent runner")
 
         @app.get("/health")
@@ -99,7 +109,7 @@ class CloudRunAgentRunner:
         @app.post(cls.PUSH_PATH)
         def push(body: dict[str, Any] = Body(...)) -> Response:
             try:
-                status = receiver.handle(body)
+                status = executor.submit(receiver.handle, body).result()
             except Exception:
                 # The bookkeeping store is unreachable, for example: a nack, so Pub/Sub redelivers.
                 cls._log.exception("Failed to handle a push delivery: answering with a nack for redelivery")

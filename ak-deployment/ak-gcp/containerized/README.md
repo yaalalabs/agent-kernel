@@ -313,7 +313,7 @@ module "queued_agents" {
     command            = ["python", "-c", "from app import runner; runner()"]
     min_instance_count = 0  # scale to zero between requests
     max_instance_count = 10
-    concurrency        = 5  # agent runs per instance
+    concurrency        = 1  # agent runs per instance (the runner runs one at a time)
   }
 }
 ```

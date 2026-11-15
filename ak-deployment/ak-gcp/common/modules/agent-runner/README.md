@@ -47,7 +47,7 @@ Pass its `push_endpoint` and `push_service_account_email` to the `pubsub` module
 | `command`, `args` | Entrypoint and argument overrides | `list(string)` | `null` |
 | `cpu` / `memory` | Per instance | `string` | `"1"` / `"512Mi"` |
 | `min_instance_count` / `max_instance_count` | Scaling bounds; 0 scales to zero | `number` | `0` / `10` |
-| `concurrency` | Agent runs per instance | `number` | `5` |
+| `concurrency` | Agent runs per instance | `number` | `1` |
 | `container_port` | The app's `api.port` | `number` | `8000` |
 | `environment_variables` | Runner environment, including the queue coordinates | `map(string)` | `{}` |
 | `vpc_connector_id` | VPC connector for Memorystore | `string` | required |

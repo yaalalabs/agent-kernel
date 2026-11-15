@@ -57,7 +57,7 @@ variable "max_instance_count" {
 variable "concurrency" {
   type        = number
   description = "Requests (agent runs) one instance handles at once"
-  default     = 5
+  default     = 1
 }
 
 variable "container_port" {

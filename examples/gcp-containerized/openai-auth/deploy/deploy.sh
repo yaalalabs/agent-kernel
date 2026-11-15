@@ -20,7 +20,7 @@ create_deployment_package() {
     cp Dockerfile ../dist/
 }
 
-create_deployment_package ${2-}
+create_deployment_package ${1-}
 
 terraform init
 terraform apply -var="openai_api_key=${OPENAI_API_KEY}"

@@ -346,7 +346,7 @@ variable "agent_runner" {
     memory                = optional(string, "512Mi")
     min_instance_count    = optional(number, 0)
     max_instance_count    = optional(number, 10)
-    concurrency           = optional(number, 5)
+    concurrency           = optional(number, 1)
     package_path          = optional(string)
     image_uri             = optional(string)
     command               = optional(list(string))

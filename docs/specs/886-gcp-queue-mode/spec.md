@@ -481,7 +481,7 @@ _Rewritten during implementation (2026-11-09): a push-driven Cloud Run service r
 pool and CREMA ([§7](#7-design-amendments-for-re-review) item 9)._
 
 Inputs: `project_id`, `region`, `prefix`, `image_url`, `command`, `args`, `cpu`, `memory`,
-`min_instance_count` (0), `max_instance_count` (10), `concurrency` (5), `container_port` (8000),
+`min_instance_count` (0), `max_instance_count` (10), `concurrency` (1), `container_port` (8000),
 `environment_variables` (map), `vpc_connector_id`, `pubsub` (`topics`, `dead_letter_topics`),
 `grant_firestore` (bool), `labels`.
 
@@ -511,7 +511,7 @@ Inputs: `project_id`, `region`, `prefix`, `image_url`, `command`, `args`, `cpu`,
 | `execution_mode` | `string`, `"rest_sync"` | One of `rest_sync`, `rest_async`: `async` and `realtime` are non-goals on GCP |
 | `message_type` | `string`, `null` | `complete` or `delta` when set |
 | `queue_config` | `object({ input_queue_max_receive_count = optional(number, D), output_queue_max_receive_count = optional(number, D), batch_size = optional(number, 1) })` | counts ≥ 1, `batch_size` 1–1000 (Pub/Sub's pull maximum) |
-| `agent_runner` | `object({ cpu = optional(string, "1"), memory = optional(string, "512Mi"), min_instance_count = optional(number, 0), max_instance_count = optional(number, 10), concurrency = optional(number, 5), package_path = optional(string), image_uri = optional(string), command = optional(list(string)), args = optional(list(string)), environment_variables = optional(map(string), {}) })`, `{}` | when `queue_mode`, at least one of `package_path`, `image_uri`, `command`; `0 <= min_instance_count <= max_instance_count`, `concurrency >= 1` |
+| `agent_runner` | `object({ cpu = optional(string, "1"), memory = optional(string, "512Mi"), min_instance_count = optional(number, 0), max_instance_count = optional(number, 10), concurrency = optional(number, 1), package_path = optional(string), image_uri = optional(string), command = optional(list(string)), args = optional(list(string)), environment_variables = optional(map(string), {}) })`, `{}` | when `queue_mode`, at least one of `package_path`, `image_uri`, `command`; `0 <= min_instance_count <= max_instance_count`, `concurrency >= 1` |
 
 - `D` mirrors AWS per flavor, field names included: `5` in containerized
   (`ak-aws/containerized/variables.tf:340,347`), `3` in serverless (`ak-aws/serverless/variables.tf:467,477`).
