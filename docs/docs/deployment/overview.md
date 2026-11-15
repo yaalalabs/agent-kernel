@@ -65,7 +65,7 @@ Independently of *where* you deploy, `execution.mode` selects *how* requests are
 | `async` | `complete` (default) | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
 | `async` | `delta` | WebSocket | One `STREAM_CHUNK` per stream event, ending with `done: true` | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
 
-`rest_async` with `delta` is rejected when the configuration loads. `execution.mode: stream` was removed: for SSE over REST use `rest_sync` with `message_type: delta`; for chunks over WebSocket use `async` with `message_type: delta`. SSE on a broker transport (SQS, Kafka, NATS) needs a shared response store that can stream chunks: `redis` or `valkey` (DynamoDB cannot).
+`rest_async` with `delta` is rejected when the configuration loads. `execution.mode: stream` was removed: for SSE over REST use `rest_sync` with `message_type: delta`; for chunks over WebSocket use `async` with `message_type: delta`. SSE on a broker transport (SQS, Kafka, NATS, Service Bus) needs a shared response store that can stream chunks: `redis` or `valkey` (DynamoDB cannot).
 
 Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom handlers) execute inline rather than through the pipeline.
 

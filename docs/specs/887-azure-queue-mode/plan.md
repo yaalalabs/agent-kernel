@@ -77,24 +77,23 @@ Builds [spec.md](spec.md) in order. Each iteration leaves the branch green.
 
 ## Iteration 6: Sync docs and skills
 
-- **Goal:** every surface that lists transports or Azure deploy options describes `servicebus` and Azure queue mode.
+- **Goal:** every list that reads as the complete set of transports names `servicebus`, and the Azure deploy
+  docs describe queue mode. Mentions that are only examples stay as they are.
 - **Files:**
-  - `docs/docs/advanced/queue-mode-guide.md`: transport matrix row and a "Running queue mode on Azure
+  - `docs/docs/advanced/queue-mode-guide.md`: both transport tables and a short "Running Queue Mode on Azure
     Service Bus" section.
-  - `docs/docs/deployment/azure-containerized.md`: `queue_mode`, `agent_runner_command`, Redis requirement,
-    supported modes (no WebSocket, G6), and scheduling refused until #952.
-  - `docs/docs/deployment/azure-serverless.md`: Functions stays direct-only and is retired with direct mode.
-  - `docs/docs/core-concepts/configuration.md`: the `servicebus` block.
-  - `docs/docs/advanced/scheduling.md`: the transport list.
-  - `docs/src/pages/features.tsx:868`, `docs/src/components/FeatureExplorer/data.tsx:259-260`,
-    `docs/src/components/IntegrationsMarquee/data.tsx:146` (a Service Bus queue tile).
-  - `ak-deployment/ak-azure/containerized/README.md` (done in iteration 3; recheck).
-  - `.agents/skills/ak-dev-architecture/SKILL.md` (pipeline transports) and
-    `.agents/skills/ak-dev-new-queue-transport/SKILL.md` (shipped-implementations list).
-  - Bundled `ak-py/src/agentkernel/skills/ak-cloud-deploy/SKILL.md` (Azure queue mode, `:12` transport list,
-    `:258` scheduling note) and `ak-add-capabilities/SKILL.md` (transport list).
-  - Not touched: `docs/versioned_docs/`, Helm docs (no chart change).
-- **Steps:** edit the surfaces above, then run the `ak-dev-sync-docs-from-branch` and
-  `ak-dev-sync-skills-from-branch` flows to catch anything this list missed.
-- **Verify:** `cd docs && npm run build`; `grep -rn "SQS, Kafka" docs/docs docs/src ak-py/src/agentkernel/skills .agents/skills`
-  shows no stale lists.
+  - `docs/docs/deployment/azure-containerized.md`: a Queue Mode section (`queue_mode`, `agent_runner_command`,
+    Redis requirement, no WebSocket or scheduling yet).
+  - `docs/docs/core-concepts/configuration.md`: the two `type` lists (the page documents no other transport's
+    block, so no `servicebus` block).
+  - One-word list fixes: `docs/docs/api/a2a-server.md`, `docs/docs/api/mcp-server.md`,
+    `docs/docs/integrations/agui.md`, `docs/docs/deployment/overview.md`, `docs/docs/agent-skills.md`,
+    `docs/src/pages/features.tsx`, `docs/src/components/FeatureExplorer/data.tsx`.
+  - Skills: `.agents/skills/ak-dev-architecture/SKILL.md`, `.agents/skills/ak-dev-new-queue-transport/SKILL.md`,
+    bundled `ak-cloud-deploy` (an Azure queue mode subsection; `queue_mode` is no longer AWS-only) and
+    `ak-add-capabilities`.
+  - Cut, nothing on them becomes false: `azure-serverless.md` (unchanged), `scheduling.md` (Service Bus does not
+    support scheduling yet, so its list stays right), the `IntegrationsMarquee` tile (needs a new logo asset),
+    and the two sync-skill sweeps (replaced by the grep below). Not touched: `docs/versioned_docs/`, Helm docs.
+- **Verify:** `cd docs && npm run build`; `git grep -n -i "Kafka, or NATS\|SQS/Kafka/NATS[^/]\|Kafka or NATS"`
+  over `docs/docs docs/src ak-py/src/agentkernel/skills .agents/skills` finds nothing.
