@@ -18,6 +18,12 @@ def test_reasoning_model_that_cannot_turn_reasoning_off_gets_nothing(model):
     assert reasoning_off_params(model) == {}
 
 
+@pytest.mark.parametrize("model", ["gpt-5-2025-08-07", "openai/gpt-5-2025-08-07", "gpt-5-mini"])
+def test_reasoning_model_whose_info_rejects_none_effort_gets_nothing(model):
+    """LiteLLM marks supports_none_reasoning_effort false for these, and OpenAI rejects reasoning_effort="none"."""
+    assert reasoning_off_params(model) == {}
+
+
 @pytest.mark.parametrize("model", ["gpt-4.1-mini", "openai/gpt-4o-mini"])
 def test_non_reasoning_model_gets_nothing(model):
     assert reasoning_off_params(model) == {}
