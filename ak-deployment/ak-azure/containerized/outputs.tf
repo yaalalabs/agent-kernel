@@ -93,3 +93,23 @@ output "gateway_endpoints" {
     }
   }
 }
+
+output "servicebus_namespace" {
+  description = "Service Bus namespace FQDN (queue_mode only)"
+  value       = var.queue_mode ? "${local.servicebus_namespace}.servicebus.windows.net" : null
+}
+
+output "servicebus_input_queue" {
+  description = "Service Bus input queue name (queue_mode only)"
+  value       = var.queue_mode ? azurerm_servicebus_queue.input[0].name : null
+}
+
+output "servicebus_output_queue" {
+  description = "Service Bus output queue name (queue_mode only)"
+  value       = var.queue_mode ? azurerm_servicebus_queue.output[0].name : null
+}
+
+output "agent_runner_name" {
+  description = "Name of the agent runner Container App (queue_mode only)"
+  value       = var.queue_mode ? azurerm_container_app.agent_runner[0].name : null
+}

@@ -34,7 +34,7 @@ Builds [spec.md](spec.md) in order. Each iteration leaves the branch green.
 - **Files:** `ak-deployment/ak-azure/containerized/{queue_mode.tf,container_app.tf,variables.tf,outputs.tf,README.md}`.
 - **Steps:**
   1. Variables and validation (spec §6).
-  2. `queue_mode.tf`: namespace, queues, runner app with the KEDA rule (`identity_id = "system"`), role
+  2. `queue_mode.tf`: namespace, queues, runner app with the KEDA rule (`identity_id = "System"`), role
      assignments, locals.
   3. `container_app.tf`: edge env merge, `redis-url` secret, grace period, all gated on `queue_mode`.
   4. Outputs; README inputs/outputs tables.
@@ -58,7 +58,8 @@ Builds [spec.md](spec.md) in order. Each iteration leaves the branch green.
 - **Verify:** a manual `run_single_test.py --type azure-containerized --path examples/azure-containerized/openai-queue-mode`
   with `--action deploy`, `test`, then `destroy`, against the module by local path. The contract tests prove
   that Data Owner can create queues through `ServiceBusAdministrationClient` and that a lost session lock
-  redelivers with `delivery_count + 1` (the two behaviours the fake can only assume). Check the namespace
+  redelivers with `delivery_count + 1` (the two behaviours the fake can only assume). Also confirm the runner
+  scales out on queue length (the KEDA rule's `System` identity reads the queue with its Data Owner role). Check the namespace
   is gone after destroy, so a leaked one doesn't break the next weekly run with "already exists".
 
 ## Iteration 5: Tests

@@ -25,6 +25,9 @@ Found while detailing; each tightens the design rather than changing scope. `des
    guide and the docs-site inventories.
 5. **Deliberate departures from `ak-dev-new-queue-transport`**: no `examples/transport/servicebus/` compose
    stack and no per-PR live run (decision 5: no emulator), and no Helm wiring (design Non-goal).
+6. **Found by `terraform plan` in iteration 3** (azurerm `v5.11.0`): the namespace is `<prefix>-queues`, not
+   `-sb` (a reserved suffix); `identity_id` is `"System"`; the runner holds Data Owner, not Data Receiver, on
+   `input` so the KEDA scaler can read the queue length; Terraform injects no `*__TYPE` env (AWS parity).
 
 ## Design
 
@@ -178,17 +181,18 @@ New file `queue_mode.tf`, all resources `count = var.queue_mode ? 1 : 0`:
 
 | Resource | Settings |
 |---|---|
-| `azurerm_servicebus_namespace.queues` | `"${var.prefix}-sb"` (the `-cosmos` naming pattern), `sku = "Standard"`, `local_auth_enabled = false`, `minimum_tls_version = "1.2"` |
+| `azurerm_servicebus_namespace.queues` | `"${var.prefix}-queues"` (Service Bus rejects names ending in `-sb`, caught by `terraform plan`), `sku = "Standard"`, `local_auth_enabled = false`, `minimum_tls_version = "1.2"` |
 | `azurerm_servicebus_queue.input` / `.output` | `requires_session = true`, `requires_duplicate_detection = true`, `duplicate_detection_history_time_window = "PT5M"`, `lock_duration = "PT1M"`, `max_delivery_count = local.max_receive_count + 1`, `dead_lettering_on_message_expiration = true` |
-| `azurerm_container_app.agent_runner` | same environment, registry and image as `app`; `command = var.agent_runner_command`; no `ingress`; system identity; `termination_grace_period_seconds = 300`; `min/max_replicas` from the existing variables; `custom_scale_rule` `azure-servicebus` with `metadata = { namespace, queueName = "input", messageCount = "5" }` and `identity_id = "system"`; env = shared queue env + session env + `var.environment_variables` |
-| `azurerm_role_assignment` ×4 | edge: Data Sender on `input`, Data Receiver on `output`; runner: Data Receiver on `input`, Data Sender on `output` (queue scope) |
+| `azurerm_container_app.agent_runner` | same environment, registry and image as `app`; `command = var.agent_runner_command`; no `ingress`; system identity; `termination_grace_period_seconds = 300`; `min/max_replicas` from the existing variables; `custom_scale_rule` `azure-servicebus` with `metadata = { namespace, queueName = "input", messageCount = "5" }` and `identity_id = "System"` (the provider accepts only that exact casing or a user-assigned identity ID); env and secret refs shared with the edge through `local.app_env` / `local.env_secret_refs` |
+| `azurerm_role_assignment` ×4 | edge: Data Sender on `input`, Data Receiver on `output`; runner: **Data Owner** on `input` (the KEDA scaler reads queue runtime properties, a manage operation on Service Bus), Data Sender on `output` (queue scope) |
 
 - `locals` in `queue_mode.tf`:
   - `max_receive_count = 3` (the AK default, `core/config.py:666-668`), injected as
     `AK_EXECUTION__QUEUES__{INPUT,OUTPUT}__MAX_RECEIVE_COUNT` so the broker ceiling stays one above it.
   - `queue_env`: `AK_EXECUTION__QUEUES__INPUT__URL` / `OUTPUT__URL` (`https://${namespace}.servicebus.windows.net/<queue>`),
-    the two receive counts, `AK_EXECUTION__RESPONSE_STORE__TYPE = "redis"` and the response-store URL by
-    secret reference.
+    the two receive counts and the response-store URL by secret reference. Coordinates only, like
+    `ak-aws/containerized/modules/rest-service/main.tf:31-40`: `execution.queues.type` and
+    `execution.response_store.type` come from the app's `config.yaml`.
   - `messageCount = "5"` matches `no_of_consumers`' default (`core/config.py:669-670`); comment says so.
 - `container_app.tf` edits to `app` (the edge), all gated on `var.queue_mode`:
   - A `redis-url` secret holding `local.full_redis_url`; `AK_EXECUTION__RESPONSE_STORE__REDIS__URL` and the

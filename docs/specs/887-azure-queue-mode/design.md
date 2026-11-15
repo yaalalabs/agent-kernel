@@ -120,9 +120,10 @@ flowchart LR
     length, the existing `container_min_replicas` / `container_max_replicas`, and a termination grace period
     long enough for `ThreadRunner` to drain.
   - The existing `app` becomes the edge: keeps APIM, ingress and the HTTP scale rule; gains queue URLs and
-    response-store env (`AK_EXECUTION__RESPONSE_STORE__TYPE=redis`, URL from a Container Apps secret).
+    the response-store Redis URL from a Container Apps secret (coordinates only; the app's `config.yaml`
+    declares the transport and response-store types, as on AWS).
   - Least-privilege roles on the system identities: edge = Data Sender (input) + Data Receiver (output);
-    runner = Data Receiver (input) + Data Sender (output).
+    runner = Data Owner (input, which the KEDA scaler needs to read queue length) + Data Sender (output).
   - A validation: `queue_mode = true` requires `create_redis_cluster = true` (the response store).
 - New variables: `queue_mode`, `agent_runner_command`. New outputs: namespace and queue names.
 - `ak-azure/serverless` is unchanged.
