@@ -8,5 +8,4 @@ dist.zip
 .pytest_cache
 __pycache__
 .idea
-uv.lock
 rag_storage/

@@ -32,7 +32,7 @@ def _restore_signals_and_shutdown_state():
     AKConfig._reset()
 
 
-def _cfg(mode=None, response_store_type=None, push_auth_token=None, message_type=None, a2a=False, mcp=False, expose_agents=False):
+def _cfg(mode=None, response_store_type=None, push_auth_token=None, message_type=None, a2a=False, mcp=False, expose_agents=False, identity=None):
     class _WebSocketAPI:
         pass
 
@@ -53,7 +53,24 @@ def _cfg(mode=None, response_store_type=None, push_auth_token=None, message_type
 
     _Cfg.a2a = SimpleNamespace(enabled=a2a)
     _Cfg.mcp = SimpleNamespace(enabled=mcp, expose_agents=expose_agents)
+    _Cfg.identity = identity
     return _Cfg
+
+
+def _identity_config_file(monkeypatch) -> None:
+    """Point the real AKConfig at a static identity block and seed its one credential in the environment."""
+    import tempfile
+    from pathlib import Path
+
+    from agentkernel.identity import IdentityProviderFactory
+    from agentkernel.secret import SecretManager
+
+    cfg_path = Path(tempfile.mkdtemp()) / "config.yaml"
+    cfg_path.write_text("identity:\n  provider:\n    type: static\n    static:\n      principals:\n        ALICE_TOKEN:\n          subject: alice\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    monkeypatch.setenv("ALICE_TOKEN", "alice-secret")
+    IdentityProviderFactory.reset()
+    SecretManager.reset()
 
 
 def _store(chunk_capable: bool) -> MagicMock:
@@ -63,18 +80,18 @@ def _store(chunk_capable: bool) -> MagicMock:
 
 
 class TestTopologyValidation:
-    def test_async_on_in_memory_without_validator_rejected(self):
-        with pytest.raises(AKConfigError, match="auth_validator"):
+    def test_async_on_in_memory_without_an_identity_block_rejected(self):
+        with pytest.raises(AKConfigError, match="identity block"):
             IOHandler._validate_topology("in_memory", _cfg(ExecutionMode.ASYNC))
 
-    def test_async_delta_on_in_memory_without_validator_rejected(self):
-        with pytest.raises(AKConfigError, match="auth_validator"):
+    def test_async_delta_on_in_memory_without_an_identity_block_rejected(self):
+        with pytest.raises(AKConfigError, match="identity block"):
             IOHandler._validate_topology("in_memory", _cfg(ExecutionMode.ASYNC, message_type="delta"))
 
-    def test_async_on_in_memory_with_validator_passes(self):
-        IOHandler._validate_topology("in_memory", _cfg(ExecutionMode.ASYNC), auth_validator=MagicMock())
+    def test_async_on_in_memory_with_an_identity_block_passes(self):
+        IOHandler._validate_topology("in_memory", _cfg(ExecutionMode.ASYNC, identity=True))
 
-    def test_websocket_modes_over_broker_need_no_validator_here(self):
+    def test_websocket_modes_over_broker_need_no_identity_block_here(self):
         # Broker topologies authenticate at the standalone gateway, not in this process.
         IOHandler._validate_topology("kafka", _cfg(ExecutionMode.ASYNC, response_store_type="redis", push_auth_token="s3cret"))
         IOHandler._validate_topology("nats", _cfg(ExecutionMode.ASYNC, response_store_type="redis", push_auth_token="s3cret", message_type="delta"))
@@ -378,8 +395,8 @@ class TestPollerCoHosting:
 
 class TestRealtimeWebSocket:
     def test_realtime_does_not_co_host_the_websocket_handlers(self, monkeypatch, caplog):
-        """Realtime replies go to the stateful edge, never the WS push path, so a validator must not
-        mount the WebSocket handlers; it is ignored with the usual warning instead."""
+        """Realtime replies go to the stateful edge, never the WS push path, so the WebSocket
+        handlers are not mounted and no identity block is demanded."""
         from agentkernel.pipeline.ws.endpoint import PushEndpointHandler
         from agentkernel.pipeline.ws.handler import PipelineWebSocketHandler
 
@@ -393,19 +410,20 @@ class TestRealtimeWebSocket:
         monkeypatch.setattr(ThreadRunner, "run", staticmethod(lambda tasks, max_workers=None, exit_on_shutdown=True: None))
 
         with caplog.at_level("WARNING"):
-            IOHandler.run(auth_validator=MagicMock())
+            IOHandler.run()
 
         assert not [h for h in captured["handlers"] if isinstance(h, (PipelineWebSocketHandler, PushEndpointHandler))]
-        assert "auth_validator ignored" in caplog.text
 
 
 class TestMessageTypeTopology:
     """Runner selection and WebSocket co-hosting under the mode / message_type pair (#641)."""
 
     @staticmethod
-    def _run(monkeypatch, mode, message_type=None, auth_validator=None):
+    def _run(monkeypatch, mode, message_type=None, identity=False):
         captured = {}
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        if identity:
+            _identity_config_file(monkeypatch)
         monkeypatch.setenv("AK_EXECUTION__MODE", mode)
         if message_type:
             monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", message_type)
@@ -417,28 +435,42 @@ class TestMessageTypeTopology:
         monkeypatch.setattr("agentkernel.pipeline.io_handler.uvicorn.Server", MagicMock())
         monkeypatch.setattr(IOHandler, "_install_signal_handlers", classmethod(lambda cls, server: None))
         monkeypatch.setattr(ThreadRunner, "run", staticmethod(lambda tasks, max_workers=None, exit_on_shutdown=True: None))
-        IOHandler.run(auth_validator=auth_validator)
+        try:
+            IOHandler.run()
+        finally:
+            from agentkernel.identity import IdentityProviderFactory
+
+            IdentityProviderFactory.reset()
         selected = [name for name, runner in runners.items() if runner.called]
         return captured["handlers"], selected
 
-    def test_rest_sync_delta_streams_without_co_hosting_the_websocket(self, monkeypatch, caplog):
+    def test_rest_sync_delta_streams_without_co_hosting_the_websocket(self, monkeypatch):
         from agentkernel.pipeline.ws.endpoint import PushEndpointHandler
         from agentkernel.pipeline.ws.handler import PipelineWebSocketHandler
 
-        with caplog.at_level("WARNING"):
-            handlers, selected = self._run(monkeypatch, "rest_sync", "delta", auth_validator=MagicMock())
+        handlers, selected = self._run(monkeypatch, "rest_sync", "delta")
 
         assert selected == ["StreamAgentRunner"]
         assert not [h for h in handlers if isinstance(h, (PipelineWebSocketHandler, PushEndpointHandler))]
-        assert "auth_validator ignored" in caplog.text
 
     def test_async_delta_selects_the_stream_runner(self, monkeypatch):
-        _, selected = self._run(monkeypatch, "async", "delta", auth_validator=MagicMock())
+        _, selected = self._run(monkeypatch, "async", "delta", identity=True)
         assert selected == ["StreamAgentRunner"]
 
-    def test_async_complete_selects_the_plain_runner(self, monkeypatch):
-        _, selected = self._run(monkeypatch, "async", auth_validator=MagicMock())
+    def test_async_complete_selects_the_plain_runner_and_co_hosts_the_websocket(self, monkeypatch):
+        from agentkernel.pipeline.ws.endpoint import PushEndpointHandler
+        from agentkernel.pipeline.ws.handler import PipelineWebSocketHandler
+
+        handlers, selected = self._run(monkeypatch, "async", identity=True)
         assert selected == ["AgentRunner"]
+        assert [type(h) for h in handlers if isinstance(h, (PipelineWebSocketHandler, PushEndpointHandler))] == [
+            PipelineWebSocketHandler,
+            PushEndpointHandler,
+        ]
+
+    def test_async_without_an_identity_block_is_refused(self, monkeypatch):
+        with pytest.raises(AKConfigError, match="identity block"):
+            self._run(monkeypatch, "async")
 
     def test_realtime_selects_the_realtime_runner_not_the_stream_runner(self, monkeypatch):
         _, selected = self._run(monkeypatch, "realtime")

@@ -13,7 +13,7 @@ MAF is the unified successor to AutoGen and Semantic Kernel, providing a modern,
 Install Agent Kernel with the `maf` extra, plus the MAF package for your model provider. The `maf` extra installs only the provider-neutral MAF core (`agent-framework-core`):
 
 ```bash
-pip install "agentkernel[maf]" agent-framework-openai
+uv add "agentkernel[maf]" agent-framework-openai
 ```
 
 `agent-framework-openai` covers OpenAI, Azure OpenAI, and any OpenAI-compatible endpoint. For other providers, see [Model providers](#model-providers).
@@ -117,7 +117,7 @@ client = OpenAIChatCompletionClient(model="llama3.1", base_url="http://localhost
 For a native provider integration, install that provider's MAF package and import its client from the matching `agent_framework` namespace:
 
 ```bash
-pip install agent-framework-anthropic   # also: agent-framework-gemini, -bedrock, -mistral, -ollama, -foundry
+uv add agent-framework-anthropic   # also: agent-framework-gemini, -bedrock, -mistral, -ollama, -foundry
 ```
 
 ```python
@@ -152,7 +152,7 @@ agent = Agent(
 MAFModule([agent])
 ```
 
-Tools bound this way reach execution context (session, agent, requests) through `ToolContext.get()` —
+Tools bound this way reach execution context (session, agent, requests) through `ToolContext.get()`:
 the same portable mechanism as every other adapter, so a tool function bound here also works unchanged on
 any other framework. Native MAF tools that take a `FunctionInvocationContext` instead read the per-run
 [framework context](#per-run-contextstate). See [Tools](../core-concepts/tools) for the full guide.
@@ -253,7 +253,7 @@ agent = Agent(client, name="shopping", instructions="...", tools=MAFToolBuilder.
 MAFModule([agent]).pre_hook(agent, [SeedContextPreHook()])
 ```
 
-The adapter injects a copy of the framework context into the native session state under `ak_context` before each run. When the native call completes — including a run that pauses for approval — it merges the tool-modified dictionary back into the AK session, so tool-added keys survive across turns. A run whose native call fails, or a stream interrupted before it drains, leaves the stored context unchanged. The conversation is stored before the context, so a context that cannot be stored (an unpicklable value) loses only the context, never the turn.
+The adapter injects a copy of the framework context into the native session state under `ak_context` before each run. When the native call completes, including a run that pauses for approval, it merges the tool-modified dictionary back into the AK session, so tool-added keys survive across turns. A run whose native call fails, or a stream interrupted before it drains, leaves the stored context unchanged. The conversation is stored before the context, so a context that cannot be stored (an unpicklable value) loses only the context, never the turn.
 
 The native session state is shared with every MAF context provider configured on the agent, so do not put secrets in the framework context. See `examples/cli/maf_context` for a complete example.
 
@@ -337,8 +337,8 @@ See [examples/cli/maf](https://github.com/yaalalabs/agent-kernel/tree/develop/ex
 complete CLI example with a bound weather tool.
 
 For per-run context/state carried across turns, see
-[examples/cli/maf_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/maf_context)
-— a cart kept in the framework context and mutated by native MAF tools through `FunctionInvocationContext`.
+[examples/cli/maf_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/maf_context):
+a cart kept in the framework context and mutated by native MAF tools through `FunctionInvocationContext`.
 
 For per-agent native run options, see [examples/cli/maf-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/maf-run-options)
 (`options` and `function_invocation_kwargs`, with a deterministic `Run stats:` line on every reply).

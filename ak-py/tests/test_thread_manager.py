@@ -64,12 +64,21 @@ class TestConversationThreadManager:
         assert created.user_id == "u1"
         assert created.group_id == "g1"
 
-        # Second call: user_id/group_id are fixed at creation; only an explicit name applies
-        loaded = thread_enabled.get_or_create_thread("s1", "u2", group_id="g2", name="other")
+        # Second call: group_id is fixed at creation; only an explicit name applies
+        loaded = thread_enabled.get_or_create_thread("s1", "u1", group_id="g2", name="other")
         assert loaded.user_id == "u1"
         assert loaded.group_id == "g1"
         assert loaded.name == "other"
         assert loaded.name_locked is True
+
+    def test_get_or_create_refuses_another_users_thread(self, thread_enabled):
+        """A thread is one user's conversation: a second user neither loads nor renames it (#603)."""
+        thread_enabled.get_or_create_thread("s1", "u1", first_prompt="Hello")
+
+        with pytest.raises(PermissionError, match="Thread s1 is not owned by user u2"):
+            thread_enabled.get_or_create_thread("s1", "u2", name="other")
+
+        assert thread_enabled.get_thread("s1").name == "Hello"
 
     def test_explicit_name_wins_over_prompt(self, thread_enabled):
         thread = thread_enabled.get_or_create_thread("s1", "u1", name="My thread", first_prompt="Hello world")

@@ -11,27 +11,28 @@ dependencies = []
 #
 # The request handler verifies, acknowledges and enqueues Slack messages, and the response handler
 # delivers the replies, so both carry the `slack` extra (Bolt, FastAPI, aiohttp). Neither needs the
-# heavy OpenAI Agents SDK; only the agent runner does. The authorizer needs nothing but `aws`:
-# WebhookRouteMatcher imports no platform SDK.
+# heavy OpenAI Agents SDK; only the agent runner does. The authorizer needs nothing but `aws` for
+# the static provider (WebhookRouteMatcher imports no platform SDK); add `auth` to it,
+# `agentkernel[aws,auth]`, before swapping in an `oidc`, `cognito`, `entra` or `firebase` block.
 request_handler = [
-    "agentkernel[aws,slack]>=0.9.5",
+    "agentkernel[aws,slack]>=0.10.0",
 ]
 response_handler = [
-    "agentkernel[aws,slack]>=0.9.5",
+    "agentkernel[aws,slack]>=0.10.0",
 ]
 agent_runner = [
-    "agentkernel[aws,openai,multimodal]>=0.9.5",
+    "agentkernel[aws,openai,multimodal]>=0.10.0",
 ]
 authorizer = [
-    "agentkernel[aws]>=0.9.5",
+    "agentkernel[aws]>=0.10.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.5",
-    "black==26.5.1",
-    "isort>=5.0.0",
-    "mypy>=1.0.0",
+    "agentkernel[test]>=0.10.0",
+    "black==26.10.1",
+    "isort>=5.0.0,<10.0.0",
+    "mypy>=1.0.0,<3.0.0",
 ]
 
 [tool.uv]

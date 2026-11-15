@@ -61,28 +61,30 @@ Two terminals. The agent and the UI are separate processes, and the agent is use
 
 ```bash
 export OPENAI_API_KEY=...
+export DEMO_TOKEN=demo-token
 ./build.sh local        # `local` installs agentkernel from ../../../ak-py/dist
 uv run app.py           # :8000
 ```
 
 ```bash
 curl -s localhost:8000/api/v1/chat \
-  -H 'content-type: application/json' \
-  -d '{"prompt": "I need to file an expense", "session_id": "s1", "user_id": "demo-user", "agent": "expenses"}'
+  -H 'authorization: Bearer demo-token' -H 'content-type: application/json' \
+  -d '{"prompt": "I need to file an expense", "session_id": "s1", "agent": "expenses"}'
 
 # the same turn, read back out of thread history
 curl -s localhost:8000/api/v1/threads/s1 -H 'authorization: Bearer demo-token'
 ```
 
-Two things about identity, and they are not the same thing. `user_id` is **required** on chat and
-was not before: the thread handler owns these routes now, and a thread belongs to someone — but it
-is still taken from the body, on trust. The **read** routes are different: `app.py` passes a
-`DemoAuthoriser`, so they resolve the caller from a Bearer token, scope the listing to that user,
-and reject reading somebody else's thread. Drop the header and you get a 401.
+One thing about identity: a bearer token is **required** on chat and was not before. The thread
+handler owns these routes now, and a thread belongs to someone, so every one of its routes, chat and
+read alike, resolves the caller from the token through the identity provider in
+[`config.yaml`](config.yaml). The listing is the caller's own, reading or continuing somebody else's
+thread is a 403, and dropping the header gets a 401.
 
-`demo-token` is a static map entry standing in for a real provider. A real deployment validates a
-token it issued — and authenticates the chat route too, rather than believing the `user_id` it is
-handed.
+`demo-token` is the value of `DEMO_TOKEN`, the one credential the `static` provider maps to the
+principal `demo-user`; the value lives in the environment, not in the file. A real deployment swaps
+the provider for `oidc` (Auth0, Keycloak, Okta or any OIDC issuer), `cognito`, `entra` or `firebase`
+and validates a token it issued, with no code change here.
 
 **Terminal 2 — the UI** (optional; the agent works without it):
 
@@ -147,9 +149,9 @@ Turning on history is two things: the `thread` block in [`config.yaml`](config.y
 store, and mounting `ThreadRequestHandler` (through `IOHandler.run`, so the agent runs behind the
 queue) is what actually enables recording. The handler records the user message before the request
 is enqueued and the runner records the reply, and it also serves `GET /api/v1/threads` and
-`GET /api/v1/threads/{session_id}` — the two routes the **History** rail in the UI reads. Those two
-are behind the `Authoriser`, so `fetchAll` in [`App.tsx`](frontend/src/App.tsx) sends the demo
-token; the chat POST beside it does not.
+`GET /api/v1/threads/{session_id}`, the two routes the **History** rail in the UI reads. Every route
+takes the bearer token, so `fetchAll` and the chat POST in [`App.tsx`](frontend/src/App.tsx) both send
+the demo token.
 
 To see the point: file an expense, then click the conversation again in **History**. The form comes
 back as a form.

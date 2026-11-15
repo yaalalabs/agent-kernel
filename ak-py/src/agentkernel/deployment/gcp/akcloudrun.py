@@ -75,7 +75,7 @@ class CloudRun:
         queue-mode edge (REST API plus response handler), which needs a shared response store.
         This is the entry point equivalent of ``Lambda.handler()`` for AWS.
 
-        REST authentication stays on ``GCPAuthorizer(...).register()``, which applies to every
+        REST authentication comes from the ``identity`` block, which applies to every
         route this server mounts.
 
         Call this from your ``main()`` function::

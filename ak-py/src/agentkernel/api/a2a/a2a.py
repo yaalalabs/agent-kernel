@@ -11,8 +11,9 @@ from a2a.types import AgentCard, InternalError, Message, UnsupportedOperationErr
 from ...a2ui.hook import A2UIPostHook
 from ...core import Agent
 from ...core.config import AKConfig
-from ...core.model import BaseRunRequest
+from ...core.model import BaseRunRequest, Principal
 from ...core.runtime import Runtime
+from ...identity.provider.request import RequestAuthenticator
 
 if TYPE_CHECKING:  # pragma: no cover: annotation only; api reaches pipeline lazily
     from ...pipeline.request_handler import QueuedReply, RestHandler
@@ -73,7 +74,9 @@ class A2A:
             if not context.message:
                 raise ValueError("RequestContext must have a message")
 
-            body = BaseRunRequest(prompt=context.get_user_input(), agent=self.agent_name, session_id=context.context_id)
+            body = BaseRunRequest(
+                prompt=context.get_user_input(), agent=self.agent_name, session_id=context.context_id, principal=self._principal(context)
+            )
             try:
                 reply = await A2A.get_client().request(body, protocol=A2A.PROTOCOL)
             except ReplyTimeoutError as e:
@@ -91,6 +94,17 @@ class A2A:
 
         async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
             raise UnsupportedOperationError()
+
+        @staticmethod
+        def _principal(context: RequestContext) -> Principal:
+            """The caller's principal: from the call context the handler's builder filled, else the
+            request's contextvar (a caller that reached the executor another way), else anonymous."""
+            call_context = getattr(context, "call_context", None)
+            state = getattr(call_context, "state", None)
+            principal = state.get("principal") if isinstance(state, dict) else None
+            if isinstance(principal, Principal):
+                return principal
+            return RequestAuthenticator.current() or Principal.anonymous()
 
         @classmethod
         def _as_message(cls, reply: "QueuedReply", context: RequestContext) -> Message:

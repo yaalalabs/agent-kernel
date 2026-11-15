@@ -20,37 +20,37 @@ const FRAMEWORKS = [
 
 const FRAMEWORK_DATA = {
   openai: {
-    installation: `# 1. Install the CLI\npip install agentkernel[openai]`,
+    installation: `# 1. Create a project\nuv init --python 3.12 my-agent && cd my-agent\n\n# 2. Install the CLI\nuv add "agentkernel[openai]"`,
     usage: `from agents import Agent as OpenAIAgent\nfrom agentkernel.cli import CLI\nfrom agentkernel.openai import OpenAIModule\n\nagent = OpenAIAgent(\n    name="assistant",\n    instructions="You are a helpful assistant.",\n)\n\nOpenAIModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/frameworks/openai",
   },
   crewai: {
-    installation: `# 1. Install the CLI\npip install agentkernel[crewai]`,
+    installation: `# 1. Create a project\nuv init --python 3.12 my-agent && cd my-agent\n\n# 2. Install the CLI\nuv add "agentkernel[crewai]"`,
     usage: `from crewai import Agent as CrewAgent\nfrom agentkernel.cli import CLI\nfrom agentkernel.crewai import CrewAIModule\n\nagent = CrewAgent(\n    role="assistant",\n    goal="Help users with their questions",\n    backstory="You are a helpful AI assistant",\n    verbose=False,\n)\n\nCrewAIModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/frameworks/crewai",
   },
   langgraph: {
-    installation: `# 1. Install the CLI\npip install agentkernel[langgraph]`,
+    installation: `# 1. Create a project\nuv init --python 3.12 my-agent && cd my-agent\n\n# 2. Install the CLI\nuv add "agentkernel[langgraph]"`,
     usage: `from typing import TypedDict\nfrom langgraph.graph import StateGraph, END\nfrom agentkernel.cli import CLI\nfrom agentkernel.langgraph import LangGraphModule\n\nclass State(TypedDict):\n    messages: list\n\ndef agent_node(state: State):\n    return {"messages": state["messages"] + ["response"]}\n\nworkflow = StateGraph(State)\nworkflow.add_node("agent", agent_node)\nworkflow.set_entry_point("agent")\nworkflow.add_edge("agent", END)\n\ngraph = workflow.compile()\ngraph.name = "assistant"\n\nLangGraphModule([graph])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/frameworks/langgraph",
   },
   adk: {
-    installation: `# 1. Install the CLI\npip install agentkernel[adk]`,
+    installation: `# 1. Create a project\nuv init --python 3.12 my-agent && cd my-agent\n\n# 2. Install the CLI\nuv add "agentkernel[adk]"`,
     usage: `from adk import Agent as ADKAgent\nfrom agentkernel.cli import CLI\nfrom agentkernel.adk import GoogleADKModule\n\nagent = ADKAgent(\n    name="assistant",\n    model="gemini-2.0-flash-exp",\n    instructions="You are a helpful AI assistant",\n)\n\nGoogleADKModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/frameworks/google-adk",
   },
   smolagents: {
-    installation: `# 1. Install the CLI\npip install agentkernel[smolagents]`,
+    installation: `# 1. Create a project\nuv init --python 3.12 my-agent && cd my-agent\n\n# 2. Install the CLI\nuv add "agentkernel[smolagents]"`,
     usage: `from smolagents import LiteLLMModel, ToolCallingAgent\nfrom agentkernel.cli import CLI\nfrom agentkernel.smolagents import SmolagentsModule\n\nmodel = LiteLLMModel(model_id="openai/gpt-4o")\n\nassistant = ToolCallingAgent(\n    tools=[],\n    model=model,\n    name="assistant",\n    description="You are a helpful AI assistant",\n)\n\nSmolagentsModule([assistant])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/frameworks/smolagents",
   },
   pydanticai: {
-    installation: `# 1. Install the CLI (provider-agnostic core)\npip install agentkernel[pydanticai]\n\n# 2. Install the model provider you want\npip install "pydantic-ai-slim[openai]"`,
+    installation: `# 1. Create a project\nuv init --python 3.12 my-agent && cd my-agent\n\n# 2. Install the CLI (provider-agnostic core)\nuv add "agentkernel[pydanticai]"\n\n# 3. Install the model provider you want\nuv add "pydantic-ai-slim[openai]"`,
     usage: `from pydantic_ai import Agent\nfrom agentkernel.cli import CLI\nfrom agentkernel.pydanticai import PydanticAIModule\n\nagent = Agent(\n    model="openai:gpt-4o-mini",\n    name="assistant",\n    description="A helpful assistant.",\n    instructions="You are a helpful assistant.",\n)\n\nPydanticAIModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/frameworks/pydantic-ai",
   },
   maf: {
-    installation: `# 1. Install the CLI (provider-agnostic core)\npip install agentkernel[maf]\n\n# 2. Install the model provider you want\npip install agent-framework-openai`,
+    installation: `# 1. Create a project\nuv init --python 3.12 my-agent && cd my-agent\n\n# 2. Install the CLI (provider-agnostic core)\nuv add "agentkernel[maf]"\n\n# 3. Install the model provider you want\nuv add agent-framework-openai`,
     usage: `from agent_framework import Agent\nfrom agent_framework.openai import OpenAIChatClient\nfrom agentkernel.cli import CLI\nfrom agentkernel.maf import MAFModule\n\nagent = Agent(\n    OpenAIChatClient(model="gpt-4.1-mini"),\n    name="assistant",\n    description="A helpful assistant.",\n    instructions="You are a helpful assistant.",\n)\n\nMAFModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/next/frameworks/microsoft-agents",
   },

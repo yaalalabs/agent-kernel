@@ -87,9 +87,9 @@ shared image whose per-Deployment `command` selects the entry file.
 
 | Deployment | Default command | Entry point |
 |---|---|---|
-| io-handler | `python app_io_handler.py` | `IOHandler.run()` (pass `auth_validator=` only for the in_memory single-process profile's WebSocket co-hosting) |
+| io-handler | `python app_io_handler.py` | `IOHandler.run()`; REST routes authenticate through the `identity` block in `config.yaml`, which the in_memory single-process profile's WebSocket co-hosting requires |
 | agent-runner | `python app_agent_runner.py` | registers your agent modules, then `AgentRunner.run()` |
-| ws-gateway | `python app_ws_gateway.py` | `WebSocketGateway.run(auth_validator=...)` |
+| ws-gateway | `python app_ws_gateway.py` | `WebSocketGateway.run()`; authenticates each handshake's `?token=` through the `identity` block in `config.yaml` and refuses to start without one |
 
 Your `config.yaml` (baked into the image) declares what runs: `execution.mode`, agents,
 logging. The chart injects where it runs as environment variables, which override the
@@ -145,6 +145,15 @@ secretStore:
 - **Rotation.** Kubelet refreshes the files after a short delay; no checksum annotation is added, so
   a Secret change does not roll the pods. Values the app reads once at startup need a rollout restart.
 
+- **Identity credentials.** The keys of a `static` identity provider (`identity.provider.static.principals`)
+  name secrets too, never values. The io-handler and ws-gateway tiers build the provider, and the mount
+  reaches only the agent-executing tier, so in the split topology deliver the credential through
+  `extraEnv` from a Secret: the per-tier `ioHandler.extraEnv` and `wsGateway.extraEnv` keep it off the
+  agent runner, as [examples/k8s/openai-queue-mode](../../examples/k8s/openai-queue-mode/) does with its
+  `demo-credentials` Secret and `DEMO_AUTH_TOKEN`. In the single-process profile the io handler is that
+  tier and can read the credential from its mount. An `oidc`, `cognito`, `entra` or `firebase`
+  provider needs no secret, only the `auth` extra in the image.
+
 The environment still wins: a set, non-empty `OPENAI_API_KEY` in the container (for example from
 an `extraEnv` `secretKeyRef`) is used before any mounted file. See [Secret Resolution](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/advanced/secrets.md) for the
 provider side.
@@ -185,8 +194,9 @@ wsGateway:
     token: <random shared secret>   # or existingSecret
 ```
 
-The gateway owns client sockets and nothing else: it authenticates the handshake (your
-`auth_validator`), enqueues chat frames directly to the transport, and records each
+The gateway owns client sockets and nothing else: it authenticates the handshake's `?token=`
+through the identity provider named by the `identity` block in your `config.yaml`, enqueues chat
+frames directly to the transport, and records each
 connection in the shared connection store (provided by the session backend, so `session.type`
 must be a shared store such as `valkey`). Response Handlers on the io pods resolve the user's
 current connections and POST each frame to the owning pod's `/internal/push`, authenticated

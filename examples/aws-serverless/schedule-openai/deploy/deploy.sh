@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eo pipefail # exit if any command in this script fails
 
-# The request and response handlers deploy as local zips; the agent runner deploys as a container
+# The request handler, response handler and authorizer deploy as local zips; the agent runner deploys as a container
 # image because agentkernel[aws,openai,cron] (the OpenAI Agents SDK in particular) does not fit
 # inside Lambda's 250 MB unzipped zip limit. Terraform builds and pushes that image from
 # ../dist_agent_runner, so Docker must be running.
@@ -64,10 +64,12 @@ LOCAL_BUILD=${1-}
 create_zip_deployment_package request_handler lambda_request_handler.py dist_request_handler "aws,cron"
 create_image_deployment_package agent_runner lambda_agent_runner.py dist_agent_runner "aws,openai,cron"
 create_zip_deployment_package response_handler lambda_response_handler.py dist_response_handler "aws"
+create_zip_deployment_package authorizer lambda_auth.py dist_auth "aws"
 
 echo "Package sizes:"
 report_zip_size dist_request_handler
 report_zip_size dist_response_handler
+report_zip_size dist_auth
 echo "  dist_agent_runner: $(du -sh ../dist_agent_runner | cut -f1) image build context"
 
 rm -f ../requirements.txt

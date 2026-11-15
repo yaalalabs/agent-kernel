@@ -39,22 +39,23 @@ The Runtime:
 
 ## The run() Pipeline
 
-`Runtime.run(agent, session, requests)` is the central execution method used by every surface:
+`Runtime.run(agent, session, requests, principal=None)` is the central execution method used by every surface:
 
 1. Acquires the session lock (`async with session`); concurrent requests for the same session are serialized, and `Session.current()` becomes available.
-2. Runs **pre-hooks**: the agent's hooks first, then system hooks (input guardrails, multimodal). A pre-hook can rewrite the request list, or halt execution by returning an `AgentReply`; the agent never runs in that case.
-3. Calls `agent.runner.run(agent, session, requests)` for framework execution.
-4. Runs **post-hooks**: system hooks (output guardrails) first, then the agent's hooks. Each must return a valid `AgentReply`.
-5. Persists the session via the configured `SessionStore`.
-6. Clears the session's volatile cache in a `finally` block.
+2. Publishes the **principal** the surface authenticated (the anonymous principal when none) with the agent as its `actor`, so `session.get_principal()` and `ToolContext.principal` read it for the run's duration; the first authenticated principal to run here is recorded as the session's owner (`session.get_owner()`). See [Identity and access](../advanced/identity-and-access.md).
+3. Runs **pre-hooks**: the agent's hooks first, then system hooks (input guardrails, multimodal). A pre-hook can rewrite the request list, or halt execution by returning an `AgentReply`; the agent never runs in that case.
+4. Calls `agent.runner.run(agent, session, requests)` for framework execution.
+5. Runs **post-hooks**: system hooks (output guardrails) first, then the agent's hooks. Each must return a valid `AgentReply`.
+6. Persists the session via the configured `SessionStore`.
+7. Clears the session's volatile cache, the published principal with it, in a `finally` block.
 
 ## The stream() Pipeline
 
-`Runtime.stream(agent, session, requests)` is the streaming counterpart (used when `execution.message_type: delta`). It shares the same pre-hook pipeline, then:
+`Runtime.stream(agent, session, requests, principal=None)` is the streaming counterpart (used when `execution.message_type: delta`). It shares the same pre-hook pipeline, then:
 
 - Iterates `agent.runner.stream(...)`. Adapters that still yield raw token strings (rather than typed `StreamEvent`s) have those strings normalised into a synthesized `MessageStart`/`TextDelta`/`MessageEnd` sequence.
 - Passes **every** event through each post-hook's `on_stream_event()`. A hook may pass it, rewrite it in place, return `None` to drop it, or return a list to emit several events in its place; a returned list is emitted as-is and ends the chain for that event.
-- Yields a `StreamChunk(delta=..., event=...)` per surviving event — `delta` is populated only when the event is a `TextDelta`, and is taken from the event finally emitted so the two can never disagree — then a final `StreamChunk(done=True)`.
+- Yields a `StreamChunk(delta=..., event=...)` per surviving event: `delta` is populated only when the event is a `TextDelta`, and is taken from the event finally emitted so the two can never disagree: then a final `StreamChunk(done=True)`.
 - If a pre-hook halts, yields a single `StreamChunk(error=..., done=True)`.
 - If a post-hook raises `StreamHalt`, emits the closing event for any boundary the stream left open, then a single `StreamChunk(error=..., done=True)`, and does **not** store the session. Any other exception propagates unchanged.
 - Stores the session and clears the volatile cache in `finally`, same as `run()`.

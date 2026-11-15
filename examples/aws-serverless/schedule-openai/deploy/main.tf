@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers            = { aws = aws, docker = docker }
   prefix               = var.prefix
@@ -64,6 +64,27 @@ module "serverless_agents" {
     },
   ]
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
+  # ---- Authorizer ----
+  # Every route needs an authenticated caller: a task belongs to the principal whose request
+  # created it. The authorizer validates the bearer token through the identity block in
+  # config.yaml (lambda_auth.py is one line) and hands the principal to the request handler.
+  authorizer = {
+    description           = "Bearer-token auth through the identity provider in config.yaml"
+    function_name         = "gtwy-auth"
+    handler_path          = "lambda_auth.handler"
+    package_path          = "../dist_auth.zip"
+    package_type          = "LocalZip"
+    result_ttl_in_seconds = 0
+    environment_variables = {
+      # The credential of the static identity provider in config.yaml. Not needed with an oidc block.
+      "DEMO_AUTH_TOKEN" = var.demo_auth_token
+    }
+  }
+
   # ---- Request handler ----
   # Chat ingress plus the custom schedule management routes.
   request_handler = {
@@ -75,9 +96,6 @@ module "serverless_agents" {
     memory_size          = 256
     timeout              = 45
     security_group_id    = var.request_handler_security_group_id
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # ---- Agent runner ----
@@ -94,9 +112,6 @@ module "serverless_agents" {
     package_type         = "Image"
     package_path         = "../dist_agent_runner"
     security_group_id    = var.agent_runner_security_group_id
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # ---- Response handler ----

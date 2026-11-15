@@ -8,10 +8,15 @@ from agentkernel.core.model import ExecutionMode
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.deployment.aws.containerized.ecs_io_handler import ECSIOHandler
 from agentkernel.deployment.common import ThreadRunner
+from agentkernel.identity import IdentityProviderFactory
 
 
 def _set_mode(monkeypatch, mode, message_type=None):
     monkeypatch.setattr(ECSIOHandler, "_config", SimpleNamespace(execution=_ExecutionConfig(mode=mode, message_type=message_type)))
+
+
+def _set_identity(monkeypatch, provider):
+    monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
 
 
 @pytest.fixture(autouse=True)
@@ -20,32 +25,50 @@ def _stub_thread_runner(monkeypatch):
     monkeypatch.setattr(ThreadRunner, "run", MagicMock())
 
 
-def test_rest_mode_with_auth_validator_binds_it_via_add_auth_handlers(monkeypatch):
+def test_rest_mode_starts_the_api_and_consumer_threads(monkeypatch):
+    """Authentication is the identity dependency every REST route already carries: nothing is bound here."""
     _set_mode(monkeypatch, ExecutionMode.REST_SYNC)
-    fake_rest_api = MagicMock()
-    monkeypatch.setattr("agentkernel.deployment.aws.containerized.core.api.rest_api.AWSRestAPI", fake_rest_api)
-
-    validator = MagicMock()
-    ECSIOHandler.run(auth_validator=validator)
-
-    fake_rest_api.add_auth_handlers.assert_called_once_with(auth_validators=[validator])
-
-
-def test_rest_mode_without_auth_validator_skips_binding(monkeypatch):
-    _set_mode(monkeypatch, ExecutionMode.REST_SYNC)
-    fake_rest_api = MagicMock()
-    monkeypatch.setattr("agentkernel.deployment.aws.containerized.core.api.rest_api.AWSRestAPI", fake_rest_api)
+    monkeypatch.setattr("agentkernel.deployment.aws.containerized.core.api.rest_api.AWSRestAPI", MagicMock())
 
     ECSIOHandler.run()
 
-    fake_rest_api.add_auth_handlers.assert_not_called()
+    tasks = ThreadRunner.run.call_args.kwargs["tasks"]
+    assert [task.thread_name for task in tasks] == ["rest-api", "output-queue-consumer"]
 
 
-def test_websocket_mode_requires_auth_validator(monkeypatch):
+def test_websocket_mode_requires_an_identity_block(monkeypatch):
+    """$connect authenticates through the provider, so without one the WebSocket API cannot be served."""
     _set_mode(monkeypatch, ExecutionMode.ASYNC)
+    _set_identity(monkeypatch, None)
 
-    with pytest.raises(ValueError, match="auth_validator is required"):
+    with pytest.raises(AKConfigError, match="identity block"):
         ECSIOHandler.run()
+
+    ThreadRunner.run.assert_not_called()
+
+
+def test_async_delta_requires_an_identity_block(monkeypatch):
+    _set_mode(monkeypatch, ExecutionMode.ASYNC, "delta")
+    _set_identity(monkeypatch, None)
+
+    with pytest.raises(AKConfigError, match="identity block"):
+        ECSIOHandler.run()
+
+    ThreadRunner.run.assert_not_called()
+
+
+def test_websocket_mode_with_an_identity_block_serves_the_websocket_api(monkeypatch):
+    _set_mode(monkeypatch, ExecutionMode.ASYNC)
+    _set_identity(monkeypatch, MagicMock())
+    fake_ws_api = MagicMock()
+    monkeypatch.setattr("agentkernel.deployment.aws.containerized.core.api.websocket_api.AWSWebsocketAPI", fake_ws_api)
+    extra = MagicMock()
+
+    ECSIOHandler.run(handlers=[extra])
+    tasks = ThreadRunner.run.call_args.kwargs["tasks"]
+    tasks[0].execution_function()
+
+    fake_ws_api.run.assert_called_once_with(handlers=[extra])
 
 
 def test_rest_sync_delta_is_refused_before_any_thread_starts(monkeypatch):
@@ -53,16 +76,9 @@ def test_rest_sync_delta_is_refused_before_any_thread_starts(monkeypatch):
     _set_mode(monkeypatch, ExecutionMode.REST_SYNC, "delta")
 
     with pytest.raises(AKConfigError, match="rest_sync with message_type delta"):
-        ECSIOHandler.run(auth_validator=MagicMock())
+        ECSIOHandler.run()
 
     ThreadRunner.run.assert_not_called()
-
-
-def test_async_delta_requires_auth_validator(monkeypatch):
-    _set_mode(monkeypatch, ExecutionMode.ASYNC, "delta")
-
-    with pytest.raises(ValueError, match="auth_validator is required"):
-        ECSIOHandler.run()
 
 
 @pytest.mark.parametrize("env", [{"AK_A2A__ENABLED": "true"}, {"AK_MCP__ENABLED": "true", "AK_MCP__EXPOSE_AGENTS": "true"}])

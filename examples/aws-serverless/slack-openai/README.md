@@ -27,9 +27,14 @@ Slack --POST /api/v1/slack/events--> API Gateway --> Authorizer (bypass: method 
 - **Request-handler Lambda**: the chat route plus `POST /api/v1/slack/events`, registered with
   `@Lambda.register("/slack/events", method="POST")` on a function that calls
   `LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter())).handle`.
-- **Authorizer Lambda**: bearer-token auth for the chat route, with
-  `bypass=WebhookRouteMatcher.for_integrations("slack")` for the webhook. Slack sends no bearer
-  token; the adapter's signature check is the real authentication.
+- **Authorizer Lambda**: bearer-token auth for the chat route through the identity provider in
+  `config.yaml` (the `static` provider, whose one credential is the `demo_auth_token` Terraform
+  variable), with `bypass=WebhookRouteMatcher.for_integrations("slack")` for the webhook. Slack sends
+  no bearer token; the adapter's signature check is the real authentication. To validate real tokens
+  instead (Auth0, Keycloak or Okta through `oidc`, or Cognito, Entra ID, Firebase), add `auth` to the
+  `authorizer` extra in `pyproject.toml` and swap the block; `../openai-auth` shows the Auth0 block
+  and the [Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access) page
+  covers every provider.
 - **Agent-runner Lambda**: runs the agent. It keeps the message's return address (`integration`
   plus the `reply_*` context) on the reply.
 - **Response-handler Lambda**: delivers the reply to Slack through the Slack outbound adapter.
@@ -40,7 +45,7 @@ The three must agree, and a mismatch fails quietly from Agent Kernel's side:
 
 | Where | What | Symptom when it is missing |
 |---|---|---|
-| `lambda_auth.py` | `WebhookRouteMatcher.for_integrations("slack")` | Slack gets 403: with no `Authorization` header the authorizer logs `Event validation failed` and denies without calling the validator |
+| `lambda_auth.py` | `WebhookRouteMatcher.for_integrations("slack")` | Slack gets 403: with no `Authorization` header the authorizer logs `Event validation failed` and denies without consulting the identity provider |
 | `lambda_request_handler.py` | `@Lambda.register("/slack/events", method="POST")` calling `LambdaWebhookHost(...).handle` | Slack gets 500: the router has no route |
 | `deploy/main.tf` | `gateway_endpoints = [{ path = "/slack/events", method = "POST" }]` | API Gateway answers 403 before any Lambda runs |
 
@@ -77,9 +82,23 @@ itself.
 
 ## Deploy
 
-Create `deploy/terraform.tfvars` values (or `TF_VAR_*` variables) for `openai_api_key`,
-`slack_bot_token`, `slack_signing_secret`, `demo_auth_token`, `vpc_id` and `private_subnet_ids`,
-then:
+Store the three secrets in SSM Parameter Store, where `<prefix>` is `prefix` in
+`deploy/terraform.tfvars`:
+
+```bash
+for pair in "openai_api_key=$OPENAI_API_KEY" "slack_bot_token=$SLACK_BOT_TOKEN" "slack_signing_secret=$SLACK_SIGNING_SECRET"; do
+  aws ssm put-parameter --name "/ak/<prefix>/${pair%%=*}" --type SecureString --value "${pair#*=}" --overwrite
+done
+```
+
+The deployment sets `ssm_enabled = true`, which grants all three Lambdas `ssm:GetParameter` on
+`/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`; `config.yaml` selects the `aws_ssm` secret provider.
+The request handler resolves `SLACK_SIGNING_SECRET` (and `SLACK_BOT_TOKEN`) to verify and acknowledge each
+delivery, the agent runner resolves `OPENAI_API_KEY`, and the response handler resolves `SLACK_BOT_TOKEN`
+to reply. No secret passes through Terraform or sits in a Lambda's environment.
+
+Then create `deploy/terraform.tfvars` values (or `TF_VAR_*` variables) for `demo_auth_token`, `vpc_id`
+and `private_subnet_ids`, and deploy:
 
 ```bash
 cd deploy
@@ -90,7 +109,8 @@ cd deploy
 Docker must be running: the agent runner deploys as a container image.
 
 > Serving webhooks on Lambda needs an `agentkernel` and an `ak-serverless` module release that
-> include messaging-integration support (#760). Until those are published, deploy with
+> include messaging-integration support (#760) and SSM access for the request and response handlers
+> (#858). Until those are published, deploy with
 > `./deploy.sh local` and point the module `source` at `../../../../ak-deployment/ak-aws/serverless`.
 
 ## Cold starts and Slack's 3 seconds

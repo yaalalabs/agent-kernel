@@ -32,6 +32,7 @@ import {
   MdMessage,
   MdCloudUpload,
   MdFactCheck,
+  MdVerifiedUser,
 } from "react-icons/md";
 import {
   FaSlack,
@@ -929,6 +930,20 @@ function CoreFeatures() {
         "Off-topic filtering",
       ],
       link: "/docs/advanced/guardrails",
+    },
+    {
+      icon: <MdVerifiedUser />,
+      title: "Identity & Access",
+      description:
+        "One identity provider, configured not coded, authenticates every surface and gives tools, hooks and threads the caller as a principal.",
+      highlights: [
+        "Any OIDC issuer: Auth0, Keycloak, Okta",
+        "Amazon Cognito, Microsoft Entra ID, Firebase",
+        "Static credentials through the secret capability",
+        "REST, WebSocket, AG-UI, MCP, A2A, CLI and messaging",
+      ],
+      // The identity page is only in the unreleased docs until the next release; drop `next` once it ships.
+      link: "/docs/next/advanced/identity-and-access",
     },
     {
       icon: <MdNetworkCheck />,

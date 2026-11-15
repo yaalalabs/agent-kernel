@@ -15,6 +15,7 @@ from fastapi import HTTPException, Request
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
+from ...secret import SecretManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
@@ -32,16 +33,25 @@ class _TelegramClient:
 
     def __init__(self):
         config = AKConfig.get().telegram
-        self._bot_token = config.bot_token
+        # An empty field falls back to the secret provider, under the key its *_key field names.
+        secrets = SecretManager.current()
+        self._bot_token = config.bot_token or secrets.get(config.bot_token_key, default="")
         if not self._bot_token:
-            _log.error("Telegram bot token is not configured. Please set bot_token.")
-            raise ValueError("Incomplete Telegram configuration.")
+            message = f"Incomplete Telegram configuration: set {secrets.describe(config.bot_token_key, 'telegram.bot_token')}."
+            _log.error(message)
+            raise ValueError(message)
         self._base_url = f"https://api.telegram.org/{config.api_version or 'bot'}{self._bot_token}"
-        self._webhook_secret = config.webhook_secret
+        self._webhook_secret = config.webhook_secret or secrets.get(config.webhook_secret_key, default="")
 
     @property
     def webhook_secret(self) -> str:
         return self._webhook_secret
+
+    @property
+    def bot_id(self) -> str | None:
+        """The bot's id, the part of its token before the colon: the scope a Telegram user id is seen under (#603)."""
+        bot_id, separator, _ = self._bot_token.partition(":")
+        return bot_id if separator else None
 
     async def send_message(self, chat_id: str, chunks: list[str]) -> None:
         """Send each chunk as its own message, in order."""
@@ -211,6 +221,7 @@ class TelegramInboundAdapter(InboundAdapter):
             prompt=text,
             agent=self._agent,
             user_id=sender_id,
+            namespace=self._client.bot_id,
             reply_context={"chat_id": session_id},
         )
 

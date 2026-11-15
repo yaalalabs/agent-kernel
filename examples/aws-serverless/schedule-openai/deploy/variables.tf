@@ -14,11 +14,6 @@ variable "is_production" {
   default     = false
 }
 
-variable "openai_api_key" {
-  description = "OpenAI API Key"
-  type        = string
-}
-
 variable "vpc_id" {
   description = "VPC ID for Lambda deployment"
   type        = string
@@ -46,4 +41,10 @@ variable "response_handler_security_group_id" {
   description = "Response handler security group ID for Lambda deployment"
   type        = string
   default     = null
+}
+
+variable "demo_auth_token" {
+  description = "The one credential the static identity provider in config.yaml accepts as a bearer token"
+  type        = string
+  sensitive   = true
 }

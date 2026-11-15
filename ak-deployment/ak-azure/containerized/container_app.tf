@@ -8,6 +8,7 @@ resource "azurerm_container_app_environment" "env" {
   infrastructure_subnet_id       = local.function_subnet_id
   internal_load_balancer_enabled = true
 
+  logs_destination           = "log-analytics"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.container_logs.id
   tags                       = var.tags
 

@@ -9,6 +9,7 @@ slug: /
 
 :::tip What's New
 ☁️ **Queue mode on GCP** - Cloud Run deployments now run the queue pipeline by default: an edge service and a push-driven agent-runner service connected by Google Cloud Pub/Sub, both scaling to zero, with Memorystore for replies. [Learn more →](./deployment/gcp-serverless.md#queue-mode)
+🪪 **Identity and Access** - One configured identity provider (Auth0, Keycloak or Okta over OIDC, Amazon Cognito, Microsoft Entra ID, Firebase, a static map, or your own) authenticates every surface, and tools, hooks, threads and scheduled tasks see the same `Principal`. [Learn more →](./advanced/identity-and-access.md)
 
 🧠 **Claude Agent SDK** - Run agents built on Anthropic's Claude Code harness (built-in file, shell and web tools, subagents, hooks) in Agent Kernel, with conversations that continue on any replica. [Learn more →](./frameworks/claude-agent-sdk.md)
 

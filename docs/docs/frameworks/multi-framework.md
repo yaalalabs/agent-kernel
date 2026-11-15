@@ -87,13 +87,13 @@ if __name__ == "__main__":
 To use multiple frameworks, install Agent Kernel with the required framework extensions:
 
 ```bash
-pip install agentkernel[cli,crewai,openai]
+uv add "agentkernel[cli,crewai,openai]"
 ```
 
 For all supported frameworks:
 
 ```bash
-pip install agentkernel[cli,crewai,openai,langgraph,google-adk,smolagents]
+uv add "agentkernel[cli,crewai,openai,langgraph,adk,smolagents,pydanticai,maf,claude]"
 ```
 
 ## Project Structure

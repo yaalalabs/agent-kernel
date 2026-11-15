@@ -45,7 +45,7 @@ which resolves to `agentkernel.test.core.evaluator.jev.JevAKEvaluator`:
 **Outbound data:** every judged comparison sends the user input, expected output and actual output to
 `api.typesafe.ai`. For sensitive data, use `deepeval` or `opik` (judged by your own LLM) instead.
 
-Requires the `jev` extra (`pip install "agentkernel[jev]"`), already declared in this package's
+Requires the `jev` extra (`uv add "agentkernel[jev]"`), already declared in this package's
 [`pyproject.toml`](pyproject.toml).
 
 See [`agentkernel.test.core.evaluator.jev`](../../../ak-py/src/agentkernel/test/core/evaluator/jev.py)

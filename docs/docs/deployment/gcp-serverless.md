@@ -27,7 +27,7 @@ Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous J
 ## Prerequisites
 
 - GCP CLI configured: `gcloud auth application-default login`
-- Terraform >= 1.9.5
+- Terraform >= 1.9.5, <= 1.16.7
 - Docker installed
 - An existing GCP project with billing enabled
 - Required APIs enabled:
@@ -75,7 +75,7 @@ dependencies = [
 
 ### Providers
 
-The module is provider-agnostic — it does not configure the `google`/`google-beta`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
+The module is provider-agnostic: it does not configure the `google`/`google-beta`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
 
 ```hcl
 provider "google" {
@@ -182,6 +182,22 @@ module "serverless_agent" {
   }
 }
 ```
+
+`enable_jwt_auth` makes API Gateway verify Google-issued identity tokens for `jwt_audiences` before
+Cloud Run sees the request; the application itself runs every request as the anonymous principal.
+
+A built-in `identity` block does not recover that caller behind the gateway. API Gateway calls Cloud
+Run with its own Google-signed token in `Authorization`, copies the caller's original header to
+`X-Forwarded-Authorization`, and sends the claims it verified in `X-Apigateway-Api-Userinfo`. The
+built-in providers read only `Authorization`, so they see the gateway's token, not the caller's. To
+make the caller visible to agents, tools and hooks as a `Principal`,
+[bring an identity provider of your own](../advanced/identity-and-access.md#bring-your-own-provider):
+its `authenticate` receives every request header in `context.headers`, so it can verify the caller's
+token from `X-Forwarded-Authorization` against the issuer and audience the gateway checks.
+`X-Apigateway-Api-Userinfo` carries no signature, so read it only with
+`allow_unauthenticated_invocation = false`, which leaves the gateway as the one caller Cloud Run
+accepts; with the default public Cloud Run URL a client can send that header directly. See
+[Identity and Access](../advanced/identity-and-access.md).
 
 ## Session Configuration
 
@@ -326,7 +342,7 @@ terraform apply
 See working examples in the repository:
 
 - [`examples/gcp-serverless/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai): Basic deployment with Redis
-- [`examples/gcp-serverless/openai-auth`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-auth): With JWT authentication
+- [`examples/gcp-serverless/openai-auth`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-auth): With JWT authentication at the API Gateway
 - [`examples/gcp-serverless/openai-firestore`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-firestore): With Firestore sessions
 - [`examples/gcp-serverless/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-queue-mode): Queue mode, edge + push-driven agent runner over Pub/Sub
 

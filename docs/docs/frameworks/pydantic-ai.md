@@ -12,14 +12,14 @@ for automatic provider failover.
 ## Installation
 
 ```bash
-pip install agentkernel[pydanticai]
+uv add "agentkernel[pydanticai]"
 ```
 
 `agentkernel[pydanticai]` installs the **provider-agnostic** `pydantic-ai-slim` core — it ships no
 model provider. Install the provider you intend to use:
 
 ```bash
-pip install "pydantic-ai-slim[openai]"       # or [anthropic], [google], [bedrock], [groq], ...
+uv add "pydantic-ai-slim[openai]"       # or [anthropic], [google], [bedrock], [groq], ...
 ```
 
 Switching providers is then a one-line change to the model string — that provider freedom is the

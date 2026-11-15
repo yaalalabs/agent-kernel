@@ -22,10 +22,24 @@ Perfect for microservices, web applications, APIs requiring persistent connectio
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
-| Google Provider | >= 6.8.0 |
-| Google Beta Provider | >= 6.8.0 |
+| Terraform | >= 1.9.5, <= 1.16.7 |
+| Google Provider | 8.8.1 |
+| Google Beta Provider | 8.8.1 |
 | Docker Provider | 3.6.2 |
+| Null Provider | 3.2.4 |
+| Random Provider | 3.9.1 |
+| Time Provider | 0.14.2 |
+
+### Version pinning
+
+Providers are pinned to exact versions, so `terraform init` resolves the same, tested providers on every machine and a new upstream release cannot break a deploy until the pin is moved on purpose. To bump a version:
+
+1. Change the `version` in every file that declares the provider (or, for the Terraform CLI, the `<=` cap in `required_version`): `ak-gcp/common/versions.tf`, `ak-gcp/common/modules/*/main.tf`, `ak-gcp/serverless/main.tf`, `ak-gcp/containerized/main.tf` and each GCP example's `deploy/providers.tf`.
+2. Check the provider changelog for regressions in the resources these modules use, and avoid releases that are only days old.
+3. Run `terraform init -upgrade` and `terraform validate` in each example's `deploy/` directory, and commit the regenerated `.terraform.lock.hcl`.
+4. Run `terraform plan` against an existing stack (expect no replacements), deploy at least one example, then release the modules.
+
+Lock files: the examples (root configurations you run) commit `.terraform.lock.hcl`; the modules do not, because Terraform ignores a child module's lock file and the registry release does not publish it.
 
 ## 🔌 Providers
 
@@ -391,7 +405,7 @@ gateway_endpoints = [
 |------|-------------|------|---------|:--------:|
 | `create_redis_cluster` | Create Memorystore Redis instance for agent memory. Queue mode always creates it, as its response store | `bool` | `false` | no |
 | `create_firestore_database` | Create Firestore database for agent session storage | `bool` | `false` | no |
-| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database` — it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml` — setting this flag alone leaves threads on the in-memory backend. Note that enabling threads makes `user_id` required on every chat request. | `bool` | `false` | no |
+| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database`; it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml`; setting this flag alone leaves threads on the in-memory backend. Note that enabling threads requires an authenticated caller: an `identity` block in `config.yaml` and a bearer token on every chat request. Behind API Gateway the caller's token reaches Cloud Run as `X-Forwarded-Authorization`, which only an identity provider of your own reads (see the Agent Kernel GCP deployment guide). | `bool` | `false` | no |
 
 **Redis Environment Variables (Auto-injected when enabled)**:
 - `AK_SESSION__REDIS__URL`: Complete Redis connection URL with authentication
@@ -468,7 +482,7 @@ When `authorizer` is set, API Gateway validates JWT tokens in every request befo
 | `gateway_url` | API Gateway base URL | `myapp-prod-api-12345678-gw-abc123.uc.gateway.dev` |
 | `api_gateway_id` | API Gateway ID | `myapp-prod-api-12345678-api` |
 | `agent_invoke_url` | Full agent invocation URL via API Gateway | `https://myapp-prod-api-12345678-gw-abc123.uc.gateway.dev/api/v1/chat` |
-| `authorizer_status` | JWT authorizer configuration status | `"JWT Authorizer configured (issuer: ...)"` or `"No authorizer configured — endpoints are publicly accessible"` |
+| `authorizer_status` | JWT authorizer configuration status | `"JWT Authorizer configured (issuer: ...)"` or `"No authorizer configured: endpoints are publicly accessible"` |
 | `input_topic` | Pub/Sub topic carrying chat requests (queue mode only) | `myapp-prod-api-agent-input` |
 | `output_topic` | Pub/Sub topic carrying agent replies (queue mode only) | `myapp-prod-api-agent-output` |
 | `agent_runner_service` | Agent-runner Cloud Run service name (queue mode only) | `myapp-prod-api-runner` |

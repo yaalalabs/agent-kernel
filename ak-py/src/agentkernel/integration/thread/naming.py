@@ -33,7 +33,7 @@ _DEFAULT_MAX_NAME_LENGTH = 80
 
 _LITELLM_MISSING_WARNING = (
     "litellm is not installed — LLM-based thread naming is unavailable and thread names "
-    'will fall back to a truncated prompt prefix. Install it with: pip install "agentkernel[thread]"'
+    'will fall back to a truncated prompt prefix. Install it with: uv add "agentkernel[thread]"'
 )
 
 

@@ -14,24 +14,6 @@ variable "is_production" {
   default     = false
 }
 
-variable "openai_api_key" {
-  description = "OpenAI API Key"
-  type        = string
-  sensitive   = true
-}
-
-variable "slack_bot_token" {
-  description = "Slack bot token (xoxb-...), used by the request handler to acknowledge and by the response handler to reply"
-  type        = string
-  sensitive   = true
-}
-
-variable "slack_signing_secret" {
-  description = "Slack signing secret, used by the request handler to verify every delivery"
-  type        = string
-  sensitive   = true
-}
-
 variable "demo_auth_token" {
   description = "Bearer token the demo authorizer accepts on the chat route"
   type        = string

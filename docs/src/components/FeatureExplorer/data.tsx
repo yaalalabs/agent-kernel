@@ -168,8 +168,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Conversation Threads",
         description:
-          "Persistent, named conversation threads keyed by session, readable over REST with cursor pagination and auto-named from the first prompt.",
-        tags: ["Threads", "REST", "Auto-naming"],
+          "Persistent, named conversation threads keyed by session, readable over REST with cursor pagination and auto-named from the first prompt. A paused run and the decision answering it are recorded as messages of their own.",
+        tags: ["Threads", "REST", "Auto-naming", "Human in the loop"],
         docs: "/docs/advanced/threads",
         example: "api/thread-openai",
       },
@@ -213,11 +213,12 @@ export const FEATURE_TABS: FeatureTab[] = [
         example: "cli/openai-secret",
       },
       {
-        title: "Authentication",
+        title: "Identity & Access",
         description:
-          "Bring your own validator for REST and WebSocket routes, with JWT and JWKS validation, cloud API gateway authorizers, and per-user scoping of threads and schedules.",
-        tags: ["JWT", "JWKS", "Authorisers"],
-        docs: "/docs/api/rest-api",
+          "One configured identity provider authenticates every surface: any OIDC issuer (Auth0, Keycloak, Okta), Amazon Cognito, Microsoft Entra ID, Firebase, a static credential map, or your own. Tools, hooks, threads and scheduled tasks see the same principal; a role mapper derives roles from groups and claims.",
+        tags: ["OIDC", "Auth0", "Cognito", "Entra ID", "Firebase", "Principal"],
+        // Drop `next` once the release that carries the identity layer is published.
+        docs: "/docs/next/advanced/identity-and-access",
         example: "aws-serverless/openai-auth",
       },
       {

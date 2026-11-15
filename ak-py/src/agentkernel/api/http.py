@@ -1,12 +1,12 @@
 import logging
 
 import uvicorn
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from ..auth import AuthValidator, ValidationContext
 from ..core.config import AKConfig
+from ..identity.provider.request import RequestAuthenticator
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
 
 
@@ -18,7 +18,6 @@ class RESTAPI:
 
     _log = logging.getLogger("ak.api.http")
     _custom_routers = []
-    _auth_token_validators = []
 
     @classmethod
     def get_default_handlers(cls) -> list[RESTRequestHandler]:
@@ -30,10 +29,15 @@ class RESTAPI:
 
     @classmethod
     def _get_router_dependencies(cls):
-        """Get dependencies to apply to APIRouters.
-        :return: List of dependencies or None if no auth validators are configured
+        """The dependency every included router runs: the identity dependency.
+
+        It puts the request's principal on ``request.state.principal``, the anonymous principal
+        when no ``identity`` block is configured, so every handler reads the principal the same way.
+        A handler that declares ``authenticates_itself`` (a messaging webhook) is mounted without it.
+
+        :return: The dependency list.
         """
-        return cls._auth_token_validators if cls._auth_token_validators else None
+        return [Depends(RequestAuthenticator.from_config().dependency())]
 
     @classmethod
     def _create_app(cls, routers, lifespan=None) -> FastAPI:
@@ -182,9 +186,10 @@ class RESTAPI:
             handlers = cls.get_default_handlers()
 
         routers = []
+        self_authenticating = []
         for handler in handlers:
             if handler is not None:
-                routers.append(handler.get_router())
+                (self_authenticating if getattr(handler, "authenticates_itself", False) is True else routers).append(handler.get_router())
 
         if AKConfig.get().a2a.enabled:
             from .a2a.handler import A2ARESTRequestHandler
@@ -197,40 +202,17 @@ class RESTAPI:
             mcp_app = MCP.get_http_app()
             app = cls._create_app(routers=routers, lifespan=mcp_app.lifespan)
             app.mount("/mcp", mcp_app)
+            # RFC 9728 resource metadata belongs at the origin's root, where the 401 points; inside the
+            # /mcp mount FastMCP would serve it under /mcp/.well-known, which no client looks up.
+            auth = MCP.get().auth
+            if auth is not None:
+                app.router.routes.extend(auth.get_well_known_routes(mcp_path="/"))
         else:
             app = cls._create_app(routers=routers)
+        # Routes that verify their own callers (a platform's signed webhook) skip the identity dependency.
+        for router in self_authenticating:
+            app.include_router(router)
         # Add custom routers
         for router in cls._custom_routers:
             app.include_router(router, prefix=AKConfig.get().api.custom_router_prefix, dependencies=cls._get_router_dependencies())
         return app
-
-    @classmethod
-    def add_auth_handlers(cls, auth_validators: list[AuthValidator]):
-        """Add authentication validators to the REST API.
-        :param auth_validators: List of auth validators to add for token validation
-        """
-
-        def get_auth_function(token_validator: AuthValidator):
-            def verify_token(request: Request):
-                """Verify authentication token for incoming requests.
-                :param request: FastAPI Request object
-                :return: ValidationResult if token is valid
-                :raises: HTTPException if authentication fails
-                """
-                request_url = str(request.url)
-                cls._log.debug(f"Validating token for request: {request.method} {request_url}")
-                auth_token = request.headers.get("authorization")
-                if auth_token is None:
-                    raise HTTPException(status_code=401, detail="Missing authorization header")
-                auth_token = auth_token.replace("Bearer ", "").strip()
-                result = token_validator.validate(
-                    token=auth_token, context=ValidationContext(path=request_url, http_method=request.method, headers=dict(request.headers))
-                )
-                if not result.is_valid:
-                    raise HTTPException(status_code=401, detail=result.error_msg or "Unauthorized")
-                return result
-
-            return verify_token
-
-        for token_validator in auth_validators:
-            cls._auth_token_validators.append(Depends(get_auth_function(token_validator)))

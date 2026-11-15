@@ -173,15 +173,15 @@ await test.send("Hello")
 await test.expect(["Hello! How can I help?"])  # Uses configured mode
 ```
 
-**Built-in evaluators:** `deepeval` (default, requires `pip install "agentkernel[test]"`), `opik`
-(requires `pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet).
+**Built-in evaluators:** `deepeval` (default, requires `uv add "agentkernel[test]"`), `opik`
+(requires `uv add "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet).
 Opik's `score` mode uses its `LevenshteinRatio` metric, an offline string-similarity check that
 never calls an LLM; `llm` mode uses its `GEval` judge, which runs locally against the LLM configured
 under `llm:`. Neither mode requires an Opik Cloud account, API key, or self-hosted server. See
 [`examples/cli/opik-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/opik-evaluator)
 for a complete working example.
 
-`jev` (requires `pip install "agentkernel[jev]"`) is a hosted judge, [TypeSafe JEV](https://docs.typesafe.ai). It
+`jev` (requires `uv add "agentkernel[jev]"`) is a hosted judge, [TypeSafe JEV](https://docs.typesafe.ai). It
 has no score-based metric, so it works only with `mode: llm` (`score` and `fallback` raise
 `AKMetricNotSupported`). It reads `TYPESAFE_API_KEY` from the environment and ignores the `llm:` block.
 **Every judged comparison sends the user input, expected output and actual output to `api.typesafe.ai`** — for

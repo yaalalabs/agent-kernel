@@ -57,7 +57,10 @@ supplies the polished chat UI, generative UI and human-in-the-loop pieces this e
 not. Note that it expects a CopilotKit Runtime (a Node service) in front of the agent, so it is a
 different architecture from this single-origin demo — worth knowing before you choose.
 
-`OPENAI_API_KEY` must be set in the environment.
+`OPENAI_API_KEY` and `DEMO_TOKEN` must be set in the environment (see [Authorization](#authorization)):
+
+    export OPENAI_API_KEY=sk-...
+    export DEMO_TOKEN=demo-token
 
 ## What the surface looks like
 
@@ -106,11 +109,15 @@ type.
 
 ## Authorization
 
-AG-UI has no open mode — `AGUIRequestHandler` refuses to construct without an `Authoriser` or an
-`AuthValidator`, because its routes run agents on a caller's behalf. Agent Kernel does not
-authenticate users itself: you supply an `Authoriser` subclass that validates the Bearer token
-against your own provider and resolves the caller's `user_id`. Here `DemoAuthoriser` uses a static
-token map (`demo-token` → `demo-user`), and the resolved user becomes the run's acting user.
+AG-UI has no open mode: `AGUIRequestHandler` refuses to construct without an `identity` block in
+`config.yaml`, because its routes run agents on a caller's behalf. The block names the identity
+provider that turns the bearer token into the run's principal. Here it is the `static` provider with
+one credential mapped to the principal `demo-user`; the credential's value is not in the file but
+resolved from the environment (`DEMO_TOKEN`) when the app starts, which is why the frontend's default
+token is `demo-token` and the run section exports that value. A request without a token, or with one
+the provider refuses, is a 401. To validate real tokens, swap the provider for `oidc` (Auth0, Keycloak,
+Okta or any other OIDC issuer), `cognito`, `entra` or `firebase`;
+[`examples/aws-serverless/openai-auth`](../../aws-serverless/openai-auth/README.md) shows an Auth0 block.
 
 ## Client-supplied context
 
@@ -257,7 +264,7 @@ makes it the smaller thing to reason about for a demo or low traffic:
 from agentkernel.agui import AGUIRequestHandler
 from agentkernel.api import RESTAPI
 
-RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=DemoAuthoriser())])
+RESTAPI.run(handlers=[AGUIRequestHandler()])
 ```
 
 The routes and the events are the same; what you give up is retries and scaling the agent apart

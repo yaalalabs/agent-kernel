@@ -846,6 +846,8 @@ class TestGoogleADKRunOptions:
             "state_delta",
             "invocation_id",
             "yield_user_message",
+            "live_request_queue",
+            "session",
         }
 
     def test_split_routes_constructor_keys_and_leaves_the_rest_for_run_async(self):

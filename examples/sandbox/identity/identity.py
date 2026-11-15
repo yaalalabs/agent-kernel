@@ -12,6 +12,13 @@ identity rather than one shared agent identity:
 * ``SessionUserPrincipalResolver`` — the ``PrincipalResolver`` the sandbox calls when it
   needs the execution identity. It reads what the pre-hook stored and returns a user-mode
   ``SandboxPrincipal`` (falling back to the agent identity when no user is present).
+
+A custom resolver is no longer required for user-mode execution. With an ``identity`` block in
+config.yaml, every surface authenticates the caller into the run's principal, and the default
+resolver (``AgentPrincipalResolver``) already runs an authenticated run as that principal: its
+subject and groups, with no credentials. This example keeps its own resolver because it shows
+the bring-your-own path end to end, and because it maps the caller onto provider credentials
+(the role ARN), which the default resolver deliberately does not.
 """
 
 from agentkernel import Agent, PreHook, Session

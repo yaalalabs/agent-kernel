@@ -18,7 +18,7 @@ Walled AI guardrails provide safety validation and PII redaction for Agent Kerne
 Install Agent Kernel with Walled AI extras:
 
 ```bash
-pip install agentkernel[walledai]
+uv add "agentkernel[walledai]"
 ```
 
 Set required environment variables:
@@ -27,6 +27,8 @@ Set required environment variables:
 export WALLED_API_KEY=your-walledai-api-key
 export AK_LOGGING__AK__LEVEL=DEBUG
 ```
+
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](secrets.md#framework-owned-credentials).
 
 ## Configuration
 

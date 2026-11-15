@@ -2,7 +2,7 @@
 # Lambda module configuration for deploying OpenAI Agent Lambda function
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { aws = aws, docker = docker }
   # Basic lambda configuration
@@ -10,6 +10,10 @@ module "serverless_agents" {
   create_dynamodb_multimodal_memory_table = true
   product_display_name                    = "Agent Kernel OpenAI Multimodal with DynamoDB"
   region                                  = var.region
+
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
 
   # Request handler configuration
   request_handler = {
@@ -20,8 +24,5 @@ module "serverless_agents" {
     package_type         = "Image"
     memory_size          = 2048
     timeout              = 60
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 }

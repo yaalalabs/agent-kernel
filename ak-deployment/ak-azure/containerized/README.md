@@ -19,8 +19,23 @@ Perfect for microservices, web applications, APIs requiring persistent connectio
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
-| Azure Provider | >= 4.57.0, < 5.0.0 |
+| Terraform | >= 1.9.5, <= 1.16.7 |
+| Azure Provider | 5.11.0 |
+
+### Version pinning
+
+Providers are pinned to exact versions, so `terraform init` resolves the same, tested providers on every machine and a new upstream release cannot break a deploy until the pin is moved on purpose. To bump a version:
+
+1. Change the `version` in every file that declares the provider (or, for the Terraform CLI, the `<=` cap in `required_version`): `ak-azure/common/versions.tf`, `ak-azure/serverless/main.tf`, `ak-azure/containerized/main.tf` and each Azure example's `deploy/providers.tf`.
+2. Check the provider changelog for regressions in the resources these modules use, and avoid releases that are only days old.
+3. Run `terraform init -upgrade` and `terraform validate` in each example's `deploy/` directory, and commit the regenerated `.terraform.lock.hcl`.
+4. Run `terraform plan` against an existing stack (expect no replacements), deploy at least one example, then release the modules.
+
+Lock files: the examples (root configurations you run) commit `.terraform.lock.hcl`; the modules do not, because Terraform ignores a child module's lock file and the registry release does not publish it.
+
+**Upgrading from azurerm 4.x:** state written by azurerm 5.x cannot be read by 4.x, so the move is one-way. Run `terraform plan` before the first apply and check that it shows no replacements.
+
+**Known issue: API Management `405 Method Not Allowed`.** After `azurerm_api_management` is created, the provider fails with `retrieving tenant access properties ... 405 Method Not Allowed: Direct management API is disabled for this service`. Azure changed the API Management service, so every azurerm version up to and including 5.13.0 fails. The instance itself is healthy. It affects every SKU except `Consumption` and `V2`: `ak-azure/containerized` (`Developer_1`) and `ak-azure/serverless` with `is_production = true` (`Basic_1`). Non-production serverless (`Consumption_0`) is not affected. When the provider fix is released, move the azurerm pin to that version, and run `terraform untaint` on the API Management instance before the next apply, or Terraform will replace it.
 
 ## 🔌 Providers
 

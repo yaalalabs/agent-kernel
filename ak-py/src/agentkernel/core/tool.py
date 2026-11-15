@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from .base import Agent, AgentRequest, Session
 from .config import AKConfig
-from .model import SystemTool
+from .model import AccessLevel, Principal, SystemTool
 
 if TYPE_CHECKING:
     from .runtime import Runtime
@@ -106,6 +106,25 @@ class ToolContext:
         :param context: The per-run copy of the session's framework context.
         """
         self._framework_context = context
+
+    @property
+    def principal(self) -> Principal | None:
+        """
+        The principal the run acts as, as Runtime published it: the authenticated user with the agent as its
+        actor, or the anonymous principal when the surface authenticated nobody.
+        :return: The run's Principal, or None outside a run.
+        """
+        return self._session.get_principal()
+
+    @property
+    def access_level(self) -> AccessLevel | None:
+        """
+        The level the principal holds on the agent, from the tool filter the access gate published. A tool that
+        cannot be split into read and write variants reads this to refuse the higher operation.
+        :return: The AccessLevel, or None when no authorization block gates the run, which a tool treats as no restriction.
+        """
+        tool_filter = self._session.get_tool_filter()
+        return tool_filter.level if tool_filter is not None else None
 
     @classmethod
     def get(cls) -> Self:

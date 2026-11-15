@@ -57,6 +57,8 @@ code { font-family: ui-monospace, monospace; background: var(--panel); padding: 
 }
 .approval .why { color: var(--muted); font-size: 13px; margin-top: 10px; }
 .approval .settled { color: var(--muted); font-size: 13px; padding: 0 14px 14px; }
+
+.approval .staged { color: var(--muted); font-size: 13px; padding: 0 14px 14px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 14px 14px; }
 .approval .answer {
   flex: 1;

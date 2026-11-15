@@ -210,7 +210,7 @@ uv run pytest -s
 Make sure `boto3` dependency is installed via `agentkernel`:
 
 ```bash
-pip install agentkernel[aws]
+uv add "agentkernel[aws]"
 ```
 
 ### AWS Permissions

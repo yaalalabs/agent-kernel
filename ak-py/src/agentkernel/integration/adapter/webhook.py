@@ -25,6 +25,9 @@ class WebhookRESTRequestHandler(RESTRequestHandler):
     """
 
     requires_pipeline = True
+    # The adapter's ``verify`` is the delivery's one check, as behind the Lambda authorizer's
+    # integration bypass; the sender's principal comes from the platform, not the request (#603).
+    authenticates_itself = True
 
     _log = logging.getLogger("ak.integration.webhook")
 
@@ -41,6 +44,15 @@ class WebhookRESTRequestHandler(RESTRequestHandler):
             raise ValueError(f"{type(adapter).__name__} must declare a webhook_path for its platform's deliveries")
         self._adapter = adapter
         self._producer = producer or IntegrationProducer()
+        # An adapter missing its verification secret accepts deliveries nobody authenticated (the
+        # Lambda host refuses such an adapter outright). Here they still run, but anonymous: a sender
+        # id the poster chose must not become a principal the schedule tools or the sandbox act as.
+        self._unverified_settings = adapter.missing_verification_settings()
+        if self._unverified_settings:
+            self._log.warning(
+                f"{type(adapter).__name__} accepts deliveries it cannot verify until {', '.join(self._unverified_settings)} "
+                "is set; they run as the anonymous principal"
+            )
 
     @property
     def adapter(self) -> InboundAdapter:
@@ -77,6 +89,8 @@ class WebhookRESTRequestHandler(RESTRequestHandler):
             for inbound in result.requests:
                 inbound.reply_context.update(await outbound.acknowledge(inbound.reply_context))
                 try:
+                    if self._unverified_settings:
+                        inbound = inbound.model_copy(update={"user_id": None})  # names nobody: the producer enqueues it anonymous
                     await asyncio.to_thread(self._producer.enqueue, name, inbound)
                 except Exception:
                     self._log.exception(f"Failed to enqueue: integration={name}, session_id={inbound.session_id}, request_id={inbound.request_id}")

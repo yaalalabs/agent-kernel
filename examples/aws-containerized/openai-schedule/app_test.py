@@ -1,7 +1,9 @@
 """Tests for the deployed scheduling example.
 
-Set AK_TEST_ENDPOINT to the module's `agent_invoke_url` output (the chat route). The schedule
-management routes are derived from it, so both live behind the same API Gateway stage.
+Set AK_TEST_ENDPOINT to the module's `agent_invoke_url` output (the chat route) and AK_TEST_TOKEN to
+the `demo_auth_token` the stack was deployed with: every request carries it as the bearer token, and the
+principal it authenticates (`demo-user`) owns the tasks. The schedule management routes are derived from
+the chat route, so both live behind the same API Gateway stage.
 
 These are integration tests against a real deployment: they create real EventBridge schedules and
 clean up after themselves. Nothing here waits for an occurrence to actually fire — a schedule far
@@ -18,7 +20,10 @@ import pytest_asyncio
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-USER_ID = "alice"
+TOKEN = os.getenv("AK_TEST_TOKEN", "")
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+# The subject of the principal the static provider maps the token to (config.yaml).
+USER_ID = "demo-user"
 # Deliberately far in the future: the assertions never wait for a firing.
 FUTURE_AT = "2035-01-31T09:00:00"
 
@@ -33,33 +38,35 @@ class ScheduleTestClient:
         self.session_id = str(uuid.uuid4())
 
     async def chat(self, prompt: str, schedule: dict | None = None) -> httpx.Response:
-        payload = {"prompt": prompt, "session_id": self.session_id, "user_id": USER_ID}
+        payload = {"prompt": prompt, "session_id": self.session_id}
         if schedule is not None:
             payload["schedule"] = schedule
         async with httpx.AsyncClient(timeout=60.0) as client:
-            return await client.post(self.chat_url, json=payload)
+            return await client.post(self.chat_url, json=payload, headers=AUTH)
 
     async def list_schedules(self) -> httpx.Response:
+        # The listing is always the caller's own: no query parameter names the owner.
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.get(self.schedules_url, params={"user_id": USER_ID})
+            return await client.get(self.schedules_url, headers=AUTH)
 
     async def get_schedule(self, task_id: str) -> httpx.Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.get(f"{self.schedules_url}/{task_id}")
+            return await client.get(f"{self.schedules_url}/{task_id}", headers=AUTH)
 
     async def amend_schedule(self, task_id: str, body: dict) -> httpx.Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.put(f"{self.schedules_url}/{task_id}", json=body)
+            return await client.put(f"{self.schedules_url}/{task_id}", json=body, headers=AUTH)
 
     async def cancel_schedule(self, task_id: str) -> httpx.Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.delete(f"{self.schedules_url}/{task_id}")
+            return await client.delete(f"{self.schedules_url}/{task_id}", headers=AUTH)
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def client():
     endpoint = os.getenv("AK_TEST_ENDPOINT")
     assert endpoint, "Set AK_TEST_ENDPOINT to the deployment's agent_invoke_url"
+    assert TOKEN, "Set AK_TEST_TOKEN to the deployed demo_auth_token"
     yield ScheduleTestClient(endpoint)
 
 

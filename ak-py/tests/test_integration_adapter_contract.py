@@ -100,7 +100,7 @@ class TestMessengerContract(_ConfiguredContract):
         return MessengerOutboundAdapter()
 
     def valid_delivery(self):
-        event = {"sender": {"id": "psid-123"}, "message": {"mid": "mid.1", "text": "hello"}}
+        event = {"sender": {"id": "psid-123"}, "recipient": {"id": "page-1"}, "message": {"mid": "mid.1", "text": "hello"}}
         return _signed({"object": "page", "entry": [{"messaging": [event]}]})
 
     def ignorable_delivery(self):
@@ -131,7 +131,7 @@ class TestInstagramContract(_ConfiguredContract):
         return InstagramOutboundAdapter()
 
     def valid_delivery(self):
-        event = {"sender": {"id": "igsid-123"}, "message": {"mid": "mid.1", "text": "hello"}}
+        event = {"sender": {"id": "igsid-123"}, "recipient": {"id": "ig-acct-1"}, "message": {"mid": "mid.1", "text": "hello"}}
         return _signed({"object": "instagram", "entry": [{"messaging": [event]}]})
 
     def ignorable_delivery(self):
@@ -146,7 +146,7 @@ class TestInstagramContract(_ConfiguredContract):
 
 
 class TestTelegramContract(_ConfiguredContract):
-    ENV = {"AK_TELEGRAM__BOT_TOKEN": "bot-token", "AK_TELEGRAM__WEBHOOK_SECRET": "webhook-secret"}
+    ENV = {"AK_TELEGRAM__BOT_TOKEN": "123456:bot-token", "AK_TELEGRAM__WEBHOOK_SECRET": "webhook-secret"}
 
     def make_inbound(self):
         from agentkernel.integration.telegram.adapter import TelegramInboundAdapter
@@ -194,6 +194,7 @@ class TestGmailContract(_ConfiguredContract):
         users = client.users.return_value
         users.messages.return_value.get.return_value.execute.return_value = message
         users.threads.return_value.get.return_value.execute.return_value = {"messages": []}
+        users.getProfile.return_value.execute.return_value = {"emailAddress": "agent@example.com"}
         return client
 
     def make_inbound(self):
@@ -227,6 +228,7 @@ class TestSlackContract(_ConfiguredContract):
         adapter._agent = None
         adapter._max_file_size = 10 * 1024 * 1024
         adapter._bot_id = "B_BOT"
+        adapter._team_id = None
         adapter._app = MagicMock()
         adapter._app.client.chat_postMessage = AsyncMock()
         return adapter
@@ -237,7 +239,7 @@ class TestSlackContract(_ConfiguredContract):
         return SlackOutboundAdapter()
 
     def valid_delivery(self):
-        return {"user": "U123", "text": "hello", "channel": "C9", "ts": "111.222"}
+        return {"user": "U123", "text": "hello", "channel": "C9", "ts": "111.222", "team": "T1"}
 
     def ignorable_delivery(self):
         return {"user": "B_BOT", "text": "the bot's own message", "channel": "C9", "ts": "111.222"}
@@ -302,6 +304,7 @@ class TestTeamsContract(_ConfiguredContract):
                 "text": "hello",
                 "from": {"id": "user-1", "name": "Alice"},
                 "conversation": {"id": "conv-1"},
+                "channelData": {"tenant": {"id": "tenant-1"}},
                 "recipient": {"id": "28:bot", "name": "AgentBot"},
                 "serviceUrl": "https://smba.trafficmanager.net/emea/",
             }

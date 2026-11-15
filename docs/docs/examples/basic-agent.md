@@ -33,13 +33,13 @@ if __name__ == "__main__":
 
 ```bash
 # Install dependencies
-pip install agentkernel[crewai]
+uv add "agentkernel[crewai]"
 
 # Set API key
 export OPENAI_API_KEY=sk-...
 
 # Run the agent
-python basic_agent.py
+uv run python basic_agent.py
 ```
 
 ## Customization

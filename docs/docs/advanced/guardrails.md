@@ -78,21 +78,21 @@ Guardrails provide defense in depth:
 
 **OpenAI Guardrails**:
 ```bash
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 ```
 
 See the [OpenAI Guardrails Guide](./guardrails-openai) for setup instructions.
 
 **AWS Bedrock Guardrails**:
 ```bash
-pip install agentkernel[aws]
+uv add "agentkernel[aws]"
 ```
 
 See the [Bedrock Guardrails Guide](./guardrails-bedrock) for setup instructions.
 
 **Walled AI Guardrails**:
 ```bash
-pip install agentkernel[walledai]
+uv add "agentkernel[walledai]"
 ```
 
 See the [Walled AI Guardrails Guide](./guardrails-walledai) for setup instructions.
