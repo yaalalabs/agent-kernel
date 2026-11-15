@@ -45,10 +45,10 @@ While parsing the **streamed** args (`index.ts`), the middleware also:
 - reads a repeated list's data key from `children: { componentId, path }`, the path minus its
   leading slash (default `"items"`)
 
-## The catalog is host-owned, and never a tool parameter
+## Upstream's tool makes the catalog host-owned
 
 `catalogId` appears in the streamed-args parser but **not** in the tool parameter schema quoted
-above. That gap is deliberate, and the source says so in three places:
+above. That gap is deliberate on upstream's side, and the source says so in three places:
 
 - `required: ["surfaceId", "components"]` over exactly three properties — there is no `catalogId`
   property to fill (`tools.ts:26-45`).
@@ -57,7 +57,7 @@ above. That gap is deliberate, and the source says so in three places:
 - The guidelines shipped to the model: *"Note: the catalog id is set by the host, not by you. Do not
   include a catalogId argument."* (`tools.ts:63`).
 
-The two host-side routes, in priority order (`index.ts:772-786`):
+The resolution order (`index.ts:772-786`) — the first two are host-side, the third is the model's:
 
 1. **`defaultCatalogId`** — explicit relay configuration. An empty string is treated as unset, so it
    cannot propagate `""` into `createSurface` and surface as *"Catalog not found: "*.
@@ -74,10 +74,11 @@ The two host-side routes, in priority order (`index.ts:772-786`):
 the argument stream is therefore not in the running, and the `streamedSurfaceIds` dedup stops the
 later tool result from correcting the surface (`index.ts:1048-1062`).
 
-> **Correction.** An earlier revision of this file had `design.md` carry `catalogId` as an optional
-> tool parameter, reading branch 3 as a supported input. It is the legacy branch, it loses the race
-> against branch ordering, and upstream tells the model not to send one. The parameter was withdrawn
-> — see `design.md`, "Decided during review".
+> **What Agent Kernel does with this.** `design.md` **keeps** `catalogId` as an optional
+> `render_a2ui` parameter — upstream declining to offer it is not a reason for AK to deny it to a
+> client who wants per-call selection. The two facts above are the caveats the design carries rather
+> than reasons to drop it: host config wins over branch 3, and a late-arriving id can miss the first
+> snapshot. See `design.md`, "The catalog" and "Decided during review".
 
 ## The tool's result
 
