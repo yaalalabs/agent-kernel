@@ -72,6 +72,25 @@ class TestTransportFactorySeam:
         with pytest.raises(AKConfigError, match=r"sandbox\.broker\.queue\.input\.url"):
             QueueTransportFactory.create(queues_config=_sqs_block(input_url="https://sqs.example/in"), config_path="sandbox.broker.queue")
 
+    def test_servicebus_block_threads_through_create_consumer(self, monkeypatch):
+        from agentkernel.pipeline.transport import servicebus
+
+        monkeypatch.setattr(servicebus, "ServiceBusClient", lambda namespace, credential: object())
+        monkeypatch.setattr(servicebus, "AutoLockRenewer", lambda max_lock_renewal_duration: object())
+        monkeypatch.setattr(servicebus, "DefaultAzureCredential", object)
+        block = _QueuesConfig.model_validate(
+            {
+                "type": "servicebus",
+                "input": {"url": "https://ns.servicebus.windows.net/in"},
+                "output": {"url": "https://ns.servicebus.windows.net/out"},
+            }
+        )
+        consumer = QueueTransportFactory.create_consumer(QueueName.OUTPUT, queues_config=block, config_path="sandbox.broker.queue")
+        assert consumer._queue_name == "out"
+        with pytest.raises(AKConfigError, match=r"sandbox\.broker\.queue\.output\.url"):
+            block.output.url = "https://ns.servicebus.windows.net/"
+            QueueTransportFactory.create(queues_config=block, config_path="sandbox.broker.queue")
+
     def test_create_consumer_threads_the_block_through(self):
         block = _QueuesConfig(type="in_memory")
         consumer = QueueTransportFactory.create_consumer(QueueName.INPUT, queues_config=block)

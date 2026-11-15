@@ -49,7 +49,7 @@ class ServiceBusTransportConsumer(TransportConsumer):
 
     def __init__(self, client: ServiceBusClient, queue_name: str, ack_wait: float): ...
     def fetch(self, batch_size: int, wait_seconds: float) -> list[QueueMessage]: ...
-    def ack(self, message: QueueMessage) -> None: ...          # complete_message, release session
+    def ack(self, message: QueueMessage) -> None: ...          # complete_message, keep the session for reuse
     def nack(self, message: QueueMessage) -> None: ...         # abandon_message, release session
     def dead_letter(self, message: QueueMessage) -> None: ...  # dead_letter_message, release; never raises
     def close(self) -> None: ...                               # close receivers, renewer, client
@@ -92,20 +92,29 @@ Rules:
    2. For each held session with nothing in flight: one `receive_messages(1, min(SESSION_REUSE_WAIT_SECONDS,
       remaining))`. A message is kept in flight; an empty receive releases the session.
    3. While fewer than `batch_size` messages: `get_queue_receiver(session_id=NEXT_AVAILABLE_SESSION,
-      max_wait_time=remaining)`; `OperationTimeoutError` ends the loop. Receive one message from the new
-      session; an empty session is released.
-   4. Each delivered message registers its session with the consumer's `AutoLockRenewer`
-      (`max_lock_renewal_duration=ack_wait`). Registering per message resets the ceiling, so a reused
-      session never lapses under a quick message.
+      max_wait_time=wait)`, where `wait` is `remaining` until the fetch holds a message and then
+      `min(SESSION_REUSE_WAIT_SECONDS, remaining)`, so a batch returns promptly instead of waiting out the
+      long poll for sessions that never come; `OperationTimeoutError` ends the loop. Receive one message
+      from the new session; an empty session is released.
+   4. Each accepted session is registered once with the consumer's `AutoLockRenewer`
+      (`max_lock_renewal_duration = 2 * ack_wait`), and step 2 reuses a held session only while it is
+      younger than `ack_wait` (older ones are released and re-accepted). The SDK counts the ceiling from the
+      session's accept (`_session_start`, `azure/servicebus/_common/utils.py:233-239`), so this gives every
+      message a full `ack_wait`. Registering per message instead would leave one self-re-enqueuing renew
+      task per message, and a long delta stream would renew one session hundreds of times at once.
+      A receive error on a held session releases it.
    - Sessions with an unsettled message are never polled, which is what keeps `m2` behind `m1`
      (`pipeline/testing.py:96-107`). `ConsumerLoop` settles each message before the next fetch
      (`pipeline/consumer.py:114-126`), so reuse is the normal path for back-to-back turns and delta chunks.
 5. **Settle.** `ack` / `nack` / `dead_letter` settle through the held receiver found by the envelope's
-   `group_id`, then close that receiver and forget the session (a released session is free for any consumer).
+   `group_id`. `ack` and a successful `dead_letter` keep the session held for reuse (rule 4); `nack`, and
+   any settle failure, close that receiver and forget the session (a released session is free for any
+   consumer).
    `dead_letter` passes `reason="max_receive_count exceeded"` and swallows and logs failures, the NATS rule
    (`pipeline/transport/nats.py:150-165`): the queue's `max_delivery_count` is the backstop.
 6. **Envelope.** `body`: the message body bytes decoded as UTF-8. `attributes`: `application_properties`
-   with bytes keys and values decoded to `str`. `group_id`: the session id. `receive_count`: `delivery_count`.
+   with bytes keys and values decoded to `str`. `group_id`: the session id. `receive_count`: `delivery_count + 1` (the SDK returns the AMQP header count,
+   which counts prior deliveries only; the live contract confirms it).
    `message_id`: `str(sequence_number)`. `native`: the received message.
 7. **Capacity.** `check_consumer_capacity` is not overridden: sessions have no partition ceiling.
 8. **No class-level caches**, so no `reset()` classmethod (unlike `NatsTransport.reset`).
@@ -234,7 +243,7 @@ or Functions code, no stored data layout (sessions, response records), no Helm c
 
 | Failure | Where it surfaces |
 |---|---|
-| `azure` extra missing | `require_extra` → `AKConfigError` at transport creation (startup) |
+| `azure` extra missing | `require_extra` → `ImportError` naming the extra, at transport creation (startup) |
 | A URL missing, malformed, or the two on different namespaces | `AKConfigError` naming `<config_path>.input.url` / `.output.url`, at startup |
 | Auth or network failure on `send` | `ServiceBusError` subclasses propagate; the REST handler returns its existing 500 |
 | Message over the Standard tier's 256 KB | `MessageSizeExceededError` propagates from `send` (SQS parity: same limit) |
