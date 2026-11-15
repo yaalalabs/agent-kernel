@@ -1804,13 +1804,13 @@ thread: # optional; configures Conversation Thread Support (enabled by mounting 
 execution:
   mode: rest_sync
   queues:
-    type: sqs # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass — mandatory whenever this block is declared
+    type: sqs # in_memory | sqs | kafka | nats | servicebus, or a dotted path to a QueueTransport subclass — mandatory whenever this block is declared
     input:
-      url: https://queue.example.com/<accountno>/<queuename> # sqs transport only
+      url: https://queue.example.com/<accountno>/<queuename> # sqs: queue URL; servicebus: https://<namespace>.servicebus.windows.net/<queue>
       max_receive_count: 3
       no_of_consumers: 5 # in-process pipeline + containerized deployments, ignored by serverless deployments
     output:
-      url: https://queue.example.com/<accountno>/<queuename> # sqs transport only
+      url: https://queue.example.com/<accountno>/<queuename> # sqs: queue URL; servicebus: https://<namespace>.servicebus.windows.net/<queue>
       max_receive_count: 3
       no_of_consumers: 5 # in-process pipeline + containerized deployments, ignored by serverless deployments
     # in_memory: {ack_wait: 300.0, dedup_window: 300.0}  # in_memory transport settings, unused otherwise
@@ -1837,6 +1837,9 @@ execution:
     #   max_age: 86400.0
     #   request_timeout: 10.0
     #   auto_provision: false # true for local/dev; leave false where NACK CRs own the objects
+    # servicebus:  # servicebus transport settings, unused otherwise (requires the `azure` extra)
+    #   ack_wait: 300.0 # seconds the session lock is renewed; keep above your longest agent turn
+    #   connection_string: <file:servicebus-connection-string> # emulator/dev only; unset uses managed identity
     # batch_size is set by the deployment tooling — set via AK_EXECUTION__QUEUES__BATCH_SIZE, never here
   response_store:
     type: redis # in_memory | redis | valkey | dynamodb | dotted path — omit for the built-in in_memory store
