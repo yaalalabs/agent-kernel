@@ -202,11 +202,17 @@ def test_llm_model_is_lazily_created_and_cached(monkeypatch, evaluator):
 
 
 @pytest.mark.parametrize(
-    "provider, model",
-    [("openai", "gpt-6-luna"), ("openai", "gpt-4.1-mini"), ("anthropic", "claude-sonnet-4-5"), ("gemini", "gemini-2.5-flash")],
+    "provider, model, reasoning_params",
+    [
+        ("openai", "gpt-6-luna", {"reasoning_effort": "none"}),
+        ("anthropic", "claude-sonnet-4-5", {"reasoning_effort": "none"}),
+        ("gemini", "gemini-2.5-flash", {"reasoning_effort": "none"}),
+        ("gemini", "gemini-2.5-pro", {}),  # can't turn thinking off: LiteLLM's thinkingBudget=0 would be rejected
+        ("openai", "gpt-4.1-mini", {}),  # not a reasoning model
+    ],
 )
-def test_llm_model_sends_the_same_reasoning_params_for_any_model(monkeypatch, provider, model):
-    """No per-model branching: every judge gets plain LiteLLM params, which LiteLLM maps or drops per provider."""
+def test_llm_model_turns_reasoning_off_where_the_model_can(monkeypatch, provider, model, reasoning_params):
+    """Every judge gets plain LiteLLM params, asking for reasoning off only from models that can turn it off."""
     import agentkernel.test.core.evaluator.deepeval as ak_deepeval_module
 
     created = []
@@ -222,4 +228,4 @@ def test_llm_model_sends_the_same_reasoning_params_for_any_model(monkeypatch, pr
 
     DeepevalAKEvaluator(config).evaluate_by_llm(AKEvaluationCase(user_input="q", actual="a", expected="e"))
 
-    assert created == [(f"{provider}/{model}", {"generation_kwargs": {"reasoning_effort": "none", "drop_params": True}})]
+    assert created == [(f"{provider}/{model}", {"generation_kwargs": {**reasoning_params, "drop_params": True}})]

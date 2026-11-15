@@ -22,6 +22,7 @@ from ..model import (
     AgentRequestImage,
     AgentRequestText,
 )
+from ..util.reasoning import reasoning_off_params
 from .source import AttachmentSource, ExtractedAttachment
 from .storage import AttachmentStorageManager
 
@@ -85,9 +86,8 @@ class MultimodalPreHook(PreHook):
                         }
                     ],
                     max_tokens=50,
-                    # Keep the short budget for the description: LiteLLM turns reasoning off where the model
-                    # can, and drop_params drops the setting for models that don't support it.
-                    reasoning_effort="none",
+                    # Keep the short budget for the description: reasoning off where the model can turn it off.
+                    **reasoning_off_params(model_name),
                     drop_params=True,
                 )
                 description = response.choices[0].message.content.strip()
@@ -113,9 +113,8 @@ class MultimodalPreHook(PreHook):
                         }
                     ],
                     max_tokens=50,
-                    # Keep the short budget for the description: LiteLLM turns reasoning off where the model
-                    # can, and drop_params drops the setting for models that don't support it.
-                    reasoning_effort="none",
+                    # Keep the short budget for the description: reasoning off where the model can turn it off.
+                    **reasoning_off_params(model_name),
                     drop_params=True,
                 )
                 return resp.choices[0].message.content.strip()

@@ -11,6 +11,7 @@ os.environ.setdefault("OPIK_TRACK_DISABLE", "True")
 from opik.evaluation.metrics import GEval, LevenshteinRatio
 from opik.evaluation.models import LiteLLMChatModel
 
+from agentkernel.core.util.reasoning import reasoning_off_params
 from agentkernel.test.config import AKTestConfig
 
 from .base import AKEvaluationCase, AKEvaluationError, AKEvaluationResult, AKEvaluator, AKMissingInput
@@ -66,9 +67,8 @@ class OpikAKEvaluator(AKEvaluator):
             # LiteLLM reports it unsupported, which LiteLLM doesn't for "openai/<non-reasoning model>") and GEval's
             # top_logprobs gets capped. A LiteLLM model for every provider, like the deepeval judge: opik's models_factory
             # would hand anthropic/* to its own Anthropic client. temperature=0.0 is what GEval would use.
-            self._model = _TopLogprobsCappedModel(
-                model_name=f"{llm.provider}/{llm.model}", track=False, temperature=0.0, reasoning_effort="none", drop_params=True
-            )
+            model = f"{llm.provider}/{llm.model}"
+            self._model = _TopLogprobsCappedModel(model_name=model, track=False, temperature=0.0, **reasoning_off_params(model), drop_params=True)
         return self._model
 
     def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:

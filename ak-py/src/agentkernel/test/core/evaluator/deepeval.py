@@ -10,6 +10,7 @@ from deepeval.models.llms.litellm_model import LiteLLMModel
 from deepeval.scorer import Scorer
 from deepeval.test_case import LLMTestCase, SingleTurnParams  # not the deprecated LLMTestCaseParams
 
+from agentkernel.core.util.reasoning import reasoning_off_params
 from agentkernel.test.config import AKTestConfig
 
 from .base import AKEvaluationCase, AKEvaluationError, AKEvaluationResult, AKEvaluator, AKMissingInput
@@ -37,9 +38,10 @@ class DeepevalAKEvaluator(AKEvaluator):
         """Lazily build and cache the judge, asking for reasoning off so GEval's temperature and logprobs are accepted."""
         if self._model is None:
             llm = self._config.llm
-            # Reasoning models only take GEval's temperature=0 and logprobs with reasoning off. LiteLLM turns it off where
-            # the model can, and drop_params drops whatever a model doesn't support instead of failing the call.
-            self._model = LiteLLMModel(f"{llm.provider}/{llm.model}", generation_kwargs={"reasoning_effort": "none", "drop_params": True})
+            # Reasoning models only take GEval's temperature=0 and logprobs with reasoning off, so turn it off where the
+            # model can; drop_params drops whatever a model doesn't support instead of failing the call.
+            model = f"{llm.provider}/{llm.model}"
+            self._model = LiteLLMModel(model, generation_kwargs={**reasoning_off_params(model), "drop_params": True})
         return self._model
 
     def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
