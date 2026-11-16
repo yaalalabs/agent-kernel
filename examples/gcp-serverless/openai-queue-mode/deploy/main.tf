@@ -6,7 +6,7 @@
 # Both scale to zero. queue_mode is the module's default; Memorystore is created as the reply store.
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.5"
+  version = "0.10.1"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
