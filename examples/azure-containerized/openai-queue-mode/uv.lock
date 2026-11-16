@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -10,7 +10,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.10.0"
+version = "0.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/67/ea/ffc3896811d10c7acfc525bf0da2c8ccdf71067d8b85356d7bb95c6e9410/agentkernel-0.10.0.tar.gz", hash = "sha256:02dcf7e652b1ad78752073f25780f5665b876aaff3126c4b9b66678cb8c5db77", size = 831554, upload-time = "2026-11-13T06:43:39.95Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/ca/d90e1312f219a1abb46c9ec72050e0a259d2163724f05d44ded2fe949e9f/agentkernel-0.10.1.tar.gz", hash = "sha256:248d420a3d37c45090c6808b695b686a63a5a581e687156432cf0599bc19828b", size = 853158, upload-time = "2026-11-16T08:38:30.326Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cf/ba/738072d648c54e037161c9ad032667cab34175cf522f1b3af6f19dcef9cb/agentkernel-0.10.0-py3-none-any.whl", hash = "sha256:c022dc9d0dbb18757a5b41cfd92641b387aca9dfadafbf552de70e6ead1d9c8d", size = 1054931, upload-time = "2026-11-13T06:43:37.501Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/a2/300d3a4cd46d2a1953f901ae5fbfb477f600f74644d238c9853a7a27927c/agentkernel-0.10.1-py3-none-any.whl", hash = "sha256:48343062fdcbcdfe2de75ae191e050799cb49a08ad8d17a023a2e29bf3bf4dd9", size = 1078427, upload-time = "2026-11-16T08:38:27.88Z" },
 ]
 
 [package.optional-dependencies]
@@ -35,6 +35,8 @@ azure = [
     { name = "azure-data-tables" },
     { name = "azure-functions", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "azure-functions", version = "2.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "azure-identity" },
+    { name = "azure-servicebus" },
 ]
 openai = [
     { name = "openai-agents" },
@@ -283,7 +285,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "api", "azure", "redis", "test"], specifier = ">=0.10.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "api", "azure", "redis", "test"], specifier = ">=0.10.1" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -328,7 +330,7 @@ resolution-markers = [
     "python_full_version < '3.13'",
 ]
 dependencies = [
-    { name = "werkzeug", marker = "python_full_version < '3.13'" },
+    { name = "werkzeug" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fb/ed/315d7843371830e248f716f11b30f707ae7eff64272eaece992649d4dae7/azure_functions-1.26.0.tar.gz", hash = "sha256:f4aad4a401bdc7833cce4c17352ce410fc4e419dcc6ece5f02247fdee3fbb838", size = 166896, upload-time = "2026-11-03T17:58:21.484Z" }
 wheels = [
@@ -345,11 +347,41 @@ resolution-markers = [
     "python_full_version == '3.13.*'",
 ]
 dependencies = [
-    { name = "werkzeug", marker = "python_full_version >= '3.13'" },
+    { name = "werkzeug" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/99/c2/5109e07bc920a77e5bb79aa09fdc9d0f81b3822f4a45e755508e94fd21fc/azure_functions-2.4.0.tar.gz", hash = "sha256:4b764002c787b860dbee0c8ec02f795bdd2ca0384f8b3860da8369403ee19b01", size = 182897, upload-time = "2026-11-11T21:51:07.685Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/97/8d748de8f1afb8ff112ce0e53b15348568bbc3e1e1cc3e31c615a6af8225/azure_functions-2.4.0-py3-none-any.whl", hash = "sha256:c1f69edce150af18bcbf4cd6eab224506335a7bfd225a5269a54df27c115aa12", size = 132161, upload-time = "2026-11-11T21:51:09.327Z" },
+]
+
+[[package]]
+name = "azure-identity"
+version = "1.27.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "cryptography" },
+    { name = "msal" },
+    { name = "msal-extensions" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/33/0b881d0093d64c965bb20fcf71b806c7097881b544a2a55d519cdcf3bab9/azure_identity-1.27.0.tar.gz", hash = "sha256:6a4c50e25e8e9a47b324a95ad024897e56cb3c6241e0094e93b126a2bf71edc5", size = 331360, upload-time = "2026-10-26T21:17:39.095Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/1e/6a2fe486576f41884a120ef7b2c3774f334f9143402fb73650c67db94ddd/azure_identity-1.27.0-py3-none-any.whl", hash = "sha256:92fd2a93c0d2f777dac6c04e5fd7d5734f6643582b983544ef66b4575844e46d", size = 203474, upload-time = "2026-10-26T21:17:40.92Z" },
+]
+
+[[package]]
+name = "azure-servicebus"
+version = "7.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e1/34/a377ae04966328abdd4a5366aba51d499bbe3c4e0d2aa17ad29bf8276574/azure_servicebus-7.15.0.tar.gz", hash = "sha256:62c73f3d9efbaf0089a375adc5ef992ffe6d7d0b1218b8462265aa30ad352c3e", size = 637868, upload-time = "2026-10-08T20:15:26.613Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b5/55/204b3848057a4f4178501fed240964cf2ee4ee2ac532d6da77725029f46d/azure_servicebus-7.15.0-py3-none-any.whl", hash = "sha256:7d60ad0956d7d9a7b75a0dad0b9eea0d182564e48911c11af9cd47f65a1d6584", size = 449397, upload-time = "2026-10-08T20:15:28.691Z" },
 ]
 
 [[package]]
@@ -1962,6 +1994,32 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
+name = "msal"
+version = "1.39.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bb/85/747d28986a44b715cc51cf57aa021c8fd94e9614064261ceec77320e8b0b/msal-1.39.0.tar.gz", hash = "sha256:6ab7de335e6d7f5717e2c7e1dbf86e4dda2f6acf3c56773b78dc53ebc6395b5f", size = 205360, upload-time = "2026-09-17T16:07:45.1Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a4/32/178457385925ce301c7b3232bd85665d4df57da39568b62dcfc74031873f/msal-1.39.0-py3-none-any.whl", hash = "sha256:2d2577886906cd7293850dffa2da29119966c213bfc6ec0cecf8bf7621e1ca77", size = 131629, upload-time = "2026-09-17T16:07:46.722Z" },
+]
+
+[[package]]
+name = "msal-extensions"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "msal" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/01/99/5d239b6156eddf761a636bded1118414d161bd6b7b37a9335549ed159396/msal_extensions-1.3.1.tar.gz", hash = "sha256:c5b0fd10f65ef62b5f1d62f4251d51cbcaf003fcedae8c91b040a488614be1a4", size = 23315, upload-time = "2025-03-14T23:51:03.902Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/75/bd9b7bb966668920f06b200e84454c8f3566b102183bc55c5473d96cb2b9/msal_extensions-1.3.1-py3-none-any.whl", hash = "sha256:96d3de4d034504e969ac5e85bae8106c8373b5c6568e4c8fa7af2eca9dbe6bca", size = 20583, upload-time = "2025-03-14T23:51:03.016Z" },
 ]
 
 [[package]]
@@ -3611,26 +3669,26 @@ resolution-markers = [
     "python_full_version == '3.14.*'",
 ]
 dependencies = [
-    { name = "catalogue", marker = "python_full_version == '3.14.*'" },
-    { name = "click", marker = "python_full_version == '3.14.*'" },
-    { name = "confection", marker = "python_full_version == '3.14.*'" },
-    { name = "cymem", marker = "python_full_version == '3.14.*'" },
-    { name = "jinja2", marker = "python_full_version == '3.14.*'" },
-    { name = "murmurhash", marker = "python_full_version == '3.14.*'" },
-    { name = "numpy", marker = "python_full_version == '3.14.*'" },
-    { name = "packaging", marker = "python_full_version == '3.14.*'" },
-    { name = "preshed", marker = "python_full_version == '3.14.*'" },
-    { name = "pydantic", marker = "python_full_version == '3.14.*'" },
-    { name = "requests", marker = "python_full_version == '3.14.*'" },
-    { name = "setuptools", marker = "python_full_version == '3.14.*'" },
-    { name = "spacy-legacy", marker = "python_full_version == '3.14.*'" },
-    { name = "spacy-loggers", marker = "python_full_version == '3.14.*'" },
-    { name = "srsly", marker = "python_full_version == '3.14.*'" },
-    { name = "thinc", marker = "python_full_version == '3.14.*'" },
-    { name = "tqdm", marker = "python_full_version == '3.14.*'" },
-    { name = "typer", marker = "python_full_version == '3.14.*'" },
-    { name = "wasabi", marker = "python_full_version == '3.14.*'" },
-    { name = "weasel", marker = "python_full_version == '3.14.*'" },
+    { name = "catalogue" },
+    { name = "click" },
+    { name = "confection" },
+    { name = "cymem" },
+    { name = "jinja2" },
+    { name = "murmurhash" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "preshed" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "setuptools" },
+    { name = "spacy-legacy" },
+    { name = "spacy-loggers" },
+    { name = "srsly" },
+    { name = "thinc" },
+    { name = "tqdm" },
+    { name = "typer" },
+    { name = "wasabi" },
+    { name = "weasel" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/69/5d/b0b4cd2f6e8a0470e50f7f0cfc1cea6e2f25572e97fb5d404c7941d5e88a/spacy-3.8.16.tar.gz", hash = "sha256:a3d19da23637cc396b42d22fc33852680f675d8ddcb847d3e2a0d094712d1794", size = 1330989, upload-time = "2026-08-24T10:05:57.936Z" }
 wheels = [
@@ -3670,26 +3728,26 @@ resolution-markers = [
     "python_full_version < '3.13'",
 ]
 dependencies = [
-    { name = "catalogue", marker = "python_full_version != '3.14.*'" },
-    { name = "click", marker = "python_full_version != '3.14.*'" },
-    { name = "confection", marker = "python_full_version != '3.14.*'" },
-    { name = "cymem", marker = "python_full_version != '3.14.*'" },
-    { name = "jinja2", marker = "python_full_version != '3.14.*'" },
-    { name = "murmurhash", marker = "python_full_version != '3.14.*'" },
-    { name = "numpy", marker = "python_full_version != '3.14.*'" },
-    { name = "packaging", marker = "python_full_version != '3.14.*'" },
-    { name = "preshed", marker = "python_full_version != '3.14.*'" },
-    { name = "pydantic", marker = "python_full_version != '3.14.*'" },
-    { name = "requests", marker = "python_full_version != '3.14.*'" },
-    { name = "setuptools", marker = "python_full_version != '3.14.*'" },
-    { name = "spacy-legacy", marker = "python_full_version != '3.14.*'" },
-    { name = "spacy-loggers", marker = "python_full_version != '3.14.*'" },
-    { name = "srsly", marker = "python_full_version != '3.14.*'" },
-    { name = "thinc", marker = "python_full_version != '3.14.*'" },
-    { name = "tqdm", marker = "python_full_version != '3.14.*'" },
-    { name = "typer", marker = "python_full_version != '3.14.*'" },
-    { name = "wasabi", marker = "python_full_version != '3.14.*'" },
-    { name = "weasel", marker = "python_full_version != '3.14.*'" },
+    { name = "catalogue" },
+    { name = "click" },
+    { name = "confection" },
+    { name = "cymem" },
+    { name = "jinja2" },
+    { name = "murmurhash" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "preshed" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "setuptools" },
+    { name = "spacy-legacy" },
+    { name = "spacy-loggers" },
+    { name = "srsly" },
+    { name = "thinc" },
+    { name = "tqdm" },
+    { name = "typer" },
+    { name = "wasabi" },
+    { name = "weasel" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/01/3a/1805baf651a20b9f2dbc2e76bc9ba085028175a9d104c5e72da514e34c50/spacy-3.8.18.tar.gz", hash = "sha256:cbb0a630b30b2c20f96eefc5c7c65f8b2ca264c943050043db0c9315d1cc876d", size = 1331024, upload-time = "2026-10-26T21:24:01.029Z" }
 wheels = [
