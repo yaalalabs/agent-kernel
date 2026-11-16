@@ -250,6 +250,7 @@ async def _reason_submitted(ack, body):
   | `session_id` | `container.thread_ts`, else `message.thread_ts`, else `message.ts` | Must equal the `thread_ts` the original turn used (`:158`), or the decision reaches a session with no pause. The pause message is posted into that thread, so the container carries it. |
   | `request_id` | `InboundAdapter._bounded_request_id(f"slack:{channel}:{message_ts}", f"{interruption_id}:{verb}:{user}")` | The composite logical key. Never `action_ts`, which is minted per click. The presser is part of it: a press an approver policy rejects leaves the pause open, so it must not deduplicate the authorized press that follows. The tail is digested when the whole id would pass `DEDUP_ID_LIMIT` — `IntegrationProducer` makes the queue's `dedup_id` out of the adapter name and this, and SQS caps that at 128 characters. |
   | `user_id` | `user.id` | Carries the presser to `acting_user_id`, which is what lets an application's pre-hook enforce an approver policy. |
+  | `namespace` | `_workspace_id(body)` | A pause is recorded against `(namespace, subject)` (#603), and `Runtime._validate_resume` compares the pair, so a decision naming only the subject is refused as another principal's. The same method serves a message turn: an event names the workspace as a string, an interactive payload as an object. |
   | `group_id` | `channel.id` | Same as a message turn. |
   | `requests` | `[AgentResumeRequestAny(run_id=None, decisions=[ResumeDecision(id=..., status=verb)])]` | |
   | `prompt` | `""` | |
@@ -306,7 +307,9 @@ if len(data.encode()) > CALLBACK_LIMIT:
   minted per update, so two presses of the same button already produce two different ids and
   neither dedupes.
 - `session_id` stays `str(chat_id)` and `user_id` stays `callback_query.from.id`, both unchanged
-  from `_build`.
+  from `_build`. `namespace` is `_client.bot_id`, as a message turn sets it: a pause is recorded
+  against `(namespace, subject)` (#603), so a press naming only the subject is refused by
+  `Runtime._validate_resume` as another principal's.
 - `answer_callback_query` (`:63`) keeps clearing the spinner and is still called before anything
   else, including for data that is not ours.
 - A decision request bypasses `_build`: that helper appends an `AgentRequestText` and runs

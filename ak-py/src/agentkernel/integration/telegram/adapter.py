@@ -314,6 +314,7 @@ class TelegramInboundAdapter(InboundAdapter):
             requests=[AgentResumeRequestAny(decisions=decisions)],
             agent=self._agent,
             user_id=sender,
+            namespace=self._client.bot_id,
             reply_context={"chat_id": session_id},
         )
 
@@ -362,6 +363,7 @@ class TelegramInboundAdapter(InboundAdapter):
             requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status)])],
             agent=self._agent,
             user_id=sender,
+            namespace=self._client.bot_id,
             reply_context={"chat_id": session_id},
         )
 

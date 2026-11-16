@@ -16,7 +16,7 @@ from ...core.event import PausedInterruption
 from ...core.model import AgentPausedReplyAny
 from ...pipeline.envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, REPLY_CONTEXT_PREFIX, QueueName
 from ...pipeline.transport.in_memory import InMemoryTransport
-from .base import InboundAdapter, InboundParseResult, OutboundAdapter, Source
+from .base import InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter, Source
 from .factory import IntegrationAdapterFactory
 from .producer import IntegrationProducer
 from .routes import BUILTIN_WEBHOOK_ROUTES
@@ -66,6 +66,14 @@ class IntegrationAdapterContract:
 
     def unauthentic_delivery(self) -> Any | None:
         """A raw delivery whose verification must fail, or None if the adapter cannot verify."""
+        return None
+
+    async def decision_request(self) -> InboundRequest | None:
+        """A decision this adapter parses from a pause control, or None if it renders none.
+
+        The parsed request rather than a raw delivery, because a platform whose dispatch belongs to
+        its own SDK is not driven by this contract.
+        """
         return None
 
     #: Status the platform expects when verification fails.
@@ -124,6 +132,19 @@ class IntegrationAdapterContract:
         principal's namespace (#603); a platform id alone could collide across installations."""
         [request] = (await self._parse_valid()).requests
         assert request.namespace, "parse must name the platform scope as the request's namespace"
+
+    @pytest.mark.asyncio
+    async def test_a_decision_names_the_same_scope_as_a_message(self):
+        """A pause is recorded against ``(namespace, subject)``, so a press that names only the
+        subject is refused as another principal's (``Runtime._validate_resume``) and the person who
+        opened the pause cannot answer it."""
+        decision = await self.decision_request()
+        if decision is None:
+            pytest.skip("adapter renders no pause controls")
+        [message] = (await self._parse_valid()).requests
+
+        assert decision.user_id, "a decision must name who made it"
+        assert decision.namespace == message.namespace, "a press and a message are the same principal"
 
     @pytest.mark.asyncio
     async def test_parse_produces_a_runnable_request_list(self):

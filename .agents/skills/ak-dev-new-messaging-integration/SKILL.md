@@ -151,7 +151,12 @@ Rules the adapter must hold to:
    the reply still goes to the header as written. Put sender facts the platform vouches for
    in `claims` (Gmail carries `Authentication-Results`); leave it empty when the platform vouches for the sender
    itself. A delivery naming no sender runs anonymous. `tests/test_principal_messaging.py` pins the seam and each
-   adapter suite pins its own namespace.
+   adapter suite pins its own namespace. Every request names the scope, not only the one parsed from a message: a
+   pause is recorded against `(namespace, subject)`, so a decision parsed from a pause control that names only the
+   subject is refused by `Runtime._validate_resume` as another principal's, and the person who opened the pause
+   cannot answer it. An interactive payload often spells the scope differently from an event (Slack names the
+   workspace as a string on an event and as an object on a press), so read it through one method rather than
+   inline at each call site.
 
 ### 3. Implement the Outbound Adapter
 

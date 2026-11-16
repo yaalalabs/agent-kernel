@@ -265,6 +265,46 @@ class TestParse:
         assert [r.type for r in request.requests] == ["text"]
 
 
+class TestDecisionPrincipal:
+    """A decision names the bot, not only the presser.
+
+    ``Runtime._validate_resume`` compares ``(namespace, subject)`` against the pause record, so a
+    decision that names only the subject is refused as another principal's and the person who
+    opened the pause cannot answer it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_press_names_its_bot(self):
+        [request] = (await _inbound().parse(_fake_request(_press(f"{CALLBACK_PREFIX}a:call_9f2b")))).requests
+
+        assert request.namespace == "123456"
+
+    @pytest.mark.asyncio
+    async def test_a_submitted_tally_names_its_bot(self):
+        outbound = _outbound()
+        reply = _paused("call_a", "call_b")
+        reply.answer_together = True
+        await outbound.deliver_paused(reply, {"chat_id": str(CHAT_ID)})
+        keyboard = outbound._client.send_message.await_args.kwargs["reply_markup"]["inline_keyboard"]
+        inbound = _inbound()
+        _, keyboard = await TestTally._press(inbound, keyboard[0][0]["callback_data"], keyboard)
+        _, keyboard = await TestTally._press(inbound, keyboard[1][0]["callback_data"], keyboard)
+
+        request, _ = await TestTally._press(inbound, f"{CALLBACK_PREFIX}{SUBMIT_CODE}", keyboard)
+
+        assert request.namespace == "123456"
+
+    @pytest.mark.asyncio
+    async def test_a_press_and_a_message_are_one_principal(self):
+        inbound = _inbound()
+        update = {"update_id": 100, "message": {"message_id": 7, "chat": {"id": CHAT_ID}, "from": {"id": 99}, "text": "hello"}}
+
+        [message] = (await inbound.parse(_fake_request(update))).requests
+        [press] = (await _inbound().parse(_fake_request(_press(f"{CALLBACK_PREFIX}a:call_9f2b")))).requests
+
+        assert (press.namespace, press.user_id) == (message.namespace, message.user_id)
+
+
 class TestVerification:
     @pytest.mark.asyncio
     async def test_the_configured_secret_token_is_required(self):

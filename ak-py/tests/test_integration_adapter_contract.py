@@ -168,6 +168,10 @@ class TestTelegramContract(_ConfiguredContract):
     def unauthentic_delivery(self):
         return _fake_request(b"{}", headers={"X-Telegram-Bot-Api-Secret-Token": "wrong"})
 
+    async def decision_request(self):
+        callback_query = {"id": "cb-1", "data": "akhitl:a:call_1", "message": {"message_id": 7}}
+        return self.make_inbound()._decision(callback_query, chat_id=4242, data="akhitl:a:call_1", sender="99")
+
     expected_session_id = "4242"
     expected_request_id = "100"
 
@@ -253,6 +257,16 @@ class TestSlackContract(_ConfiguredContract):
     async def test_an_ignorable_delivery_is_not_an_error(self):
         adapter = self.make_inbound()
         assert await adapter._to_request(self.ignorable_delivery()) is None
+
+    async def decision_request(self):
+        press = {
+            "actions": [{"value": "call_1:approved"}],
+            "channel": {"id": "C9"},
+            "container": {"message_ts": "111.222", "thread_ts": "111.222"},
+            "team": {"id": "T1", "domain": "acme"},
+            "user": {"id": "U123"},
+        }
+        return await self.make_inbound()._decision_from_press(press)
 
     expected_session_id = "111.222"
     expected_request_id = "C9:111.222"

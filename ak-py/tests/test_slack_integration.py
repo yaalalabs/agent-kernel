@@ -43,6 +43,7 @@ from agentkernel.pipeline.envelope import QueueName  # noqa: E402
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport  # noqa: E402
 
 BOT_ID = "B_BOT"
+TEAM_ID = "T1"
 SIGNING_SECRET = "test-signing-secret"
 
 
@@ -353,7 +354,14 @@ def _paused(*interruption_ids):
 def _submission(reason, value="call_9f2b:denied"):
     metadata = {"value": value, "channel": "C9", "ts": "111.222", "thread_ts": "000.111", "user": "U123"}
     state = {"values": {REASON_BLOCK_ID: {REASON_INPUT_ID: {"value": reason}}}}
-    return {"view": {"private_metadata": json.dumps(metadata), "state": state}}
+    return {"team": {"id": TEAM_ID}, "view": {"private_metadata": json.dumps(metadata), "state": state}}
+
+
+def _review_submission(status="approved"):
+    metadata = {"channel": "C9", "ts": "111.222", "thread_ts": "000.111", "user": "U123"}
+    state = {"values": {f"{BLOCK_PREFIX}call_a": {f"{ACTION_PREFIX}choice": {"selected_option": {"value": status}}}}}
+    view = {"callback_id": REVIEW_CALLBACK_ID, "private_metadata": json.dumps(metadata), "state": state}
+    return {"team": {"id": TEAM_ID}, "view": view}
 
 
 def _press(value="call_9f2b:approved", channel="C9", message_ts="111.222", thread_ts="000.111", user="U123"):
@@ -361,6 +369,7 @@ def _press(value="call_9f2b:approved", channel="C9", message_ts="111.222", threa
         "actions": [{"action_id": f"{ACTION_PREFIX}approved", "value": value}],
         "channel": {"id": channel},
         "container": {"message_ts": message_ts, "thread_ts": thread_ts},
+        "team": {"id": TEAM_ID},
         "user": {"id": user},
     }
 
@@ -658,7 +667,8 @@ class TestAnswerTogether:
         assert [o["value"] for o in inputs[0]["element"]["options"]] == ["approved", "denied"]
         assert view["callback_id"] == REVIEW_CALLBACK_ID
 
-    def test_a_submission_carries_every_decision_in_one_request(self):
+    @pytest.mark.asyncio
+    async def test_a_submission_carries_every_decision_in_one_request(self):
         inbound, outbound = _inbound(), _outbound()
         view = inbound._review_modal(self._press(outbound, "call_a", "call_b"))
         view["state"] = {
@@ -668,30 +678,32 @@ class TestAnswerTogether:
             }
         }
 
-        request = inbound._decision_from_modal({"view": view})
+        request = await inbound._decision_from_modal({"team": {"id": TEAM_ID}, "view": view})
 
         [resume] = request.requests
         assert [(d.id, d.status) for d in resume.decisions] == [("call_a", "approved"), ("call_b", "denied")]
         assert request.session_id == "000.111" and request.user_id == "U123"
         assert len(request.request_id) <= 128, "the request id becomes the queue dedup id, which SQS caps at 128"
 
-    def test_two_different_answer_sets_are_two_requests(self):
+    @pytest.mark.asyncio
+    async def test_two_different_answer_sets_are_two_requests(self):
         inbound, outbound = _inbound(), _outbound()
         view = inbound._review_modal(self._press(outbound, "call_a"))
 
-        def submit(status):
+        async def submit(status):
             view["state"] = {"values": {f"{BLOCK_PREFIX}call_a": {f"{ACTION_PREFIX}choice": {"selected_option": {"value": status}}}}}
-            return inbound._decision_from_modal({"view": dict(view)}).request_id
+            return (await inbound._decision_from_modal({"team": {"id": TEAM_ID}, "view": dict(view)})).request_id
 
-        assert submit("approved") != submit("denied"), "a resubmitted form with different answers is a different decision"
-        assert submit("approved") == submit("approved"), "the same answers twice deduplicate"
+        assert await submit("approved") != await submit("denied"), "a resubmitted form with different answers is a different decision"
+        assert await submit("approved") == await submit("approved"), "the same answers twice deduplicate"
 
 
 class TestPressParsing:
     """A press on a pause button, as the decision it carries."""
 
-    def test_a_press_becomes_a_decision(self):
-        request = _inbound()._decision_from_press(_press())
+    @pytest.mark.asyncio
+    async def test_a_press_becomes_a_decision(self):
+        request = await _inbound()._decision_from_press(_press())
 
         [resume] = request.requests
         assert isinstance(resume, AgentResumeRequestAny)
@@ -702,46 +714,100 @@ class TestPressParsing:
         assert request.user_id == "U123", "who pressed is what lets a pre-hook decide whether they may"
         assert request.reply_context == {"channel": "C9", "thread_ts": "000.111", "user": "U123"}
 
-    def test_a_press_is_identified_by_the_decision_not_the_click(self):
+    @pytest.mark.asyncio
+    async def test_a_press_is_identified_by_the_decision_not_the_click(self):
         """Slack mints action_ts per click, so a second press of one button must not be a new request."""
-        first = _inbound()._decision_from_press(_press())
-        again = _inbound()._decision_from_press(_press())
-        denied = _inbound()._decision_from_press(_press(value="call_9f2b:denied"))
+        first = await _inbound()._decision_from_press(_press())
+        again = await _inbound()._decision_from_press(_press())
+        denied = await _inbound()._decision_from_press(_press(value="call_9f2b:denied"))
 
         assert first.request_id == again.request_id == "slack:C9:111.222:call_9f2b:approved:U123"
         assert denied.request_id != first.request_id, "approve then deny are two decisions, not a repeat"
 
-    def test_two_people_pressing_are_two_requests(self):
+    @pytest.mark.asyncio
+    async def test_two_people_pressing_are_two_requests(self):
         """A policy that rejects one press leaves the pause open; the next press must still arrive."""
-        mine = _inbound()._decision_from_press(_press())
-        theirs = _inbound()._decision_from_press(_press(user="U999"))
+        mine = await _inbound()._decision_from_press(_press())
+        theirs = await _inbound()._decision_from_press(_press(user="U999"))
 
         assert mine.request_id != theirs.request_id, "a rejected press must not deduplicate an authorized one"
 
-    def test_a_press_id_stays_inside_the_queue_deduplication_budget(self):
+    @pytest.mark.asyncio
+    async def test_a_press_id_stays_inside_the_queue_deduplication_budget(self):
         """An id long enough for Slack's block budget would otherwise blow SQS's 128-character cap."""
-        request = _inbound()._decision_from_press(_press(value=f"{'c' * 200}:approved"))
+        request = await _inbound()._decision_from_press(_press(value=f"{'c' * 200}:approved"))
 
         assert len(f"slack:{request.request_id}") <= SlackInboundAdapter.DEDUP_ID_LIMIT
 
-    def test_an_id_containing_a_colon_survives(self):
-        request = _inbound()._decision_from_press(_press(value="ns:call_9f2b:denied"))
+    @pytest.mark.asyncio
+    async def test_an_id_containing_a_colon_survives(self):
+        request = await _inbound()._decision_from_press(_press(value="ns:call_9f2b:denied"))
 
         assert [(d.id, d.status) for d in request.requests[0].decisions] == [("ns:call_9f2b", "denied")]
 
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("value", [None, "", "call_9f2b", "call_9f2b:nonsense", ":approved"])
-    def test_a_press_that_does_not_parse_is_ignored(self, value):
-        assert _inbound()._decision_from_press(_press(value=value)) is None
+    async def test_a_press_that_does_not_parse_is_ignored(self, value):
+        assert await _inbound()._decision_from_press(_press(value=value)) is None
 
-    def test_a_press_without_a_channel_is_ignored(self):
+    @pytest.mark.asyncio
+    async def test_a_press_without_a_channel_is_ignored(self):
         press = _press()
         press["channel"] = {}
-        assert _inbound()._decision_from_press(press) is None
+        assert await _inbound()._decision_from_press(press) is None
 
-    def test_an_unthreaded_pause_falls_back_to_the_message_timestamp(self):
+    @pytest.mark.asyncio
+    async def test_an_unthreaded_pause_falls_back_to_the_message_timestamp(self):
         press = _press(thread_ts=None)
         press["container"] = {"message_ts": "111.222"}
-        assert _inbound()._decision_from_press(press).session_id == "111.222"
+        assert (await _inbound()._decision_from_press(press)).session_id == "111.222"
+
+
+class TestDecisionPrincipal:
+    """A decision names the workspace, not only the presser.
+
+    ``Runtime._validate_resume`` compares ``(namespace, subject)`` against the pause record, so a
+    decision that names only the subject is refused as another principal's and the person who
+    opened the pause cannot answer it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_press_names_its_workspace(self):
+        request = await _inbound()._decision_from_press(_press())
+
+        assert request.namespace == TEAM_ID
+
+    @pytest.mark.asyncio
+    async def test_a_reason_submission_names_its_workspace(self):
+        request = await _inbound()._decision_from_modal(_submission("why"))
+
+        assert request.namespace == TEAM_ID
+
+    @pytest.mark.asyncio
+    async def test_a_review_submission_names_its_workspace(self):
+        request = await _inbound()._decision_from_modal(_review_submission())
+
+        assert request.namespace == TEAM_ID
+
+    @pytest.mark.asyncio
+    async def test_a_payload_naming_no_workspace_falls_back_to_the_installation(self):
+        """An org-level install can omit ``team``; the workspace the bot authenticated to still names it."""
+        inbound = _inbound()
+        inbound._team_id = "T_INSTALLED"
+        press = _press()
+        del press["team"]
+
+        request = await inbound._decision_from_press(press)
+
+        assert request.namespace == "T_INSTALLED"
+
+    @pytest.mark.asyncio
+    async def test_a_press_and_a_message_are_one_principal(self):
+        inbound = _inbound()
+        message = await inbound._to_request({"user": "U123", "text": "hi", "channel": "C9", "ts": "000.111", "team": TEAM_ID})
+        press = await inbound._decision_from_press(_press())
+
+        assert (press.namespace, press.user_id) == (message.namespace, message.user_id)
 
 
 class TestDenialReason:
@@ -774,8 +840,9 @@ class TestDenialReason:
         [block] = view["blocks"]
         assert block["optional"] is True, "a denial must stay possible for someone with nothing to type"
 
-    def test_a_submission_becomes_a_denial_carrying_its_reason(self):
-        request = _inbound()._decision_from_modal(_submission("Customer was already refunded."))
+    @pytest.mark.asyncio
+    async def test_a_submission_becomes_a_denial_carrying_its_reason(self):
+        request = await _inbound()._decision_from_modal(_submission("Customer was already refunded."))
 
         [resume] = request.requests
         [decision] = resume.decisions
@@ -785,21 +852,24 @@ class TestDenialReason:
         assert request.request_id == "slack:C9:111.222:call_9f2b:denied:U123"
         assert request.reply_context == {"channel": "C9", "thread_ts": "000.111", "user": "U123"}
 
-    def test_a_submission_with_no_reason_still_denies(self):
-        [decision] = _inbound()._decision_from_modal(_submission(None)).requests[0].decisions
+    @pytest.mark.asyncio
+    async def test_a_submission_with_no_reason_still_denies(self):
+        [decision] = (await _inbound()._decision_from_modal(_submission(None))).requests[0].decisions
 
         assert (decision.status, decision.message) == ("denied", None)
 
-    def test_a_submission_and_a_press_share_one_request_id(self):
+    @pytest.mark.asyncio
+    async def test_a_submission_and_a_press_share_one_request_id(self):
         """The same decision answered either way must deduplicate against itself."""
-        pressed = _inbound()._decision_from_press(_press(value="call_9f2b:denied"))
-        submitted = _inbound()._decision_from_modal(_submission("why"))
+        pressed = await _inbound()._decision_from_press(_press(value="call_9f2b:denied"))
+        submitted = await _inbound()._decision_from_modal(_submission("why"))
 
         assert pressed.request_id == submitted.request_id
 
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("metadata", ["", "not-json", '{"channel": "C9"}'])
-    def test_a_submission_whose_metadata_does_not_parse_is_ignored(self, metadata):
+    async def test_a_submission_whose_metadata_does_not_parse_is_ignored(self, metadata):
         body = _submission("why")
         body["view"]["private_metadata"] = metadata
 
-        assert _inbound()._decision_from_modal(body) is None
+        assert await _inbound()._decision_from_modal(body) is None

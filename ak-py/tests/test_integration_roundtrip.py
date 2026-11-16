@@ -31,6 +31,7 @@ from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 AGENT_NAME = "roundtrip-agent"
 PAUSING_AGENT_NAME = "roundtrip-pausing-agent"
 ADAPTER_NAME = "byo_pkg.RoundTripOutboundAdapter"
+NAMESPACE = "roundtrip-workspace"
 
 
 class DummyRunner(Runner):
@@ -158,6 +159,7 @@ class RoundTripInboundAdapter(InboundAdapter):
                     prompt=prompt,
                     agent=body.get("agent", AGENT_NAME),
                     user_id="u1",
+                    namespace=NAMESPACE,
                     reply_context={"channel": body["conversation"]},
                 )
             ]
@@ -174,6 +176,7 @@ class RoundTripInboundAdapter(InboundAdapter):
             requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status, message=body.get("reason"))])],
             agent=body.get("agent", PAUSING_AGENT_NAME),
             user_id=body.get("user", "u1"),
+            namespace=NAMESPACE,
             reply_context={"channel": conversation},
         )
 
@@ -189,6 +192,7 @@ class RoundTripInboundAdapter(InboundAdapter):
             requests=[AgentResumeRequestAny(decisions=decisions)],
             agent=body.get("agent", PAUSING_AGENT_NAME),
             user_id=body.get("user", "u1"),
+            namespace=NAMESPACE,
             reply_context={"channel": conversation},
         )
 

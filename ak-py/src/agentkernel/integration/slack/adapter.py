@@ -177,16 +177,16 @@ class SlackInboundAdapter(InboundAdapter):
             if inbound is not None:
                 requests.append(inbound)
         for press in presses:
-            decision = self._decision_from_press(press)
+            decision = await self._decision_from_press(press)
             if decision is not None:
                 requests.append(decision)
         for submission in submissions:
-            decision = self._decision_from_modal(submission)
+            decision = await self._decision_from_modal(submission)
             if decision is not None:
                 requests.append(decision)
         return InboundParseResult(requests=requests, response=response)
 
-    def _decision_from_press(self, body: dict) -> InboundRequest | None:
+    async def _decision_from_press(self, body: dict) -> InboundRequest | None:
         """A Block Kit button press, as the decision it carries.
 
         The request id is composed from the press, not Slack's per-click ``action_ts``, so a
@@ -218,6 +218,7 @@ class SlackInboundAdapter(InboundAdapter):
             requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status)])],
             agent=self._agent,
             user_id=user,
+            namespace=await self._workspace_id(body),
             group_id=channel,
             reply_context=reply_context,
         )
@@ -259,7 +260,7 @@ class SlackInboundAdapter(InboundAdapter):
             ],
         }
 
-    def _decision_from_modal(self, body: dict) -> InboundRequest | None:
+    async def _decision_from_modal(self, body: dict) -> InboundRequest | None:
         """A submitted modal, as the decision or decisions it carries.
 
         Two kinds arrive here, told apart by the view's ``callback_id``: a denial's reason, and the
@@ -270,7 +271,7 @@ class SlackInboundAdapter(InboundAdapter):
         """
         view = body.get("view") or {}
         if view.get("callback_id") == REVIEW_CALLBACK_ID:
-            return self._decisions_from_review(view)
+            return await self._decisions_from_review(body)
         try:
             metadata = json.loads(view.get("private_metadata") or "")
         except ValueError:
@@ -295,6 +296,7 @@ class SlackInboundAdapter(InboundAdapter):
             requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status, message=reason or None)])],
             agent=self._agent,
             user_id=user,
+            namespace=await self._workspace_id(body),
             group_id=metadata["channel"],
             reply_context=reply_context,
         )
@@ -383,7 +385,7 @@ class SlackInboundAdapter(InboundAdapter):
             "blocks": blocks,
         }
 
-    def _decisions_from_review(self, view: dict) -> InboundRequest | None:
+    async def _decisions_from_review(self, body: dict) -> InboundRequest | None:
         """Every answer the review form collected, as one resume.
 
         One request carrying every decision is the whole point: the frameworks that set
@@ -394,9 +396,10 @@ class SlackInboundAdapter(InboundAdapter):
         deduplication key. The submitter is part of what is digested, for the reason given in
         :meth:`_decision_from_press`.
 
-        :param view: The submitted view, carrying the return address and the answers.
+        :param body: The ``view_submission`` payload, carrying the return address and the answers.
         :return: The decisions as one request, or None when nothing usable came back.
         """
+        view = body.get("view") or {}
         try:
             metadata = json.loads(view.get("private_metadata") or "")
         except ValueError:
@@ -426,6 +429,7 @@ class SlackInboundAdapter(InboundAdapter):
             requests=[AgentResumeRequestAny(decisions=decisions)],
             agent=self._agent,
             user_id=user,
+            namespace=await self._workspace_id(body),
             group_id=metadata["channel"],
             reply_context=reply_context,
         )
@@ -528,8 +532,13 @@ class SlackInboundAdapter(InboundAdapter):
         return self._bot_id
 
     async def _workspace_id(self, body: dict) -> str | None:
-        """The workspace an event belongs to: its ``team``, else the one the bot authenticated to."""
+        """The workspace a delivery belongs to: its ``team``, else the one the bot authenticated to.
+
+        An event names it as a string; an interactive payload names it as an object.
+        """
         team = body.get("team")
+        if isinstance(team, dict):
+            team = team.get("id")
         if team:
             return team
         if self._team_id is None:
