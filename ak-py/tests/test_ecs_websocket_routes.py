@@ -478,3 +478,49 @@ async def test_handle_chat_queue_mode_unaffected_by_delta_setting(monkeypatch):
     mock_sqs.send_message_to_input_queue.assert_called_once()
     assert "invoked" not in stream_called
     assert response.status_code == 200
+
+
+class TestQueueHandOff:
+    """With a queue configured, AWSWebsocketAPI.run hands off to IOHandler (#870), so the Response
+    Handler runs beside the API and pushes replies through API Gateway."""
+
+    @pytest.fixture
+    def io_run(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+        monkeypatch.setattr("agentkernel.deployment.aws.core.websocket_service.boto3", MagicMock())
+        run = MagicMock()
+        monkeypatch.setattr(IOHandler, "run", run)
+        return run
+
+    def test_io_handler_serves_the_ws_routes_and_pushes_through_api_gateway(self, io_run, static_identity):
+        extra = MagicMock()
+
+        AWSWebsocketAPI.run(handlers=[extra])
+
+        handlers = io_run.call_args.kwargs["handlers"]
+        system, app, mounted = handlers
+        assert isinstance(system, ECSWebSocketSystemRequestHandler)
+        assert isinstance(app, ECSWebSocketRequestHandler)
+        assert mounted is extra
+        ws_handler = io_run.call_args.kwargs["ws_handler"]
+        assert isinstance(ws_handler, AWSWebSocketHandler)
+        assert ws_handler is system.get_websocket_handler()  # the same push client $connect's store backs
+
+    def test_no_identity_block_fails_before_io_handler_starts(self, io_run):
+        with pytest.raises(AKConfigError, match="identity block"):
+            AWSWebsocketAPI.run()
+        io_run.assert_not_called()
+
+    def test_direct_mode_never_reaches_io_handler(self, monkeypatch, static_identity):
+        from agentkernel.pipeline.io_handler import IOHandler
+
+        io_run = MagicMock()
+        monkeypatch.setattr(IOHandler, "run", io_run)
+        monkeypatch.setattr(RESTAPI, "run", classmethod(lambda cls, handlers=None: None))
+
+        AWSWebsocketAPI.run()  # the module's stub config declares no queues: in_memory
+
+        io_run.assert_not_called()
