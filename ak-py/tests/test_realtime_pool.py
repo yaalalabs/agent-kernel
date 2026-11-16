@@ -1449,3 +1449,74 @@ class TestPoolLoop:
         finally:
             ThreadRunner.shutdown_event.set()
             thread.join(5)
+
+
+class _SlowCloseAdapter(_Adapter):
+    """An adapter whose disconnect waits for a gate, so a close can be held open."""
+
+    gate = threading.Event()
+    disconnecting = threading.Event()
+
+    async def disconnect(self):
+        _SlowCloseAdapter.disconnecting.set()
+        while not _SlowCloseAdapter.gate.is_set():
+            await asyncio.sleep(0.01)
+
+
+class TestCloseBarrier:
+    """CodeRabbit on #947: a call for a session must not load or publish while that session's old close is still running."""
+
+    @pytest.fixture
+    def pool(self, monkeypatch):
+        _SlowCloseAdapter.gate = threading.Event()
+        _SlowCloseAdapter.disconnecting = threading.Event()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        yield pool
+        _SlowCloseAdapter.gate.set()
+        ThreadRunner.shutdown_event.set()
+        thread.join(timeout=5)
+
+    @staticmethod
+    def _chat_service():
+        from unittest.mock import MagicMock
+
+        def prepare(session_id, agent):
+            return types.SimpleNamespace(
+                service=types.SimpleNamespace(
+                    agent=_Agent(realtime_runner_cls=_SlowCloseAdapter), runtime=Runtime(InMemorySessionStore()), session=Session(session_id)
+                )
+            )
+
+        chat_service = MagicMock()
+        chat_service.prepare_agent_handler.side_effect = prepare
+        return chat_service
+
+    @staticmethod
+    def _input():
+        return BaseRunRequest(prompt="", session_id="s1", requests=[AgentRequestText(prompt="hi")])
+
+    def test_a_new_call_loads_only_after_the_old_close_finished(self, pool):
+        chat_service = self._chat_service()
+        pool.dispatch(self._input(), "r1", None, {}, chat_service)
+        ender = threading.Thread(
+            target=pool.dispatch,
+            args=(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r2", None, {ATTR_REALTIME_END: "true"}, chat_service),
+        )
+        ender.start()
+        assert _SlowCloseAdapter.disconnecting.wait(3)
+
+        caller = threading.Thread(target=pool.dispatch, args=(self._input(), "r3", None, {}, chat_service))
+        caller.start()
+        time.sleep(0.3)
+        loaded_while_closing = chat_service.prepare_agent_handler.call_count
+
+        _SlowCloseAdapter.gate.set()
+        caller.join(5)
+        ender.join(12)
+
+        assert loaded_while_closing == 1  # only the first call: the new one is waiting for the old close
+        assert chat_service.prepare_agent_handler.call_count == 2
+        assert pool.get_connection("s1") is not None

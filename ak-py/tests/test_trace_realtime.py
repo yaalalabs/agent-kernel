@@ -338,8 +338,7 @@ class TestCloudWatchCallSpan:
         from agentkernel.trace.cloudwatch import cloudwatch as module
 
         tracer, exporter = otel
-        monkeypatch.setattr(module.trace_api, "get_tracer", lambda name: tracer)
-        span = module.CloudWatchRealtimeCallSpan("Agent Kernel ADK realtime", "s1")
+        span = module.CloudWatchRealtimeCallSpan(tracer, "Agent Kernel ADK realtime", "s1")
         seen = {}
 
         with span.opened():
@@ -460,6 +459,7 @@ class TestModuleSelection:
         # As the default realtime class is: only the pipeline, in realtime mode, ever instantiates it.
         module, _, _, traced_realtime, traced_runner = module_cls
         _configure(monkeypatch, tracing=True, mode=ExecutionMode.REST_SYNC)
+        monkeypatch.setattr(traced_realtime, "__init__", lambda self, *a, **k: pytest.fail("the traced realtime class was instantiated in text mode"))
 
         m = module([])
 
@@ -611,3 +611,38 @@ class TestADKSpansNestUnderTheCallSpan:
         assert tool.parent.span_id == invoke.context.span_id
         assert call.attributes["session_id"] == "call-n"
         assert call.end_time >= invoke.end_time  # the call span ends last, in disconnect
+
+
+class TestSharedWiring:
+    def test_ensure_instrumented_installs_once(self):
+        from agentkernel.trace.base import ensure_instrumented
+
+        class Fake:
+            is_instrumented_by_opentelemetry = False
+            calls = 0
+
+            def instrument(self):
+                self.calls += 1
+                self.is_instrumented_by_opentelemetry = True
+
+        fake = Fake()
+        ensure_instrumented(fake)
+        ensure_instrumented(fake)
+        assert fake.calls == 1
+
+    def test_bound_to_keeps_the_name_and_sets_attributes(self):
+        bound = TracedFake.bound_to(_client="c")
+        assert bound.__name__ == "TracedFake" and issubclass(bound, TracedFake) and bound._client == "c"
+
+    def test_for_module_asks_only_when_enabled_and_something_is_unset(self, monkeypatch):
+        from agentkernel.core.config import AKConfig
+        from agentkernel.trace.trace import Trace
+
+        built = []
+        monkeypatch.setattr(Trace, "get", classmethod(lambda cls: built.append(1) or "tracer"))
+        config = AKConfig.get()
+        monkeypatch.setattr(config.trace, "enabled", False)
+        assert Trace.for_module(None, None) is None
+        monkeypatch.setattr(config.trace, "enabled", True)
+        assert Trace.for_module(object(), object()) is None
+        assert Trace.for_module(object(), None) == "tracer" and built == [1]

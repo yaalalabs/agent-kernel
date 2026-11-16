@@ -123,8 +123,9 @@ class Logfire(BaseTrace):
         """
         Returns the Logfire ADK realtime runner class.
         """
-        from .adk import LogfireADKRealtimeRunner
+        from .adk import LogfireADKRealtimeRunner, instrument_adk
 
+        instrument_adk()
         return LogfireADKRealtimeRunner
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:

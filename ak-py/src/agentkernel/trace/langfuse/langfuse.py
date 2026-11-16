@@ -152,17 +152,19 @@ class LangFuse(BaseTrace):
         """
         Returns the Langfuse OpenAI realtime runner class.
         """
-        from .openai import LangFuseOpenAIRealtimeRunner
+        from .openai import LangFuseOpenAIRealtimeRunner, instrument_openai
 
-        return LangFuseOpenAIRealtimeRunner
+        instrument_openai()
+        return LangFuseOpenAIRealtimeRunner.bound_to(_client=self._client)
 
     def adk_realtime(self) -> type[RealtimeRunner]:
         """
         Returns the Langfuse ADK realtime runner class.
         """
-        from .adk import LangFuseADKRealtimeRunner
+        from .adk import LangFuseADKRealtimeRunner, instrument_adk
 
-        return LangFuseADKRealtimeRunner
+        instrument_adk()
+        return LangFuseADKRealtimeRunner.bound_to(_client=self._client)
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """

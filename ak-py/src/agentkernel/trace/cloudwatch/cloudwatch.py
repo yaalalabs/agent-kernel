@@ -52,12 +52,13 @@ class CloudWatchRealtimeCallSpan(OTelRealtimeCallSpan):
     ``SessionSpanProcessor`` stamps it onto the spans the framework instrumentors emit during the call.
     """
 
-    def __init__(self, name: str, session_id: str):
+    def __init__(self, tracer: trace_api.Tracer, name: str, session_id: str):
         """
+        :param tracer: The CloudWatch tracer, the one :meth:`CloudWatch.span` uses.
         :param name: The span name.
         :param session_id: The session the call belongs to.
         """
-        super().__init__(trace_api.get_tracer("agentkernel.trace.cloudwatch"), name, {SESSION_ID: session_id})
+        super().__init__(tracer, name, {SESSION_ID: session_id})
         self._session_id = session_id
 
     @contextmanager
@@ -248,17 +249,19 @@ class CloudWatch(BaseTrace):
         """
         Returns the CloudWatch OpenAI realtime runner class.
         """
-        from .openai import CloudWatchOpenAIRealtimeRunner
+        from .openai import CloudWatchOpenAIRealtimeRunner, instrument_openai
 
-        return CloudWatchOpenAIRealtimeRunner
+        instrument_openai()
+        return CloudWatchOpenAIRealtimeRunner.bound_to(_cloudwatch=self)
 
     def adk_realtime(self) -> type[RealtimeRunner]:
         """
         Returns the CloudWatch ADK realtime runner class.
         """
-        from .adk import CloudWatchADKRealtimeRunner
+        from .adk import CloudWatchADKRealtimeRunner, instrument_adk
 
-        return CloudWatchADKRealtimeRunner
+        instrument_adk()
+        return CloudWatchADKRealtimeRunner.bound_to(_cloudwatch=self)
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """

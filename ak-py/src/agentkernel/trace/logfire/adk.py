@@ -8,8 +8,15 @@ from opentelemetry import trace
 from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.adk.adk import GoogleADKRealtimeRunner, GoogleADKRunner
-from ..base import RealtimeCallSpan, TracedRealtimeRunner
+from ..base import RealtimeCallSpan, TracedRealtimeRunner, ensure_instrumented
 from ..otel import OTelRealtimeCallSpan
+
+
+def instrument_adk() -> None:
+    """
+    Installs the OpenInference instrumentor the text runner and the realtime runner class both rely on, once.
+    """
+    ensure_instrumented(GoogleADKInstrumentor())
 
 
 class LogfireADKRunner(GoogleADKRunner):
@@ -21,7 +28,7 @@ class LogfireADKRunner(GoogleADKRunner):
         super().__init__()
         self._log = logging.getLogger("ak.trace.logfire.adk")
 
-        GoogleADKInstrumentor().instrument()
+        instrument_adk()
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """

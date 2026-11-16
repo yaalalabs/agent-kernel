@@ -269,7 +269,8 @@ class Session:
     def _publish_run(self, principal: Principal, tool_filter: ToolFilter | None) -> None:
         """
         Publishes the identity of the run that is starting. Called by Runtime, and by the realtime
-        connection pool for the tool calls it owns; nothing else writes these keys.
+        connection pool for the tool calls it owns; nothing else writes these keys. The pool also ends that
+        identity through ``Runtime._end_run``, the partner of ``Runtime._publish`` (#603 section 8.4).
         :param principal: The principal the run acts as.
         :param tool_filter: The gate's tool decision, or None when the run is not gated.
         """
@@ -597,7 +598,8 @@ class Agent(ABC):
     def current(cls) -> "Agent | None":
         """
         Returns the agent currently executing in this context (set for the duration of a
-        Runtime.run()/Runtime.stream() call), or None if no agent is currently running.
+        Runtime.run()/Runtime.stream() call, and around a realtime call's connect and hook calls by
+        Runtime.activate), or None if no agent is currently running.
         :return: The current Agent instance, or None.
         """
         return cls.current_agent.get()

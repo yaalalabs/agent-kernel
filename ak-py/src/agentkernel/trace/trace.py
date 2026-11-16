@@ -36,6 +36,19 @@ class Trace(BaseTrace):
         trace.init()
         return trace
 
+    @classmethod
+    def for_module(cls, *overrides: object) -> "Trace | None":
+        """
+        The tracer a framework ``Module`` asks for its traced runners, or None when it needs none.
+
+        ``Trace.get()`` builds and initialises a provider each time, so a module asks once, and only when tracing is
+        enabled and the app left at least one runner unset. A runner the app passes is used as is.
+        :param overrides: The runner and realtime runner class the app passed to the module, None when left unset.
+        """
+        if AKConfig.get().trace.enabled and any(override is None for override in overrides):
+            return cls.get()
+        return None
+
     @staticmethod
     def _build(trace_type: str) -> BaseTrace:
         """Resolve the configured tracer: a built-in short name, or a dotted path to a

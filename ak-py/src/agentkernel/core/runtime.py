@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
+from contextlib import contextmanager
 from threading import RLock
 from types import ModuleType
 
@@ -110,6 +111,10 @@ class StreamBoundaryTracker:
 class Runtime:
     """
     Runtime class provides the environment for hosting and running agents.
+
+    Every run takes its start and end steps from here, so a surface that runs no `run()` or `stream()` (a realtime
+    call) takes the same ones: `activate` only sets context variables, so keep it cheap and free of side effects (a
+    realtime call enters it per hook call); start-of-run side effects belong in `_publish`, end-of-run steps in `_end_run`.
     """
 
     _current: Runtime | None = None
@@ -449,6 +454,36 @@ class Runtime:
             session._record_owner(SessionOwner(subject=principal.subject, provider=principal.provider, namespace=principal.namespace))
         return principal
 
+    @contextmanager
+    def activate(self, agent: Agent, session: Session) -> Iterator[None]:
+        """
+        Makes the session and the agent current (`Session.current()`, `Agent.current()`) for the block,
+        restoring the previous ones on exit. Takes no session lock: a surface that holds a session for
+        longer than one run (a realtime call) uses it where `Runtime.run()` would hold the lock.
+        Only sets context variables: it publishes nothing and cannot change the run's identity.
+
+        :param agent: The agent to make current.
+        :param session: The session to make current.
+        """
+        token = Session.current_session.set(session)
+        try:
+            with agent._activate():
+                yield
+        finally:
+            Session.current_session.reset(token)
+
+    def _end_run(self, session: Session) -> None:
+        """
+        Ends a run's identity and per-run state: unpublishes the principal and clears the volatile cache.
+        Private like `_publish`, its partner: it removes the published identity, so only the runtime and the realtime
+        connection pool call it (#603 section 8.4). Called in the `finally` of `run()` and `stream()`, and when a
+        realtime call closes.
+
+        :param session: The session the run used.
+        """
+        session._unpublish_run()
+        session.get_volatile_cache()._clear_all()
+
     def _warn_resume_dropped(self, agent: Agent, session: Session) -> None:
         """
         Warns that a pre-hook removed the decisions, so this run proceeds as an ordinary turn.
@@ -514,7 +549,7 @@ class Runtime:
         async with session:
             try:
                 self._publish(agent, session, principal)
-                with agent._activate():
+                with self.activate(agent, session):
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self.run_pre_hooks(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
@@ -546,8 +581,7 @@ class Runtime:
                     self.sessions().store(session)
                     return reply
             finally:
-                session._unpublish_run()
-                session.get_volatile_cache()._clear_all()
+                self._end_run(session)
 
     async def stream(
         self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None
@@ -575,7 +609,7 @@ class Runtime:
         async with session:
             try:
                 self._publish(agent, session, principal)
-                with agent._activate():
+                with self.activate(agent, session):
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self.run_pre_hooks(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
@@ -638,8 +672,7 @@ class Runtime:
                         # generator has run to completion.
                         await events.aclose()
             finally:
-                session._unpublish_run()
-                session.get_volatile_cache()._clear_all()
+                self._end_run(session)
 
     def sessions(self) -> SessionStore:
         """

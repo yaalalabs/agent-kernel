@@ -22,7 +22,6 @@ from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
-from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
     MessageStart,
@@ -928,9 +927,7 @@ class OpenAIModule(Module):
             OpenAI realtime runner, or the configured tracer's traced one when tracing is enabled.
         """
         super().__init__()
-        # One tracer per module: Trace.get() builds and initialises a provider each time, so it is asked only when the
-        # app left the runner or the realtime class unset. A class the app passes is used as is.
-        tracer = Trace.get() if AKConfig.get().trace.enabled and (runner is None or realtime_runner_cls is None) else None
+        tracer = Trace.for_module(runner, realtime_runner_cls)
         self.realtime_runner_cls = realtime_runner_cls or (tracer.openai_realtime() if tracer else None) or OpenAIRealtimeRunner
         if runner is not None:
             self.runner = runner

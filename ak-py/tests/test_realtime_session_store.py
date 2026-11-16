@@ -14,9 +14,9 @@ import threading
 import pytest
 
 from agentkernel import Agent, Runner, Session
-from agentkernel.core.event import MessageEnd
-from agentkernel.core.hooks import PostHook
-from agentkernel.core.model import AgentReplyText, Principal
+from agentkernel.core.event import MessageEnd, TextDelta
+from agentkernel.core.hooks import PostHook, PreHook
+from agentkernel.core.model import AgentReplyText, AgentRequestText, AgentRequestVoice, Principal
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -75,6 +75,27 @@ class _Agent(Agent):
 
     def attach_tool(self, tool):
         pass
+
+
+class _SlowInputHook(PreHook):
+    """A caller-audio hook that takes a while and then writes to the session, as a real async hook can."""
+
+    def __init__(self):
+        self.started = asyncio.Event()
+        self.runs = 0
+
+    def name(self):
+        return "slow-input"
+
+    async def on_run(self, session, agent, requests):
+        return requests
+
+    async def on_stream_input(self, session, agent, request):
+        self.runs += 1
+        self.started.set()
+        await asyncio.sleep(0.4)
+        session.get_non_volatile_cache().set("late", True)
+        return request
 
 
 class _RecordingStore(InMemorySessionStore):
@@ -256,6 +277,131 @@ class TestCallEnd:
 
         assert any("at the end of the call failed" in r.message for r in caplog.records)
         assert conn.session.get_principal() is None
+
+
+class TestInputSettlesBeforeStore:
+    """CodeRabbit on #947: an input task still running at close must not change the session after it was stored."""
+
+    @pytest.mark.asyncio
+    async def test_a_running_input_hook_is_stopped_before_the_session_is_stored(self, store):
+        hook = _SlowInputHook()
+        agent = _Agent()
+        agent.pre_hooks.append(hook)
+        conn = _connection(store, agent)
+        await conn.connect()
+
+        conn.append_audio(AgentRequestVoice(audio_data="QUFB", name="clip"))
+        await asyncio.wait_for(hook.started.wait(), 2)
+        await conn.close()
+        await asyncio.sleep(0.6)  # long enough for the hook to finish if it had been left running
+
+        assert conn.session.get_non_volatile_cache().get("late") is None
+
+    @pytest.mark.asyncio
+    async def test_input_that_arrives_after_the_close_started_is_dropped(self, store):
+        hook = _SlowInputHook()
+        agent = _Agent()
+        agent.pre_hooks.append(hook)
+        conn = _connection(store, agent)
+        await conn.connect()
+        await conn.close()
+
+        conn.append_audio(AgentRequestVoice(audio_data="QUFB", name="clip"))
+        await asyncio.sleep(0.1)
+
+        assert hook.runs == 0
+
+
+class TestSharedRuntimeSteps:
+    """The pool takes its context and end steps from ``Runtime`` (the ones ``run()`` and ``stream()`` use), not copies of them."""
+
+    @staticmethod
+    def _spy(conn, store, monkeypatch):
+        """Records ``activate``, ``_end_run`` and the store, in order, still running the real ones."""
+        seen: list[str] = []
+        real_activate, real_end_run, real_store = conn.runtime.activate, conn.runtime._end_run, store.store
+
+        def activate(agent, session):
+            seen.append("activate")
+            return real_activate(agent, session)
+
+        def end_run(session):
+            seen.append("_end_run")
+            real_end_run(session)
+
+        def record_store(session):
+            seen.append("store")
+            real_store(session)
+
+        monkeypatch.setattr(conn.runtime, "activate", activate)
+        monkeypatch.setattr(conn.runtime, "_end_run", end_run)
+        monkeypatch.setattr(store, "store", record_store)
+        return seen
+
+    @pytest.mark.asyncio
+    async def test_connect_enters_activate(self, store, monkeypatch):
+        conn = _connection(store)
+        seen = self._spy(conn, store, monkeypatch)
+
+        await conn.connect()
+
+        assert seen == ["activate"]
+        await conn.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "run_path",
+        [
+            lambda conn: conn._process_audio(AgentRequestVoice(audio_data="QUFB", name="clip")),
+            lambda conn: conn._process_text(AgentRequestText(prompt="hi")),
+            lambda conn: conn._emit_event(TextDelta(content="x", message_id="m1")),
+        ],
+        ids=["audio_input_hooks", "typed_text_pre_hooks", "output_event_post_hooks"],
+    )
+    async def test_each_hook_path_enters_activate(self, store, monkeypatch, run_path):
+        conn = _connection(store)
+        await conn.connect()
+        seen = self._spy(conn, store, monkeypatch)
+
+        await run_path(conn)
+
+        assert "activate" in seen
+        await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_a_normal_close_stores_then_ends_the_run_once(self, store, monkeypatch):
+        conn = _connection(store)
+        await conn.connect()
+        seen = self._spy(conn, store, monkeypatch)
+
+        await conn.close()
+        await conn.close()
+
+        assert seen == ["store", "_end_run"]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_call_still_ends_the_run_but_stores_nothing(self, store, monkeypatch):
+        conn = _connection(store)
+        await conn.connect()
+        seen = self._spy(conn, store, monkeypatch)
+
+        await conn.handle_framework_event("error", {"message": "native session failed"})
+        await _until(lambda: conn._disconnecting)
+        await asyncio.sleep(0.1)
+
+        assert seen == ["_end_run"]
+
+    @pytest.mark.asyncio
+    async def test_the_run_still_ends_when_the_native_session_fails_to_close(self, store, monkeypatch):
+        conn = _connection(store)
+        await conn.connect()
+        seen = self._spy(conn, store, monkeypatch)
+        _Adapter.disconnect_error = RuntimeError("close failed")
+
+        with pytest.raises(RuntimeError):
+            await conn.close()
+
+        assert seen == ["store", "_end_run"]
 
 
 class TestFailure:
