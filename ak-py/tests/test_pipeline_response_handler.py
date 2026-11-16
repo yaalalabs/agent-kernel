@@ -37,7 +37,7 @@ class _FakeWSHandler:
         self.broadcasts = []
 
     def broadcast(self, endpoint_url=None, message=None, user_id=None, connection_ids=None, message_type=None):
-        self.broadcasts.append({"message": message, "user_id": user_id, "message_type": message_type})
+        self.broadcasts.append({"endpoint_url": endpoint_url, "message": message, "user_id": user_id, "message_type": message_type})
 
 
 def _handler():
@@ -219,6 +219,26 @@ class TestAsyncDelivery:
         handler, _, ws = _ws_handler()
         handler.on_permanent_failure(_output_msg({"result": "never"}, attributes={"request_id": "r1"}))
         assert ws.broadcasts == []
+
+    @pytest.mark.parametrize("deliver", ["process", "on_permanent_failure"])
+    def test_the_messages_endpoint_url_is_passed_to_the_ws_handler(self, monkeypatch, deliver):
+        """ECS's API Gateway handler posts to the return address the message carries (#870)."""
+        _use_mode(monkeypatch, ExecutionMode.ASYNC)
+        handler, _, ws = _ws_handler()
+        attributes = {"request_id": "r1", "user_id": "u1", "endpoint_url": "https://gw.example/prod"}
+        getattr(handler, deliver)(_output_msg({"result": "ok"}, attributes=attributes))
+
+        [call] = ws.broadcasts
+        assert call["endpoint_url"] == "https://gw.example/prod"
+
+    def test_no_endpoint_url_passes_none(self, monkeypatch):
+        """Pod push ignores the value, so a message without one still broadcasts."""
+        _use_mode(monkeypatch, ExecutionMode.ASYNC)
+        handler, _, ws = _ws_handler()
+        handler.process(_output_msg({"result": "ok"}, attributes={"request_id": "r1", "user_id": "u1"}))
+
+        [call] = ws.broadcasts
+        assert call["endpoint_url"] is None
 
 
 class TestIntegrationDispatch:

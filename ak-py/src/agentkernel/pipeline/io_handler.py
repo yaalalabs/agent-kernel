@@ -13,6 +13,7 @@ from .response_handler import ResponseHandler
 from .response_store.factory import ResponseStoreFactory
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransportFactory
+from .ws.base import WebSocketHandlerABC
 
 if TYPE_CHECKING:  # pragma: no cover: typing only, so pipeline keeps importing core and api only
     from ..integration.adapter.gateway import GatewayRunner
@@ -43,6 +44,7 @@ class IOHandler:
         pollers: list["PollerRunner"] | None = None,
         gateways: list["GatewayRunner"] | None = None,
         request_handler: RequestHandler | None = None,
+        ws_handler: WebSocketHandlerABC | None = None,
     ) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
 
@@ -68,6 +70,9 @@ class IOHandler:
             whichever registered first, silently. This is the seam a capability that has to act on
             a chat request *before* it is enqueued mounts on: ``ThreadRequestHandler`` records the
             user message here. Must be a ``RequestHandler`` (the queue producer is not optional).
+        :param ws_handler: Delivers WebSocket replies in place of the default pod push, for a
+            deployment whose sockets live elsewhere (ECS passes the API Gateway handler). When set,
+            the pod-push prerequisites (push token, shared connection store) are not required.
         :raises AKConfigError: If the topology is unusable, or ``request_handler`` is not a
             ``RequestHandler``.
         """
@@ -76,14 +81,14 @@ class IOHandler:
         execution = config.execution
         mode = execution.mode
         transport_type = QueueTransportFactory.resolve_type()
-        cls._validate_topology(transport_type, config)
+        cls._validate_topology(transport_type, config, pod_push=ws_handler is None)
         cls._warn_if_no_agents(config)
 
         single_process = transport_type == "in_memory"
         # REALTIME is deliberately absent: its replies go through the integration gateway adapter,
         # never the WebSocket push endpoint, so it needs no shared connection store (matching
         # ``_validate_topology``, which exempts it from the push token for the same reason).
-        if not single_process and execution.is_websocket:
+        if not single_process and execution.is_websocket and ws_handler is None:
             from .ws.push import default_connection_store
 
             # Raises on session backends without a connection store; a process-local store
@@ -128,7 +133,7 @@ class IOHandler:
                 # exit_on_shutdown=False: the nested loop returns after draining (finishing its
                 # in-flight work); only this outer ThreadRunner.run ends the process, once every
                 # pipeline loop has reported in.
-                execution_function=lambda: ResponseHandler().start(exit_on_shutdown=False),
+                execution_function=lambda: ResponseHandler(ws_handler=ws_handler).start(exit_on_shutdown=False),
                 thread_name="response-handler",
                 stop_all_on_failure=True,
             ),
@@ -210,8 +215,12 @@ class IOHandler:
         )
 
     @classmethod
-    def _validate_topology(cls, transport_type: str, config) -> None:
-        """Fail fast on unsupported/incoherent topology combinations (spec §9, §10)."""
+    def _validate_topology(cls, transport_type: str, config, pod_push: bool = True) -> None:
+        """Fail fast on unsupported/incoherent topology combinations (spec §9, §10).
+
+        :param pod_push: False when the caller supplies its own WebSocket delivery, which needs no
+            push token.
+        """
         execution = config.execution
         if execution.is_websocket and transport_type == "in_memory" and getattr(config, "identity", None) is None:
             raise AKConfigError(
@@ -219,7 +228,7 @@ class IOHandler:
             )
         # REALTIME is deliberately absent: its replies go through the integration adapter, not
         # the WebSocket push endpoint, so it needs no push token.
-        if execution.is_websocket and transport_type != "in_memory":
+        if execution.is_websocket and transport_type != "in_memory" and pod_push:
             # This process's Response Handler pushes replies to the gateway pods: it needs the
             # shared secret (and, checked at delivery setup, the shared connection store).
             from .ws.push import push_auth_token, push_auth_token_sources

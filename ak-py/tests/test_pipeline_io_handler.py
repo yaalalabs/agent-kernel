@@ -490,3 +490,47 @@ class TestNestedDrainCoordination:
 
         assert not exit_called.is_set(), "a nested runner must return, not end the process"
         assert list(results.values()) == ["done"]
+
+
+class TestExternalWebSocketHandler:
+    """A caller-supplied ws_handler replaces pod push (#870: ECS delivers through API Gateway)."""
+
+    @staticmethod
+    def _capture_tasks(monkeypatch):
+        """Async mode on SQS with neither pod-push prerequisite: no push token, no shared connection store."""
+        captured = {}
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_EXECUTION__MODE", "async")
+        monkeypatch.setenv("AK_EXECUTION__QUEUES__TYPE", "sqs")
+        monkeypatch.setenv("AK_EXECUTION__QUEUES__INPUT__URL", "https://sqs.local/input")
+        monkeypatch.setenv("AK_EXECUTION__QUEUES__OUTPUT__URL", "https://sqs.local/output")
+        AKConfig._reset()
+
+        monkeypatch.setattr("agentkernel.api.http.RESTAPI.build_app", classmethod(lambda cls, handlers=None: MagicMock()))
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.uvicorn.Server", MagicMock())
+        monkeypatch.setattr(IOHandler, "_install_signal_handlers", classmethod(lambda cls, server: None))
+        monkeypatch.setattr(ThreadRunner, "run", staticmethod(lambda tasks, max_workers=None, exit_on_shutdown=True: captured.update(tasks=tasks)))
+        return captured
+
+    def test_the_response_handler_delivers_through_the_given_handler(self, monkeypatch):
+        captured = self._capture_tasks(monkeypatch)
+        response_handler_class = MagicMock()
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.ResponseHandler", response_handler_class)
+        ws_handler = MagicMock()
+
+        IOHandler.run(ws_handler=ws_handler)
+
+        [task] = [task for task in captured["tasks"] if task.thread_name == "response-handler"]
+        task.execution_function()
+        response_handler_class.assert_called_once_with(ws_handler=ws_handler)
+
+    def test_without_it_the_pod_push_prerequisites_still_apply(self, monkeypatch):
+        self._capture_tasks(monkeypatch)
+        with pytest.raises(AKConfigError, match="push_auth_token"):
+            IOHandler.run()
+
+    def test_topology_check_skips_the_push_token_only_when_told(self):
+        config = _cfg(mode=ExecutionMode.ASYNC)
+        IOHandler._validate_topology("sqs", config, pod_push=False)
+        with pytest.raises(AKConfigError, match="push_auth_token"):
+            IOHandler._validate_topology("sqs", config)
