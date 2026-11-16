@@ -63,7 +63,16 @@ class ServiceBusTransportConsumer(TransportConsumer):
         deadline = time.monotonic() + wait_seconds
         self._drop_lapsed_sessions()
         messages: list[QueueMessage] = []
+        try:
+            self._receive_into(messages, batch_size, deadline)
+        except Exception:
+            if not messages:
+                raise
+            # Received messages hold their session locks; dropping them would stall them until the lock lapses.
+            _log.warning(f"Fetch on {self._queue_name} failed after {len(messages)} message(s); returning them", exc_info=True)
+        return messages
 
+    def _receive_into(self, messages: list[QueueMessage], batch_size: int, deadline: float) -> None:
         # Reuse first: back-to-back turns and delta chunks of one session skip a new accept.
         for session_id, held in list(self._sessions.items()):
             remaining = deadline - time.monotonic()
@@ -110,7 +119,6 @@ class ServiceBusTransportConsumer(TransportConsumer):
             # reused only while younger than ack_wait, so 2 x ack_wait gives every message a full ack_wait.
             self._renewer.register(receiver, receiver.session, max_lock_renewal_duration=2 * self._ack_wait)
             messages.append(self._hold(session_id, held, received[0]))
-        return messages
 
     def ack(self, message: QueueMessage) -> None:
         held = self._held(message)
@@ -181,6 +189,7 @@ class ServiceBusTransportConsumer(TransportConsumer):
             body=b"".join(received.body).decode("utf-8"),
             attributes={text(name): text(value) for name, value in (received.application_properties or {}).items()},
             group_id=session_id,
+            dedup_id=received.message_id,  # send() stores dedup_id here; the runner derives reply dedup ids from it
             # The SDK hands back the AMQP header count, which counts prior deliveries only.
             receive_count=(received.delivery_count or 0) + 1,
             message_id=str(received.sequence_number),

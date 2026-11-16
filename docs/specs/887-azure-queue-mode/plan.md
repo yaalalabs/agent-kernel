@@ -89,11 +89,11 @@ Builds [spec.md](spec.md) in order. Each iteration leaves the branch green.
   - One-word list fixes: `docs/docs/api/a2a-server.md`, `docs/docs/api/mcp-server.md`,
     `docs/docs/integrations/agui.md`, `docs/docs/deployment/overview.md`, `docs/docs/agent-skills.md`,
     `docs/src/pages/features.tsx`, `docs/src/components/FeatureExplorer/data.tsx`.
+  - An "Azure Service Bus" `Queue` tile in `docs/src/components/IntegrationsMarquee/data.tsx` (reuses `VscAzure`).
   - Skills: `.agents/skills/ak-dev-architecture/SKILL.md`, `.agents/skills/ak-dev-new-queue-transport/SKILL.md`,
     bundled `ak-cloud-deploy` (an Azure queue mode subsection; `queue_mode` is no longer AWS-only) and
     `ak-add-capabilities`.
   - Cut, nothing on them becomes false: `azure-serverless.md` (unchanged), `scheduling.md` (Service Bus does not
-    support scheduling yet, so its list stays right), the `IntegrationsMarquee` tile (needs a new logo asset),
-    and the two sync-skill sweeps (replaced by the grep below). Not touched: `docs/versioned_docs/`, Helm docs.
+    support scheduling yet, so its list stays right), and the two sync-skill sweeps (replaced by the grep below). Not touched: `docs/versioned_docs/`, Helm docs.
 - **Verify:** `cd docs && npm run build`; `git grep -n -i "Kafka, or NATS\|SQS/Kafka/NATS[^/]\|Kafka or NATS"`
   over `docs/docs docs/src ak-py/src/agentkernel/skills .agents/skills` finds nothing.

@@ -772,7 +772,8 @@ class _ServiceBusQueueConfig(BaseModel):
     ack_wait: float = Field(
         default=300.0,
         description=(
-            "Seconds a received message's session lock is renewed while the agent works. Past it the lock "
+            "Seconds a received message's session lock is renewed while the agent works: at least ack_wait, "
+            "and up to 2 x ack_wait for a message taken on a freshly accepted session. After that the lock "
             "lapses and the message is redelivered (within the queue's lock duration). Keep it above your "
             "longest agent turn, or a slow turn runs twice."
         ),

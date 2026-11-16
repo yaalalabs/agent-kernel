@@ -271,6 +271,13 @@ class TestSend:
 
 
 class TestConsume:
+    def test_the_envelope_round_trips_dedup_id_and_attributes(self, broker):
+        transport = _transport(ack_wait=5)
+        transport.send(QueueName.INPUT, _msg(body="m1", group_id="s1", dedup_id="d1", attributes={"request_id": "r1"}))
+        [received] = transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)
+        assert (received.group_id, received.dedup_id, received.receive_count) == ("s1", "d1", 1)
+        assert received.attributes == {"request_id": "r1"}
+
     def test_a_held_session_is_reused_after_ack(self, broker):
         transport = _transport(ack_wait=5)
         consumer = transport.create_consumer(QueueName.INPUT)
@@ -305,6 +312,27 @@ class TestConsume:
         with pytest.raises(ConnectionError):
             consumer.fetch(1, 1.0)
         assert receiver.closed and consumer._sessions == {}
+
+    def test_a_later_receive_failure_returns_the_messages_already_received(self, broker):
+        transport = _transport(ack_wait=5)
+        consumer = transport.create_consumer(QueueName.INPUT)
+        transport.send(QueueName.INPUT, _msg(body="m1", group_id="s1"))
+        transport.send(QueueName.INPUT, _msg(body="m2", group_id="s2"))
+        get_receiver = consumer._client.get_queue_receiver
+        receivers = []
+
+        def second_receive_fails(*args, **kwargs):
+            receiver = get_receiver(*args, **kwargs)
+            if receivers:
+                receiver.receive_messages = lambda *a, **k: (_ for _ in ()).throw(ConnectionError("link detached"))
+            receivers.append(receiver)
+            return receiver
+
+        consumer._client.get_queue_receiver = second_receive_fails
+        [first] = consumer.fetch(2, 1.0)
+        assert first.body == "m1"
+        assert receivers[1].closed
+        consumer.ack(first)  # still held, so it settles normally
 
     def test_fetch_returns_promptly_once_it_has_a_message(self, broker):
         transport = _transport(ack_wait=5)

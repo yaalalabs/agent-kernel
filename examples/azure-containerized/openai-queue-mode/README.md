@@ -52,7 +52,7 @@ namespace. Only `servicebus_contract_test.py` needs it; drop that resource if yo
 
 ```bash
 ./build.sh
-cd deploy && ./deploy.sh
+(cd deploy && ./deploy.sh)
 ```
 
 ## Test
@@ -84,5 +84,5 @@ curl -X POST "$AK_TEST_ENDPOINT" -H "Content-Type: application/json" \
 ## Clean up
 
 ```bash
-cd deploy && terraform destroy
+(cd deploy && terraform destroy)
 ```

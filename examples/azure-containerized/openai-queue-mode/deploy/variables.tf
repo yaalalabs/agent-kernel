@@ -24,13 +24,8 @@ variable "publisher_email" {
   description = "The publisher email"
 }
 
-variable "environment_variables" {
-  type        = map(string)
-  description = "The environment variables to pass to the container"
-  default     = {}
-}
-
 variable "openai_api_key" {
   type        = string
   description = "The OpenAI API key"
+  sensitive   = true
 }

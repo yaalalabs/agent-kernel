@@ -741,10 +741,12 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         return False
 
     # Queue-mode examples also expose their Service Bus namespace, for the live transport contract.
-    namespace = subprocess.run(
+    result = subprocess.run(
         ['terraform', 'output', '-raw', 'servicebus_namespace'],
         cwd=str(deploy_path), capture_output=True, text=True
-    ).stdout.strip()
+    )
+    # A missing output fails, and the setup-terraform wrapper may still print to stdout.
+    namespace = result.stdout.strip() if result.returncode == 0 else ''
     pytest_cmd = ['uv', 'run', 'pytest']
     if namespace:
         test_env['AK_TEST_SERVICEBUS_NAMESPACE'] = namespace
