@@ -533,16 +533,31 @@ here.
 
 ### Iteration 14: Adapter descriptors and A2A cards
 
-- **Goal:** each adapter reports its tool names and its card is built from the descriptor with
-  the provider's security scheme.
-- **Files:** the eight `framework/<name>/<name>.py`, `api/a2a/a2a.py`.
+- **Goal:** each adapter reports its tools, A2A cards are built from the registry's descriptors
+  with the provider's security scheme, and `get_a2a_card` is gone from the adapter contract.
+- **Files:** the eight `framework/<name>/<name>.py`, `core/base.py`, `core/builder.py`,
+  `api/a2a/a2a.py`; `examples/cli/session-context/hooks_test.py` (its stub agent's unused
+  method).
 - **Steps:**
-  1. `get_tool_names()` per adapter from the spec 9 table (the LangGraph `ToolNode` walk
-     replaces the `node_data.tools` read that always produced empty skills) (spec 9).
-  2. `A2ACardBuilder.build(descriptor)` with security schemes from `security_scheme()`;
-     `get_a2a_card` goes through it (spec 6, design refinement 5).
-- **Verify:** the descriptor cases in the eight `test_tool_<adapter>` suites; the card
-  assertions in `test_api_a2a_surface` and `test_api_a2a_auth`.
+  1. `get_tool_names()` and `_tool_descriptions()` per adapter from the spec 9 table (the
+     LangGraph `ToolNode` walk replaces the `node_data.tools` read that always produced empty
+     skills); `_build_descriptor` fills each skill's description from them (spec 6, 9).
+  2. `A2ACardBuilder.build(descriptor)` with security schemes from `security_scheme()` (spec 6,
+     design refinement 5).
+  3. `A2A._build` builds one card per descriptor from `Runtime.current().registry.descriptors()`
+     and warns for an empty description. The `a2a.agents` allow-list still selects the agents,
+     by `descriptor.id`, until 16 replaces it (spec 6, design refinement 8).
+  4. `get_a2a_card` is deleted from `Agent`, the eight adapters and the example stub; the "has no
+     A2A card" branch goes with it (spec 6).
+- **Verify:** the descriptor cases (tools, skill descriptions) in the eight `test_tool_<adapter>`
+  suites; the card assertions in `test_api_a2a_surface` (the card built from the registered
+  descriptor, the empty-description warning, an ADK agent, a descriptor the process hosts no
+  agent for) and `test_api_a2a_auth`; `test_protocol_pipeline_roundtrip`; `test_base` and
+  `test_maf_runner` lose their `get_a2a_card` cases. The test agents elsewhere that define the
+  method keep it unused.
+- **Behaviour to expect:** a card's description is empty until `Module.describe` or (from 15) the
+  overlay sets one, where six adapters published the agent's instructions or backstory (spec
+  behavioural change 31).
 
 ### Iteration 15: Registry config and store backends
 
@@ -556,9 +571,14 @@ here.
      `_RegistryAgentOverlayConfig`; `AKConfig.registry: Optional = None` (spec Config changes).
   2. `_RedisLikeAgentRegistry`, the Redis, Valkey and DynamoDB backends,
      `AgentRegistryContract` (spec 6).
-  3. The factory's store branches, the dotted-path branch and the overlay.
+  3. The factory's store branches, the dotted-path branch and the overlay, whose `register` sets
+     the final descriptor back on the agent so the hosting process holds one record (spec 6,
+     descriptor source 3).
 - **Verify:** `test_agent_registry` (all backends over fake drivers, factory, overlay,
-  cross-instance read); `test_config` registry cases; the `FakeCfg` stubs gain `registry = None`.
+  cross-instance read; the overlay on `agent.descriptor`, the run's actor subject following an
+  overlaid `identity`); an overlaid description and version on the A2A card in
+  `test_api_a2a_surface`; `test_config` registry cases; the `FakeCfg` stubs gain
+  `registry = None`.
 
 ### Iteration 16: Catalog and exposure
 
@@ -576,7 +596,9 @@ here.
      validators; the example configs move to `registry.agents.<id>.surfaces` (spec 8.5 to 8.7,
      Config changes).
 - **Verify:** new `tests/test_api_catalog.py`; `test_config` cases for the removed lists;
-  changed `test_api_mcp`, `test_api_a2a_surface`, `test_agui_handler`.
+  changed `test_api_mcp`, `test_api_a2a_surface` (exposure from `exposed_on`; a card and its
+  routes for a descriptor the process hosts no agent for, now that availability resolves through
+  the registry), `test_agui_handler`.
 
 ## Phase D: Authorization (iterations 17 to 20)
 
@@ -630,11 +652,12 @@ here.
   2. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
      403 reply and the warning (spec 8.1, 8.11).
   3. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
-  4. The catalog filtered by `visible_agents`; `get_router()` calls `validate_configuration`
-     (spec 6, 7).
+  4. The catalog filtered by `visible_agents`, each entry's `tools` and tool-backed `skills`
+     narrowed to the caller; `get_router()` calls `validate_configuration` (spec 6, 7).
 - **Verify:** 403/404 cases in `test_api_http`; `test_pipeline_request_handler` (the riskiest
   consumer: the precheck on a store-backed registry with no local agents); the fire-time skip
-  in `test_schedule_principal`; visibility in `test_api_catalog`.
+  in `test_schedule_principal`; visibility and the `tools` and `skills` narrowing in
+  `test_api_catalog`.
 
 ### Iteration 20: Protocol surface enforcement
 
@@ -643,12 +666,13 @@ here.
   `integration/agui/handler.py`, `pipeline/realtime_pool.py`.
 - **Steps:**
   1. MCP per-tool `AuthCheck` and list filtering (spec 8.6).
-  2. A2A `get_cards(principal)` filtering and the 403 (spec 8.7).
+  2. A2A `get_cards(principal)` filtering, a served card's skills narrowed to the caller with
+     `Vary: Authorization` and an ETag of the card as served, and the 403 (spec 8.7).
   3. AG-UI `/agents` narrowed by `visible_agents` and the 403 (spec 8.5).
   4. `RealtimeConnectionPool.dispatch` runs `ensure_agent_available(body.agent, body.principal)`
      on first connect (spec 8.4).
-- **Verify:** list filtering and `AuthCheck` in `test_api_mcp_auth`; card filtering in
-  `test_api_a2a_auth`; the 403 in `test_agui_handler`; the realtime pool tests.
+- **Verify:** list filtering and `AuthCheck` in `test_api_mcp_auth`; card filtering and skill
+  narrowing in `test_api_a2a_auth`; the 403 in `test_agui_handler`; the realtime pool tests.
 
 ## Phase E: Framework tool gates (iterations 21 to 23)
 
@@ -773,25 +797,34 @@ user-skill updates), so iterations 27 and 28 cover what phases C to F add and re
      (decided 2026-11-10); `configuration.md` says the same where it lists the provider types.
   2. Confirm the Terraform resources need no change (the connections table keeps its `user_id`
      hash key; the authorizer Lambda keeps its `handler_path` contract).
+  3. `api/a2a-server.md` says a card is built from the agent's descriptor (not by the adapter's
+     `get_a2a_card()`, which is gone), shows `Module.describe` and
+     `registry.agents.<id>.description` as the way to give a card its description and version,
+     and notes that an agent registered after a process mounted its A2A routes is served there
+     after a restart (spec 6, A2A card).
 - **Verify:** `grep -rn "AuthValidator\|Authoriser\|acting_user_id\|mcp.agents\|a2a.agents\|
-  agui.agents\|userId" docs/docs ak-py/README.md README.md ak-deployment` returns only the
-  frozen `docs/versioned_docs/` snapshots and the Gmail API's `userId="me"`; the docs site
-  builds (`NODE_ENV=production`, 6 GB heap).
+  agui.agents\|userId\|get_a2a_card" docs/docs ak-py/README.md README.md ak-deployment` returns
+  only the frozen `docs/versioned_docs/` snapshots and the Gmail API's `userId="me"`; the docs
+  site builds (`NODE_ENV=production`, 6 GB heap).
 
 ### Iteration 28: Skills
 
 - **Goal:** the dev and user skills match the implementation.
 - **Files:** `.agents/skills/ak-dev-architecture/SKILL.md`,
   `.agents/skills/ak-dev-testing-conventions/SKILL.md`,
-  `.agents/skills/ak-dev-new-messaging-integration/SKILL.md`, new
+  `.agents/skills/ak-dev-new-messaging-integration/SKILL.md`,
+  `.agents/skills/ak-dev-new-framework-integration/SKILL.md`, new
   `.agents/skills/ak-dev-new-identity-provider/SKILL.md` and
   `.agents/skills/ak-dev-new-authorizer/SKILL.md`; `ak-py/src/agentkernel/skills/ak-cloud-deploy/`,
   `ak-add-capabilities/`, `ak-add-integration/` with their `evals/evals.json`.
 - **Steps:**
   1. Run `ak-dev-sync-skills-from-branch` over the branch; write the two new dev skills from
      spec sections 4 and 7 and their contract suites.
-  2. Verify no update is needed for `ak-dev-write-spec`, `ak-dev-review-pr`, the other
-     `ak-dev-new-*` skills, `ak-build`, `ak-init` and `ak-test`.
+  2. `ak-dev-new-framework-integration` describes the adapter contract as it now stands: no
+     `get_a2a_card`, and `get_tool_names`, `_tool_descriptions` and `ungated_tool_names` in its
+     place (the card comes from the descriptor); the stub agent in `ak-dev-testing-conventions`
+     loses the method too. Verify no update is needed for `ak-dev-write-spec`,
+     `ak-dev-review-pr`, the other `ak-dev-new-*` skills, `ak-build`, `ak-init` and `ak-test`.
   3. Wherever `ak-add-capabilities` and `ak-cloud-deploy` list the identity providers, Auth0 is
      named as a supported provider with its `oidc` block (decided 2026-11-10), and the
      `ak-dev-new-identity-provider` skill says a new OIDC issuer is a configuration before it is a

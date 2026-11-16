@@ -133,6 +133,8 @@ and `research/design-options.md` section 4).
   - `get_tool_names() -> list[str]`: implemented per adapter from the same source the A2A skills
     are built from today (`framework/openai/openai.py:1082-1091` and siblings); ADK implements it
     too, although its `get_a2a_card` is still a `TODO` (`framework/adk/adk.py:1519-1524`).
+  - `get_a2a_card` leaves the adapter contract: cards are built from the registry's descriptors
+    (section 4, spec refinement 8).
 - `Runtime` (`core/runtime.py`):
   - `run(...)` and `stream(...)` take `principal: Optional[Principal] = None` in place of
     `acting_user_id` (`core/runtime.py:378, 433`), which is removed together with the
@@ -442,13 +444,18 @@ and `research/design-options.md` section 4).
   `Agent` and raises `ValueError` when the process does not host it.
 - Catalog: `GET /api/v1/agents` returns `{"agents": [<descriptor>...]}` filtered by the caller
   (section 6), paginated with the shared cursor helpers; the `tools` field of each entry lists only
-  the tools at or below the caller's level. The same filtered list feeds AG-UI's `/agents`, the MCP
+  the tools at or below the caller's level, and the `skills` backed by those tools are narrowed
+  with it (spec refinement 8). The same filtered list feeds AG-UI's `/agents`, the MCP
   tool list and `/a2a/catalog`, each narrowed by the descriptor's `surfaces`.
 - `A2ACardBuilder.build` takes the descriptor and emits the a2a-sdk 1.x card: `name`,
   `description`, `version` (the descriptor's, not `library_version`), `supported_interfaces`,
   `skills` (one per skill descriptor), `security_schemes` and `security_requirements` derived from
   the configured identity provider (`bearer` for `static`, `openIdConnect` with the
   issuer's discovery URL otherwise; none when identity is not configured), mirrored per skill.
+  The A2A surface builds each card from the registry's descriptor when its routes are mounted,
+  not through the adapter, so a card carries the config overlay and a process serves cards for
+  agents it does not host; its description is the declared catalog text or empty (spec
+  refinement 8).
 
 ### 5. Authorization (`identity/authz/`)
 

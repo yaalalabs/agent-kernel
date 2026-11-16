@@ -13,7 +13,7 @@ Evidence is cited against `feature/603-identity-rbac-registry` at `d9d0d18bc` (a
 over the develop merge `287ec7485`; every `.py` cited is identical in both). The change ships as a
 breaking change with no compatibility window (design section 10).
 
-Seven places where detailing refined the design are listed in [Design refinements](#design-refinements)
+Eight places where detailing refined the design are listed in [Design refinements](#design-refinements)
 at the end; each is a mechanism change inside a settled decision, not a new decision, and each is
 reflected in `design.md`.
 
@@ -31,7 +31,7 @@ ak-py/src/agentkernel/
 │   │                       #   AgentDescriptorPage, AgentRegistrationError
 │   ├── runtime.py          # principal and tool-filter publication, resume subject check
 │   ├── base.py             # Session.Keys.OWNER, get_principal/get_owner/get_tool_filter,
-│   │                       #   Agent.descriptor, Agent.get_tool_names
+│   │                       #   Agent.descriptor, Agent.get_tool_names; get_a2a_card removed
 │   ├── tool.py             # ToolContext.principal / access_level / credentials
 │   ├── util/key_value_cache.py   # reserved "ak." prefix
 │   ├── service.py, chat_service.py, builder.py, config.py
@@ -604,10 +604,13 @@ class AgentRegistry(ABC):
    `_build_descriptor()` (not in `Agent.__init__`: every adapter assigns its native agent and
    attaches the system tools after the base constructor returns, so the first read is
    `Runtime.register`): `id = name`, `name`, `tools = self.get_tool_names()`, `skills` one per
-   tool (`id = name = tool name`, `description` from the native tool where the adapter has one),
+   tool (`id = name = tool name`, `description = self._tool_descriptions().get(name, "")`),
    `runner = runner.name`, `supports_streaming = runner.supports_streaming`, `description = ""`.
    `Agent.get_tool_names() -> list[str]` is a new method each adapter implements (section 9 lists
    the source per adapter); the base implementation returns `[]`.
+   `Agent._tool_descriptions() -> dict[str, str]` (tool name to the native tool's description;
+   base `{}`) is implemented beside it from the same native tools. It is the path a skill's
+   description takes now that no adapter builds a card (A2A card, below).
 2. `Module.describe(agent, **fields) -> Self` (`core/module.py`, beside `pre_hook`, `post_hook`
    and `run_options`, resolving the wrapped agent through `_wrapped` (`core/module.py:134-145`)):
    `ValueError` for an unloaded agent, for a field `AgentDescriptor` does not declare, for `id`
@@ -618,7 +621,16 @@ class AgentRegistry(ABC):
    agent again (`Runtime.register`), which is how the registry, already holding the descriptor
    from `load`, receives the described one.
 3. The `registry.agents.<id>` overlay, applied by `AgentRegistryFactory`'s returned registry in
-   `register` (the registry is constructed with the overlay dict).
+   `register` (the registry is constructed with the overlay dict), which also sets the resulting
+   descriptor on the agent it was handed (`Agent._set_descriptor`). In the hosting process
+   `agent.descriptor` and `registry.descriptor(id)` are therefore one record (a store's
+   `updated_at` aside): Runtime's actor subject (section 3) sees an overlaid `identity`, and
+   nothing reads a descriptor the overlay has not reached.
+
+The registry's descriptor is the one record of an agent. The catalog, AG-UI's `/agents` and the
+A2A card are built from `registry.descriptors()`, never from the adapter or the native agent.
+MCP is the exception that remains: its agent tools are registered from the agents the process
+hosts, with `get_description()` as the tool text (section 8.6).
 
 **Availability** (`core/service.py:49-70`):
 
@@ -639,22 +651,50 @@ needs the local `Agent` and raises `ValueError` when the process does not host i
 "next_cursor": ...}` where the list is `AccessGate.visible_agents(principal)` narrowed to
 `surfaces` containing `"rest"` (or `surfaces is None`), and each descriptor's `tools` is
 replaced by `gate.tool_filter(principal, agent).allowed` when the process hosts the agent, else
-the stored list filtered by `check_tool` through the authorizer (the io-handler case, Q15). With no
-gate the full descriptor list is returned. `limit` is clamped by `clamp_limit(limit,
+the stored list filtered by `check_tool` through the authorizer (the io-handler case, Q15). Its
+`skills` are narrowed with it: a skill whose `id` is one of the descriptor's tool names stays only
+when that tool does, and a skill that names no tool (declared through `Module.describe`) stays;
+otherwise a denied tool's name would still be listed, since the skills default to one per tool.
+With no gate the full descriptor list is returned. `limit` is clamped by `clamp_limit(limit,
 DEFAULT_PAGE_SIZE)`; a malformed cursor is 400.
 
 **A2A card** (`core/builder.py:40-74`): `A2ACardBuilder.build(descriptor: AgentDescriptor) ->
-AgentCard` replaces `build(name, description, skills)`: `name`, `description`, `version =
-descriptor.version` (not `library_version`, line 69), `supported_interfaces` as today, `skills`
-from `descriptor.skills` (tags defaulted to `[name]` as today, lines 90-101), and when
+AgentCard` replaces `build(name, description, skills)`: `name = descriptor.name`, `description =
+descriptor.description`, `version = descriptor.version` (not `library_version`, line 69),
+`supported_interfaces` as today with the URL built from `descriptor.id` (the route segment, and
+the name the A2UI labelling check takes), `skills` from `descriptor.skills` (tags defaulted to
+`[descriptor.id]`, the agent-name default of lines 90-101), and when
 `IdentityProviderFactory.get()` is not `None`: `security_schemes = {"ak": SecurityScheme(
 http_auth_security_scheme=HTTPAuthSecurityScheme(scheme="bearer"))}` for `static` and dotted
 providers, or `SecurityScheme(open_id_connect_security_scheme=OpenIdConnectSecurityScheme(
 open_id_connect_url=<discovery url>))` for the OIDC family; `security_requirements =
 [SecurityRequirement(schemes={"ak": StringList(list=[])})]`, mirrored onto every skill
 (`a2a/types/a2a_pb2.pyi:188-277, 305-376` in a2a-sdk 1.2.3). Without identity, neither field is set.
-Every adapter's `get_a2a_card` becomes `A2ACardBuilder.build(self.descriptor)`; ADK's `TODO`
-(`framework/adk/adk.py:1519-1524`) is filled the same way.
+
+Cards are built by the A2A surface from the registry, not by the adapters (design refinement 8):
+
+- `A2A._build` (`api/a2a/a2a.py:144-160`) iterates `Runtime.current().registry.descriptors()`
+  where it iterated `Runtime.current().agents()`, and builds each card with
+  `A2ACardBuilder.build(descriptor)`. A card therefore carries the config overlay, and a process
+  over a store-backed registry builds cards for agents it does not host, which is what lets the
+  io process stop loading every agent's code to serve them (`examples/k8s/openai-queue-mode/
+  app_io_handler.py:5-8`).
+- `Agent.get_a2a_card` is removed: the abstract method on `Agent` (`core/base.py`) and its eight
+  implementations, whose one caller was `A2A._build` (line 155). ADK agents get a card the same
+  way as the rest, with no adapter code, so the `TODO` (`framework/adk/adk.py:1197-1202`) and the
+  "has no A2A card" branch (`api/a2a/a2a.py:156-158`) go. An adapter outside this repository that
+  still defines the method keeps an unused one.
+- The description is the declared catalog text and nothing else. Six adapters put the agent's
+  instructions or backstory on the card (`openai.py:905`, `crewai.py:523`, `maf.py:798`,
+  `smolagents.py:319`, `claude.py:1062`, `pydanticai.py:886`); that source is gone, so a card's
+  description is empty until `Module.describe` or the overlay sets one. A2A 1.0 requires the
+  field, so `_build` logs one warning per agent it serves with an empty description, naming
+  `Module.describe` and `registry.agents.<id>.description`.
+- Cards are still built once, when the A2A routes are mounted, because the SDK binds the card
+  into `DefaultRequestHandler` and `create_agent_card_routes` (`api/a2a/handler.py:64-78`). An
+  agent whose descriptor reaches a shared registry after a process mounted its routes is served
+  by that process only after it restarts. Stored descriptors do not expire, so this concerns a
+  first deployment and a newly added agent; it is a documented boundary, not solved here.
 
 ### 7. Authorization (`identity/authz/`)
 
@@ -993,10 +1033,19 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `state["principal"] = request.state.principal`. The executor
   (`api/a2a/a2a.py:68-90`) reads `context.call_context.state["principal"]`, falling back to
   `RequestAuthenticator.current()` and then to anonymous, and sets it on the body (line 76).
-- `_build()` (129-146): the `a2a.agents` line (137) is deleted; cards are built for every
-  descriptor `exposed_on("a2a")`; `get_cards()` becomes `get_cards(principal)` filtered by
-  `AccessGate.visible`; the catalog route (36-46) and the well-known card route take the request's
-  principal; a hidden agent's card is 404 (the A2A 1.0 rule).
+- `_build()` (129-146): the `a2a.agents` line (137) is deleted; one card is built, with
+  `A2ACardBuilder.build(descriptor)`, for every descriptor in `Runtime.current().registry` that is
+  `exposed_on("a2a")` (section 6, A2A card), and the cards, executors and `/a2a/{id}` routers are
+  keyed by `descriptor.id`. The process need not host the agent: the executor only enqueues, and
+  availability resolves through the registry (section 6).
+- `get_cards()` becomes `get_cards(principal)` filtered by `AccessGate.visible`; the catalog
+  route (36-46) and the well-known card route take the request's principal; a hidden agent's card
+  is 404 (the A2A 1.0 rule).
+- A served card's `skills` are narrowed to the caller by the catalog's rule (section 6): a skill
+  backed by a tool the caller's level does not allow is left out of a copy of the mounted card;
+  with no gate the card is served as built. Because a card then varies by caller, the catalog and
+  well-known card responses carry `Vary: Authorization`, and an ETag is computed over the card as
+  served. Authenticated extended cards stay a non-goal (design, Non-goals).
 
 #### 8.8 CLI (`cli/cli.py`)
 
@@ -1210,7 +1259,7 @@ Shared pieces (`core/`):
 | `auth/` package, `auth.py` shadow module | both, whole | | |
 | `core/model.py` | `BaseChatRequest.user_id` (427); `from_payload` user_id handling (497, 503, 505, 513-516) | `BaseChatRequest.principal`; `SystemTool.tier`; new models (section 2) | every other request and reply model; `BaseRunRequest.extra="allow"` |
 | `core/runtime.py` | `ACTING_USER_CACHE_KEY` (40); `acting_user_id` (378, 433); `_agents` dict (144) | `run`/`stream` signatures and sequence; `_validate_resume` eighth check; `register`/`deregister`/`agents` delegate | system hook lists; `_prepare_requests`; `StreamBoundaryTracker` |
-| `core/base.py` | | `Keys.OWNER`; accessors; `Agent.descriptor`, `get_tool_names`, `ungated_tool_names` (default `[]`) | framework-context accessors; run options; `_attach_system_tools` |
+| `core/base.py` | abstract `Agent.get_a2a_card` | `Keys.OWNER`; accessors; `Agent.descriptor`, `get_tool_names`, `ungated_tool_names` (default `[]`), `_tool_descriptions` (default `{}`) | framework-context accessors; run options; `_attach_system_tools` |
 | `core/tool.py` | | `ToolContext.principal/access_level/credentials` | `SystemToolFactory.get_all`, `_agent_allowed` |
 | `core/util/key_value_cache.py` | | reserved prefix | `get/has/keys/items` |
 | `core/paused_run.py` | the "accepted risk" note (24-26) | subject/provider/namespace on `PausedRun`; reserved writes | accessors' contract |
@@ -1226,13 +1275,13 @@ Shared pieces (`core/`):
 | `integration/adapter/base.py`, `producer.py` | | `InboundRequest.namespace/claims`; principal built at enqueue | attributes; reply-context budget |
 | `integration/agui/*` | `authoriser`/`auth_validator`; `agui.agents` read (60-68) | principal through `_resolve_run_inputs`; visibility | event mapping; envelope; pause outcome |
 | `api/mcp/akmcp.py` | `mcp.agents` read (140) | `auth=`; per-tool `AuthCheck`; principal on the body | executor error mapping; `get_http_app` |
-| `api/a2a/*` | `a2a.agents` read (137) | context builder; principal on the body; filtered cards | routes shape; data parts |
+| `api/a2a/*` | `a2a.agents` read (137); the `agent.get_a2a_card()` call and its "no card" branch (155-158) | context builder; principal on the body; cards built from registry descriptors, filtered and narrowed per caller | routes shape; data parts; cards built once at mount |
 | `cli/cli.py` | | `--token` / `AK_CLI_TOKEN` | REPL commands |
 | `deployment/aws/*`, `gcp/akauthorizer.py`, `azure/akfunction.py` | validator arguments; `GCPAuthorizer`; `set_auth_handler`; `set_auth_validator` | principal via authorizer context; WS keyed by subject | queue wiring; connection table schema |
 | `integration/thread/*` | `authoriser`; `user_id` requirement text | ownership `PermissionError`; 403 mapping; 401 for anonymous | store layouts; naming; recording order |
 | `schedule/*` | `user_id` in the trigger body | `principal` on tasks and triggers; tools read the principal | routes; providers; store key layouts (one new optional column) |
 | `sandbox/principal.py` | | default resolver reads the run principal | `PrincipalResolver` ABC |
-| `framework/*` | | `get_tool_names`, `ungated_tool_names`, gates (section 9) | every native run call with no `authorization` block |
+| `framework/*` | `get_a2a_card` in all eight adapters | `get_tool_names`, `_tool_descriptions`, `ungated_tool_names`, gates (section 9) | every native run call with no `authorization` block |
 
 ### Config changes (`core/config.py`)
 
@@ -1368,7 +1417,8 @@ Each is intentional; the justification is design section 10 unless stated.
 11. Schedules: creation requires an authenticated principal (401 on the chat route, an error
     string from the tools); the frozen trigger body carries `principal`, not `user_id`.
 12. `Runtime.register` raises `AgentRegistrationError`; `Runtime.agents()` returns the registry's
-    dict (same contract).
+    dict (same contract). Registering the same agent object again replaces its descriptor where
+    it raised before; a different agent under a registered name still raises (section 6).
 13. `KeyValueCache.set/delete/update` refuse `ak.`-prefixed keys; `clear()` keeps them.
 14. `A2ACardBuilder` emits the descriptor version and, with identity configured, security
     schemes; ADK agents now have a card.
@@ -1381,7 +1431,7 @@ Each is intentional; the justification is design section 10 unless stated.
     (`framework/openai/openai.py:836-850`) now see AK-set values: a realtime session offers only
     the tools whose composed `is_enabled` is true at connect, and AK-added input guardrails no
     longer cause a tool to be skipped (the skip is narrowed to user-added guardrails).
-19. LangGraph `get_a2a_card` skills, always empty today because `node_data.tools` never exists
+19. LangGraph's card skills, always empty today because `node_data.tools` never exists
     (`framework/langgraph/langgraph.py:380-401` against
     `langchain_core/runnables/graph.py:95-105`), are populated from the compiled graph's tool
     nodes through the descriptor.
@@ -1407,6 +1457,18 @@ Each is intentional; the justification is design section 10 unless stated.
     Cognito `token_use` other than `access` or `id` are startup errors (section 4).
 29. The API Gateway authorizer answers a refused, expired or malformed token with 401 (it raises
     `Unauthorized`) instead of a Deny's 403; a request with no token is still a Deny (section 8.9).
+30. `Agent.get_a2a_card` is removed from the base class and the eight adapters. A2A cards are
+    built from the registry's descriptors when the A2A routes are mounted, so they carry the
+    config overlay and a process over a store-backed registry serves A2A for agents it does not
+    host. An agent that registers after a process mounted its routes is served there once that
+    process restarts (section 6, A2A card).
+31. An A2A card's description is the declared `descriptor.description`, empty until
+    `Module.describe` or `registry.agents.<id>.description` sets one, where the OpenAI, CrewAI,
+    MAF, smolagents, Pydantic AI and Claude cards carried the agent's instructions or backstory.
+    An agent served over A2A with no description logs a warning at mount.
+32. In the catalog and on A2A cards, a skill backed by a tool the caller's level does not allow
+    is left out with the tool; the A2A catalog and card responses carry `Vary: Authorization`
+    (sections 6 and 8.7).
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (one optional
 `last_error` on schedule occurrences and `principal` on tasks aside); the queue envelope
@@ -1436,6 +1498,7 @@ for the two caches and the framework context; public exports other than those na
 | Exchanger or engine name reserved but not shipped | the factories | `AKConfigError` naming the dotted-path alternative |
 | Missing optional SDK (`redis`, `valkey`, `boto3`, PyJWT, cryptography) | factories under `require_extra` | `ImportError` naming the extra |
 | Duplicate agent id | `AgentRegistry.register` | `AgentRegistrationError` |
+| Agent served over A2A with no description | `A2A._build` | one warning per agent at mount; the card is served with an empty description |
 | Policy naming an unknown tool on a hosted agent; LangGraph/smolagents ungated tools | `AccessGate.validate_configuration` | `AKConfigError` at `Module.load` / `get_router()` |
 | Removed config lists present | `_A2AConfig`/`_MCPConfig`/`_AGUIConfig` validators | `AKConfigError` naming `registry.agents.<id>.surfaces` |
 | Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; catalog routes 500 |
@@ -1475,8 +1538,10 @@ New files under `ak-py/tests/`:
 - `test_agent_registry.py`: `AgentRegistryContract` over in-memory, redis-like (fake client at
   `store._driver._client`) and DynamoDB (fake driver); `AgentRegistryFactory` resolution;
   `Runtime.register` delegating and raising `AgentRegistrationError`; `Module.describe`
-  (unloaded agent, unknown field, later wins); the config overlay; descriptors readable from a
-  second registry instance over the same fake store (the io-handler case).
+  (unloaded agent, unknown field, later wins); a skill's description from
+  `_tool_descriptions`; the config overlay, on the registry's descriptor and on
+  `agent.descriptor` (the run's actor subject follows an overlaid `identity`); descriptors
+  readable from a second registry instance over the same fake store (the io-handler case).
 - `test_authorizer_static.py`: `AuthorizerContract` subclassed; grant normalization errors; the
   empty-grants warning; tier defaults from system tools.
 - `test_access_gate.py`: visibility rules, 403 versus 404, `tool_filter` composition, `tag:`
@@ -1506,13 +1571,17 @@ New files under `ak-py/tests/`:
   files already do); `ungated_tool_names` for LangGraph (unmarked `StructuredTool` in a
   `ToolNode`) and smolagents (a tool added after wrap).
 - `test_api_catalog.py`: `GET /api/v1/agents` descriptors, filtering by caller, `tools`
-  narrowing, cursor and limit, 400 on a bad cursor, `surfaces` narrowing per surface.
+  narrowing and the `skills` narrowed with it (a tool-backed skill goes with its tool, a declared
+  skill that names no tool stays), cursor and limit, 400 on a bad cursor, `surfaces` narrowing
+  per surface.
 - `test_api_mcp_auth.py`: `AKTokenVerifier` through a real `fastmcp.Client` with a bearer token,
   401 on a bad token, `tools/list` filtered by the per-tool check, the principal on the enqueued
   body, open MCP without identity; `RemoteAuthProvider` metadata served for an OIDC provider.
 - `test_api_a2a_auth.py`: the context builder putting the principal on the call context, the
   executor setting it on the body, cards carrying `security_schemes` and per-skill requirements
-  for `static` and `oidc`, none without identity, a hidden card 404, `/a2a/catalog` filtered.
+  for `static` and `oidc`, none without identity, a hidden card 404, `/a2a/catalog` filtered, a
+  card's skills narrowed to the caller with `Vary: Authorization` and an ETag of the card as
+  served.
 - `test_cli_token.py`: `--token` and `AK_CLI_TOKEN` through the `static` provider; the principal
   on `run_multi`; an invalid token exits.
 - `test_principal_messaging.py`: `IntegrationProducer.enqueue` building the `messaging:` and
@@ -1615,7 +1684,16 @@ Changed files and the exact targets that move:
 - `tests/test_api_a2a_surface.py`, `tests/test_api_a2a.py:264`, `tests/test_api_mcp.py:51-53,
   280`, `tests/test_protocol_pipeline_roundtrip.py`, `tests/test_cross_surface_parity.py`: the
   config stubs gain the three `None` blocks; `A2ACardBuilder.build(descriptor)` call shape; the
-  enqueued body carries an anonymous principal.
+  enqueued body carries an anonymous principal. The test agents in the three A2A suites
+  (`test_api_a2a_surface.py:44, 127`, `test_api_a2a_auth.py:144`,
+  `test_protocol_pipeline_roundtrip.py:69`) stop building a card; `test_api_a2a_surface` asserts
+  the card built from the registered descriptor instead: the described name, description and
+  version, the warning for an empty description, a card for an ADK agent, and a card for a
+  descriptor the process hosts no agent for (a stub `AgentRegistry` passed to `Runtime`); its
+  "agent without a card is not served" case goes with the branch.
+- `tests/test_base.py:60` and `tests/test_maf_runner.py:122-123`: the `get_a2a_card` assertions go
+  with the method. The thirty or so test agents that define `get_a2a_card` to satisfy the old
+  abstract method keep an unused method and need no change.
 - Deleted: `tests/test_auth_handler.py`, `tests/test_authoriser_shared.py` (both pin the removed
   package); their surviving assertions (bearer parsing, 401 variants) live in
   `test_identity_providers.py`, the thread handler's membership of the `AuthorisedRESTRequestHandler`
@@ -1635,7 +1713,10 @@ cover phases C to F, and the sync skills verify them before merge.
 - **Docs site (`docs/docs/`)**: new `advanced/identity-and-access.md`; `api/rest-api.md`
   (the Authentication section 474-499 and the `user_id` context claim 192-207, already
   inaccurate); `api/agui-server.md:26-76`; `integrations/agui.md:21-120`; `api/mcp-server.md:37,
-  85-91`; `api/a2a-server.md:18-29`; `core-concepts/configuration.md:58-72, 128, 324-332, 524,
+  85-91`; `api/a2a-server.md:18-29, 79, 141` (the card is built from the agent's descriptor, not
+  by the adapter's `get_a2a_card()`; how to give a card its description and version; the
+  restart needed for an agent registered after mount);
+  `core-concepts/configuration.md:58-72, 128, 324-332, 524,
   534, 854-867, 1084`; `advanced/threads.md:21-218, 323`; `advanced/scheduling.md:21-274, 397-408`;
   `advanced/queue-mode-guide.md:80, 144, 323-412, 485-491, 673-674, 808`;
   `deployment/aws-serverless.md:280-342, 502-510, 579-599, 873, 1391-1397, 1674-1678` (whose
@@ -1648,8 +1729,11 @@ cover phases C to F, and the sync skills verify them before merge.
   `Runtime`/`AgentService`/`ChatService` signatures 132-167, threads 398-405, AG-UI 462-477, the
   `agui` block 531-543, scheduling 645-655, sandbox 894, pipeline 926-927, ECS 1205-1248) gains
   an Identity and Access section; `ak-dev-testing-conventions/SKILL.md` rows 62-183 for the
-  changed and deleted files plus the new ones; `ak-dev-new-messaging-integration/SKILL.md:34,
-  124` (the `namespace` field and the authorizer bypass); new `ak-dev-new-identity-provider` and
+  changed and deleted files plus the new ones, and its stub agent at 265, which loses
+  `get_a2a_card`; `ak-dev-new-messaging-integration/SKILL.md:34,
+  124` (the `namespace` field and the authorizer bypass); `ak-dev-new-framework-integration/
+  SKILL.md:273-284` (the adapter contract loses `get_a2a_card` and gains `get_tool_names`,
+  `_tool_descriptions` and `ungated_tool_names`); new `ak-dev-new-identity-provider` and
   `ak-dev-new-authorizer` skills.
 - **User skills (`ak-py/src/agentkernel/skills/`)**: `ak-cloud-deploy/SKILL.md:8-77, 292,
   635-662, 700-701, 780-797, 849-868, 928-930, 1061-1084, 1124-1125, 1386` and its
@@ -1666,7 +1750,8 @@ cover phases C to F, and the sync skills verify them before merge.
   an `identity.provider` block (`static` for the demos, credential values through the `secret`
   capability), drops `user_id` from bodies, READMEs and tests, and moves surface lists to
   `registry.agents.<id>.surfaces`. `examples/sandbox/identity` keeps its custom resolver and
-  gains a note that the default resolver now covers it.
+  gains a note that the default resolver now covers it. `examples/cli/session-context/
+  hooks_test.py:40` drops the `get_a2a_card` its stub agent no longer needs.
   - As implemented (iteration 12, 2026-11-10): the credential keys follow one convention, resolved
     through the secret capability's environment layer: `ALICE_TOKEN`/`BOB_TOKEN` for the two-user
     API demos, `DEMO_TOKEN` for the single-user API demos, `DEMO_AUTH_TOKEN` for every AWS and k8s
@@ -1762,3 +1847,18 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    the principal under the `ak.principal` claim beside its `principal` field, and
    `AKAccessToken.principal_of` reads whichever it is handed; the design's rule (the executor
    runs as the authenticated caller, anonymous otherwise) holds unchanged.
+8. **A2A cards come from the registry, not the adapters** (decided 2026-11-16, before iteration
+   14). The descriptor and the A2A card describe the same agent, and the design already made the
+   card a projection of the descriptor; detailing left two descriptors in play (the agent's own,
+   which each adapter's `get_a2a_card` would have rendered, and the registry's, which carries the
+   config overlay) and kept the card dependent on the process hosting the agent. The registry's
+   descriptor is now the one record: `A2A._build` builds every card from
+   `registry.descriptors()`, `Agent.get_a2a_card` leaves the adapter contract, the overlay-applying
+   `register` sets the final descriptor back on the agent, and a skill's description reaches the
+   descriptor through `Agent._tool_descriptions`. Two consequences follow from rules the design
+   had already set: a card's description is only ever the declared catalog text (never
+   `get_description()`), so it is empty until declared and a warning says so; and the skills,
+   which default to one per tool, are narrowed with the tools wherever the caller's level narrows
+   them, in the catalog and on a served card. Cards are still built once at mount (the SDK binds
+   them), which leaves an agent registered later unserved until a restart (section 6, A2A card;
+   section 8.7).
