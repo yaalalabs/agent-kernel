@@ -30,6 +30,31 @@ return QueueMessage(
   `:257`, `:282`).
 - The Service Bus transport already does the same on receive (`pipeline/transport/servicebus.py:192`).
 
+`build_send_message_kwargs` (`sqs.py:125-151`) makes sure every dedup ID it sends is one SQS accepts:
+
+```python
+_SQS_DEDUP_ID = re.compile(r"[!-~]{1,128}")  # SQS: 1-128 printable ASCII characters, no spaces
+
+def _sqs_dedup_id(dedup_id: str | None) -> str | None:
+    """A dedup ID SQS accepts: the ID itself, or its SHA-256 hex digest when SQS would reject it."""
+    if dedup_id is None or _SQS_DEDUP_ID.fullmatch(dedup_id):
+        return dedup_id
+    return hashlib.sha256(dedup_id.encode()).hexdigest()
+```
+
+- It is called on `message_deduplication_id` inside `build_send_message_kwargs`.
+- It is a module-level function because it is small and stateless, and the SQS wire helpers next to it are
+  functions too (`sqs.py:100-191`).
+- One place covers every SQS sender. `SQSTransport.send` (`sqs.py:255-262`) and `SQSHandler` both build their
+  kwargs here (`sqs.py:1-7`, `tests/test_pipeline_sqs_transport.py:85-91`). That covers the ECS WebSocket
+  enqueue, the Lambda runner and the pipeline runners.
+- Why it is needed: on ECS WebSocket frames, `request_id` is set by the client and has no length limit
+  (`core/model.py:764`). It becomes the input's dedup ID (`websocket_api.py:356`). A 125-character ID is accepted
+  at enqueue, but its chunk IDs (`<id>-1-0`) are over 128 characters. SQS would then reject every chunk and the
+  error chunk, and the client would hang. `ECSStreamAgentRunner` has the same bug today.
+- The digest is deterministic, so a redelivered message still deduplicates against its first send. Different
+  chunk suffixes give different digests.
+
 ### 2. `IOHandler.run(ws_handler=)`
 
 `pipeline/io_handler.py`:
@@ -209,6 +234,9 @@ All intentional.
    only ECS. On a FIFO output queue with content-based dedup, the explicit ID now wins over the content hash. That
    is harmless: the reply IDs are unique per request and chunk. Without it, ECS's FIFO output queue
    (`content_based_deduplication = false`, `modules/queues/main.tf:46`) would reject every reply.
+   A dedup ID SQS would reject (over 128 characters, or outside printable ASCII) is now sent as its SHA-256
+   digest instead of failing. This applies to every SQS sender, Lambda included (§1). IDs SQS already accepted
+   are sent unchanged.
 2. **ECS gains** `integration` / `reply_*` delivery, thread reply recording, AG-UI and A2A/MCP routing, the
    handlers marked `requires_pipeline` (webhook host, AG-UI, thread request handler), `requests=` on
    `ChatService`, and SIGTERM drain on the runner and IO containers (design, Agent runner and IO entry point).
@@ -279,6 +307,11 @@ Run: `cd ak-py && uv run pytest tests/ -q`, and before the PR, `make lint-check-
   - `_record()` gains `"MessageDeduplicationId": "r1"` under `Attributes`.
     `test_fetch_maps_boto3_record_to_envelope` asserts `message.dedup_id == "r1"`.
   - New `test_fetch_without_a_dedup_id_maps_to_none` (standard queue).
+  - New `TestDedupIdBounds` on `build_send_message_kwargs`:
+    - A 128-character ID is sent unchanged.
+    - A 129-character ID, and an ID containing a space, are each sent as a 64-character hex digest. The same
+      input always gives the same digest.
+    - A 128-character ID with chunk suffixes `-1-0` and `-1-1` gives two different digests.
   - New `test_reply_sent_from_a_fetched_record_carries_its_dedup_id`: fetch a record with a dedup ID, run it
     through `AgentRunner._send_to_output` on an `SQSTransport` over a mocked client, and assert the
     `send_message` kwargs carry `MessageDeduplicationId="r1"`. With a chunk suffix, assert `"r1-2-0"`.

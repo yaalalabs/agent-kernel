@@ -9,7 +9,8 @@ Each iteration leaves the branch green (`cd ak-py && uv run pytest tests/ -q`). 
 - **Files:** `pipeline/transport/sqs.py`, `tests/test_pipeline_sqs_transport.py`
 - **Steps:**
   1. Map `MessageDeduplicationId` in `_to_envelope` (§1).
-  2. Add the dedup regression tests (Testing → `test_pipeline_sqs_transport.py`).
+  2. Make `build_send_message_kwargs` replace a dedup ID SQS would reject with its SHA-256 digest (§1).
+  3. Add the dedup regression and `TestDedupIdBounds` tests (Testing → `test_pipeline_sqs_transport.py`).
 - **Verify:** `uv run pytest tests/test_pipeline_sqs_transport.py tests/test_pipeline_agent_runner.py -q`
 
 ## Iteration 2: Pluggable WebSocket delivery in the pipeline

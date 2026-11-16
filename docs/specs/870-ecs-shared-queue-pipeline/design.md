@@ -84,8 +84,20 @@ flowchart LR
   system attribute.
 - Replies then carry it: `<id>` for a single reply, `<id>-<suffix>` for each chunk (`agent_runner.py:332-334`).
   This matches what ECS sends today (`akagentrunner.py:123-124`, `:222-223`).
-- Regression test in `ak-py/tests/test_pipeline_sqs_transport.py`: a fetched record carries `dedup_id`, and a
-  reply sent from it carries `MessageDeduplicationId`.
+- `build_send_message_kwargs` (`pipeline/transport/sqs.py:125-151`) replaces any dedup ID SQS would reject with
+  its SHA-256 hex digest (64 characters). SQS rejects an ID over 128 characters, or one with characters outside
+  printable ASCII.
+  - It is shared by `SQSTransport.send` and `SQSHandler`, so one fix covers ECS, Lambda and the pipeline.
+  - Why: on ECS WebSocket frames, `request_id` is set by the client and has no length limit
+    (`core/model.py:764`, `deployment/aws/containerized/core/api/websocket_api.py:434`). A 125-character ID is
+    accepted at enqueue, but its chunk IDs (`<id>-1-0`) go over 128. SQS then rejects every chunk and the error
+    chunk, and the client hangs. `ECSStreamAgentRunner` has the same bug today.
+  - The digest is deterministic, so a redelivered reply still deduplicates. IDs SQS already accepts, including
+    single-reply IDs, are unchanged.
+- Regression tests in `ak-py/tests/test_pipeline_sqs_transport.py`:
+  - A fetched record carries `dedup_id`, and a reply sent from it carries `MessageDeduplicationId`.
+  - A 128-character ID is sent unchanged. Its chunk IDs are sent as 64-character digests, a different one for
+    each chunk.
 - The test is SQS-only, as decided in review. The shared `QueueTransportContract` round-trip test
   (`pipeline/testing.py:86-94`) still does not check `dedup_id` (see Non-goals).
 
@@ -166,6 +178,11 @@ flowchart LR
   - With a DynamoDB response store, `IOHandler` still refuses SSE (`io_handler.py:244-249`).
   - With Redis or Valkey, it starts, and the stream reaches the client buffered.
   - shortcut: documented, not enforced in Python; revisit if ECS adds a REST API gateway.
+  - Why no runtime check:
+    - After this change, nothing in the ECS REST path is ECS-specific. `IOHandler.run` is shared with Helm,
+      Azure and GCP, whose gateways do stream.
+    - So the process cannot tell it sits behind an HTTP API without a new ECS-only setting.
+    - The case it would catch still delivers the full, correct reply, only all at once.
 
 ### Rolling deploy compatibility (#495 spec §5)
 
@@ -214,6 +231,7 @@ flowchart LR
 - New classes: none.
 - New config: none.
 - New parameters: `IOHandler.run(ws_handler=)`.
+- New helper: `_sqs_dedup_id` in `pipeline/transport/sqs.py`, next to the other SQS wire helpers.
 - New extras or dependencies: none.
 - Terraform: one `validation` block. Container commands and env vars are unchanged.
 - New files: none, apart from tests.
