@@ -106,7 +106,7 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_input.json
   output:
     enabled: true
@@ -916,8 +916,8 @@ dependencies = [
 multimodal:
   enabled: true
   max_attachments: 20
-  description_model: "gpt-4o"          # Model for generating brief descriptions
-  analysis_model: "gpt-4o"             # Model for detailed analysis via tool
+  description_model: "gpt-6-luna"      # Model for generating brief descriptions
+  analysis_model: "gpt-6-luna"         # Model for detailed analysis via tool
 ```
 
 3. No further code changes needed. When enabled:
@@ -942,8 +942,8 @@ multimodal:
   enabled: true
   storage_type: redis
   max_attachments: 20
-  description_model: "gpt-4o"
-  analysis_model: "gpt-4o"
+  description_model: "gpt-6-luna"
+  analysis_model: "gpt-6-luna"
   redis:
     url: "redis://localhost:6379"
     prefix: "ak:attachments:"
@@ -965,8 +965,8 @@ multimodal:
   enabled: true
   storage_type: dynamodb
   max_attachments: 20
-  description_model: "gpt-4o"
-  analysis_model: "gpt-4o"
+  description_model: "gpt-6-luna"
+  analysis_model: "gpt-6-luna"
   dynamodb:
     table_name: "ak-attachments"
     ttl: 604800
@@ -1079,7 +1079,7 @@ dependencies = [
 thread:
   type: in_memory
   naming:
-    model: "gpt-4o-mini"   # LiteLLM model used to name threads
+    model: "gpt-6-luna"    # LiteLLM model used to name threads
     max_length: 80
 ```
 

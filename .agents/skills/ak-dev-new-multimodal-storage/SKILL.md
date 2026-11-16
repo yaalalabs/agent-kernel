@@ -325,8 +325,8 @@ multimodal:
   enabled: true
   storage_type: <backend>
   max_attachments: 20
-  description_model: gpt-4o
-  analysis_model: gpt-4o
+  description_model: gpt-6-luna
+  analysis_model: gpt-6-luna
   <backend>:
     endpoint: "https://..."
     ttl: 604800
