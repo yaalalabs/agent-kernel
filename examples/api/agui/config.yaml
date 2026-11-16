@@ -27,7 +27,7 @@ agui:
 
 # Attachments the browser sends with a run are described by a vision model and stored, so the agent can
 # refer back to them on later turns. `storage_type` defaults to `in_memory`, which is right for a demo;
-# the description and analysis models default to gpt-4o via LiteLLM, so OPENAI_API_KEY covers both.
+# the description and analysis models default to gpt-6-luna via LiteLLM, so OPENAI_API_KEY covers both.
 multimodal:
   enabled: true
 
