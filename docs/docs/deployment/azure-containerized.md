@@ -288,6 +288,33 @@ export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
 - Container App managed identity or connection string with appropriate permissions
 - The Terraform module automatically creates the resources and configures permissions when enabled
 
+## Queue Mode (Service Bus)
+
+Set `queue_mode = true` on the `ak-containerized/azurerm` module to split the deployment in two: the
+existing Container App becomes the edge (REST behind APIM, `IOHandler.run()`), and a second, ingress-less
+agent runner app (`AgentRunner.run()`) works the queue. The module adds:
+
+- A Standard Service Bus namespace (`<prefix>-queues`, key-based access off) with session-enabled `input` and
+  `output` queues
+- The agent runner app, started with `agent_runner_command` (default `["python", "app_agent_runner.py"]`) in
+  the same image, and scaled by KEDA on the input queue's length
+- Managed-identity roles for both apps at queue scope
+
+```hcl
+module "agent" {
+  source               = "yaalalabs/ak-containerized/azurerm"
+  # ...
+  queue_mode           = true
+  create_redis_cluster = true   # required: the response store the edge reads replies from
+}
+```
+
+Your `config.yaml` declares `execution.queues.type: servicebus` and `execution.response_store.type: redis`; the
+module injects the queue URLs and the Redis URL. Supported modes are `rest_sync` and `rest_async`. WebSocket
+delivery and scheduling are not supported yet (scheduling is tracked in #952). See the
+[Queue Mode Guide](../advanced/queue-mode-guide#running-queue-mode-on-azure-service-bus) and
+[examples/azure-containerized/openai-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/openai-queue-mode).
+
 ## Monitoring
 
 Use Azure Monitor Container Insights:

@@ -55,17 +55,17 @@ graph TB
 
 ## Execution Modes
 
-Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered, and `execution.message_type` (`AK_EXECUTION__MESSAGE_TYPE`) selects whether a reply arrives whole (`complete`) or as one message per chunk (`delta`). Chat execution always runs on the [queue pipeline](../architecture/overview#the-queue-execution-pipeline): in-process with the default `in_memory` transport on every server flavor, over durable SQS queues on AWS Lambda/ECS, or over Kafka/NATS on-prem or Kubernetes via the [Helm chart](./onprem-kubernetes). WebSocket delivery runs on API Gateway on AWS and on the pipeline's own [WebSocket gateway tier](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-async) everywhere else.
+Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered, and `execution.message_type` (`AK_EXECUTION__MESSAGE_TYPE`) selects whether a reply arrives whole (`complete`) or as one message per chunk (`delta`). Chat execution always runs on the [queue pipeline](../architecture/overview#the-queue-execution-pipeline): in-process with the default `in_memory` transport on every server flavor, over durable SQS queues on AWS Lambda/ECS, over Service Bus on Azure Container Apps (`queue_mode`), or over Kafka/NATS on-prem or Kubernetes via the [Helm chart](./onprem-kubernetes). WebSocket delivery runs on API Gateway on AWS and on the pipeline's own [WebSocket gateway tier](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-async) everywhere else.
 
 | Mode | Message type | Transport | How the client gets the reply | Queues | Response store | Supported on |
 |------|--------------|-----------|-------------------------------|--------|----------------|--------------|
-| `rest_sync` (also when `mode` is unset) | `complete` (default) | HTTP | JSON on the same connection (server awaits the store internally) | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
+| `rest_sync` (also when `mode` is unset) | `complete` (default) | HTTP | JSON on the same connection (server awaits the store internally) | `in_memory` / SQS FIFO / Kafka / NATS / Service Bus | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Azure Container Apps (Service Bus); Kubernetes (Kafka/NATS/SQS) |
 | `rest_sync` (also when `mode` is unset) | `delta` | SSE | One `StreamChunk` per stream event as they are generated, ending with the done chunk | Any transport | Must stream chunks: `in_memory` (one process), `redis` or `valkey` (any transport) | REST API surfaces; not AWS Lambda or the ECS IO container |
-| `rest_async` | `complete` only | HTTP | `202 ACCEPTED` + `request_id`, client polls | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
+| `rest_async` | `complete` only | HTTP | `202 ACCEPTED` + `request_id`, client polls | `in_memory` / SQS FIFO / Kafka / NATS / Service Bus | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Azure Container Apps (Service Bus); Kubernetes (Kafka/NATS/SQS) |
 | `async` | `complete` (default) | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
 | `async` | `delta` | WebSocket | One `STREAM_CHUNK` per stream event, ending with `done: true` | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
 
-`rest_async` with `delta` is rejected when the configuration loads. `execution.mode: stream` was removed: for SSE over REST use `rest_sync` with `message_type: delta`; for chunks over WebSocket use `async` with `message_type: delta`. SSE on a broker transport (SQS, Kafka, NATS) needs a shared response store that can stream chunks: `redis` or `valkey` (DynamoDB cannot).
+`rest_async` with `delta` is rejected when the configuration loads. `execution.mode: stream` was removed: for SSE over REST use `rest_sync` with `message_type: delta`; for chunks over WebSocket use `async` with `message_type: delta`. SSE on a broker transport (SQS, Kafka, NATS, Service Bus) needs a shared response store that can stream chunks: `redis` or `valkey` (DynamoDB cannot).
 
 Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom handlers) execute inline rather than through the pipeline.
 
@@ -81,7 +81,7 @@ AWS ECS supports `execution_mode = "async"` with `message_type = "delta"` for We
 | AWS Lambda | ✅ | - (use WebSocket) | ✅ | ✅ SQS |
 | AWS ECS Fargate | ✅ | - | ✅ (`async`, `complete` or `delta`) | ✅ SQS |
 | Azure Functions | ✅ | - | - | - (per-invocation, inline) |
-| Azure Container Apps | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
+| Azure Container Apps | ✅ | ✅ | - | ✅ in-process (`in_memory`) or Service Bus (`queue_mode`) |
 | GCP Cloud Run (both flavors) | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
 | Kubernetes (Helm chart) | ✅ | - | ✅ (`async`, `complete` or `delta`, ws-gateway tier) | ✅ NATS / Kafka / SQS |
 
