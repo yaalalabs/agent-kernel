@@ -102,4 +102,3 @@ class TestConsumerLoop:
 
         _SyncConsumer.process_message.assert_called_once_with(msg)
         _SyncConsumer.delete_message.assert_called_once_with(msg)
-
