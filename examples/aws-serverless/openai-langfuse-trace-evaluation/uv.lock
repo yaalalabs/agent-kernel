@@ -9,18 +9,17 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.5"
+version = "0.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "deprecated" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/23/04a97afd1bfce8f69640c7052036eda1e324114538aa519d04308d5a4de3/agentkernel-0.9.5.tar.gz", hash = "sha256:43df6229bd23e2d43db5905ee75ff93564b3c5bd5645924de97217a77a237a9f", size = 673951, upload-time = "2026-10-09T06:37:29.487Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/ca/d90e1312f219a1abb46c9ec72050e0a259d2163724f05d44ded2fe949e9f/agentkernel-0.10.1.tar.gz", hash = "sha256:248d420a3d37c45090c6808b695b686a63a5a581e687156432cf0599bc19828b", size = 853158, upload-time = "2026-11-16T08:38:30.326Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/26/64bdbf4bedb1a0844ff8769d8aa91b237eaff9182a1656145aab789cb906/agentkernel-0.9.5-py3-none-any.whl", hash = "sha256:78a545e8d9652c8b2ade16003fb75ad5be5e1f2221df60a24320358956151ecc", size = 872753, upload-time = "2026-10-09T06:37:27.346Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/a2/300d3a4cd46d2a1953f901ae5fbfb477f600f74644d238c9853a7a27927c/agentkernel-0.10.1-py3-none-any.whl", hash = "sha256:48343062fdcbcdfe2de75ae191e050799cb49a08ad8d17a023a2e29bf3bf4dd9", size = 1078427, upload-time = "2026-11-16T08:38:27.88Z" },
 ]
 
 [package.optional-dependencies]
@@ -280,16 +279,16 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["aws", "openai", "redis", "langfuse"], marker = "extra == 'agent-runner'", specifier = ">=0.9.5" },
-    { name = "agentkernel", extras = ["aws", "redis"], marker = "extra == 'response-handler'", specifier = ">=0.9.5" },
-    { name = "agentkernel", extras = ["aws", "redis", "langfuse"], marker = "extra == 'request-handler'", specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["aws", "openai", "redis", "langfuse"], marker = "extra == 'agent-runner'", specifier = ">=0.10.1" },
+    { name = "agentkernel", extras = ["aws", "redis"], marker = "extra == 'response-handler'", specifier = ">=0.10.1" },
+    { name = "agentkernel", extras = ["aws", "redis", "langfuse"], marker = "extra == 'request-handler'", specifier = ">=0.10.1" },
     { name = "opik", marker = "extra == 'request-handler'", specifier = ">=1.9.0,<3.0.0" },
 ]
 provides-extras = ["request-handler", "agent-runner", "response-handler"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.10.1" },
     { name = "black", specifier = "==26.10.1" },
     { name = "httpx", specifier = ">=0.27.0,<0.29.0" },
     { name = "isort", specifier = ">=5.0.0,<10.0.0" },
@@ -990,18 +989,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/fe/07/0b85e434d66a34adaa7683c1711ae85c4ba3fba2d564adf3b527c1eeab2e/deepeval-4.3.3.tar.gz", hash = "sha256:4f33543a77b559336c0f3c49fd0a1418cef0cdb14867fb58ebb5b1fd25fad26e", size = 1067557, upload-time = "2026-11-04T11:29:21.589Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/69/cb/74cac091d06ba05e5301cddd2a83b2d39b4f56bf8c79545be85ce3d3ce8d/deepeval-4.3.3-py3-none-any.whl", hash = "sha256:d81e2da8388046cce112ba55e5d218f8997f6b80e4574b3209b9e41ec8e7d089", size = 1537061, upload-time = "2026-11-04T11:29:23.499Z" },
-]
-
-[[package]]
-name = "deprecated"
-version = "3.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "wrapt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/61/46/f6958cdfa8a801fc845e981a8a958dba2e74a386b026a8fd5cae58423f1f/deprecated-3.0.1.tar.gz", hash = "sha256:2f5a9fecc9961e26462846cf1e57f73a612b1d0b79c27dceeed8de647beadcee", size = 1074378, upload-time = "2026-10-30T11:15:39.954Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/82/f0/07de837adfa09d592747b82fd74316e88285d2d7057551f30e4b5ef81bd8/deprecated-3.0.1-py3-none-any.whl", hash = "sha256:eda314c115e8bc0fe52b90a6869e19240ac3cedb7449adfdba5981cf9ef693e1", size = 22191, upload-time = "2026-10-30T11:15:38.08Z" },
 ]
 
 [[package]]
