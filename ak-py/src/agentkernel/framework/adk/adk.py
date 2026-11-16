@@ -47,6 +47,7 @@ from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
+from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
     MessageStart,
@@ -1233,14 +1234,15 @@ class GoogleADKModule(Module):
             class to override. Only the pipeline (in REALTIME mode) ever instantiates it.
         """
         super().__init__()
-        tracer = Trace.for_module(runner, realtime_runner_cls)
-        self.realtime_runner_cls = realtime_runner_cls or (tracer.adk_realtime() if tracer else None) or GoogleADKRealtimeRunner
+        tracer = Trace.get() if AKConfig.get().trace.enabled else None
         if runner is not None:
             self.runner = runner
         elif tracer is not None:
             self.runner = tracer.adk()
         else:
             self.runner = GoogleADKRunner()
+        # After the text runner: its constructor installs the instrumentor; the realtime method then finds it installed.
+        self.realtime_runner_cls = realtime_runner_cls or (tracer.adk_realtime() if tracer else None) or GoogleADKRealtimeRunner
         self.load(agents)
 
     def _wrap(self, agent: BaseAgent | Workflow, agents: list[BaseAgent | Workflow]) -> AKBaseAgent:

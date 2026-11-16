@@ -338,7 +338,8 @@ class TestCloudWatchCallSpan:
         from agentkernel.trace.cloudwatch import cloudwatch as module
 
         tracer, exporter = otel
-        span = module.CloudWatchRealtimeCallSpan(tracer, "Agent Kernel ADK realtime", "s1")
+        monkeypatch.setattr(module.trace_api, "get_tracer", lambda name: tracer)
+        span = module.CloudWatchRealtimeCallSpan("Agent Kernel ADK realtime", "s1")
         seen = {}
 
         with span.opened():
@@ -613,36 +614,56 @@ class TestADKSpansNestUnderTheCallSpan:
         assert call.end_time >= invoke.end_time  # the call span ends last, in disconnect
 
 
-class TestSharedWiring:
-    def test_ensure_instrumented_installs_once(self):
-        from agentkernel.trace.base import ensure_instrumented
+class _FakeInstrumentor:
+    """Stands in for an OpenInference instrumentor: counts installs and reports whether it is installed."""
 
-        class Fake:
-            is_instrumented_by_opentelemetry = False
-            calls = 0
+    installed = False
+    installs = 0
 
-            def instrument(self):
-                self.calls += 1
-                self.is_instrumented_by_opentelemetry = True
+    @property
+    def is_instrumented_by_opentelemetry(self):
+        return type(self).installed
 
-        fake = Fake()
-        ensure_instrumented(fake)
-        ensure_instrumented(fake)
-        assert fake.calls == 1
+    def instrument(self):
+        type(self).installed = True
+        type(self).installs += 1
 
-    def test_bound_to_keeps_the_name_and_sets_attributes(self):
-        bound = TracedFake.bound_to(_client="c")
-        assert bound.__name__ == "TracedFake" and issubclass(bound, TracedFake) and bound._client == "c"
 
-    def test_for_module_asks_only_when_enabled_and_something_is_unset(self, monkeypatch):
-        from agentkernel.core.config import AKConfig
-        from agentkernel.trace.trace import Trace
+class TestRealtimeInstallsItsInstrumentor:
+    """An app that passes its own text runner never builds the traced one, so the realtime method installs the
+    instrumentor itself, once, as the text runner's constructor does."""
 
-        built = []
-        monkeypatch.setattr(Trace, "get", classmethod(lambda cls: built.append(1) or "tracer"))
-        config = AKConfig.get()
-        monkeypatch.setattr(config.trace, "enabled", False)
-        assert Trace.for_module(None, None) is None
-        monkeypatch.setattr(config.trace, "enabled", True)
-        assert Trace.for_module(object(), object()) is None
-        assert Trace.for_module(object(), None) == "tracer" and built == [1]
+    @pytest.mark.parametrize(
+        "module, provider, sdk",
+        [
+            ("agentkernel.trace.langfuse.langfuse", "LangFuse", "langfuse"),
+            ("agentkernel.trace.logfire.logfire", "Logfire", "logfire"),
+            ("agentkernel.trace.cloudwatch.cloudwatch", "CloudWatch", "opentelemetry.exporter.otlp.proto.http.trace_exporter"),
+        ],
+    )
+    def test_adk_realtime_installs_the_instrumentor_once(self, monkeypatch, module, provider, sdk):
+        pytest.importorskip(sdk)
+        import importlib
+
+        fake = type("FakeADKInstrumentor", (_FakeInstrumentor,), {"installed": False, "installs": 0})
+        monkeypatch.setattr("openinference.instrumentation.google_adk.GoogleADKInstrumentor", fake)
+        tracer = getattr(importlib.import_module(module), provider)()
+
+        first = tracer.adk_realtime()
+        second = tracer.adk_realtime()
+
+        assert fake.installs == 1
+        assert first is second
+
+    def test_logfire_openai_realtime_installs_the_openai_agents_instrumentation(self, monkeypatch):
+        pytest.importorskip("logfire")
+        import logfire
+
+        from agentkernel.trace.logfire.logfire import Logfire
+
+        calls = []
+        monkeypatch.setattr(logfire, "instrument_openai_agents", lambda: calls.append(1))
+
+        Logfire().openai_realtime()
+
+        assert calls == [1]

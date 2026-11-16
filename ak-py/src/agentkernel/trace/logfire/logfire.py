@@ -117,15 +117,21 @@ class Logfire(BaseTrace):
         """
         from .openai import LogfireOpenAIRealtimeRunner
 
+        # The text runner installs this in its constructor; an app that passes its own runner skips that.
+        logfire.instrument_openai_agents()
         return LogfireOpenAIRealtimeRunner
 
     def adk_realtime(self) -> type[RealtimeRunner]:
         """
         Returns the Logfire ADK realtime runner class.
         """
-        from .adk import LogfireADKRealtimeRunner, instrument_adk
+        from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 
-        instrument_adk()
+        from .adk import LogfireADKRealtimeRunner
+
+        instrumentor = GoogleADKInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
         return LogfireADKRealtimeRunner
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:

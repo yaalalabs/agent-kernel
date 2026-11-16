@@ -9,9 +9,11 @@ Line numbers cite `feature/927-realtime-hooks` at `07821ddfb` and were read, not
 
 ## Design
 
-### 1. `Runtime` (`core/runtime.py`): not changed
+### 1. `Runtime` (`core/runtime.py`): `activate` and `_end_run`
 
-- No method is added and `run()` / `stream()` are untouched. The pool keeps its own scoping (`Agent._activate`, `Session.current_session`) and end steps (`Session._unpublish_run`, `KeyValueCache._clear_all`), as today.
+- `activate(agent, session)`: a public context manager. It sets `Session.current_session` and enters `agent._activate()`, and resets both on exit, even after an exception. It takes no session lock and only sets context variables.
+- `_end_run(session)`: private, `session._unpublish_run()` then `session.get_volatile_cache()._clear_all()`. A missing principal makes the first a no-op; the cache is cleared either way.
+- `run()` and `stream()` call `activate` around the hook and runner span, and `_end_run` in their `finally`, in place of the two inline steps. Behaviour is unchanged.
 - Identity publication is not touched: `Runtime._publish` stays private, called by `run()`, `stream()` and the pool (`pipeline/realtime_pool.py:112`), as #603 section 8.4 specifies.
 - No store method is added: the pool calls `runtime.sessions().store(session)`, the call `run()` and `stream()` make (`:546`, `:627`).
 
@@ -25,7 +27,7 @@ self._failed = False   # set by _fail and fail_to_connect: no store at close
 
 #### 2.1 Unchanged lifecycle steps
 
-- `_connect` and `_hook_context` keep their own scoping (`Session.current_session`, `Agent._activate`); `ToolContext(...).set()` / `reset()` stay.
+- `_connect` and each hook call (`_emit_event`, `_process_audio`, `_process_text`) enter `Runtime.activate`; the pool's own `_hook_context` is gone. `ToolContext(...).set()` / `reset()` stay.
 - `Runtime._publish` (`:112`) and `Session._publish_run`'s docstring (`core/base.py:270-272`) are unchanged.
 
 #### 2.2 Storing the session at the end of the call
@@ -40,9 +42,7 @@ self._failed = False   # set by _fail and fail_to_connect: no store at close
           if not self._failed:
               await self._store_session()
       finally:
-          if self._principal_published:
-              self.session._unpublish_run()
-          self.session.get_volatile_cache()._clear_all()
+          self.runtime._end_run(self.session)
   ```
 
 - `_store_session()`: `await asyncio.to_thread(self.runtime.sessions().store, self.session)`. A failure is logged with its traceback (`ERROR`) and not raised, so the identity and the volatile cache are still cleared.
@@ -130,7 +130,7 @@ class OTelRealtimeCallSpan(RealtimeCallSpan):
 | cloudwatch | `CloudWatchRealtimeCallSpan(OTelRealtimeCallSpan)` in `cloudwatch.py` on the provider's tracer name `agentkernel.trace.cloudwatch` (`:57`); `_tagged()` attaches `session.id` baggage, as `CloudWatch.span` does (`:91`) | attribute and baggage `session.id`, which `SessionSpanProcessor` stamps on child spans (`:36-46`) | `CloudWatchOpenAIRealtimeRunner`, `CloudWatchADKRealtimeRunner` |
 
 - Span names: `SPAN_NAME = "Agent Kernel OpenAI realtime"` / `"Agent Kernel ADK realtime"`, beside the run spans' `"Agent Kernel OpenAI"` / `"Agent Kernel ADK"`.
-- Each runner class is `class X(TracedRealtimeRunner, <Framework>RealtimeRunner)` with `SPAN_NAME` and a two-line `_start_call_span`. It installs no instrumentor: the `Module` builds the traced text runner too, whose `__init__` already installs it (for example `trace/langfuse/adk.py:24`).
+- Each runner class is `class X(TracedRealtimeRunner, <Framework>RealtimeRunner)` with `SPAN_NAME` and a two-line `_start_call_span`. The text runner's `__init__` installs the instrumentor (for example `trace/langfuse/adk.py:24`); an app that passes its own text runner never builds it, so each provider's `openai_realtime()` / `adk_realtime()` installs it too, once, written as the text runner writes it with an `is_instrumented_by_opentelemetry` check. The runner reaches its provider's client the way `develop` does: `get_client()` (Langfuse) and `get_tracer("agentkernel.trace.cloudwatch")` (CloudWatch). CloudWatch's `session.id` baggage is set in one place, `SessionSpanProcessor.tagged`, for `CloudWatch.span` and the call span.
 - Langfuse needs its own API: its default export filter drops a span that has no `gen_ai.*` attribute and does not come from its tracer (`langfuse/_client/span_filter.py:104-108`, langfuse 4.15.1).
 - No Lambda flush: a realtime call never runs on Lambda (the pool runs in a long-lived runner process).
 - Each provider's `openai_realtime()` / `adk_realtime()` imports and returns its class, lazily, as its framework methods do.
@@ -138,13 +138,13 @@ class OTelRealtimeCallSpan(RealtimeCallSpan):
 #### 3.4 `Module` selection (`framework/openai/openai.py:923-929`, `framework/adk/adk.py:1237-1243`)
 
 ```python
-tracer = Trace.get() if AKConfig.get().trace.enabled and (runner is None or realtime_runner_cls is None) else None
-self.runner = runner if runner is not None else (tracer.openai() if tracer else OpenAIRunner())
+tracer = Trace.get() if AKConfig.get().trace.enabled else None
 self.realtime_runner_cls = realtime_runner_cls or (tracer.openai_realtime() if tracer else None) or OpenAIRealtimeRunner
+self.runner = runner if runner is not None else (tracer.openai() if tracer else OpenAIRunner())
 ```
 
 - The class is picked on `trace.enabled` alone, as the traced runner is. The framework does not know the execution mode: the realtime class is attached unconditionally and only the pipeline, in realtime mode, ever builds it (`pipeline/agent_runner.py:429-431`), so a text-mode app never instantiates it.
-- `Trace.get()` is called at most once per `Module` (it builds and initialises a provider each time, `trace/trace.py:28-36`), and not at all when the app passed both a runner and a realtime class.
+- `Trace.get()` is called once per `Module`, inline as in every other framework module (it builds and initialises a provider each time, `trace/trace.py:28-36`).
 - A class the app passes is used as is, as a `runner` the app passes is.
 - A tracer that returns `None` (a bring-your-own tracer without the methods) leaves the untraced default.
 - `core/module.py` is not changed.

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, ClassVar
+from typing import Any
 
 from langfuse import Langfuse, get_client, propagate_attributes
 from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
@@ -7,15 +7,8 @@ from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.openai.openai import OpenAIRealtimeRunner, OpenAIRunner
-from ..base import RealtimeCallSpan, TracedRealtimeRunner, ensure_instrumented
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
 from .langfuse import LangFuse, LangFuseRealtimeCallSpan
-
-
-def instrument_openai() -> None:
-    """
-    Installs the OpenInference instrumentor the text runner and the realtime runner class both rely on, once.
-    """
-    ensure_instrumented(OpenAIAgentsInstrumentor())
 
 
 class LangFuseOpenAIRunner(OpenAIRunner):
@@ -29,7 +22,7 @@ class LangFuseOpenAIRunner(OpenAIRunner):
         self._client = client
         self._log = logging.getLogger("ak.trace.langfuse.openai")
 
-        instrument_openai()
+        OpenAIAgentsInstrumentor().instrument()
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
@@ -58,9 +51,7 @@ class LangFuseOpenAIRealtimeRunner(TracedRealtimeRunner, OpenAIRealtimeRunner):
     The OpenAI realtime runner with one LangFuse span over each call, tagged with the session id as this provider's ``run()`` span is.
     """
 
-    # Bound by the provider (``bound_to``), as the text runner is handed the same client.
-    _client: ClassVar[Langfuse | None] = None
     SPAN_NAME = "Agent Kernel OpenAI realtime"
 
     def _start_call_span(self, session: Session, agent: Agent) -> RealtimeCallSpan:
-        return LangFuseRealtimeCallSpan(self._client or get_client(), self.SPAN_NAME, session.id)
+        return LangFuseRealtimeCallSpan(get_client(), self.SPAN_NAME, session.id)

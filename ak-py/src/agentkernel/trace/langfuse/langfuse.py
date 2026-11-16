@@ -152,19 +152,28 @@ class LangFuse(BaseTrace):
         """
         Returns the Langfuse OpenAI realtime runner class.
         """
-        from .openai import LangFuseOpenAIRealtimeRunner, instrument_openai
+        from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 
-        instrument_openai()
-        return LangFuseOpenAIRealtimeRunner.bound_to(_client=self._client)
+        from .openai import LangFuseOpenAIRealtimeRunner
+
+        # The text runner installs this in its constructor; an app that passes its own runner skips that.
+        instrumentor = OpenAIAgentsInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
+        return LangFuseOpenAIRealtimeRunner
 
     def adk_realtime(self) -> type[RealtimeRunner]:
         """
         Returns the Langfuse ADK realtime runner class.
         """
-        from .adk import LangFuseADKRealtimeRunner, instrument_adk
+        from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 
-        instrument_adk()
-        return LangFuseADKRealtimeRunner.bound_to(_client=self._client)
+        from .adk import LangFuseADKRealtimeRunner
+
+        instrumentor = GoogleADKInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
+        return LangFuseADKRealtimeRunner
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """

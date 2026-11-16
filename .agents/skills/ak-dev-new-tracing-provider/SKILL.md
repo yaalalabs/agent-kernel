@@ -204,8 +204,12 @@ class <Provider>OpenAIRealtimeRunner(TracedRealtimeRunner, OpenAIRealtimeRunner)
 # ak-py/src/agentkernel/trace/<provider>/<provider>.py
 def openai_realtime(self):
     from .openai import <Provider>OpenAIRealtimeRunner
+    # install the framework instrumentor here too, the way the text runner's __init__ does:
+    # an app that passes its own text runner never builds it
     return <Provider>OpenAIRealtimeRunner  # a class: the pool builds it with no arguments, once per call
 ```
+
+- The pool builds the class with no arguments, so the runner reaches the provider's client the way the provider already does elsewhere: `get_client()` (Langfuse), `trace.get_tracer("agentkernel.trace.<name>")` (OTel providers). Do not add a binding mechanism.
 
 - `TracedRealtimeRunner` opens the span around `connect`, marks it failed on a raising connect or an `error` event, and ends it once in `disconnect`; you write only the span.
 - `RealtimeCallSpan` has `opened()` (a context manager that starts the span and makes it current, with the session tagging, so the native session's tasks inherit it), `fail(message)` and `end()`. The span outlives the task that opens it, so it cannot be one `with` block.

@@ -22,6 +22,7 @@ from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
+from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
     MessageStart,
@@ -927,14 +928,15 @@ class OpenAIModule(Module):
             OpenAI realtime runner, or the configured tracer's traced one when tracing is enabled.
         """
         super().__init__()
-        tracer = Trace.for_module(runner, realtime_runner_cls)
-        self.realtime_runner_cls = realtime_runner_cls or (tracer.openai_realtime() if tracer else None) or OpenAIRealtimeRunner
+        tracer = Trace.get() if AKConfig.get().trace.enabled else None
         if runner is not None:
             self.runner = runner
         elif tracer is not None:
             self.runner = tracer.openai()
         else:
             self.runner = OpenAIRunner()
+        # After the text runner: its constructor installs the instrumentor; the realtime method then finds it installed.
+        self.realtime_runner_cls = realtime_runner_cls or (tracer.openai_realtime() if tracer else None) or OpenAIRealtimeRunner
         self.load(agents)
 
     def _wrap(self, agent: Agent | RealtimeAgent, agents: list[Agent | RealtimeAgent]) -> BaseAgent:

@@ -1,20 +1,13 @@
 import logging
-from typing import Any, ClassVar
+from typing import Any
 
 from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 
 from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.openai.openai import OpenAIRealtimeRunner, OpenAIRunner
-from ..base import RealtimeCallSpan, TracedRealtimeRunner, ensure_instrumented
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
 from .cloudwatch import INPUT_VALUE, OUTPUT_VALUE, CloudWatch, CloudWatchRealtimeCallSpan
-
-
-def instrument_openai() -> None:
-    """
-    Installs the OpenInference instrumentor the text runner and the realtime runner class both rely on, once.
-    """
-    ensure_instrumented(OpenAIAgentsInstrumentor())
 
 
 class CloudWatchOpenAIRunner(OpenAIRunner):
@@ -28,7 +21,7 @@ class CloudWatchOpenAIRunner(OpenAIRunner):
         self._tracer = tracer
         self._log = logging.getLogger("ak.trace.cloudwatch.openai")
 
-        instrument_openai()
+        OpenAIAgentsInstrumentor().instrument()
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
@@ -50,9 +43,7 @@ class CloudWatchOpenAIRealtimeRunner(TracedRealtimeRunner, OpenAIRealtimeRunner)
     The OpenAI realtime runner with one CloudWatch span over each call, tagged with the session id as this provider's ``run()`` span is.
     """
 
-    # Bound by the provider (``bound_to``), as the text runner is handed the same tracer.
-    _cloudwatch: ClassVar[CloudWatch | None] = None
     SPAN_NAME = "Agent Kernel OpenAI realtime"
 
     def _start_call_span(self, session: Session, agent: Agent) -> RealtimeCallSpan:
-        return CloudWatchRealtimeCallSpan(self._cloudwatch._tracer, self.SPAN_NAME, session.id)
+        return CloudWatchRealtimeCallSpan(self.SPAN_NAME, session.id)

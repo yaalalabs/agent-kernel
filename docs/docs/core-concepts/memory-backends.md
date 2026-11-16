@@ -98,6 +98,15 @@ The second run reads the value from Redis. With `session.type: in_memory` it wou
 
 In a real application you do not write this code: configuring `session.type` is enough, because `Runtime` and the framework adapters create and use the store for you. The script exists only so you can verify your configuration.
 
+### Realtime calls
+
+A realtime call stores its session **once, when it ends normally**, so the backend decides what survives the call:
+
+- **`in_memory`**: enough for a single process. A restart loses the session owner, hook state and (for Google ADK) the conversation.
+- **A durable store** (`redis`, `valkey`, `dynamodb`, ...): needed when a text chat in another process continues the same session after the call, or when the session must outlive a runner restart.
+- The write runs off the audio loop, so a slower store does not delay audio.
+- OpenAI keeps its conversation inside its own live session. No backend restores it after the call; Google ADK's conversation is stored with the session.
+
 ## Session memory vs. knowledge bases
 
 Session memory is **per conversation**. A knowledge base is **durable, shared, and retrieved on demand**.

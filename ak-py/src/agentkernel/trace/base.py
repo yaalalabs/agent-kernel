@@ -8,16 +8,6 @@ from ..core.realtime import RealtimeRunner
 from .fetch import FetchedSpan, TraceQuery
 
 
-def ensure_instrumented(instrumentor: Any) -> None:
-    """
-    Installs an OpenInference instrumentor once. Both the text runner and the realtime runner class of a provider
-    need it, and instrumenting twice only logs a warning and duplicates nothing, so the second caller skips it.
-    :param instrumentor: An OpenInference ``BaseInstrumentor`` instance.
-    """
-    if not instrumentor.is_instrumented_by_opentelemetry:
-        instrumentor.instrument()
-
-
 class RealtimeCallSpan(ABC):
     """
     One trace span over a realtime call: opened around ``connect``, ended at ``disconnect``.
@@ -61,17 +51,6 @@ class TracedRealtimeRunner(RealtimeRunner):
     """
 
     SPAN_NAME: ClassVar[str]
-
-    @classmethod
-    def bound_to(cls, **attributes: Any) -> "type[TracedRealtimeRunner]":
-        """
-        Returns a subclass carrying the provider's own client or tracer as class attributes.
-
-        The pool builds a realtime runner with no arguments, once per call, so unlike a text runner it cannot be handed
-        the provider's client in ``__init__``. The provider binds it here instead, so both paths use the one object.
-        :param attributes: The class attributes to set, such as ``_client``.
-        """
-        return type(cls.__name__, (cls,), attributes)
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)

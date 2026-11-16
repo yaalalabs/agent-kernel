@@ -1,20 +1,13 @@
 import logging
-from typing import Any, ClassVar
+from typing import Any
 
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 
 from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.adk.adk import GoogleADKRealtimeRunner, GoogleADKRunner
-from ..base import RealtimeCallSpan, TracedRealtimeRunner, ensure_instrumented
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
 from .cloudwatch import INPUT_VALUE, OUTPUT_VALUE, CloudWatch, CloudWatchRealtimeCallSpan
-
-
-def instrument_adk() -> None:
-    """
-    Installs the OpenInference instrumentor the text runner and the realtime runner class both rely on, once.
-    """
-    ensure_instrumented(GoogleADKInstrumentor())
 
 
 class CloudWatchADKRunner(GoogleADKRunner):
@@ -28,7 +21,7 @@ class CloudWatchADKRunner(GoogleADKRunner):
         self._tracer = tracer
         self._log = logging.getLogger("ak.trace.cloudwatch.adk")
 
-        instrument_adk()
+        GoogleADKInstrumentor().instrument()
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
@@ -50,9 +43,7 @@ class CloudWatchADKRealtimeRunner(TracedRealtimeRunner, GoogleADKRealtimeRunner)
     The ADK realtime runner with one CloudWatch span over each call, tagged with the session id as this provider's ``run()`` span is.
     """
 
-    # Bound by the provider (``bound_to``), as the text runner is handed the same tracer.
-    _cloudwatch: ClassVar[CloudWatch | None] = None
     SPAN_NAME = "Agent Kernel ADK realtime"
 
     def _start_call_span(self, session: Session, agent: Agent) -> RealtimeCallSpan:
-        return CloudWatchRealtimeCallSpan(self._cloudwatch._tracer, self.SPAN_NAME, session.id)
+        return CloudWatchRealtimeCallSpan(self.SPAN_NAME, session.id)

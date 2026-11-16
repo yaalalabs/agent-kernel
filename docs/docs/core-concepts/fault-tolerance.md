@@ -204,6 +204,20 @@ In queue-backed deployments, retries are message-driven and fully configurable:
 LLM-call retry policies (exponential backoff, etc.) are handled by the underlying agent frameworks and LLM SDKs; configure them on the framework side.
 
 
+## Realtime Calls
+
+A realtime deployment runs **one Agent Runner replica**: the connection pool lives in that process, so a crash ends every live call at once. What a caller and the session see:
+
+| What happens | Caller | Session stored | Trace span |
+|---|---|---|---|
+| Native session error (bad setting, quota) | One error message | No | Marked failed |
+| Repeated failures | Input dropped, retry after 1, 2, 4 ... up to 30 s | No | Marked failed |
+| Caller leaves or the room ends | Call closes at once | Yes | Ends normally |
+| No activity for 300 s | Call evicted | Yes | Ends normally |
+| Graceful shutdown | Calls closed | Yes | Ends normally |
+| Runner crash mid-call | Call drops; the next input starts a fresh session | No (the call's changes are lost) | Never ended |
+| Caller rejoins quickly | The new call waits up to 15 s for the old one to finish saving | Starts from the saved session | New span |
+
 ## Monitoring and Alerting
 
 ### CloudWatch Metrics (AWS)
@@ -212,6 +226,7 @@ Standard Lambda/ECS metrics (invocations, errors, duration, task counts) are ava
 
 - SQS queue metrics (`ApproximateNumberOfMessages`, message age) for the input/output queues and DLQs
 - The custom `Custom/ECS/BacklogPerTask` metric published by the scaling Lambda in ECS queue mode; alarm on it to catch sustained backlog growth
+- With `trace.enabled`, each realtime call is one span (`Agent Kernel OpenAI realtime` or `Agent Kernel ADK realtime`) and a failed call is marked as an error, so you can alert on it. See [Realtime calls in tracing](../advanced/traceability.md#realtime-calls)
 
 ## Testing Fault Tolerance
 
