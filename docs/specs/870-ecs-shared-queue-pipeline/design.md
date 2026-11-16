@@ -175,9 +175,12 @@ flowchart LR
   - Messages enqueued by `ECSWebSocketRequestHandler` are unchanged.
 - No change to response store records, the DynamoDB connection table, or container commands
   (`python app_rest_service.py`, `python app_agent_runner.py`).
-- Test: an output record shaped like the old `ECSAgentRunner`'s, consumed by
-  `ResponseHandler(ws_handler=AWSWebSocketHandler)`, reaches its `endpoint_url`. The same record in REST mode
-  is stored with its `status_code`.
+- Test, both directions, in WebSocket delta mode (the shape that changes most):
+  - Old IO → new runner: an input record shaped like `ECSWebSocketRequestHandler`'s goes through
+    `StreamAgentRunner`, and each chunk it sends carries `endpoint_url` and `MessageDeduplicationId`.
+  - Old runner → new IO: an output record shaped like the old `ECSAgentRunner`'s, consumed by
+    `ResponseHandler(ws_handler=AWSWebSocketHandler)`, reaches its `endpoint_url`. The same record in REST
+    mode is stored with its `status_code`.
 
 ### Breaking change
 
@@ -193,12 +196,14 @@ flowchart LR
 
 - Mount: `IOHandler.run(handlers=[WebhookRESTRequestHandler(...), AGUIPipelineRequestHandler(...)],
   request_handler=ThreadRequestHandler(...))` starts with no error on the ECS SQS config.
-- Slack: an input message carrying `integration=slack` and `reply_*` goes through the runner (attributes
-  forwarded) and the `ResponseHandler` (`IntegrationDelivery.deliver` called). The public route is added
-  through the existing `gateway_endpoints` variable (`ak-deployment/ak-aws/containerized/variables.tf:46`).
-- Dedup: covered by the regression test above.
-- Modes: REST sync, REST async, WebSocket complete and WebSocket delta each get one end-to-end test through
-  `AgentRunner.run`, plus `IOHandler.run` or `AWSWebsocketAPI.run`.
+- Slack: no ECS-specific test. Once ECS runs the shared classes, attribute forwarding and
+  `IntegrationDelivery` are covered by the existing pipeline tests (`test_pipeline_agent_runner.py`,
+  `test_pipeline_response_handler.py`). The public route is added through the existing `gateway_endpoints`
+  variable (`ak-deployment/ak-aws/containerized/variables.tf:46`).
+- Dedup: covered by the regression test above and the rolling-deploy test.
+- Modes: no per-mode end-to-end tests. The pipeline suites already cover each mode's delivery. The ECS-specific
+  parts are tested where they change: the `ws_handler` seam, the `endpoint_url` guard, the
+  `AWSWebsocketAPI.run` hand-off and the rolling-deploy test.
 - Removal: `akagentrunner.py`, `akoutputconsumer.py`, `ecs_io_handler.py` and `core/api/rest_api.py` are deleted.
 
 ### New surface
