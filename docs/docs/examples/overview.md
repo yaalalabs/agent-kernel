@@ -141,6 +141,8 @@ Azure Container Apps deployment examples:
 
 - **`adk/`** - Google ADK agents deployed on Azure Container Apps
 - **`crewai/`** - CrewAI agents deployed on Azure Container Apps
+- **`openai-cosmos/`** - OpenAI agents on Azure Container Apps with Cosmos DB session storage
+- **`openai-queue-mode/`** - OpenAI agents in queue mode on Azure Container Apps, with Azure Service Bus as the queue transport (separate API and agent-runner apps)
 
 ### 📁 Azure Serverless Examples (`/examples/azure-serverless`)
 
