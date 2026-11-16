@@ -1,0 +1,27 @@
+# Two Container Apps over Azure Service Bus: this file declares WHAT runs; the ak-containerized
+# Terraform module injects WHERE as AK_* env vars (queue URLs, max_receive_count, and the Redis URL
+# for the response store and the session store, from a Container Apps secret).
+
+execution:
+  mode: rest_sync              # the REST call waits for the agent's reply
+
+  queues:
+    type: servicebus
+    servicebus:
+      ack_wait: 300            # seconds a session lock is renewed while a turn runs; above your longest turn
+    input:
+      no_of_consumers: 5       # agent turns one runner replica works on at once (the KEDA rule assumes 5)
+    output:
+      no_of_consumers: 1
+
+  response_store:
+    type: redis
+    retry_count: 60            # rest_sync waits up to retry_count * delay seconds for the reply
+    delay: 1
+
+session:
+  type: redis
+
+logging:
+  ak:
+    level: INFO

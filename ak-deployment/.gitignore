@@ -1,1 +1,4 @@
 .terraform
+# Reusable modules: lock files are ignored by consumers and never published (see the module READMEs)
+ak-gcp/**/.terraform.lock.hcl
+ak-azure/**/.terraform.lock.hcl

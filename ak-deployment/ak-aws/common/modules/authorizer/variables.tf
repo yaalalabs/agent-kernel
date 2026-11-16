@@ -83,3 +83,14 @@ variable "lambda_signing_config_arn" {
   description = "Lambda code signing configuration ARN"
   default     = null
 }
+variable "ssm_enabled" {
+  type        = bool
+  description = "Whether the authorizer's role may read /ak/<prefix>/* from SSM Parameter Store and receive AK_SECRET__PREFIX"
+  default     = false
+}
+
+variable "account_id" {
+  type        = string
+  description = "AWS account ID, used to scope the SSM read policy. Required when ssm_enabled is true"
+  default     = null
+}

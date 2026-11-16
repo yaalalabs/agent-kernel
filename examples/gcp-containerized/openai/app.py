@@ -1,4 +1,5 @@
-from agentkernel.api import RESTAPI, AgentRESTRequestHandler
+from agentkernel.api import RESTAPI, RESTRequestHandler
+from agentkernel.gcp import CloudRun, CloudRunAgentRunner
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 from fastapi import APIRouter
@@ -37,20 +38,26 @@ def get_app_name() -> dict[str, str]:
 RESTAPI.add(router)
 
 
-# Adding a custom route - Option 2
-class CustomHandler(AgentRESTRequestHandler):
+# Adding a custom route - Option 2: a handler served beside the chat route
+class CustomHandler(RESTRequestHandler):
     def get_router(self) -> APIRouter:
-        parent_router = super().get_router()
+        router = APIRouter()
 
-        @parent_router.get("/whoami")
+        @router.get("/whoami")
         def whoami() -> dict[str, str]:
             return {"whoami": "I am a custom application built with Agent Kernel!"}
 
-        return parent_router
+        return router
 
 
 OpenAIModule([triage_agent, math_agent, history_agent])
 
 
 def main() -> None:
-    RESTAPI.run([CustomHandler()])
+    """The edge: takes chat requests, publishes them to Pub/Sub, and answers with the reply."""
+    CloudRun.run(handlers=[CustomHandler()])
+
+
+def runner() -> None:
+    """The agent runner: serves the requests Pub/Sub pushes and publishes each reply."""
+    CloudRunAgentRunner.run()
