@@ -1,5 +1,5 @@
-from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
 from agentkernel.secret import SecretManager
 from agents import Agent, set_default_openai_key
 
@@ -32,7 +32,7 @@ triage_agent = Agent(
 OpenAIModule([triage_agent, math_agent, history_agent])
 
 # Agent Runner entrypoint - polls Input Queue, runs agent, sends to Output Queue.
-handler = ECSAgentRunner.run
+handler = AgentRunner.run
 
 if __name__ == "__main__":
     handler()

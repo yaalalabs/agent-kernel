@@ -6,8 +6,8 @@ Input Queue as a plain chat request) and the one that registers new tasks, wheth
 carried a `schedule` block or the agent called `create_schedule` itself.
 """
 
-from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
 from agentkernel.secret import SecretManager
 from agents import Agent, set_default_openai_key
 
@@ -26,7 +26,7 @@ reminder_agent = Agent(
 
 OpenAIModule([reminder_agent])
 
-handler = ECSAgentRunner.run
+handler = AgentRunner.run
 
 if __name__ == "__main__":
     handler()

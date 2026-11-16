@@ -95,7 +95,7 @@ class RESTAPI:
         """Start the REST API server.
 
         With no explicit handlers on RESTAPI itself, an in_memory queue transport boots the
-        single-process pipeline topology (#495): subclasses (AWSRestAPI, AWSWebsocketAPI) and
+        single-process pipeline topology (#495): subclasses (AWSWebsocketAPI) and
         explicit-handler callers keep their own paths.
 
         :param handlers: List of REST request handlers to use (default: AgentRESTRequestHandler)
@@ -158,8 +158,7 @@ class RESTAPI:
 
         Their executors put each request on the input queue and wait for the runner's reply (#780),
         so on a bare API every call would wait out its budget and fail. Called by ``run`` past the
-        ``cls is RESTAPI`` hand-off, so subclasses are covered, and by ``ECSIOHandler.run`` before
-        it starts any thread.
+        ``cls is RESTAPI`` hand-off, so subclasses are covered.
 
         :raises AKConfigError: If ``agent_protocol_surfaces()`` is non-empty.
         """

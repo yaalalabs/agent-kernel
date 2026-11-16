@@ -68,11 +68,11 @@ def serialize_message_body(message_body: Any) -> str:
     is a ``JSONText``, so a sender hands it an object and the envelope encodes — which is why
     ``nats.py``, ``kafka.py`` and ``in_memory.py`` have nothing like this. ``SQSTransport.send``
     does not need it either: it arrives with ``message.body``, already a ``str``, and falls through
-    the first branch. The dict branch exists for ``SQSHandler``, which ``ECSAgentRunner`` and
-    ``ServerlessAgentRunner`` use to write the output queue **without** building a ``QueueMessage``.
+    the first branch. The dict branch exists for ``SQSHandler``, which ``ServerlessAgentRunner``
+    uses to write the output queue **without** building a ``QueueMessage``.
 
     So: do not delete this as dead code because the transports look symmetric, and do not copy it
-    into a new transport. If those two runners are ever converged onto the envelope, this whole
+    into a new transport. If that runner is ever converged onto the envelope, this whole
     function goes with them and ``PayloadCodec.encode`` drops to one internal caller.
 
     :param message_body: The message payload to serialize.

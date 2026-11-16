@@ -23,7 +23,7 @@ class ResponseHandler:
     (wherever the user's sockets are right now), delivered to the owning gateway pod: in-process
     on the ``in_memory`` transport, pod-to-pod HTTP otherwise.
 
-    The generalization of ECSOutputConsumer; response-store records additionally carry the
+    Response-store records additionally carry the
     ``status_code`` forwarded by the Agent Runner.
 
     Integration traffic goes to its platform, then ``protocol`` traffic (A2A and MCP, #780) to the

@@ -348,7 +348,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         )
 
     async def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: str | None, session_id: str, endpoint_url: str) -> JSONResponse:
-        """Queue mode: send to the input queue; ECSOutputConsumer pushes the reply."""
+        """Queue mode: send to the input queue; the shared ResponseHandler pushes the reply."""
         self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
 
         await self._offload(

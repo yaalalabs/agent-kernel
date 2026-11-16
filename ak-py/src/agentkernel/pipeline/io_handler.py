@@ -127,7 +127,7 @@ class IOHandler:
                 thread_name="rest-api",
                 stop_all_on_failure=True,
                 graceful=True,
-                awaited_on_shutdown=False,  # exits via server.should_exit on signals, not shutdown_event (see ECSIOHandler)
+                awaited_on_shutdown=False,  # exits via server.should_exit on signals, not shutdown_event
             ),
             ThreadRunner.Task(
                 # exit_on_shutdown=False: the nested loop returns after draining (finishing its
