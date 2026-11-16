@@ -5,8 +5,9 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from concurrent.futures import Future
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ..core.base import Agent as BaseAgent
@@ -138,10 +139,12 @@ class RealtimeConnection:
         # Set once here: the SDK's tool tasks are created inside connect() and inherit these contextvars.
         # The session lock is not taken; holding it for a whole call would block every other run of the session.
         tool_context = ToolContext(self.runtime, self.agent, self.session, []).set()
+        session_token = Session.current_session.set(self.session)
         try:
-            with self.runtime.activate(self.agent, self.session):
+            with self.agent._activate():
                 await self.adapter.connect(self.session, self.agent, self.handle_framework_event)
         finally:
+            Session.current_session.reset(session_token)
             tool_context.reset()
         if self.closed:
             # end_session() may have closed this connection while the native session was still opening:
@@ -233,6 +236,19 @@ class RealtimeConnection:
         finally:
             await self.close()
 
+    @contextmanager
+    def _hook_context(self) -> Iterator[None]:
+        """Set ``Session.current()`` and ``Agent.current()`` around a hook call.
+
+        The pacing task and an input coroutine start without them: ``_connect`` resets them before it creates the pacing task.
+        """
+        token = Session.current_session.set(self.session)
+        try:
+            with self.agent._activate():
+                yield
+        finally:
+            Session.current_session.reset(token)
+
     async def _emit_event(self, event: StreamEvent, audio_bytes: int | None = None) -> list[StreamEvent]:
         """Run one output event through the post-hooks, emit each resulting event, and pace every audio event emitted.
 
@@ -245,7 +261,7 @@ class RealtimeConnection:
         :raises StreamHalt: When a hook ends the call; any other hook failure is logged and raised as one.
         """
         try:
-            with self.runtime.activate(self.agent, self.session):
+            with self._hook_context():
                 emitted = await self.runtime.run_stream_event_hooks(self.agent, self.session, self._last_turn, event)
         except StreamHalt:
             raise
@@ -346,7 +362,7 @@ class RealtimeConnection:
         A failing hook drops the chunk: an error chunk per audio chunk would flood the edge.
         """
         try:
-            with self.runtime.activate(self.agent, self.session):
+            with self._hook_context():
                 voice, text = await self.runtime.run_stream_input_hooks(self.agent, self.session, request)
         except Exception:
             if self._input_failure_logged:
@@ -371,7 +387,7 @@ class RealtimeConnection:
         A hook that halts the turn, or fails, sends the edge one error chunk and the call continues.
         """
         try:
-            with self.runtime.activate(self.agent, self.session):
+            with self._hook_context():
                 result = await self.runtime.run_pre_hooks(self.agent, self.session, [request])
         except Exception:
             _log.exception(f"Realtime session {self.session_id}: a pre-hook failed on a typed message")
@@ -458,10 +474,11 @@ class RealtimeConnection:
                 if not self._failed:
                     await self._store_session()
             finally:
-                # The call's identity and the hook state kept in the volatile cache end with the call, as when a
-                # Runtime run ends, also when the native session fails to close: the session store hands the next
-                # call this same Session.
-                self.runtime.end_run(self.session)
+                if self._principal_published:
+                    self.session._unpublish_run()
+                # Hook state kept in the volatile cache ends with the call, as it does when a Runtime run ends,
+                # also when the native session fails to close: the session store hands the next call this same Session.
+                self.session.get_volatile_cache()._clear_all()
 
 
 class RealtimeConnectionPool:

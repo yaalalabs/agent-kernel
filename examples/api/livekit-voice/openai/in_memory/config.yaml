@@ -1,2 +1,6 @@
 execution:
   mode: "realtime"
+# TEMPORARY: local tracing test for #928, do not commit
+trace:
+  enabled: true
+  type: langfuse

@@ -1,7 +1,6 @@
 # #928: Realtime calls follow the AK run lifecycle: session, context and tracing — Implementation Spec
 
-This spec details [design.md](design.md). Three changes: `Runtime` gets public methods for the lifecycle steps the
-realtime pool now repeats; a call stores its session once when it ends normally, as
+This spec details [design.md](design.md). Two changes: a call stores its session once when it ends normally, as
 `Runtime.stream` does, writing off the shared pool loop; and a call is traced by a traced realtime runner that the `Module` picks, as text runs
 are traced. No new config, no adapter behaviour change, no new pool class.
 
@@ -10,20 +9,10 @@ Line numbers cite `feature/927-realtime-hooks` at `07821ddfb` and were read, not
 
 ## Design
 
-### 1. `Runtime` lifecycle API (`core/runtime.py`)
+### 1. `Runtime` (`core/runtime.py`): not changed
 
-Two public methods, extracted from `run()` / `stream()`, which then call them, so each step has one owner.
-
-```python
-@contextmanager
-def activate(self, agent: Agent, session: Session) -> Iterator[None]: ...
-def end_run(self, session: Session) -> None: ...
-```
-
-- `activate` sets `Session.current()` (the `Session.current_session` context variable, `core/base.py:74`) and enters `agent._activate()` (`core/base.py:724`), resetting both on exit by token. It takes no lock.
-  - `run()` and `stream()` replace `with agent._activate():` (`:517`, `:578`) with `with self.activate(agent, session):`. Inside `async with session` the session is already current, so setting it again is a no-op in effect; the tokens restore it on exit. Behaviour is unchanged.
-- Identity publication is not touched: `Runtime._publish` (`:428-450`) stays private, called by `run()` (`:516`), `stream()` (`:577`) and the pool (`pipeline/realtime_pool.py:112`), as #603 section 8.4 specifies.
-- `end_run` is the body of the two `finally` blocks (`:549-550`, `:641-642`): `session._unpublish_run()` then `session.get_volatile_cache()._clear_all()`. Both blocks call it.
+- No method is added and `run()` / `stream()` are untouched. The pool keeps its own scoping (`Agent._activate`, `Session.current_session`) and end steps (`Session._unpublish_run`, `KeyValueCache._clear_all`), as today.
+- Identity publication is not touched: `Runtime._publish` stays private, called by `run()`, `stream()` and the pool (`pipeline/realtime_pool.py:112`), as #603 section 8.4 specifies.
 - No store method is added: the pool calls `runtime.sessions().store(session)`, the call `run()` and `stream()` make (`:546`, `:627`).
 
 ### 2. `RealtimeConnection` (`pipeline/realtime_pool.py`)
@@ -34,21 +23,14 @@ No new class. One new instance attribute:
 self._failed = False   # set by _fail and fail_to_connect: no store at close
 ```
 
-#### 2.1 Lifecycle calls
+#### 2.1 Unchanged lifecycle steps
 
-| Today | After |
-| --- | --- |
-| `Session.current_session.set(...)` + `with self.agent._activate():` in `_connect` (`:138-143`) | `with self.runtime.activate(self.agent, self.session):` |
-| `_hook_context` (`:233-244`) | Removed. Its three callers (`:258`, `:359`, `:384`) use `with self.runtime.activate(self.agent, self.session):` |
-| `if self._principal_published: self.session._unpublish_run()` and `..._clear_all()` in `close` (`:454-458`) | `self.runtime.end_run(self.session)` |
-
-- `ToolContext(...).set()` / `reset()` in `_connect` (`:137`, `:144`) stay: `ToolContext.set` is public API, and the pool keeps building it (design: kept).
-- `end_run` unpublishes unconditionally. When nothing was published, `_delete_reserved` deletes nothing (`core/util/key_value_cache.py:159`). `_principal_published` stays for the republish check in `publish_principal` (`:108`).
+- `_connect` and `_hook_context` keep their own scoping (`Session.current_session`, `Agent._activate`); `ToolContext(...).set()` / `reset()` stay.
 - `Runtime._publish` (`:112`) and `Session._publish_run`'s docstring (`core/base.py:270-272`) are unchanged.
 
 #### 2.2 Storing the session at the end of the call
 
-- Once, in `close()`, after `adapter.disconnect()` and before `end_run`: the order `Runtime.stream` uses (store, then the `finally` that ends the run). Disconnecting first lets the adapter finish its own writes (ADK flushes its session service, `framework/adk/adk.py:1125-1126`).
+- Once, in `close()`, after `adapter.disconnect()` and before the identity and volatile cache are cleared: the order `Runtime.stream` uses (store, then the `finally` that ends the run). Disconnecting first lets the adapter finish its own writes (ADK flushes its session service, `framework/adk/adk.py:1125-1126`).
 
   ```python
   try:
@@ -58,10 +40,12 @@ self._failed = False   # set by _fail and fail_to_connect: no store at close
           if not self._failed:
               await self._store_session()
       finally:
-          self.runtime.end_run(self.session)
+          if self._principal_published:
+              self.session._unpublish_run()
+          self.session.get_volatile_cache()._clear_all()
   ```
 
-- `_store_session()`: `await asyncio.to_thread(self.runtime.sessions().store, self.session)`. A failure is logged with its traceback (`ERROR`) and not raised, so `end_run` still runs.
+- `_store_session()`: `await asyncio.to_thread(self.runtime.sessions().store, self.session)`. A failure is logged with its traceback (`ERROR`) and not raised, so the identity and the volatile cache are still cleared.
   - The store call and the stored object are those of `Runtime.stream`: the session itself, no copy.
   - On a worker thread, not the loop: the pool loop serves every call in the process (`:461-465`), and a store is synchronous network I/O. A slow write delays only this call's close.
   - Accepted risk: an input chunk whose hooks are still running (`_process_audio` / `_process_text`, scheduled from a consumer thread) could change the session while the thread writes it. The native session and the pacing task have already stopped.
@@ -73,7 +57,7 @@ self._failed = False   # set by _fail and fail_to_connect: no store at close
 
 #### 2.3 Unchanged
 
-- No lock. Volatile cache cleared once, at close (now through `end_run`), after the store, as in `Runtime.stream`. Principal publication per input. `ToolContext` built by the pool. Hook calls, pacing, the `MessageEnd` sequence, `_queued_audio`, the reconnect back-off.
+- No lock. Volatile cache cleared once, at close, after the store, as in `Runtime.stream`. Principal publication per input. `ToolContext` built by the pool. Hook calls, pacing, the `MessageEnd` sequence, `_queued_audio`, the reconnect back-off.
 
 ### 3. Tracing
 
@@ -169,7 +153,7 @@ self.realtime_runner_cls = realtime_runner_cls or (tracer.openai_realtime() if t
 
 | Consumer | Change |
 | --- | --- |
-| `core/runtime.py` `run()` / `stream()` | `activate`, `end_run` instead of the inline steps. Same behaviour. |
+| `core/runtime.py` | None. |
 | `pipeline/realtime_pool.py` `RealtimeConnection` | Section 2. |
 | `framework/openai/openai.py`, `framework/adk/adk.py` `Module.__init__` | Section 3.4. The realtime adapters themselves are unchanged. |
 | `trace/<provider>/` | Two runner classes each, and a call-span class for langfuse, openllmetry, cloudwatch. |
@@ -188,8 +172,6 @@ None. No `AKConfig` field, extra, factory branch or provider is added. `session.
 3. A failed call, or a process that dies mid-call, stores nothing for that call. *Intentional (the `Runtime.stream` halt rule).*
 4. With `trace.enabled` in realtime mode, each call opens one AK span named `Agent Kernel <Framework> realtime`, tagged with the session id; ADK's native spans become its children. *Intentional.*
 5. `close()` waits for the store before it ends the run. A slow store delays that call's close by the write. *Accepted.*
-6. `RealtimeConnection._hook_context` is removed.
-7. `end_run` unpublishes at close even when no principal was published (a no-op then).
 
 **Non-changes:** `run()` / `stream()` results, hook order and session storage; session store data layouts and what each store writes (the volatile cache stays out); the realtime output sequence; the edge; adapters' `connect` / `append_audio` / `send_text` / `disconnect`; principal publication per input; text-mode tracing; `BaseTrace`'s abstract methods (bring-your-own tracers still construct).
 
@@ -197,7 +179,7 @@ None. No `AKConfig` field, extra, factory branch or provider is added. `session.
 
 | Failure | Result |
 | --- | --- |
-| The store raises (backend down, value not picklable) | Logged at `ERROR` with the traceback; `end_run` still runs; the close completes |
+| The store raises (backend down, value not picklable) | Logged at `ERROR` with the traceback; the identity and volatile cache are still cleared; the close completes |
 | The native session fails (`_fail`) or fails to start | No store |
 | The tracer's `opened()` raises | `connect` fails as any connect failure does (`fail_to_connect`, one error chunk to the edge) |
 | `connect` raises inside the span | The span is marked failed and ended; the error propagates unchanged |
@@ -210,11 +192,10 @@ Concurrency: the write runs on a worker thread from `asyncio.to_thread`, on the 
 
 New files:
 
-- `tests/test_runtime_lifecycle_api.py`: `activate` (current session and agent inside, restored after, nested activation restored, no lock taken: `session._lock.locked()` is false inside); `end_run` (principal gone, volatile cache cleared, durable state kept, a no-op with nothing published). `run()` and `stream()` still pass `tests/test_runtime*.py` unchanged.
 - `tests/test_realtime_session_store.py`, with its own fakes and the real `asyncio.to_thread` (`tests/test_realtime_pool.py` runs it inline), over a recording store on the connection's `Runtime`:
   - a normal close stores once, the session itself, on a worker thread; a turn end stores nothing; a second close stores nothing more;
   - a post-hook's non-volatile cache write during the call is stored; the volatile cache is empty once the run ends;
-  - the store is attempted when `disconnect` raises; a failing store is logged and `end_run` still runs;
+  - the store is attempted when `disconnect` raises; a failing store is logged and the identity and volatile cache are still cleared;
   - none after a native error or a failed connect;
   - a slow store at one call's close does not block another call's audio;
   - durable round trip: a real `ValkeySessionStore` over a fake client; a second store instance (another pod) loads the owner and the non-volatile cache after the call.
@@ -228,19 +209,18 @@ New files:
 
 Existing tests that change:
 
-- `tests/test_realtime_pool.py` `TestRealtimePrincipal.test_closing_unpublishes_the_identity` (`:419`): unchanged assertion, now through `end_run`.
+- `tests/test_realtime_pool.py` `TestRealtimePrincipal.test_closing_unpublishes_the_identity` (`:419`): unchanged.
 - `tests/test_realtime_hooks.py`: the close tests (volatile cache cleared, also when `disconnect` raises) keep their assertions; the store-when-`disconnect`-raises case lives in `tests/test_realtime_session_store.py`.
-- `tests/test_ecs_akagentrunner_realtime.py:175`: unchanged. Its `SimpleNamespace` agent supplies `_activate`, which `Runtime.activate` calls, and a real `Session` and `InMemorySessionStore`, which the close stores.
+- `tests/test_ecs_akagentrunner_realtime.py:175`: unchanged. Its `SimpleNamespace` agent supplies `_activate`, and a real `Session` and `InMemorySessionStore`, which the close stores.
 - Not changed, re-run: `tests/test_realtime_edge_path.py`, `tests/test_openai_realtime.py`, `tests/test_adk_realtime.py`, `tests/test_livekit_edge_adapter.py`, `tests/test_runtime.py`, `tests/test_runtime_stream_events.py`, `tests/test_runtime_principal.py`, `tests/test_trace.py`, `tests/test_trace_langfuse_flush.py`.
 
-Run: `cd ak-py && uv run pytest tests/test_runtime_lifecycle_api.py tests/test_realtime_session_store.py tests/test_realtime_system_tools.py tests/test_trace_realtime.py tests/test_realtime_pool.py tests/test_realtime_hooks.py tests/test_trace_cloudwatch.py tests/test_trace_logfire.py`, then `uv run pytest`, then `make lint-check`.
+Run: `cd ak-py && uv run pytest tests/test_realtime_session_store.py tests/test_realtime_system_tools.py tests/test_trace_realtime.py tests/test_realtime_pool.py tests/test_realtime_hooks.py tests/test_trace_cloudwatch.py tests/test_trace_logfire.py`, then `uv run pytest`, then `make lint-check`.
 
 ## Design requirements traced
 
 | design.md requirement | Spec section |
 | --- | --- |
-| `Runtime` public `activate` and `end_run`; `run()` / `stream()` use them | 1 |
-| The pool uses `Runtime`'s scoping and end steps; identity publication unchanged | 2.1 |
+| `Runtime` and identity publication unchanged | 1, 2.1 |
 | Store once at a normal call end, the `Runtime.stream` rule | 2.2 |
 | No store after a failure | 2.2 |
 | Write off the shared loop; failed store logged | 2.2, Error handling |

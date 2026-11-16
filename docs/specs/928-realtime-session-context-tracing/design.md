@@ -1,9 +1,8 @@
 # #928: Realtime calls follow the AK run lifecycle: session, context and tracing
 
 A realtime call should use AK's main building blocks (`Runtime`, `Session`, hooks, tool context, tracing) the way
-every other mode does, without copying every AK capability onto a live call. Today the pool repeats `Runtime`'s start
-and end steps itself, a call never stores its session, and a call gets no AK trace span.
-This change gives the scoping and end steps back to `Runtime`, leaves identity publication as #603 designed it, stores the session, and traces a call through a traced realtime
+every other mode does, without copying every AK capability onto a live call. Today a call never stores its session,
+and a call gets no AK trace span. This change leaves `Runtime` and identity publication as they are (#603), stores the session, and traces a call through a traced realtime
 runner, as text runs are traced. What already works on a call is kept. Capabilities that do not fit a live call are
 left out and documented, not forced.
 
@@ -21,11 +20,11 @@ left out and documented, not forced.
 | Pick agent and session | `ChatService` → `AgentService` (`core/service.py:109`) | Same, through `prepare_agent_handler` (`pipeline/realtime_pool.py:713`) | None |
 | Session lock | `Runtime` (`core/runtime.py:514`) | None | None: a stated departure |
 | Publish the principal, record the owner | `Runtime._publish` (`core/runtime.py:516`) | The pool calls `Runtime._publish` (`pipeline/realtime_pool.py:112`), as #603 section 8.4 specifies | None: kept (below) |
-| `Session.current()`, `Agent.current()` | `Runtime` (`core/base.py:121`, `core/runtime.py:517`) | The pool sets the context variable and calls the private `Agent._activate` (`pipeline/realtime_pool.py:138-140`, `:239-241`) | A public `Runtime` method (`activate`) |
+| `Session.current()`, `Agent.current()` | `Runtime` (`core/base.py:121`, `core/runtime.py:517`) | The pool sets the context variable and calls the private `Agent._activate` (`pipeline/realtime_pool.py:138-140`, `:239-241`) | None: kept (the pool's own scoping; below) |
 | Pre-hooks and post-hooks | `Runtime` | `Runtime`'s public hook loops (#927) | None |
 | `ToolContext` | The adapter, per run (`framework/openai/openai.py:234`) | The pool, once per call (`pipeline/realtime_pool.py:137`) | None: works, kept |
 | Store the session | `Runtime`, after a successful run (`core/runtime.py:546`, `:627`) | Never | Stored once, when the call ends normally (the `Runtime.stream` rule) |
-| Unpublish, clear the volatile cache | `Runtime`, in `finally` (`core/runtime.py:549-550`, `:641-642`) | The pool calls the private `Session._unpublish_run` and `KeyValueCache._clear_all` (`pipeline/realtime_pool.py:455`, `:458`) | A public `Runtime` method (`end_run`) |
+| Unpublish, clear the volatile cache | `Runtime`, in `finally` (`core/runtime.py:549-550`, `:641-642`) | The pool calls the private `Session._unpublish_run` and `KeyValueCache._clear_all` (`pipeline/realtime_pool.py:455`, `:458`) | None: kept (the pool's own end steps; below) |
 | `framework_context` | The adapter (`framework/openai/openai.py:245-251`) | Not carried (`core/realtime/runner.py:19`) | None: not needed on a call (below) |
 | Tracing | A traced runner per framework, picked by the `Module` (`framework/openai/openai.py:925-929`) | ADK: native spans. OpenAI: none. The realtime runner class is never traced (`:923`) | A traced realtime runner per framework, picked by the `Module` |
 
@@ -52,10 +51,8 @@ Verified on the code, by the existing tests named here, and by running an experi
 
 ## Motivation
 
-- Two owners of the run lifecycle.
-  - The pool repeats `Runtime`'s scoping and end steps itself, through `Agent._activate`, the `Session.current_session` variable, `Session._unpublish_run` and `KeyValueCache._clear_all` (table above).
-  - So a change to how a run is scoped or ended has to be made in two places. #927 removed this for hooks; these steps are still duplicated.
-  - Identity publication is not part of this: the pool publishes each input's principal through `Runtime._publish` on purpose (#603, section 8.4), `Session` documents that exception (`core/base.py:270-272`), and the access gate is planned to slot into `_publish` (`core/runtime.py:432-434`). Making it public would add a documented way to publish any principal on a session, which #603's unforgeable-identity design avoids.
+- The pool repeats `Runtime`'s scoping and end steps itself, through `Agent._activate`, the `Session.current_session` variable, `Session._unpublish_run` and `KeyValueCache._clear_all` (table above). Left as it is in this change: it is not needed to store or trace a call, and it keeps `core/runtime.py` untouched. Sharing these steps through public `Runtime` methods is a possible follow-up.
+- Identity publication is not touched: the pool publishes each input's principal through `Runtime._publish` on purpose (#603, section 8.4), `Session` documents that exception (`core/base.py:270-272`), and the access gate is planned to slot into `_publish` (`core/runtime.py:432-434`). Making it public would add a documented way to publish any principal on a session, which #603's unforgeable-identity design avoids.
 - A call never stores its session.
   - A call works on the session the store handed out when it opened (`pipeline/realtime_pool.py:713`, loaded at `core/service.py:109`).
     - `in_memory`: that is the store's own object, so nothing is lost while the process lives.
@@ -72,20 +69,16 @@ Verified on the code, by the existing tests named here, and by running an experi
 - Identity publication is not changed: it stays as #603 designed it, so the access gate keeps one place to slot into.
 - Each departure from a text run is stated with its reason.
 
-### `Runtime` owns the call's lifecycle
+### `Runtime` is not changed
 
-- `Runtime` gets public methods for the lifecycle steps of a run it does not drive, as #927 did for the hook loops:
-  - make the session and the agent current, without the lock;
-  - end the run (unpublish, clear the volatile cache).
-- `run()` and `stream()` use the same methods, so each step has one owner. Their behaviour does not change.
-- The pool calls these methods instead of `Agent._activate`, `Session.current_session`, `Session._unpublish_run` and `KeyValueCache._clear_all`.
+- `core/runtime.py` is untouched. The pool keeps its own scoping (`Agent._activate`, `Session.current_session`) and end steps (`Session._unpublish_run`, `KeyValueCache._clear_all`), as today.
 - Identity publication stays as #603 specifies: the pool calls `Runtime._publish` per input, and `Session._publish_run`'s docstring is unchanged.
 
 ### Session store
 
 - The call stores its session once, when it ends normally (the edge ended it, idle eviction, shutdown), through the runtime's session store (`runtime.sessions().store(session)`): the `Runtime.stream` rule, one store at the end of a stream that ended normally (`core/runtime.py:627`). A call is a two-sided stream.
 - No store after a failure (`_fail`: a native error, a `StreamHalt`, a raising post-hook; a failed connect), as `Runtime.stream` does not store a halted run (`core/runtime.py:629`).
-- The store runs after the adapter has disconnected (ADK flushes its session service there, `framework/adk/adk.py:1125-1126`) and before the run ends (`end_run`), the order `Runtime.stream` uses.
+- The store runs after the adapter has disconnected (ADK flushes its session service there, `framework/adk/adk.py:1125-1126`) and before the call's identity and volatile cache are cleared, the order `Runtime.stream` uses.
 - One stated difference: the write runs on a worker thread, not on the loop.
   - `Runtime.stream` writes on its own loop, which nothing else shares. The pool's loop serves every call in the process (`pipeline/realtime_pool.py:461-465`), and a store is synchronous network I/O, one write per session key (`core/session/redis.py:100-101`, `core/session/dynamodb.py:104-106`). On the loop, each call's end would stall every other call's audio, which the edge buffers only `playback_lead_ms` ahead, 50 ms by default (`core/config.py:681-682`).
   - The store call itself is unchanged, and the stored object is the session itself, as in `Runtime.stream`: no copy, no new API.
@@ -121,7 +114,7 @@ Verified on the code, by the existing tests named here, and by running an experi
 What a call gets today, measured (scratch experiment: each SDK's spans collected during a live call that runs one tool):
 
 - ADK is traced natively. One `invoke_agent <agent>` span lasts the whole call and carries the AK session id as `gen_ai.conversation.id`; each tool call is an `execute_tool <tool>` child (`google/adk/agents/base_agent.py:380`, `google/adk/flows/llm_flows/functions.py:1021`, google-adk 2.8.0). Both carry `gen_ai.*` attributes, so even Langfuse's default export filter keeps them (`langfuse/_client/span_filter.py:104-108`, langfuse 4.15.1).
-- OpenAI is not traced at all. A call that ran a tool produced no SDK trace, no SDK span and no OpenTelemetry span; a control span in the same test arrived. The SDK's realtime code creates no spans (none under `agents/realtime/`, unlike `agents/run.py` and `agents/run_internal/tool_execution.py`, openai-agents 0.20.0). Its only tracing is OpenAI's own, on OpenAI's servers (the `tracing` model setting, `agents/realtime/config.py:244`).
+- OpenAI's SDK creates no spans of its own on a call. A call that ran a tool produced no SDK trace, no SDK span and no OpenTelemetry span; a control span in the same test arrived (measured without an instrumentor). A provider that installs the OpenInference OpenAI Agents instrumentor (2.5.0 here; Langfuse and CloudWatch) does get model and tool spans on a call, because that instrumentor also wraps `RealtimeSession` (checked live on Langfuse: one `conversation.turn` per turn with `user` and `assistant` children and a `TOOL` span, all children of the call span). The SDK's realtime code creates no spans (none under `agents/realtime/`, unlike `agents/run.py` and `agents/run_internal/tool_execution.py`, openai-agents 0.20.0). Its only tracing is OpenAI's own, on OpenAI's servers (the `tracing` model setting, `agents/realtime/config.py:244`).
 - So the gap is realtime-only. A text run gets two layers: AK's traced runner adds one span with the session id (`trace/langfuse/openai.py:36-38`), and the instrumentor copies the SDK's spans (`docs/docs/advanced/traceability.md:480`, `:565`). A call has neither on OpenAI, and only the SDK's on ADK.
 
 Requirements:
@@ -137,11 +130,12 @@ Requirements:
 - Each provider creates the span in a way its backend exports:
   - Langfuse through its own client, because its export filter drops a span that has no `gen_ai.*` attribute and does not come from its own tracer (`langfuse/_client/span_filter.py:104-108`).
   - Logfire, OpenLLMetry and CloudWatch as an OpenTelemetry span on the tracer provider each one installs, which they export in full. Logfire's own span object can only be used inside one block (its start and end are private), and a call's span outlives the task that opens it.
-- OpenAI's missing model and tool spans are an SDK limit: documented, not rebuilt by AK.
+- OpenAI's own model and tool spans are not built by AK. Where the provider installs the OpenInference instrumentor they appear anyway; otherwise a call is one span (documented).
+- Known limitation, Langfuse with OpenAI: the instrumentor tags its realtime spans with OpenAI's session id (`sess_...`) unless OpenInference's `session.id` context key is already set (`openinference/instrumentation/openai_agents/_realtime.py:733`). AK sets Langfuse's `propagate_attributes` only, so the call span carries the AK session id and the turn spans OpenAI's, and Langfuse lists the call under two sessions. Text runs are not affected (`_processor.py` sets no session id). Not changed here; a fix would set OpenInference's `using_session` around `connect`.
 
 ### Component structure
 
-- No new pool class. `RealtimeConnection` calls `Runtime`'s public lifecycle methods and the session store, where it calls the hook loops today (house pattern 3). No new session or store API.
+- No new pool class. `RealtimeConnection` calls the session store at close, as it calls the hook loops today (house pattern 3). No new session or store API.
 - No change to adapter behaviour. Each `Module` picks the traced realtime runner where it picks the traced runner.
 - Tracing: two optional methods on `BaseTrace`, delegated by `Trace`; one shared base for the traced realtime runners (the open-at-connect, end-at-disconnect rule, written once); traced realtime runner classes in each built-in provider's package.
 
@@ -155,7 +149,7 @@ Requirements:
 - Correct "the AK session is not saved when a call ends" (it is now stored at the end of a call that ended normally): `docs/docs/integrations/livekit.md:160`, `docs/docs/architecture/realtime-internals.md:52`, `.agents/skills/ak-dev-architecture/SKILL.md:638`.
 - Correct the stale `Agent.__init__` docstring: "realtime runner class for WebSocket connections" (`core/base.py:610`).
 - `docs/docs/integrations/hooks.md`: per-turn state in the volatile cache is reset by the hook itself.
-- `docs/docs/advanced/traceability.md`: a realtime section: the call span per provider, ADK's native spans, OpenAI's SDK limit and its own server-side tracing.
+- `docs/docs/advanced/traceability.md`: a realtime section: the call span per provider, ADK's native spans, what the OpenAI instrumentor adds, the Langfuse session-id limitation and OpenAI's own server-side tracing.
 - `docs/docs/integrations/livekit.md`: the scheduling limit below.
 
 ## Not in this change
@@ -165,7 +159,7 @@ Each was checked against a realtime call in practice; none is forced onto it.
 - A turn log shipped by AK. #928 does not define one. After #927 a post-hook sees every per-turn event (`InputTranscript`, `TextDelta`, `AgentChanged`, `Interrupt`, `MessageEnd`), and with this change what it keeps in the non-volatile cache is stored when the call ends.
 - Scheduled occurrences in a realtime deployment. Creating a schedule during a call works (above). An occurrence, though, is a chat request with no caller listening, and a realtime runner sends it to the call pool (`pipeline/agent_runner.py:433-439`), never through `ChatService`, so it is not recorded (`core/chat_service.py:576`). With no live call it opens a native session whose output nobody reads; with a live call on the same session it is sent into the call as text and briefly replaces the call's reply route (`pipeline/realtime_pool.py:702-716`). This is documented as a limit, not fixed: an occurrence can still work when the schedule provider delivers to a text-mode deployment's queue.
 - `framework_context` on a call. The native tools on a call get no context object (the OpenAI adapter passes no `context` and rejects it as a run option, `framework/openai/openai.py:641`); they reach the AK session through `ToolContext`. It would matter only for tool functions shared between a text agent and a voice agent, and would change both adapters (both natives could take it: `agents/realtime/runner.py:48-49`; ADK session state, `framework/adk/adk.py:993`).
-- AK-built model and tool spans for OpenAI calls (an SDK limit, above).
+- AK-built model and tool spans for OpenAI calls (the instrumentor supplies them where installed, above).
 - `ToolContext` built by each adapter instead of the pool. The pool builds it today (`pipeline/realtime_pool.py:137`); it works on both adapters, so it is kept.
 - Native tool calls reported as AK events (`ToolCallStart` / `ToolCallResult`), as delta-mode runners emit them. It changes both adapters and what the edge receives.
 - Restoring a native conversation after a reconnect or a restart. OpenAI keeps its history inside the native session only (native fact).
@@ -176,5 +170,5 @@ Each was checked against a realtime call in practice; none is forced onto it.
 
 1. Store the session once, when the call ends normally, as `Runtime.stream` does (first decided as per turn plus call end; changed for consistency: a call is a two-sided stream). The write runs off the shared loop.
 2. `framework_context` is not carried on a call.
-3. Tracing is in this change: AK's layer through traced realtime runners; OpenAI's model and tool spans stay an SDK limit.
+3. Tracing is in this change: AK's layer through traced realtime runners; OpenAI's model and tool spans are left to the instrumentor where one is installed.
 4. Scheduled occurrences, a turn log, native tool events and a lock stay out (above).

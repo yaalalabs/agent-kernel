@@ -594,7 +594,9 @@ What is inside the call span depends on the framework:
 | Framework | Inside the call span |
 |---|---|
 | Google ADK | ADK's own spans: one `invoke_agent <agent>` for the call and an `execute_tool <tool>` for each tool call, as children of the call span |
-| OpenAI Agents SDK | Nothing: the SDK's realtime session creates no spans, so a call shows as one span with its session, duration and errors, but no model or tool spans |
+| OpenAI Agents SDK | None from the SDK itself: its realtime session creates no spans. When the provider installs the OpenInference OpenAI Agents instrumentor (Langfuse and CloudWatch do; checked live on Langfuse only), the instrumentor traces the realtime session too, so the call span also holds one `conversation.turn` per turn with its `user` and `assistant` spans (transcripts, token counts) and a `TOOL` span for each tool call. Without it a call is one span with its session, duration and errors |
+
+On Langfuse, those instrumentor spans carry OpenAI's own realtime session id (`sess_...`) as their session, not the Agent Kernel session id the call span carries (the instrumentor sets it unless its own session key is already in the context, which Agent Kernel does not set). The Langfuse Sessions view therefore lists the call twice: the call span under the Agent Kernel session id, and the turns, tokens and duration under OpenAI's. Text runs are not affected. The instrumentor captures the caller's and the model's audio on those spans; set `OPENINFERENCE_HIDE_INPUT_AUDIO` and `OPENINFERENCE_HIDE_OUTPUT_AUDIO` to `true` to keep audio out of your backend.
 
 OpenAI offers its own tracing for realtime sessions, shown in OpenAI's dashboard rather than your backend. Turn it on through the agent's run options (the `tracing` model setting inside `config`).
 
