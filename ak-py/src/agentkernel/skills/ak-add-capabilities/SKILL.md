@@ -559,7 +559,7 @@ mcp:
    is enqueued, the agent runner executes it, and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. With `expose_agents: true`, `RESTAPI.run(handlers=[...])`,
-     `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
+     `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, and `AWSWebsocketAPI` with no queue refuse to start.
    - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
      agent runner (tools are built from the IO process's registry), configure a shared
      `execution.response_store` (redis, valkey or dynamodb) in every execution mode, and set
@@ -606,7 +606,7 @@ a2a:
    and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on
-     SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
+     SQS/Kafka/NATS/Pub/Sub/Service Bus, and `AWSWebsocketAPI` with no queue refuse to start with `a2a.enabled`.
    - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
      agent runner (cards are built from the IO process's registry), and configure a shared
      `execution.response_store` (redis, valkey or dynamodb) in every execution mode.

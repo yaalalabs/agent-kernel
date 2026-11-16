@@ -45,7 +45,7 @@ back from the response store. The tool's `session_id` argument is the Agent Kern
 | `RESTAPI.run()` with no `execution.queues` block (the laptop default) | ✅ one process, in-memory queue |
 | `IOHandler.run(handlers=[...])`, any transport | ✅ through the queue |
 | `CloudRun.run()` on GCP, any transport | ✅ through the queue (it starts `IOHandler`) |
-| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
+| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSWebsocketAPI` with no queue (with one it starts `IOHandler`) | ❌ refuses to start (`AKConfigError`): these start no agent runner |
 
 - **Split deployments** (SQS, Kafka, NATS, Pub/Sub or Service Bus, with the agent runner in its own process): import the
   same agent modules in the IO process as in the runner, because agent tools are built from the IO

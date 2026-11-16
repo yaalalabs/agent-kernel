@@ -13,13 +13,13 @@ the agent workers independently of the number of open connections.
 
 ## Architecture Overview
 
-- **REST/IO Service ECS Task** (`app_rest_service.py`, started via `ECSIOHandler.run()`):
+- **REST/IO Service ECS Task** (`app_rest_service.py`, started via `AWSWebsocketAPI.run()`, which hands off to `IOHandler.run()`):
   - Thread 1: authenticates `$connect`, on the `chat` route enqueues the request to the Input
     Queue (never runs the agent itself), and answers the custom `echo` route directly (registered
     via `@AWSWebsocketAPI.register("echo")`)
-  - Thread 2 (`ECSOutputConsumer`): polls the Output Queue and pushes each chat reply back over
+  - Thread 2 (`ResponseHandler`): polls the Output Queue and pushes each chat reply back over
     the originating WebSocket connection
-- **Agent Runner ECS Task** (`app_agent_runner.py`, `ECSAgentRunner`): polls the Input Queue, runs
+- **Agent Runner ECS Task** (`app_agent_runner.py`, `AgentRunner`): polls the Input Queue, runs
   the agent, and sends the result — with the `endpoint_url` forwarded — to the Output Queue.
   Scales on SQS backlog per task, independently of the REST/IO service.
 - **SQS Queues**: FIFO input and output queues
@@ -41,7 +41,7 @@ Client --(wss, ?token=...)--> WS API Gateway --> REST/IO service ($connect / enq
                                                  Output SQS Queue
                                                         |
                                                         v
-                                     REST/IO service's output-queue consumer
+                                     REST/IO service's Response Handler
                                                         |
                                                         v
                                      pushed back over the WebSocket connection
@@ -127,7 +127,7 @@ Return `None` to broadcast nothing. Any exception raised by the route is logged,
 broadcast to the client, and a 500 is returned.
 
 Because routes are registered globally (before `run()` is called), `main()` calls
-`ECSIOHandler.run()` directly: the framework-managed handler picks up the registered `echo` route
+`AWSWebsocketAPI.run()` directly: the framework-managed handler picks up the registered `echo` route
 automatically, so no custom handler injection or manual `ThreadRunner` wiring is needed.
 
 ## Auth

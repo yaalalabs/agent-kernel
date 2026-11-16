@@ -86,8 +86,8 @@ Rules:
      `_validate_topology` working (`tests/test_pipeline_io_handler.py:82-136`).
 3. All other topology checks still run: REST response store, SSE chunk store, A2A/MCP shared store
    (`io_handler.py:232-261`).
-4. `WebSocketHandlerABC` is imported under `TYPE_CHECKING`, the same way `GatewayRunner` and `PollerRunner` are
-   (`io_handler.py:17-19`). `pipeline` still imports nothing from `deployment/`.
+4. `WebSocketHandlerABC` is a plain import from `pipeline/ws/base.py`, which is inside `pipeline`, so there is no
+   cycle to break. `pipeline` still imports nothing from `deployment/`.
 5. Not validated: `ws_handler` on the `in_memory` transport. Its only caller (§4) never passes it there. A BYO
    caller who does gets both the co-hosted pod handlers and their own push handler, which is their choice.
 
@@ -329,8 +329,8 @@ Run: `cd ak-py && uv run pytest tests/ -q`, and before the PR, `make lint-check-
 - **`tests/test_websocket_service_broadcast.py`**
   - New tests: `AWSWebSocketHandler.broadcast` raises `ValueError` with no `endpoint_url` and never calls
     `get_client`. With one, it sends to each connection.
-- **`tests/test_ecs_io_handler.py`**: rewritten as the `AWSWebsocketAPI.run` hand-off test. File name kept for
-  history; the rename is optional. Its tests:
+- **`tests/test_ecs_websocket_routes.py`**: new `TestQueueHandOff` for the `AWSWebsocketAPI.run` hand-off, kept
+  beside the other `AWSWebsocketAPI` tests. `test_ecs_io_handler.py` is deleted with `ECSIOHandler`. Its tests:
   - `sqs` transport: `IOHandler.run` is called with the system and app handlers plus the caller's, and with
     `ws_handler` being the system handler's `AWSWebSocketHandler`. Patch
     `agentkernel.pipeline.io_handler.IOHandler.run`.
@@ -350,8 +350,9 @@ Run: `cd ak-py && uv run pytest tests/ -q`, and before the PR, `make lint-check-
       `ResponseHandler(ws_handler=AWSWebSocketHandler)`. `post_to_connection` is called on the client built for
       its `endpoint_url`, with `STREAM_CHUNK`. In REST mode the same record is stored with its `status_code`.
   - **Mount:** `IOHandler.run(handlers=[WebhookRESTRequestHandler(...), AGUIPipelineRequestHandler(...)],
-    request_handler=ThreadRequestHandler(...))` on an `sqs` config with a DynamoDB response store builds the app
-    without error (server and threads stubbed).
+    request_handler=ThreadRequestHandler(...))` on an `sqs` config with a Redis response store builds the app
+    without error (server and threads stubbed). Redis, not DynamoDB: `AGUIPipelineRequestHandler` refuses a store
+    that cannot stream chunks (`integration/agui/queue_handler.py:82-86`).
 - **`tests/test_deployment_identity.py`**
   - Drop the `ECSIOHandler` import (`:29`).
   - `test_the_entry_points_take_no_validator` (`:557-558`) checks `AWSWebsocketAPI.run`'s parameters are
@@ -374,6 +375,7 @@ Their behaviour is already covered by the pipeline suites:
 | `test_ecs_akagentrunner_realtime.py` | `test_realtime_pool.py:487-529`, `test_pipeline_protocol_routing.py` |
 | `test_ecs_akoutputconsumer.py` | `test_pipeline_response_handler.py:168-217` + the new `endpoint_url` tests |
 | `test_ecs_output_consumer_status.py` | `test_pipeline_response_handler.py:83-105` |
+| `test_ecs_io_handler.py` | `test_ecs_websocket_routes.py` `TestQueueHandOff`, `test_pipeline_io_handler.py` |
 
 ### Terraform
 

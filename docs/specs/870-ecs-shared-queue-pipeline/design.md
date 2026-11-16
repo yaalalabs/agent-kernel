@@ -246,7 +246,7 @@ flowchart LR
   - `test_ecs_akagentrunner_stream.py`
   - `test_ecs_akoutputconsumer.py`
   - `test_ecs_output_consumer_status.py`
-  - `test_ecs_io_handler.py`, which becomes an `AWSWebsocketAPI.run` hand-off test
+  - `test_ecs_io_handler.py` (the hand-off tests go in `test_ecs_websocket_routes.py`)
   - `test_deployment_identity.py`
 - `test_ecs_sqs_consumer_parallel.py` stays, because `ECSSQSConsumer` stays.
 - Examples:

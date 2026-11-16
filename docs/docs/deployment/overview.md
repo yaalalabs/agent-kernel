@@ -70,7 +70,7 @@ Independently of *where* you deploy, `execution.mode` selects *how* requests are
 Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom handlers) execute inline rather than through the pipeline.
 
 :::note
-AWS ECS supports `execution_mode = "async"` with `message_type = "delta"` for WebSocket streaming in both direct and queue-backed topologies: in direct mode the chat route broadcasts each chunk inline via `ChatService.process_stream_chat_async`; in queue mode `ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner`, which fans out one Output Queue message per chunk instead of one for the full reply. See [AWS Containerized](./aws-containerized) for details.
+AWS ECS supports `execution_mode = "async"` with `message_type = "delta"` for WebSocket streaming in both direct and queue-backed topologies: in direct mode the chat route broadcasts each chunk inline via `ChatService.process_stream_chat_async`; in queue mode `AgentRunner.run()` dispatches to `StreamAgentRunner`, which fans out one Output Queue message per chunk instead of one for the full reply. See [AWS Containerized](./aws-containerized) for details.
 :::
 
 **Protocol support by flavor:**
@@ -132,9 +132,9 @@ graph LR
 
 | Role | Local / any server flavor (in-process) | AWS Lambda (serverless) | AWS ECS (containerized) | Kubernetes (Helm chart) |
 |------|----------------------------------------|------------------------|-------------------------|-------------------------|
-| Request handler | `RequestHandler` on the rest-api thread | Request Handler Lambda | `ECSQueueRequestHandler` thread in the IO container | `RequestHandler` thread in the io-handler Deployment |
-| Agent runner | `AgentRunner` worker threads (same process) | Agent Runner Lambda (SQS event source mapping) | `ECSAgentRunner` service, a pool of long-poll consumer threads | `AgentRunner` consumer threads in the agent-runner Deployment |
-| Response handler | `ResponseHandler` worker thread (same process) | Response Handler Lambda | `ECSOutputConsumer` thread pool in the IO container | `ResponseHandler` thread pool in the io-handler Deployment |
+| Request handler | `RequestHandler` on the rest-api thread | Request Handler Lambda | `RequestHandler` thread in the IO container | `RequestHandler` thread in the io-handler Deployment |
+| Agent runner | `AgentRunner` worker threads (same process) | Agent Runner Lambda (SQS event source mapping) | `AgentRunner` service, a pool of long-poll consumer threads | `AgentRunner` consumer threads in the agent-runner Deployment |
+| Response handler | `ResponseHandler` worker thread (same process) | Response Handler Lambda | `ResponseHandler` thread pool in the IO container | `ResponseHandler` thread pool in the io-handler Deployment |
 | Reply delivery | Response store (in-memory), or SSE bridging (`rest_sync` + `delta`) | Response store, or WebSocket push (`async`) | Response store, or WebSocket push (`async`) | Response store (Valkey/Redis), or ws-gateway push (`async`) |
 | Scaling | `no_of_consumers` threads | Automatic per SQS batch | Backlog-per-task target tracking | KEDA on queue depth (Kafka lag / NATS pending / SQS length) |
 

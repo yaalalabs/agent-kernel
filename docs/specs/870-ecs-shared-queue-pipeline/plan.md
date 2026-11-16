@@ -29,11 +29,11 @@ Each iteration leaves the branch green (`cd ak-py && uv run pytest tests/ -q`). 
 ## Iteration 3: `AWSWebsocketAPI.run` hands off to `IOHandler`
 
 - **Goal:** ECS WebSocket mode with a queue runs on `IOHandler` + `ResponseHandler`, and direct mode is unchanged.
-- **Files:** `deployment/aws/containerized/core/api/websocket_api.py`, `tests/test_ecs_io_handler.py` (rewritten)
+- **Files:** `deployment/aws/containerized/core/api/websocket_api.py`, `tests/test_ecs_websocket_routes.py`
 - **Steps:**
   1. Add the queue hand-off in `AWSWebsocketAPI.run` (§5).
-  2. Rewrite `test_ecs_io_handler.py` as the hand-off test.
-- **Verify:** `uv run pytest tests/test_ecs_io_handler.py tests/test_ecs_websocket_routes.py tests/test_deployment_identity.py -q`
+  2. Add `TestQueueHandOff` to `test_ecs_websocket_routes.py`.
+- **Verify:** `uv run pytest tests/test_ecs_websocket_routes.py tests/test_deployment_identity.py -q`
 
 ## Iteration 4: Delete the ECS-only classes and switch their callers
 
@@ -55,7 +55,7 @@ The deletion and the example switch land together, so no example ever imports a 
 - **Steps:**
   1. Delete the modules and update the exports (§6).
   2. Reword the comment-only references (§6 list).
-  3. Delete the five ECS test files (Testing → Deleted tests).
+  3. Delete the six ECS test files (Testing → Deleted tests).
   4. Edit `test_deployment_identity.py`, `test_ecs_sqs_consumer_parallel.py` and `test_api_http.py`.
   5. Swap the example imports and calls, and fix the comments that name `ECSIOHandler`.
   6. Check that nothing still names the deleted classes:

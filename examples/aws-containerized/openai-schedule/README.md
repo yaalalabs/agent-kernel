@@ -92,19 +92,18 @@ takes precedence over content-based dedup.
 
 ## Where the management routes are served
 
-Nothing is mounted from config, so `app_rest_service.py` hands the handler to `ECSIOHandler.run()`,
-which serves it alongside the API's own queue-producing chat route — the same shape the pipeline's
-`IOHandler` uses:
+Nothing is mounted from config, so `app_rest_service.py` hands the handler to `IOHandler.run()`,
+which serves it alongside the pipeline's own queue-producing chat route:
 
 ```python
-from agentkernel.aws import ECSIOHandler
+from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
 
-ECSIOHandler.run(handlers=[ScheduleRESTRequestHandler()])
+IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
 ```
 
-That is the whole entrypoint: `ECSIOHandler` still starts both peer threads (the REST API and the
-output-queue consumer). The routes run **in the REST service**, not through the queues — they read
+That is the whole entrypoint: `IOHandler` still starts both peer threads (the REST API and the
+Response Handler, which consumes the Output Queue). The routes run **in the REST service**, not through the queues — they read
 the shared DynamoDB task store and call Scheduler directly, so a listing or cancellation needs no
 round trip.
 
