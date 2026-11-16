@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from .event import StreamEvent
 from .hooks import PostHook, PreHook
-from .model import AgentReply, AgentRequest, Principal, ResumeDecision, SessionOwner, ToolFilter
+from .model import AgentDescriptor, AgentReply, AgentRequest, AgentSkillDescriptor, Principal, ResumeDecision, SessionOwner, ToolFilter
 from .util.key_value_cache import KeyValueCache
 from .util.picklable import first_unpicklable_entry
 
@@ -616,6 +616,9 @@ class Agent(ABC):
         self._post_hooks: list[PostHook] = []
         self._run_options: dict[str, Any] = {}
         self._run_options_factory: RunOptionsFactory | None = None
+        # Built on first read, not here: an adapter assigns its native agent and attaches the
+        # system tools after this constructor returns, and the descriptor lists the agent's tools.
+        self._descriptor: AgentDescriptor | None = None
 
     def __repr__(self) -> str:
         """
@@ -682,6 +685,58 @@ class Agent(ABC):
     @run_options_factory.setter
     def run_options_factory(self, factory: RunOptionsFactory | None) -> None:
         self._run_options_factory = factory
+
+    @property
+    def descriptor(self) -> AgentDescriptor:
+        """
+        Returns the agent's descriptor: its catalog entry, which the registry stores and the surfaces read.
+        Built once, on first read, from what the adapter knows of the native agent; `Module.describe` then
+        declares what only the application knows (catalog text, tags, visibility). Read-only: a descriptor
+        changes through `Module.describe`, which also updates the registry.
+        """
+        if self._descriptor is None:
+            self._descriptor = self._build_descriptor()
+        return self._descriptor
+
+    def _set_descriptor(self, descriptor: AgentDescriptor) -> None:
+        """
+        Replaces the agent's descriptor. The caller registers the agent again so the registry holds the same one.
+        :param descriptor: The descriptor to carry from now on.
+        """
+        self._descriptor = descriptor
+
+    def _build_descriptor(self) -> AgentDescriptor:
+        """
+        Builds the descriptor from what the agent itself knows: its name as id and name, the tools it reports,
+        one skill per tool, and its runner's name and streaming support. The description stays empty, since
+        `get_description()` is the agent's instructions and never catalog text.
+        :return: The agent's own descriptor, before `Module.describe` is applied.
+        """
+        tools = self.get_tool_names()
+        return AgentDescriptor(
+            id=self.name,
+            name=self.name,
+            tools=tools,
+            skills=[AgentSkillDescriptor(id=tool, name=tool) for tool in tools],
+            runner=self.runner.name,
+            supports_streaming=self.runner.supports_streaming,
+        )
+
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names of the tools the agent can call, as an authorization policy names them.
+        The base implementation reports none; each framework adapter reports its native agent's tools.
+        :return: The tool names.
+        """
+        return []
+
+    def ungated_tool_names(self) -> list[str]:
+        """
+        Returns the names of the tools the agent can call that Agent Kernel cannot gate at call time.
+        The base implementation reports none.
+        :return: The ungated tool names.
+        """
+        return []
 
     async def resolve_run_options(self, session: Session, requests: list[AgentRequest]) -> dict[str, Any]:
         """

@@ -6,6 +6,7 @@ from agentkernel import Agent, PostHook, PreHook, Runner
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.module import Module
+from agentkernel.core.registry import AgentRegistrationError
 from agentkernel.core.runtime import Runtime
 
 
@@ -119,10 +120,8 @@ def test_module_add_updates_agents(monkeypatch):
         # Handle duplicates
         a3 = FrameworkAgent("agent3")
 
-        try:
+        with pytest.raises(AgentRegistrationError, match="Agent with name 'agent1' is already registered."):
             SimpleModule([a3, a1])
-        except Exception as e:
-            assert "Agent with name 'agent1' is already registered." in str(e)
 
         # Runtime should be intact after exception
         assert len(mod.agents) == 1
@@ -154,10 +153,8 @@ def test_load_modules_with_duplicate_agent_names():
 
         a2 = FrameworkAgent("agent2")
         a1x = FrameworkAgent("agent1")
-        try:
+        with pytest.raises(AgentRegistrationError, match="Agent with name 'agent1' is already registered."):
             SimpleModule([a2, a1x])
-        except Exception as e:
-            assert "Agent with name 'agent1' is already registered." in str(e)
 
         assert len(runtime.agents()) == 1
         assert runtime.agents() == {"agent1": mod1.agents[0]}

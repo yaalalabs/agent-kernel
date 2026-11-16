@@ -1,8 +1,11 @@
 from abc import ABC, abstractmethod
 from typing import Any, Self
 
+from pydantic import ValidationError
+
 from ..core.hooks import PostHook, PreHook
 from .base import Agent, RunOptionsFactory
+from .model import AgentDescriptor
 from .runtime import Runtime
 
 
@@ -129,6 +132,42 @@ class Module(ABC):
         if run_options_factory is not None:
             wrapped.run_options_factory = run_options_factory
         wrapped.run_options.update(options)
+        return self
+
+    def describe(self, agent: Any, **fields: Any) -> Self:
+        """
+        Declares catalog metadata for one loaded agent: the `AgentDescriptor` fields only the application knows,
+        such as `description`, `version`, `owner`, `tags`, `visibility` and `surfaces`. The fields are set over the
+        descriptor the adapter built from the native agent, and the registry is updated with the result. Repeated
+        calls merge, the later call winning per field (a list is replaced, not extended). Chained like `pre_hook` /
+        `post_hook` / `run_options`.
+
+        The `id` is the key the agent is registered under and cannot be described.
+        :param agent: The native framework agent the metadata is for.
+        :param fields: The `AgentDescriptor` fields to set.
+        :return: This module, for chaining.
+        :raises ValueError: If the agent is not loaded in this module or not registered in the current runtime, a
+            field is not one `AgentDescriptor` declares, `id` is named, or a value is not valid for its field;
+            nothing is stored.
+        """
+        wrapped = self._wrapped(agent)
+        unknown = sorted(set(fields) - set(AgentDescriptor.model_fields))
+        if unknown:
+            raise ValueError(f"Unknown descriptor field(s) for agent '{wrapped.name}': {', '.join(unknown)}")
+        if "id" in fields:
+            raise ValueError(f"The descriptor id of agent '{wrapped.name}' is the key it is registered under and cannot be described")
+        # Validated as a whole, not copied with the update applied: the descriptor is read by other processes
+        # once a shared registry stores it, so a value its model refuses must fail here.
+        try:
+            described = AgentDescriptor.model_validate({**wrapped.descriptor.model_dump(), **fields})
+        except ValidationError as e:
+            details = "; ".join(f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}" for error in e.errors())
+            raise ValueError(f"Invalid descriptor for agent '{wrapped.name}': {details}") from e
+        runtime = Runtime.current()
+        if runtime.registry.get(described.id) is not wrapped:
+            raise ValueError(f"Agent '{wrapped.name}' is not registered in the current runtime")
+        wrapped._set_descriptor(described)
+        runtime.register(wrapped)
         return self
 
     def _wrapped(self, agent: Any) -> Agent:

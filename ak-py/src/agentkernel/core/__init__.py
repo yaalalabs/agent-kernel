@@ -51,6 +51,7 @@ from .model import (
     ToolFilter,
 )
 from .config import AKConfig as Config
+from .registry import AgentRegistrationError, AgentRegistry
 from .module import Module
 from .runtime import Runtime
 from .service import AgentService

@@ -564,7 +564,8 @@ class AgentRegistrationError(Exception): ...
 class AgentDescriptorPage(BaseModel): agents: list[AgentDescriptor]; next_cursor: Optional[str]
 
 class AgentRegistry(ABC):
-    @abstractmethod def register(self, descriptor: AgentDescriptor, agent: Agent) -> None   # AgentRegistrationError on a duplicate id
+    @abstractmethod def register(self, descriptor: AgentDescriptor, agent: Agent) -> None   # AgentRegistrationError when a different agent
+                                                                               # holds the id; the same agent again replaces its descriptor
     @abstractmethod def deregister(self, id: str) -> None
     @abstractmethod def get(self, id: str) -> Optional[Agent]                  # process-local object
     @abstractmethod def descriptor(self, id: str) -> Optional[AgentDescriptor]
@@ -587,8 +588,9 @@ class AgentRegistry(ABC):
   DynamoDB one item per agent, partition key `agent_id`, no sort key, denormalized `updated_at`,
   listing by scan (`schedule/store/dynamodb.py:1-18`). `ttl` default 0: records never expire; a
   crashed process leaving a record is the documented boundary.
-- `AgentRegistryFactory.build() -> AgentRegistry` (`core/registry.py`): `in_memory` when the
-  `registry` block is absent or `registry.type == "in_memory"`; `redis`, `valkey`, `dynamodb`
+- `AgentRegistryFactory.build() -> AgentRegistry` (`core/registry.py`), one registry per call, so
+  each `Runtime` has its own: `in_memory` when the `registry` block is absent or
+  `registry.type == "in_memory"`; `redis`, `valkey`, `dynamodb`
   under `require_extra` with lazy imports from `identity/registry/`; dotted path; else
   `AKConfigError`. The config overlay `registry.agents.<id>` is applied inside `register`
   (section 6, descriptor sources), so every backend sees the final descriptor.
@@ -598,16 +600,23 @@ class AgentRegistry(ABC):
 
 **Descriptor sources, later wins per field:**
 
-1. `Agent.descriptor` (`core/base.py`, a property) is built once in `Agent.__init__` from
-   `_build_descriptor()`: `id = name`, `name`, `tools = self.get_tool_names()`, `skills` one per
+1. `Agent.descriptor` (`core/base.py`, a read-only property) is built once, on first read, from
+   `_build_descriptor()` (not in `Agent.__init__`: every adapter assigns its native agent and
+   attaches the system tools after the base constructor returns, so the first read is
+   `Runtime.register`): `id = name`, `name`, `tools = self.get_tool_names()`, `skills` one per
    tool (`id = name = tool name`, `description` from the native tool where the adapter has one),
    `runner = runner.name`, `supports_streaming = runner.supports_streaming`, `description = ""`.
    `Agent.get_tool_names() -> list[str]` is a new method each adapter implements (section 9 lists
    the source per adapter); the base implementation returns `[]`.
 2. `Module.describe(agent, **fields) -> Self` (`core/module.py`, beside `pre_hook`, `post_hook`
    and `run_options`, resolving the wrapped agent through `_wrapped` (`core/module.py:134-145`)):
-   `ValueError` for an unloaded agent and for a field `AgentDescriptor` does not declare; applies
-   `descriptor.model_copy(update=fields)`.
+   `ValueError` for an unloaded agent, for a field `AgentDescriptor` does not declare, for `id`
+   (the registry key, and the name every other layer addresses the agent by), for a value the
+   model refuses (the merged descriptor is validated, not `model_copy`-ed, because a shared
+   registry hands it to other processes) and for an agent the current runtime does not host;
+   nothing is stored on any of them. It then replaces the agent's descriptor and registers the
+   agent again (`Runtime.register`), which is how the registry, already holding the descriptor
+   from `load`, receives the described one.
 3. The `registry.agents.<id>` overlay, applied by `AgentRegistryFactory`'s returned registry in
    `register` (the registry is constructed with the overlay dict).
 
@@ -1208,7 +1217,7 @@ Shared pieces (`core/`):
 | `core/service.py` | `acting_user_id` (162, 180) | `ensure_agent_available(name, principal)`; `principal=` | `select`, `new`, `clear`, `load`, `run` |
 | `core/chat_service.py` | `acting_user_id` (277-315); `"user_id"` in known fields (150) | `req.principal` hand-off; 403/404 mapping; the `user_id` rejection in `reject_unprocessable` (the public name of `_reject_ambiguous`, which the thread and pipeline edges call before their first write); trigger skip | `_maybe_schedule`; `ResponseBuilder` |
 | `core/builder.py` | `build(name, description, skills)` | `build(descriptor)` with security schemes | `SessionStoreBuilder`, `SessionCacheBuilder` |
-| `core/__init__.py` | `ACTING_USER_CACHE_KEY` (48) | exports `Principal`, `AccessLevel`, `AgentDescriptor`, `SessionOwner`, `ToolFilter` | |
+| `core/__init__.py` | `ACTING_USER_CACHE_KEY` (48) | exports `Principal`, `AccessLevel`, `AgentDescriptor`, `SessionOwner`, `ToolFilter`, `AgentRegistry`, `AgentRegistrationError` | |
 | `api/http.py` | `add_auth_handlers`, `_auth_token_validators` (22, 208-237) | `_get_router_dependencies` always returns the identity dependency | `run` delegation rule; `build_app` mounting; `reject_unqueued_protocols` |
 | `api/handler.py` | `authoriser` argument; multipart `user_id` (121) | `AuthorisedRESTRequestHandler` identity requirement; `_resolve_user -> Principal`; catalog | path constants |
 | `pipeline/request_handler.py` | multipart `user_id` (481, 507) | precheck before enqueue; `body.principal` | wait budget; `_reject_unroutable`; `QueuedReply` |
@@ -1431,10 +1440,12 @@ for the two caches and the framework context; public exports other than those na
 | Removed config lists present | `_A2AConfig`/`_MCPConfig`/`_AGUIConfig` validators | `AKConfigError` naming `registry.agents.<id>.surfaces` |
 | Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; catalog routes 500 |
 
-Concurrency: `IdentityProviderFactory.get()`, `AuthorizerFactory.get()`, `AccessGate.get()` and
-`AgentRegistryFactory.build()` are built once behind an `RLock` (the `ScheduleManager.get()`
-shape, `schedule/manager.py:60-73`); `JWKSCache` guards its refresh with a `threading.Lock`
-because ECS consumer threads share one provider; the redis-like and DynamoDB stores inherit the
+Concurrency: `IdentityProviderFactory.get()`, `AuthorizerFactory.get()` and `AccessGate.get()`
+are built once behind an `RLock` (the `ScheduleManager.get()` shape,
+`schedule/manager.py:60-73`); `AgentRegistryFactory.build()` is called once per `Runtime` and
+returns a registry of its own each time (section 6); `JWKSCache` guards its refresh with a
+`threading.Lock` because ECS consumer threads share one provider; the redis-like and DynamoDB
+stores inherit the
 drivers' per-instance connect lock; `InMemoryCredentialStore` and `InMemoryAgentRegistry` use
 plain dicts under the GIL with no check-then-act across awaits. Per-operation cost on hot paths:
 one `authorize_agent` at the surface and one at the choke point per request (accepted, design
