@@ -12,6 +12,12 @@ Terraform in that folder with the user's own cloud credentials.
 
 Everything that needs a server, an account or a deployed system to look at is out of Phase 1.
 
+**Position.** Real code, any framework, any cloud. Everything the app produces is ordinary framework code,
+pytest and Terraform in the user's own repository. That matters more after 2026, when hosted visual builders
+were retired or closed (OpenAI Agent Builder shuts down on 30 November 2026, Microsoft retires the Foundry
+workflow designer on 1 December 2026, Flowise was archived in August 2026): a project made with this app
+outlives the app.
+
 ## Goals and non-goals
 
 | Phase 1 does | Phase 1 does not |
@@ -21,7 +27,9 @@ Everything that needs a server, an account or a deployed system to look at is ou
 | Write real project files: agents, tools, config, Python project, Terraform | Observe or operate a deployed system: traces, conversations, schedules, live memory, deployment monitoring |
 | Run and test the project on the computer | Team approvals; billing; API keys |
 | Deploy, redeploy and destroy from the computer with Terraform | Kubernetes with Helm (it is not Terraform) |
-| Show every command it runs | Hosted runners or CI integration |
+| Show every command it runs | Running CI or hosted runners (the app writes a CI workflow file; it does not run CI) |
+| Write a CI workflow that runs the tests and the business-rule check | Time-travel debugging (it is LangGraph-specific, not framework-neutral) |
+| Test with simulated users; keep and compare test runs | A connector catalogue |
 
 ## Phases at a glance
 
@@ -30,7 +38,8 @@ Everything that needs a server, an account or a deployed system to look at is ou
 | **1 (this plan)** | Build and ship from one computer | Welcome, new project, builder (Canvas, Code, Config, Test & Trace, Deploy), Build with AI, business rules, app settings |
 | Later | Deep configuration | Full pages for agents, tools, knowledge, channels, guardrails, memory. In Phase 1 the same settings are reachable through the canvas inspector, the Config tab, the Code tab and the coding agent. |
 | Later | Operate | Playground against a deployed system, traces, conversations, evaluations history, schedules, deployments view, dashboard |
-| Later | Teams and hosting | Sign-in, workspaces, roles and approvals, shared projects, billing |
+| Later | Teams and hosting | A hosted Studio (cloud SaaS): sign-in, workspaces, roles and approvals, shared projects, billing |
+| Later | More coding agents | Codex, Gemini CLI, Cursor and others, as adapters of the Phase 1 coding-agent interface |
 
 Later phases are not planned here. Their briefs are parked in [later-phases/](later-phases/).
 
@@ -66,7 +75,9 @@ by the app is an ordinary Agent Kernel project that works without the app.
 | `deploy/Dockerfile`, `deploy/deploy.sh` | Packaging for containerized targets | Deploy tab | Deploy, Code |
 | `.claude/commands/` | Agent Kernel skills for Claude Code (`ak skill install --assistant claude`) | App | Settings |
 | `.env` | Local secrets. Ignored by git. The app shows names only. | New project, Settings | Settings |
-| `.akstudio/` | **Assumption.** What code cannot hold: canvas layout, business rules, saved test scenarios, deploy history | App | Canvas, Rules, Deploy |
+| `.akstudio/` | **Assumption.** What code cannot hold: canvas layout, business rules, saved test scenarios, deploy history. Documented, versioned plain-text formats. `.akstudio/runs/` (test run history) is ignored by git. | App | Canvas, Rules, Test & Trace, Deploy |
+| `.github/workflows/ak-checks.yml` | CI workflow: install, run the tests, run `ak rules check`. Written only when the user asks. | Test & Trace | Code |
+| `deploy/backend.tf` | The remote Terraform state backend | Deploy tab | Deploy, Code |
 
 ## Principles
 
@@ -79,6 +90,28 @@ by the app is an ordinary Agent Kernel project that works without the app.
 4. **Credentials stay where they are.** The app uses the cloud profile already configured on the computer and
    never stores or displays cloud keys. Model keys live in `.env`; the UI shows key names only.
 5. **Nothing depends on the app.** Close the app and the folder is still a complete, runnable project.
+6. **No telemetry without consent.** Usage data is off by default and opt-in. With it off, the app makes no
+   network calls of its own; the tools it runs and the project's model providers make their own.
+
+## Built for the next phases
+
+The next phases take the app to a hosted Studio (cloud SaaS) and add coding agents other than Claude Code.
+Phase 1 builds neither, but its seams are shaped so that both are additions, not rewrites.
+
+1. **One coding-agent interface.** Build with AI talks to the coding agent through one agent-neutral
+   interface shaped like the Agent Client Protocol (ACP): start a session in the working directory, send a
+   prompt, stream events, relay permission requests and answers, report the files a turn changed. Claude Code
+   is its only adapter in Phase 1. Checkpoints and revert belong to the app, not to the adapter.
+2. **A renderer that can run in a browser.** The renderer uses no Electron-only API. The typed bridge to the
+   main process has a transport that can change: Electron IPC now, HTTP or WebSocket to hosted services later.
+3. **Files a server can read.** `.akstudio/` uses documented, versioned plain-text formats with no absolute
+   paths or machine-specific values in committed files. A hosted Studio reads the same files from the
+   repository.
+4. **Secrets by name.** A secret is a key name plus the Agent Kernel secret provider that resolves it
+   (`secret.provider.type` in `config.yaml`). `.env` is the local store of the `env` provider, not the model,
+   so a hosted Studio can resolve the same names from its own store.
+5. **Rule checks outside the app.** The business-rule checks live in the `ak` CLI (`ak rules check`), which
+   the app, CI and a hosted Studio all run.
 
 ## How each part works locally
 
@@ -88,9 +121,9 @@ by the app is an ordinary Agent Kernel project that works without the app.
 | Code | All project files | Light edits; "Open in editor" for real work | Nothing |
 | Config | `config.yaml` | `config.yaml`, keeping comments and order | Agent Kernel's own config validation |
 | Build with AI | The whole folder | Any project file, through the coding agent | Claude Code in the working directory, with its permission requests shown as approval cards |
-| Rules | `.akstudio/` rules, the code they link to | Rules; code through the coding agent | The test file, for coverage |
-| Test & Trace | The local run's stream | Saved scenarios, new test cases | The project as a local server; `uv run pytest` |
-| Deploy | `deploy/`, `config.yaml`, cloud profile | `deploy/` files, deploy history | Packaging, `terraform init`, `plan`, `apply`, `output`, `destroy` |
+| Rules | `.akstudio/` rules, the code they link to | Rules; code and tests through the coding agent | The test file, for coverage; the same checks as `ak rules check` |
+| Test & Trace | The local run's stream and its OpenTelemetry spans | Saved scenarios, simulated-user scenarios, new test cases, run history, the CI workflow | The project as a local server; a local OTLP receiver; `uv run pytest` |
+| Deploy | `deploy/`, `config.yaml`, cloud profile | `deploy/` files, `deploy/backend.tf`, deploy history | Creating the state backend, packaging, `terraform init`, `plan`, `apply`, `output`, `destroy` |
 
 ## Architecture sketch
 
@@ -98,12 +131,14 @@ by the app is an ordinary Agent Kernel project that works without the app.
 
 | Layer | Piece | Responsibility |
 |-------|-------|----------------|
-| Renderer | The UI from these briefs | No direct file or process access; talks to the main process over a narrow, typed bridge |
+| Renderer | The UI from these briefs | No direct file or process access; talks to the main process over a narrow, typed bridge. Uses no Electron-only API, so it can run in a browser. |
+| Bridge | Typed calls and events | One contract between renderer and services; the transport is Electron IPC in Phase 1 and can become HTTP or WebSocket for a hosted Studio |
 | Main process | Project service | Open and create folders, read and write project files, watch for changes on disk |
 | Main process | Introspection | Run a Python helper inside the project's environment to turn the project into a graph for the canvas |
-| Main process | Run service | Create the environment (`uv venv`, `uv sync`), start and stop the local server, stream its log |
-| Main process | Agent bridge | Start the coding agent in the working directory, stream its events, relay permission requests |
-| Main process | Deploy service | Package, run Terraform in `deploy/`, parse the plan, stream logs, record deploy history |
+| Main process | Run service | Create the environment (`uv venv`, `uv sync`), start and stop the local server, stream its log, receive its OpenTelemetry spans on a local OTLP receiver, record test runs |
+| Main process | Agent bridge | The agent-neutral coding-agent interface and its Claude Code adapter: start the agent in the working directory, stream its events, relay permission requests. Takes the checkpoint before each turn. |
+| Main process | Rules service | Compute rule states with the same checks as `ak rules check` whenever a linked file changes |
+| Main process | Deploy service | Create the state backend, package, run Terraform in `deploy/`, parse the plan, stream logs, record deploy history |
 | Main process | Toolchain and secrets | Detect installed tools; read and write `.env`; never expose values to the renderer |
 
 All commands run inside the working directory. The renderer cannot start a process by itself.
@@ -138,11 +173,14 @@ All commands run inside the working directory. The renderer cannot start a proce
 | Milestone | Outcome |
 |-----------|---------|
 | 1. Open and read | Open a folder, detect an Agent Kernel project, show it on a read-only canvas and in Code and Config |
-| 2. Create and edit | New project wizard; config editing; adding nodes through scaffold templates |
-| 3. Coding agent | Build with AI drawer over local Claude Code; accept and revert; business rules |
-| 4. Run and test | Local server, chat, trace from the run's events, test file |
-| 5. Deploy | Generate Terraform for one target; prerequisites, plan, confirm, apply, outputs, destroy |
+| 2. Coding agent | Build with AI drawer over local Claude Code, through the coding-agent interface; accept and revert; business rules, rule tests and `ak rules check` |
+| 3. Create and edit | New project wizard; config editing; adding nodes through scaffold templates |
+| 4. Run and test | Local server, chat, trace from the run's events and the local OTLP receiver, test file with judge reasons, run history and comparison, simulated users, the CI workflow |
+| 5. Deploy | Generate Terraform for one target; remote state backend; prerequisites, plan, confirm, apply, outputs, destroy |
 | 6. More targets | The remaining Terraform targets |
+
+The coding agent and business rules come before canvas editing: they are what sets the app apart, and canvas
+editing is its costliest part. Nothing is dropped by the order.
 
 ## Risks and open questions
 
@@ -150,9 +188,11 @@ All commands run inside the working directory. The renderer cannot start a proce
 |-------|----------------|-----------|
 | Canvas to code | Turning canvas edits into correct Python across eight frameworks is the hardest part of Phase 1 | Read by introspection. Write config deterministically. Write Python only through scaffold templates and the coding agent. No general-purpose Python rewriting. |
 | Code the canvas cannot read | A syntax error or an unusual project layout breaks the view | A clear "cannot read" state that points to the file and offers the coding agent |
-| Local trace detail | Traces come from the run's stream events; frameworks without streaming give run-level timing only | Accept in Phase 1; richer tracing arrives with the Operate phase |
+| Local trace detail | Stream events alone give frameworks without streaming run-level timing only, and carry no token usage | Stream events for the live view; a local OTLP receiver for span detail, tokens and cost in every framework. Run-level timing only when neither source has detail. |
 | Reverting agent changes | "Revert" must restore files exactly | Use git when the folder is a repository, otherwise app snapshots |
-| Terraform state | Local state files are easy to lose and must not be committed | Local state by default, a visible warning, optional remote backend through `deploy/backend.tf` |
+| Terraform state | Local state files are easy to lose and must not be committed | A remote backend by default, created by the app after a confirmation that names the account, written to `deploy/backend.tf`. Local state stays available as an explicit choice for scratch deploys, with a visible warning. |
+| Coding-agent terms | Anthropic does not allow third-party products to offer claude.ai login or subscription limits, and tightened enforcement in 2026 | The app launches the Claude Code the user installed and signed in to, and never reads, stores or proxies its credentials. Confirm this with Anthropic before release, and settle the hosted-Studio model (API keys or commercial terms) in the same conversation. |
+| One coding agent | If Claude Code's terms or availability change, Build with AI and business rules stop | The coding-agent interface keeps a second adapter a contained piece of work |
 | Secrets in Terraform | Model keys must reach the deployment without being written into `terraform.tfvars` | Pass them as Terraform environment variables at run time |
 | Cost and safety | Applying creates billable resources | Plan first, name the account, confirm, and always offer destroy |
 | Three operating systems | The skills generate bash scripts (`build.sh`, `deploy.sh`) and Unix-style commands. Windows paths, line endings and process handling differ. Installers need signing on macOS and Windows. | The Run and Deploy services call `uv`, `terraform` and `docker` directly with argument lists, never through a shell script. The scripts are still written for people who use a terminal, and need Git Bash or WSL on Windows. Test on all three before release. |
@@ -162,7 +202,8 @@ All commands run inside the working directory. The renderer cannot start a proce
 
 1. The deep configuration pages are parked, and Phase 1 reaches those settings through the inspector, the
    Config tab and the coding agent.
-2. Claude Code is the only coding agent wired up in Phase 1. Others appear as "not set up".
+2. Claude Code is the only coding agent wired up in Phase 1, as the only adapter of an agent-neutral
+   coding-agent interface. Others appear as "not set up".
 3. One deploy target per project, Terraform only. The targets are the six Terraform modules: AWS serverless,
    AWS containerized, Azure serverless, Azure containerized, Google Cloud serverless and containerized.
 4. The app keeps its own data in `.akstudio/` inside the working directory, and that folder can be committed.

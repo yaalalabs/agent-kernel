@@ -69,7 +69,7 @@ the adaptations below. Everything not listed follows the system unchanged.
 | Primary | Electric blue | Primary action, links, focus ring, the active tab, selection |
 | AI | Magenta | Anything authored or offered by the coding agent: the Build with AI entry, its avatar, "Added by Claude Code" badges, generated nodes and edges, "with AI" buttons. Nothing else. |
 | Success | Success token | Passed, running, connected, in sync, applied |
-| Needs a person | Warning token | Pending approval, out-of-sync rule, a plan waiting for confirmation, a change on disk |
+| Needs a person | Warning token | Pending approval, out-of-sync rule, untested rule, a plan waiting for confirmation, a change on disk |
 | Failure | Danger token | Failed, blocked, destroy and other destructive actions |
 
 - All text meets 4.5:1 contrast, including secondary labels and 12px captions.
@@ -130,7 +130,8 @@ given is a placeholder in square brackets, never an invented fact.
 - Local secrets in `.env`: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `SLACK_BOT_TOKEN`,
   `SLACK_SIGNING_SECRET`, `WALLED_API_KEY`, `LANGFUSE_SECRET_KEY`.
 - Deploy target: AWS ECS Fargate (containerized), region eu-west-1, AWS profile `default`. Not deployed yet.
-- Coding agent: Claude Code, found on this computer and connected.
+- Coding agent: Claude Code, found on this computer, signed in by the user, and connected.
+- Usage data: off.
 - Tool versions, account numbers and resource counts are not given: show `[VERSION]`, `[ACCOUNT]`, `[N]`.
 
 ### Project files
@@ -149,7 +150,8 @@ given is a placeholder in square brackets, never an invented fact.
   README.md
   .env                 local secrets, ignored by git
   .claude/commands/    Agent Kernel skills for Claude Code
-  .akstudio/           studio data: canvas layout, business rules, test scenarios, deploy history
+  .akstudio/           studio data: canvas layout, business rules, test scenarios, deploy history;
+                       runs/ holds the local test run history and is ignored by git
   deploy/
     main.tf  variables.tf  outputs.tf  providers.tf  terraform.tfvars
     Dockerfile
@@ -159,7 +161,7 @@ given is a placeholder in square brackets, never an invented fact.
 The layout is the one the bundled `ak-init` and `ak-cloud-deploy` skills generate. `hooks.py` and `.akstudio/`
 are additions of this fixture.
 
-### Business rules (12 rules, 11 enforced, 1 out of sync, 9 covered by tests)
+### Business rules (12 rules: 8 enforced, 3 untested, 1 out of sync; 9 covered by tests)
 
 | Id | Category | Rule | Enforced by | Tests |
 |----|----------|------|-------------|-------|
@@ -176,8 +178,13 @@ are additions of this fixture.
 | BR-011 | Tone | Agents answer in the customer's language | Instructions of all three agents in `app.py` | 1 |
 | BR-012 | Data | Order data is read-only for agents | The Orders knowledge base is a read-only backend | none |
 
-BR-004 and BR-011 were added by Claude Code. Rule states are Enforced, Drafted (no implementation yet) and
-Out of sync (the files no longer match the rule).
+BR-004 and BR-011 were added by Claude Code. Rule states, in order of severity:
+
+1. **Out of sync**: the files no longer match the rule (BR-009).
+2. **Untested**: implemented, but no test is linked (BR-005, BR-010, BR-012). It ranks above Drafted because it
+   looks finished but has no evidence.
+3. **Drafted**: no implementation yet.
+4. **Enforced**: implemented and covered by at least one linked test.
 
 ### Story moments
 

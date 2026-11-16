@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Artboards | `Builder-Deploy` (main), `Builder-Deploy-NoTarget`, `Builder-Deploy-Prerequisites`, `Builder-Deploy-Confirm`, `Builder-Deploy-Applying`, `Builder-Deploy-Done`, `Builder-Deploy-Failed`, `Builder-Deploy-Destroy`, `Builder-Deploy-Redeploy`, `Builder-Deploy-ChangeTarget` |
-| Design | Built on the [design canvas](https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po), page **Builder**: 8 of 10 artboards. Not drawn yet: `Builder-Deploy-Redeploy`, `Builder-Deploy-ChangeTarget`. |
+| Artboards | `Builder-Deploy` (main), `Builder-Deploy-NoTarget`, `Builder-Deploy-StateBackend`, `Builder-Deploy-Prerequisites`, `Builder-Deploy-Confirm`, `Builder-Deploy-Applying`, `Builder-Deploy-Done`, `Builder-Deploy-Failed`, `Builder-Deploy-Destroy`, `Builder-Deploy-Redeploy`, `Builder-Deploy-ChangeTarget` |
+| Design | Built on the [design canvas](https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po), page **Builder**: 9 of 11 artboards. Not drawn yet: `Builder-Deploy-Redeploy`, `Builder-Deploy-ChangeTarget`. |
 | Canvas page | Builder |
 | Kind | Page with `DesktopShell` |
 | Fidelity | Working prototype |
@@ -12,9 +12,9 @@
 
 ## Job
 
-Deploy from this computer. The app generates the Terraform files for one cloud target into `deploy/`, checks
-that the computer is ready, packages the project, shows the Terraform plan, and applies it only after the user
-confirms. The same tab redeploys and destroys. The user's own cloud profile is used; the app holds no cloud
+Deploy from this computer. The app generates the Terraform files for one cloud target into `deploy/`, sets up
+a remote state backend, checks that the computer is ready, packages the project, shows the Terraform plan, and
+applies it only after the user confirms. The same tab redeploys and destroys. The user's own cloud profile is used; the app holds no cloud
 credentials.
 
 ## Layout
@@ -46,21 +46,22 @@ The main artboard shows a first deploy at the moment the plan is ready and waiti
 
 - Card "Generated files": `deploy/main.tf`, `variables.tf`, `outputs.tf`, `providers.tf`, `terraform.tfvars`,
   `Dockerfile`, `deploy.sh`, each with "View".
-- Card "Terraform state": "Local file in `deploy/`", a note "Keep this file. It is ignored by git.", and a link
-  "Use a remote backend".
+- Card "Terraform state": "Remote · S3 bucket `[BUCKET]` · account `[ACCOUNT]`", state "Ready", a line
+  "Versioned, encrypted, with state locking", and a link "Use a local file instead".
 
 **Main column: the five steps**
 
-1. **Prerequisites** (passed, collapsed to "6 checks · 1 warning"). Expanded it shows `CheckRow`s:
+1. **Prerequisites** (passed, collapsed to "7 checks · 1 warning"). Expanded it shows `CheckRow`s:
 
 | Status | Check | Detail | Action |
 |--------|-------|--------|--------|
 | passed | Terraform | found | |
 | passed | Docker | running | |
 | passed | AWS credentials | profile `default` is signed in | |
+| passed | State backend | S3 bucket `[BUCKET]` is ready | |
 | passed | Configuration fits the target | `rest_sync` with `delta` is supported on a single-container ECS service | |
 | passed | Tests | 40 of 42 passed | "View" |
-| needs a person | Business rules | BR-009 is out of sync | AI button "Fix with AI" |
+| needs a person | Business rules | BR-009 is out of sync · 3 rules have no tests | AI button "Fix with AI" |
 
 2. **Package** (done). `CommandRow`s: `uv export --no-hashes > requirements.txt`,
    `uv pip install -r requirements.txt --target=dist/data`, and the copy of `app.py`, `config.yaml` and the
@@ -81,6 +82,10 @@ the fixture.
 - "Fix with AI" resolves the business-rules check: "Business rules in sync · fixed by Claude Code".
 - "View" on a generated file goes to `Builder-Code`. "View" on Tests goes to `Builder-TestTrace`.
 - "Change target" opens `Builder-Deploy-ChangeTarget`.
+- On a first deploy with no `deploy/backend.tf`, the tab opens on `Builder-Deploy-StateBackend` before the
+  steps. Confirming "Remote" creates the backend, writes `deploy/backend.tf` and continues to the main
+  artboard. Choosing "Local file" continues with the Terraform state card showing "Local file in `deploy/`" and
+  the note "Keep this file. It is ignored by git. It is lost with this computer."
 - A warning does not block applying. A failed check does.
 - Every command in the steps also appears in the Commands panel, as it was run.
 
@@ -89,12 +94,13 @@ the fixture.
 | Artboard | Pass | Shows |
 |----------|------|-------|
 | `Builder-Deploy-NoTarget` | first | No `deploy/` folder yet. "Choose where to deploy", with six target cards, one per Terraform module: AWS serverless (Lambda and API Gateway), AWS containerized (ECS Fargate), Azure serverless (Functions), Azure containerized (Container Apps), Google Cloud serverless (Cloud Run, scale to zero), Google Cloud containerized (Cloud Run, always on). Each card says whether it needs Docker. The AI button "Ask Claude Code to set up the deploy". Choosing a card writes `deploy/` and opens the main artboard. |
+| `Builder-Deploy-StateBackend` | first | A first deploy, before the steps. A card "Where Terraform keeps its state" with two choices. "Remote (recommended)", selected: "Create S3 bucket `[BUCKET]` in AWS account `[ACCOUNT]`, region eu-west-1, with versioning, encryption and state locking, and write `deploy/backend.tf`." "Local file": "For a scratch deploy only. State stays in `deploy/` on this computer and is lost with it." The literal command the app will run as a `CommandRow`, and a primary "Create backend" that names the account. |
 | `Builder-Deploy-Prerequisites` | first | Step 1 open with two failed checks: "Docker is not running" and "AWS profile `default` is not signed in", each with what to do, and "Recheck". Steps 2 to 5 are locked. |
 | `Builder-Deploy-Confirm` | first | A `ConfirmModal`: "Apply this plan?", "This creates `[N]` resources in AWS account `[ACCOUNT]`, region eu-west-1, using profile `default`. Cloud resources cost money until you destroy them.", a checkbox "I have reviewed the plan", "Cancel" and "Apply". |
 | `Builder-Deploy-Applying` | first | Step 4 running: `terraform apply` as a `CommandRow` with its `LogStream`, a count of resources created so far, and "Stop" with the caution "Stopping can leave some resources created". |
 | `Builder-Deploy-Done` | first | All five steps done. Step 5 shows an `OutputList` with `agent_invoke_url` and a copy control, and a ready-made curl request. `DeployStatus` reads "Deployed just now". A danger zone with "Destroy". |
 | `Builder-Deploy-Failed` | first | Step 4 failed. The error excerpt from Terraform, "Show log", "Run plan again" and the AI button "Ask Claude Code to diagnose". A note: "Some resources may have been created. A new plan shows the current state." |
-| `Builder-Deploy-Destroy` | first | A destructive `ConfirmModal`: "Destroy the deployment?", "This removes every resource this project created in AWS account `[ACCOUNT]`.", a field to type the project name, "Cancel" and "Destroy". It runs `terraform destroy`. |
+| `Builder-Deploy-Destroy` | first | A destructive `ConfirmModal`: "Destroy the deployment?", "This removes every resource this project created in AWS account `[ACCOUNT]`.", a field to type the project name, "Cancel" and "Destroy". It runs `terraform destroy`. A note: "The state bucket `[BUCKET]` is kept. Delete it when you retire the project." |
 | `Builder-Deploy-Redeploy` | second | After a first deploy. A card "Changed since the last deploy" lists the changed files. The plan reads "0 to add · `[N]` to change · 0 to destroy". |
 | `Builder-Deploy-ChangeTarget` | second | A modal with the six target cards and a warning: "Changing the target replaces the files in `deploy/`. Destroy the current deployment first." |
 
@@ -116,7 +122,16 @@ the fixture.
 - Docker is needed for containerized targets only.
 - One deploy target per project in Phase 1. Kubernetes with Helm is not a Terraform target and is not offered.
 - The coding agent can write the `deploy/` files through `ak-cloud-deploy`, but it never applies or destroys.
+- Remote state is the default. The app creates the backend with the cloud's own command-line tool, in the
+  target's account and region, only after a confirmation that names the account, because the backend is real
+  infrastructure: an S3 bucket with versioning, encryption and S3 native state locking (`use_lockfile`) on AWS;
+  a Cloud Storage bucket with versioning on Google Cloud; a Storage account container on Azure. It writes the
+  matching `deploy/backend.tf`, and every command appears in the Commands panel.
+- Local state stays available as an explicit choice for scratch deploys, with the warning. "Use a local file
+  instead" and the reverse both need a `terraform init` with state migration, which the app runs and shows.
+- `terraform destroy` removes the deployment, not the state backend.
 
 ## Open details
 
 - Whether a small smoke test of the deployed endpoint belongs here or waits for a later phase.
+- How the state bucket is named, and whether one bucket serves several projects in the same account.

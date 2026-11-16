@@ -31,13 +31,15 @@ expects.
 - "Recheck", and a field to point at a tool that was not found automatically.
 
 **`Settings-CodingAgents`**
-- Card "Claude Code": state "Connected"; path `[PATH]`; "Skills installed in this project": ak-init, ak-build,
-  ak-add-capabilities, ak-add-integration, ak-test, ak-cloud-deploy, with "Update skills".
+- Card "Claude Code": state "Connected"; path `[PATH]`; a line "Signed in to Claude Code with your own account.
+  The app never reads or stores your Claude credentials."; "Skills installed in this project": ak-init,
+  ak-build, ak-add-capabilities, ak-add-integration, ak-test, ak-cloud-deploy, with "Update skills".
 - Permissions for this project: a toggle "Edit project files", on; a choice "Running commands": "Ask every
   time" (selected) or "Allow listed commands", with the list (`uv run pytest`); a locked row "Never apply or
   destroy Terraform".
 - A toggle "Take a checkpoint before each turn", on.
-- Rows for Codex, Cursor, Windsurf and GitHub Copilot, each "Not set up".
+- Rows for Codex, Cursor, Windsurf and GitHub Copilot, each "Not set up", under the note "More coding agents
+  connect in a later release".
 
 **`Settings-Cloud`**
 - A note: "Deploys use the profiles configured on this computer. The app stores no cloud credentials."
@@ -67,6 +69,8 @@ expects.
 - "Default location for new projects" as a `FolderField`: `~/code`.
 - "Open files with": the system default editor.
 - "Theme": dark.
+- "Usage data": a toggle "Send anonymous usage data to help improve the app", off, with the line "Off by
+  default. With it off, the app sends nothing of its own."
 
 ## Behaviour
 
@@ -82,4 +86,10 @@ expects.
   project and live in the working directory.
 - Local keys use Agent Kernel's `env` secret provider. A cloud secret store is chosen per deploy target, in
   `config.yaml`.
+- A secret is a key name plus the provider that resolves it (`secret.provider.type` in `config.yaml`: `env`,
+  `aws_ssm`, `kubernetes`, or a dotted path). The Secrets table reads the provider from `config.yaml` and shows
+  `.env` for the `env` provider. The app never assumes `.env` is the only store, so a later hosted Studio can
+  resolve the same names from its own store without changing the project.
 - A missing key is the same condition that stops a local run in brief 07.
+- Usage data is off by default and opt-in. With it off, the app makes no network calls of its own; the tools it
+  runs and the project's model providers make their own.

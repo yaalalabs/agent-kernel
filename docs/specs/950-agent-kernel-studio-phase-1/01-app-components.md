@@ -46,6 +46,9 @@ Button (primary, secondary, outline, ghost), Badge, Tag, Card, Input, CodeBlock,
 **Data** (`System-Data`)
 - `DataTable` (header; row default, hover, selected), `ProgressBar`, `SpanTree`, `Waterfall`,
   `ResultSquares`, `DiffView`, `JSONTree`, `FileTree` (with markers for changed, new and AI-written files).
+- `RunHistory`: test runs as rows (time, commit, passed and failed counts, duration), two selectable for
+  comparison. `RunCompare`: improvements, regressions and unchanged cases between two runs, with the score
+  before and after.
 
 **Canvas** (`System-Canvas`)
 - `CanvasNode` variants: agent, tool, knowledge, channel, store, guardrail. States: default, selected,
@@ -54,9 +57,11 @@ Button (primary, secondary, outline, ghost), Badge, Tag, Card, Input, CodeBlock,
   (not deployed, deployed), `PaletteTile` (default, dragging), `DropTarget`, `MiniMap`, `ZoomControl`.
 
 **Chat and runs** (`System-Chat`)
-- `UserBubble`, `AgentMessage` (with agent avatar), `ReasoningBlock`, `ToolCallCard`, `HandoffDivider`,
-  `PlanCard`, `ApprovalCard` (pending, approved, denied), `CanvasChangesCard`, `StreamEventRow`, `Composer`,
-  `RuleCard` (enforced, drafted, out of sync, AI-added), `AnnotationPill`.
+- `UserBubble` (person, simulated user), `AgentMessage` (with agent avatar), `ReasoningBlock`,
+  `ToolCallCard`, `HandoffDivider`, `PlanCard`, `ApprovalCard` (pending, approved, denied),
+  `CanvasChangesCard`, `StreamEventRow`, `Composer`, `RuleCard` (enforced, untested, drafted, out of sync,
+  AI-added), `RuleChip` (a rule id on a span, a test case or a card, opening the rule), `AnnotationPill`.
+- `JudgeResult`: a score, its threshold and the evaluator's reason.
 
 **Local machine** (`System-Local`)
 - `CommandRow`: one command the app ran, with its working directory, duration and exit status (running,

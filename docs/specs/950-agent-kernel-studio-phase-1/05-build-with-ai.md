@@ -76,8 +76,8 @@ all" and "Review".
 | `Builder-AIDrawer-Resolved` | first | The approval card approved: "Approved · uv run pytest -q · 40 passed, 2 failed in 18 s", with a link "View in Test & Trace". |
 | `Builder-AIDrawer-Code` | first | Code view. A compact `FileTree` (app.py, tool.py, config.yaml, app_test.py) over the code editor on app.py. AI gutter markers on the added lines and an `AnnotationPill`: "Implements BR-004 · Refunds above $200 require approval". The composer stays. |
 | `Builder-AIDrawer-Rules` | first | Rules view. `RuleCard`s for BR-001, BR-002 and BR-004 (AI-added) from the fixture, and an input "Add a rule in plain language" with the AI button "Implement". |
-| `Builder-AIDrawer-Disconnected` | first | Claude Code is not available. An `EmptyState` in the drawer: "Claude Code was not found on this computer", the steps to install and sign in, a "Recheck" control and a link "Coding agents in Settings". The composer is disabled. The rest of the app still works. |
-| `Builder-AIDrawer-AgentMenu` | second | The agent select open: Claude Code (connected); Codex, Cursor, Windsurf and GitHub Copilot listed as "Not set up"; a footer link "Coding agents in Settings". |
+| `Builder-AIDrawer-Disconnected` | first | Claude Code is not available. An `EmptyState` in the drawer: "Claude Code was not found on this computer", the steps to install Claude Code and sign in to it with your own account, the line "The app never sees your Claude credentials", a "Recheck" control and a link "Coding agents in Settings". The composer is disabled. The rest of the app still works. |
+| `Builder-AIDrawer-AgentMenu` | second | The agent select open: Claude Code (connected); Codex, Cursor, Windsurf and GitHub Copilot listed as "Not set up", with the note "More coding agents connect in a later release"; a footer link "Coding agents in Settings". |
 | `Builder-AIDrawer-Bottom` | second | The drawer docked at the bottom: transcript on the left two thirds, plan and canvas-changes cards on the right, composer across the bottom. |
 | `Builder-AIDrawer-Review` | second | A modal "Review changes": a canvas diff on the left (new nodes in the AI style, unchanged nodes dimmed), the file diff for app.py, tool.py and config.yaml on the right, and "Accept all", "Accept selected", "Revert". |
 
@@ -107,3 +107,14 @@ all" and "Review".
   `ak-test`, `ak-cloud-deploy`.
 - "Revert" depends on a checkpoint taken before each agent turn: git when the folder is a repository, the
   app's own snapshot otherwise.
+- The drawer talks to the coding agent through one agent-neutral interface, shaped like the Agent Client
+  Protocol (ACP): start a session in the working directory, send a prompt, stream events (messages, plan
+  steps, tool calls, file edits, commands), relay permission requests and their answers, and report the files a
+  turn changed. Claude Code is its only adapter in Phase 1. Checkpoints, accept and revert belong to the app,
+  not to the adapter, so a later agent (Codex, Gemini CLI, Cursor and others) is a new adapter, not a change to
+  the drawer, the approval cards or revert.
+- Authentication: the app launches the Claude Code installed on this computer, signed in by the user with their
+  own account. The app never reads, stores or proxies Claude Code's credentials and has no sign-in of its own.
+  Anthropic does not allow third-party products to offer claude.ai login or subscription limits
+  ([Claude Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview)), so this position must be
+  confirmed with Anthropic before release.

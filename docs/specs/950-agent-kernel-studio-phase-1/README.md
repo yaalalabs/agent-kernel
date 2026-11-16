@@ -13,7 +13,7 @@ The product is built in phases. **Only Phase 1 is planned and briefed here.**
 | Phase | Theme | State |
 |-------|-------|-------|
 | **1** | A local desktop app: build, test and deploy an Agent Kernel project from one folder on one computer | Planned in [PHASE-1-PLAN.md](PHASE-1-PLAN.md); briefs 00 to 09 |
-| Later | Deep configuration pages; operating a deployed system; teams, sign-in and hosting | Not planned. Earlier briefs are parked in [later-phases/](later-phases/). |
+| Later | Deep configuration pages; operating a deployed system; a hosted Studio (cloud SaaS) with teams and sign-in; coding agents other than Claude Code | Not planned. Earlier briefs are parked in [later-phases/](later-phases/). Phase 1 is shaped for them: see "Built for the next phases" in [PHASE-1-PLAN.md](PHASE-1-PLAN.md). |
 
 Phase 1 in one paragraph: an Electron app opens a working directory, generates the project files in it (the
 agents, the Python project and the Terraform files), runs and tests the project locally, and deploys from the
@@ -43,9 +43,14 @@ The canvas has four pages, matching the artboard names in the briefs.
 | 03 | [03-new-project.md](03-new-project.md) | Start | 5 of 5 | none |
 | 04 | [04-agent-canvas.md](04-agent-canvas.md) | Builder | 6 of 8 | `Builder-Canvas-Dragging`, `Builder-Canvas-ContextMenu` |
 | 05 | [05-build-with-ai.md](05-build-with-ai.md) | Builder | 6 of 9 | `Builder-AIDrawer-AgentMenu`, `Builder-AIDrawer-Bottom`, `Builder-AIDrawer-Review` |
-| 06 | [06-agentic-development.md](06-agentic-development.md) | Builder | 3 of 4 | `AgenticDev-Diff` |
-| 07 | [07-builder-test-and-trace.md](07-builder-test-and-trace.md) | Builder | 5 of 6 | `Builder-TestTrace-Compare` |
-| 08 | [08-builder-deploy.md](08-builder-deploy.md) | Builder | 8 of 10 | `Builder-Deploy-Redeploy`, `Builder-Deploy-ChangeTarget` |
+| 06 | [06-agentic-development.md](06-agentic-development.md) | Builder | 4 of 5 | `AgenticDev-Diff` |
+| 07 | [07-builder-test-and-trace.md](07-builder-test-and-trace.md) | Builder | 8 of 9 | `Builder-TestTrace-Compare` |
+| 08 | [08-builder-deploy.md](08-builder-deploy.md) | Builder | 9 of 11 | `Builder-Deploy-Redeploy`, `Builder-Deploy-ChangeTarget` |
+
+**Canvas synced with the briefs (16 November 2026).** The canvas shows the Untested rule state, rule tests and
+the three-way "Fix with AI", rule chips on spans, judge reasons, run history, the simulated user, the CI
+workflow, the remote state backend, the Claude sign-in lines and the usage-data setting. The second-pass
+artboards in the "Not drawn yet" column are still to do.
 | 09 | [09-app-settings.md](09-app-settings.md) | Settings | 5 of 5 | none |
 
 **Playing the prototypes.** Artboards marked interactive have a Play button on the canvas. Press it on the main artboard of each brief and follow the links between artboards. The pieces that really work are listed under Behaviour in each brief and were built as follows:
@@ -54,9 +59,12 @@ The canvas has four pages, matching the artboard names in the briefs.
 - New project: the four steps and the creating screen are one component. Back, Continue and card selection work.
 - Builder canvas: node selection, inspector tabs (Properties, Tools, Hooks, Run options, Output schema), renaming, adding an agent by drag or click.
 - Build with AI: Approve and Deny on the approval card, Accept all and Revert on the pending changes, the Chat, Code and Rules views.
-- Agentic development: rule selection, category filters, the rule detail panel, and Fix with AI on BR-009.
-- Test & Trace: span selection, approve and deny a paused refund, Run tests filling the result squares.
-- Deploy: the whole flow from plan to confirmation to apply to done, then destroy with a typed confirmation.
+- Agentic development: rule selection, category filters, the rule detail panel, Fix with AI on BR-009 with a
+  choice of code, rule or tests, and Generate tests on BR-005, BR-010 or BR-012 with Accept and Revert.
+- Test & Trace: span selection, approve and deny a paused refund, Run tests filling the result squares, the
+  "Last run" chip opening the run history, the simulated-user scenario, and Add CI workflow.
+- Deploy: the whole flow from choosing a target, through the state backend choice, plan, confirmation and apply
+  to done, then destroy with a typed confirmation.
 
 **What the design settled that the briefs left open**
 
@@ -141,7 +149,8 @@ the code is real files in the working directory. What remains:
 2. **How canvas edits become Python.** The plan writes config deterministically and writes Python only through
    scaffold templates and the coding agent. This is the main technical risk of Phase 1.
 3. **Deploy scope.** One Terraform target per project; the six Terraform modules; no Kubernetes with Helm.
-4. **Coding agents.** Claude Code only in Phase 1; the others appear as "Not set up".
+4. **Coding agents.** Claude Code only in Phase 1, as the only adapter of an agent-neutral (ACP-shaped)
+   coding-agent interface; the others appear as "Not set up" and arrive later as adapters.
 5. **The app's own folder.** Canvas layout, business rules, test scenarios and deploy history live in
    `.akstudio/` inside the working directory and can be committed.
 6. **Platform and stack.** Windows, Linux and macOS from the first release (decided). A React and TypeScript renderer, and where the app's source lives, are still open.
@@ -149,6 +158,12 @@ the code is real files in the working directory. What remains:
    and tags, glass for floating layers) and add the adaptations in brief 00. Say if you want a flatter, denser
    look.
 8. **Name.** "Agent Kernel Studio" and `.akstudio/` are working names.
+9. **Licence and price.** Recommended: free to use locally, ideally open source, since every local agent dev
+   tool it competes with is free. Charging belongs to the hosted Studio.
+10. **Claude Code terms.** Confirm with Anthropic that the app may launch the user's own signed-in Claude
+    Code, and settle the hosted-Studio model (API keys or commercial terms) in the same conversation.
+11. **Rule severity.** The briefs rank Untested above Drafted, because an untested rule looks finished but has
+    no evidence. Say if Drafted should rank higher.
 
 ## Sources
 
