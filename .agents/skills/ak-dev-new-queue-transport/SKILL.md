@@ -3,7 +3,7 @@ name: ak-dev-new-queue-transport
 description: >
   Step-by-step guide for adding a new queue transport to Agent Kernel's execution pipeline.
   Use this skill when you need to integrate a new message broker (beyond in_memory, SQS,
-  Kafka, NATS JetStream, and Google Cloud Pub/Sub) behind the QueueTransport/TransportConsumer interface. Covers the
+  Kafka, NATS JetStream, Google Cloud Pub/Sub, and Azure Service Bus) behind the QueueTransport/TransportConsumer interface. Covers the
   queue-semantics contract every transport must reproduce, factory registration, configuration
   and extras, the QueueTransportContract test suite (fake and live-broker runs), the
   transport example, and Helm chart wiring.
@@ -30,6 +30,8 @@ increasing order of complexity:
   (`_DeliveryLedger`), client-held batches served one per key, a lease-renewing thread, the whole
   envelope in the message data (attribute size limits), and a second receive path for push
   subscriptions (`PubSubPushReceiver`) sharing the same ledger
+- `transport/servicebus.py`: native sessions as the per-group lock; the consumer holds session
+  receivers, renews their locks while a turn runs, and reuses a settled session for the next message
 
 Read `.agents/skills/ak-dev-architecture` (the pipeline section) first if you have not.
 
@@ -169,8 +171,8 @@ containerized e2e tests.
   `docs/docs/advanced/queue-mode-guide.md`; the transports list in
   `docs/docs/deployment/onprem-kubernetes.md` if the transport is k8s-relevant; the transport
   roll call on the docs-site features page (`docs/src/pages/features.tsx`: the "Queue broker
-  over SQS, Kafka, or NATS" highlight on the Sandboxed Code Execution card, and any other
-  "SQS, Kafka, or NATS" mention found by grepping `docs/src/pages/*.tsx`).
+  over SQS, Kafka, NATS, or Azure Service Bus" highlight on the Sandboxed Code Execution card, and any
+  other transport roll call found by grepping `docs/src/pages/*.tsx` for "NATS").
 - Landing page inventories (`docs/src/components/*/data.tsx`): a tile in the **Cloud &
   infrastructure** row of `IntegrationsMarquee/data.tsx` (role `Queue`, `href` to the queue mode
   guide, logo or `react-icons/si` glyph), and the transport in the **Queue Pipeline** card's

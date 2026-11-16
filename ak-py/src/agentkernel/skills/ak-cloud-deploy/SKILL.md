@@ -75,7 +75,7 @@ All modules are provider-agnostic: they declare `required_providers` but do not 
 AWS-only features in this skill:
 - `authorizer` (the AWS Lambda authorizer; GCP's modules take a JWT `authorizer` object instead)
 
-`queue_mode`, `execution_mode` and `message_type` exist on AWS and GCP. On GCP `queue_mode` defaults to `true`, and `execution_mode` accepts only `rest_sync` and `rest_async`.
+`queue_mode`, `execution_mode` and `message_type` exist on AWS and GCP. On GCP `queue_mode` defaults to `true`, and `execution_mode` accepts only `rest_sync` and `rest_async`. `queue_mode` also exists on Azure Container Apps, over Service Bus: see Azure Containerized below. `execution.message_type` itself is plain Agent Kernel config.
 
 Azure examples use the provider module's standard top-level inputs (`function_name`, `package_path`, `container_port`, `publisher_email`) rather than AWS serverless execution modes.
 
@@ -850,7 +850,7 @@ execution:
   message_type: delta
 ```
 
-`POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Under any other pair, including `async`, the direct REST handler returns JSON. With the queue pipeline (`IOHandler`), SSE works on the `in_memory` transport, and on a broker (SQS, Kafka, NATS) with a `redis` or `valkey` response store, the shared stores that can stream chunks; with `dynamodb` (or any store that cannot stream chunks) on a broker, `IOHandler` fails at startup. Not available on AWS Lambda (refused at REST router init), ECS queue mode (refused at `ECSIOHandler` startup) or Azure Functions — use `async` + `delta` over WebSocket on AWS.
+`POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Under any other pair, including `async`, the direct REST handler returns JSON. With the queue pipeline (`IOHandler`), SSE works on the `in_memory` transport, and on a broker (SQS, Kafka, NATS, Service Bus) with a `redis` or `valkey` response store, the shared stores that can stream chunks; with `dynamodb` (or any store that cannot stream chunks) on a broker, `IOHandler` fails at startup. Not available on AWS Lambda (refused at REST router init), ECS queue mode (refused at `ECSIOHandler` startup) or Azure Functions — use `async` + `delta` over WebSocket on AWS.
 
 ### E) API Gateway Authorizer (AWS)
 
@@ -1312,6 +1312,30 @@ module "containerized_agents" {
 }
 ```
 
+### Queue Mode (Service Bus)
+
+`queue_mode = true` (requires `create_redis_cluster = true`) splits the deployment: the existing Container App
+becomes the edge (`IOHandler.run()`, the image's default command), and an ingress-less agent runner app runs
+`agent_runner_command` (default `["python", "app_agent_runner.py"]`, i.e. `AgentRunner.run()`) in the same
+image, scaled by KEDA on the Service Bus input queue. The module creates the `<prefix>-queues` namespace, the
+session-enabled `input`/`output` queues and the managed-identity roles, and injects the queue URLs and the
+Redis URL. `config.yaml` declares only the types:
+
+```yaml
+execution:
+  mode: rest_sync          # or rest_async
+  queues:
+    type: servicebus
+  response_store:
+    type: redis
+session:
+  type: redis
+```
+
+Extras: `agentkernel[openai,api,azure,redis]`. Not supported on Azure queue mode: WebSocket (`async`) and
+scheduling. `max_receive_count` is pinned by the module (env beats `config.yaml`). Full example:
+`examples/azure-containerized/openai-queue-mode`.
+
 ## GCP Serverless (Cloud Run — scale-to-zero)
 
 ### Agent Code Pattern
@@ -1666,14 +1690,14 @@ Each Lambda package must include a `config.yaml`. Most runtime values (`executio
 ### Azure
 
 - Azure CLI logged in (`az login`)
-- Terraform >= 1.9.5
+- Terraform >= 1.9.5, <= 1.16.7
 - Resource group and subscription permissions
 - Storage for remote Terraform state (optional but recommended)
 
 ### GCP
 
 - GCP CLI configured (`gcloud auth application-default login`)
-- Terraform >= 1.9.5
+- Terraform >= 1.9.5, <= 1.16.7
 - Docker installed (for local image building and push to Artifact Registry)
 - An existing GCP project with appropriate permissions
 - Required APIs enabled: Cloud Run, API Gateway, Artifact Registry, VPC Access

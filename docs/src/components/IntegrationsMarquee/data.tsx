@@ -146,6 +146,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Apache Kafka", role: "Queue", href: QUEUE, icon: <SiApachekafka /> },
       { name: "NATS JetStream", role: "Queue", href: QUEUE, icon: <SiNatsdotio /> },
       { name: "Google Cloud Pub/Sub", role: "Queue", href: QUEUE, icon: <SiGooglepubsub /> },
+      { name: "Azure Service Bus", role: "Queue", href: QUEUE, icon: <VscAzure /> },
       { name: "Amazon EventBridge", role: "Scheduler", href: "/docs/advanced/scheduling", icon: <FaAws /> },
       // The secrets page is only in the unreleased docs until the next release; drop `next` once it ships.
       { name: "AWS Systems Manager", role: "Secrets", href: "/docs/next/advanced/secrets", icon: <FaAws />, title: "AWS Systems Manager: Parameter Store secrets and EC2 sandbox attach" },

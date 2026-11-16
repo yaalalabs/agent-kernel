@@ -460,6 +460,34 @@ def test_injected_pubsub_coordinates_without_a_declared_type_fail_at_load(monkey
         AKConfig.get()
 
 
+def test_servicebus_queue_block_yaml_and_env(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  queues:\n" "    type: servicebus\n" "    servicebus:\n" "      ack_wait: 120\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    cfg = AKConfig.get()
+    assert cfg.execution.queues.type == "servicebus"
+    assert cfg.execution.queues.servicebus.ack_wait == 120
+    assert cfg.execution.queues.servicebus.connection_string is None
+
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__SERVICEBUS__ACK_WAIT", "30")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__SERVICEBUS__CONNECTION_STRING", "Endpoint=sb://localhost/;UseDevelopmentEmulator=true")
+    AKConfig._reset()
+    servicebus = AKConfig.get().execution.queues.servicebus
+    assert servicebus.ack_wait == 30
+    assert servicebus.connection_string == "Endpoint=sb://localhost/;UseDevelopmentEmulator=true"
+
+
+def test_queues_block_without_servicebus_leaves_it_unset(tmp_path, monkeypatch):
+    """Old YAML loads unchanged: the servicebus block is optional."""
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("execution:\n  queues:\n    type: sqs\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    assert AKConfig.get().execution.queues.servicebus is None
+
+
 def test_response_store_accepts_in_memory_type(tmp_path, monkeypatch):
     yaml_text = "execution:\n" "  response_store:\n" "    type: in_memory\n"
     cfg_path = tmp_path / "config.yaml"

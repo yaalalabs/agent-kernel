@@ -53,6 +53,7 @@ declared by the application rather than inferred from the queue URLs a deploymen
 | `kafka` | ✅ (`uv add "agentkernel[kafka]"`) | Kubernetes / on-prem two-process topology |
 | `nats` (recommended on-prem) | ✅ (`uv add "agentkernel[nats]"`) | Kubernetes / on-prem two-process topology |
 | `pubsub` | ✅ (`uv add "agentkernel[pubsub]"`) | Google Cloud: the edge pulls replies; on Cloud Run the agent runner is pushed to |
+| `servicebus` | ✅ (`uv add "agentkernel[azure]"`) | Two-process topology on Azure Container Apps (edge + agent runner) |
 
 Delivery sub-modes (`execution.mode` + `execution.message_type`):
 
@@ -309,6 +310,47 @@ Three things to know:
   and per-partition consumers at startup. In production, leave it off so a missing stream or consumer
   fails loudly at startup, naming the object, instead of being silently created with defaults
   alongside your NACK CRs.
+
+## Running Queue Mode on Azure Service Bus
+
+Two session-enabled, duplicate-detecting Service Bus queues carry the pipeline on Azure. Install the
+extra (`uv add "agentkernel[azure]"`) and configure it:
+
+```yaml
+execution:
+  mode: rest_sync
+  queues:
+    type: servicebus
+    input:
+      url: "https://my-ns.servicebus.windows.net/input"
+    output:
+      url: "https://my-ns.servicebus.windows.net/output"
+    servicebus:
+      ack_wait: 300           # seconds a session lock is renewed per turn: above your longest turn
+  response_store:             # required: the two processes must share it
+    type: redis
+```
+
+The transport signs in with `DefaultAzureCredential` (the Container App's managed identity on Azure);
+`servicebus.connection_string` is for the local emulator only. Process layout is the same as the other
+brokers: `IOHandler.run()` in one process, `AgentRunner.run()` in the other.
+
+The [`ak-containerized/azurerm` module](../deployment/azure-containerized) deploys this with
+`queue_mode = true`: the namespace, both queues, an agent runner Container App scaled by KEDA on the input
+queue, and the managed-identity roles. It injects the queue URLs, so `config.yaml` only declares the types.
+[`examples/azure-containerized/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/openai-queue-mode)
+runs it end to end.
+
+Like JetStream, the broker does most of the work: the session (`group_id`) gives per-session order with
+one message in flight, `delivery_count` is the receive count, the queue's `MessageId` duplicate detection
+is the dedup window, and `max_delivery_count` is the server-side ceiling. Three things to know:
+
+- **Queues must be session-enabled and duplicate-detecting.** Agent Kernel never creates them; the
+  Terraform module does, with `max_delivery_count` one above `max_receive_count` so Agent Kernel's
+  permanent-failure reply fires first.
+- **`ack_wait` must exceed your longest turn**, as on NATS: past it the session lock lapses and the turn
+  runs again.
+- **No WebSocket delivery and no scheduling yet** on Azure queue mode (scheduling is tracked in #952).
 
 ---
 
@@ -882,6 +924,7 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | `kafka` | ✅ | confluent-kafka client, per-session ordering by record key, DLQ topics, Strimzi-provisioned clusters. Needs the `kafka` extra and an `execution.queues.kafka` block; see the notes below |
 | `nats` (recommended on-prem) | ✅ | JetStream work-queue streams, partitioned per-session ordering, server-side delivery counts and dedup. Needs the `nats` extra and an `execution.queues.nats` block |
 | `pubsub` | ✅ | Google Cloud Pub/Sub: ordering keys for per-session order, delivery counts and dedup in a key store, dead-letter topics, pull consumer plus a push receiver for Cloud Run. Needs the `pubsub` extra and an `execution.queues.pubsub` block; see [Running Queue Mode on Google Cloud Pub/Sub](#running-queue-mode-on-google-cloud-pubsub) |
+| `servicebus` | ✅ | Azure Service Bus session queues: per-session ordering, server-side delivery counts and dedup, managed identity. Needs the `azure` extra; see [Running Queue Mode on Azure Service Bus](#running-queue-mode-on-azure-service-bus) |
 | WebSocket delivery (`async`, `complete` or `delta`) | ✅ | Gateway tier (`WebSocketGateway.run()`, authenticating the handshake through the `identity` block; co-hosted by `IOHandler` on `in_memory`) + session-backed shared connection store; see [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-async) |
 | Kubernetes Helm chart (baremetal + EKS) | ✅ | Two-Deployment topology (io-handler + agent-runner, optional ws-gateway), KEDA queue-depth autoscaling, NACK/Strimzi-provisioned brokers; see [On-Prem / Kubernetes](../deployment/onprem-kubernetes) |
 

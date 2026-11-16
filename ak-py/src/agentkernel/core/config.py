@@ -662,7 +662,7 @@ class _ResponseStoreConfig(BaseModel):
 
 
 class _InputQueueConfig(BaseModel):
-    url: str = Field(default=None, description="Input queue URL (sqs transport only)")
+    url: str = Field(default=None, description="Input queue URL (sqs: queue URL; servicebus: https://<namespace>.servicebus.windows.net/<queue>)")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
@@ -678,7 +678,7 @@ class _InputQueueConfig(BaseModel):
 
 
 class _OutputQueueConfig(BaseModel):
-    url: str = Field(default=None, description="Output queue URL (sqs transport only)")
+    url: str = Field(default=None, description="Output queue URL (sqs: queue URL; servicebus: https://<namespace>.servicebus.windows.net/<queue>)")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
@@ -804,10 +804,29 @@ class _PubSubQueueConfig(BaseModel):
     )
 
 
+class _ServiceBusQueueConfig(BaseModel):
+    ack_wait: float = Field(
+        default=300.0,
+        description=(
+            "Seconds a received message's session lock is renewed while the agent works: at least ack_wait, "
+            "and up to 2 x ack_wait for a message taken on a freshly accepted session. After that the lock "
+            "lapses and the message is redelivered (within the queue's lock duration). Keep it above your "
+            "longest agent turn, or a slow turn runs twice."
+        ),
+    )
+    connection_string: str | None = Field(
+        default=None,
+        description=(
+            "Service Bus connection string, for the local emulator and development only. Unset uses Azure "
+            "managed identity (DefaultAzureCredential) against the namespace in input.url / output.url."
+        ),
+    )
+
+
 class _QueuesConfig(BaseModel):
     type: str = Field(
         description=(
-            "Queue transport: in_memory | sqs | kafka | nats | pubsub, or a dotted path to a QueueTransport "
+            "Queue transport: in_memory | sqs | kafka | nats | pubsub | servicebus, or a dotted path to a QueueTransport "
             "subclass. Mandatory whenever this block is declared: the transport decides the "
             "deployment topology, so it is declared by the application rather than inferred from "
             "whichever queue coordinates a deployment happens to inject. Omitting the whole block "
@@ -820,6 +839,7 @@ class _QueuesConfig(BaseModel):
     kafka: _KafkaQueueConfig | None = Field(default=None, description="kafka transport settings")
     nats: _NatsQueueConfig | None = Field(default=None, description="nats transport settings")
     pubsub: _PubSubQueueConfig | None = Field(default=None, description="pubsub (Google Cloud Pub/Sub) transport settings")
+    servicebus: _ServiceBusQueueConfig | None = Field(default=None, description="servicebus transport settings")
     batch_size: int | None = Field(
         default=None,
         description=(

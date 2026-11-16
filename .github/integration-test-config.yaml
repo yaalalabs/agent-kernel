@@ -106,6 +106,9 @@ weekly:
     - type: azure-containerized
       path: examples/azure-containerized/openai-cosmos
       deploy_dir: deploy
+    - type: azure-containerized
+      path: examples/azure-containerized/openai-queue-mode
+      deploy_dir: deploy
 
     # GCP Serverless
     - type: gcp-serverless
