@@ -169,7 +169,7 @@ All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAM
 Built-in support for:
 - Multi-cloud session persistence (AWS, Azure, GCP)
 - Event streaming (SSE over REST, WebSocket on AWS serverless)
-- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (deployed by the [Helm chart](../deployment/onprem-kubernetes))
+- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Pub/Sub-backed on GCP Cloud Run, Kafka and NATS JetStream for on-prem / Kubernetes (deployed by the [Helm chart](../deployment/onprem-kubernetes))
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
 - Observability and tracing (Langfuse, OpenLLMetry, Logfire, CloudWatch)
@@ -339,6 +339,7 @@ The queue transport is a pluggable backend (`execution.queues.type`):
 | `in_memory` | ✅ the default | In-process only | Local development, single-container deployments: full queue semantics (per-session FIFO, bounded retry, deduplication) with zero backing services |
 | SQS | ✅ on AWS Lambda and ECS (via the deployment adapters) | Durable, FIFO | Production on AWS |
 | `kafka`, `nats` | ✅ (`kafka`/`nats` extras) | Durable | Production on-prem / Kubernetes |
+| `pubsub` | ✅ (`pubsub` extra) | Durable, ordered per session | Production on GCP Cloud Run (the GCP modules' queue mode) |
 
 **One pipeline, three topologies.** The logical components map onto processes per deployment:
 

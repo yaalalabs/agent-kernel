@@ -29,6 +29,12 @@ module "containerized_agents" {
     }
   ]
 
+  # Queue mode (the module's default): this service is the edge, and Pub/Sub pushes each request
+  # to a second, private agent-runner service built from the same image.
+  agent_runner = {
+    command = ["python", "-c", "from app import runner; runner()"]
+  }
+
   # Environment variables passed to container
   environment_variables = {
     "OPENAI_API_KEY" = var.openai_api_key

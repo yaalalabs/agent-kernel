@@ -103,6 +103,10 @@ nats = [
     "nats-py>=2.15.0,<3.0.0",
 ]
 
+pubsub = [
+    "google-cloud-pubsub>=2.43.0",
+]
+
 thread = [
     "litellm>=1.95.0,<2.0.0",
 ]

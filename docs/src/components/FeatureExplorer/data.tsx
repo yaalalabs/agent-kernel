@@ -256,8 +256,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Queue Pipeline",
         description:
-          "Request handler, input queue, agent runner, output queue, response handler. In-memory locally; SQS, Kafka, NATS JetStream or Azure Service Bus in production, with per-session FIFO, retries and dedup.",
-        tags: ["SQS", "Kafka", "NATS", "Service Bus", "FIFO"],
+          "Request handler, input queue, agent runner, output queue, response handler. In-memory locally; SQS, Kafka, NATS JetStream, Google Cloud Pub/Sub or Azure Service Bus in production, with per-session FIFO, retries and dedup.",
+        tags: ["SQS", "Kafka", "NATS", "Pub/Sub", "Service Bus", "FIFO"],
         docs: "/docs/advanced/queue-mode-guide",
         example: "transport/kafka",
       },
