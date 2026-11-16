@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.9.5"
+version = "0.10.0"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -83,7 +83,9 @@ aws = [
 azure = [
     "azure-functions>=1.24.0,<3.0.0",
     "azure-data-tables>=12.4.0,<13.0.0",
-    "azure-core>=1.26.0,<2.0.0"
+    "azure-core>=1.26.0,<2.0.0",
+    "azure-servicebus>=7.15.0,<8.0.0",
+    "azure-identity>=1.27.0,<2.0.0",
 ]
 redis = [
     "redis>=7.1.0,<9.0.0",
@@ -99,6 +101,10 @@ kafka = [
 
 nats = [
     "nats-py>=2.15.0,<3.0.0",
+]
+
+pubsub = [
+    "google-cloud-pubsub>=2.43.0",
 ]
 
 thread = [

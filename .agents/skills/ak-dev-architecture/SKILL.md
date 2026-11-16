@@ -30,10 +30,10 @@ metadata:
 1. **Framework-agnostic core**: All core abstractions (`Session`, `Agent`, `Tool`, `Runner`, `Module`, `Runtime`) are framework-independent. Framework-specific logic lives exclusively in adapter modules under `ak-py/src/agentkernel/framework/`.
 2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and Claude Agent SDK) implements `Agent`, `Runner`, and `Module` subclasses that wrap native framework objects, plus a `*ToolBuilder` that binds plain Python functions to the framework's native tool type (for Claude, `ClaudeToolBuilder` produces SDK MCP tools). The Claude Agent SDK has no named agent object, so its adapter wraps a thin `ClaudeAgentSpec` (name, description, native `ClaudeAgentOptions`, tools) instead.
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
-4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore). Session stores also provide the WebSocket gateway's `WSConnectionStore` on their backend via `SessionStore.get_connection_store()` (spec #495 §9): the ABC lives beside `SessionStore` in `core/session/base.py`, and each store file carries (or explicitly declines) its implementation, encapsulating its database operations over the shared drivers: `InMemoryWSConnectionStore` (`in_memory.py`, process-wide class-level state), `RedisLikeWSConnectionStore` (`core/session/redis_like.py`, client-library-agnostic; constructed by the redis/valkey stores with their own drivers), `DynamoDBWSConnectionStore` (`dynamodb.py`, over an existing table named by `session.connection_store.table_name`, same schema as the AWS adapters' connections table); cosmosdb/firestore raise actionably, as does the base default (so pre-method BYO stores keep working until a WS mode is enabled). Kafka's retry/dedup bookkeeping keeps its own session-type factory in `pipeline/transport/bookkeeping.py` (Q5).
+4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore). Session stores also provide the WebSocket gateway's `WSConnectionStore` on their backend via `SessionStore.get_connection_store()` (spec #495 §9): the ABC lives beside `SessionStore` in `core/session/base.py`, and each store file carries (or explicitly declines) its implementation, encapsulating its database operations over the shared drivers: `InMemoryWSConnectionStore` (`in_memory.py`, process-wide class-level state), `RedisLikeWSConnectionStore` (`core/session/redis_like.py`, client-library-agnostic; constructed by the redis/valkey stores with their own drivers), `DynamoDBWSConnectionStore` (`dynamodb.py`, over an existing table named by `session.connection_store.table_name`, same schema as the AWS adapters' connections table); cosmosdb/firestore raise actionably, as does the base default (so pre-method BYO stores keep working until a WS mode is enabled). The Kafka and Pub/Sub transports' retry/dedup bookkeeping keeps its own factory in `pipeline/transport/bookkeeping.py`: a Redis/Valkey session store (Q5), else a Redis/Valkey `execution.response_store` (#886, since GCP sessions usually live in Firestore), else process-local with a warning. It also remembers acknowledged messages (`mark_acked`/`was_acked`), which Pub/Sub can redeliver.
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, identity providers and role mappers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider, identity provider and role mapper, integration outbound adapter) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
-6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core` and `api`; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
-7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, `nats`) and process topology selected by configuration.
+6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core`, `api` and the core-only `secret` package; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
+7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, `nats`, `pubsub`, `servicebus`) and process topology selected by configuration.
 
 ## House Patterns for New Features
 
@@ -183,7 +183,8 @@ knowledge of conversation threads (that lives in `integration/thread/`).
     (the coroutine half) is untouched — still a fresh `asyncio.run` loop per call on a consumer thread
   - `requests=None`: `RequestBuilder` builds the list from the pydantic request (prompt **or** a `resume` block — since #606 `BaseChatRequest.prompt` is `str = ""`, so a decision can stand alone; `_add_resume` runs in **both** the sync and async builders, and the async one is what every REST, streaming and thread request uses).
     `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty): this
-    is how messaging integrations pass platform-downloaded attachments and extra `AgentRequestAny` context
+    is how messaging integrations pass platform-downloaded attachments and extra `AgentRequestAny` context.
+    A supplied list that omits the request's `resume` block is rejected by `_validate` rather than run with the decision dropped (#884)
   - Each call selects the agent/session via `prepare_agent_handler(session_id, agent) -> AgentHandler`, which
     wraps `AgentService.ensure_agent_available(name)` (raises `ValueError` for an unmatched agent *before*
     selecting or loading a session — so a request that could never be answered fails before any state
@@ -283,6 +284,7 @@ Pydantic-based configuration:
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
 
 - **Request types**: `AgentRequestText`, `AgentRequestFile`, `AgentRequestImage`, `AgentRequestAny`, `AgentResumeRequestAny` (#606: a human's decisions travelling to the runner; a union member rather than a subclass of `AgentRequestAny`, whose handling is *skip* — exactly wrong for a decision that must reach the runner)
+- **Chat request bodies** (#884): `BaseRunRequest` is both a client's chat body and the queue message format, so it carries three fields only internal producers set — `requests` (messaging integrations, thread recording), `scheduled_task_id` and `scheduled_time` (schedule providers). Every public chat route parses `ChatRunRequest` instead: its `before` validator rejects a non-null value for those keys (`INTERNAL_FIELDS`; `null` means "not set" and passes, since generated clients may send it) and its `json_schema_extra` drops them from the API docs. That covers the `run`/`run_chat`/`enqueue_and_wait` body annotations on `AgentRESTRequestHandler`, `RestHandler`, `RequestHandler` and both thread handlers (FastAPI answers 422), and `BaseRequest.from_payload`, whose callers are all client-facing (pipeline `/ws`, the Lambda REST and WebSocket routers, the ECS WebSocket API), and the Azure Functions handler (`deployment/azure/akfunction.py`, which answers 400). Runners and producers keep `BaseRunRequest`. The Lambda routers and the ECS WebSocket API still answer any body that fails to parse, these fields included, with their generic 500. A custom route parsing `BaseRunRequest` still accepts the fields
 - **Reply types**: 
   - `AgentReplyText`, 
   - `AgentReplyImage`
@@ -670,7 +672,7 @@ Coupling rules: `core/` reaches `schedule/` only lazily, inside enabled-checks (
 
 - **`ScheduleSpec`** (`core/model.py`, not `schedule/`): the chat-envelope block (`at` | `cron`, `timezone`, `session_mode`). It lives in core beside `BaseChatRequest` so core never imports the capability; structural validation only (exactly one of at/cron) — cron syntax, timezone and "at is in the future" are semantic checks the manager runs
 - **`ResumeSpec`** (`core/model.py`, #606): the sibling block, `BaseChatRequest.resume`, carrying `run_id: str | None` and `decisions: list[ResumeDecision]`. `run_id` is optional because AG-UI has no field for one; the run is then resolved from the decisions' interruption ids. **`schedule` + `resume` is rejected** (`ChatService._reject_ambiguous`, the first statement of all four entry points — a guard inside `_validate` would never fire, because `_maybe_schedule` has already returned its 202)
-- **Interception point** (`ChatService._maybe_schedule`): all four execution-core entry points check `req.schedule` **before** validation and agent selection, and return an `AgentReplyAny` acknowledgement (`{"status": "SCHEDULED", "scheduled_task_id", "session_id"}`) instead of running. Streaming surfaces yield that acknowledgement as a single terminal `StreamChunk` (not an error chunk). `_record_trigger` (same class, also at the top) records the occurrence of a request that carries `scheduled_task_id`, then lets it run normally; it never raises into the run. It forwards `req.principal`, and `ScheduleManager.record_trigger(task_id, principal, ...)` records nothing unless that principal owns the task (an anonymous run is a mismatch): the metadata rides on a client-bindable chat request, so any caller can name any task id, and a forged one would otherwise complete someone else's one-time task. The 202 travels through `ChatService._success_status` and, in `rest_api_mode`, a `JSONResponse`; `AgentThreadRequestHandler` checks `req.schedule` before `ThreadRecorder.pre_run`, so a deferred request creates no thread and records no messages
+- **Interception point** (`ChatService._maybe_schedule`): all four execution-core entry points check `req.schedule` **before** validation and agent selection, and return an `AgentReplyAny` acknowledgement (`{"status": "SCHEDULED", "scheduled_task_id", "session_id"}`) instead of running. Streaming surfaces yield that acknowledgement as a single terminal `StreamChunk` (not an error chunk). `_record_trigger` (same class, also at the top) records the occurrence of a request that carries `scheduled_task_id`, then lets it run normally; it never raises into the run. It forwards `req.principal`, and `ScheduleManager.record_trigger(task_id, principal, ...)` records nothing unless that principal owns the task (an anonymous run is a mismatch): the public chat routes reject the metadata (`ChatRunRequest`, #884), but a custom route parsing `BaseRunRequest` still accepts it, so a caller there can name any task id, and a forged one would otherwise complete someone else's one-time task. The 202 travels through `ChatService._success_status` and, in `rest_api_mode`, a `JSONResponse`; `AgentThreadRequestHandler` checks `req.schedule` before `ThreadRecorder.pre_run`, so a deferred request creates no thread and records no messages
 - **`ScheduleManager`** (`manager.py`): process-wide singleton (`ScheduleManager.get()`, `RLock`-guarded, `reset()` for tests) owning semantic validation, ownership (`PermissionError`), the store-then-provider write order with rollback, the frozen trigger body, and occurrence recording. At construction it fails fast (`AKConfigError`) three times: `_validate_transport_compatibility` when the provider cannot deliver to the transport `QueueTransportFactory.resolve_type()` reports, `_validate_local_provider_topology` when `provider.type` is `local` and either that transport or `store.type` is not `in_memory` — the local heap and the in-memory store are reachable only from their own process's threads, so on a broker transport the management routes (IOHandler process) would amend timers the agent-runner process actually owns — and `_validate_store_topology` when `store.type` is `in_memory` on a broker transport, which splits the records themselves across the runner and IOHandler processes even under a durable provider that manages fine. Three methods, not one, because each constrains a different thing: `local` + `sqs` fires correctly and is only unmanageable, and `eventbridge` + `in_memory` manages correctly but only within one process. `update` is PUT semantics down to the manager: the occurrence rule is replaced **as a unit**, so an amendment naming any of at/cron/timezone/session_mode rebuilds the whole spec from what it carries (omitted fields fall back to their defaults, never to the stored values), while an amendment naming none of them leaves the rule untouched. That last branch is reachable only by code calling the manager directly: `ScheduleAmendment` defaults `timezone` and `session_mode` and the PUT route passes `model_dump()` (not `exclude_unset=True`), and `update_schedule` builds all six keys unconditionally, so both of those surfaces always carry occurrence fields and a body naming neither `at` nor `cron` is a `ValueError` -> 400. Prompt-only and pause/resume amendments over the route must resend the occurrence rule, which is what PUT semantics mean here — do not describe the untouched-rule branch as the routes' contract. `create` covers all three creation paths (chat block, `create_schedule` tool, BYO caller), so its validation is where a bad task is stopped: owner, prompt and session present, occurrence rule resolvable, and — via `AgentService.ensure_agent_available` — a **named** agent that is actually registered. An unnamed agent is deliberately *not* prechecked: the default is resolved by whichever process fires the occurrence, which need not be this one
 - **`ScheduledTask` / `ScheduledTaskPage` / `ScheduleStatus`** (`model.py`): the stored record (all JSON primitives, ISO-8601 UTC timestamp strings) and cursor-paginated listings, using the shared `core/util/pagination.py` helpers (`encode_cursor`/`decode_cursor`/`clamp_limit`/`paginate` plus `MAX_PAGE_SIZE` and `DEFAULT_PAGE_SIZE`, the one default the manager and the store signatures beneath it both read). Statuses: `active`, `paused`, `completed`, `cancelled`
 - **`OccurrenceCalculator`** (`timing.py`): shared interpretation of a spec's occurrence rule — `validate()` for the manager, `next_fire_time()` for the local provider. `croniter` (the `cron` extra) is imported on demand, so `at`-only schedules work without it
@@ -748,6 +750,32 @@ no `enabled` flag: selecting a provider other than `env` is the only opt-in. Not
 ever writes `os.environ` — callers hand the value to the SDK explicitly
 (`set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))`).
 
+**Every credential the framework reads itself goes through it (#858)** — not those an SDK reads from the
+environment on its own (OpenAI guardrails, Langfuse/Logfire/OpenLLMetry sending, the evaluators' LiteLLM
+judge), which `docs/docs/advanced/secrets.md` lists under "Environment only" — and `tests/test_secret_consumers.py`
+enforces it two ways: an AST scan fails on any `os.environ`/`os.getenv` read under `src/agentkernel/`
+(outside `secret/`) whose literal key looks like a credential (`KEY|TOKEN|SECRET|PASSWORD|...`) or whose key
+is computed, short of a reviewed allow-list; and a table of consumers asserts the three behaviours each must
+have (env wins without asking the provider, provider used when the env is unset, provider failure raises
+`SecretError`). Two shapes:
+- **Direct reads** keep their env name: `SecretManager.current().get("WALLED_API_KEY", default=None)` —
+  Walled AI, Neo4j/Starburst passwords (Starburst's no longer at import time), the E2B/Daytona
+  `api_key_env` key, and the OpenAI realtime runner (`model_config["api_key"]` for the SDK's
+  `RealtimeRunner.run`, off the loop; a configured `model_config` key wins, `None` keeps the SDK's own
+  lookup). The ADK realtime runner stays environment-only: ADK builds its own Gemini client.
+- **Secret-valued `AKConfig` fields** fall back only when empty, under the key their `*_key` field names, at
+  the point of use: `config.access_token or SecretManager.current().get(config.access_token_key, default="")`.
+  Slack (bot token and signing secret, passed to Bolt explicitly since `AsyncApp` would read only the env)
+  and Gmail (client id/secret) follow the same shape.
+  Never inside `AKConfig` or a validator — `SecretManager` is built from `AKConfig`, so that would recurse.
+  Covered: whatsapp/messenger/instagram `verify_token`/`access_token`/`app_secret`, telegram
+  `bot_token`/`webhook_secret`, teams `app_password`, livekit `api_key`/`api_secret`, and
+  `websocket_api.push_auth_token` through `pipeline/ws/push.py::push_auth_token(config)` (one resolver for
+  its four readers). A new secret field gets the same fallback and a row in the consumer table.
+
+`tests/conftest.py` installs an env-only `SecretManager` per test (autouse), so consumers never build one
+from a mocked `AKConfig`; tests of the manager itself reset it in their own fixture.
+
 - **`SecretManager`** (`manager.py`): process-wide singleton (`current()`, `RLock` guards construction
   only, `reset()` for tests). Unlike `ScheduleManager.get()` it never returns `None`. `get(key,
   default=_UNSET)` raises `ValueError` on a malformed key, `SecretNotFoundError` on a miss without
@@ -757,7 +785,11 @@ ever writes `os.environ` — callers hand the value to the SDK explicitly
 - **`SecretProvider`** (`base.py`): the ABC — `get_secret(key) -> str | None` (`None` = miss;
   raise `SecretError` only on backend failure) plus a `create(_SecretConfig)` classmethod that
   receives the **whole** `secret` block (so `secret.prefix` is shared across backends). Providers own
-  their addressing, never cache, never fall back, and must tolerate concurrent calls.
+  their addressing, never cache, never fall back, and must tolerate concurrent calls. `describe(key)`
+  (non-abstract, no I/O) names where the backend looks — `SSM parameter /ak/<prefix>/<key>` — and
+  `SecretManager.describe(key, field=None)` joins field → env var → that location into the "set ..."
+  phrase `SecretNotFoundError` and every consumer's missing-credential error use (#858 follow-up), so a
+  user on `aws_ssm` is told the exact parameter to create.
 - **`SecretCache`** (`cache.py`): TTL'd dict of provider hits only; lock-free reads of immutable
   `(value, expires_at)` tuples, write lock for set/evict/clear. `cache_ttl: 0` disables it.
 - **`SecretProviderFactory`** (`factory.py`): `get(config)` maps `env` / `kubernetes` / `aws_ssm`
@@ -792,11 +824,17 @@ secret:
 Terraform side (`ak-deployment/ak-aws/{serverless,containerized}/`): `ssm_enabled` (default `false`,
 `count`-gated) grants `ssm:GetParameter` only, on
 `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*`, and injects `AK_SECRET__PREFIX = var.prefix`,
-to the one tier that runs the agent: the agent runner in queue mode, otherwise the request handler
-Lambda (serverless) / REST service (containerized) — the root passes `var.ssm_enabled && !var.queue_mode`
-to the latter. The response handler and WS connection handler never get it. Terraform never sets
+to every tier that resolves framework credentials: the request handler Lambda (serverless) / REST service
+(containerized) always — in queue mode it still verifies messaging-integration webhooks, and the ECS REST
+service also delivers their replies — plus, in queue mode, the agent runner and (serverless) the response
+handler, which delivers integration replies (#858 widened this from "the agent tier only"). The WS
+connection handler never gets it. Terraform never sets
 `secret.provider.type` (the app's `config.yaml` does, like `thread.type`) and never creates the
-parameters. To add a provider, use the `ak-dev-new-secret-provider` skill.
+parameters — not even placeholders: an `aws_ssm_parameter` refreshes the decrypted value into state
+whatever `ignore_changes` says, and a placeholder value is a real-looking credential the adapters would
+cache for the life of the process. The weekly CI seeds the parameters before the deploy
+(`run_single_test.py --action seed-secrets`) and deletes them after a successful destroy
+(`--action delete-secrets`). To add a provider, use the `ak-dev-new-secret-provider` skill.
 
 ## Identity and Access (`ak-py/src/agentkernel/identity/`)
 
@@ -1186,11 +1224,24 @@ queue-depth autoscaling) with its end-to-end example at `examples/k8s/openai-que
 the cross-cutting CI: the live-broker `QueueTransportContract` job in `test-reusable.yaml`
 (`tests/test_transport_contract_live.py`, env-gated) and the per-flavor kind chart smoke in
 `chart-test.yaml`.
+#886 (shipped): the `pubsub` (Google Cloud Pub/Sub) transport (`transport/pubsub.py`): ordering keys
+for per-session order, the envelope in the message data (attributes are capped at 100 x 1024 bytes),
+receive counts, dedup and an acked-message memory in the bookkeeping store (`_DeliveryLedger`, shared
+by both receive paths), a pull consumer with held batches and a `_LeaseKeeper` thread, and
+`PubSubPushReceiver` for push subscriptions (`PubSubTransport.create_push_receiver`). On GCP the
+`ak-gcp` modules default to queue mode: `CloudRun.run()` is the edge, and the agent runner is a
+private Cloud Run service Pub/Sub pushes to (`CloudRunAgentRunner.run()`); spec set
+`docs/specs/886-gcp-queue-mode/`.
+
+Azure (#887, shipped): the `servicebus` transport (session queues, managed identity, `azure` extra) and
+`queue_mode` in `ak-azure/containerized` (edge + KEDA-scaled agent runner Container Apps). Its live contract
+runs weekly from `examples/azure-containerized/openai-queue-mode/servicebus_contract_test.py`, not in
+`test_transport_contract_live.py`. No Helm wiring.
 
 | Module | Contents |
 |---|---|
 | `envelope.py` | `QueueMessage` (`body`, `attributes`, `group_id`, `dedup_id`, `receive_count`, `message_id`, `native` excluded from serialization) + attribute constants `ATTR_REQUEST_ID`/`ATTR_USER_ID`/`ATTR_ENDPOINT_URL`/`ATTR_STATUS_CODE`/`ATTR_PROTOCOL`; `QueueMessage.protocol_of(attributes)` (non-empty `str` only, the `integration_of` rule) is the single reader of `ATTR_PROTOCOL`, so the runner side never imports the REST layer that stamps it (#780); `QueueName` (INPUT/OUTPUT) |
-| `transport/base.py` | `QueueTransport` (`send`, `create_consumer` hook, `check_consumer_capacity` startup warning hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`dead_letter`/`close` plus `fetch_wait_slice_seconds`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: returns the declared `execution.queues.type` — mandatory inside a declared block, since per-component queue coordinates made URL sniffing resolve differently in each process — and `in_memory` when no block is declared; all four built-ins (`in_memory`/`sqs`/`kafka`/`nats`) wired; dotted-path BYO supported). `resolve_type`/`create`/`create_consumer` accept an optional explicit `queues_config` block (#503 seam): the sandbox queue broker passes its own `sandbox.broker.queue` block, while `None` keeps the `execution.queues` path byte-for-byte |
+| `transport/base.py` | `QueueTransport` (`send`, `create_consumer` hook, `check_consumer_capacity` startup warning hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`dead_letter`/`close` plus `fetch_wait_slice_seconds`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: returns the declared `execution.queues.type` — mandatory inside a declared block, since per-component queue coordinates made URL sniffing resolve differently in each process — and `in_memory` when no block is declared; all six built-ins (`in_memory`/`sqs`/`kafka`/`nats`/`pubsub`/`servicebus`) wired; dotted-path BYO supported). `resolve_type`/`create`/`create_consumer` accept an optional explicit `queues_config` block (#503 seam): the sandbox queue broker passes its own `sandbox.broker.queue` block, while `None` keeps the `execution.queues` path byte-for-byte |
 | `transport/in_memory.py` | `InMemoryTransport`: process-wide class-level queues; per-group FIFO with at most one in-flight message per group (groupless messages get synthetic groups); `ack_wait` redelivery with exact `receive_count`; `dedup_window`; blocking fetch; `reset()` for test isolation |
 | `consumer.py` | `ConsumerLoop`: the generic batch/retry/permanent-failure machinery extracted from `ECSSQSConsumer` (exact log-message parity; `logger` param keeps legacy `ak.ecs.*` logger names) |
 | `producer.py` | `RequestProducer`: the public input-queue enqueue seam (`enqueue(body, request_id, attributes, group_id, dedup_id)`) shared by `RestHandler._enqueue_request`, `RestHandler.request` (#780) and `IntegrationProducer` (#524); defaults reproduce the REST envelope exactly |
@@ -1223,8 +1274,10 @@ Rules that govern the package:
    as its first statement, before any thread starts (ECS queue-mode A2A/MCP is a follow-up). MCP
    serving only the app's own tools runs no agent and is not refused. `build_app` still mounts A2A
    and MCP, since `IOHandler` serves its app; `WebSocketGateway` never mounts them.
-2. **Coupling**: `pipeline` imports `core` and `api` only (api's pipeline imports are lazy: inside
-   `run()`, and inside `A2A.get_client`/`MCP.get_client` and the executors for `request_handler`); `deployment` imports `pipeline`; `integration/adapter` imports `pipeline`; nothing in
+2. **Coupling**: `pipeline` imports `core`, `api` and `secret` only (`secret` itself imports only `core`;
+   `ws/push.py` resolves the push token through it; api's pipeline imports are lazy: inside
+   `run()`, and inside `A2A.get_client`/`MCP.get_client` and the executors for `request_handler`);
+   `deployment` imports `pipeline`; `integration/adapter` imports `pipeline`; nothing in
    `pipeline` imports `deployment` at runtime (typing-only imports allowed under `TYPE_CHECKING`,
    which is how `IOHandler` types its `pollers` parameter). **`pipeline` reaches `integration`
    only through lazy in-method imports**, never at module scope: `integration` capabilities carry
@@ -1336,7 +1389,7 @@ ak-py/src/agentkernel/
 │   ├── io_handler.py         # IOHandler: single-/two-process topologies + fail-fasts
 │   ├── thread_runner.py      # ThreadRunner (relocated)
 │   ├── testing.py            # QueueTransportContract (BYO/conformance test suite)
-│   ├── transport/            # base.py (ABCs + factory), in_memory.py, sqs.py, kafka.py, nats.py, bookkeeping.py
+│   ├── transport/            # base.py (ABCs + factory), in_memory.py, sqs.py, kafka.py, nats.py, pubsub.py, servicebus.py, bookkeeping.py
 │   ├── response_store/       # base, factory (ResponseStoreFactory), in_memory, redis, valkey, dynamodb
 │   └── ws/                   # gateway tier: base.py (WS ABCs), registry.py, handler.py (/ws), endpoint.py (/internal/push), push.py, gateway.py (entry point)
 ├── deployment/              # Cloud deployment adapters
@@ -1358,7 +1411,10 @@ ak-py/src/agentkernel/
 │   │   │   ├── akoutputconsumer.py      # ECSOutputConsumer: polls Output Queue, writes to DB/WS
 │   │   │   └── ecs_io_handler.py        # ECSIOHandler: entrypoint: wires both threads
 │   │   └── core/            # Shared AWS-only: SQSHandler, ResponseStore, websocket_service.py (WebSocketConnectionStore, DynamoDB, AWSWebSocketHandler, API Gateway Management API push, extends WebSocketHandlerABC)
-│   └── azure/               # Azure Functions handler
+│   ├── azure/               # Azure Functions handler
+│   └── gcp/                 # Cloud Run: CloudRun (akcloudrun.py: run() always starts IOHandler, so the edge in queue mode),
+│                            #   CloudRunAgentRunner (akagentrunner.py: serves Pub/Sub push deliveries on POST /pubsub/push
+│                            #   through PubSubPushReceiver), GCPAuthorizer (akauthorizer.py)
 ├── integration/             # Integrations (messaging platforms + conversation threads + AG-UI)
 │   ├── thread/              # Conversation Thread Support: AgentThreadRequestHandler (direct) and
 │   │                        #   ThreadRequestHandler (queue pipeline), ThreadRecorder,

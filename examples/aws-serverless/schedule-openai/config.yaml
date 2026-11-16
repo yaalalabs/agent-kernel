@@ -48,6 +48,11 @@ execution:
       table_name: ""   # injected via AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME
       ttl: 300
 
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX
+
 # Who may call: the identity provider the authorizer Lambda authenticates every bearer token with.
 # A scheduled task belongs to the principal whose request created it, so scheduling needs an
 # authenticated caller and the management routes serve the caller's own tasks. The static provider

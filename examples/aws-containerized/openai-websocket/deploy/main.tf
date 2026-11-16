@@ -1,7 +1,7 @@
 # OpenAI Agents in ECS over a WebSocket API (async, no queue) — agent runs inline, reply pushed over the connection.
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { aws = aws, docker = docker }
 
@@ -14,11 +14,14 @@ module "containerized_agents" {
 
   create_dynamodb_memory_table = true
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   rest_service = {
     package_path   = "../dist"
     container_port = 8000
     environment_variables = {
-      OPENAI_API_KEY  = var.openai_api_key
       DEMO_AUTH_TOKEN = var.demo_auth_token
     }
   }

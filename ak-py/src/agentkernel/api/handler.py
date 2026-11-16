@@ -7,7 +7,7 @@ from pydantic import ConfigDict
 
 from ..core import Config
 from ..core.chat_service import ChatService
-from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, BaseRunRequest, Principal
+from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, ChatRunRequest, Principal
 from ..core.runtime import Runtime
 from ..core.util.factory import AKConfigError
 from ..identity.provider.factory import IdentityProviderFactory
@@ -105,7 +105,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     def list_agents(self):
         return {"agents": list(Runtime.current().agents().keys())}
 
-    async def run(self, body: BaseRunRequest, request: Request):
+    async def run(self, body: ChatRunRequest, request: Request):
         # The surface decides who is calling: a principal the client put in the body is overwritten
         # with the one the identity dependency RESTAPI installs put on the request (the anonymous
         # principal without an identity block). The default covers a router mounted on a bare app.

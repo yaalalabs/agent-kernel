@@ -92,12 +92,12 @@ description = "<description>"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[<extras>]>=0.9.5",
+    "agentkernel[<extras>]>=0.10.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.5",
+    "agentkernel[test]>=0.10.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",

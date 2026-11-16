@@ -25,6 +25,7 @@ from googleapiclient.discovery import build
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
+from ...secret import SecretManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundParseResult, InboundRequest, OutboundAdapter, PollingInboundAdapter
 
 NAME = "gmail"
@@ -73,13 +74,25 @@ class _GmailService:
     """OAuth2 credentials and the Gmail client both halves use."""
 
     def __init__(self):
-        self._token_file = AKConfig.get().gmail.token_file or "token.pickle"
-        self._client_id = os.environ.get("AK_GMAIL__CLIENT_ID")
-        self._client_secret = os.environ.get("AK_GMAIL__CLIENT_SECRET")
+        config = AKConfig.get().gmail
+        self._token_file = config.token_file or "token.pickle"
+        # An empty field falls back to the secret provider, under the key its *_key field names.
+        secrets = SecretManager.current()
+        self._client_id = config.client_id or secrets.get(config.client_id_key, default=None)
+        self._client_secret = config.client_secret or secrets.get(config.client_secret_key, default=None)
         self._redirect_uris = os.environ.get("AK_GMAIL__REDIRECT_URIS", "http://localhost").split(",")
-        if not (self._client_id and self._client_secret):
-            _log.error("Gmail credentials are not configured. Please set AK_GMAIL__CLIENT_ID and AK_GMAIL__CLIENT_SECRET.")
-            raise ValueError("Incomplete Gmail configuration.")
+        missing = [
+            secrets.describe(key, field)
+            for field, key, value in (
+                ("gmail.client_id", config.client_id_key, self._client_id),
+                ("gmail.client_secret", config.client_secret_key, self._client_secret),
+            )
+            if not value
+        ]
+        if missing:
+            message = f"Incomplete Gmail configuration: set {'; '.join(missing)}."
+            _log.error(message)
+            raise ValueError(message)
         self._creds = None
         self._test_mode = False
         self._authenticated = False

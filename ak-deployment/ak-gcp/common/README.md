@@ -16,8 +16,8 @@ This package provides the following Terraform modules:
 
 ### Prerequisites
 
-- Terraform >= 1.9.5
-- Google Provider >= 6.8.0
+- Terraform >= 1.9.5, <= 1.16.7
+- Google Provider 8.8.1
 - Docker (for Artifact Registry module)
 - Valid GCP credentials configured (`gcloud auth application-default login`)
 
@@ -96,9 +96,12 @@ Each module has its own comprehensive documentation:
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
-| Google Provider | >= 6.8.0 |
-| Docker Provider | >= 3.0.0 (for Artifact Registry) |
+| Terraform | >= 1.9.5, <= 1.16.7 |
+| Google Provider | 8.8.1 |
+| Docker Provider | 3.6.2 (for Artifact Registry) |
+| Null Provider | 3.2.4 (for Memorystore) |
+
+Provider versions are pinned exactly. See [Version pinning](../serverless/README.md#version-pinning) for how to bump them.
 
 ## 💡 Common Patterns
 

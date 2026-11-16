@@ -127,6 +127,12 @@ For deploying to GCP (Cloud Run, includes Firestore session support):
 uv add "agentkernel[gcp]"
 ```
 
+For queue mode on GCP (the Google Cloud Pub/Sub queue transport):
+
+```bash
+uv add "agentkernel[pubsub]"
+```
+
 For multiple clouds:
 
 ```bash

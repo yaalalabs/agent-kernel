@@ -38,9 +38,12 @@ resource "azurerm_subnet" "private" {
   address_prefixes     = [var.private_subnet_cidrs[count.index]]
 
   # Service endpoints ONLY for non-Flex subnets
-  service_endpoints = count.index == 1 ? [] : [
-    "Microsoft.Storage"
-  ]
+  dynamic "service_endpoint" {
+    for_each = count.index == 1 ? [] : ["Microsoft.Storage"]
+    content {
+      service = service_endpoint.value
+    }
+  }
 
   # Delegation ONLY for Flex subnet (index 1)
   dynamic "delegation" {

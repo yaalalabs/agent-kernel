@@ -1,6 +1,6 @@
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.5"
+  version = "0.10.0"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration
@@ -25,6 +25,12 @@ module "serverless_agents" {
       overwrite_path = "/app"
     }
   ]
+
+  # Queue mode (the module's default): this service is the edge, and Pub/Sub pushes each request
+  # to a second, private agent-runner service built from the same image.
+  agent_runner = {
+    command = ["python", "-c", "from app import runner; runner()"]
+  }
 
   # Environment variables passed to Cloud Run
   environment_variables = {

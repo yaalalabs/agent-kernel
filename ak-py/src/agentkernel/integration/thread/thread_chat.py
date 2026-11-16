@@ -23,7 +23,7 @@ from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
 from ...core import Config
 from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
 from ...core.event import RunPaused
-from ...core.model import AgentPausedReplyAny, BaseChatRequest, BaseRunRequest, StreamChunk
+from ...core.model import AgentPausedReplyAny, BaseChatRequest, BaseRunRequest, ChatRunRequest, StreamChunk
 from ...core.service import AgentService
 from ...pipeline.envelope import ATTR_THREAD
 from ...pipeline.producer import RequestProducer
@@ -74,7 +74,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         router.include_router(self._read_handler.get_router())
         return router
 
-    async def run(self, body: BaseRunRequest, request: Request):
+    async def run(self, body: ChatRunRequest, request: Request):
         # The surface assigns the principal, a client value is overwritten; unlike the plain REST
         # route, a request nothing authenticated is refused here (401), since a thread is keyed on
         # its caller.
@@ -304,7 +304,7 @@ class ThreadRequestHandler(RequestHandler):
         attributes = {} if body.schedule is not None else {ATTR_THREAD: "1"}
         return RequestProducer(self.get_transport()).enqueue(body, request_id, attributes=attributes)
 
-    async def run_chat(self, body: BaseRunRequest, request: Request):
+    async def run_chat(self, body: ChatRunRequest, request: Request):
         """POST /api/v1/chat: record the user message, then enqueue as the pipeline normally does.
 
         Every rejection the inherited route can raise runs before the recording: the 401 for a

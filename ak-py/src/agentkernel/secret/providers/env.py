@@ -10,3 +10,7 @@ class EnvSecretProvider(SecretProvider):
 
     def get_secret(self, key: str) -> str | None:
         return os.environ.get(key) or None
+
+    def describe(self, key: str) -> str | None:
+        """Nothing beyond the environment variable, which SecretManager already names."""
+        return None

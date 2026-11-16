@@ -15,21 +15,21 @@ dependencies = []
 # the static provider (WebhookRouteMatcher imports no platform SDK); add `auth` to it,
 # `agentkernel[aws,auth]`, before swapping in an `oidc`, `cognito`, `entra` or `firebase` block.
 request_handler = [
-    "agentkernel[aws,slack]>=0.9.5",
+    "agentkernel[aws,slack]>=0.10.0",
 ]
 response_handler = [
-    "agentkernel[aws,slack]>=0.9.5",
+    "agentkernel[aws,slack]>=0.10.0",
 ]
 agent_runner = [
-    "agentkernel[aws,openai,multimodal]>=0.9.5",
+    "agentkernel[aws,openai,multimodal]>=0.10.0",
 ]
 authorizer = [
-    "agentkernel[aws]>=0.9.5",
+    "agentkernel[aws]>=0.10.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.5",
+    "agentkernel[test]>=0.10.0",
     "black==26.10.1",
     "isort>=5.0.0,<10.0.0",
     "mypy>=1.0.0,<3.0.0",

@@ -84,7 +84,7 @@ execution:
   mode: rest_sync  # Execution mode: rest_sync, rest_async, async (WebSocket), or realtime. Unset runs as rest_sync
   message_type: complete  # Reply delivery: complete (one whole reply) or delta (one message per chunk). Unset: delta for realtime, complete otherwise
   queues:
-    type: sqs  # Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
+    type: sqs  # Queue transport: in_memory | sqs | kafka | nats | pubsub | servicebus, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
@@ -93,6 +93,16 @@ execution:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
       no_of_consumers: 2  # Containerized deployments only - consumer threads polling the output queue (default: 2, ignored by serverless)
+    # pubsub:  # Google Cloud Pub/Sub (type: pubsub, `pubsub` extra). The GCP modules inject these as AK_EXECUTION__QUEUES__PUBSUB__*
+    #   project_id: my-project  # Unset uses the Application Default Credentials project
+    #   input_topic: agent-input  # Topic carrying chat requests
+    #   input_subscription: agent-input  # Subscription the agent runner pulls (ordering enabled)
+    #   output_topic: agent-output  # Topic carrying agent replies
+    #   output_subscription: agent-output  # Subscription the response handler pulls (ordering enabled)
+    #   dlq_suffix: "-dlq"  # Dead-letter topic suffix: permanently failed messages are copied there
+    #   ack_wait: 300  # Seconds a pulled message stays leased before redelivery: exceed your longest turn
+    #   request_timeout: 10  # Seconds to wait for a Pub/Sub call
+    #   auto_provision: false  # Create missing topics/subscriptions at startup (emulator and dev only)
   response_store:
     type: redis  # Response store type: redis, valkey, or dynamodb (required for rest_sync and rest_async modes)
     retry_count: 5  # Number of retry attempts for response store reads
@@ -240,35 +250,50 @@ identity:
 slack:
   agent: ""  # Default agent for Slack
   agent_acknowledgement: ""  # Acknowledgement message
+  bot_token: ""  # Bot token
+  bot_token_key: "SLACK_BOT_TOKEN"  # Secret key used when bot_token is empty
+  signing_secret: ""  # Signing secret for request verification
+  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key used when signing_secret is empty
 
 whatsapp:
   agent: ""  # Default agent for WhatsApp
   agent_acknowledgement: ""  # Acknowledgement message
   verify_token: ""  # Webhook verify token
+  verify_token_key: "AK_WHATSAPP__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""  # Business API access token
+  access_token_key: "AK_WHATSAPP__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""  # App secret for signature verification
+  app_secret_key: "AK_WHATSAPP__APP_SECRET"  # Secret key used when app_secret is empty
   phone_number_id: ""  # Business phone number ID
   api_version: "v24.0"  # API version
 
 messenger:
   agent: ""  # Default agent for Facebook Messenger
   verify_token: ""  # Webhook verify token
+  verify_token_key: "AK_MESSENGER__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""  # Page access token
+  access_token_key: "AK_MESSENGER__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""  # App secret for signature verification
+  app_secret_key: "AK_MESSENGER__APP_SECRET"  # Secret key used when app_secret is empty
   api_version: "v24.0"  # Graph API version
 
 instagram:
   agent: ""  # Default agent for Instagram
   verify_token: ""  # Webhook verify token
+  verify_token_key: "AK_INSTAGRAM__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""  # Business access token
+  access_token_key: "AK_INSTAGRAM__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""  # App secret for signature verification
+  app_secret_key: "AK_INSTAGRAM__APP_SECRET"  # Secret key used when app_secret is empty
   instagram_account_id: ""  # Business Account ID (IGSID)
   api_version: "v21.0"  # Graph API version
 
 telegram:
   agent: ""  # Default agent for Telegram
   bot_token: ""  # Bot token from BotFather
+  bot_token_key: "AK_TELEGRAM__BOT_TOKEN"  # Secret key used when bot_token is empty
   webhook_secret: ""  # Optional webhook security token
+  webhook_secret_key: "AK_TELEGRAM__WEBHOOK_SECRET"  # Secret key used when webhook_secret is empty
   api_version: "bot"  # Bot API version prefix
 
 teams:
@@ -276,6 +301,7 @@ teams:
   agent_acknowledgement: ""  # Message sent when a Teams message is received
   app_id: ""  # Azure Bot / Entra ID application (client) ID
   app_password: ""  # Azure Bot / Entra ID application client secret
+  app_password_key: "AK_TEAMS__APP_PASSWORD"  # Secret key used when app_password is empty
   tenant_id: ""  # Bot app registration's own tenant; empty for a multi-tenant bot
 
 # A2UI labelling (optional - off unless `enabled` is true)
@@ -933,35 +959,50 @@ mcp:
 slack:
   agent: ""                     # Default agent for Slack interactions
   agent_acknowledgement: ""     # Acknowledgement message when message received
+  bot_token: ""                 # Slack bot token
+  bot_token_key: "SLACK_BOT_TOKEN"  # Secret key used when bot_token is empty
+  signing_secret: ""            # Slack signing secret for request verification
+  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key used when signing_secret is empty
 
 whatsapp:
   agent: ""                     # Default agent for WhatsApp interactions
   agent_acknowledgement: ""     # Acknowledgement message when message received
   verify_token: ""              # WhatsApp webhook verify token
+  verify_token_key: "AK_WHATSAPP__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""              # WhatsApp Business API access token
+  access_token_key: "AK_WHATSAPP__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""                # WhatsApp app secret for signature verification
+  app_secret_key: "AK_WHATSAPP__APP_SECRET"  # Secret key used when app_secret is empty
   phone_number_id: ""           # WhatsApp Business phone number ID
   api_version: "v24.0"          # WhatsApp API version
 
 messenger:
   agent: ""                     # Default agent for Facebook Messenger interactions
   verify_token: ""              # Facebook Messenger webhook verify token
+  verify_token_key: "AK_MESSENGER__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""              # Facebook Page access token
+  access_token_key: "AK_MESSENGER__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""                # Facebook app secret for signature verification
+  app_secret_key: "AK_MESSENGER__APP_SECRET"  # Secret key used when app_secret is empty
   api_version: "v24.0"          # Facebook Graph API version
 
 instagram:
   agent: ""                     # Default agent for Instagram interactions
   verify_token: ""              # Instagram webhook verify token
+  verify_token_key: "AK_INSTAGRAM__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""              # Instagram Business access token
+  access_token_key: "AK_INSTAGRAM__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""                # Instagram app secret for signature verification
+  app_secret_key: "AK_INSTAGRAM__APP_SECRET"  # Secret key used when app_secret is empty
   instagram_account_id: ""      # Instagram Business Account ID (IGSID)
   api_version: "v21.0"          # Instagram Graph API version
 
 telegram:
   agent: ""                     # Default agent for Telegram interactions
   bot_token: ""                 # Telegram bot token from BotFather
+  bot_token_key: "AK_TELEGRAM__BOT_TOKEN"  # Secret key used when bot_token is empty
   webhook_secret: ""            # Optional secret token for webhook security
+  webhook_secret_key: "AK_TELEGRAM__WEBHOOK_SECRET"  # Secret key used when webhook_secret is empty
   api_version: "bot"            # Telegram Bot API version prefix
 
 teams:
@@ -969,6 +1010,7 @@ teams:
   agent_acknowledgement: ""     # Message sent as an acknowledgement when a Teams message is received
   app_id: ""                    # Azure Bot / Entra ID application (client) ID
   app_password: ""              # Azure Bot / Entra ID application client secret
+  app_password_key: "AK_TEAMS__APP_PASSWORD"  # Secret key used when app_password is empty
   tenant_id: ""                 # Entra ID tenant that owns the bot's app registration. Required
                                 # only for a single-tenant registration; empty for a multi-tenant
                                 # bot. Also the fallback tenant for the app-only token used to
@@ -999,7 +1041,7 @@ execution:
   mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'async', or 'realtime'
   message_type: "complete"      # Reply delivery: 'complete' or 'delta' (unset: delta for realtime, complete otherwise)
   queues:                       # Queue transport + coordinates for queue-based execution
-    type: "sqs"                 # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
+    type: "sqs"                 # in_memory | sqs | kafka | nats | pubsub | servicebus, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed

@@ -10,7 +10,6 @@ import base64
 import contextvars
 import json
 import logging
-import os
 import re
 import traceback
 
@@ -34,6 +33,7 @@ from ...core.model import (
     ResumeDecision,
 )
 from ...core.multimodal.storage import AttachmentStorageManager
+from ...secret import SecretManager
 from ..adapter.base import (
     ATTACHMENTS_DISABLED_ERROR,
     SESSION_CACHE_ERROR,
@@ -88,7 +88,28 @@ class SlackInboundAdapter(InboundAdapter):
         # The workspace the bot authenticated to: the namespace for an event that does not carry its team.
         self._team_id: str | None = None
 
+        # Passed explicitly so both resolve through the secret provider; Bolt would read only the environment.
+        # Checked here too, because Bolt's own errors name only the environment variable.
+        # An empty field falls back to the secret provider, under the key its *_key field names.
+        secrets = SecretManager.current()
+        slack = config.slack
+        token = slack.bot_token or secrets.get(slack.bot_token_key, default=None)
+        signing_secret = slack.signing_secret or secrets.get(slack.signing_secret_key, default=None)
+        missing = [
+            secrets.describe(key, field)
+            for field, key, value in (
+                ("slack.bot_token", slack.bot_token_key, token),
+                ("slack.signing_secret", slack.signing_secret_key, signing_secret),
+            )
+            if not value
+        ]
+        if missing:
+            message = f"Incomplete Slack configuration: set {'; '.join(missing)}."
+            self._log.error(message)
+            raise ValueError(message)
         self._app = AsyncApp(
+            token=token,
+            signing_secret=signing_secret,
             process_before_response=True,
         )
         self._handler = AsyncSlackRequestHandler(self._app)
@@ -611,7 +632,9 @@ class SlackOutboundAdapter(OutboundAdapter):
     _log = logging.getLogger("ak.integration.slack")
 
     def __init__(self):
-        self._acknowledgement = AKConfig.get().slack.agent_acknowledgement or None
+        config = AKConfig.get().slack
+        self._acknowledgement = config.agent_acknowledgement or None
+        self._token = config.bot_token or SecretManager.current().get(config.bot_token_key, default=None)
 
     async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         """Post the "thinking" message, if one is configured, and remember where it went."""
@@ -846,7 +869,6 @@ class SlackOutboundAdapter(OutboundAdapter):
             blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": self.TRUNCATION_NOTICE}})
         return blocks
 
-    @staticmethod
-    def _client() -> AsyncWebClient:
+    def _client(self) -> AsyncWebClient:
         """A fresh client per call: each delivery runs on its own event loop."""
-        return AsyncWebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
+        return AsyncWebClient(token=self._token)

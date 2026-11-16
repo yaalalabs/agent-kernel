@@ -24,7 +24,7 @@ Update `pyproject.toml`:
 ```toml
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.5",
+    "agentkernel[test]>=0.10.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -353,7 +353,7 @@ uv add "agentkernel[claude]"     # For Claude Agent SDK (Claude models only; ANT
 
 Or in `pyproject.toml`:
 ```toml
-dependencies = ["agentkernel[openai,api]>=0.9.5"]
+dependencies = ["agentkernel[openai,api]>=0.10.0"]
 ```
 
 #### Issue: Redis connection errors

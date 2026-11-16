@@ -1,0 +1,53 @@
+# Agent Kernel queue mode over Google Cloud Pub/Sub (two-process pipeline).
+#
+# Start the emulator and Valkey with `python pubsub_tester.py up`. auto_provision below lets Agent
+# Kernel create the topics, dead-letter topics and subscriptions at startup, which is the emulator
+# and dev posture. Production leaves it false: Terraform (the ak-gcp pubsub module) owns the
+# objects, and a missing one fails startup naming it instead of being created with defaults.
+#
+# app.py points the client at the emulator through PUBSUB_EMULATOR_HOST, which the Pub/Sub
+# libraries read themselves.
+
+execution:
+  mode: rest_sync              # rest_sync (wait for the reply) | rest_async (accept, then poll)
+
+  queues:
+    type: pubsub
+
+    pubsub:
+      project_id: ak-local       # the emulator accepts any project id
+      input_topic: agent-input
+      input_subscription: agent-input
+      output_topic: agent-output
+      output_subscription: agent-output
+      dlq_suffix: "-dlq"         # permanently failed messages are copied to agent-input-dlq
+      ack_wait: 300              # lease ceiling: must exceed your longest agent turn
+      auto_provision: true       # create the topics and subscriptions if missing
+
+    input:
+      max_receive_count: 2       # deliveries before a message is permanently failed (3 in production)
+      no_of_consumers: 2         # agent-runner threads
+    output:
+      no_of_consumers: 1
+
+  # Required on every broker transport: the two processes exchange responses through this store.
+  response_store:
+    type: valkey
+    valkey:
+      url: "valkey://localhost:6379"
+      prefix: "ak:responses:"
+    retry_count: 60              # with delay: how long a rest_sync caller waits (60 x 1s)
+    delay: 1
+
+# Pub/Sub has no exact delivery count and no publish-side deduplication, so the transport keeps
+# that bookkeeping itself, in Valkey here because sessions live there. With sessions elsewhere
+# (Firestore on GCP), a Redis or Valkey response store is used for it instead.
+session:
+  type: valkey
+  valkey:
+    url: "valkey://localhost:6379"
+    prefix: "ak:sessions:"
+
+logging:
+  ak:
+    level: INFO

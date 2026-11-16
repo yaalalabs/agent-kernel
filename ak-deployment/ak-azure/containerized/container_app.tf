@@ -8,6 +8,7 @@ resource "azurerm_container_app_environment" "env" {
   infrastructure_subnet_id       = local.function_subnet_id
   internal_load_balancer_enabled = true
 
+  logs_destination           = "log-analytics"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.container_logs.id
   tags                       = var.tags
 
@@ -36,6 +37,41 @@ resource "azurerm_application_insights" "container_insights" {
   application_type    = "web"
 
   tags = var.tags
+}
+
+locals {
+  # Env shared by the edge and, in queue mode, the agent runner. Module values override environment_variables.
+  app_env = merge(
+    var.environment_variables,
+    local.redis_url != null ? {
+      "AK_SESSION__REDIS__URL" = var.queue_mode ? "" : local.full_redis_url
+    } : {},
+    local.cosmosdb_table_name != null ? {
+      "AK_SESSION__COSMOSDB__TABLE_NAME"        = local.cosmosdb_table_name
+      "AK_SESSION__COSMOSDB__TABLE_ENDPOINT"    = local.cosmosdb_table_endpoint
+      "AK_SESSION__COSMOSDB__CONNECTION_STRING" = "" # Will use secret reference
+    } : {},
+    local.queue_env,
+    {
+      "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.container_insights.connection_string
+    }
+  )
+
+  # Env vars set to "" above are read from these Container Apps secrets.
+  env_secret_refs = merge(
+    { "AK_SESSION__COSMOSDB__CONNECTION_STRING" = "cosmosdb-connection-string" },
+    var.queue_mode ? {
+      "AK_SESSION__REDIS__URL"                   = "redis-url"
+      "AK_EXECUTION__RESPONSE_STORE__REDIS__URL" = "redis-url"
+    } : {}
+  )
+
+  # Secrets the agent runner needs (the edge declares its own below).
+  app_secrets = merge(
+    { "acr-password" = module.docker_image.admin_password },
+    var.create_cosmosdb_cluster ? { "cosmosdb-connection-string" = local.cosmosdb_connection_string } : {},
+    var.queue_mode ? { "redis-url" = local.full_redis_url } : {}
+  )
 }
 
 # Container App
@@ -76,6 +112,15 @@ resource "azurerm_container_app" "app" {
     }
   }
 
+  # Redis URL (embeds the access key) as a secret: queue mode adds the response store as a second reader
+  dynamic "secret" {
+    for_each = var.queue_mode ? [1] : []
+    content {
+      name  = "redis-url"
+      value = local.full_redis_url
+    }
+  }
+
   # Add CosmosDB primary key secret if CosmosDB is enabled
   dynamic "secret" {
     for_each = var.create_cosmosdb_cluster ? [1] : []
@@ -88,6 +133,8 @@ resource "azurerm_container_app" "app" {
   template {
     min_replicas = var.container_min_replicas
     max_replicas = var.container_max_replicas
+    # queue mode: one 20 s fetch slice plus in-flight reply handling; 0 is the provider default
+    termination_grace_period_seconds = var.queue_mode ? 60 : 0
 
     container {
       name   = "${var.prefix}-container"
@@ -97,28 +144,13 @@ resource "azurerm_container_app" "app" {
 
       # Environment variables
       dynamic "env" {
-        for_each = merge(
-          var.environment_variables,
-          local.redis_url != null ? {
-            "AK_SESSION__REDIS__URL" = local.full_redis_url
-          } : {},
-          local.cosmosdb_table_name != null ? {
-            "AK_SESSION__COSMOSDB__TABLE_NAME"        = local.cosmosdb_table_name
-            "AK_SESSION__COSMOSDB__TABLE_ENDPOINT"    = local.cosmosdb_table_endpoint
-            "AK_SESSION__COSMOSDB__CONNECTION_STRING" = "" # Will use secret reference
-          } : {},
-          {
-            "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.container_insights.connection_string
-          }
-        )
+        for_each = local.app_env
         content {
           name  = env.key
           value = env.value != "" ? env.value : null
 
           # Use secret reference for empty values (they'll be populated from secrets)
-          secret_name = env.value == "" ? (
-            env.key == "AK_SESSION__COSMOSDB__CONNECTION_STRING" ? "cosmosdb-connection-string" : null
-          ) : null
+          secret_name = env.value == "" ? lookup(local.env_secret_refs, env.key, null) : null
         }
       }
 
