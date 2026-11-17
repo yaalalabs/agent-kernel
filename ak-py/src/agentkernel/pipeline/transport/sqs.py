@@ -133,7 +133,7 @@ def _sqs_dedup_id(dedup_id: str | None) -> str | None:
 
     A client-chosen request id becomes the input's dedup id, and replies append chunk suffixes to
     it, so an id SQS took at enqueue can outgrow the limit on the way back. The digest is
-    deterministic, so a redelivered message still deduplicates against its first send.
+    deterministic, so resending the same id still deduplicates against its first send.
 
     :param dedup_id: The deduplication id, or None
     :return: The id unchanged when SQS accepts it, its 64-character hex digest otherwise, or None

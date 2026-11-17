@@ -52,8 +52,12 @@ def _sqs_dedup_id(dedup_id: str | None) -> str | None:
   (`core/model.py:764`). It becomes the input's dedup ID (`websocket_api.py:356`). A 125-character ID is accepted
   at enqueue, but its chunk IDs (`<id>-1-0`) are over 128 characters. SQS would then reject every chunk and the
   error chunk, and the client would hang. `ECSStreamAgentRunner` has the same bug today.
-- The digest is deterministic, so a redelivered message still deduplicates against its first send. Different
-  chunk suffixes give different digests.
+- The digest is deterministic, so a resent whole reply (`<id>`) still deduplicates against its first send.
+  Streamed chunk IDs (`<id>-<receive_count>-<n>`) change on redelivery, so a redelivered input's chunks are
+  not deduplicated against the first attempt's, as before this change. Different chunk suffixes give
+  different digests.
+- Known limit: a valid ID equal to another ID's digest maps to the same value. That takes a client sending the
+  digest of its own other ID in the same session within SQS's 5-minute window, and only drops its own message.
 
 ### 2. `IOHandler.run(ws_handler=)`
 
@@ -292,7 +296,10 @@ All intentional.
 the route offloads) and `output.no_of_consumers` response handler threads. Today it is already shared, by the
 `asyncio.to_thread` offloads and by `ECSOutputConsumer`'s consumer threads (a class attribute), so the risk is no
 higher. `get_client`'s unlocked cache can at worst build two boto3 clients for one endpoint, and boto3 clients
-are thread-safe. The DynamoDB `Table` resource is shared the same way it is today.
+are thread-safe. The DynamoDB `Table` resource in `WebSocketConnectionStore` is not: boto3 documents
+resources as not thread-safe. It is already shared across the API thread's offloads and the output consumer
+threads today, so this change does not add the risk, and moving the store to a boto3 client is left to a
+follow-up.
 
 **Per-operation cost.** None added. The dedup mapping is one dict read per fetched record. The endpoint guard is
 one truthiness check per broadcast.

@@ -47,7 +47,7 @@ If missing, suggest `ak-init` first.
 - Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode; AWS serverless or containerized)
 - Asynchronous REST (`rest_async`, queue/scalable mode; AWS serverless or containerized)
 - WebSocket full-response (`async` with `message_type` unset or `complete`, works with or without queue mode — `queue_mode = false` runs the agent inline, `queue_mode = true` enqueues to a separately-scalable Agent Runner) — AWS serverless or AWS containerized/ECS
-- WebSocket token streaming (`async` with `message_type = "delta"`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: rest_sync` and `execution.message_type: delta`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container (non-queue) REST, Azure Container Apps, GCP Cloud Run — not on AWS Lambda (refused at startup), ECS queue mode (rejected at `terraform plan`; use `async` + `delta` on both) or Azure Functions. The old `stream` mode was removed: `execution_mode = "stream"` fails at `terraform plan` and `execution.mode: stream` fails at config load
+- WebSocket token streaming (`async` with `message_type = "delta"`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: rest_sync` and `execution.message_type: delta`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container (non-queue) REST, Azure Container Apps, GCP Cloud Run — not on AWS Lambda (refused at startup), ECS queue mode (rejected at `terraform plan` only when the Terraform `message_type` variable is `delta`, so set it there as well as in `config.yaml`; use `async` + `delta` on both) or Azure Functions. The old `stream` mode was removed: `execution_mode = "stream"` fails at `terraform plan` and `execution.mode: stream` fails at config load
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: which identity provider authenticates callers (the `identity` block in `config.yaml`: `static`, `oidc` for Auth0, Keycloak, Okta or any OIDC issuer, `cognito`, `entra`, `firebase`, or your own), and on AWS serverless, is the API Gateway `authorizer` wanted (see Deploying the Identity Provider)?
@@ -281,7 +281,7 @@ always pair the flags with the matching types. The reverse is safe: declaring th
 flags fails at startup with an `AKConfigError` on the missing `group_name` / `role_arn` / `queue_arn`.
 
 The blocks above enable deferring and the agent tools. The `/api/v1/schedules` management routes are
-**not** mounted from config — on ECS queue mode, pass the handler to the IO container's entrypoint,
+**not** mounted from config — on ECS REST queue mode, pass the handler to the IO container's entrypoint,
 where it is served alongside the queue-producing chat route:
 
 ```python
@@ -296,7 +296,7 @@ if __name__ == "__main__":
 ```
 
 Remember to list the schedule paths in `gateway_endpoints` — the gateway only proxies paths it is
-told about.
+told about. ECS WebSocket mode creates no HTTP API, so the management routes are not reachable there.
 
 New outputs on both AWS stacks (null unless the matching flag is set): `schedule_group_name`,
 `schedule_group_arn`, `scheduler_execution_role_arn`, `schedule_table_name`, `schedule_table_arn`.
@@ -1132,7 +1132,7 @@ dependencies = [
 ```
 
 **Key rules:**
-- Agent definitions (`OpenAIModule([...])`) go in `app_agent_runner.py` only — never in `app_rest_service.py`.
+- Agent definitions (`OpenAIModule([...])`) go in `app_agent_runner.py`. When A2A or agent MCP is enabled in queue mode, import the same agent modules in `app_rest_service.py` too: the IO process builds the A2A catalog and MCP agent tools from its own agent registry.
 - `IOHandler` starts two threads via `ThreadRunner`; if the output-consumer pool crashes, sibling consumer threads finish their in-flight message first (graceful drain via a shared `shutdown_event`), then the container exits (`os._exit(1)`) so ECS can restart it. The REST API thread doesn't participate in the drain — it's just terminated at that point.
 - `AgentRunner` and `ResponseHandler` are the shared pipeline classes (`agentkernel.pipeline`), the same ones every queue transport uses; `AgentRunner.run()` dispatches to `StreamAgentRunner` (`delta`) or `RealtimeAgentRunner` (`realtime`). Extend `ECSSQSConsumer` only for your own custom SQS consumers.
 

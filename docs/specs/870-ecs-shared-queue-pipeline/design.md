@@ -92,8 +92,9 @@ flowchart LR
     (`core/model.py:764`, `deployment/aws/containerized/core/api/websocket_api.py:434`). A 125-character ID is
     accepted at enqueue, but its chunk IDs (`<id>-1-0`) go over 128. SQS then rejects every chunk and the error
     chunk, and the client hangs. `ECSStreamAgentRunner` has the same bug today.
-  - The digest is deterministic, so a redelivered reply still deduplicates. IDs SQS already accepts, including
-    single-reply IDs, are unchanged.
+  - The digest is deterministic, so a resent whole reply still deduplicates. Streamed chunk IDs include the
+    input's receive count, so a redelivered input's chunks get new IDs and are not deduplicated against the
+    first attempt's. IDs SQS already accepts, including single-reply IDs, are unchanged.
 - Regression tests in `ak-py/tests/test_pipeline_sqs_transport.py`:
   - A fetched record carries `dedup_id`, and a reply sent from it carries `MessageDeduplicationId`.
   - A 128-character ID is sent unchanged. Its chunk IDs are sent as 64-character digests, a different one for
@@ -216,7 +217,8 @@ flowchart LR
 - Slack: no ECS-specific test. Once ECS runs the shared classes, attribute forwarding and
   `IntegrationDelivery` are covered by the existing pipeline tests (`test_pipeline_agent_runner.py`,
   `test_pipeline_response_handler.py`). The public route is added through the existing `gateway_endpoints`
-  variable (`ak-deployment/ak-aws/containerized/variables.tf:46`).
+  variable (`ak-deployment/ak-aws/containerized/variables.tf:46`). REST modes only: WebSocket mode creates no
+  HTTP API (`api_gateway.tf:2`), so a webhook cannot reach the IO container there.
 - Dedup: covered by the regression test above and the rolling-deploy test.
 - Modes: no per-mode end-to-end tests. The pipeline suites already cover each mode's delivery. The ECS-specific
   parts are tested where they change: the `ws_handler` seam, the `endpoint_url` guard, the
