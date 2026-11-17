@@ -1,9 +1,8 @@
 """
-The lifecycle steps of Runtime that every run takes (#928): `activate` (public) and `_end_run` (private).
+The lifecycle steps of Runtime that every run takes (#928): `activate` (public).
 
 `run()` and `stream()` use them, and so does a surface that holds a session for longer than one run (a realtime
-call). `activate` only sets context variables and takes no session lock. `_end_run` is private like `_publish`:
-it removes the published identity.
+call). `activate` only sets context variables and takes no session lock.
 """
 
 import pytest
@@ -14,6 +13,7 @@ from agentkernel.core.hooks import PostHook, PreHook, StreamHalt
 from agentkernel.core.model import AgentReplyText, AgentRequestText, Principal
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.core.util.key_value_cache import KeyValueCache
 
 HUMAN = Principal(subject="human", provider="static", namespace="static")
 
@@ -87,20 +87,20 @@ def runtime():
 
 @pytest.fixture
 def calls(runtime, monkeypatch):
-    """Records every `activate` and `_end_run` call the runtime makes, still running the real ones."""
+    """Records every `activate` call the runtime makes and the clearing of the volatile cache that ends a run, still running the real ones."""
     seen: list[str] = []
-    real_activate, real_end_run = runtime.activate, runtime._end_run
+    real_activate, real_clear = runtime.activate, KeyValueCache._clear_all
 
     def activate(agent, session):
         seen.append("activate")
         return real_activate(agent, session)
 
-    def end_run(session):
-        seen.append("_end_run")
-        real_end_run(session)
+    def clear_all(cache):
+        seen.append("clear_cache")
+        real_clear(cache)
 
     monkeypatch.setattr(runtime, "activate", activate)
-    monkeypatch.setattr(runtime, "_end_run", end_run)
+    monkeypatch.setattr(KeyValueCache, "_clear_all", clear_all)
     return seen
 
 
@@ -145,37 +145,6 @@ class TestActivate:
             assert session.get_principal() is None
 
 
-class TestEndRun:
-    def test_unpublishes_the_principal_and_clears_the_volatile_cache(self, runtime):
-        session = Session("s1")
-        runtime._publish(_Agent(), session, HUMAN)
-        session.get_volatile_cache().set("hook-state", 1)
-
-        runtime._end_run(session)
-
-        assert session.get_principal() is None
-        assert session.get_volatile_cache().keys() == []
-
-    def test_keeps_the_durable_state(self, runtime):
-        session = Session("s1")
-        runtime._publish(_Agent(), session, HUMAN)
-        session.get_non_volatile_cache().set("kept", 1)
-
-        runtime._end_run(session)
-
-        assert session.get_non_volatile_cache().get("kept") == 1
-        assert session.get_owner() is not None
-
-    def test_with_nothing_published_it_still_clears_the_volatile_cache(self, runtime):
-        session = Session("s1")
-        session.get_volatile_cache().set("hook-state", 1)
-
-        runtime._end_run(session)
-
-        assert session.get_principal() is None
-        assert session.get_volatile_cache().keys() == []
-
-
 class TestRunUsesThem:
     @pytest.mark.asyncio
     async def test_run_ends_with_the_run_state_gone(self, runtime):
@@ -192,7 +161,7 @@ class TestRunUsesThem:
     async def test_on_success(self, runtime, calls):
         await runtime.run(_Agent(), Session("s1"), [AgentRequestText(prompt="hi")], principal=HUMAN)
 
-        assert calls == ["activate", "_end_run"]
+        assert calls == ["activate", "clear_cache"]
 
     @pytest.mark.asyncio
     async def test_on_a_pre_hook_halt(self, runtime, calls):
@@ -202,14 +171,14 @@ class TestRunUsesThem:
         reply = await runtime.run(agent, Session("s1"), [AgentRequestText(prompt="hi")], principal=HUMAN)
 
         assert reply.response == "halted by a pre-hook"
-        assert calls == ["activate", "_end_run"]
+        assert calls == ["activate", "clear_cache"]
 
     @pytest.mark.asyncio
     async def test_on_an_exception(self, runtime, calls):
         with pytest.raises(RuntimeError):
             await runtime.run(_Agent(fail=True), Session("s1"), [AgentRequestText(prompt="hi")], principal=HUMAN)
 
-        assert calls == ["activate", "_end_run"]
+        assert calls == ["activate", "clear_cache"]
 
 
 class TestStreamUsesThem:
@@ -223,7 +192,7 @@ class TestStreamUsesThem:
 
         await self._drain(runtime, _Agent(), session)
 
-        assert calls == ["activate", "_end_run"]
+        assert calls == ["activate", "clear_cache"]
         assert session.get_principal() is None
         assert session.get_volatile_cache().keys() == []
 
@@ -235,11 +204,11 @@ class TestStreamUsesThem:
         chunks = await self._drain(runtime, agent, Session("s1"))
 
         assert chunks[-1].error == "stop"
-        assert calls == ["activate", "_end_run"]
+        assert calls == ["activate", "clear_cache"]
 
     @pytest.mark.asyncio
     async def test_on_an_exception(self, runtime, calls):
         with pytest.raises(RuntimeError):
             await self._drain(runtime, _Agent(fail=True), Session("s1"))
 
-        assert calls == ["activate", "_end_run"]
+        assert calls == ["activate", "clear_cache"]

@@ -19,7 +19,7 @@ from opentelemetry.trace import StatusCode
 from agentkernel.core import Agent, Session
 from agentkernel.core.config import _ExecutionConfig
 from agentkernel.core.model import ExecutionMode
-from agentkernel.core.realtime import RealtimeRunner
+from agentkernel.realtime import RealtimeRunner
 from agentkernel.trace.base import BaseTrace, RealtimeCallSpan, TracedRealtimeRunner
 from agentkernel.trace.otel import OTelRealtimeCallSpan
 from agentkernel.trace.trace import Trace

@@ -12,7 +12,7 @@ from opentelemetry import context, trace
 from traceloop.sdk import Traceloop
 
 from ...core import Runner
-from ...core.realtime import RealtimeRunner
+from ...realtime.base import RealtimeRunner
 from ..base import BaseTrace
 from ..fetch import FetchedSpan, TraceQuery
 from ..otel import OTelRealtimeCallSpan

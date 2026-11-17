@@ -33,16 +33,17 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
 from agentkernel.core import Session
+from agentkernel.core.config import _RealtimeConfig
 from agentkernel.core.model import AgentRequestText, BaseRunRequest, Principal
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.framework.adk.adk import GoogleADKModule
 from agentkernel.framework.openai.openai import OpenAIModule
-from agentkernel.pipeline.realtime_pool import RealtimeConnection, RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+from agentkernel.realtime.pool import RealtimeConnection, RealtimeConnectionPool
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.provider.base import ScheduleProvider
 from agentkernel.schedule.store.in_memory import InMemoryScheduleStore
@@ -187,7 +188,15 @@ class TestOpenAIRealtime:
             model = ScriptedModel(_calls_create_schedule("r1", "c1"), _says_nothing("r2"))
             agent = _openai_agent(model)
             assert "create_schedule" in [tool.name for tool in agent.agent.tools]
-            conn = RealtimeConnection("call-1", agent, runtime, Session("call-1"), asyncio.get_running_loop())
+            conn = RealtimeConnection(
+                "call-1",
+                agent,
+                runtime,
+                Session("call-1"),
+                asyncio.get_running_loop(),
+                transport=QueueTransportFactory.create(),
+                playback_lead_ms=_RealtimeConfig().playback_lead_ms,
+            )
             conn.update_delivery_context("req", None, None, {})
             await conn.connect()
             try:
@@ -298,7 +307,15 @@ class TestADKRealtime:
             module.run_options(module.get_agent("voice").agent, run_config=RunConfig(response_modalities=["AUDIO"]))
             agent = module.get_agent("voice")
             session = Session("call-3")
-            conn = RealtimeConnection("call-3", agent, runtime, session, asyncio.get_running_loop())
+            conn = RealtimeConnection(
+                "call-3",
+                agent,
+                runtime,
+                session,
+                asyncio.get_running_loop(),
+                transport=QueueTransportFactory.create(),
+                playback_lead_ms=_RealtimeConfig().playback_lead_ms,
+            )
             conn.update_delivery_context("req", None, None, {})
             conn.publish_principal(principal)  # ahead of the first input, as dispatch() does
             await asyncio.sleep(0)

@@ -4,7 +4,7 @@ from contextlib import AbstractContextManager
 from typing import Any, ClassVar
 
 from ..core import Agent, Runner, Session
-from ..core.realtime import RealtimeRunner
+from ..realtime.base import RealtimeRunner
 from .fetch import FetchedSpan, TraceQuery
 
 

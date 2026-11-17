@@ -15,16 +15,18 @@ import threading
 import pytest
 
 from agentkernel import Agent, Runner, Session
+from agentkernel.core.config import _RealtimeConfig
 from agentkernel.core.event import MessageEnd, TextDelta
 from agentkernel.core.hooks import PostHook, PreHook, StreamHalt
 from agentkernel.core.model import AgentReplyText, AgentRequestText, AgentRequestVoice, Principal
-from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.core.util.key_value_cache import KeyValueCache
 from agentkernel.pipeline.envelope import QueueName
-from agentkernel.pipeline.realtime_pool import RealtimeConnection
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+from agentkernel.realtime import RealtimeRunner
+from agentkernel.realtime.pool import RealtimeConnection
 
 HUMAN = Principal(subject="human", provider="realtime:livekit", namespace="lk-key")
 
@@ -144,7 +146,15 @@ def store():
 
 
 def _connection(store, agent=None):
-    return RealtimeConnection("s1", agent or _Agent(), Runtime(store), Session("s1"), asyncio.get_running_loop())
+    return RealtimeConnection(
+        "s1",
+        agent or _Agent(),
+        Runtime(store),
+        Session("s1"),
+        asyncio.get_running_loop(),
+        transport=QueueTransportFactory.create(),
+        playback_lead_ms=_RealtimeConfig().playback_lead_ms,
+    )
 
 
 async def _until(predicate, timeout=3.0):
@@ -222,7 +232,7 @@ class TestCallEnd:
         for turn in (1, 2):
             conn.session.get_non_volatile_cache().set("turn", turn)
             await conn.handle_framework_event("done", {"status": "completed"})
-            await _until(lambda: conn._audio_queue.empty())
+            await _until(lambda: conn._output_queue.empty())
             await asyncio.sleep(0.05)
         conn.session.get_non_volatile_cache().set("turn", 3)
         store.gate.set()
@@ -239,7 +249,7 @@ class TestCallEnd:
         for turn in (1, 2, 3, 4):
             conn.session.get_non_volatile_cache().set("turn", turn)
             await conn.handle_framework_event("done", {"status": "completed"})
-            await _until(lambda: conn._audio_queue.empty())
+            await _until(lambda: conn._output_queue.empty())
             await asyncio.sleep(0.05)
             if turn == 1:
                 await asyncio.to_thread(store.started.wait, 2)
@@ -384,7 +394,7 @@ class TestCallEnd:
         await conn.connect()
         store.fail_times = 1
 
-        with caplog.at_level(logging.ERROR, logger="ak.pipeline.realtime_pool"):
+        with caplog.at_level(logging.ERROR, logger="ak.realtime.connection"):
             await conn.close()
 
         assert any("storing the session failed" in r.message for r in caplog.records)
@@ -429,24 +439,24 @@ class TestSharedRuntimeSteps:
 
     @staticmethod
     def _spy(conn, store, monkeypatch):
-        """Records ``activate``, ``_end_run`` and the store, in order, still running the real ones."""
+        """Records ``activate``, the volatile-cache clear that ends the run and the store, in order, still running the real ones."""
         seen: list[str] = []
-        real_activate, real_end_run, real_store = conn.runtime.activate, conn.runtime._end_run, store.store
+        real_activate, real_clear, real_store = conn.runtime.activate, KeyValueCache._clear_all, store.store
 
         def activate(agent, session):
             seen.append("activate")
             return real_activate(agent, session)
 
-        def end_run(session):
-            seen.append("_end_run")
-            real_end_run(session)
+        def clear_all(cache):
+            seen.append("clear_cache")
+            real_clear(cache)
 
         def record_store(session):
             seen.append("store")
             real_store(session)
 
         monkeypatch.setattr(conn.runtime, "activate", activate)
-        monkeypatch.setattr(conn.runtime, "_end_run", end_run)
+        monkeypatch.setattr(KeyValueCache, "_clear_all", clear_all)
         monkeypatch.setattr(store, "store", record_store)
         return seen
 
@@ -489,7 +499,7 @@ class TestSharedRuntimeSteps:
         await conn.close()
         await conn.close()
 
-        assert seen == ["store", "_end_run"]
+        assert seen == ["store", "clear_cache"]
 
     @pytest.mark.asyncio
     async def test_a_failed_call_still_ends_the_run_but_stores_nothing(self, store, monkeypatch):
@@ -498,10 +508,10 @@ class TestSharedRuntimeSteps:
         seen = self._spy(conn, store, monkeypatch)
 
         await conn.handle_framework_event("error", {"message": "native session failed"})
-        await _until(lambda: conn._disconnecting)
+        await _until(lambda: conn._state is RealtimeConnection._State.CLOSED)
         await asyncio.sleep(0.1)
 
-        assert seen == ["_end_run"]
+        assert seen == ["clear_cache"]
 
     @pytest.mark.asyncio
     async def test_the_run_still_ends_when_the_native_session_fails_to_close(self, store, monkeypatch):
@@ -513,7 +523,7 @@ class TestSharedRuntimeSteps:
         with pytest.raises(RuntimeError):
             await conn.close()
 
-        assert seen == ["store", "_end_run"]
+        assert seen == ["store", "clear_cache"]
 
 
 class TestFailure:
@@ -525,7 +535,7 @@ class TestFailure:
         await conn.connect()
 
         await conn.handle_framework_event("error", {"message": "native session failed"})
-        await _until(lambda: conn._disconnecting)
+        await _until(lambda: conn._state is RealtimeConnection._State.CLOSED)
         await asyncio.sleep(0.1)
 
         assert store.stores == []
@@ -543,7 +553,15 @@ class TestLoad:
     @pytest.mark.asyncio
     async def test_a_slow_store_at_one_close_does_not_block_another_calls_audio(self, store, _isolated):
         ending = _connection(store)
-        talking = RealtimeConnection("s2", _Agent(), Runtime(InMemorySessionStore()), Session("s2"), asyncio.get_running_loop())
+        talking = RealtimeConnection(
+            "s2",
+            _Agent(),
+            Runtime(InMemorySessionStore()),
+            Session("s2"),
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=_RealtimeConfig().playback_lead_ms,
+        )
         await ending.connect()
         await talking.connect()
         _drain(_isolated)
@@ -629,7 +647,15 @@ class TestDurableStoreRoundTrip:
 
         sessions = build_store()
         session = sessions.new("s1")
-        conn = RealtimeConnection("s1", _Agent(), Runtime(sessions), session, asyncio.get_running_loop())
+        conn = RealtimeConnection(
+            "s1",
+            _Agent(),
+            Runtime(sessions),
+            session,
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=_RealtimeConfig().playback_lead_ms,
+        )
         conn.publish_principal(HUMAN)
         await asyncio.sleep(0)
         await conn.connect()

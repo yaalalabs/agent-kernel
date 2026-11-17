@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from langfuse import Langfuse, get_client, propagate_attributes
 
 from ... import Runner
-from ...core.realtime import RealtimeRunner
+from ...realtime.base import RealtimeRunner
 from ..base import BaseTrace, RealtimeCallSpan
 from ..fetch import FetchedSpan, TraceQuery
 

@@ -16,8 +16,8 @@ from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from ...core import Runner, Session
-from ...core.realtime import RealtimeRunner
 from ...core.util.factory import AKConfigError
+from ...realtime.base import RealtimeRunner
 from ..base import BaseTrace
 from ..fetch import FetchedSpan, TraceQuery
 from ..otel import OTelRealtimeCallSpan

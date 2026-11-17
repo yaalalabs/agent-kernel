@@ -311,12 +311,14 @@ class RealtimeConnection:
                 else:
                     if self._turn_writer is not None:
                         await asyncio.gather(self._turn_writer, return_exceptions=True)
-                    await self._store_session(self.session)
+                    await self._store_final(self.session)
             finally:
                 # The call's identity and the hook state kept in the volatile cache end with the call, as when a
                 # Runtime run ends, also when the native session fails to close: the session store hands the next
                 # call this same Session.
-                self.runtime._end_run(self.session)
+                if self._principal_published:
+                    self.session._unpublish_run()
+                self.session.get_volatile_cache()._clear_all()
 
     def close_in_background(self, loop: asyncio.AbstractEventLoop) -> None:
         """Schedule :meth:`close` on ``loop``; the task is held in ``_close_tasks`` since the loop keeps only a weak reference."""
@@ -678,7 +680,7 @@ class RealtimeConnection:
         """Write the waiting turn copy, and any newer one that arrives meanwhile, until none is left."""
         while self._pending_turn is not None:
             snapshot, self._pending_turn = self._pending_turn, None
-            await self._store_session(snapshot)
+            await self._store_turn(snapshot)
 
     def _rebuild(self, snapshot: dict[str, bytes]) -> Session:
         """Build the session a turn copy stands for. Runs on the worker thread: nothing else holds this object."""
@@ -687,21 +689,32 @@ class RealtimeConnection:
             session.set(key, BinarySerde.loads(payload))
         return session
 
-    async def _store_session(self, session: Session | dict[str, bytes]) -> None:
-        """Store a session of this call: a turn's pickled copy, or the live session once the call has ended normally.
+    async def _store_turn(self, snapshot: dict[str, bytes]) -> None:
+        """Store a finished turn's pickled copy of the session: rebuild it on a worker thread and write it.
 
-        The write runs on a worker thread: every call in the process shares this loop, and a store can be
-        several network round trips. Writes run one at a time, in the order they were made. A failure is
-        logged, never raised, so the run still ends.
+        :param snapshot: The pickled session keys, as ``_save_turn`` copied them.
+        """
+        await self._write(lambda: self.runtime.sessions().store(self._rebuild(snapshot)))
 
-        :param session: The live session, or a turn's pickled copy to rebuild and write.
+    async def _store_final(self, session: Session) -> None:
+        """Store the live session once the call has ended normally.
+
+        :param session: The call's session.
+        """
+        await self._write(lambda: self.runtime.sessions().store(session))
+
+    async def _write(self, store_call) -> None:
+        """Run one store write on a worker thread, under the lock that keeps this call's writes one at a time.
+
+        Every call in the process shares the pool loop, and a store can be several network round trips, so the write
+        never runs on it. Writes run in the order they were made. A failure is logged, never raised, so the run
+        still ends.
+
+        :param store_call: The blocking store call.
         """
         async with self._store_lock:
             try:
-                if isinstance(session, dict):
-                    await asyncio.to_thread(lambda: self.runtime.sessions().store(self._rebuild(session)))
-                else:
-                    await asyncio.to_thread(self.runtime.sessions().store, session)
+                await asyncio.to_thread(store_call)
                 self._log.debug(f"Realtime session {self.session_id}: session stored")
             except Exception:
                 self._log.exception(f"Realtime session {self.session_id}: storing the session failed")
@@ -954,7 +967,9 @@ class RealtimeConnectionPool:
         if closing is None or self._stopping.is_set():
             return
         if not closing.close_done.wait(self.CLOSE_WAIT_SECONDS):
-            self._log.warning(f"Realtime session {session_id}: the previous call is still closing after {self.CLOSE_WAIT_SECONDS:.0f}s; starting anyway")
+            self._log.warning(
+                f"Realtime session {session_id}: the previous call is still closing after {self.CLOSE_WAIT_SECONDS:.0f}s; starting anyway"
+            )
         with self._conn_lock:
             if self._closing.get(session_id) is closing:
                 del self._closing[session_id]

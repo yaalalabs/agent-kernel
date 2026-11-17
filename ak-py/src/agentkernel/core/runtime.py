@@ -114,7 +114,7 @@ class Runtime:
 
     Every run takes its start and end steps from here, so a surface that runs no `run()` or `stream()` (a realtime
     call) takes the same ones: `activate` only sets context variables, so keep it cheap and free of side effects (a
-    realtime call enters it per hook call); start-of-run side effects belong in `_publish`, end-of-run steps in `_end_run`.
+    realtime call enters it per hook call); start-of-run side effects belong in `_publish`.
     """
 
     _current: Runtime | None = None
@@ -472,18 +472,6 @@ class Runtime:
         finally:
             Session.current_session.reset(token)
 
-    def _end_run(self, session: Session) -> None:
-        """
-        Ends a run's identity and per-run state: unpublishes the principal and clears the volatile cache.
-        Private like `_publish`, its partner: it removes the published identity, so only the runtime and the realtime
-        connection pool call it (#603 section 8.4). Called in the `finally` of `run()` and `stream()`, and when a
-        realtime call closes.
-
-        :param session: The session the run used.
-        """
-        session._unpublish_run()
-        session.get_volatile_cache()._clear_all()
-
     def _warn_resume_dropped(self, agent: Agent, session: Session) -> None:
         """
         Warns that a pre-hook removed the decisions, so this run proceeds as an ordinary turn.
@@ -581,7 +569,8 @@ class Runtime:
                     self.sessions().store(session)
                     return reply
             finally:
-                self._end_run(session)
+                session._unpublish_run()
+                session.get_volatile_cache()._clear_all()
 
     async def stream(
         self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None
@@ -672,7 +661,8 @@ class Runtime:
                         # generator has run to completion.
                         await events.aclose()
             finally:
-                self._end_run(session)
+                session._unpublish_run()
+                session.get_volatile_cache()._clear_all()
 
     def sessions(self) -> SessionStore:
         """

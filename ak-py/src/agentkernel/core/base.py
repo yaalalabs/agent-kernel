@@ -269,8 +269,7 @@ class Session:
     def _publish_run(self, principal: Principal, tool_filter: ToolFilter | None) -> None:
         """
         Publishes the identity of the run that is starting. Called by Runtime, and by the realtime
-        connection pool for the tool calls it owns; nothing else writes these keys. The pool also ends that
-        identity through ``Runtime._end_run``, the partner of ``Runtime._publish`` (#603 section 8.4).
+        connection pool for the tool calls it owns; nothing else writes these keys.
         :param principal: The principal the run acts as.
         :param tool_filter: The gate's tool decision, or None when the run is not gated.
         """

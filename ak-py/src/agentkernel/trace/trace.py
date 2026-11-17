@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from ..core import Runner
 from ..core.config import AKConfig
-from ..core.realtime import RealtimeRunner
 from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
+from ..realtime.base import RealtimeRunner
 from .base import BaseTrace
 from .fetch import FetchedSpan, FetchedTrace, TraceQuery
 

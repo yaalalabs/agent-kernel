@@ -6,7 +6,7 @@ import threading
 import logfire
 
 from ...core import Runner
-from ...core.realtime import RealtimeRunner
+from ...realtime.base import RealtimeRunner
 from ..base import BaseTrace
 from ..fetch import FetchedSpan, TraceQuery
 
