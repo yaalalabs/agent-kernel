@@ -804,7 +804,15 @@ class TestThroughThePool:
         )
         agent = module.get_agent("coordinator")
         agent.run_options.update(model=model)
-        conn = RealtimeConnection("call-1", agent, runtime, Session("call-1"), asyncio.get_running_loop())
+        conn = RealtimeConnection(
+            "call-1",
+            agent,
+            runtime,
+            Session("call-1"),
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=AKConfig.get().execution.realtime.playback_lead_ms,
+        )
         conn.update_delivery_context("req", None, None, {})
         await conn.connect()
         try:
@@ -852,7 +860,15 @@ class TestThroughThePool:
         agent = module.get_agent("voice")
         agent.run_options.update(model=model)
         session = Session("call-ctx")
-        conn = RealtimeConnection("call-ctx", agent, runtime, session, asyncio.get_running_loop())
+        conn = RealtimeConnection(
+            "call-ctx",
+            agent,
+            runtime,
+            session,
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=AKConfig.get().execution.realtime.playback_lead_ms,
+        )
         conn.update_delivery_context("req", None, None, {})
         await conn.connect()
         try:

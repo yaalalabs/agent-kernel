@@ -738,7 +738,15 @@ async def test_a_live_tool_sees_the_session_and_agent_the_pool_set(monkeypatch):
         module = GoogleADKModule([coordinator, billing])
         agent = module.get_agent("coordinator")
         session = Session("call-pool")
-        conn = RealtimeConnection("call-pool", agent, runtime, session, asyncio.get_running_loop())
+        conn = RealtimeConnection(
+            "call-pool",
+            agent,
+            runtime,
+            session,
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=AKConfig.get().execution.realtime.playback_lead_ms,
+        )
         conn.update_delivery_context("req", None, None, {})
         await conn.connect()
         try:

@@ -750,17 +750,19 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         except Exception as e:
             _log.error(f"OpenAI realtime session error: {e}")
             if not self._closing:
-                await self._callback("error", {"message": f"OpenAI realtime session error: {e}"})
+                await self._callback(BaseRealtimeRunner.Event.ERROR, {"message": f"OpenAI realtime session error: {e}"})
             return
         if not self._closing:
             # A clean end of the event stream means the native session closed, not that a turn finished.
-            await self._callback("error", {"message": "OpenAI realtime session ended"})
+            await self._callback(BaseRealtimeRunner.Event.ERROR, {"message": "OpenAI realtime session ended"})
 
     async def _handle_event(self, event: Any) -> None:
         """Maps one SDK session event onto the pool's events."""
         kind = event.type
         if kind == "audio":
-            await self._callback("audio_delta", {"delta": base64.b64encode(event.audio.data).decode("utf-8"), "message_id": event.item_id})
+            await self._callback(
+                BaseRealtimeRunner.Event.AUDIO_DELTA, {"delta": base64.b64encode(event.audio.data).decode("utf-8"), "message_id": event.item_id}
+            )
         elif kind == "raw_model_event":
             await self._handle_model_event(event.data)
         elif kind == "handoff":
@@ -781,16 +783,16 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
     async def _handle_model_event(self, data: Any) -> None:
         kind = data.type
         if kind in ("transcript_delta", "output_text_delta"):
-            await self._callback("transcript_delta", {"delta": data.delta, "message_id": data.item_id})
+            await self._callback(BaseRealtimeRunner.Event.TRANSCRIPT_DELTA, {"delta": data.delta, "message_id": data.item_id})
         elif kind == "input_audio_transcription_completed":
             text = (data.transcript or "").strip()
             if text:
-                await self._callback("input_transcript", {"text": text, "message_id": data.item_id})
+                await self._callback(BaseRealtimeRunner.Event.INPUT_TRANSCRIPT, {"text": text, "message_id": data.item_id})
         elif kind == "turn_started":
             self._response_in_flight = True
         elif kind == "turn_ended":
             self._response_in_flight = False
-            await self._callback("done", {"status": "completed"})
+            await self._callback(BaseRealtimeRunner.Event.DONE, {"status": "completed"})
 
     async def _speaker_changed(self, agent: str, previous: str | None = None) -> None:
         """Reports a change of speaker once (the SDK names it on both handoff and agent_start), with the roster when the agent is new."""
@@ -801,15 +803,15 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
             self._roster.append(agent)
             data["agents"] = list(self._roster)
         self._speaker = agent
-        await self._callback("agent_changed", data)
+        await self._callback(BaseRealtimeRunner.Event.AGENT_CHANGED, data)
 
     async def _interrupted(self) -> None:
         """Reports ``interrupt`` while a response is in flight, else ``speech_started``: the SDK sends one event for both."""
         if self._response_in_flight:
             self._response_in_flight = False
-            await self._callback("interrupt", {})
+            await self._callback(BaseRealtimeRunner.Event.INTERRUPT, {})
         else:
-            await self._callback("speech_started", {})
+            await self._callback(BaseRealtimeRunner.Event.SPEECH_STARTED, {})
 
     async def _refuse_approval(self, event: Any) -> None:
         """Rejects a tool call that needs approval, so the model is not left waiting, and fails the connection."""
@@ -818,7 +820,8 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
             await self._session.reject_tool_call(event.call_id)
         finally:
             await self._callback(
-                "error", {"message": f"Tool '{name}' of agent '{event.agent.name}' needs approval, which a realtime session cannot get"}
+                BaseRealtimeRunner.Event.ERROR,
+                {"message": f"Tool '{name}' of agent '{event.agent.name}' needs approval, which a realtime session cannot get"},
             )
 
     async def append_audio(self, base64_audio: str) -> None:

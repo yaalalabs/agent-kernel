@@ -208,10 +208,10 @@ def test_consumer_loop_starts_real_pool_processes_requests_and_closes_connection
         first, second = connections
         assert first is second
         assert first.session is session
-        assert first.adapter.connect_count == 1
-        assert first.adapter.audio == ["AAA="]
-        assert first.adapter.texts == ["hello"]
-        assert first.adapter.disconnected
+        assert first.runner.connect_count == 1
+        assert first.runner.audio == ["AAA="]
+        assert first.runner.texts == ["hello"]
+        assert first.runner.disconnected
         assert first.closed
         assert pool.get_connection("room_01") is None
         chat_service.prepare_agent_handler.assert_called_once_with("room_01", "general")

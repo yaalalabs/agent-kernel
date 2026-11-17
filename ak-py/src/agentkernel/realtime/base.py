@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from abc import abstractmethod
 from collections.abc import AsyncGenerator, Callable
+from enum import StrEnum
 from typing import Any
 
 from ..core.base import Agent, Runner, Session
@@ -18,6 +19,22 @@ class RealtimeRunner(Runner):
     reports its output through the ``callback`` given to :meth:`connect`. One instance per connection.
     ``framework_context`` is neither injected nor stored. Bring your own via ``realtime_runner_cls`` on the ``Module``.
     """
+
+    class Event(StrEnum):
+        """The event names a runner reports through the ``callback`` given to :meth:`connect`.
+
+        A member is a ``str`` equal to its value, so a custom runner may keep passing plain strings
+        (``callback("audio_delta", ...)``); the pool compares by value and treats both the same.
+        """
+
+        AUDIO_DELTA = "audio_delta"
+        TRANSCRIPT_DELTA = "transcript_delta"
+        DONE = "done"
+        ERROR = "error"
+        INTERRUPT = "interrupt"
+        SPEECH_STARTED = "speech_started"
+        AGENT_CHANGED = "agent_changed"
+        INPUT_TRANSCRIPT = "input_transcript"
 
     input_sample_rate: int = EDGE_SAMPLE_RATE
     output_sample_rate: int = EDGE_SAMPLE_RATE
@@ -68,7 +85,8 @@ class RealtimeRunner(Runner):
 
         :param session: The session to bind this connection to.
         :param agent: The agent instance.
-        :param callback: Awaited as ``callback(event_type, data)``; any other event name fails the connection:
+        :param callback: Awaited as ``callback(event_type, data)`` with an :class:`Event` member (or its string value);
+            any other event name fails the connection:
 
             - ``audio_delta``: ``{"delta": <base64 PCM16 at output_sample_rate>, "message_id": str}``
             - ``transcript_delta``: ``{"delta": str, "message_id": str}``
