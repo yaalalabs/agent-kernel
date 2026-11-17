@@ -59,7 +59,7 @@ A call runs no `Runtime.run()` or `stream()`: the native SDK owns the loop. The 
 
 | Step | `run()` / `stream()` | Realtime call |
 |---|---|---|
-| `Session.current()`, `Agent.current()` | `Runtime.activate` | `Runtime.activate`, around connect and each hook call |
+| `Session.current()`, `Agent.current()` | `async with session` and the agent's own scoping | `RealtimeConnection._hook_context`, around connect and each hook call, without the lock |
 | Publish identity | `Runtime._publish` | `Runtime._publish`, when the caller changes (#603 §8.4) |
 | Pre- and post-hooks | `Runtime` hook loops | The same loops (`run_stream_input_hooks`, `run_stream_event_hooks`) |
 | Store the session | `sessions().store()` on a normal end | The same call on a worker thread, after each finished turn and once more at close |

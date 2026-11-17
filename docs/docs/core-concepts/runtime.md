@@ -72,7 +72,7 @@ A realtime (voice) call does not go through `run()` or `stream()`: the framework
 
 | Step | `run()` / `stream()` | Realtime call |
 |---|---|---|
-| Current session and agent | `Runtime.activate` | `Runtime.activate`, around the connect and each hook |
+| Current session and agent | `async with session` and the agent's own scoping | The connection sets both itself, around the connect and each hook, without the lock |
 | Publish the caller | `Runtime._publish` | `Runtime._publish`, for each input whose caller changed |
 | Hooks | `Runtime`'s hook methods | The same methods: typed text, caller audio chunks, every output event |
 | Store the session | After each successful run | After each finished turn and when the call ends normally; a failed call stores nothing more |

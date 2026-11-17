@@ -597,8 +597,7 @@ class Agent(ABC):
     def current(cls) -> "Agent | None":
         """
         Returns the agent currently executing in this context (set for the duration of a
-        Runtime.run()/Runtime.stream() call, and around a realtime call's connect and hook calls by
-        Runtime.activate), or None if no agent is currently running.
+        Runtime.run()/Runtime.stream() call), or None if no agent is currently running.
         :return: The current Agent instance, or None.
         """
         return cls.current_agent.get()

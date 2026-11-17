@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import importlib
 import logging
-from collections.abc import AsyncGenerator, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator
 from threading import RLock
 from types import ModuleType
 
@@ -111,10 +110,6 @@ class StreamBoundaryTracker:
 class Runtime:
     """
     Runtime class provides the environment for hosting and running agents.
-
-    Every run takes its start and end steps from here, so a surface that runs no `run()` or `stream()` (a realtime
-    call) takes the same ones: `activate` only sets context variables, so keep it cheap and free of side effects (a
-    realtime call enters it per hook call); start-of-run side effects belong in `_publish`.
     """
 
     _current: Runtime | None = None
@@ -454,24 +449,6 @@ class Runtime:
             session._record_owner(SessionOwner(subject=principal.subject, provider=principal.provider, namespace=principal.namespace))
         return principal
 
-    @contextmanager
-    def activate(self, agent: Agent, session: Session) -> Iterator[None]:
-        """
-        Makes the session and the agent current (`Session.current()`, `Agent.current()`) for the block,
-        restoring the previous ones on exit. Takes no session lock: a surface that holds a session for
-        longer than one run (a realtime call) uses it where `Runtime.run()` would hold the lock.
-        Only sets context variables: it publishes nothing and cannot change the run's identity.
-
-        :param agent: The agent to make current.
-        :param session: The session to make current.
-        """
-        token = Session.current_session.set(session)
-        try:
-            with agent._activate():
-                yield
-        finally:
-            Session.current_session.reset(token)
-
     def _warn_resume_dropped(self, agent: Agent, session: Session) -> None:
         """
         Warns that a pre-hook removed the decisions, so this run proceeds as an ordinary turn.
@@ -537,7 +514,7 @@ class Runtime:
         async with session:
             try:
                 self._publish(agent, session, principal)
-                with self.activate(agent, session):
+                with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self.run_pre_hooks(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
@@ -598,7 +575,7 @@ class Runtime:
         async with session:
             try:
                 self._publish(agent, session, principal)
-                with self.activate(agent, session):
+                with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self.run_pre_hooks(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):

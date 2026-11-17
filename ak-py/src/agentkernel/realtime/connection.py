@@ -5,6 +5,8 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from enum import Enum
 from typing import ClassVar
 
@@ -227,7 +229,7 @@ class RealtimeConnection:
         # The session lock is not taken; holding it for a whole call would block every other run of the session.
         tool_context = ToolContext(self.runtime, self.agent, self.session, []).set()
         try:
-            with self.runtime.activate(self.agent, self.session):
+            with self._hook_context():
                 await self.runner.connect(self.session, self.agent, self.handle_framework_event)
         finally:
             tool_context.reset()
@@ -360,6 +362,19 @@ class RealtimeConnection:
         self.integration = integration
         self.reply_context = reply_context
 
+    @contextmanager
+    def _hook_context(self) -> Iterator[None]:
+        """Set ``Session.current()`` and ``Agent.current()`` around a hook call or the connect, without the session lock.
+
+        ``Runtime.run()`` holds the lock for one run; a call lasts minutes, so it would block every other run of the session.
+        """
+        token = Session.current_session.set(self.session)
+        try:
+            with self.agent._activate():
+                yield
+        finally:
+            Session.current_session.reset(token)
+
     # -- input: edge -> model -----------------------------------------------------------------------------
 
     def append_audio(self, request: AgentRequestVoice) -> None:
@@ -401,7 +416,7 @@ class RealtimeConnection:
         A failing hook drops the chunk: an error chunk per audio chunk would flood the edge.
         """
         try:
-            with self.runtime.activate(self.agent, self.session):
+            with self._hook_context():
                 voice, text = await self.runtime.run_stream_input_hooks(self.agent, self.session, request)
         except Exception:
             if self._input_failure_logged:
@@ -426,7 +441,7 @@ class RealtimeConnection:
         A hook that halts the turn, or fails, sends the edge one error chunk and the call continues.
         """
         try:
-            with self.runtime.activate(self.agent, self.session):
+            with self._hook_context():
                 result = await self.runtime.run_pre_hooks(self.agent, self.session, [request])
         except Exception:
             self._log.exception(f"Realtime session {self.session_id}: a pre-hook failed on a typed message")
@@ -597,7 +612,7 @@ class RealtimeConnection:
         # A hook may change the audio in place and return the same event: its known length then no longer applies.
         content_before = event.content if isinstance(event, AudioDelta) else None
         try:
-            with self.runtime.activate(self.agent, self.session):
+            with self._hook_context():
                 emitted = await self.runtime.run_stream_event_hooks(self.agent, self.session, self._last_turn, event)
         except StreamHalt:
             raise

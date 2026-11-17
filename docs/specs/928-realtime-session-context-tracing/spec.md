@@ -9,11 +9,11 @@ Line numbers cite `feature/927-realtime-hooks` at `07821ddfb` and were read, not
 
 ## Design
 
-### 1. `Runtime` (`core/runtime.py`): `activate`
+### 1. `Runtime` (`core/runtime.py`): not changed
 
-- `activate(agent, session)`: a public context manager. It sets `Session.current_session` and enters `agent._activate()`, and resets both on exit, even after an exception. It takes no session lock and only sets context variables.
+- Nothing is added to `Runtime`: the connection sets `Session.current_session` and enters `agent._activate()` itself (`_hook_context`), without the session lock.
 - The end steps are not shared: the pool calls `session._unpublish_run()` and `session.get_volatile_cache()._clear_all()` itself, as the inline lines in `run()` and `stream()` do (#603 section 8.4).
-- `run()` and `stream()` call `activate` around the hook and runner span. Behaviour is unchanged.
+- `run()` and `stream()` are unchanged.
 - Identity publication is not touched: `Runtime._publish` stays private, called by `run()`, `stream()` and the pool (`pipeline/realtime_pool.py:112`), as #603 section 8.4 specifies.
 - No store method is added: the pool calls `runtime.sessions().store(session)`, the call `run()` and `stream()` make (`:546`, `:627`).
 
@@ -27,7 +27,7 @@ self._failed = False   # set by _fail and fail_to_connect: no store at close
 
 #### 2.1 Unchanged lifecycle steps
 
-- `_connect` and each hook call (`_emit_event`, `_process_audio`, `_process_text`) enter `Runtime.activate`; the pool's own `_hook_context` is gone. `ToolContext(...).set()` / `reset()` stay.
+- `_connect` and each hook call (`_emit_event`, `_process_audio`, `_process_text`) enter the connection's own `_hook_context` (`Session.current_session` and `Agent._activate`, no session lock). `ToolContext(...).set()` / `reset()` stay.
 - `Runtime._publish` (`:112`) and `Session._publish_run`'s docstring (`core/base.py:270-272`) are unchanged.
 
 #### 2.2 Storing the session at the end of the call

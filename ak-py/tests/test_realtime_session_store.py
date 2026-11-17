@@ -451,18 +451,14 @@ class TestInputSettlesBeforeStore:
         assert hook.runs == 0
 
 
-class TestSharedRuntimeSteps:
-    """The pool takes its context and end steps from ``Runtime`` (the ones ``run()`` and ``stream()`` use), not copies of them."""
+class TestEndOfRun:
+    """The call ends its run as ``Runtime.run()`` and ``stream()`` do: store first, then clear the run state."""
 
     @staticmethod
     def _spy(conn, store, monkeypatch):
-        """Records ``activate``, the volatile-cache clear that ends the run and the store, in order, still running the real ones."""
+        """Records the store and the volatile-cache clear that ends the run, in order, still running the real ones."""
         seen: list[str] = []
-        real_activate, real_clear, real_store = conn.runtime.activate, KeyValueCache._clear_all, store.store
-
-        def activate(agent, session):
-            seen.append("activate")
-            return real_activate(agent, session)
+        real_clear, real_store = KeyValueCache._clear_all, store.store
 
         def clear_all(cache):
             seen.append("clear_cache")
@@ -472,40 +468,9 @@ class TestSharedRuntimeSteps:
             seen.append("store")
             real_store(session)
 
-        monkeypatch.setattr(conn.runtime, "activate", activate)
         monkeypatch.setattr(KeyValueCache, "_clear_all", clear_all)
         monkeypatch.setattr(store, "store", record_store)
         return seen
-
-    @pytest.mark.asyncio
-    async def test_connect_enters_activate(self, store, monkeypatch):
-        conn = _connection(store)
-        seen = self._spy(conn, store, monkeypatch)
-
-        await conn.connect()
-
-        assert seen == ["activate"]
-        await conn.close()
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "run_path",
-        [
-            lambda conn: conn._process_audio(AgentRequestVoice(audio_data="QUFB", name="clip")),
-            lambda conn: conn._process_text(AgentRequestText(prompt="hi")),
-            lambda conn: conn._emit_event(TextDelta(content="x", message_id="m1")),
-        ],
-        ids=["audio_input_hooks", "typed_text_pre_hooks", "output_event_post_hooks"],
-    )
-    async def test_each_hook_path_enters_activate(self, store, monkeypatch, run_path):
-        conn = _connection(store)
-        await conn.connect()
-        seen = self._spy(conn, store, monkeypatch)
-
-        await run_path(conn)
-
-        assert "activate" in seen
-        await conn.close()
 
     @pytest.mark.asyncio
     async def test_a_normal_close_stores_then_ends_the_run_once(self, store, monkeypatch):
