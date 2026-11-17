@@ -5,10 +5,10 @@ Builds [spec.md](spec.md) in four iterations. Each one leaves the branch green. 
 
 ## Iteration 1: Store the session
 
-- **Goal:** a call stores its session once, when it ends normally, as `Runtime.stream` does; the write runs off the pool loop.
+- **Goal:** a call stores its session after each finished turn and once when it ends normally, never after a failure, so a failed call loses at most the turn in progress; every write runs off the pool loop.
 - **Files:** `pipeline/realtime_pool.py`, `tests/test_realtime_session_store.py` (new).
 - **Steps:**
-  1. In `RealtimeConnection`: `_failed` set by `_fail` and `fail_to_connect`; `_store_session()`; the `close()` order: disconnect, store unless failed, then clear the identity and the volatile cache (spec 2.2).
+  1. In `RealtimeConnection`: `_failed` set by `_fail` and `fail_to_connect`; `_save_turn()` (copy on the loop, write on a worker thread, in turn order) and `_store_session(session)`; the `close()` order: disconnect, store unless failed, then clear the identity and the volatile cache (spec 2.2).
   2. `tests/test_realtime_session_store.py` (spec Testing).
 - **Verify:** `uv run pytest tests/test_realtime_session_store.py tests/test_realtime_pool.py tests/test_realtime_hooks.py tests/test_realtime_edge_path.py tests/test_ecs_akagentrunner_realtime.py`.
 

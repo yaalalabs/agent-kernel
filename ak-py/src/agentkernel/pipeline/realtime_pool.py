@@ -18,6 +18,7 @@ from ..core.model import AgentRequest, AgentRequestText, AgentRequestVoice, Prin
 from ..core.realtime import EDGE_SAMPLE_RATE, PCM16Resampler
 from ..core.realtime import RealtimeRunner as BaseRealtimeRunner
 from ..core.runtime import Runtime
+from ..core.session.serde import BinarySerde
 from ..core.tool import ToolContext
 from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REALTIME_END, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
 from .integration_delivery import IntegrationDelivery
@@ -83,8 +84,14 @@ class RealtimeConnection:
         self._last_turn: list[AgentRequest] = []
         # The first failing audio hook of a connection is logged at ERROR; later ones at DEBUG, since audio arrives at the chunk rate.
         self._input_failure_logged = False
-        # The call failed (a native error, a halt, a failed connect): its session is not stored when it closes.
+        # The call failed (a native error, a halt, a failed connect): its session is not stored again, so the last
+        # finished turn is what the next call starts from.
         self._failed = False
+        # The newest finished turn's pickled session still waiting to be written (an older waiting one is replaced),
+        # the task writing turns, and the lock that keeps every write of this call one at a time.
+        self._pending_turn: dict[str, bytes] | None = None
+        self._turn_writer: asyncio.Task | None = None
+        self._store_lock = asyncio.Lock()
         self._pacing_task: asyncio.Task | None = None
         self._startup_task: asyncio.Task | None = None
         # Shutdown, eviction and failure can all close one connection; disconnect only once.
@@ -298,6 +305,7 @@ class RealtimeConnection:
                         await self._emit_event(MessageEnd(message_id=self._turn_message_id or uuid.uuid4().hex))
                         self._turn_message_id = None
                         await self._emit(StreamChunk(done=True))
+                        self._save_turn()
                     elif event_type == "interrupt":
                         await self._emit_event(Interrupt())
                     elif event_type == "agent_changed":
@@ -395,18 +403,56 @@ class RealtimeConnection:
         if prompts:
             await self.adapter.send_text("\n".join(prompts))
 
-    async def _store_session(self) -> None:
-        """Store the call's session once it has ended, as ``Runtime.stream`` stores a stream that ended normally.
+    def _save_turn(self) -> None:
+        """Store the session as it stands after a finished turn, so a call that fails later loses only the turn in progress.
+
+        Only the pickling happens here, on the pool loop where every change to the session happens, so ADK or a hook
+        cannot change the session mid-copy. Unpickling and the write run on a worker thread. A slow store never
+        builds a backlog: a turn still waiting is replaced by the newer one. A halted turn never gets here (the halt
+        fails the call first), and a failed call stores nothing more.
+        """
+        if self._failed or self._disconnecting:
+            return
+        try:
+            snapshot = {key: BinarySerde.dumps(value) for key, value in self.session.get_all(volatile=False)}
+        except Exception:
+            _log.exception(f"Realtime session {self.session_id}: copying the session at the end of a turn failed")
+            return
+        self._pending_turn = snapshot
+        if self._turn_writer is None or self._turn_writer.done():
+            self._turn_writer = asyncio.create_task(self._write_turns())
+
+    async def _write_turns(self) -> None:
+        """Write the waiting turn copy, and any newer one that arrives meanwhile, until none is left."""
+        while self._pending_turn is not None:
+            snapshot, self._pending_turn = self._pending_turn, None
+            await self._store_session(snapshot)
+
+    def _rebuild(self, snapshot: dict[str, bytes]) -> Session:
+        """Build the session a turn copy stands for. Runs on the worker thread: nothing else holds this object."""
+        session = Session(self.session.id)
+        for key, payload in snapshot.items():
+            session.set(key, BinarySerde.loads(payload))
+        return session
+
+    async def _store_session(self, session: Session | dict[str, bytes]) -> None:
+        """Store a session of this call: a turn's pickled copy, or the live session once the call has ended normally.
 
         The write runs on a worker thread: every call in the process shares this loop, and a store can be
-        several network round trips. The call is over, so nothing is talking on the session while it is written.
-        A failure is logged, never raised, so the run still ends.
+        several network round trips. Writes run one at a time, in the order they were made. A failure is
+        logged, never raised, so the run still ends.
+
+        :param session: The live session, or a turn's pickled copy to rebuild and write.
         """
-        try:
-            await asyncio.to_thread(self.runtime.sessions().store, self.session)
-            _log.debug(f"Realtime session {self.session_id}: session stored at the end of the call")
-        except Exception:
-            _log.exception(f"Realtime session {self.session_id}: storing the session at the end of the call failed")
+        async with self._store_lock:
+            try:
+                if isinstance(session, dict):
+                    await asyncio.to_thread(lambda: self.runtime.sessions().store(self._rebuild(session)))
+                else:
+                    await asyncio.to_thread(self.runtime.sessions().store, session)
+                _log.debug(f"Realtime session {self.session_id}: session stored")
+            except Exception:
+                _log.exception(f"Realtime session {self.session_id}: storing the session failed")
 
     def _dispatch_send(self, coro, action: str) -> None:
         """Run a send on the pool loop, blocking (bounded) so the input is not acked before it reached the model.
@@ -510,7 +556,9 @@ class RealtimeConnection:
                 if self._failed:
                     _log.debug(f"Realtime session {self.session_id}: session not stored, the call failed")
                 else:
-                    await self._store_session()
+                    if self._turn_writer is not None:
+                        await asyncio.gather(self._turn_writer, return_exceptions=True)
+                    await self._store_session(self.session)
             finally:
                 # The call's identity and the hook state kept in the volatile cache end with the call, as when a
                 # Runtime run ends, also when the native session fails to close: the session store hands the next

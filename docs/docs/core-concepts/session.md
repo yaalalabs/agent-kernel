@@ -79,7 +79,7 @@ stateDiagram-v2
 
 ### Realtime calls
 
-A realtime call loads its session when the call opens and **stores it once, when the call ends normally**, after the framework's live session has disconnected. A call that fails stores nothing. The write runs on a worker thread, so a slow store never delays other calls' audio. The volatile cache and the published identity are cleared when the call closes, as at the end of a run.
+A realtime call loads its session when the call opens and **stores it after each finished turn, and again when the call ends normally** (after the framework's live session has disconnected). A call that fails stores nothing more, so it loses at most the turn in progress and the next call starts from the last finished turn. The write runs on a worker thread, so a slow store never delays other calls' audio. The volatile cache and the published identity are cleared when the call closes, as at the end of a run.
 
 ## Creating and Managing Sessions
 

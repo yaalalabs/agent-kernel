@@ -46,14 +46,14 @@ self._failed = False   # set by _fail and fail_to_connect: no store at close
   ```
 
 - `_store_session()`: `await asyncio.to_thread(self.runtime.sessions().store, self.session)`. A failure is logged with its traceback (`ERROR`) and not raised, so the identity and the volatile cache are still cleared.
-  - The store call and the stored object are those of `Runtime.stream`: the session itself, no copy.
+  - A turn's write is a copy (`_save_turn`: each durable key pickled with `BinarySerde` on the pool loop, where every change to the session happens, so ADK or a hook cannot change it mid-copy; unpickled and written on the worker thread; a copy still waiting is replaced by the newer one, so a slow store builds no backlog); the write at close is the live session. Writes run one at a time under a lock, in turn order; close waits for pending turn writes before its own.
   - On a worker thread, not the loop: the pool loop serves every call in the process (`:461-465`), and a store is synchronous network I/O. A slow write delays only this call's close.
   - Accepted risk: an input chunk whose hooks are still running (`_process_audio` / `_process_text`, scheduled from a consumer thread) could change the session while the thread writes it. The native session and the pacing task have already stopped.
 - No store after a failure: `_fail` (`:203`) and `fail_to_connect` (`:220`) set `self._failed = True` before anything else, as `Runtime.stream` stores nothing for a halted run.
 - Normal ends, which store: `end_session` (`:650-663`), idle eviction (`:552-554`), shutdown (`_close_all`, `:557-567`), and a close during startup (`:145-150`).
 - Stale eviction in `get_connection` (`:582-592`) closes a connection that is already `closed`. That is a failed one, so `_failed` is already set; a connection closed by `end_session` is popped first (`:653`) and never reaches it.
 - `close()` runs once (`_disconnecting`, `:439-441`), so a call is stored at most once.
-- Nothing is stored at a turn end.
+- A finished turn stores a copy: `done` reaches `_save_turn` after its `MessageEnd` passed the post-hooks, so a halting post-hook (which fails the call first) leaves that turn unstored.
 
 #### 2.3 Unchanged
 
@@ -167,9 +167,9 @@ None. No `AKConfig` field, extra, factory branch or provider is added. `session.
 
 ### Behavioural changes
 
-1. A realtime call stores its session once, when it ends normally. With a durable store, a call's changes (owner, non-volatile cache, ADK's conversation) now survive the call. *Intentional (#885).*
+1. A realtime call stores its session after each finished turn and once when it ends normally. With a durable store, a call's changes (owner, non-volatile cache, ADK's conversation) now survive the call. *Intentional (#885).*
 2. The write runs on a worker thread, where `Runtime.stream` writes on its own loop. *Stated difference: the pool loop is shared by every call.*
-3. A failed call, or a process that dies mid-call, stores nothing for that call. *Intentional (the `Runtime.stream` halt rule).*
+3. A failed call, or a process that dies mid-call, stores nothing more: it loses at most the turn in progress. *Intentional: a text run loses at most one request, which the queue retries; a call is many turns and nothing retries them.*
 4. With `trace.enabled` in realtime mode, each call opens one AK span named `Agent Kernel <Framework> realtime`, tagged with the session id; ADK's native spans become its children. *Intentional.*
 5. `close()` waits for the store before it ends the run. A slow store delays that call's close by the write. *Accepted.*
 
@@ -193,7 +193,7 @@ Concurrency: the write runs on a worker thread from `asyncio.to_thread`, on the 
 New files:
 
 - `tests/test_realtime_session_store.py`, with its own fakes and the real `asyncio.to_thread` (`tests/test_realtime_pool.py` runs it inline), over a recording store on the connection's `Runtime`:
-  - a normal close stores once, the session itself, on a worker thread; a turn end stores nothing; a second close stores nothing more;
+  - a normal close stores once, the session itself, on a worker thread; a finished turn stores a copy off the loop, later changes stay out of it, writes land in turn order with the close write last, a halted turn stores nothing, a call that fails after a turn leaves that turn stored; a second close stores nothing more;
   - a post-hook's non-volatile cache write during the call is stored; the volatile cache is empty once the run ends;
   - the store is attempted when `disconnect` raises; a failing store is logged and the identity and volatile cache are still cleared;
   - none after a native error or a failed connect;

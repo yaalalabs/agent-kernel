@@ -23,7 +23,7 @@ left out and documented, not forced.
 | `Session.current()`, `Agent.current()` | `Runtime` (`core/base.py:121`, `core/runtime.py:517`) | The pool sets the context variable and calls the private `Agent._activate` (`pipeline/realtime_pool.py:138-140`, `:239-241`) | The pool calls the public `Runtime.activate`, the step `run()` and `stream()` use |
 | Pre-hooks and post-hooks | `Runtime` | `Runtime`'s public hook loops (#927) | None |
 | `ToolContext` | The adapter, per run (`framework/openai/openai.py:234`) | The pool, once per call (`pipeline/realtime_pool.py:137`) | None: works, kept |
-| Store the session | `Runtime`, after a successful run (`core/runtime.py:546`, `:627`) | Never | Stored once, when the call ends normally (the `Runtime.stream` rule) |
+| Store the session | `Runtime`, after a successful run (`core/runtime.py:546`, `:627`) | Never | Stored after each finished turn and when the call ends normally (the `Runtime.stream` rule) |
 | Unpublish, clear the volatile cache | `Runtime`, in `finally` (`core/runtime.py:549-550`, `:641-642`) | The pool calls the private `Session._unpublish_run` and `KeyValueCache._clear_all` (`pipeline/realtime_pool.py:455`, `:458`) | The pool calls `Runtime._end_run`, the step `run()` and `stream()` use |
 | `framework_context` | The adapter (`framework/openai/openai.py:245-251`) | Not carried (`core/realtime/runner.py:19`) | None: not needed on a call (below) |
 | Tracing | A traced runner per framework, picked by the `Module` (`framework/openai/openai.py:925-929`) | ADK: native spans. OpenAI: none. The realtime runner class is never traced (`:923`) | A traced realtime runner per framework, picked by the `Module` |
@@ -78,15 +78,15 @@ Verified on the code, by the existing tests named here, and by running an experi
 
 ### Session store
 
-- The call stores its session once, when it ends normally (the edge ended it, idle eviction, shutdown), through the runtime's session store (`runtime.sessions().store(session)`): the `Runtime.stream` rule, one store at the end of a stream that ended normally (`core/runtime.py:627`). A call is a two-sided stream.
+- The call stores its session after each finished turn (a copy, see below) and once when it ends normally (the edge ended it, idle eviction, shutdown), through the runtime's session store (`runtime.sessions().store(session)`): the `Runtime.stream` rule, one store at the end of a stream that ended normally (`core/runtime.py:627`). A call is a two-sided stream.
 - No store after a failure (`_fail`: a native error, a `StreamHalt`, a raising post-hook; a failed connect), as `Runtime.stream` does not store a halted run (`core/runtime.py:629`).
 - The store runs after the adapter has disconnected (ADK flushes its session service there, `framework/adk/adk.py:1125-1126`) and before the call's identity and volatile cache are cleared, the order `Runtime.stream` uses.
 - One stated difference: the write runs on a worker thread, not on the loop.
   - `Runtime.stream` writes on its own loop, which nothing else shares. The pool's loop serves every call in the process (`pipeline/realtime_pool.py:461-465`), and a store is synchronous network I/O, one write per session key (`core/session/redis.py:100-101`, `core/session/dynamodb.py:104-106`). On the loop, each call's end would stall every other call's audio, which the edge buffers only `playback_lead_ms` ahead, 50 ms by default (`core/config.py:681-682`).
-  - The store call itself is unchanged, and the stored object is the session itself, as in `Runtime.stream`: no copy, no new API.
+  - The store call itself is unchanged, no new API. A turn's write is a copy of the session, pickled on the pool loop (each durable key through the stores' own `BinarySerde`; measured about 1.5 ms per 200 ADK events) and unpickled on the worker thread; a copy still waiting is replaced by the newer one, because ADK and hooks change the session on that loop while a call is live; the write at close is the live session, as in `Runtime.stream`. Writes run one at a time, in turn order.
   - Accepted, narrow risk: an input chunk whose hooks are still running when the call closes could change the session while the thread writes it. The native session and pacing have already stopped by then.
 - A failed store is logged and the call still ends.
-- What this gives up, consistently with a stream: a process crash or a native-session failure mid-call loses that call's changes on a durable store; the next connection starts from the session as it was before the call.
+- What this gives up: a process crash or a native-session failure mid-call loses the turn in progress; the next connection starts from the session as of the last finished turn. On ADK that is a smooth resume: ADK replays the saved events (transcription is on by default in `RunConfig`). On OpenAI the conversation lives only in the native session (no resume, no history input), so a new call starts fresh and only the AK-side state is kept.
 - Against another run on the same session id, the last store wins (no lock, below). This is already the case between two processes.
 - Existing apps: a call on a durable store starts storing its session. Intended (#885), not opt-in.
 
@@ -170,7 +170,7 @@ Each was checked against a realtime call in practice; none is forced onto it.
 
 ## Decisions taken in review
 
-1. Store the session once, when the call ends normally, as `Runtime.stream` does (first decided as per turn plus call end; changed for consistency: a call is a two-sided stream). The write runs off the shared loop.
+1. Store the session after each finished turn and once when the call ends normally, never after a failure. Reversal of an earlier review decision (once at the end, to match `Runtime.stream`): a text run loses at most one request, which the queue retries; a call that fails would lose every finished turn with nothing to retry them, and the next call could not resume. The rule AK follows is "save finished work, never half-finished work", and a call's unit of work is a turn. Each turn's write is a copy taken on the loop; all writes run off the shared loop.
 2. `framework_context` is not carried on a call.
 3. Tracing is in this change: AK's layer through traced realtime runners; OpenAI's model and tool spans are left to the instrumentor where one is installed.
 4. Scheduled occurrences, a turn log, native tool events and a lock stay out (above). The session lock and human-in-the-loop (pause and resume) on a call are deferred to a later change; so is an AK span around `Runtime.stream()` and `resume()`, which is its own issue across every traced runner.

@@ -1,6 +1,7 @@
 """
-A realtime call stores its session (#928) the way ``Runtime.stream`` does: once, when the call ends normally,
-never after a failure. The write runs off the pool loop, which every call in the process shares.
+A realtime call stores its session (#928) after each finished turn and once when the call ends normally, never
+after a failure, so a call that fails loses only the turn in progress. A turn's write is a copy taken on the pool
+loop; every write runs off that loop, which every call in the process shares.
 
 This file keeps the real ``asyncio.to_thread`` (unlike ``test_realtime_pool.py``, which runs it inline), because
 whether the store write runs off the loop is part of what is tested.
@@ -15,7 +16,7 @@ import pytest
 
 from agentkernel import Agent, Runner, Session
 from agentkernel.core.event import MessageEnd, TextDelta
-from agentkernel.core.hooks import PostHook, PreHook
+from agentkernel.core.hooks import PostHook, PreHook, StreamHalt
 from agentkernel.core.model import AgentReplyText, AgentRequestText, AgentRequestVoice, Principal
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
@@ -181,16 +182,127 @@ class TestCallEnd:
         assert store.stores[0]["thread"] is not threading.main_thread()
 
     @pytest.mark.asyncio
-    async def test_a_turn_end_does_not_store(self, store):
+    async def test_a_finished_turn_stores_a_copy_off_the_loop(self, store):
         conn = _connection(store)
+        await conn.connect()
+        conn.session.get_non_volatile_cache().set("turn", 1)
+
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await _until(lambda: len(store.stores) == 1)
+
+        assert store.stores[0]["turn"] == 1
+        assert store.stores[0]["session"] is not conn.session
+        assert store.stores[0]["thread"] is not threading.main_thread()
+        await conn.close()
+        assert len(store.stores) == 2
+        assert store.stores[1]["session"] is conn.session
+
+    @pytest.mark.asyncio
+    async def test_a_change_after_the_turn_is_not_in_that_turns_copy(self, store):
+        conn = _connection(store)
+        await conn.connect()
+        store.gate = threading.Event()
+        conn.session.get_non_volatile_cache().set("turn", 1)
+
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await asyncio.wait_for(asyncio.to_thread(store.started.wait, 2), 3)
+        conn.session.get_non_volatile_cache().set("turn", 2)
+        store.gate.set()
+        await _until(lambda: len(store.stores) == 1)
+
+        assert store.stores[0]["turn"] == 1
+        await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_writes_land_in_turn_order_and_the_close_write_is_last(self, store):
+        conn = _connection(store)
+        await conn.connect()
+        store.gate = threading.Event()
+
+        for turn in (1, 2):
+            conn.session.get_non_volatile_cache().set("turn", turn)
+            await conn.handle_framework_event("done", {"status": "completed"})
+            await _until(lambda: conn._audio_queue.empty())
+            await asyncio.sleep(0.05)
+        conn.session.get_non_volatile_cache().set("turn", 3)
+        store.gate.set()
+        await conn.close()
+
+        assert [s["turn"] for s in store.stores] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_a_slow_store_keeps_only_the_newest_waiting_turn(self, store):
+        conn = _connection(store)
+        await conn.connect()
+        store.gate = threading.Event()
+
+        for turn in (1, 2, 3, 4):
+            conn.session.get_non_volatile_cache().set("turn", turn)
+            await conn.handle_framework_event("done", {"status": "completed"})
+            await _until(lambda: conn._audio_queue.empty())
+            await asyncio.sleep(0.05)
+            if turn == 1:
+                await asyncio.to_thread(store.started.wait, 2)
+        store.gate.set()
+        await conn.close()
+
+        assert [s["turn"] for s in store.stores] == [1, 4, 4]  # turn 1 was in flight, 2 and 3 replaced, then the close
+
+    @pytest.mark.asyncio
+    async def test_a_halted_turn_is_not_stored(self, store):
+        class HaltAtTurnEnd(PostHook):
+            async def on_run(self, session, requests, agent, agent_reply):
+                return agent_reply
+
+            async def on_stream_event(self, session, requests, agent, event):
+                if isinstance(event, MessageEnd):
+                    raise StreamHalt("blocked")
+                return event
+
+            def name(self):
+                return "halt-at-turn-end"
+
+        agent = _Agent()
+        agent.post_hooks.append(HaltAtTurnEnd())
+        conn = _connection(store, agent)
         await conn.connect()
 
         await conn.handle_framework_event("done", {"status": "completed"})
-        await asyncio.sleep(0.2)
+        await asyncio.to_thread(conn.close_done.wait, 3)
 
         assert store.stores == []
+
+    @pytest.mark.asyncio
+    async def test_a_call_that_fails_after_a_turn_leaves_that_turn_stored(self, store):
+        conn = _connection(store)
+        await conn.connect()
+        conn.session.get_non_volatile_cache().set("turn", 1)
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await _until(lambda: len(store.stores) == 1)
+        conn.session.get_non_volatile_cache().set("turn", 2)
+
+        await conn.handle_framework_event("error", {"message": "native session lost"})
+        await asyncio.to_thread(conn.close_done.wait, 3)
+
+        assert [s["turn"] for s in store.stores] == [1]
+        assert store.load("s1").get_non_volatile_cache().get("turn") == 1
+
+    @pytest.mark.asyncio
+    async def test_a_slow_turn_write_does_not_block_the_loop(self, store):
+        conn = _connection(store)
+        await conn.connect()
+        store.gate = threading.Event()
+
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await asyncio.wait_for(asyncio.to_thread(store.started.wait, 2), 3)
+        ticks = 0
+        for _ in range(5):
+            await asyncio.sleep(0.01)
+            ticks += 1
+        store.gate.set()
+
+        assert ticks == 5
         await conn.close()
-        assert len(store.stores) == 1
 
     @pytest.mark.asyncio
     async def test_the_volatile_cache_is_not_stored(self, store):
@@ -275,7 +387,7 @@ class TestCallEnd:
         with caplog.at_level(logging.ERROR, logger="ak.pipeline.realtime_pool"):
             await conn.close()
 
-        assert any("at the end of the call failed" in r.message for r in caplog.records)
+        assert any("storing the session failed" in r.message for r in caplog.records)
         assert conn.session.get_principal() is None
 
 
