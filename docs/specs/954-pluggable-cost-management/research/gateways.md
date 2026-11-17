@@ -200,3 +200,15 @@ Done by a delegated research pass over the official docs and the source reposito
 - **Self-hosting.** Needs Langfuse 4.75.0 or later, with the `langfuse/ai-gateway` image on the same version. Not available with `LANGFUSE_MIGRATION_V4_WRITE_MODE=legacy`. **V** (https://langfuse.com/self-hosting/configuration/ai-gateway)
 - **Headers.** The values are capped at 1 KiB each; if the total exceeds 8 KiB, every context header is ignored. `langfuse-metadata` is comma-separated `key:value`. W3C `baggage` is accepted as an alternative. **V** (https://langfuse.com/docs/gateway/features/tracing)
 - **Versioning.** There is no API-version header or compatibility matrix. **U**
+
+## Correction (2026-11-17): LiteLLM 1.95.1, read in source (`ak-py/.venv`, the `uv.lock` pin)
+
+Supersedes the **V** marks above where they disagree. These were read in source, not in the docs.
+
+- **`budget_reset_time` does not exist at 1.95.1.** `get_next_standardized_reset_time(duration, current_time, timezone_str)` (`litellm/litellm_core_utils/duration_parser.py:97`) takes no reset time. The timezone comes from `litellm.timezone`, defaulting to UTC (`proxy/common_utils/timezone_utils.py:7-15`).
+- **Calendar alignment at 1.95.1**: `1d` aligns to the next midnight, `7d` to Monday and `30d` to the 1st (`duration_parser.py:190-207`); `Nmo` aligns to the 1st (`_handle_month_reset`, `:357`). A `w` unit falls through to "next midnight" (`:143`). So weekly is `7d`, not `1w`.
+- **`max_end_user_budget_id` cannot be set through the admin API.** `POST /config/update` (`proxy/proxy_server.py:14376`) stores `litellm_settings` in the DB, but the proxy applies only the keys in `LITELLM_SETTINGS_SAFE_DB_OVERRIDES` (`constants.py:1586-1595`; applied at `proxy_server.py:5669-5674`), and that key is not among them. No admin route returns `litellm_settings` (`/get/config/callbacks`, `:14992`, returns callbacks, alerts and router settings).
+- **End-user header**: `x-litellm-customer-id` and `x-litellm-end-user-id` are `STANDARD_CUSTOMER_ID_HEADERS` (`constants.py:1330-1333`), read at `proxy/auth/auth_utils.py:1169`.
+- **Budget refusal at 1.95.1**: `BudgetExceededError` (status 429, `exceptions.py:844-856`) becomes `ProxyException(type="budget_exceeded")` (`proxy/auth/auth_exception_handler.py:142-147`). The end-user message starts `ExceededBudget: End User=` (`proxy/auth/auth_checks.py:1121`).
+- **`/spend/logs/v2`** has an `end_user` filter, `page_size` and `sort_by` / `sort_order` on one column (`proxy/spend_tracking/spend_management_endpoints.py:1734-1806`). There is no secondary sort key, so rows sharing a `startTime` have no stable order.
+- **`/health/readiness`** returns `litellm_version` (`proxy/health_endpoints/_health_endpoints.py:1579`, `:1590`, route at `:1668`).
