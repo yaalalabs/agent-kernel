@@ -939,13 +939,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     def __init__(self):
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.adk.realtime")
-        self._callback: Callable | None = None
         self._runner: Runner | None = None
         self._queue: LiveRequestQueue | None = None
         self._listen_task: asyncio.Task | None = None
-        self._closing = False
-        self._speaker: str | None = None
-        self._roster: list[str] = []
         self._tool_context: AKToolContext | None = None
 
     def initial_speaker(self, agent: AKBaseAgent) -> str | None:
@@ -1025,13 +1021,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            self._log.error(f"ADK live run failed: {e}")
-            if not self._closing:
-                await self._callback(BaseRealtimeRunner.Event.ERROR, {"message": f"ADK live run failed: {e}"})
+            await self._report_listen_failed(f"ADK live run failed: {e}")
             return
-        if not self._closing:
-            # A clean end of run_live() means the native session closed, not that a turn finished.
-            await self._callback(BaseRealtimeRunner.Event.ERROR, {"message": "ADK live run ended"})
+        # A clean end of run_live() means the native session closed, not that a turn finished.
+        await self._report_listen_ended("ADK live run ended")
 
     async def _handle_event(self, event: Event) -> bool:
         """
@@ -1075,17 +1068,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         elif event.turn_complete:
             await self._callback(BaseRealtimeRunner.Event.DONE, {"status": "completed"})
         return False
-
-    async def _speaker_changed(self, agent: str) -> None:
-        """Reports a change of speaker once, with the roster when the agent is new to it."""
-        if agent == self._speaker:
-            return
-        data: dict[str, Any] = {"agent": agent, "previous_agent": self._speaker}
-        if agent not in self._roster:
-            self._roster.append(agent)
-            data["agents"] = list(self._roster)
-        self._speaker = agent
-        await self._callback(BaseRealtimeRunner.Event.AGENT_CHANGED, data)
 
     async def _refuse_confirmation(self, event: Event) -> None:
         """Fails the connection for a tool that needs a human's confirmation: a realtime session has no decision route."""

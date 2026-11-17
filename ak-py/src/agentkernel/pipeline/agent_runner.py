@@ -7,7 +7,6 @@ from ..core.config import AKConfig
 from ..core.event import PausedInterruption
 from ..core.model import AgentPausedReplyAny, BaseRunRequest, ExecutionMode, Principal, StreamChunk
 from ..core.util.factory import AKConfigError
-from ..realtime.pool import RealtimeConnectionPool
 from .consumer import ConsumerLoop
 from .envelope import (
     ATTR_AGUI,
@@ -418,7 +417,7 @@ class StreamAgentRunner(AgentRunner):
 
 
 class RealtimeAgentRunner(AgentRunner):
-    """REALTIME-mode sibling: dedicated consumer for WebRTC/audio streaming.
+    """REALTIME-mode sibling (spec #405, #810): dedicated consumer for WebRTC/audio streaming.
 
     ``protocol`` traffic is not realtime: an A2A or MCP caller waits for one whole reply in the
     response store, so it takes the base single-reply path instead of the connection pool (#780).
@@ -427,12 +426,17 @@ class RealtimeAgentRunner(AgentRunner):
     _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
 
     def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
+        # Imported here, as ``ResponseHandler`` imports ``StatefulEdgeRegistry``: ``pipeline`` does not load ``realtime`` at module level.
+        from ..realtime.pool import RealtimeConnectionPool
+
         pool = RealtimeConnectionPool.initialize()
         return [pool.get_task()]
 
     def _process_run(self, message: QueueMessage) -> None:
         if QueueMessage.protocol_of(message.attributes):
             return super()._process_run(message)
+
+        from ..realtime.pool import RealtimeConnectionPool  # lazy: see ``_get_extra_tasks``
 
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
@@ -451,6 +455,8 @@ class RealtimeAgentRunner(AgentRunner):
 
         self._log.error(f"Permanent failure for message {message.message_id}")
         try:
+            from ..realtime.pool import RealtimeConnectionPool  # lazy: see ``_get_extra_tasks``
+
             max_receive_count = AKConfig.get().execution.queues.input.max_receive_count
             dedup_id = f"{message.dedup_id}-{message.receive_count}-error" if message.dedup_id else None
             RealtimeConnectionPool.send_permanent_failure(

@@ -713,6 +713,24 @@ class TestRealtimePoolShutdown:
         assert RealtimeConnectionPool.get()._connections == {}
 
 
+class TestRealtimeRunnerBase:
+    def test_a_custom_runner_without_its_own_logger_can_report_a_failed_listen(self, caplog):
+        """``_Adapter`` sets no ``_log``: the base class default keeps ``_report_listen_failed`` working."""
+        adapter = _Adapter()
+        events = []
+
+        async def callback(event, data):
+            events.append((event, data))
+
+        adapter._callback = callback
+
+        with caplog.at_level("ERROR", logger="ak.realtime.runner"):
+            asyncio.run(adapter._report_listen_failed("native session broke"))
+
+        assert events == [(RealtimeRunner.Event.ERROR, {"message": "native session broke"})]
+        assert "native session broke" in caplog.text
+
+
 class TestRealtimeRunnerReuse:
     def test_audio_chunks_reuse_connection_without_re_resolving(self, monkeypatch):
         from unittest.mock import MagicMock

@@ -52,8 +52,9 @@ class RealtimeConnection:
        lock is not held, since a call would block every other run of the session). Once open the state is
        ``OPEN``, the ``[REALTIME CALL START]`` line is logged and the pacing task starts.
     2. Caller input arrives from consumer threads. ``append_audio`` and ``send_text`` schedule the send on the
-       pool loop and wait, bounded by ``SEND_TIMEOUT_SECONDS``, so the input is acked only after it reached
-       the model.
+       pool loop and wait, bounded by ``SEND_TIMEOUT_SECONDS``, so the input is normally acked once the model has it.
+       A send that fails or times out is logged and the input is still acked: the caller's audio keeps flowing,
+       and one lost chunk or message does not fail the call.
     3. The runner reports events through ``handle_framework_event``. Audio, ``transcript_delta``, ``done``,
        ``agent_changed`` and ``input_transcript`` all ride one queue (``_output_queue``), so a control event
        cannot overtake the audio it belongs to. The pacing loop drains it, emitting audio at playback rate.
@@ -268,8 +269,8 @@ class RealtimeConnection:
         self._log.error(f"Realtime session {self.session_id} could not start: {error!r}")
         try:
             await self._emit(StreamChunk(error=f"Realtime session could not start: {str(error) or type(error).__name__}", done=True))
-        except Exception as e:
-            self._log.error(f"Realtime session {self.session_id}: could not report its failed start: {e}")
+        except Exception:
+            self._log.exception(f"Realtime session {self.session_id}: could not report its failed start")
         finally:
             await self.close()
 
@@ -294,7 +295,16 @@ class RealtimeConnection:
         self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal)
 
     def update_delivery_context(self, request_id: str | None, user_id: str | None, integration: str | None, reply_context: dict) -> None:
-        """Called before pushing audio to ensure callbacks route output to the right place."""
+        """Record where this connection's output goes, for text input as well as audio.
+
+        Called by ``RealtimeConnectionPool.dispatch`` before every input (voice or text), and once when the connection is created,
+        so the output the model produces in reply is stamped with the latest return address.
+
+        :param request_id: The request id stamped on the output chunks.
+        :param user_id: The WebSocket routing marker the output is stamped with, if any (not an identity).
+        :param integration: The messaging integration the output is delivered through, if any.
+        :param reply_context: The integration's reply context (already stripped of its ``reply_`` prefix).
+        """
         self.request_id = request_id
         self.user_id = user_id
         self.integration = integration
@@ -315,9 +325,10 @@ class RealtimeConnection:
         self._dispatch_send(self.runner.send_text(text), "send_text")
 
     def _dispatch_send(self, coro, action: str) -> None:
-        """Run a send on the pool loop, blocking (bounded) so the input is not acked before it reached the model.
+        """Run a send on the pool loop, blocking (bounded by ``SEND_TIMEOUT_SECONDS``) so the input is normally acked once the model has it.
 
-        On the pool loop itself the send is scheduled instead, and a failure is logged.
+        A failed or timed-out send is logged and not raised, so the input is still acked. On the pool loop itself the send is
+        scheduled instead, and a failure is logged.
         """
         try:
             running = asyncio.get_running_loop()
@@ -332,8 +343,8 @@ class RealtimeConnection:
         future = asyncio.run_coroutine_threadsafe(coro, self.loop)
         try:
             future.result(timeout=self.SEND_TIMEOUT_SECONDS)
-        except Exception as e:
-            self._log.error(f"Realtime session {self.session_id}: failed to {action}: {e}")
+        except Exception:
+            self._log.exception(f"Realtime session {self.session_id}: failed to {action}")
 
     def _log_send_failure(self, task: "asyncio.Task", action: str) -> None:
         if not task.cancelled() and task.exception() is not None:
@@ -345,6 +356,7 @@ class RealtimeConnection:
         """Queue one runner event behind the audio it belongs to; an unknown event fails the connection.
 
         ``speech_started`` is a barge-in only while paced audio is still queued.
+
         :param event_type: One of the :class:`RealtimeRunner.Event` names (a plain string with the same value works).
         :param data: The event's payload.
         """
@@ -441,8 +453,8 @@ class RealtimeConnection:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                self._log.error(f"Error in realtime pacing loop: {e}")
+            except Exception:
+                self._log.exception("Error in realtime pacing loop")
 
     async def _emit(self, chunk: StreamChunk) -> None:
         """Send a realtime output chunk to the output queue with the current delivery context."""
@@ -530,7 +542,10 @@ class RealtimeConnectionPool:
 
     @classmethod
     def reset(cls) -> None:
-        """Test isolation."""
+        """Shut down the process-wide pool, closing every connection, and forget it so the next ``initialize()`` builds a new one.
+
+        Meant for test isolation.
+        """
         with cls._lock:
             if cls._instance is not None:
                 cls._instance.shutdown()
@@ -680,10 +695,17 @@ class RealtimeConnectionPool:
     ) -> RealtimeConnection:
         """Get or create a session's connection. Thread-safe; the connect runs outside the lock.
 
+        :param session_id: The AK session id; one connection per session id.
+        :param agent: The agent the call starts with, used only when a connection is created here.
+        :param runtime: The runtime the call's identity is published on, used only when a connection is created here.
+        :param session: The AK session the call is bound to, used only when a connection is created here.
         :param request_id: The delivery context of a connection created here, set before it connects.
         :param user_id: See ``request_id``.
         :param integration: See ``request_id``.
         :param reply_context: See ``request_id``.
+        :return: The session's open connection: the existing one, or a new one that has finished connecting.
+        :raises RuntimeError: If the pool's loop is not ready in time, if the pool is shutting down, or if the new
+            connection ends during startup. A connect that fails or times out re-raises its own error.
         """
         if not self._loop_ready.wait(timeout=self.LOOP_READY_TIMEOUT_SECONDS):
             raise RuntimeError("RealtimeConnectionPool event loop not ready")
@@ -736,8 +758,8 @@ class RealtimeConnectionPool:
             future = asyncio.run_coroutine_threadsafe(conn.close(), self._loop)
             try:
                 future.result(timeout=RealtimeConnection.SEND_TIMEOUT_SECONDS)
-            except Exception as e:
-                self._log.error(f"Realtime session {session_id}: failed to close on end: {e}")
+            except Exception:
+                self._log.exception(f"Realtime session {session_id}: failed to close on end")
         self._log.info(f"Realtime session {session_id} ended by its edge")
 
     def _discard_failed(self, session_id: str, conn: RealtimeConnection, connect: "Future", error: BaseException) -> None:

@@ -644,13 +644,10 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
     def __init__(self):
         super().__init__(FRAMEWORK)
+        self._log = logging.getLogger("ak.openai.realtime")
         self._session: RealtimeSession | None = None
-        self._callback: Callable | None = None
         self._listen_task: asyncio.Task | None = None
-        self._closing = False
         self._response_in_flight = False
-        self._speaker: str | None = None
-        self._roster: list[str] = []
 
     def team(self, agent: BaseAgent) -> list[str]:
         """Every agent reachable through ``handoffs``, the starting agent first."""
@@ -748,13 +745,10 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            _log.error(f"OpenAI realtime session error: {e}")
-            if not self._closing:
-                await self._callback(BaseRealtimeRunner.Event.ERROR, {"message": f"OpenAI realtime session error: {e}"})
+            await self._report_listen_failed(f"OpenAI realtime session error: {e}")
             return
-        if not self._closing:
-            # A clean end of the event stream means the native session closed, not that a turn finished.
-            await self._callback(BaseRealtimeRunner.Event.ERROR, {"message": "OpenAI realtime session ended"})
+        # A clean end of the event stream means the native session closed, not that a turn finished.
+        await self._report_listen_ended("OpenAI realtime session ended")
 
     async def _handle_event(self, event: Any) -> None:
         """Maps one SDK session event onto the pool's events."""
@@ -772,13 +766,13 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         elif kind == "audio_interrupted":
             await self._interrupted()
         elif kind == "guardrail_tripped":
-            _log.warning(f"Realtime output guardrail tripped: {event.message[:200]}")
+            self._log.warning(f"Realtime output guardrail tripped: {event.message[:200]}")
             await self._interrupted()
         elif kind == "tool_approval_required":
             await self._refuse_approval(event)
         elif kind == "error":
             # An error the session survives; one it cannot survive raises in _listen instead.
-            _log.warning(f"OpenAI realtime error: {event.error}")
+            self._log.warning(f"OpenAI realtime error: {event.error}")
 
     async def _handle_model_event(self, data: Any) -> None:
         kind = data.type
@@ -793,17 +787,6 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         elif kind == "turn_ended":
             self._response_in_flight = False
             await self._callback(BaseRealtimeRunner.Event.DONE, {"status": "completed"})
-
-    async def _speaker_changed(self, agent: str, previous: str | None = None) -> None:
-        """Reports a change of speaker once (the SDK names it on both handoff and agent_start), with the roster when the agent is new."""
-        if agent == self._speaker:
-            return
-        data: dict[str, Any] = {"agent": agent, "previous_agent": previous or self._speaker}
-        if agent not in self._roster:
-            self._roster.append(agent)
-            data["agents"] = list(self._roster)
-        self._speaker = agent
-        await self._callback(BaseRealtimeRunner.Event.AGENT_CHANGED, data)
 
     async def _interrupted(self) -> None:
         """Reports ``interrupt`` while a response is in flight, else ``speech_started``: the SDK sends one event for both."""

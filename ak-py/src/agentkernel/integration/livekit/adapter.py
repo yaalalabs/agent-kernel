@@ -170,7 +170,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         )
 
     async def start(self) -> None:
-        """Join the room and bridge audio until the pipeline shuts down.
+        """Join the room and bridge audio until the edge ends: the last caller leaves, the room finishes, or the process shuts down.
 
         On a failed join the participants leave before the error is raised: the edge runner does not call :meth:`stop` then.
         """
@@ -260,8 +260,9 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
     async def _send_session_end(self) -> None:
         """Send the end-of-session control once, behind the frames already staged, so the pool closes the session now.
 
-        Skipped when staged input is still unsent after the wait (the pool would drop it as late input) or the broker
-        does not answer in time; the pool's idle eviction closes the session then.
+        Skipped when staged input is still unsent after the wait (the control would overtake it, and the pool would act on the end first)
+        or the broker does not answer in time. Later input for the session id opens a new connection; the pool's idle eviction closes
+        the old one.
         """
         if self._end_sent or self._producer is None or not self._connected:
             return
@@ -356,8 +357,8 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
                 return
             _log.info(f"Text chat received from {data_packet.participant.identity}: {text}")
             self._stage_request(AgentRequestText(prompt=text), getattr(data_packet.participant, "identity", None))
-        except Exception as e:
-            _log.error(f"Failed to process chat: {e}")
+        except Exception:
+            _log.exception("Failed to process chat")
 
     async def _process_incoming_audio(self, track: "rtc.Track", participant_identity: str | None = None) -> None:
         """Pass the caller's audio to the queue, batched per ``execution.realtime.input_batch_ms``.
@@ -381,8 +382,8 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
                 if len(buffer) >= self._input_batch_bytes:
                     self._stage_request(self._enqueue_audio(buffer), participant_identity)
                     buffer.clear()
-            except Exception as e:
-                _log.error(f"Failed to process incoming audio frame: {e}")
+            except Exception:
+                _log.exception("Failed to process incoming audio frame")
 
         if buffer:
             self._stage_request(self._enqueue_audio(buffer), participant_identity)
@@ -391,7 +392,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         """Stage one request for the sender task; a full queue drops it with a warning.
 
         :param participant_identity: The LiveKit participant it came from, which becomes the
-            ``realtime:livekit`` principal's subject with the API key id as its scope (spec #603,
+            ``realtime:livekit`` principal's subject with the API key id as its scope (spec #603
             section 8.4); None stages it anonymous.
         """
         if self._producer is None or self._pending is None or self._end_sent:
@@ -409,8 +410,8 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
             inbound = await self._pending.get()
             try:
                 await asyncio.to_thread(self._producer.enqueue, self.name, inbound, self.source)
-            except Exception as e:
-                _log.error(f"Failed to enqueue request for session {self.session_id}: {e}")
+            except Exception:
+                _log.exception(f"Failed to enqueue request for session {self.session_id}")
             finally:
                 self._pending.task_done()
 
