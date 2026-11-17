@@ -1252,6 +1252,18 @@ class TestRealtimeReconnectBackoff:
 
         assert "s1" not in pool._failures
 
+    def test_the_sweep_forgets_a_finished_close_so_an_ended_session_is_not_kept_forever(self, pool, clock):
+        chat_service = TestRealtimeEndSession._chat_service()
+        self._send(pool, chat_service)
+        conn = pool.get_connection("s1")
+        pool.end_session("s1")
+        assert pool._closing.get("s1") is conn  # kept while its close may still be running
+
+        conn.close_done.set()
+        pool._sweep(clock[0])
+
+        assert "s1" not in pool._closing
+
     def test_other_sessions_are_not_held_back(self, pool, clock):
         chat_service = TestRealtimeEndSession._chat_service("s2")
         pool._failures["s1"] = (1, clock[0] + 50)

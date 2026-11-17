@@ -496,6 +496,18 @@ class TestModuleSelection:
         assert m.runner is mine
         assert m.realtime_runner_cls is traced_realtime
 
+    def test_both_runners_given_builds_no_tracer(self, monkeypatch, module_cls):
+        module, _, _, _, _ = module_cls
+        built = _configure(monkeypatch, tracing=True, mode=ExecutionMode.REALTIME)
+
+        class Mine(RealtimeRunner):
+            pass
+
+        m = module([], runner=object(), realtime_runner_cls=Mine)
+
+        assert built == []  # a failing tracer backend cannot block an app that chose both runners
+        assert m.realtime_runner_cls is Mine
+
     def test_a_tracer_without_the_realtime_methods_leaves_the_untraced_default(self, monkeypatch, module_cls):
         module, _, default_realtime, _, _ = module_cls
         _configure(monkeypatch, tracing=True, mode=ExecutionMode.REALTIME, tracer=_PlainTracer)

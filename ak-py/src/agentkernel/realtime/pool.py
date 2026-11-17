@@ -203,10 +203,13 @@ class RealtimeConnectionPool:
                 self._sweep(time.time())
 
     def _sweep(self, now: float) -> None:
-        """Forget stale failure records and evict connections idle for longer than ``IDLE_TIMEOUT_SECONDS``."""
+        """Forget stale failure records and finished closes, and evict connections idle for longer than ``IDLE_TIMEOUT_SECONDS``."""
         with self._conn_lock:
             for session_id in [sid for sid, (_, retry_at) in self._failures.items() if now - retry_at >= self.FAILURE_RECORD_TTL_SECONDS]:
                 del self._failures[session_id]
+            # A finished close needs no waiting: a session that never reconnects must not keep its connection for good.
+            for session_id in [sid for sid, conn in self._closing.items() if conn.close_done.is_set()]:
+                del self._closing[session_id]
         # Closed and removed under one lock, so a lookup cannot count the eviction as a failure.
         idle: list[tuple[str, RealtimeConnection]] = []
         with self._conn_lock:

@@ -9,11 +9,11 @@ Line numbers cite `feature/927-realtime-hooks` at `07821ddfb` and were read, not
 
 ## Design
 
-### 1. `Runtime` (`core/runtime.py`): `activate` and `_end_run`
+### 1. `Runtime` (`core/runtime.py`): `activate`
 
 - `activate(agent, session)`: a public context manager. It sets `Session.current_session` and enters `agent._activate()`, and resets both on exit, even after an exception. It takes no session lock and only sets context variables.
-- `_end_run(session)`: private, `session._unpublish_run()` then `session.get_volatile_cache()._clear_all()`. A missing principal makes the first a no-op; the cache is cleared either way.
-- `run()` and `stream()` call `activate` around the hook and runner span, and `_end_run` in their `finally`, in place of the two inline steps. Behaviour is unchanged.
+- The end steps are not shared: the pool calls `session._unpublish_run()` and `session.get_volatile_cache()._clear_all()` itself, as the inline lines in `run()` and `stream()` do (#603 section 8.4).
+- `run()` and `stream()` call `activate` around the hook and runner span. Behaviour is unchanged.
 - Identity publication is not touched: `Runtime._publish` stays private, called by `run()`, `stream()` and the pool (`pipeline/realtime_pool.py:112`), as #603 section 8.4 specifies.
 - No store method is added: the pool calls `runtime.sessions().store(session)`, the call `run()` and `stream()` make (`:546`, `:627`).
 
@@ -42,11 +42,13 @@ self._failed = False   # set by _fail and fail_to_connect: no store at close
           if not self._failed:
               await self._store_session()
       finally:
-          self.runtime._end_run(self.session)
+          if self._principal_published:
+              self.session._unpublish_run()
+          self.session.get_volatile_cache()._clear_all()
   ```
 
 - `_store_session()`: `await asyncio.to_thread(self.runtime.sessions().store, self.session)`. A failure is logged with its traceback (`ERROR`) and not raised, so the identity and the volatile cache are still cleared.
-  - A turn's write is a copy (`_save_turn`: each durable key pickled with `BinarySerde` on the pool loop, where every change to the session happens, so ADK or a hook cannot change it mid-copy; unpickled and written on the worker thread; a copy still waiting is replaced by the newer one, so a slow store builds no backlog); the write at close is the live session. Writes run one at a time under a lock, in turn order; close waits for pending turn writes before its own.
+  - A turn's write is a copy (`_save_turn`: each durable key pickled with `BinarySerde` on the pool loop, where every change to the session happens, so ADK or a hook cannot change it mid-copy; unpickled and written on the worker thread; each write waits for the previous one, so writes land in turn order with no lock); the write at close is the live session and waits for the last turn write. A failed call waits for that write too, but stores nothing.
   - On a worker thread, not the loop: the pool loop serves every call in the process (`:461-465`), and a store is synchronous network I/O. A slow write delays only this call's close.
   - Accepted risk: an input chunk whose hooks are still running (`_process_audio` / `_process_text`, scheduled from a consumer thread) could change the session while the thread writes it. The native session and the pacing task have already stopped.
 - No store after a failure: `_fail` (`:203`) and `fail_to_connect` (`:220`) set `self._failed = True` before anything else, as `Runtime.stream` stores nothing for a halted run.

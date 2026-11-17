@@ -160,6 +160,10 @@ class RealtimeConnection:
         self._last_turn: list[AgentRequest] = []
         # The first failing audio hook of a connection is logged at ERROR; later ones at DEBUG, since audio arrives at the chunk rate.
         self._input_failure_logged = False
+        # An interrupt is queued and not yet emitted: audio a hook releases meanwhile is not played over it.
+        self._interrupt_pending = False
+        # A hook is releasing held audio: the user starting to speak is a barge-in, as with queued audio.
+        self._releasing_audio = False
         # Saves the session after each finished turn and at the end; a failed call stores nothing more.
         # The call failed (a native error, a halt, a failed connect): its session is not stored again, so the last
         # finished turn is what the next call starts from.
@@ -296,6 +300,9 @@ class RealtimeConnection:
                 # data while disconnecting. Never save a call that failed.
                 if self._failed:
                     self._log.debug(f"Realtime session {self.session_id}: session not stored, the call failed")
+                    # A turn write still running must finish before the next call loads the session, or it could overwrite it.
+                    if self._last_write is not None:
+                        await asyncio.gather(self._last_write, return_exceptions=True)
                 else:
                     await self._write_session(self._last_write, lambda: self.session)
             finally:
@@ -489,7 +496,7 @@ class RealtimeConnection:
         elif event_type == Event.INTERRUPT:
             await self._interrupt(data)
         elif event_type == Event.SPEECH_STARTED:
-            if self._queued_audio > 0:
+            if self._queued_audio > 0 or self._releasing_audio:
                 await self._interrupt(data)
         elif event_type in (Event.DONE, Event.TRANSCRIPT_DELTA, Event.AGENT_CHANGED, Event.INPUT_TRANSCRIPT):
             await self._output_queue.put((event_type, data))
@@ -520,6 +527,7 @@ class RealtimeConnection:
             if item[0] not in (Event.AUDIO_DELTA, Event.TRANSCRIPT_DELTA):
                 kept.append(item)
         self._queued_audio = 0
+        self._interrupt_pending = True
         await self._output_queue.put((Event.INTERRUPT, data))
         for item in kept:
             await self._output_queue.put(item)
@@ -548,6 +556,7 @@ class RealtimeConnection:
                         await self._emit(StreamChunk(done=True))
                         self._save_turn()
                     elif event_type == Event.INTERRUPT:
+                        self._interrupt_pending = False
                         await self._emit_event(Interrupt())
                     elif event_type == Event.AGENT_CHANGED:
                         await self._emit_event(
@@ -577,13 +586,16 @@ class RealtimeConnection:
         """Run one output event through the post-hooks, emit each resulting event, and pace every audio event emitted.
 
         Pacing is applied to whatever audio leaves, whichever event released it: a hook that held audio and releases it on
-        the turn end gets the same playback-speed delivery as audio passed straight through.
+        the turn end gets the same playback-speed delivery as audio passed straight through. An interrupt that arrives
+        meanwhile drops the audio not yet emitted, as it drops queued audio.
 
         :param event: The event the native session produced, at the edge's sample rate when it is audio.
         :param audio_bytes: Byte length of ``event``'s audio when it is an ``AudioDelta``, which spares a decode.
         :return: The events that were emitted (empty when a hook dropped it).
         :raises StreamHalt: When a hook ends the call; any other hook failure is logged and raised as one.
         """
+        # A hook may change the audio in place and return the same event: its known length then no longer applies.
+        content_before = event.content if isinstance(event, AudioDelta) else None
         try:
             with self.runtime.activate(self.agent, self.session):
                 emitted = await self.runtime.run_stream_event_hooks(self.agent, self.session, self._last_turn, event)
@@ -592,12 +604,20 @@ class RealtimeConnection:
         except Exception as e:
             self._log.exception(f"Realtime session {self.session_id}: a post-hook failed on a '{event.type}' event")
             raise StreamHalt("Realtime output hook failed") from e
-        for out in emitted:
-            if isinstance(out, AudioDelta) and self._pace_played_ms == 0.0:
-                self._pace_start = time.time()
-            await self._emit(StreamChunk(delta=out.content if isinstance(out, TextDelta) else None, event=out))
-            if isinstance(out, AudioDelta):
-                await self._pace(out, audio_bytes if out is event else None)
+        self._releasing_audio = any(isinstance(out, AudioDelta) and out is not event for out in emitted)
+        try:
+            for out in emitted:
+                if isinstance(out, AudioDelta):
+                    if self._interrupt_pending:
+                        continue
+                    if self._pace_played_ms == 0.0:
+                        self._pace_start = time.time()
+                await self._emit(StreamChunk(delta=out.content if isinstance(out, TextDelta) else None, event=out))
+                if isinstance(out, AudioDelta):
+                    unchanged = out is event and out.content is content_before
+                    await self._pace(out, audio_bytes if unchanged else None)
+        finally:
+            self._releasing_audio = False
         return emitted
 
     async def _pace(self, audio: AudioDelta, known_bytes: int | None) -> None:

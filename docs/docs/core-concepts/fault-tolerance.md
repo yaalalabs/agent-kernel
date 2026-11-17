@@ -210,12 +210,12 @@ A realtime deployment runs **one Agent Runner replica**: the connection pool liv
 
 | What happens | Caller | Session stored | Trace span |
 |---|---|---|---|
-| Native session error (bad setting, quota) | One error message | No | Marked failed |
-| Repeated failures | Input dropped, retry after 1, 2, 4 ... up to 30 s | No | Marked failed |
+| Native session error (bad setting, quota) | One error message | Nothing more (turns finished before it are kept) | Marked failed |
+| Repeated failures | Input dropped, retry after 1, 2, 4 ... up to 30 s | Nothing more | Marked failed |
 | Caller leaves or the room ends | Call closes at once | Yes | Ends normally |
 | No activity for 300 s | Call evicted | Yes | Ends normally |
 | Graceful shutdown | Calls closed | Yes | Ends normally |
-| Runner crash mid-call | Call drops; the next input starts a fresh session | No (the call's changes are lost) | Never ended |
+| Runner crash mid-call | Call drops; the next input starts a fresh session | Turns finished before the crash are kept in a durable store (`in_memory` keeps nothing); the turn in progress is lost | Never ended |
 | Caller rejoins quickly | The new call waits up to 15 s for the old one to finish saving | Starts from the saved session | New span |
 
 ## Monitoring and Alerting

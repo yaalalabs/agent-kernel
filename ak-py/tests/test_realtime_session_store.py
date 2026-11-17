@@ -298,6 +298,23 @@ class TestCallEnd:
         assert store.load("s1").get_non_volatile_cache().get("turn") == 1
 
     @pytest.mark.asyncio
+    async def test_a_failed_call_waits_for_its_running_turn_write_before_it_is_done(self, store):
+        conn = _connection(store)
+        await conn.connect()
+        store.gate = threading.Event()
+        conn.session.get_non_volatile_cache().set("turn", 1)
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await asyncio.to_thread(store.started.wait, 2)
+
+        await conn.handle_framework_event("error", {"message": "native session lost"})
+        await asyncio.sleep(0.2)
+        assert not conn.close_done.is_set(), "the next call could load the session before this write landed"
+
+        store.gate.set()
+        await asyncio.to_thread(conn.close_done.wait, 3)
+        assert [s["turn"] for s in store.stores] == [1]  # the turn write landed; the failed call stored nothing more
+
+    @pytest.mark.asyncio
     async def test_a_slow_turn_write_does_not_block_the_loop(self, store):
         conn = _connection(store)
         await conn.connect()

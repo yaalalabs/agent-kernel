@@ -105,6 +105,13 @@ class VoiceOutputGuardrail(PostHook):
             self._reset(cache)
             if tripped or not text:
                 return event
+            # The tail after the last debounce check is unchecked: a short turn may never have reached the threshold.
+            hit = self._blocked_phrase(text)
+            if hit is not None:
+                _log.warning(
+                    f"session={session.id} output guardrail tripped on '{hit}' at the turn end: caption dropped"
+                )
+                return event
             redacted = redact_pii(text)
             if redacted != text:
                 _log.info(f"session={session.id} redacted PII in the agent's caption")
@@ -127,12 +134,15 @@ class VoiceOutputGuardrail(PostHook):
         cache.set(self._MESSAGE_ID, cache.get(self._MESSAGE_ID) or event.message_id)
         if len(text) - cache.get(self._CHECKED, 0) >= self._debounce_chars:
             cache.set(self._CHECKED, len(text))
-            hit = next((phrase for phrase in self._blocked if phrase in text.lower()), None)
+            hit = self._blocked_phrase(text)
             if hit is not None:
                 cache.set(self._TRIPPED, True)
                 _log.warning(f"session={session.id} output guardrail tripped on '{hit}': cutting the agent off")
                 return [Interrupt()]
         return None  # held until message_end
+
+    def _blocked_phrase(self, text: str) -> str | None:
+        return next((phrase for phrase in self._blocked if phrase in text.lower()), None)
 
     def _reset(self, cache) -> None:
         for key in (self._TEXT, self._CHECKED, self._TRIPPED, self._MESSAGE_ID):

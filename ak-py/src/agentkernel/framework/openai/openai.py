@@ -914,7 +914,9 @@ class OpenAIModule(Module):
             OpenAI realtime runner, or the configured tracer's traced one when tracing is enabled.
         """
         super().__init__()
-        tracer = Trace.get() if AKConfig.get().trace.enabled else None
+        # A tracer is built only when a runner is left to choose, as before: a module given both runners never touches tracing.
+        needs_tracer = runner is None or realtime_runner_cls is None
+        tracer = Trace.get() if needs_tracer and AKConfig.get().trace.enabled else None
         if runner is not None:
             self.runner = runner
         elif tracer is not None:
@@ -922,11 +924,10 @@ class OpenAIModule(Module):
         else:
             self.runner = OpenAIRunner()
         # After the text runner: its constructor installs the instrumentor; the realtime method then finds it installed.
-        traced_realtime = tracer.openai_realtime() if tracer is not None else None
         if realtime_runner_cls is not None:
             self.realtime_runner_cls = realtime_runner_cls
-        elif traced_realtime is not None:
-            self.realtime_runner_cls = traced_realtime
+        elif tracer is not None and (traced := tracer.openai_realtime()) is not None:
+            self.realtime_runner_cls = traced
         else:
             self.realtime_runner_cls = OpenAIRealtimeRunner
         self.load(agents)
