@@ -9,18 +9,17 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.5"
+version = "0.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "deprecated" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/23/04a97afd1bfce8f69640c7052036eda1e324114538aa519d04308d5a4de3/agentkernel-0.9.5.tar.gz", hash = "sha256:43df6229bd23e2d43db5905ee75ff93564b3c5bd5645924de97217a77a237a9f", size = 673951, upload-time = "2026-10-09T06:37:29.487Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/ca/d90e1312f219a1abb46c9ec72050e0a259d2163724f05d44ded2fe949e9f/agentkernel-0.10.1.tar.gz", hash = "sha256:248d420a3d37c45090c6808b695b686a63a5a581e687156432cf0599bc19828b", size = 853158, upload-time = "2026-11-16T08:38:30.326Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/26/64bdbf4bedb1a0844ff8769d8aa91b237eaff9182a1656145aab789cb906/agentkernel-0.9.5-py3-none-any.whl", hash = "sha256:78a545e8d9652c8b2ade16003fb75ad5be5e1f2221df60a24320358956151ecc", size = 872753, upload-time = "2026-10-09T06:37:27.346Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/a2/300d3a4cd46d2a1953f901ae5fbfb477f600f74644d238c9853a7a27927c/agentkernel-0.10.1-py3-none-any.whl", hash = "sha256:48343062fdcbcdfe2de75ae191e050799cb49a08ad8d17a023a2e29bf3bf4dd9", size = 1078427, upload-time = "2026-11-16T08:38:27.88Z" },
 ]
 
 [package.optional-dependencies]
@@ -997,18 +996,6 @@ wheels = [
 ]
 
 [[package]]
-name = "deprecated"
-version = "1.3.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "wrapt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/49/85/12f0a49a7c4ffb70572b6c2ef13c90c88fd190debda93b23f026b25f9634/deprecated-1.3.1.tar.gz", hash = "sha256:b1b50e0ff0c1fddaa5708a2c6b0a6588bb09b892825ab2b214ac9ea9d92a5223", size = 2932523, upload-time = "2025-10-30T08:19:02.757Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/d0/205d54408c08b13550c733c4b85429e7ead111c7f0014309637425520a9a/deprecated-1.3.1-py2.py3-none-any.whl", hash = "sha256:597bfef186b6f60181535a29fbe44865ce137a5079f295b479886c82729d5f3f", size = 11298, upload-time = "2025-10-30T08:19:00.758Z" },
-]
-
-[[package]]
 name = "distro"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1833,11 +1820,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["livekit", "openai", "api"], specifier = ">=0.9.5" }]
+requires-dist = [{ name = "agentkernel", extras = ["livekit", "openai", "api"], specifier = ">=0.10.1" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.10.1" },
     { name = "black", specifier = "==26.10.1" },
     { name = "isort", specifier = ">=5.0.0,<10.0.0" },
     { name = "mypy", specifier = ">=1.0.0,<3.0.0" },
@@ -4041,15 +4028,15 @@ wheels = [
 
 [[package]]
 name = "uvicorn"
-version = "0.53.0"
+version = "0.52.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "h11" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5d/ad/04bbb797c84fc1f26cb171f7394716f4865ffb8d8c5e1eef42565c2dfa6b/uvicorn-0.53.0.tar.gz", hash = "sha256:a9356f0cb89b3b8621529c5d5eebd69bfe154f4c3f68b4cf2de47e45fa855c2e", size = 110881, upload-time = "2026-09-14T07:44:23.815Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f2/0f/3f86e61397dd33bf2ccf28188c40db6a740658aeebbbf6e7dbc101a1f487/uvicorn-0.52.4.tar.gz", hash = "sha256:73acfee47a0b133c5de13d219492d62d8a31e935f4fe6e41a232451a15379f86", size = 100627, upload-time = "2026-08-19T06:27:41.821Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/76/18/0eea75741ee812e9f598b687619ce2454f6c3a1c5cd21ea990ec6bd26f45/uvicorn-0.53.0-py3-none-any.whl", hash = "sha256:e8dca71ec86dce5f04e333f0d56cdedf942446e6643b9cea1af0d6d3a02cb03e", size = 87081, upload-time = "2026-09-14T07:44:22.179Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/79/4a20b54ab0491485ccd8c077db2d39187c7f12b3e15485d38a7be37c81b4/uvicorn-0.52.4-py3-none-any.whl", hash = "sha256:f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1", size = 79871, upload-time = "2026-08-19T06:27:40.36Z" },
 ]
 
 [[package]]

@@ -124,6 +124,9 @@ resource "google_cloud_run_v2_service" "service" {
           cpu    = var.cpu
           memory = var.memory
         }
+        # Queue mode: the response handler thread pulls replies between requests, so its CPU must
+        # stay allocated. null leaves the attribute unset outside queue mode.
+        cpu_idle = var.queue_mode ? false : null
       }
 
       startup_probe {
@@ -153,22 +156,8 @@ resource "google_cloud_run_v2_service" "service" {
             API_VERSION    = var.api_version
             AGENT_ENDPOINT = var.agent_endpoint
           },
-          local.redis_url != null ? {
-            AK_SESSION__REDIS__URL = local.redis_url
-          } : {},
-          local.firestore_db_name != null ? {
-            AK_SESSION__TYPE                       = "firestore"
-            AK_SESSION__FIRESTORE__COLLECTION_NAME = module.firestore[0].collection_name
-            AK_SESSION__FIRESTORE__PROJECT_ID      = var.project_id
-            AK_SESSION__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
-          } : {},
-          # Collection name is literal, not module.firestore[0].collection_name — that
-          # output is the session collection; threads need their own.
-          (local.firestore_db_name != null && var.create_firestore_thread_collection) ? {
-            AK_THREAD__FIRESTORE__COLLECTION_NAME = "ak-agent-threads"
-            AK_THREAD__FIRESTORE__PROJECT_ID      = var.project_id
-            AK_THREAD__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
-          } : {}
+          local.session_env,
+          local.queue_env,
         )
         content {
           name  = env.key
@@ -182,7 +171,10 @@ resource "google_cloud_run_v2_service" "service" {
 
   depends_on = [
     google_project_iam_member.function_logging,
-    module.docker_image
+    module.docker_image,
+    # Queue mode: the edge verifies its topics and subscription at startup.
+    google_pubsub_topic_iam_member.edge_publish,
+    google_pubsub_subscription_iam_member.edge_output,
   ]
 }
 

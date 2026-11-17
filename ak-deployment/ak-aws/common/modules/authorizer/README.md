@@ -86,6 +86,8 @@ and [Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-an
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
 | `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |
+| `ssm_enabled` | Grant the authorizer `ssm:GetParameter` on `/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>`, for `secret.provider.type: aws_ssm` | `bool` | `false` | no |
+| `account_id` | AWS account ID scoping the SSM policy; required when `ssm_enabled` is true | `string` | `null` | no |
 
 ### Authorizer Object Structure
 

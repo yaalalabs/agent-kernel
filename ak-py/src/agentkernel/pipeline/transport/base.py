@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from ...core.config import AKConfig
+from ...core.config import AKConfig, _ServiceBusQueueConfig
 from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ..envelope import QueueMessage, QueueName
 
@@ -90,7 +90,7 @@ class TransportConsumer(ABC):
 class QueueTransportFactory:
     """Resolves a queues config block to a transport (#541 house pattern).
 
-    All four built-ins are available: ``in_memory``, ``sqs``, ``kafka`` and ``nats``. Any other
+    All six built-ins are available: ``in_memory``, ``sqs``, ``kafka``, ``nats``, ``pubsub`` and ``servicebus``. Any other
     value is treated as a dotted path to a :class:`QueueTransport` subclass (bring-your-own),
     which must also implement ``create_consumer``.
 
@@ -100,7 +100,7 @@ class QueueTransportFactory:
     completions), which resolves and validates identically.
     """
 
-    _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")
+    _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats", "pubsub", "servicebus")
 
     @staticmethod
     def resolve_type(queues_config: Any | None = None) -> str:
@@ -137,14 +137,26 @@ class QueueTransportFactory:
                 ack_wait=in_memory_cfg.ack_wait if in_memory_cfg is not None else DEFAULT_ACK_WAIT_SECONDS,
                 dedup_window=in_memory_cfg.dedup_window if in_memory_cfg is not None else DEFAULT_DEDUP_WINDOW_SECONDS,
             )
-        if transport_type == "sqs":
-            from .sqs import SQSTransport
-
+        if transport_type in ("sqs", "servicebus"):
             input_url = queues.input.url if queues is not None else None
             output_url = queues.output.url if queues is not None else None
             if not input_url or not output_url:
-                raise AKConfigError(f"the sqs transport requires both {config_path}.input.url and {config_path}.output.url")
-            return SQSTransport(input_url=input_url, output_url=output_url)
+                raise AKConfigError(f"the {transport_type} transport requires both {config_path}.input.url and {config_path}.output.url")
+            if transport_type == "sqs":
+                from .sqs import SQSTransport
+
+                return SQSTransport(input_url=input_url, output_url=output_url)
+            with require_extra("azure", f"{config_path}.type: servicebus"):
+                from .servicebus import ServiceBusTransport
+
+            servicebus_config = getattr(queues, "servicebus", None) or _ServiceBusQueueConfig()
+            return ServiceBusTransport(
+                input_url=input_url,
+                output_url=output_url,
+                ack_wait=servicebus_config.ack_wait,
+                connection_string=servicebus_config.connection_string,
+                config_path=config_path,
+            )
         if transport_type == "kafka":
             with require_extra("kafka", f"{config_path}.type: kafka"):
                 from .kafka import KafkaTransport
@@ -191,6 +203,32 @@ class QueueTransportFactory:
                     QueueName.OUTPUT: queues.output.max_receive_count + 1,
                 },
                 config_path=config_path,
+            )
+        if transport_type == "pubsub":
+            with require_extra("pubsub", f"{config_path}.type: pubsub"):
+                from .pubsub import PubSubTransport
+
+            pubsub_config = getattr(queues, "pubsub", None) if queues is not None else None
+            if pubsub_config is None:
+                raise AKConfigError(f"the pubsub transport requires a {config_path}.pubsub configuration block")
+            return PubSubTransport(
+                project_id=pubsub_config.project_id,
+                input_topic=pubsub_config.input_topic,
+                input_subscription=pubsub_config.input_subscription,
+                output_topic=pubsub_config.output_topic,
+                output_subscription=pubsub_config.output_subscription,
+                dlq_suffix=pubsub_config.dlq_suffix,
+                ack_wait=pubsub_config.ack_wait,
+                request_timeout=pubsub_config.request_timeout,
+                auto_provision=pubsub_config.auto_provision,
+                # The server's dead-letter backstop sits one delivery past the loop's own limit, so
+                # the component's permanent-failure hook runs first; Pub/Sub accepts 5 to 100.
+                max_delivery_attempts={
+                    QueueName.INPUT: min(max(queues.input.max_receive_count + 1, 5), 100),
+                    QueueName.OUTPUT: min(max(queues.output.max_receive_count + 1, 5), 100),
+                },
+                config_path=config_path,
+                feature=f"{config_path}.type: pubsub",
             )
         if transport_type in cls._BUILTIN_TYPES:
             # Reachable only if a name is added to _BUILTIN_TYPES before its branch above: a clear

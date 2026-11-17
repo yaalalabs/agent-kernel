@@ -324,7 +324,21 @@ if __name__ == "__main__":
     main()
 ```
 
-`CloudRun` is the GCP equivalent of `Lambda` (AWS) and `AzureFunctions` (Azure). It wraps `RESTAPI` and starts a FastAPI/uvicorn server. Custom routes are registered with `@CloudRun.register(path, method)`. Use `CloudRun.run()` instead of `RESTAPI.run()` when deploying to GCP.
+`CloudRun` is the GCP equivalent of `Lambda` (AWS) and `AzureFunctions` (Azure). It starts the queue pipeline's IO process (a FastAPI/uvicorn server): on the default `in_memory` transport the whole pipeline in one instance, and in queue mode the edge (REST API plus response handler). Custom routes are registered with `@CloudRun.register(path, method)`. Use `CloudRun.run()` instead of `RESTAPI.run()` when deploying to GCP.
+
+**Queue mode on GCP** (the Terraform modules' default) splits the deployment into two Cloud Run services from one image, connected by Google Cloud Pub/Sub (`uv add "agentkernel[pubsub]"`): the edge (`CloudRun.run()`) and a private agent-runner service that Pub/Sub pushes each request to (`CloudRunAgentRunner.run()`):
+
+```python
+from agentkernel.gcp import CloudRun, CloudRunAgentRunner
+
+def main() -> None:      # the edge (the image's CMD)
+    CloudRun.run()
+
+def runner() -> None:    # the agent runner (Terraform's agent_runner.command)
+    CloudRunAgentRunner.run()
+```
+
+with `execution.queues.type: pubsub` and `execution.response_store.type: redis` in `config.yaml`. Pub/Sub waits at most 600 seconds for a push answer, so an agent run that takes longer is redelivered and runs a second time; the runner itself is not capped. See [`examples/gcp-serverless/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-queue-mode).
 
 For full Terraform deployment configuration, see [`ak-deployment/ak-gcp/`](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp) or the [GCP deployment docs](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/gcp-serverless.md).
 
@@ -527,7 +541,7 @@ mode additionally require `multimodal.enabled: true` with a shared attachment st
 - **Naming Model**
   - **Field**: `thread.naming.model`
   - **Type**: string
-  - **Default**: `gpt-4o-mini`
+  - **Default**: `gpt-6-luna`
   - **Description**: LiteLLM model used to generate thread names (requires the `thread` extra — `uv add "agentkernel[thread]"` — and an API key in the environment; falls back to a truncated prompt prefix otherwise)
   - **Environment Variable**: `AK_THREAD__NAMING__MODEL`
 
@@ -817,7 +831,7 @@ Configure queue-backed and serverless execution behavior.
 
   - **Transport Type**
     - **Field**: `execution.queues.type`
-    - **Options**: `in_memory`, `sqs`, `kafka`, `nats`, or a dotted path to a `QueueTransport` subclass
+    - **Options**: `in_memory`, `sqs`, `kafka`, `nats`, `pubsub`, or a dotted path to a `QueueTransport` subclass
     - **Default**: none — **mandatory whenever an `execution.queues` block is declared**
     - **Description**: Queue transport used by the pipeline, and the only thing that selects it: queue coordinates are injected per component by a deployment, so they are never used to infer the transport. Declaring the block without a `type` is a configuration error. Omitting the block entirely leaves `in_memory` — a zero-dependency, in-process transport for local development and single-process deployments.
     - **Environment Variable**: `AK_EXECUTION__QUEUES__TYPE`
@@ -990,6 +1004,42 @@ Configure queue-backed and serverless execution behavior.
     - **Default**: `false`
     - **Description**: Create the streams and per-partition consumers at startup if missing. Convenient for local and dev clusters; leave false in production, where the objects are managed declaratively (NACK CRs) and a missing object should fail loudly instead of being created with defaults
     - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__AUTO_PROVISION`
+
+  - **Pub/Sub Project**
+    - **Field**: `execution.queues.pubsub.project_id`
+    - **Default**: `None` (the project of Application Default Credentials)
+    - **Description**: GCP project that owns the topics and subscriptions (`pubsub` transport, `pubsub` extra)
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__PROJECT_ID`
+
+  - **Pub/Sub Topics and Subscriptions**
+    - **Fields**: `execution.queues.pubsub.input_topic`, `input_subscription`, `output_topic`, `output_subscription`
+    - **Default**: `agent-input`, `agent-input`, `agent-output`, `agent-output`
+    - **Description**: The request and reply queues. Subscriptions must have message ordering enabled (a session's turns share an ordering key). The GCP Terraform modules inject these
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__INPUT_TOPIC` (and the other three)
+
+  - **Pub/Sub Dead-Letter Suffix**
+    - **Field**: `execution.queues.pubsub.dlq_suffix`
+    - **Default**: `-dlq`
+    - **Description**: Suffix appended to a topic name for its dead-letter topic, where permanently failed messages are copied
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__DLQ_SUFFIX`
+
+  - **Pub/Sub Ack Wait**
+    - **Field**: `execution.queues.pubsub.ack_wait`
+    - **Default**: `300.0`
+    - **Description**: Seconds a pulled message stays leased before Pub/Sub redelivers it. Must exceed your longest agent turn
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__ACK_WAIT`
+
+  - **Pub/Sub Request Timeout**
+    - **Field**: `execution.queues.pubsub.request_timeout`
+    - **Default**: `10.0`
+    - **Description**: Seconds to wait for a Pub/Sub call (publish, ack, admin) to complete
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__REQUEST_TIMEOUT`
+
+  - **Pub/Sub Auto Provision**
+    - **Field**: `execution.queues.pubsub.auto_provision`
+    - **Default**: `false`
+    - **Description**: Create the topics, dead-letter topics and subscriptions at startup if missing. For the emulator and dev only; leave false in production, where Terraform owns them and a missing object fails startup
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__AUTO_PROVISION`
 
   - **Queue Batch Size**
     - **Field**: `execution.queues.batch_size`
@@ -1338,7 +1388,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 
 - **Llm Model**
   - **Field**: `llm.model`
-  - **Default**: `gpt-4o-mini`
+  - **Default**: `gpt-6-luna`
   - **Description**: LLM model for llm evaluation
   - **Environment Variable**: `AK_TEST__LLM__MODEL`
 
@@ -1364,7 +1414,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 mode: fallback
 evaluator: deepeval
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -1395,7 +1445,7 @@ Configure input and output guardrails to validate agent requests and responses f
 
   - **Model**
     - **Field**: `guardrail.input.model`
-    - **Default**: `gpt-4o-mini`
+    - **Default**: `gpt-6-luna`
     - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__INPUT__MODEL`
 
@@ -1433,7 +1483,7 @@ Configure input and output guardrails to validate agent requests and responses f
 
   - **Model**
     - **Field**: `guardrail.output.model`
-    - **Default**: `gpt-4o-mini`
+    - **Default**: `gpt-6-luna`
     - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__MODEL`
 
@@ -1485,12 +1535,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
 ```
 
@@ -1730,17 +1780,17 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire, cloudwatch
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
 export AK_TEST__EVALUATOR=deepeval  # Built-in short name (deepeval, opik or jev), or a dotted path to your own AKEvaluator subclass
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 # Guardrails configuration
 export AK_GUARDRAIL__INPUT__ENABLED=false
 export AK_GUARDRAIL__INPUT__TYPE=openai
-export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__INPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json
 export AK_GUARDRAIL__OUTPUT__ENABLED=false
 export AK_GUARDRAIL__OUTPUT__TYPE=openai
-export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json
 # Walled AI guardrails
 export WALLED_API_KEY=your-walledai-api-key
@@ -1804,13 +1854,13 @@ thread: # optional; configures Conversation Thread Support (enabled by mounting 
 execution:
   mode: rest_sync
   queues:
-    type: sqs # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass — mandatory whenever this block is declared
+    type: sqs # in_memory | sqs | kafka | nats | servicebus, or a dotted path to a QueueTransport subclass — mandatory whenever this block is declared
     input:
-      url: https://queue.example.com/<accountno>/<queuename> # sqs transport only
+      url: https://queue.example.com/<accountno>/<queuename> # sqs: queue URL; servicebus: https://<namespace>.servicebus.windows.net/<queue>
       max_receive_count: 3
       no_of_consumers: 5 # in-process pipeline + containerized deployments, ignored by serverless deployments
     output:
-      url: https://queue.example.com/<accountno>/<queuename> # sqs transport only
+      url: https://queue.example.com/<accountno>/<queuename> # sqs: queue URL; servicebus: https://<namespace>.servicebus.windows.net/<queue>
       max_receive_count: 3
       no_of_consumers: 5 # in-process pipeline + containerized deployments, ignored by serverless deployments
     # in_memory: {ack_wait: 300.0, dedup_window: 300.0}  # in_memory transport settings, unused otherwise
@@ -1837,6 +1887,9 @@ execution:
     #   max_age: 86400.0
     #   request_timeout: 10.0
     #   auto_provision: false # true for local/dev; leave false where NACK CRs own the objects
+    # servicebus:  # servicebus transport settings, unused otherwise (requires the `azure` extra)
+    #   ack_wait: 300.0 # seconds the session lock is renewed; keep above your longest agent turn
+    #   connection_string: <file:servicebus-connection-string> # emulator/dev only; unset uses managed identity
     # batch_size is set by the deployment tooling — set via AK_EXECUTION__QUEUES__BATCH_SIZE, never here
   response_store:
     type: redis # in_memory | redis | valkey | dynamodb | dotted path — omit for the built-in in_memory store
@@ -1878,13 +1931,13 @@ guardrail:
     enabled: false
     type: openai
     pii: true
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: false
     type: openai
     pii: true
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
   # For Walled AI, set type: walledai, WALLED_API_KEY,
   # and optionally use input/output pii (default: true) to enable/disable PII masking.
@@ -1949,13 +2002,13 @@ gmail:
     "input": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": "/path/to/guardrails_input.json"
     },
     "output": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": "/path/to/guardrails_output.json"
     }
   },
@@ -2009,7 +2062,7 @@ The `evaluator` field accepts three built-in short names — `deepeval` (default
 mode: fallback
 evaluator: deepeval
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -2027,7 +2080,7 @@ export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
 ```bash
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
 export AK_TEST__EVALUATOR=deepeval
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```
