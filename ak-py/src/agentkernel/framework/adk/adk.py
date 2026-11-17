@@ -1227,7 +1227,13 @@ class GoogleADKModule(Module):
         else:
             self.runner = GoogleADKRunner()
         # After the text runner: its constructor installs the instrumentor; the realtime method then finds it installed.
-        self.realtime_runner_cls = realtime_runner_cls or (tracer.adk_realtime() if tracer else None) or GoogleADKRealtimeRunner
+        traced_realtime = tracer.adk_realtime() if tracer is not None else None
+        if realtime_runner_cls is not None:
+            self.realtime_runner_cls = realtime_runner_cls
+        elif traced_realtime is not None:
+            self.realtime_runner_cls = traced_realtime
+        else:
+            self.realtime_runner_cls = GoogleADKRealtimeRunner
         self.load(agents)
 
     def _wrap(self, agent: BaseAgent | Workflow, agents: list[BaseAgent | Workflow]) -> AKBaseAgent:

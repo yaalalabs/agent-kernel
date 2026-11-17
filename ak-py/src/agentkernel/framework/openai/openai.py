@@ -922,7 +922,13 @@ class OpenAIModule(Module):
         else:
             self.runner = OpenAIRunner()
         # After the text runner: its constructor installs the instrumentor; the realtime method then finds it installed.
-        self.realtime_runner_cls = realtime_runner_cls or (tracer.openai_realtime() if tracer else None) or OpenAIRealtimeRunner
+        traced_realtime = tracer.openai_realtime() if tracer is not None else None
+        if realtime_runner_cls is not None:
+            self.realtime_runner_cls = realtime_runner_cls
+        elif traced_realtime is not None:
+            self.realtime_runner_cls = traced_realtime
+        else:
+            self.realtime_runner_cls = OpenAIRealtimeRunner
         self.load(agents)
 
     def _wrap(self, agent: Agent | RealtimeAgent, agents: list[Agent | RealtimeAgent]) -> BaseAgent:
