@@ -161,7 +161,7 @@ Set default mode via a `test-config.yaml` file (in the directory the tests run f
 mode: llm  # Options: score, llm, fallback
 evaluator: deepeval  # Built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```

@@ -9,15 +9,15 @@ import pytest
 from agentkernel.core.base import Session
 from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _QueuesConfig
 from agentkernel.core.model import ExecutionMode
-from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.deployment.aws.containerized.akagentrunner import ECSAgentRunner, ECSRealtimeAgentRunner, ECSStreamAgentRunner
 from agentkernel.pipeline.envelope import QueueName
-from agentkernel.pipeline.realtime_pool import RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+from agentkernel.realtime.base import RealtimeRunner
+from agentkernel.realtime.pool import RealtimeConnectionPool
 
 
 def _make_record(requests, session_id: str = "room_01"):
@@ -212,10 +212,10 @@ def test_consumer_loop_starts_real_pool_processes_requests_and_closes_connection
         first, second = connections
         assert first is second
         assert first.session is session
-        assert first.adapter.connect_count == 1
-        assert first.adapter.audio == ["AAA="]
-        assert first.adapter.texts == ["hello"]
-        assert first.adapter.disconnected
+        assert first.runner.connect_count == 1
+        assert first.runner.audio == ["AAA="]
+        assert first.runner.texts == ["hello"]
+        assert first.runner.disconnected
         assert first.closed
         assert pool.get_connection("room_01") is None
         chat_service.prepare_agent_handler.assert_called_once_with("room_01", "general")

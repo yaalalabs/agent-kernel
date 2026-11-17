@@ -22,7 +22,8 @@ output "request_handler_lambda_role_name" {
 
 output "authorizer_status" {
   description = "Status message indicating whether the authorizer Lambda will be created"
-  value       = local.authorizer_status_message
+  # var.authorizer can carry secret env vars, which taints this fixed message as sensitive
+  value = nonsensitive(local.authorizer_status_message)
 }
 
 output "agent_invoke_url" {

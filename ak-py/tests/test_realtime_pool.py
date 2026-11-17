@@ -11,15 +11,15 @@ from agentkernel import Agent, Runner, Session
 from agentkernel.core.config import _ExecutionConfig, _GuardrailConfig, _InputQueueConfig, _OutputQueueConfig, _QueuesConfig, _RealtimeConfig
 from agentkernel.core.event import TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText, AgentRequestVoice, BaseRunRequest, ExecutionMode, Principal, StreamChunk
-from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
 from agentkernel.pipeline.envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REALTIME_END, QueueName
-from agentkernel.pipeline.realtime_pool import RealtimeConnection, RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+from agentkernel.realtime.base import RealtimeRunner
+from agentkernel.realtime.pool import RealtimeConnection, RealtimeConnectionPool
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def _reset_pipeline_state(monkeypatch):
     async def send_inline(send, *args):
         return send(*args)
 
-    monkeypatch.setattr("agentkernel.pipeline.realtime_pool.asyncio.to_thread", send_inline)
+    monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
     InMemoryTransport.reset()
     ThreadRunner.shutdown_event.clear()
     yield
@@ -90,7 +90,15 @@ class _Agent(Agent):
 
 
 def _connection(session_id="s1", agent=None, loop=None):
-    return RealtimeConnection(session_id, agent or _Agent(), Runtime(InMemorySessionStore()), Session(session_id), loop or asyncio.new_event_loop())
+    return RealtimeConnection(
+        session_id,
+        agent or _Agent(),
+        Runtime(InMemorySessionStore()),
+        Session(session_id),
+        loop or asyncio.new_event_loop(),
+        transport=QueueTransportFactory.create(),
+        playback_lead_ms=_RealtimeConfig().playback_lead_ms,
+    )
 
 
 def _drain_output(transport):
@@ -127,7 +135,13 @@ class TestRealtimeConnection:
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
         monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
-        assert _connection()._playback_lead_ms == 250
+        # The pool reads the config once and hands the value to each connection it builds.
+        pool = RealtimeConnectionPool()
+        pool._loop = asyncio.new_event_loop()
+        try:
+            assert pool._new_connection("s1", _Agent(), Runtime(InMemorySessionStore()), Session("s1"))._playback_lead_ms == 250
+        finally:
+            pool._loop.close()
 
     @pytest.mark.asyncio
     async def test_emit_stamps_realtime_and_integration(self, monkeypatch):
@@ -183,7 +197,15 @@ class TestRealtimeToolContext:
         monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
         _ContextAdapter.seen = {}
         agent = _Agent(realtime_runner_cls=_ContextAdapter)
-        conn = RealtimeConnection("s1", agent, Runtime(InMemorySessionStore()), Session("s1"), asyncio.get_running_loop())
+        conn = RealtimeConnection(
+            "s1",
+            agent,
+            Runtime(InMemorySessionStore()),
+            Session("s1"),
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=_RealtimeConfig().playback_lead_ms,
+        )
 
         await conn.connect()
 
@@ -198,7 +220,13 @@ class TestRealtimeToolContext:
     async def test_the_context_is_not_left_set_on_the_connecting_task(self, monkeypatch):
         monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
         conn = RealtimeConnection(
-            "s1", _Agent(realtime_runner_cls=_ContextAdapter), Runtime(InMemorySessionStore()), Session("s1"), asyncio.get_running_loop()
+            "s1",
+            _Agent(realtime_runner_cls=_ContextAdapter),
+            Runtime(InMemorySessionStore()),
+            Session("s1"),
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=_RealtimeConfig().playback_lead_ms,
         )
 
         await conn.connect()
@@ -217,7 +245,13 @@ class TestRealtimeToolContext:
 
         monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
         conn = RealtimeConnection(
-            "s1", _Agent(realtime_runner_cls=_Failing), Runtime(InMemorySessionStore()), Session("s1"), asyncio.get_running_loop()
+            "s1",
+            _Agent(realtime_runner_cls=_Failing),
+            Runtime(InMemorySessionStore()),
+            Session("s1"),
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=_RealtimeConfig().playback_lead_ms,
         )
 
         with pytest.raises(RuntimeError, match="no connection"):
@@ -234,11 +268,11 @@ class TestRealtimeCloseDuringConnect:
     async def test_a_connection_closed_before_start_does_not_open(self, monkeypatch):
         monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
         conn = _connection(loop=asyncio.get_running_loop())
-        conn.closed = True
+        conn.mark_closed()
 
         await conn.connect()
 
-        assert conn.adapter.connected == 0
+        assert conn.runner.connected == 0
         assert conn._pacing_task is None
 
     @pytest.mark.asyncio
@@ -262,7 +296,7 @@ class TestRealtimeCloseDuringConnect:
 
         conn = _connection(agent=_Agent(realtime_runner_cls=_Slow), loop=asyncio.get_running_loop())
         connecting = asyncio.create_task(conn.connect())
-        await conn.adapter.entered.wait()
+        await conn.runner.entered.wait()
 
         await conn.close()
         with pytest.raises(asyncio.CancelledError):
@@ -270,8 +304,8 @@ class TestRealtimeCloseDuringConnect:
 
         assert conn.closed
         assert conn._pacing_task is None
-        assert conn.adapter.connected == 0
-        assert conn.adapter.disconnects == 1
+        assert conn.runner.connected == 0
+        assert conn.runner.disconnects == 1
 
     @pytest.mark.asyncio
     async def test_startup_completing_after_end_disconnects_only_once(self, monkeypatch):
@@ -293,13 +327,13 @@ class TestRealtimeCloseDuringConnect:
 
         conn = _connection(agent=_Agent(realtime_runner_cls=_Slow), loop=asyncio.get_running_loop())
         connecting = asyncio.create_task(conn.connect())
-        await conn.adapter.entered.wait()
-        conn.closed = True
-        conn.adapter.release.set()
+        await conn.runner.entered.wait()
+        conn.mark_closed()
+        conn.runner.release.set()
         await connecting
         await conn.close()
 
-        assert conn.adapter.disconnects == 1
+        assert conn.runner.disconnects == 1
         assert conn._pacing_task is None
 
     @pytest.mark.parametrize("finish_after_cancel", [True, False])
@@ -488,8 +522,8 @@ class TestRealtimeConnectionPool:
 
             assert first is second
             assert other is not first
-            assert first.adapter.connected == 1
-            assert other.adapter.connected == 1
+            assert first.runner.connected == 1
+            assert other.runner.connected == 1
         finally:
             ThreadRunner.shutdown_event.set()
             thread.join(timeout=5)
@@ -580,7 +614,7 @@ class TestRealtimePoolShutdown:
         import concurrent.futures
 
         monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool._SHUTDOWN_GRACE_SECONDS", 0.1)
+        monkeypatch.setattr("agentkernel.realtime.pool.RealtimeConnectionPool.SHUTDOWN_GRACE_SECONDS", 0.1)
         self._HangingAdapter.entered.clear()
 
         pool = RealtimeConnectionPool.initialize()
@@ -614,7 +648,7 @@ class TestRealtimePoolShutdown:
 
         await asyncio.gather(conn.close(), conn.close())
 
-        assert conn.adapter.disconnects == 1
+        assert conn.runner.disconnects == 1
 
     @pytest.mark.asyncio
     async def test_a_failed_session_is_closed_by_a_task_that_is_kept_until_done(self, monkeypatch):
@@ -623,11 +657,11 @@ class TestRealtimePoolShutdown:
 
         await conn._fail("model failed")
 
-        assert len(RealtimeConnection._closing) == 1
-        await asyncio.gather(*RealtimeConnection._closing)
+        assert len(RealtimeConnection._close_tasks) == 1
+        await asyncio.gather(*RealtimeConnection._close_tasks)
         await asyncio.sleep(0)
-        assert conn.adapter.disconnects == 1
-        assert not RealtimeConnection._closing
+        assert conn.runner.disconnects == 1
+        assert not RealtimeConnection._close_tasks
 
     @pytest.mark.asyncio
     async def test_a_failure_whose_chunk_was_not_sent_is_not_marked_reported(self, monkeypatch):
@@ -642,7 +676,7 @@ class TestRealtimePoolShutdown:
             await conn._fail("model failed")
 
         assert not conn.failure_reported  # so a failed connect can still send the edge its error
-        await asyncio.gather(*RealtimeConnection._closing)
+        await asyncio.gather(*RealtimeConnection._close_tasks)
 
     @pytest.mark.asyncio
     async def test_a_background_close_that_raises_is_logged_with_the_session(self, monkeypatch, caplog):
@@ -655,11 +689,11 @@ class TestRealtimePoolShutdown:
 
         with caplog.at_level("ERROR"):
             conn.close_in_background(asyncio.get_running_loop())
-            await asyncio.gather(*RealtimeConnection._closing, return_exceptions=True)
+            await asyncio.gather(*RealtimeConnection._close_tasks, return_exceptions=True)
             await asyncio.sleep(0)
 
         assert "Realtime session s9: failed to close: socket gone" in caplog.text
-        assert not RealtimeConnection._closing
+        assert not RealtimeConnection._close_tasks
 
     def test_the_runner_drops_input_during_shutdown(self, monkeypatch):
         from unittest.mock import MagicMock
@@ -677,6 +711,24 @@ class TestRealtimePoolShutdown:
 
         chat_service.prepare_agent_handler.assert_not_called()
         assert RealtimeConnectionPool.get()._connections == {}
+
+
+class TestRealtimeRunnerBase:
+    def test_a_custom_runner_without_its_own_logger_can_report_a_failed_listen(self, caplog):
+        """``_Adapter`` sets no ``_log``: the base class default keeps ``_report_listen_failed`` working."""
+        adapter = _Adapter()
+        events = []
+
+        async def callback(event, data):
+            events.append((event, data))
+
+        adapter._callback = callback
+
+        with caplog.at_level("ERROR", logger="ak.realtime.runner"):
+            asyncio.run(adapter._report_listen_failed("native session broke"))
+
+        assert events == [(RealtimeRunner.Event.ERROR, {"message": "native session broke"})]
+        assert "native session broke" in caplog.text
 
 
 class TestRealtimeRunnerReuse:
@@ -724,16 +776,16 @@ class TestRealtimeResampling:
         transport = InMemoryTransport()
         monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
         conn = _connection(loop=asyncio.get_running_loop())
-        conn.adapter.input_sample_rate = 16000  # e.g. Gemini's input rate
+        conn.runner.input_sample_rate = 16000  # e.g. Gemini's input rate
 
         # 100 ms of edge-rate (24 kHz) audio; the pool must hand the adapter 16 kHz audio.
         conn.append_audio(AgentRequestVoice(audio_data=base64.b64encode(b"\x00\x00" * 2400).decode(), name="clip"))
         for _ in range(50):  # the append is scheduled on the loop; let it run
-            if conn.adapter.audio:
+            if conn.runner.audio:
                 break
             await asyncio.sleep(0.01)
 
-        [converted] = conn.adapter.audio
+        [converted] = conn.runner.audio
         assert len(base64.b64decode(converted)) == 1600 * 2  # 100 ms at 16 kHz
 
 
@@ -768,7 +820,7 @@ class TestRealtimeBargeIn:
 
     @staticmethod
     def _queued(conn):
-        return [item[0] for item in list(conn._audio_queue._queue)]
+        return [item[0] for item in list(conn._output_queue._queue)]
 
     @pytest.mark.asyncio
     async def test_speech_started_with_no_queued_audio_is_ignored(self, monkeypatch):
@@ -834,7 +886,7 @@ class TestRealtimeAgentChanged:
 
     @staticmethod
     def _queued(conn):
-        return [item[0] for item in list(conn._audio_queue._queue)]
+        return [item[0] for item in list(conn._output_queue._queue)]
 
     @pytest.mark.asyncio
     async def test_the_starting_agent_is_announced_before_any_output(self, monkeypatch):
@@ -974,7 +1026,7 @@ class TestRealtimeInputTranscript:
         await conn.handle_framework_event("audio_delta", {"delta": "QUFB"})
         await conn.handle_framework_event("interrupt", {})
 
-        assert [item[0] for item in list(conn._audio_queue._queue)] == ["interrupt", "input_transcript"]
+        assert [item[0] for item in list(conn._output_queue._queue)] == ["interrupt", "input_transcript"]
         assert conn._queued_audio == 0
 
     @pytest.mark.asyncio
@@ -986,7 +1038,7 @@ class TestRealtimeInputTranscript:
         await conn.handle_framework_event("speech_started", {})
 
         assert conn._queued_audio == 0
-        assert [item[0] for item in list(conn._audio_queue._queue)] == ["input_transcript"]
+        assert [item[0] for item in list(conn._output_queue._queue)] == ["input_transcript"]
 
 
 class TestRealtimeEndSession:
@@ -1102,7 +1154,7 @@ class TestRealtimeReconnectBackoff:
     @pytest.fixture
     def clock(self, monkeypatch):
         now = [1000.0]
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool.time", types.SimpleNamespace(time=lambda: now[0]))
+        monkeypatch.setattr("agentkernel.realtime.pool.time", types.SimpleNamespace(time=lambda: now[0]))
         return now
 
     @pytest.fixture
@@ -1127,7 +1179,7 @@ class TestRealtimeReconnectBackoff:
         for attempt, delay in enumerate(expected_delays, start=1):
             self._send(pool, chat_service)  # opens a connection
             assert opened() == attempt
-            pool._connections["s1"].closed = True  # the native session failed as soon as it opened
+            pool._connections["s1"].mark_closed()  # the native session failed as soon as it opened
             self._send(pool, chat_service)  # evicts it, records the failure and drops this frame
             assert opened() == attempt and pool.get_connection("s1") is None
             assert pool._failures["s1"] == (attempt, clock[0] + delay)
@@ -1141,7 +1193,7 @@ class TestRealtimeReconnectBackoff:
         chat_service = TestRealtimeEndSession._chat_service()
         pool._failures["s1"] = (9, clock[0] - 1)
         self._send(pool, chat_service)
-        pool._connections["s1"].closed = True
+        pool._connections["s1"].mark_closed()
         self._send(pool, chat_service)
 
         assert pool._failures["s1"] == (10, clock[0] + 30.0)
@@ -1153,7 +1205,7 @@ class TestRealtimeReconnectBackoff:
         conn = pool._connections["s1"]
         asyncio.run_coroutine_threadsafe(conn.handle_framework_event("transcript_delta", {"delta": "hi", "message_id": "m"}), pool._loop).result(5)
         assert conn.produced_output
-        conn.closed = True
+        conn.mark_closed()
 
         self._send(pool, chat_service)
 
@@ -1163,7 +1215,7 @@ class TestRealtimeReconnectBackoff:
         chat_service = TestRealtimeEndSession._chat_service()
         pool._failures["s1"] = (2, clock[0] - 1)
         self._send(pool, chat_service)
-        pool._connections["s1"].closed = True
+        pool._connections["s1"].mark_closed()
 
         self._send(pool, chat_service)
 
@@ -1237,7 +1289,7 @@ class TestRealtimeFailureHandling:
             runtime = Runtime(InMemorySessionStore())
             agent = _Agent()
             conn = pool.get_or_create("s1", agent, runtime, Session("s1"))
-            conn.closed = True
+            conn.mark_closed()
 
             assert pool.get_connection("s1") is None
             # The next chunk reconnects rather than reusing the dead socket.
@@ -1426,7 +1478,7 @@ class TestBrokerRealtimeUserGate:
 
 class TestPoolLoop:
     def test_shutdown_wakes_the_pool_at_once(self, monkeypatch):
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool._SWEEP_INTERVAL_SECONDS", 30)
+        monkeypatch.setattr("agentkernel.realtime.pool.RealtimeConnectionPool.SWEEP_INTERVAL_SECONDS", 30)
         pool = RealtimeConnectionPool.initialize()
         thread = threading.Thread(target=pool.start, daemon=True)
         thread.start()
@@ -1438,7 +1490,7 @@ class TestPoolLoop:
         assert not thread.is_alive()
 
     def test_the_loop_sweeps_on_its_interval(self, monkeypatch):
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool._SWEEP_INTERVAL_SECONDS", 0.02)
+        monkeypatch.setattr("agentkernel.realtime.pool.RealtimeConnectionPool.SWEEP_INTERVAL_SECONDS", 0.02)
         pool = RealtimeConnectionPool.initialize()
         swept = threading.Event()
         monkeypatch.setattr(pool, "_sweep", lambda now: swept.set())

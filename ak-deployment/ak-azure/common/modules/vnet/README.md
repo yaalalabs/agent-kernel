@@ -22,8 +22,8 @@ Perfect for serverless architectures, Azure Functions requiring VNet integration
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
-| Azure Provider | >= 4.0.0 |
+| Terraform | >= 1.9.5, <= 1.16.7 |
+| Azure Provider | 5.11.0 |
 
 ## 🚀 Usage
 

@@ -6,12 +6,11 @@ provider "azurerm" {
 }
 
 terraform {
-  required_version = ">= 1.9.5"
+  required_version = ">= 1.9.5, <= 1.16.7"
   required_providers {
     azurerm = {
-      source = "hashicorp/azurerm"
-      # 4.75.0 is the first release with persist_id_on_create_before_polling_for_completion
-      version = ">= 4.75.0, < 5.0.0"
+      source  = "hashicorp/azurerm"
+      version = "5.11.0"
     }
   }
 }

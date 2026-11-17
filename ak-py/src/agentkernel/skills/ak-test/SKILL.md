@@ -24,7 +24,7 @@ Update `pyproject.toml`:
 ```toml
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.10.0",
+    "agentkernel[test]>=0.10.1",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -53,7 +53,7 @@ For llm mode, configure the llm model:
 ```yaml
 mode: llm
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
 ```
 
@@ -353,7 +353,7 @@ uv add "agentkernel[claude]"     # For Claude Agent SDK (Claude models only; ANT
 
 Or in `pyproject.toml`:
 ```toml
-dependencies = ["agentkernel[openai,api]>=0.10.0"]
+dependencies = ["agentkernel[openai,api]>=0.10.1"]
 ```
 
 #### Issue: Redis connection errors

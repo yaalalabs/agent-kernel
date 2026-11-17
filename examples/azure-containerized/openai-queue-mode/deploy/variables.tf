@@ -1,0 +1,31 @@
+variable "prefix" {
+  type        = string
+  description = "Prefix applied to every resource name"
+}
+
+variable "region" {
+  type        = string
+  description = "The Azure region to deploy to"
+}
+
+variable "resource_group_name" {
+  type        = string
+  description = "The Azure resource group to deploy to"
+}
+
+variable "product_display_name" {
+  type        = string
+  description = "The product display name"
+  default     = "Demo Platform API"
+}
+
+variable "publisher_email" {
+  type        = string
+  description = "The publisher email"
+}
+
+variable "openai_api_key" {
+  type        = string
+  description = "The OpenAI API key"
+  sensitive   = true
+}

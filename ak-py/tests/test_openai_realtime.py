@@ -784,14 +784,14 @@ class TestThroughThePool:
     @pytest.mark.asyncio
     async def test_the_pool_queues_the_native_conversation_in_order(self, runtime, monkeypatch):
         from agentkernel.pipeline.envelope import QueueName
-        from agentkernel.pipeline.realtime_pool import RealtimeConnection
         from agentkernel.pipeline.transport.base import QueueTransportFactory
         from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+        from agentkernel.realtime.pool import RealtimeConnection
 
         async def send_inline(send, *args):
             return send(*args)
 
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool.asyncio.to_thread", send_inline)
+        monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
         InMemoryTransport.reset()
         coordinator, billing = _team(billing_tools=[lookup_invoice])
         _no_system_tools(monkeypatch)
@@ -804,7 +804,15 @@ class TestThroughThePool:
         )
         agent = module.get_agent("coordinator")
         agent.run_options.update(model=model)
-        conn = RealtimeConnection("call-1", agent, runtime, Session("call-1"), asyncio.get_running_loop())
+        conn = RealtimeConnection(
+            "call-1",
+            agent,
+            runtime,
+            Session("call-1"),
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=AKConfig.get().execution.realtime.playback_lead_ms,
+        )
         conn.update_delivery_context("req", None, None, {})
         await conn.connect()
         try:
@@ -835,14 +843,14 @@ class TestThroughThePool:
     async def test_a_tool_the_sdk_runs_sees_the_ak_tool_context_session_and_agent(self, runtime, monkeypatch):
         """The SDK runs the tool on its own task; the pool set the context before the session opened, and the task inherits it."""
         from agentkernel.pipeline.envelope import QueueName
-        from agentkernel.pipeline.realtime_pool import RealtimeConnection
         from agentkernel.pipeline.transport.base import QueueTransportFactory
         from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+        from agentkernel.realtime.pool import RealtimeConnection
 
         async def send_inline(send, *args):
             return send(*args)
 
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool.asyncio.to_thread", send_inline)
+        monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
         InMemoryTransport.reset()
         CONTEXT_SEEN.clear()
         _no_system_tools(monkeypatch)
@@ -852,7 +860,15 @@ class TestThroughThePool:
         agent = module.get_agent("voice")
         agent.run_options.update(model=model)
         session = Session("call-ctx")
-        conn = RealtimeConnection("call-ctx", agent, runtime, session, asyncio.get_running_loop())
+        conn = RealtimeConnection(
+            "call-ctx",
+            agent,
+            runtime,
+            session,
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=AKConfig.get().execution.realtime.playback_lead_ms,
+        )
         conn.update_delivery_context("req", None, None, {})
         await conn.connect()
         try:
