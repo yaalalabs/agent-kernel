@@ -68,6 +68,12 @@ the checked-out code (`actions/cache-poisoning/poisonable-step`).
 - **LockGuard:** after `uv lock --upgrade`, a package that left its line is held: re-lock from the base lock with
   `--upgrade-package` for every other package. A held package that still moves pulls in the packages that need it.
   Up to 6 rounds. Security packages are not held by this rule; a pinned one is re-locked at its pin.
+- **Lift (end of LockGuard):** each alerted package still below its patched version gets
+  `uv lock --upgrade-package "<package>>=<patched>"`, and the packages uv moves for it may leave their line. The lock
+  is put back, and the reason kept for the report, when uv finds no solution (its last "cannot be used" requirement
+  is the reason), the fix stays out of reach, a package a failed check held back would move, a package not already
+  on a pre-release would go to one, or another alerted package would fall below a fix it had. Outcomes go to
+  `lifted.json`; the PR lists each move with the fix it serves.
 - **Sync:** `uv sync --frozen --all-extras`, leaving out all but one member of each `[tool.uv] conflicts` set (the
   one that brings pytest).
 - **Bounds:** an example resolves `agentkernel` from PyPI, whose metadata is the last release, so a limit `cap`

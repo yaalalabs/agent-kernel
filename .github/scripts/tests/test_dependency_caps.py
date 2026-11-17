@@ -19,11 +19,13 @@ from dependency_caps import (
     Bounds,
     Checker,
     Holds,
+    LockGuard,
     Manifest,
     Repo,
     Reporter,
     Snapshotter,
     State,
+    VersionLine,
     read_toml,
 )
 
@@ -465,6 +467,164 @@ class BoundsTest(unittest.TestCase):
             "- `bar` outside `agentkernel`'s `>=1.2,<2.0.0`: it takes baz 1.4 -> 2.0 onto a new version line", body
         )
         self.assertNotIn("`qux` pulled back", body)
+
+    def open_reason(self, package: str, path: str, patched: str | None) -> str:
+        alert = {"package": package, "ecosystem": "pip", "manifest_path": path, "severity": "high", "patched": patched}
+        self.state.save("alerts.json", [alert])
+        _, _, still = Reporter(self.repo, self.state, "1").alert_status()
+        self.assertEqual(len(still), 1)
+        return still[0]
+
+    def test_an_alert_on_a_manifest_that_is_gone_says_so_even_without_a_patch(self):
+        self.assertIn("no longer in the repo", self.open_reason("pillow", "examples/gone/uv.lock", "12.0.0"))
+        self.assertIn("no longer in the repo", self.open_reason("pyjwt", "examples/gone/uv.lock", None))
+
+    def test_a_fix_the_published_release_blocks_waits_for_the_next_release(self):
+        self.state.save(
+            "changes.json",
+            [{"kind": "blocked", "manifest": BAD, "package": "baz", "note": "no version", "release": "agentkernel"}],
+        )
+        reason = self.open_reason("baz", "examples/bad/uv.lock", "2.0")
+        self.assertIn("waits for the next `agentkernel` release", reason)
+        self.assertNotIn("code change", reason)
+
+    def test_a_drift_the_release_keeps_waits_for_the_next_release(self):
+        entry = {"package": "foo", "old": ["3.0.1"], "requirement": ">=1.2,<2.0.0", "source": "agentkernel"}
+        self.state.save("bounds.json", {BAD: [{**entry, "outcome": "release"}]})
+        reason = self.open_reason("foo", "examples/bad/uv.lock", "3.1")
+        self.assertIn("waits for the next `agentkernel` release", reason)
+
+    def test_an_unsatisfiable_fix_names_the_release_that_blocks_it(self):
+        log = self.state.path("logs/bad.log")
+        log.write_text(
+            "error: No solution found when resolving dependencies:\n"
+            "  cause: Because agentkernel[auth]>=0.9.5 depends on baz>=1.0,<1.5 and your project depends on baz>=2.0\n"
+        )
+        self.state.save(
+            "changes.json", [{"kind": "security", "manifest": BAD, "package": "baz", "old": "baz", "new": "baz>=2.0"}]
+        )
+        results = {BAD: {"status": "fail", "step": "uv lock", "log": str(log)}}
+        with redirect_stdout(io.StringIO()):
+            Checker(self.repo, self.state, 1).block_unsatisfiable([self.manifest()], results)
+        blocked = [c for c in self.state.load("changes.json", []) if c["kind"] == "blocked"]
+        self.assertEqual([(c["package"], c.get("release")) for c in blocked], [("baz", "agentkernel")])
+
+    def test_an_alert_the_lift_could_not_reach_names_why(self):
+        outcome = {"package": "baz", "minimum": "2.0", "outcome": "blocked", "reason": "Because logfire<5 caps baz"}
+        self.state.save("lifted.json", {BAD: [outcome]})
+        self.assertIn("Because logfire<5 caps baz", self.open_reason("baz", "examples/bad/uv.lock", "2.0"))
+
+    def test_the_report_lists_each_package_moved_for_a_security_fix(self):
+        lifted = {"package": "foo", "minimum": "1.3", "outcome": "lifted", "new": "1.3.1", "moves": ["bar 2.1 -> 3.2"]}
+        self.state.save("lifted.json", {BAD: [lifted], "examples/good/pyproject.toml": [lifted]})
+        self.assertEqual(
+            Reporter(self.repo, self.state, "1").lift_lines(),
+            ["- bar 2.1 -> 3.2: needed for the `foo` 1.3 security fix (2 manifest(s))"],
+        )
+
+    def lift(self, uv: FakeUv, minimum: str = "2.0", hold: set | None = None) -> LockGuard:
+        uv.INSIDE = {**FakeUv.INSIDE, "baz": "2.1"}
+        guard = LockGuard(self.manifest(), self.manifest().locked(), None, {"baz"}, None, {"baz": minimum})
+        with mock.patch.object(dependency_caps.CommandRunner, "run", side_effect=uv):
+            guard.lift(self.log, hold or set())
+        return guard
+
+    def test_a_lift_reaches_the_patched_version_and_names_what_moved_to_a_new_line(self):
+        guard = self.lift(FakeUv(also={"baz": {"bar": "4.0"}}))
+
+        self.assertEqual(self.manifest().locked()["baz"], "2.1")
+        [outcome] = guard.lifts
+        self.assertEqual((outcome["outcome"], outcome["new"]), ("lifted", "2.1"))
+        self.assertEqual(outcome["moves"], ["bar 3.2 -> 4.0"])
+
+    def test_a_package_that_is_already_patched_is_left_alone(self):
+        uv = FakeUv()
+        guard = self.lift(uv, minimum="1.4")
+        self.assertEqual((guard.lifts, uv.commands), ([], []))
+
+    def test_a_lift_uv_cannot_solve_is_put_back_with_uv_s_reason(self):
+        error = "Because x depends on baz<2 and y, we can conclude that logfire>=4,<5 cannot be used.\n"
+        guard = self.lift(FakeUv(fail={"baz": error}))
+
+        self.assertEqual(self.manifest().locked()["baz"], "1.4")
+        [outcome] = guard.lifts
+        self.assertEqual(outcome["outcome"], "blocked")
+        self.assertIn("logfire>=4,<5 cannot be used", outcome["reason"])
+
+    def test_a_lift_that_moves_a_held_package_is_put_back(self):
+        guard = self.lift(FakeUv(also={"baz": {"bar": "4.0"}}), hold={"bar"})
+
+        self.assertEqual(self.manifest().locked()["baz"], "1.4")
+        self.assertIn("bar", guard.lifts[0]["reason"])
+        self.assertIn("held back", guard.lifts[0]["reason"])
+
+    def test_a_lift_that_needs_a_pre_release_is_put_back(self):
+        guard = self.lift(FakeUv(also={"baz": {"bar": "4.0.dev1"}}))
+
+        self.assertEqual(self.manifest().locked()["baz"], "1.4")
+        self.assertIn("pre-release of bar", guard.lifts[0]["reason"])
+
+    def test_a_lift_that_takes_another_patched_package_below_its_fix_is_put_back(self):
+        uv = FakeUv(also={"baz": {"bar": "2.0"}})
+        uv.INSIDE = {**FakeUv.INSIDE, "baz": "2.1"}
+        guard = LockGuard(
+            self.manifest(), self.manifest().locked(), None, {"baz", "bar"}, None, {"baz": "2.0", "bar": "3.0"}
+        )
+        with mock.patch.object(dependency_caps.CommandRunner, "run", side_effect=uv):
+            guard.lift(self.log, set())
+
+        self.assertEqual(self.manifest().locked()["baz"], "1.4")
+        self.assertIn("below a security fix", next(o for o in guard.lifts if o["package"] == "baz")["reason"])
+
+    def test_a_lift_may_move_a_package_that_was_on_a_pre_release_already(self):
+        self.write(
+            "examples/bad/uv.lock",
+            _lock(("agentkernel", "0.9.5"), ("bar", "0.63b1"), ("baz", "1.4"), root="bad", extras=["auth"]),
+        )
+        guard = self.lift(FakeUv(also={"baz": {"bar": "0.66b2"}}))
+
+        self.assertEqual(guard.lifts[0]["outcome"], "lifted")
+        self.assertEqual(self.manifest().locked()["baz"], "2.1")
+
+    def test_a_lift_is_not_blamed_for_a_fix_that_was_blocked_before_it(self):
+        uv = FakeUv()
+        uv.INSIDE = {**FakeUv.INSIDE, "baz": "2.1"}
+        minimums = {"baz": "2.0", "bar": "9.0"}  # bar 3.2 is below its fix already, and the lift leaves it there
+        guard = LockGuard(self.manifest(), self.manifest().locked(), None, set(minimums), None, minimums)
+        with mock.patch.object(dependency_caps.CommandRunner, "run", side_effect=uv):
+            guard.lift(self.log, set())
+
+        self.assertEqual(next(o for o in guard.lifts if o["package"] == "baz")["outcome"], "lifted")
+
+    def test_the_report_keeps_fixes_waiting_for_a_release_apart_from_code_changes(self):
+        self.state.save(
+            "changes.json",
+            [
+                {"kind": "blocked", "manifest": BAD, "package": "baz", "note": "x", "release": "agentkernel"},
+                {"kind": "blocked", "manifest": BAD, "package": "foo", "note": "the code breaks"},
+            ],
+        )
+        with redirect_stdout(io.StringIO()):
+            Reporter(self.repo, self.state, "1").run()
+        body = self.state.path("pr-body.md").read_text()
+        code_change = body.split("Security fixes blocked (need a code change):")[1].split("\n\n")[0]
+        self.assertIn("`foo`", code_change)
+        self.assertNotIn("`baz`", code_change)
+        self.assertIn("- `baz`: the published `agentkernel` caps it below the fix", body)
+
+    def test_a_downgrade_says_so(self):
+        self.state.save("snapshot.json", {BAD: {"baz": "2.0"}})
+        rows, _ = Reporter(self.repo, self.state, "1").version_rows({"examples/bad"})
+        self.assertIn("| baz | examples/bad/pyproject.toml | 2.0 -> 1.4 (downgrade) |", rows)
+
+
+class VersionLineTest(unittest.TestCase):
+    def test_opentelemetry_beta_packages_move_with_the_api(self):
+        self.assertFalse(VersionLine.crosses("0.63b1", "0.66b2", "opentelemetry-instrumentation"))
+
+    def test_other_packages_and_stable_opentelemetry_releases_still_cross(self):
+        self.assertTrue(VersionLine.crosses("0.63b1", "0.66b2", "other-package"))
+        self.assertTrue(VersionLine.crosses("0.62.3", "0.63.0", "opentelemetry-instrumentation-agno"))
 
 
 if __name__ == "__main__":
