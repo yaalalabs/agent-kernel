@@ -37,9 +37,6 @@ class _StubAgent(BaseAgent):
     def get_description(self):
         return ""
 
-    def get_a2a_card(self):
-        return None
-
     def override_system_prompt(self, prompt):
         pass
 

@@ -177,3 +177,28 @@ class TestNeedsApproval:
         [tool] = ClaudeToolBuilder.bind([get_weather], needs_approval=True)
         assert "ak_needs_approval" not in {f.name for f in dataclasses.fields(tool)}
         assert tool.ak_needs_approval is True
+
+
+class TestClaudeAgentToolReporting:
+    """What the adapter reports of the declared tools (#603): the descriptor's tools and skills."""
+
+    def _agent(self, tools):
+        from claude_agent_sdk import ClaudeAgentOptions
+
+        from agentkernel.framework.claude.claude import ClaudeAgent, ClaudeAgentSpec, ClaudeRunner
+
+        spec = ClaudeAgentSpec(name="general", description="A helpful agent", options=ClaudeAgentOptions(), tools=tools)
+        return ClaudeAgent("general", ClaudeRunner(), spec)
+
+    def test_tool_names_are_the_declared_tools_in_order(self):
+        assert self._agent(ClaudeToolBuilder.bind([lookup, distance])).get_tool_names() == ["lookup", "distance"]
+
+    def test_each_skill_carries_its_tools_description(self):
+        from agentkernel.core.model import AgentSkillDescriptor
+
+        assert self._agent(ClaudeToolBuilder.bind([lookup])).descriptor.skills == [
+            AgentSkillDescriptor(id="lookup", name="lookup", description="Look a term up.")
+        ]
+
+    def test_an_agent_with_no_tools_reports_none(self):
+        assert self._agent([]).get_tool_names() == []

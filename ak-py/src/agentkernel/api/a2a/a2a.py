@@ -9,7 +9,7 @@ from a2a.server.tasks import InMemoryTaskStore, TaskStore
 from a2a.types import AgentCard, InternalError, Message, UnsupportedOperationError
 
 from ...a2ui.hook import A2UIPostHook
-from ...core import Agent
+from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import BaseRunRequest, Principal
 from ...core.runtime import Runtime
@@ -146,17 +146,19 @@ class A2A:
             return
         if not AKConfig.get().a2a.enabled:
             return
-        agents: dict[str, Agent] = Runtime.current().agents()
-        for name, agent in agents.items():
-            whitelisted = AKConfig.get().a2a.agents == ["*"] or name in AKConfig.get().a2a.agents
-            if not whitelisted:
+        allowed = AKConfig.get().a2a.agents
+        # From the registry's descriptors, not the agents this process hosts: a card needs nothing the
+        # descriptor does not carry, so a process over a shared registry serves agents that run elsewhere.
+        # In id order, so every process lists the same catalog whatever order its registry answers in.
+        for descriptor in sorted(Runtime.current().registry.descriptors(), key=lambda descriptor: descriptor.id):
+            if allowed != ["*"] and descriptor.id not in allowed:
                 continue
-            # get card
-            card: AgentCard | None = agent.get_a2a_card()
-            if card is None:
-                cls._log.warning(f"Agent '{name}' has no A2A card; it is not served over A2A")
-                continue
-            cls._cards.update({name: card})
+            if not descriptor.description:
+                cls._log.warning(
+                    f"Agent '{descriptor.id}' is served over A2A with an empty description, which A2A requires; declare one with "
+                    f"Module.describe(agent, description=...) or registry.agents.{descriptor.id}.description"
+                )
+            cls._cards[descriptor.id] = A2ACardBuilder.build(descriptor)
         cls._built = True
 
     @classmethod

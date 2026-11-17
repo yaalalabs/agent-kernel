@@ -454,8 +454,9 @@ and `research/design-options.md` section 4).
   issuer's discovery URL otherwise; none when identity is not configured), mirrored per skill.
   The A2A surface builds each card from the registry's descriptor when its routes are mounted,
   not through the adapter, so a card carries the config overlay and a process serves cards for
-  agents it does not host; its description is the declared catalog text or empty (spec
-  refinement 8).
+  agents it does not host; its description is the declared catalog text or empty. MCP's agent
+  tools are registered from the same descriptors and described by the same text, with a neutral
+  sentence about the call when none is declared (spec refinement 8).
 
 ### 5. Authorization (`identity/authz/`)
 

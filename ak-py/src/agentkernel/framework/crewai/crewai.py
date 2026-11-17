@@ -11,7 +11,6 @@ from pydantic import BaseModel
 
 from ...core import Agent as BaseAgent
 from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import StreamEvent
 from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
@@ -511,16 +510,17 @@ class CrewAIAgent(BaseAgent):
         """
         return self.agent.goal or self.agent.backstory
 
-    def get_a2a_card(self):
+    def get_tool_names(self) -> list[str]:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the names of the native agent's tools.
         """
-        from a2a.types import AgentSkill
+        return [tool.name for tool in self.agent.tools or []]
 
-        skills = []
-        for tool in self.agent.tools:
-            skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.agent.backstory, skills=skills)
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each native tool by name.
+        """
+        return {tool.name: tool.description or "" for tool in self.agent.tools or []}
 
     def attach_tool(self, tool: Any) -> None:
         """

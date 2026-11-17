@@ -21,7 +21,6 @@ from ...core import Module
 from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -893,16 +892,17 @@ class OpenAIAgent(BaseAgent):
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, OpenAIToolBuilder.bind([tool]))
 
-    def get_a2a_card(self):
+    def get_tool_names(self) -> list[str]:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the names of the native agent's tools, hosted tools included.
         """
-        from a2a.types import AgentSkill
+        return [tool.name for tool in self.agent.tools]
 
-        skills = []
-        for tool in self.agent.tools:
-            skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.agent.instructions, skills=skills)
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each native tool by name. A hosted tool carries none.
+        """
+        return {tool.name: getattr(tool, "description", None) or "" for tool in self.agent.tools}
 
 
 class OpenAIModule(Module):

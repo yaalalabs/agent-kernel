@@ -1194,12 +1194,44 @@ class GoogleADKAgent(AKBaseAgent):
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, GoogleADKToolBuilder.bind([tool]))
 
-    def get_a2a_card(self):
+    def get_tool_names(self) -> list[str]:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the names of the tools of every `LlmAgent` reachable from the root, the root's first, each once.
         """
-        # TODO Add A2A card support
-        pass
+        return list(self._named_tools())
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each reachable tool by name: a tool object's own, a plain function's docstring.
+        """
+        # The docstring only for a function: asked of a tool object, getdoc answers with its class's.
+        return {
+            name: getattr(tool, "description", None) or (inspect.getdoc(tool) if inspect.isroutine(tool) else None) or ""
+            for name, tool in self._named_tools().items()
+        }
+
+    def _named_tools(self) -> dict[str, Any]:
+        """
+        Returns the tools of every `LlmAgent` reachable from the root, by name: the root itself or a workflow's
+        nodes, then each level of `sub_agents`. A tool object is named by its `name`, a plain callable by its
+        function name, as ADK names them; a toolset, which lists its tools only inside a run, has no name here and
+        is left out.
+        """
+        found: dict[str, Any] = {}
+        seen: set[int] = set()
+        pending = GoogleADKRealtimeRunner._workflow_nodes(self._agent) if isinstance(self._agent, Workflow) else [self._agent]
+        while pending:
+            node = pending.pop(0)
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, LlmAgent):
+                for tool in node.tools:
+                    name = self._native_tool_name(tool)
+                    if name:
+                        found.setdefault(name, tool)
+            pending.extend(getattr(node, "sub_agents", None) or [])
+        return found
 
 
 class GoogleADKModule(Module):

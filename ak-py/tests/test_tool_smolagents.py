@@ -160,3 +160,28 @@ class TestEdgeCases:
         tools_a = SmolagentsToolBuilder.bind([get_weather])
         tools_b = SmolagentsToolBuilder.bind([get_weather])
         assert tools_a[0] is not tools_b[0]
+
+
+# What the adapter reports of the native agent's tools (#603): the descriptor's tools and skills
+class TestSmolagentsAgentToolReporting:
+
+    def _agent(self, tools):
+        from unittest.mock import MagicMock
+
+        from smolagents import ToolCallingAgent
+
+        from agentkernel.framework.smolagents.smolagents import SmolagentsAgent, SmolagentsRunner
+
+        return SmolagentsAgent("smol", SmolagentsRunner(), ToolCallingAgent(tools=tools, model=MagicMock(), name="smol"))
+
+    def test_tool_names_are_the_native_agents_tools_and_the_frameworks_own_final_answer(self):
+        agent = self._agent(SmolagentsToolBuilder.bind([get_weather, add]))
+
+        assert agent.get_tool_names() == ["get_weather", "add", "final_answer"]
+
+    def test_each_skill_carries_its_tools_description(self):
+        from agentkernel.core.model import AgentSkillDescriptor
+
+        skills = self._agent(SmolagentsToolBuilder.bind([get_weather])).descriptor.skills
+
+        assert skills[0] == AgentSkillDescriptor(id="get_weather", name="get_weather", description="Returns the weather for a given city.")

@@ -533,11 +533,12 @@ here.
 
 ### Iteration 14: Adapter descriptors and A2A cards
 
-- **Goal:** each adapter reports its tools, A2A cards are built from the registry's descriptors
-  with the provider's security scheme, and `get_a2a_card` is gone from the adapter contract.
+- **Goal:** each adapter reports its tools, A2A cards and MCP agent tools are built from the
+  registry's descriptors (cards with the provider's security scheme), and `get_a2a_card` is gone
+  from the adapter contract.
 - **Files:** the eight `framework/<name>/<name>.py`, `core/base.py`, `core/builder.py`,
-  `api/a2a/a2a.py`; `examples/cli/session-context/hooks_test.py` (its stub agent's unused
-  method).
+  `api/a2a/a2a.py`, `api/mcp/akmcp.py`; `examples/cli/session-context/hooks_test.py` (its stub
+  agent's unused method).
 - **Steps:**
   1. `get_tool_names()` and `_tool_descriptions()` per adapter from the spec 9 table (the
      LangGraph `ToolNode` walk replaces the `node_data.tools` read that always produced empty
@@ -549,15 +550,21 @@ here.
      by `descriptor.id`, until 16 replaces it (spec 6, design refinement 8).
   4. `get_a2a_card` is deleted from `Agent`, the eight adapters and the example stub; the "has no
      A2A card" branch goes with it (spec 6).
+  5. `MCP._build` registers one tool per descriptor from the same registry read, named by the id
+     and described by the descriptor's description, or by the neutral text with a warning when
+     there is none. The `mcp.agents` allow-list stays, by `descriptor.id`, until 16 (spec 8.6).
 - **Verify:** the descriptor cases (tools, skill descriptions) in the eight `test_tool_<adapter>`
   suites; the card assertions in `test_api_a2a_surface` (the card built from the registered
   descriptor, the empty-description warning, an ADK agent, a descriptor the process hosts no
   agent for) and `test_api_a2a_auth`; `test_protocol_pipeline_roundtrip`; `test_base` and
   `test_maf_runner` lose their `get_a2a_card` cases. The test agents elsewhere that define the
-  method keep it unused.
+  method keep it unused. `TestAgentTools` in `test_api_mcp` (a tool for an agent the process does
+  not host, the catalog text and never the instructions, the neutral text and its warning, id
+  order, the allow-list).
 - **Behaviour to expect:** a card's description is empty until `Module.describe` or (from 15) the
-  overlay sets one, where six adapters published the agent's instructions or backstory (spec
-  behavioural change 31).
+  overlay sets one, where six adapters published the agent's instructions or backstory; an MCP
+  tool's text is the declared description or a neutral sentence, where it was the instructions
+  (spec behavioural changes 31 and 33).
 
 ### Iteration 15: Registry config and store backends
 
@@ -565,7 +572,8 @@ here.
   instance registered.
 - **Files:** `core/config.py`, `core/registry.py` (the factory reads the block and applies the
   overlay), `identity/registry/redis_like.py`, `identity/registry/redis.py`,
-  `identity/registry/valkey.py`, `identity/registry/dynamodb.py`, `identity/registry/testing.py`.
+  `identity/registry/valkey.py`, `identity/registry/dynamodb.py`, `identity/registry/testing.py`,
+  `pipeline/io_handler.py`.
 - **Steps:**
   1. `_RegistryConfig`, the defaults-only `_Registry*Config` subclasses,
      `_RegistryAgentOverlayConfig`; `AKConfig.registry: Optional = None` (spec Config changes).
@@ -574,6 +582,9 @@ here.
   3. The factory's store branches, the dotted-path branch and the overlay, whose `register` sets
      the final descriptor back on the agent so the hosting process holds one record (spec 6,
      descriptor source 3).
+  4. `IOHandler._warn_if_no_agents` (`pipeline/io_handler.py`) asks the registry for descriptors
+     where it asked the runtime for hosted agents, and its advice names the shared registry
+     beside loading the agent modules (spec 6, A2A card).
 - **Verify:** `test_agent_registry` (all backends over fake drivers, factory, overlay,
   cross-instance read; the overlay on `agent.descriptor`, the run's actor subject following an
   overlaid `identity`); an overlaid description and version on the A2A card in
@@ -801,7 +812,8 @@ user-skill updates), so iterations 27 and 28 cover what phases C to F add and re
      `get_a2a_card()`, which is gone), shows `Module.describe` and
      `registry.agents.<id>.description` as the way to give a card its description and version,
      and notes that an agent registered after a process mounted its A2A routes is served there
-     after a restart (spec 6, A2A card).
+     after a restart (spec 6, A2A card). `api/mcp-server.md` says the same of an agent's MCP
+     tool: its text is the declared description, not the agent's instructions (spec 8.6).
 - **Verify:** `grep -rn "AuthValidator\|Authoriser\|acting_user_id\|mcp.agents\|a2a.agents\|
   agui.agents\|userId\|get_a2a_card" docs/docs ak-py/README.md README.md ak-deployment` returns
   only the frozen `docs/versioned_docs/` snapshots and the Gmail API's `userId="me"`; the docs

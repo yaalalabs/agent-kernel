@@ -165,3 +165,29 @@ class TestEdgeCases:
         tools_a = CrewAIToolBuilder.bind([get_weather])
         tools_b = CrewAIToolBuilder.bind([get_weather])
         assert tools_a[0] is not tools_b[0]
+
+
+# What the adapter reports of the native agent's tools (#603): the descriptor's tools and skills
+class TestCrewAIAgentToolReporting:
+
+    def _agent(self, tools):
+        from crewai import Agent as CrewAgent
+
+        from agentkernel.framework.crewai.crewai import CrewAIAgent, CrewAIRunner
+
+        native = CrewAgent(role="Researcher", goal="Research topics", backstory="A researcher", verbose=False, tools=tools)
+        return CrewAIAgent("Researcher", CrewAIRunner(), native, [native])
+
+    def test_tool_names_are_the_native_agents_tools_in_order(self):
+        agent = self._agent(CrewAIToolBuilder.bind([get_weather, add]))
+
+        assert agent.get_tool_names() == ["get_weather", "add"]
+
+    def test_each_skill_carries_its_tools_description(self):
+        [skill] = self._agent(CrewAIToolBuilder.bind([get_weather])).descriptor.skills
+
+        assert (skill.id, skill.name) == ("get_weather", "get_weather")
+        assert "Returns the weather for a given city." in skill.description
+
+    def test_an_agent_with_no_tools_reports_none(self):
+        assert self._agent([]).get_tool_names() == []

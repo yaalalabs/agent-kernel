@@ -49,9 +49,6 @@ class StubAgent(Agent):
     def get_description(self) -> str:
         return "the agent's instructions, which are never catalog text"
 
-    def get_a2a_card(self):
-        return None
-
     def override_system_prompt(self, prompt):
         pass
 
@@ -62,12 +59,16 @@ class StubAgent(Agent):
 class ToolReportingAgent(StubAgent):
     """Holds its tools the way every adapter holds its native agent: assigned after the base constructor returns."""
 
-    def __init__(self, name: str, tools: list[str]):
+    def __init__(self, name: str, tools: list[str], descriptions: dict[str, str] | None = None):
         super().__init__(name)
         self._tools = tools
+        self._descriptions = descriptions or {}
 
     def get_tool_names(self) -> list[str]:
         return list(self._tools)
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        return dict(self._descriptions)
 
 
 class NativeAgent:
@@ -264,6 +265,20 @@ class TestAgentDescriptor:
             AgentSkillDescriptor(id="lookup_invoice", name="lookup_invoice"),
             AgentSkillDescriptor(id="refund", name="refund"),
         ]
+
+    def test_a_skill_takes_the_description_the_adapter_reports_for_its_tool(self):
+        agent = ToolReportingAgent("billing", ["lookup_invoice", "refund"], {"lookup_invoice": "Look up an invoice by id."})
+
+        assert agent.descriptor.skills == [
+            AgentSkillDescriptor(id="lookup_invoice", name="lookup_invoice", description="Look up an invoice by id."),
+            AgentSkillDescriptor(id="refund", name="refund", description=""),  # no description reported for it
+        ]
+
+    def test_a_tool_reported_twice_is_listed_once_in_first_seen_order(self):
+        descriptor = ToolReportingAgent("billing", ["refund", "lookup_invoice", "refund"]).descriptor
+
+        assert descriptor.tools == ["refund", "lookup_invoice"]
+        assert [skill.id for skill in descriptor.skills] == ["refund", "lookup_invoice"]
 
     def test_an_agent_reports_no_tools_and_no_ungated_tools_by_default(self):
         agent = StubAgent("billing")

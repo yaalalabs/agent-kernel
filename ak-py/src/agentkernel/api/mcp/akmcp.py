@@ -7,7 +7,6 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.tools.tool import ToolResult
 
-from ...core import Agent
 from ...core.config import AKConfig
 from ...core.model import BaseRunRequest
 from ...core.runtime import Runtime
@@ -24,12 +23,19 @@ class MCP:
     This class provides a framework to manage and expose tools for
     interaction with Agent Kernel's FastMCP. Agent tools never run the agent here: each executor
     puts the request on the input queue and waits for the runner's whole reply in the response
-    store (#780). Tools an application adds to ``MCP.get()`` are its own code and still run here.
+    store (#780). One is registered per agent the registry knows, named by the agent's id and
+    described by its descriptor's catalog text. Tools an application adds to ``MCP.get()`` are its
+    own code and still run here.
     """
 
     PROTOCOL = "mcp"
     """
     Value of the queue message's ``protocol`` attribute for MCP requests
+    """
+    UNDESCRIBED_TOOL_TEXT = "Sends a prompt to the '{agent}' agent and returns its reply."
+    """
+    The text of an agent's tool when the agent's descriptor declares no description: what calling the
+    tool does, and nothing about the agent, since the agent's instructions are never catalog text
     """
 
     _fastmcp = None
@@ -48,6 +54,7 @@ class MCP:
     """
     The surface's one queue client (the pipeline's ``RestHandler``), built on first use
     """
+    _log = logging.getLogger("ak.mcp")
 
     class Executor:
         ERROR_MESSAGE = "The agent could not process the request"
@@ -141,16 +148,24 @@ class MCP:
             # None without an identity block: MCP stays open and every call runs anonymous.
             cls._fastmcp = FastMCP("Agent Kernel FastMCP Instance", auth=AKMCPAuthProvider.from_config())
         if AKConfig.get().mcp.expose_agents:
-            agents: dict[str, Agent] = Runtime.current().agents()
-            for name, agent in agents.items():
-                whitelisted = AKConfig.get().mcp.agents == ["*"] or name in AKConfig.get().mcp.agents
-                if not whitelisted:
+            allowed = AKConfig.get().mcp.agents
+            # From the registry's descriptors, not the agents this process hosts: a tool needs only the agent's
+            # id and catalog text, so a process over a shared registry exposes agents that run elsewhere. In id
+            # order, so every process lists the same tools whatever order its registry answers in.
+            for descriptor in sorted(Runtime.current().registry.descriptors(), key=lambda descriptor: descriptor.id):
+                if allowed != ["*"] and descriptor.id not in allowed:
                     continue
-                # Add executor
-                cls._executors[name] = cls.Executor(name)
+                if not descriptor.description:
+                    cls._log.warning(
+                        f"Agent '{descriptor.id}' is exposed as an MCP tool with no description of its own, and a client chooses a "
+                        f"tool by that text; declare one with Module.describe(agent, description=...) or "
+                        f"registry.agents.{descriptor.id}.description"
+                    )
+                cls._executors[descriptor.id] = cls.Executor(descriptor.id)
                 cls._fastmcp.tool(
-                    cls._executors[name].execute,
-                    name=name,
-                    description=agent.get_description(),
+                    cls._executors[descriptor.id].execute,
+                    name=descriptor.id,
+                    # Always given: left out, FastMCP would publish the executor's own docstring.
+                    description=descriptor.description or cls.UNDESCRIBED_TOOL_TEXT.format(agent=descriptor.id),
                 )
         cls._built = True

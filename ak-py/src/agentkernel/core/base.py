@@ -707,17 +707,19 @@ class Agent(ABC):
 
     def _build_descriptor(self) -> AgentDescriptor:
         """
-        Builds the descriptor from what the agent itself knows: its name as id and name, the tools it reports,
-        one skill per tool, and its runner's name and streaming support. The description stays empty, since
-        `get_description()` is the agent's instructions and never catalog text.
+        Builds the descriptor from what the agent itself knows: its name as id and name, the tools it reports
+        (each once), one skill per tool carrying the tool's description, and its runner's name and streaming
+        support. The description stays empty, since `get_description()` is the agent's instructions and never
+        catalog text.
         :return: The agent's own descriptor, before `Module.describe` is applied.
         """
-        tools = self.get_tool_names()
+        tools = list(dict.fromkeys(self.get_tool_names()))
+        descriptions = self._tool_descriptions()
         return AgentDescriptor(
             id=self.name,
             name=self.name,
             tools=tools,
-            skills=[AgentSkillDescriptor(id=tool, name=tool) for tool in tools],
+            skills=[AgentSkillDescriptor(id=tool, name=tool, description=descriptions.get(tool) or "") for tool in tools],
             runner=self.runner.name,
             supports_streaming=self.runner.supports_streaming,
         )
@@ -729,6 +731,15 @@ class Agent(ABC):
         :return: The tool names.
         """
         return []
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the native description of each tool the agent reports, by tool name; a tool with none is left out
+        or given an empty one. The descriptor's skills take their descriptions from here. The base implementation
+        reports none; each framework adapter implements it beside `get_tool_names`, from the same native tools.
+        :return: The tool descriptions by tool name.
+        """
+        return {}
 
     def ungated_tool_names(self) -> list[str]:
         """
@@ -818,13 +829,6 @@ class Agent(ABC):
         :param tool: The tool to attach.
         """
         raise NotImplementedError()
-
-    @abstractmethod
-    def get_a2a_card(self) -> Any:
-        """
-        Returns the A2A AgentCard associated with the agent.
-        """
-        pass
 
     def _setup_system_prompt(self) -> None:
         """

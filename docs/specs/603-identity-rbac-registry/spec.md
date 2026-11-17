@@ -627,10 +627,9 @@ class AgentRegistry(ABC):
    `updated_at` aside): Runtime's actor subject (section 3) sees an overlaid `identity`, and
    nothing reads a descriptor the overlay has not reached.
 
-The registry's descriptor is the one record of an agent. The catalog, AG-UI's `/agents` and the
-A2A card are built from `registry.descriptors()`, never from the adapter or the native agent.
-MCP is the exception that remains: its agent tools are registered from the agents the process
-hosts, with `get_description()` as the tool text (section 8.6).
+The registry's descriptor is the one record of an agent. The catalog, AG-UI's `/agents`, the A2A
+card and MCP's agent tools (section 8.6) are built from `registry.descriptors()`, never from the
+adapter, the native agent or `get_description()`.
 
 **Availability** (`core/service.py:49-70`):
 
@@ -674,11 +673,14 @@ open_id_connect_url=<discovery url>))` for the OIDC family; `security_requiremen
 Cards are built by the A2A surface from the registry, not by the adapters (design refinement 8):
 
 - `A2A._build` (`api/a2a/a2a.py:144-160`) iterates `Runtime.current().registry.descriptors()`
-  where it iterated `Runtime.current().agents()`, and builds each card with
+  where it iterated `Runtime.current().agents()`, in id order so that every process lists the
+  same catalog whatever order its registry answers in, and builds each card with
   `A2ACardBuilder.build(descriptor)`. A card therefore carries the config overlay, and a process
   over a store-backed registry builds cards for agents it does not host, which is what lets the
   io process stop loading every agent's code to serve them (`examples/k8s/openai-queue-mode/
-  app_io_handler.py:5-8`).
+  app_io_handler.py:5-8`). `IOHandler._warn_if_no_agents` (`pipeline/io_handler.py:264-281`),
+  which warns when the process hosts no agent, asks the registry for descriptors instead once a
+  shared registry exists (iteration 15); until then the two are the same question.
 - `Agent.get_a2a_card` is removed: the abstract method on `Agent` (`core/base.py`) and its eight
   implementations, whose one caller was `A2A._build` (line 155). ADK agents get a card the same
   way as the rest, with no adapter code, so the `TODO` (`framework/adk/adk.py:1197-1202`) and the
@@ -1010,6 +1012,19 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   so the resource is `<mcp.url>/` and the 401's `resource_metadata` is
   `<origin>/.well-known/oauth-protected-resource/<path>/`, which `RESTAPI.build_app` serves at the
   app root (`auth.get_well_known_routes(mcp_path="/")`), where RFC 9728 clients look it up.
+- The agent tools are registered from the registry, not from the agents the process hosts
+  (design refinement 8): `_build` iterates `Runtime.current().registry.descriptors()` in id order
+  where it iterated `Runtime.current().agents()` (144), with `name = descriptor.id` and
+  `description = descriptor.description`, where the tool text was `agent.get_description()`, the
+  agent's instructions (154). A process over a store-backed registry therefore exposes agents it
+  does not host, as it serves their A2A cards. A description is always passed, because FastMCP
+  publishes the executor's own docstring when given none: an agent that declares none gets
+  `MCP.UNDESCRIBED_TOOL_TEXT` ("Sends a prompt to the '<id>' agent and returns its reply."), which
+  says what the call does and nothing about the agent, and `_build` logs one warning naming
+  `Module.describe` and `registry.agents.<id>.description`, since a client chooses a tool by
+  that text. Unlike a card's description this one is not left empty: it describes the tool, and
+  an empty one leaves a client nothing to choose by. Tools are registered once, at build, so an
+  agent registered later is exposed after a restart (the A2A boundary, section 6).
 - Each agent tool is registered with `cls._fastmcp.tool(execute, name=..., description=...,
   auth=visible_check)` where `visible_check: AuthCheck` (`fastmcp/utilities/authorization.py:47`)
   reads the principal off the context's access token and returns `AccessGate.visible(principal,
@@ -1274,7 +1289,7 @@ Shared pieces (`core/`):
 | `pipeline/agent_runner.py` | | `principal=` at 126; `ATTR_USER_ID` from the principal on the fallback path; `release` in `finally` | forwarded attributes; thread recording; stream runner marker rule |
 | `integration/adapter/base.py`, `producer.py` | | `InboundRequest.namespace/claims`; principal built at enqueue | attributes; reply-context budget |
 | `integration/agui/*` | `authoriser`/`auth_validator`; `agui.agents` read (60-68) | principal through `_resolve_run_inputs`; visibility | event mapping; envelope; pause outcome |
-| `api/mcp/akmcp.py` | `mcp.agents` read (140) | `auth=`; per-tool `AuthCheck`; principal on the body | executor error mapping; `get_http_app` |
+| `api/mcp/akmcp.py` | `mcp.agents` read (140); `agent.get_description()` as the tool text (154) | `auth=`; per-tool `AuthCheck`; principal on the body; tools registered from registry descriptors | executor error mapping; `get_http_app` |
 | `api/a2a/*` | `a2a.agents` read (137); the `agent.get_a2a_card()` call and its "no card" branch (155-158) | context builder; principal on the body; cards built from registry descriptors, filtered and narrowed per caller | routes shape; data parts; cards built once at mount |
 | `cli/cli.py` | | `--token` / `AK_CLI_TOKEN` | REPL commands |
 | `deployment/aws/*`, `gcp/akauthorizer.py`, `azure/akfunction.py` | validator arguments; `GCPAuthorizer`; `set_auth_handler`; `set_auth_validator` | principal via authorizer context; WS keyed by subject | queue wiring; connection table schema |
@@ -1469,6 +1484,11 @@ Each is intentional; the justification is design section 10 unless stated.
 32. In the catalog and on A2A cards, a skill backed by a tool the caller's level does not allow
     is left out with the tool; the A2A catalog and card responses carry `Vary: Authorization`
     (sections 6 and 8.7).
+33. An agent's MCP tool is described by the declared `descriptor.description`, or by a neutral
+    sentence naming the agent when none is declared (with a warning at build), where it carried
+    the agent's instructions. The tools are registered from the registry's descriptors, in id
+    order, so a process over a store-backed registry exposes agents it does not host
+    (section 8.6).
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (one optional
 `last_error` on schedule occurrences and `principal` on tasks aside); the queue envelope
@@ -1499,6 +1519,7 @@ for the two caches and the framework context; public exports other than those na
 | Missing optional SDK (`redis`, `valkey`, `boto3`, PyJWT, cryptography) | factories under `require_extra` | `ImportError` naming the extra |
 | Duplicate agent id | `AgentRegistry.register` | `AgentRegistrationError` |
 | Agent served over A2A with no description | `A2A._build` | one warning per agent at mount; the card is served with an empty description |
+| Agent exposed as an MCP tool with no description | `MCP._build` | one warning per agent at build; the tool carries the neutral `UNDESCRIBED_TOOL_TEXT` |
 | Policy naming an unknown tool on a hosted agent; LangGraph/smolagents ungated tools | `AccessGate.validate_configuration` | `AKConfigError` at `Module.load` / `get_router()` |
 | Removed config lists present | `_A2AConfig`/`_MCPConfig`/`_AGUIConfig` validators | `AKConfigError` naming `registry.agents.<id>.surfaces` |
 | Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; catalog routes 500 |
@@ -1691,6 +1712,12 @@ Changed files and the exact targets that move:
   version, the warning for an empty description, a card for an ADK agent, and a card for a
   descriptor the process hosts no agent for (a stub `AgentRegistry` passed to `Runtime`); its
   "agent without a card is not served" case goes with the branch.
+- `tests/test_api_mcp.py` gains `TestAgentTools`: a tool for an agent the process does not host,
+  named by the id and described by the catalog text; a hosted agent's tool carrying its catalog
+  text and never its instructions; the neutral text and the one warning for an agent with no
+  description; id order; the allow-list by descriptor id; nothing registered with
+  `expose_agents` off. `tests/conftest.py` gains the `descriptor_only_registry` fixture, the
+  stand-in for a process over a shared registry that the A2A and MCP surface suites share.
 - `tests/test_base.py:60` and `tests/test_maf_runner.py:122-123`: the `get_a2a_card` assertions go
   with the method. The thirty or so test agents that define `get_a2a_card` to satisfy the old
   abstract method keep an unused method and need no change.
@@ -1713,9 +1740,10 @@ cover phases C to F, and the sync skills verify them before merge.
 - **Docs site (`docs/docs/`)**: new `advanced/identity-and-access.md`; `api/rest-api.md`
   (the Authentication section 474-499 and the `user_id` context claim 192-207, already
   inaccurate); `api/agui-server.md:26-76`; `integrations/agui.md:21-120`; `api/mcp-server.md:37,
-  85-91`; `api/a2a-server.md:18-29, 79, 141` (the card is built from the agent's descriptor, not
-  by the adapter's `get_a2a_card()`; how to give a card its description and version; the
-  restart needed for an agent registered after mount);
+  85-91` (an agent's tool is described by its declared description, set with `Module.describe`
+  or the overlay, not by its instructions); `api/a2a-server.md:18-29, 79, 141` (the card is built
+  from the agent's descriptor, not by the adapter's `get_a2a_card()`; how to give a card its
+  description and version; the restart needed for an agent registered after mount);
   `core-concepts/configuration.md:58-72, 128, 324-332, 524,
   534, 854-867, 1084`; `advanced/threads.md:21-218, 323`; `advanced/scheduling.md:21-274, 397-408`;
   `advanced/queue-mode-guide.md:80, 144, 323-412, 485-491, 673-674, 808`;
@@ -1861,4 +1889,8 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    which default to one per tool, are narrowed with the tools wherever the caller's level narrows
    them, in the catalog and on a served card. Cards are still built once at mount (the SDK binds
    them), which leaves an agent registered later unserved until a restart (section 6, A2A card;
-   section 8.7).
+   section 8.7). MCP follows the same rule (extended 2026-11-17): its agent tools are registered
+   from the registry's descriptors and described by the declared catalog text, where they were
+   built from the hosted agents and carried their instructions; an agent with no declared text
+   gets a neutral sentence about the call instead of an empty description, since a client chooses
+   a tool by that text (section 8.6).

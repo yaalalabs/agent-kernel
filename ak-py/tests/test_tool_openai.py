@@ -217,3 +217,53 @@ class TestEdgeCases:
     def test_strict_json_schema_enabled_by_default(self):
         [tool] = OpenAIToolBuilder.bind([get_weather])
         assert tool.strict_json_schema is True
+
+
+# What the adapter reports of the native agent's tools (#603): the descriptor's tools and skills
+class TestOpenAIAgentToolReporting:
+
+    def _agent(self, tools):
+        from agents import Agent as SDKAgent
+
+        from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIRunner
+
+        return OpenAIAgent("billing", OpenAIRunner(), SDKAgent(name="billing", instructions="Bill customers.", tools=tools))
+
+    def test_tool_names_are_the_native_agents_tools_in_order(self):
+        agent = self._agent(OpenAIToolBuilder.bind([get_weather, add]))
+
+        assert agent.get_tool_names() == ["get_weather", "add"]
+
+    def test_each_skill_carries_its_tools_description(self):
+        from agentkernel.core.model import AgentSkillDescriptor
+
+        agent = self._agent(OpenAIToolBuilder.bind([get_weather]))
+
+        assert agent.descriptor.skills == [
+            AgentSkillDescriptor(id="get_weather", name="get_weather", description="Returns the weather for a given city.")
+        ]
+
+    def test_a_hosted_tool_is_listed_by_name_with_no_description(self):
+        from agents import WebSearchTool
+
+        from agentkernel.core.model import AgentSkillDescriptor
+
+        agent = self._agent([WebSearchTool()])  # a hosted tool has a name and no description attribute
+
+        assert agent.get_tool_names() == ["web_search"]
+        assert agent.descriptor.skills == [AgentSkillDescriptor(id="web_search", name="web_search")]
+
+    def test_a_system_tool_attached_at_construction_is_in_the_descriptor(self, monkeypatch):
+        from agentkernel.core.model import SystemTool
+        from agentkernel.core.tool import SystemToolFactory
+
+        def analyze_attachments() -> str:
+            """Analyze the attachments of this conversation."""
+            return "none"
+
+        system_tools = [SystemTool(name="analyze_attachments", description="Analyze the attachments of this conversation.", func=analyze_attachments)]
+        monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: system_tools))
+
+        agent = self._agent(OpenAIToolBuilder.bind([get_weather]))
+
+        assert agent.descriptor.tools == ["get_weather", "analyze_attachments"]
