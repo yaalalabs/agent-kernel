@@ -6,7 +6,7 @@ per-user budgets natively where the gateway can, and with a pre-run check where 
 own usage on `GET /api/v1/usage`. The requirements are [`design.md`](design.md). This document says how they are
 built. Section numbers (§n) refer to this document.
 
-Citations are against `develop` at `bba30292`, verified on 2026-11-17. External claims name the version they were
+Citations are against `develop` at `cca1d5f2` (this branch changes only `docs/specs/`), verified on 2026-11-17. External claims name the version they were
 checked at: LiteLLM 1.95.1 (the `uv.lock` pin, read in `ak-py/.venv`), the framework versions in
 `research/framework-bindings.md`, and Agentgateway v1.7.0 (`research/agentgateway-session-attribute.md`). A claim
 not checked in source is marked **unverified**, and the test that pins it is named.
@@ -68,6 +68,20 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     (`api/handler.py:55-62`). design.md left it implicit.
 17. **Gateway header values are encoded** (§4, rule 5). Subjects are no longer percent-encoded ids, so a raw subject
     could carry CR/LF or non-ASCII characters into a header.
+18. **`fetch_usage_since` returns one batch, and the ledger catch-up is bounded.** A batch is at most one page, and
+    each batch is committed as soon as it is read. A check that has not caught up within `CATCH_UP_BUDGET` raises
+    `LedgerBehindError`, and `on_error` handles it. A partial total is never summed. The unsettled read starts at
+    the settle line (§4, §12.3).
+19. **Every user id Agent Kernel derives goes through the configured `Attributor`.** This covers the usage route,
+    `UsageView` authorization and thread naming, through `CostManager.user_id_for` and `attribution_for` (§9, §15).
+    With no principal, thread naming falls back to `ak-system`.
+20. **Native budget sync is split.** Budget definitions and the `ak-system` upsert run synchronously at startup.
+    Per-user assignments run on the background thread, so startup cost does not grow with the number of users. A
+    user's first lazy default upsert is one or two calls (§5.1, §11.4).
+21. **`total_spend` must equal the same rows' totals**, including cached tokens and the unpriced count. A gateway that
+    cannot report either raises (Langfuse, §5.3). Usage views fetch the whole window first, and split it only on
+    truncation (§13).
+22. **Classifying an error never builds `CostManager`.** `ErrorUtil` uses `RunMeterFactory.peek()` (§3.4).
 
 ## Design
 
@@ -79,7 +93,8 @@ ak-py/src/agentkernel/cost/
 ├── model.py            # Attribution, ModelUsage, UsageQuery, UsageResult, ModelSpend, SpendTotal, UsageWindow,
 │                       #   UsageReport (+ AgentUsage, SessionUsage), BudgetPeriod, BudgetLimit, BudgetDecision,
 │                       #   SpendCursor, GatewayCapabilities, GatewayFilter
-├── errors.py           # CostError, UnsupportedCapabilityError, UsageRetrievalError, UsageTruncatedError
+├── errors.py           # CostError, UnsupportedCapabilityError, UsageRetrievalError, UsageTruncatedError,
+│                       #   LedgerError, LedgerConflictError, LedgerBehindError
 ├── gateway/
 │   ├── base.py         # LLMGateway ABC
 │   ├── factory.py      # LLMGatewayFactory
@@ -116,7 +131,7 @@ ak-py/src/agentkernel/core/meter.py   # RunMeter ABC, NoOpRunMeter, RunMeterFact
 
 Coupling rules, numbered so tests can cite them:
 
-1. `core/` reaches `cost/` only through `RunMeterFactory.get()`, which imports `CostManager` inside the
+1. `core/` reaches `cost/` only through `RunMeterFactory.get()` / `peek()`. `get()` imports `CostManager` inside the
    enabled-check (the `schedule/` precedent). Nothing in `core/` names a gateway.
 2. `framework/` imports `cost/client.py`, lazily inside the binding class bodies' modules. `cost/` never imports
    `framework/`.
@@ -287,6 +302,8 @@ class RunMeterFactory:
     def get(cls) -> RunMeter:           # AKConfig.get().cost is None -> NoOpRunMeter; else
                                         #   `from agentkernel.cost.manager import CostManager` (lazy) -> CostManager.get()
     @classmethod
+    def peek(cls) -> RunMeter:          # the instance get() already built, else NoOpRunMeter; never constructs
+    @classmethod
     def reset(cls) -> None: ...         # tests
 ```
 
@@ -320,11 +337,15 @@ The check runs inside `async with session` and after `_publish` / `agent._activa
 
 - `ErrorCategory` (`:1-7`, a plain class of string constants) gains `BUDGET = "budget"`.
 - `ErrorUtil._format_error_message` (`:49`) maps it to `"Error: The usage budget for this request has been reached."`.
-  The `Error: ` prefix matches every sibling (`:55-73`). design.md drops the prefix, and this spec keeps the house
-  wording.
-- `ErrorUtil._classify(error, status_code)` (`:23`) first asks `RunMeterFactory.get().is_budget_refusal(error)` and
+  The `Error: ` prefix matches every sibling (`:55-73`; deviation 14).
+- `ErrorUtil._classify(error, status_code)` (`:23`) first asks `RunMeterFactory.peek().is_budget_refusal(error)` and
   returns `BUDGET` on a match. Without a `cost` block the no-op meter answers `False`, and classification is
   unchanged (a LiteLLM 429 stays `RATE_LIMIT`).
+- It uses `peek()`, not `get()`, so classifying an error never constructs `CostManager`. Constructing it would run the
+  probe and the sync, and could raise `AKConfigError` that hides the original error.
+  - Every run's `Runtime` check calls `get()` before any model call, so the meter is built by the time a gateway
+    refusal arrives.
+  - The one call that comes before it is thread naming, which catches its own errors (§8.3).
 - `error_util.py` imports `RunMeterFactory` inside `_classify`, so `core/util` keeps no module-scope dependency on
   `core/meter.py`.
 
@@ -351,16 +372,21 @@ class LLMGateway(ABC):
     async def total_spend(self, user_id: str, window: UsageWindow) -> SpendTotal: ...   # windowed_spend
     async def fetch_usage_since(
         self, user_id: str, cursor: SpendCursor | None, until: datetime,
-    ) -> tuple[list[ModelUsage], SpendCursor | None]: ...                              # usage_retrieval
-    async def sync_budgets(self, budgets: Mapping[str, BudgetLimit]) -> None: ...      # native_user_budget
+    ) -> tuple[list[ModelUsage], SpendCursor | None, bool]: ...                        # usage_retrieval; (rows, next_cursor, caught_up)
+    async def sync_budget_definitions(self, limits: Iterable[BudgetLimit]) -> None: ... # native_user_budget
+    async def sync_budgets(self, budgets: Mapping[str, BudgetLimit | None]) -> None: ...  # native_user_budget; None = no budget
 ```
 
 - The base class implements each optional method as `raise UnsupportedCapabilityError(self.name, "<capability>")`.
   A subclass that declares a capability overrides the method. `LLMGatewayContract` asserts both directions.
 - `fetch_usage` raises `UnsupportedCapabilityError` for any `query.filters()` member outside
   `capabilities.filters`. The view decides what to push down (§13).
-- `fetch_usage_since` returns rows with `cursor < row ≤ until`, in gateway timestamp order, and the cursor of the last
-  row returned. `until` is the settle line or `now` (§12.3).
+- `fetch_usage_since` returns **one batch**: at most one page of rows with `cursor < row ≤ until`, in gateway
+  timestamp order. It also returns the cursor of the last row returned, and `caught_up`, which is true when no rows
+  remain up to `until`. `until` is the settle line or `now` (§12.3).
+  - The bounds are exact even when the gateway's own filter is coarser than the cursor (LiteLLM filters to the
+    second, §5.1). The adapter filters on the client, so no row is repeated and none past `until` is returned.
+  - It never hits a row cap: a batch is one page, and the caller loops.
 - Every HTTP gateway uses `GatewayHTTP` (`gateway/http.py`). It wraps one `httpx.AsyncClient` per gateway instance
   and maps errors: connect or timeout errors, 5xx responses and malformed JSON become `UsageRetrievalError`; 401 and
   403 become `UsageRetrievalError(auth=True)`. Logs name the method and path only, never the query string, headers
@@ -391,6 +417,17 @@ A BYO gateway reads its own settings from `config.model_extra` (`_CostGatewayCon
 #### 5.1 `LiteLLMGateway` (`gateway/litellm.py`)
 
 Checked against the proxy source at LiteLLM 1.95.1.
+
+**Modes** (moved from design.md)
+
+- `end_user` is the default. It is open source and in every stable release, including the locked 1.95.x.
+- `customer_management`:
+  - It needs LiteLLM 1.111 or later. On 2026-11-17 that is prerelease only, and the latest stable is 1.109.1.
+    `probe` reads the proxy version and raises `AKConfigError` below 1.111 (below).
+  - Without LiteLLM Enterprise it is capped at 5 organizations, 5 teams per organization and 5 members per team.
+    Per-user budgets for more users need Enterprise. Documented.
+  - There are no per-member spend rows. `fetch_usage_since` is not declared and nothing replaces it, so only native
+    budgets work in this mode. Documented.
 
 **Capabilities**
 
@@ -423,7 +460,7 @@ mode as its own subclass.
   - `x-litellm-spend-logs-metadata`: `json.dumps({"ak_session_id": ..., "ak_request_id": ..., "ak_agent_id": ...})`. The proxy parses it with `safe_json_loads` (`:721-723`).
 - `customer_management`:
   - `x-litellm-customer-org-alias: <customer_org_alias>`
-  - `x-litellm-customer-member-id: <user_id>`
+  - `x-litellm-customer-member-id: <gateway_user_id>` (rule 5)
   - the same tags and metadata headers as `end_user`
 - `None` fields are omitted. A `None` `user_id` (an unattributed call) sends no customer header.
 
@@ -434,8 +471,9 @@ mode as its own subclass.
 - Authentication is `admin_key`, falling back to `api_key`.
 - Pages are read until `page × page_size ≥ total`. A `total` of 10 000 or more is a `UsageTruncatedError`.
 - The view sub-windows long ranges (§13).
-- The `start_date` / `end_date` string format is **unverified**. It is pinned by the Docker compatibility test
-  (Testing, `test_cost_litellm_live.py`).
+- `start_date` and `end_date` are `YYYY-MM-DD HH:MM:SS` strings, read as UTC. The v2 route also accepts `YYYY-MM-DD`,
+  and both bounds are inclusive (`startTime` `gte` / `lte`; `spend_management_endpoints.py:1866-1890`). The
+  resolution is one second.
 - Row mapping:
   - `request_id` → `row_id`
   - `startTime` → `timestamp`
@@ -451,26 +489,42 @@ mode as its own subclass.
   - currency is always `USD`
 - Agent and session filters are applied client-side by the view (§13).
 
-**`fetch_usage_since`** (`end_user`) is the same request with `start_date=cursor.timestamp` (inclusive) and
-`end_date=until`. Rows at `cursor.timestamp` whose id is in `cursor.ids_at_timestamp` are dropped. If a page run
-reaches the 10 000 cap, the rows read so far are returned with their cursor, and the next check continues from there.
-The cursor advances monotonically, so it converges.
+**`fetch_usage_since`** (`end_user`) reads one page (`page=1`, `page_size=1000`) of the same request, with:
+
+- `start_date = floor_to_second(cursor.timestamp)` and `end_date = floor_to_second(until)`
+- a client-side filter, because the route works to the second and is inclusive. It keeps only rows where
+  `row.timestamp > cursor.timestamp`, or where `row.timestamp == cursor.timestamp` and `row_id` is not in
+  `cursor.ids_at_timestamp`. In both cases it also requires `row.timestamp <= until`.
+  - Without the first condition, rows from earlier in the cursor's second would be counted twice.
+  - Without the `until` condition, rows from just past the settle line would move the cursor past it.
+
+`caught_up` is true when the page holds every remaining row (`total ≤ page_size`), or when the page contains a row
+past `until`. Otherwise the next batch starts from the returned cursor.
+
+- A page that keeps no rows and is not caught up can only be made of rows at or before the cursor's second. That
+  means more than 1000 rows share one second, so the cursor cannot advance past them. It raises
+  `UsageTruncatedError`, and `on_error` handles it.
+- The 10 000 cap never applies, because a batch is one page.
 
 **`sync_budgets`** uses `admin_key` (required; a missing `admin_key` and `api_key` is an `AKConfigError` at startup
 when native sync applies).
 
-1. For each distinct `(amount, currency, period)` it upserts a budget row with
-   `budget_id = "ak-" + sha256(f"{amount}|{period}")[:16]`, `max_budget=float(amount)` and
-   `budget_duration={daily: "1d", weekly: "7d", monthly: "1mo"}[period]` (deviation 8). The upsert is
-   `POST /budget/new` (`budget_management_endpoints.py:29`), and on a 400 "already exists" `POST /budget/update`
-   (`:122`). The **unverified** error text is pinned by the live test.
-2. For each user it upserts the customer with that `budget_id`: `POST /customer/new {user_id, budget_id}`
-   (`customer_endpoints.py:220`), and on the 400 "Customer already exists" (`:403`) `POST /customer/update`
-   (`:487`).
-3. `ak-system` is upserted with no `budget_id` (§8.3).
+1. `sync_budget_definitions(limits)` upserts one budget row for each distinct `(amount, currency, period)`.
+   - `budget_id = "ak-" + sha256(f"{amount}|{currency}|{period}")[:16]`
+   - `max_budget=float(amount)`
+   - `budget_duration={daily: "1d", weekly: "7d", monthly: "1mo"}[period]` (deviation 8)
+   - The upsert is `POST /budget/new` (`budget_management_endpoints.py:29`), and on a 400 "already exists"
+     `POST /budget/update` (`:122`). The **unverified** error text is pinned by the live test.
+   - It is called once per process, at startup, with the default budget and every `users` budget. That is one or
+     two calls per distinct budget, and a deployment usually has only a few.
+2. `sync_budgets(budgets)` upserts each user's customer row, for budgets whose rows already exist.
+   - `POST /customer/new {user_id: gateway_user_id(uid), budget_id}` (`customer_endpoints.py:220`)
+   - on the 400 "Customer already exists" (`:403`), `POST /customer/update` (`:487`)
+   - So each user costs one or two admin calls.
+   - A `None` value upserts the customer with no `budget_id`. Startup uses this for `ak-system` (§8.3).
 
-`customer_management` upserts members instead: `POST /management/v1/customer_members/upsert` with the org alias
-and a budget. The default budget goes to `/management/v1/customer_organizations/{org_id}/default_budgets`. These
+`customer_management` upserts members instead: `POST /management/v1/customer_members/upsert` with the org alias,
+the member id `gateway_user_id(user_id)` (rule 5) and a budget. The default budget goes to `/management/v1/customer_organizations/{org_id}/default_budgets`. These
 routes exist only from 1.111 (**unverified** against source; they are not in the locked 1.95.1). They are pinned by a
 recorded-response test.
 
@@ -504,6 +558,25 @@ recorded-response test.
 - `filters`: all six. `row_cap`: `None` (SQL returns everything asked for).
 
 **Headers**: `x-ak-user-id`, `x-ak-agent-id`, `x-ak-session-id`, `x-ak-request-id`, omitted when `None`.
+
+**Operator config, documented** (moved from design.md). The gateway records attribution only when its config maps the
+headers:
+
+```yaml
+config:
+  standardAttributes:
+    user: request.headers["x-ak-user-id"]
+    group: request.headers["x-ak-agent-id"]
+    session: request.headers["x-ak-session-id"]
+```
+
+- The request id is added to the log with `frontendPolicies.accessLog.database.add` under the key `ak.request_id`.
+- The gateway's database comes from `config.logging.database.url`, falling back to `config.database.url`: Postgres
+  (`postgres://` URLs) or SQLite. The operator gives Agent Kernel that URL, with a read-only role.
+- Session and request id are not columns. They live in `attributes_json`, under `agentgateway.session` and
+  `ak.request_id` (verified on a real v1.7.0 row, `research/agentgateway-session-attribute.md`). A missing header
+  leaves the key, or the `agentgateway_group` column, absent or `NULL`, which is read as `None`.
+- The accepted migration versions come from the 1.7.x source tree (Postgres 1–3), and from a v1.7.0 run (SQLite 1–2).
 
 **Database** (`RequestLogDatabase`)
 
@@ -550,12 +623,16 @@ On SQLite, `:start` and `:end` are `datetime.isoformat()` strings in UTC. That m
 - `ORDER BY started_at, id`.
 
 **`fetch_usage_since`** is `fetch_usage` with `started_at >= :cursor_ts AND started_at <= :until`, minus the rows
-in `ids_at_timestamp`. The gateway declares `windowed_spend`, so the ledger never calls it. It exists for BYO
+in `ids_at_timestamp`, `LIMIT 1000`. `caught_up` is true when fewer than 1000 rows come back. The gateway declares `windowed_spend`, so the ledger never calls it. It exists for BYO
 policies.
 
 Documented: an uncatalogued model is priced `$0` and counts as priced spend.
 
 #### 5.3 `LangfuseGateway` (`gateway/langfuse.py`)
+
+Built against self-hosted Langfuse 4.75.0 or later, with the gateway image on the same version, or Langfuse Cloud.
+The vendor labels the gateway beta, so the compatibility suite pins the header and route contract the adapter
+depends on (moved from design.md).
 
 **Capabilities**
 
@@ -568,7 +645,8 @@ Documented: an uncatalogued model is priced `$0` and counts as priced spend.
 **Headers**
 
 - `langfuse-user-id`, `langfuse-session-id` and `langfuse-tags: ak-agent:<agent_id>`.
-- `langfuse-metadata: request_id:<id>,agent_id:<id>`. Commas and colons in values are replaced by `_`.
+- `langfuse-metadata: request_id:<id>,agent_id:<id>`: comma-separated `key:value` pairs, not JSON. Commas and colons
+  in values are replaced by `_`.
 - Before returning, it checks every value ≤ 1024 bytes and the total ≤ 8192 bytes. Over either limit raises
   `ValueError("langfuse header limits exceeded: ...")`, rather than send attribution Langfuse would drop.
 
@@ -583,11 +661,19 @@ Documented: an uncatalogued model is priced `$0` and counts as priced spend.
 
 - `fetch_usage`: `GET /api/public/v2/observations`, filtered by `userId` and `sessionId` with `fromTimestamp` and
   `toTimestamp`, and followed by cursor.
-- `total_spend`: `GET /api/public/v2/metrics` on the observations view, with `sum(totalCost)`, `sum(inputTokens)`,
-  `sum(outputTokens)` and `count`, dimension `providedModelName`, and filter `userId = <user>`. It never uses top-N
-  user grouping.
-- The request and response field names are **unverified** and pinned by the compatibility suite
-  (`test_cost_langfuse_compat.py`), as design.md requires.
+- `total_spend`: `GET /api/public/v2/metrics` on the observations view, filtered on `userId = <user>`. It never uses
+  top-N user grouping.
+  - Dimensions: `providedModelName`, and the provider where the view exposes it (otherwise `ModelSpend.provider` is
+    `None`, and static pricing matches the bare model name, §10).
+  - Measures: `sum(totalCost)`, `sum(inputTokens)`, `sum(outputTokens)`, the cached-input token sum and `count`.
+  - A second query on the same dimensions counts the observations with no cost. That count is `unpriced_requests`,
+    so the unpriced warning (§11.2) works on Langfuse.
+  - With only per-model sums, `bill_total` must equal the sum of `bill` over the same rows. So when the metrics
+    response has no cached-token measure, the adapter raises `UsageRetrievalError` rather than report the cached
+    tokens as 0. Reporting 0 would charge cached tokens at the full input rate under static pricing.
+- The request and response field names, including the cached-input measure and the no-cost filter, are
+  **unverified**. They are pinned by the compatibility suite (`test_cost_langfuse_compat.py`), as design.md
+  requires.
 
 `probe` does nothing. Documented: `api_key` must be a service-account key, or `langfuse-user-id` is ignored.
 
@@ -618,6 +704,8 @@ class GatewayLiteLLM:
     cache makes this cheap)
   - `stream_options = {**kwargs.get("stream_options", {}), "include_usage": True}` when `kwargs.get("stream")`
 - It never touches `litellm.headers` (a module global, `research/framework-bindings.md`).
+- Context reaches sync calls too: LiteLLM's `acompletion` runs `completion` in an executor inside `copy_context()`
+  (`litellm/main.py:647`).
 - Constructed without a `cost` block, it raises `AKConfigError("GatewayLiteLLM requires a cost block")`.
 
 `CostManager.attribution_headers()` is the public accessor for user code: `self.gateway.attribution_headers(
@@ -654,15 +742,42 @@ confusion. Every constructor calls `CostManager.require()`, which raises `AKConf
 | 7.7 | claude-agent-sdk 0.2.179 | none (automatic) | `ClaudeRunner` options build (`framework/claude/claude.py:455-514`) | see below |
 | 7.8 | OpenAI / Pydantic AI / ADK, user's own client | `CostRunOptions.wrap(user_factory=None)` | `RunOptionsFactory` (`core/base.py:568`) | see below |
 
+**Context propagation** (moved from design.md). The binding reads attribution from context, so each framework must
+carry context to the model call:
+
+- openai-agents, ADK and MAF call the model on the run's own task. MAF runs sync tools through `asyncio.to_thread`.
+- smolagents: Agent Kernel calls `agent.run` via `asyncio.to_thread` (`framework/smolagents/smolagents.py:170`), and
+  parallel tools copy context (`smolagents/agents.py:1426`).
+- CrewAI: `kickoff_async` runs `kickoff` via `asyncio.to_thread` (`crewai/crew.py:1160`), and async tasks and
+  parallel tools copy context.
+- Claude: the headers are set per run, since each run is one CLI process (§7.7).
+- Pydantic AI has no LiteLLM-SDK seam: `LiteLLMProvider` (`pydantic_ai/providers/litellm.py:34`) wraps an
+  `AsyncOpenAI` client, so it uses `CostRunOptions` (§7.8).
+
+**7.4 CrewAI caveats, documented.**
+
+- Without `is_litellm=True`, `LLM.__new__` hands back a native-provider model instead of the subclass
+  (`crewai/llm.py:394-517`), so the binding forces it.
+- `LLM.__copy__` rebuilds a plain `LLM` (`crewai/llm.py:2561`). Only `train` and `kickoff_for_each` copy agents, and
+  Agent Kernel calls neither.
+- Sync tools run via `run_in_executor` without copying context (`crewai/tools/structured_tool.py:410`). A tool's own
+  LLM call there must pass attribution explicitly.
+
 **7.5 MAF note.** MAF has no LiteLLM client in core, so `GatewayChatClient` is a real adapter, about 150 lines. Its
 test covers text, tools and streaming against a fake `GatewayLiteLLM`.
 
-**7.6 LangChain note.** `langchain-litellm` is not locked. It is added to the `langgraph` extra at the newest
+**7.6 LangChain note.** `ChatLiteLLM` is no longer in `langchain-community` 0.4.2, and `langchain-litellm` is not
+locked. It is added to the `langgraph` extra at the newest
 release compatible with `langchain~=1.3.10` (`pyproject.toml:54`), chosen when the lock is regenerated. If its seam
 differs from the one above, the binding overrides `_agenerate` / `_astream` instead and sets `extra_headers` in
 `kwargs`. The context test is the gate.
 
 **7.7 Claude.**
+
+- Gateway routing supports **API-key authentication only**. A Claude subscription or OAuth login is not routed
+  through the gateway and is outside the tracked path. Documented.
+- The env is set in `ClaudeAgentOptions.env` (`claude_agent_sdk/types.py:2492`), which is merged over the CLI
+  subprocess environment (`_internal/transport/subprocess_cli.py:819`).
 
 - When `CostManager.get()` is not `None`, `ClaudeRunner` builds an `env` dict and merges it into the per-run
   options: `{**(user_env or {}), **ak_env}`, where `user_env` is the `env` from `spec.options` or the run options.
@@ -675,8 +790,8 @@ differs from the one above, the binding overrides `_agenerate` / `_astream` inst
 - `env` is added to the `ak_owned` dict (`claude.py:478`) so AK's keys are written last. It is **not** added to
   `RESERVED_RUN_OPTIONS` (`:947-958`): a user `env` still passes, and only the three AK keys override it.
 - A missing api key (`config.api_key` empty and `SecretManager.get(api_key_key, default=None)` `None`) raises
-  `AKConfigError` the first time the agent runs. design.md says "when the agent is built", but the key is resolved per
-  run like the other secret fields, so a rotated secret is picked up.
+  `AKConfigError` the first time the agent runs. The key is resolved per run like the other secret fields, so a
+  rotated secret is picked up (deviation 13).
 - Headers are per run: one CLI process per run (`claude.py:674`, `:748`, `:809`).
 
 **7.8 `CostRunOptions`.**
@@ -732,10 +847,14 @@ The hook runs inside `Runtime` (after the budget check), so context-derived attr
 
 #### 8.3 Thread naming (`integration/thread/naming.py`)
 
-- `ThreadRecorder.pre_run` (`recorder.py:49-61`) builds
-  `Attribution(user_id=principal.subject, session_id=req.session_id, request_id=req.request_id)` (agent `None`;
-  naming is not an agent call). It passes it as a new keyword `attribution=` to
-  `ConversationThreadManager.get_or_create_thread` (`manager.py:85`).
+- `ThreadRecorder.pre_run` (`recorder.py:49-61`) builds the attribution only when cost is configured. It calls
+  `CostManager.get().attribution_for(req.principal, req.session_id, req.request_id)` (§15), importing `CostManager`
+  lazily.
+  - The configured `Attributor` therefore decides the user id, as it does for the run (deviation 19).
+  - The agent is `None`, since naming is not an agent call.
+  - With no principal, `attribution_for` returns `None`, and `_complete` falls back to `ak-system`.
+  - The attribution is passed as a new keyword `attribution=` to
+    `ConversationThreadManager.get_or_create_thread` (`manager.py:85`).
 - That forwards it to `self._naming.generate_name(first_prompt or "", attribution=attribution)` (`:125`), which
   forwards it to `_complete(instruction, attribution)` (`naming.py:110`).
 - `_complete` calls `GatewayLiteLLM().completion(..., attribution=attribution or Attribution(user_id=SYSTEM_USER_ID))`
@@ -747,7 +866,7 @@ The hook runs inside `Runtime` (after the budget check), so context-derived attr
 
 `ak-system` is never refused:
 
-- Native sync upserts it with no budget (§5.1).
+- Native sync upserts it with no budget, in the synchronous part of startup (§5.1, §11.4).
 - `StaticBudgetPolicy.check` returns `allow` for it before any read.
 - `budgets.users` rejects the key (Config).
 - A principal whose subject is literally `ak-system` is denied by `CostManager.check` with
@@ -796,6 +915,11 @@ class DefaultAttributor(Attributor):
 `CostManager.current_attribution()` builds the context from `Session.current()`, `session.get_principal()`,
 `Agent.current().name` and `session.get_request_id()`. It returns `None` with no current session.
 
+Every user id Agent Kernel derives goes through the configured `Attributor`, never straight from
+`principal.subject`. That covers the run's budget check, the usage route (§14), `UsageView` authorization (§13) and
+thread naming (§8.3). Outside a run they go through `CostManager.user_id_for` and `attribution_for` (§15), so a BYO
+attributor (for example, one that adds a provider prefix) keys every query and header the same way.
+
 Spoofing: the principal comes only from `ak.principal`, which application code cannot write
 (`core/util/key_value_cache.py:36`, `:150-152`). Agent ids come from the registered agent. Header keys are written
 last (§6, §7). A client `user_id` in a chat body is already a 400 (#603).
@@ -834,7 +958,11 @@ class PricingSource(ABC):
   - `bill_total` applies the same formula per `ModelSpend` and sums the results. For a model with no rate it uses
     `provider_cost × markup`.
   - `bills_at_cost = not models and markup == 1`.
-  - Invalid config (a negative rate, `markup <= 0`, an unknown key) raises `AKConfigError` in the constructor.
+  - Invalid config raises `AKConfigError` at config load: a negative rate, `markup <= 0`, or an unknown key inside
+    `static` or a model's rates (both `extra="forbid"`).
+  - `_CostPricingConfig` itself stays `extra="allow"`, because a BYO pricing source reads its settings from
+    `model_extra`. So `StaticPricingSource.__init__` raises `AKConfigError` naming any extra keys beside `type` and
+    `static` (a typo such as `statc`).
   - Currency is USD only, since rates are USD.
 - `PricingSourceFactory`: `passthrough`, `static`, or a dotted path.
 
@@ -864,7 +992,7 @@ class StaticBudgetPolicy(BudgetPolicy):
         window = UsageWindow(start=period.start_of(now), end=now)
         try:
             spent = self._pricing.bill_total(await self._reader.spend(uid, window, limit))
-        except (UsageRetrievalError, LedgerError, LedgerConflictError) as e:
+        except ON_ERROR_EXCEPTIONS as e:                                 # the list in §11.3
             return self._on_error(uid, e)                                # §11.3
         if spent < limit.amount: return BudgetDecision.allow()
         message = limit.message or DEFAULT_DENY_MESSAGE
@@ -901,9 +1029,17 @@ class SpendReader:
 - `block` (default) returns `deny(UNVERIFIED_DENY_MESSAGE)` and logs at ERROR with the exception type and user.
 - `allow` returns `allow()` and logs at WARNING.
 
-It covers `UsageRetrievalError`, `UnsupportedCapabilityError`, `LedgerError`, a second `LedgerConflictError`, and
-`asyncio.TimeoutError` from the 10-second bound the policy puts around the read. Any other exception propagates as a
-bug.
+It covers `ON_ERROR_EXCEPTIONS`:
+
+- `UsageRetrievalError`
+- `UsageTruncatedError`
+- `UnsupportedCapabilityError`
+- `LedgerError`
+- a second `LedgerConflictError`
+- `LedgerBehindError` (a ledger still catching up, §12.3; logged as "catching up")
+- `asyncio.TimeoutError` from the 10-second bound the policy puts around the read
+
+Any other exception propagates as a bug.
 
 #### 11.4 Native enforcement (`NativeBudgetSync`, in `manager.py`)
 
@@ -914,8 +1050,17 @@ A budget is synced natively, and from then on skipped by the fallback check, whe
 - `pricing.bills_at_cost`
 - the gateway represents the period exactly (every period on LiteLLM; deviation 8)
 
-Startup sync covers `budgets.users` entries plus `ak-system`. It runs once per process, from `CostManager`
-construction.
+Startup sync runs once per process, from `CostManager` construction, in two parts:
+
+1. **Synchronous**, bounded by the number of distinct budgets, not users. It runs `sync_budget_definitions` for the
+   default budget and every `users` budget, then `sync_budgets({"ak-system": None})`.
+   - These calls exercise the admin key and the budget shape.
+   - An auth failure or a rejected shape still fails startup.
+   - Cost: about `D + 2` round trips, where `D` is the number of distinct budgets.
+2. **Background**, on the `ak-cost-budget-sync` thread: `sync_budgets` for the `users` entries, in chunks of 50.
+   - Until a user's row is written, `covers(uid)` is false, so that user gets the fallback check.
+   - A 401 or 403 here, which should not happen after part 1, is logged at ERROR and stops the thread.
+   - Startup therefore never waits on N users.
 
 The default budget is synced lazily (deviation 6):
 
@@ -923,20 +1068,23 @@ The default budget is synced lazily (deviation 6):
   `NativeBudgetSync.ensure(uid, default)`.
 - `ensure` returns `False` with no I/O when the default is not native-eligible.
 - If `uid` is in the process-local `synced: set[str]`, the call returns `True` at once.
-- Otherwise it calls `gateway.sync_budgets({uid: default})`. On success it adds `uid` to the set.
+- Otherwise it calls `gateway.sync_budgets({uid: default})`. The default's budget row was written at startup, so this
+  is only the customer upsert. On success it adds `uid` to the set.
 - On failure it logs a warning and the run falls through to the fallback check, so the budget is still enforced,
   best-effort.
 - The set is unbounded, one string per user seen. Shortcut: an LRU cap is the upgrade if memory becomes a concern.
-- Cost: one admin round trip per user per process, on that user's first run.
+- Cost: one or two admin round trips per user per process, on that user's first run: `/customer/new`, then
+  `/customer/update` when the customer already exists.
 
 `covers(uid)` is true when `uid` is in `synced`, which includes the users from a successful startup sync.
 
 **Startup and outages**
 
-- `sync_budgets` raises `UsageRetrievalError(auth=True)` on a 401 or 403 and `AKConfigError` on a 4xx shape
-  rejection. Both are re-raised as `AKConfigError`, and startup fails.
-- An unreachable gateway or a 5xx is logged at ERROR. A daemon thread then retries with `asyncio.run` in its own
-  loop (the `JWKSCache` loop-agnostic pattern), with exponential backoff from 1 s to a 300 s cap, until it succeeds.
+- In the synchronous part, `sync_budget_definitions` and `sync_budgets` raise `UsageRetrievalError(auth=True)` on a
+  401 or 403, and `AKConfigError` on a 4xx shape rejection. Both are re-raised as `AKConfigError`, and startup fails.
+- An unreachable gateway or a 5xx in the synchronous part is logged at ERROR. The whole sync then moves to the daemon
+  thread, which runs `asyncio.run` in its own loop (the `JWKSCache` loop-agnostic pattern) and retries with
+  exponential backoff from 1 s to a 300 s cap until it succeeds.
 - Until it succeeds, `covers()` is false for those users, so they get the fallback check.
 - The backoff thread is named `ak-cost-budget-sync`. It stops at process exit.
 
@@ -1028,21 +1176,39 @@ class SpendLedger(ABC):
 
 ```
 settle = now - SETTLE_LAG                       # SETTLE_LAG = timedelta(minutes=10), a constant, not config
-doc_cursor = await ledger.cursor(uid) or SpendCursor(timestamp=start of the longest configured period, ids=∅)
-rows, next_cursor = await gateway.fetch_usage_since(uid, doc_cursor, until=settle)
-if rows and not await ledger.add(uid, rows, doc_cursor, next_cursor):
-    retry once from the top; on a second False raise LedgerConflictError        # -> on_error (§11.3)
-unsettled, _ = await gateway.fetch_usage_since(uid, next_cursor or doc_cursor, until=now)
+deadline = monotonic() + CATCH_UP_BUDGET        # CATCH_UP_BUDGET = 5 s, a constant, inside the 10 s bound (§11.3)
+cursor = await ledger.cursor(uid) or SpendCursor(timestamp=start of the longest configured period, ids=∅)
+while True:                                     # settled catch-up, one committed batch at a time
+    rows, next_cursor, caught_up = await gateway.fetch_usage_since(uid, cursor, until=settle)
+    if rows and not await ledger.add(uid, rows, cursor, next_cursor):
+        cursor = await ledger.cursor(uid)       # someone else committed; continue from theirs
+        retry this batch once; on a second False raise LedgerConflictError     # -> on_error (§11.3)
+    cursor = next_cursor or cursor
+    if caught_up: break
+    if monotonic() > deadline: raise LedgerBehindError(uid, cursor)            # -> on_error; progress kept
+unsettled = await read_all(gateway.fetch_usage_since(uid, SpendCursor(timestamp=settle, ids=∅), until=now))
 total = (await ledger.read(uid, period, period.start_of(now))).merge(
             SpendTotal.from_rows([r for r in unsettled if r.timestamp >= period.start_of(now)], currency))
 ```
 
+- Each batch is committed as soon as it is read, so a catch-up cut short by `CATCH_UP_BUDGET` keeps its progress.
+  The next check continues from the committed cursor.
+- A check that has not caught up raises `LedgerBehindError` and applies `on_error`. It never sums a partial total.
+  - With the default `on_error: block`, a heavy user's first check after a cold start (or, with the `in_memory`
+    ledger, after a restart) is denied for a bounded number of runs, until the ledger catches up. Documented.
 - The cursor never passes `settle`, because `fetch_usage_since` stops there.
-- Unsettled rows are re-read on every check and never stored.
+- The unsettled read always starts at the settle line, never at an old cursor, so it covers at most `SETTLE_LAG` of
+  the user's rows.
+  - `read_all` follows batches until `caught_up`, under the same deadline.
+  - Unsettled rows are re-read on every check and never stored.
+  - A `UsageTruncatedError` there applies `on_error`.
 - A late row inside the lag is counted. A row older than the settle line that arrives after the cursor has passed it
   is missed, which is documented as best-effort.
-- Hot-path cost per run: one ledger read, one settled-range read (usually empty), one ledger CAS write when rows
-  exist, one unsettled-range read (at most 10 minutes of the user's rows), and one ledger read.
+- Hot-path cost per run, in steady state:
+  - two gateway reads: the settled range (usually empty) and the unsettled range
+  - three ledger reads: `cursor`, the load inside `add`, and `read`
+  - at most one compare-and-set write
+  - A cold start adds one gateway read and one write per 1000 rows, bounded by `CATCH_UP_BUDGET`.
 - `SpendTotal.merge` sums per model key.
 
 #### 12.4 Backends
@@ -1066,21 +1232,25 @@ warning naming the single-process limit.
 
 ```python
 class UsageView(ABC):
-    def __init__(self, gateway: LLMGateway, pricing: PricingSource, config: _CostViewConfig): ...
+    def __init__(self, gateway: LLMGateway, pricing: PricingSource, attributor: Attributor, config: _CostViewConfig): ...
     @abstractmethod
     async def report(self, query: UsageQuery, principal: Principal) -> UsageReport: ...
 ```
 
 `DefaultUsageView.report` works in five steps:
 
-1. **Authorise.** `query.user_id` must equal `principal.subject`, else `PermissionError` (→ 403 at the handler). An
-   anonymous principal is refused by the handler before the view (401).
+1. **Authorise.** `query.user_id` must equal the principal's attributed id,
+   `attributor.resolve(AttributionContext(principal, None, None, None)).user_id` (§9). Otherwise it raises
+   `PermissionError` (→ 403 at the handler). An anonymous principal is refused by the handler before the view (401).
 2. **Push down.** It starts with `filters = query.filters()`. Any filter outside `gateway.capabilities.filters` except
    `USER` and `TIME_RANGE` is removed from the gateway query and kept as a client-side predicate. If `USER` or
    `TIME_RANGE` is unsupported, it raises `UnsupportedCapabilityError`.
-3. **Sub-window.** With `capabilities.row_cap`, the window is split into calendar days. A day that raises
-   `UsageTruncatedError` is split into hours, and an hour that still truncates re-raises it. Days are fetched one after
-   another (bounded fan-out: at most 93 days, §14).
+3. **Sub-window, only when needed.** The whole window is fetched first.
+   - Only a `UsageTruncatedError` splits it, into calendar days. A day that truncates is split into hours, and an
+     hour that still truncates re-raises it.
+   - So a typical query is one paged fetch, and the split costs extra calls only for heavy users.
+   - Sub-windows are fetched one after another (bounded fan-out: at most 93 days, §14).
+   - With `row_cap` unset, nothing is split.
 4. **Aggregate in memory.** It applies the client-side predicates, sets `billed_cost = pricing.bill(row)` and checks
    currency (a mismatch raises `UsageRetrievalError`). It sums totals, groups by `agent_id`, and groups by
    `(agent_id, session_id)` when `query.agent_id` or `query.session_id` is set. Rows with `user_id is None` never
@@ -1088,7 +1258,8 @@ class UsageView(ABC):
 5. **Return** `UsageReport(user_id=query.user_id, currency=..., window=...)`. The currency is the gateway's single
    currency (`USD` for all built-ins).
 
-`UsageViewFactory`: `default` or a dotted path.
+`UsageViewFactory`: `default` or a dotted path. Either way it passes the `CostManager`'s gateway, pricing source and
+attributor.
 
 ### 14. `UsageRESTRequestHandler` (`cost/handler.py`)
 
@@ -1100,18 +1271,19 @@ class UsageRESTRequestHandler(AuthorisedRESTRequestHandler):
 ```
 
 - It inherits the identity-block requirement: without an `identity` block it raises `AKConfigError` in `__init__`
-  (`api/handler.py:55-62`). Documented, since design.md leaves it implicit.
+  (`api/handler.py:55-62`; deviation 16). Documented.
 - The route is `GET /api/v1/usage`, with query parameters `agent_id`, `session_id`, `start`, `end`, `model`,
   `provider` and `user_id`.
 - Order of checks:
   1. `principal = self._resolve_user(request)`: 401 for an anonymous caller (`api/handler.py:64-76`).
   2. `CostManager.get() is None`: 404 `"Cost management is not configured"`.
-  3. A `user_id` that is present and differs from `principal.subject`: 403.
+  3. `user_id = CostManager.require().user_id_for(principal)`, the caller's attributed id (§9). A `user_id`
+     parameter that is present and differs from it: 403.
   4. Parse `start` and `end` with `datetime.fromisoformat`. A naive timestamp is read as UTC. A parse failure is a 400
      naming the parameter.
   5. Defaults: `end = now`, `start = start of the current UTC month`. `start >= end` is a 400 (`"start must be before
      end"`), and `end - start > MAX_WINDOW` is a 400 (`"window exceeds 93 days"`).
-  6. `CostManager.require().view.report(...)`.
+  6. `CostManager.require().view.report(UsageQuery(user_id=user_id, ...), principal)`.
 - Exception mapping:
   - `UnsupportedCapabilityError` → 400 naming the filter
   - `PermissionError` → 403
@@ -1142,6 +1314,11 @@ class CostManager(RunMeter):
     def reset(cls) -> None: ...                     # tests; closes the gateway
 
     def current_attribution(self) -> Attribution | None: ...
+    def user_id_for(self, principal: Principal | None) -> str | None: ...
+        # attributor.resolve(AttributionContext(principal, None, None, None)).user_id; None without a principal
+    def attribution_for(self, principal: Principal | None, session_id: str | None,
+                        request_id: str | None) -> Attribution | None: ...
+        # the same, with session and request ids; None without a principal (thread naming, §8.3)
     def attribution_headers(self) -> dict[str, str]: ...
     async def check(self, session, agent) -> BudgetDecision: ...   # RunMeter
     def is_budget_refusal(self, error) -> bool: ...                # RunMeter, §11.6
@@ -1155,13 +1332,18 @@ Construction order:
 4. `AttributorFactory`, `PricingSourceFactory`.
 5. The `SpendLedgerFactory` when needed.
 6. `SpendReader`, `BudgetPolicyFactory`, `UsageViewFactory`.
-7. `gateway.probe()` and the startup `sync_budgets` (§11.4, §11.5). Both always run through `run_async_sync`
+7. `gateway.probe()` and the synchronous part of the startup sync (§11.4, §11.5). Both always run through `run_async_sync`
    (`core/util/async_bridge.py`), which runs a coroutine to completion on a loop of its own and works whether or not
    the caller is inside a loop. So a fatal answer raises from `get()` itself, and no task is tied to the loop that
    happened to call `get()` first (`iterate_async_sync` and `run_async_sync` use a loop per call). Availability
    failures hand over to the `ak-cost-budget-sync` backoff thread, which owns its own loop.
-   - Shortcut: `get()` blocks for one probe and one sync round trip, bounded by the `GatewayHTTP` timeout (10 s).
-     Upgrade to a background start if cold-start latency matters.
+   - `get()` blocks for the probe and the synchronous part of the sync: about `D + 2` round trips, where `D` is the
+     number of distinct budgets. Each round trip is bounded by the `GatewayHTTP` timeout (10 s). Per-user rows go to
+     the background thread (§11.4).
+   - The first `get()` can come from a `Runtime` check, inside the serving loop. That run then waits for those
+     `D + 2` round trips. Apps that mount the usage route, or build a binding, pay this at app build instead (below).
+   - Shortcut: a cold process with no route and no binding pays this on its first run. Upgrade to a background
+     start if that latency matters.
 
 When is "startup"?
 
@@ -1247,11 +1429,13 @@ class _CostAttributionConfig(BaseModel):
 
 class _CostViewConfig(_CostAttributionConfig):     # same shape; description says UsageView
 class _CostStaticModelRate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     input: Decimal = Field(ge=0); output: Decimal = Field(ge=0); cached_input: Decimal | None = Field(default=None, ge=0)
 class _CostStaticPricingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     markup: Decimal = Field(default=Decimal(1), gt=0); models: dict[str, _CostStaticModelRate] = {}
 class _CostPricingConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow")   # extras are a BYO pricing source's settings (model_extra)
     type: str = Field(default="passthrough", description="passthrough | static, or a dotted path to a PricingSource")
     static: _CostStaticPricingConfig | None = None
 
@@ -1417,7 +1601,7 @@ All intentional:
 | Gateway 401/403 at startup sync | `NativeBudgetSync` | `AKConfigError` |
 | Gateway unreachable / 5xx at startup | probe, sync | logged at ERROR; background retry; startup continues |
 | Probe not yet successful | usage route; budget check | 502; `on_error` |
-| Budget check: retrieval, ledger, conflict or timeout | `StaticBudgetPolicy` | `on_error` → `deny(UNVERIFIED_DENY_MESSAGE)` or `allow` + WARNING |
+| Budget check: retrieval, truncation, ledger, conflict, ledger still catching up (`LedgerBehindError`) or timeout | `StaticBudgetPolicy` | `on_error` → `deny(UNVERIFIED_DENY_MESSAGE)` or `allow` + WARNING; never a partial total |
 | Over budget (fallback) | `Runtime` | `AgentReplyText(message)` / `StreamChunk(error, done=True)`; nothing stored |
 | Over budget (native, mid-run) | framework error → `user_facing_error_message` | `ErrorCategory.BUDGET` message |
 | Thread naming refused | `ThreadNamingStrategy.generate_name` | falls back to the prompt prefix (existing catch, `naming.py:87`) |
@@ -1441,7 +1625,9 @@ carries the gateway name, the path and the status.
 
 - **Per run, cost off**: one `RunMeterFactory.get()` (a cached instance) and one `NoOpRunMeter.check` coroutine.
 - **Per run, user with no budget, or a native budget already synced**: no I/O.
-- **Per run, first run of a native-default user in a process**: one admin call (§11.4).
+- **Per run, first run of a native-default user in a process**: one or two admin calls (§11.4).
+- **Startup**: about `D + 2` admin round trips held synchronously (`D` distinct budgets). Per-user rows are written on
+  the background thread (§11.4, §15).
 - **Per run, fallback on a `windowed_spend` gateway**: one aggregate read (SQL `SUM`, or one metrics query).
 - **Per run, fallback on a ledger gateway**: as listed in §12.3.
 - The budget read is bounded at 10 s (§11.3).
@@ -1463,7 +1649,7 @@ tests/test_shared_drivers.py`. The full suite is `uv run pytest`.
 
 | Suite | Fixture(s) | Asserts |
 |---|---|---|
-| `LLMGatewayContract` | `gateway`, `seed(rows)`, `fail(mode)` | `gateway_user_id` round-trips through row mapping for an id with CR/LF, `,` and non-ASCII, and no header value contains CR or LF; every undeclared operation raises `UnsupportedCapabilityError`; a failed fetch raises (unreachable, 401, 5xx, malformed) and never returns zero; pages concatenated in order; AK headers overwrite a caller's same key (through `GatewayLiteLLM.headers`); `fetch_usage_since` neither skips nor repeats across a cursor at a shared timestamp; a filter outside `capabilities.filters` raises |
+| `LLMGatewayContract` | `gateway`, `seed(rows)`, `fail(mode)` | `gateway_user_id` round-trips through row mapping for an id with CR/LF, `,` and non-ASCII, and no header value contains CR or LF; every undeclared operation raises `UnsupportedCapabilityError`; a failed fetch raises (unreachable, 401, 5xx, malformed) and never returns zero; pages concatenated in order; AK headers overwrite a caller's same key (through `GatewayLiteLLM.headers`); `fetch_usage_since` neither skips nor repeats across a cursor at a shared timestamp, nor across rows sharing the cursor's second; a row after `until` in the same second is excluded; one batch per call with `caught_up` correct; a filter outside `capabilities.filters` raises; with `windowed_spend`, `total_spend(window)` equals `SpendTotal.from_rows(fetch_usage(window).rows)` for the seeded rows (cached tokens and unpriced count included) |
 | `AttributorContract` | `attributor` | same context → same output; `user_id` derived only from the principal (changing session data never changes it); context objects unmodified |
 | `PricingSourceContract` | `source` | `None` in → `None` out; cached tokens not double-charged; `bill_total` of `from_rows(rows)` equals the sum of `bill(row)` for rate-priced models |
 | `BudgetPolicyContract` | `policy`, `spend(amount)` | under → allow; at/over → deny or warn per action; `ak-system` and `None` users allowed without a read; read failure → `on_error` |
@@ -1476,20 +1662,20 @@ tests/test_shared_drivers.py`. The full suite is `uv run pytest`.
 |---|---|
 | `test_cost_models.py` | `BudgetPeriod.start_of` / `end_of` at edges (23:59:59 → 00:00, Sunday → Monday, Dec → Jan); `SpendTotal.from_rows` / `merge`; Decimal parsing from floats; `UsageReport` JSON Decimals as strings |
 | `test_cost_config.py` | YAML and `AK_COST__*` parsing; every validator; `ak-system` and empty `users` keys refused; ledger `ttl` default 0; absent block → `AKConfig.cost is None` |
-| `test_cost_gateway_litellm.py` | `LLMGatewayContract` for both `api` modes over `httpx.MockTransport`; header formats (comma in agent name); `/spend/logs/v2` paging, `total ≥ 10000` → truncated; row mapping with missing tokens and cost; `sync_budgets` route sequence (`/budget/new` → exists → `/budget/update`; `/customer/new` → exists → `/customer/update`), `7d` for weekly; `ak-system` upserted without a budget; `customer_management` refused below 1.111 via `/health/readiness`; `is_budget_refusal` on body, on `response.json()`, on message, never on a bare 429 |
+| `test_cost_gateway_litellm.py` | `LLMGatewayContract` for both `api` modes over `httpx.MockTransport`; header formats (comma in agent name; CR/LF and non-ASCII ids in `x-litellm-customer-member-id` and the member upsert go through `gateway_user_id`); `start_date` / `end_date` sent as `YYYY-MM-DD HH:MM:SS` floored to the second, with client-side bounds; `/spend/logs/v2` paging, `total ≥ 10000` → truncated; row mapping with missing tokens and cost; `sync_budget_definitions` route sequence (`/budget/new` → exists → `/budget/update`, once per distinct budget); `sync_budgets` route sequence (`/customer/new` → exists → `/customer/update`, no budget call), `7d` for weekly; `ak-system` upserted without a budget; `customer_management` refused below 1.111 via `/health/readiness`; `is_budget_refusal` on body, on `response.json()`, on message, never on a bare 429 |
 | `test_cost_gateway_agentgateway.py` | SQLite fixture built from the 1.7.x migrations with rows shaped like the observed v1.7.0 row (session and request id in `attributes_json`, and a row without them); `total_spend` SQL grouping and unpriced count; migration version 3 on SQLite refused; read-only open; Postgres URL without the extra → `ImportError` naming `cost-agentgateway` |
-| `test_cost_langfuse_compat.py` | header names; 1 KiB / 8 KiB limits raise; `langfuse-metadata` format; base URL per provider; v2 observations and metrics request/response shapes (recorded fixtures) |
+| `test_cost_langfuse_compat.py` | header names; 1 KiB / 8 KiB limits raise; `langfuse-metadata` format; base URL per provider; v2 observations and metrics request/response shapes (recorded fixtures), including the cached-input measure and the no-cost count; a metrics response without the cached measure → `UsageRetrievalError` |
 | `test_cost_client.py` | headers per call from context; caller headers merged, AK keys win; `include_usage` on streams; `api_base` / `api_key` set; two concurrent runs (`asyncio.gather`) see their own headers; warning once outside a run; `litellm.headers` never assigned |
 | `test_cost_bindings.py` | one class per framework: built only with a `cost` block, importable from `agentkernel.<fw>`, headers reach the native call from context — including inside `asyncio.to_thread` (CrewAI, smolagents) — and MAF text, tools, streaming through a fake client; `CostRunOptions.wrap` deep-merge per runner, user keys kept, user factory awaited, unsupported runner `TypeError` |
 | `test_cost_claude_env.py` | `env` merge (user keys kept, AK keys win); `ANTHROPIC_CUSTOM_HEADERS` value; missing key → `AKConfigError` |
 | `test_cost_attribution.py` | `AttributorContract` on `DefaultAttributor`; anonymous → `anonymous`; messaging principal → sender id; `actor` ignored; BYO dotted path |
 | `test_cost_pricing.py` | `PricingSourceContract` on both built-ins; static formula; cached fallback to input rate; markup; `bills_at_cost` |
-| `test_cost_budget.py` | `BudgetPolicyContract`; default and per-user resolution; deny / warn shapes; `on_error` for retrieval and ledger failure; currency mismatch; unpriced warning once; native eligibility table; lazy default upsert cached per process and falling back on failure; startup sync auth failure fatal, 5xx retried in background |
-| `test_cost_ledger.py` | `SpendLedgerContract` per backend: in_memory; redis/valkey with a fake client implementing `EVAL` for the one script; dynamodb with a fake table honouring `ConditionExpression`; cosmos and firestore with fake native handles; settle-lag flow (late row inside lag counted, cursor never passes settle line); conflict retried once then `on_error` |
-| `test_cost_view.py` | `UsageViewContract`; client-side agent/session filters; sub-windowing on truncation; one report shape across the three gateway fixtures (shared fixture) |
-| `test_cost_handler.py` | over `RESTAPI.build_app` with the `static_identity` fixture (`tests/conftest.py`): 200, 400 (bad timestamp, inverted, >93 days, unsupported filter), 401, 403, 404, 422, 502; naive timestamps as UTC; defaults; importing `agentkernel.cost` loads no FastAPI |
+| `test_cost_budget.py` | `BudgetPolicyContract`; default and per-user resolution; deny / warn shapes; `on_error` for retrieval and ledger failure; currency mismatch; unpriced warning once; native eligibility table; lazy default upsert cached per process and falling back on failure; startup sync auth failure fatal, 5xx retried in background; startup makes only the definition calls and the `ak-system` upsert synchronously, and per-user rows are written by the background thread, with `covers(uid)` false until they are |
+| `test_cost_ledger.py` | `SpendLedgerContract` per backend: in_memory; redis/valkey with a fake client implementing `EVAL` for the one script; dynamodb with a fake table honouring `ConditionExpression`; cosmos and firestore with fake native handles; settle-lag flow (late row inside lag counted, cursor never passes settle line); catch-up over several batches committed batch by batch; `CATCH_UP_BUDGET` exhausted → `LedgerBehindError` → `on_error`, never a partial total; the next check resumes from the committed cursor; the unsettled read starts at the settle line; conflict retried once then `on_error` |
+| `test_cost_view.py` | `UsageViewContract`; client-side agent/session filters; whole window fetched once when under the cap, split into days and then hours only on truncation; one report shape across the three gateway fixtures (shared fixture); with a BYO attributor that prefixes ids, the gateway is queried with the attributed id and a raw-subject query raises `PermissionError` |
+| `test_cost_handler.py` | over `RESTAPI.build_app` with the `static_identity` fixture (`tests/conftest.py`): 200, 400 (bad timestamp, inverted, >93 days, unsupported filter), 401, 403 (including a raw-subject `user_id` under a prefixing BYO attributor), 404, 422, 502; naive timestamps as UTC; defaults; importing `agentkernel.cost` loads no FastAPI |
 | `test_cost_runtime.py` | check before pre-hooks (a recording pre-hook never runs on deny); skipped without a `cost` block; run and stream deny shapes; `warn` logs and leaves the reply; denied resume keeps the paused run and logs the resume-halted warning; `request_id` threaded from `ChatService` and minted when absent; `ErrorCategory.BUDGET` for a refusal wrapped by each framework's exception type (`__cause__` and `__context__` chains, a cycle) |
-| `test_cost_litellm_live.py` | env-gated (`AK_TEST_LITELLM_URL`): real DB-backed proxy — `/spend/logs/v2` `startTime` asc order, `request_id` unique, a call's row visible within `settle_lag`, `start_date` format, budget refusal shape |
+| `test_cost_litellm_live.py` | env-gated (`AK_TEST_LITELLM_URL`): real DB-backed proxy — `/spend/logs/v2` `startTime` asc order, `request_id` unique, a call's row visible within `settle_lag`, budget refusal shape |
 
 ### Existing tests that change
 
@@ -1498,8 +1684,8 @@ tests/test_shared_drivers.py`. The full suite is `uv run pytest`.
 | `test_runtime.py`, `test_runtime_stream_events.py`, `test_runtime_resume_warnings.py`, `test_runtime_principal.py` | add an autouse `RunMeterFactory.reset()`; nothing else — with no `cost` block the meter is a no-op |
 | `test_chat_service_core.py`, `test_chat_service_streaming.py`, `test_hitl_chat_service.py` | fake handlers' `run_*` accept `request_id=None` (they take `principal=None` today, `test_chat_service_core.py:42`, `:46`) |
 | `test_pipeline_agent_runner.py`, `test_pipeline_agent_runner_schedule.py` | assert `body.request_id` equals the resolved id |
-| `test_error_util.py` | `BUDGET` mapping with a fake `RunMeter` installed on `RunMeterFactory._instance` |
-| `test_thread_manager.py` | naming tests patch `"litellm.completion"` (`:290-363`) unchanged without cost; one new case with cost patches `GatewayLiteLLM.completion` and asserts the attribution; `patch.object(ThreadNamingStrategy, "_complete", ...)` (`:385`) gains the `attribution` argument |
+| `test_error_util.py` | `BUDGET` mapping with a fake `RunMeter` installed on `RunMeterFactory._instance`; with a `cost` block but no meter built yet, `_classify` builds nothing (`peek()` returns the no-op) |
+| `test_thread_manager.py` | naming tests patch `"litellm.completion"` (`:290-363`) unchanged without cost; new cases with cost patch `GatewayLiteLLM.completion` and assert the attribution: a BYO attributor's id reaches the naming call, and no principal sends `ak-system`; `patch.object(ThreadNamingStrategy, "_complete", ...)` (`:385`) gains the `attribution` argument |
 | `test_multimodal_tools.py` | `"litellm.completion"` patches (`:64`, `:140`, `:147`) unchanged; new case with cost |
 | (new coverage) `hooks.py` `acompletion` | no test patches it today; `test_cost_client.py` adds both paths |
 | `test_shared_drivers.py` | `compare_and_set` success, mismatch, absent key, TTL |

@@ -119,17 +119,24 @@ cost:
     - Any failure raises `UsageRetrievalError`. It never returns an empty result in place of an error.
     - Hitting a gateway cap raises `UsageTruncatedError`. It never returns a partial total.
   - `total_spend(user_id, window) -> SpendTotal`, needs `windowed_spend`. The aggregate the budget check reads,
-    so a user's row count never affects enforcement.
+    so a user's row count never affects enforcement. It must equal `SpendTotal.from_rows` over the same rows,
+    including cached tokens and the unpriced count. A gateway that cannot report one of these raises, rather than
+    report it as 0 (asserted by `LLMGatewayContract`).
     - `SpendTotal` holds per-model sums: requests, each token kind, `provider_cost`, and the count of unpriced
       requests. That is enough for a `PricingSource` to bill the aggregate (`bill_total`) without rows.
     - A gateway whose own spend figure is lifetime, reset on the gateway's schedule, or not per model does not
       declare `windowed_spend`.
-  - `fetch_usage_since(user_id, cursor, until) -> (rows, next_cursor)`, needs `usage_retrieval`. The incremental
-    read the spend ledger uses: rows strictly after `cursor` and up to `until`, in timestamp order, so no row is
-    skipped or repeated. The cursor is the last timestamp plus the row ids seen at that timestamp, because LiteLLM
-    sorts on `startTime` alone.
+  - `fetch_usage_since(user_id, cursor, until) -> (rows, next_cursor, caught_up)`, needs `usage_retrieval`. The
+    incremental read the spend ledger uses.
+    - It returns **one batch**: at most one page of rows strictly after `cursor` and up to `until`, in timestamp
+      order, so no row is skipped or repeated. `caught_up` says whether rows remain.
+    - The cursor is the last timestamp plus the row ids seen at that timestamp, because LiteLLM sorts on `startTime`
+      alone.
+    - The bounds are exact even where the gateway filters more coarsely: LiteLLM's `/spend/logs/v2` takes
+      second-resolution, inclusive dates, so the adapter filters on the client.
   - The fallback budget check uses `total_spend` when `windowed_spend` is declared, otherwise the spend ledger.
-  - `sync_budgets(budgets)`, needs `native_user_budget`. Writes per-user budgets into the gateway.
+  - `sync_budget_definitions(limits)` and `sync_budgets(budgets)`, need `native_user_budget`. The first writes the
+    distinct budget definitions, and the second writes each user's budget assignment into the gateway.
   - `is_budget_refusal(error) -> bool`, required. Matches the gateway's error type or code, never the HTTP status
     alone.
 - Built-ins, behind the `cost` extra (gateway SDK-free: `httpx` plus `litellm`):
@@ -147,48 +154,17 @@ cost:
   | Refusal signature | `error.type` / `litellm_error_type` = `budget_exceeded` (422 by default on current releases; 429 on 1.95.x); never matched by status | as `end_user` | `budget_exceeded` (429) | n/a |
   | Setup the operator owns | DB-backed proxy; `always_include_stream_usage`; `timezone` unset or `UTC` (not verifiable through the admin API, see Budgets) | as `end_user`, plus the organization | CEL `standardAttributes` over the `x-ak-*` headers (below); a request-log database | a **service-account** key, without which `langfuse-user-id` is ignored (documented) |
 
-  - LiteLLM `customer_management`:
-    - Needs LiteLLM 1.111 or later. On 2026-11-17 that is prerelease only; the latest stable is 1.109.1. The adapter
-      reads the proxy version at startup and raises `AKConfigError` below 1.111.
-    - Without LiteLLM Enterprise it is capped at 5 organizations, 5 teams per organization and 5 members per team.
-      Per-user budgets for more users need Enterprise. Documented.
-    - `end_user` is the default: open source, in every stable release including the locked 1.95.x.
-    - Per-member spend rows are not available: `fetch_usage_since` is not declared and nothing replaces it. Only
-      native budgets work in this mode. Documented.
-  - Agentgateway 1.7.x:
-    - Its database comes from `config.logging.database.url`, falling back to `config.database.url`: Postgres
-      (`postgres://` URLs) or SQLite.
-    - Schema pinned: at startup the adapter reads `_agentgateway_request_log_migrations` and accepts only the
-      migration versions 1.7.x ships (Postgres 1–3 from the source tree; SQLite 1–2, observed on a v1.7.0 run). Any
-      other version raises `AKConfigError`.
-    - Columns read from `request_logs`: `started_at`, `agentgateway_user`, `agentgateway_group` (agent),
-      `gen_ai_provider_name`, `gen_ai_request_model` / `gen_ai_response_model`, `input_tokens`, `output_tokens`,
-      `cache_read_input_tokens`, `cost`.
-    - Session and request id are not columns. They are read from `attributes_json` (verified on a real v1.7.0 row,
-      `research/agentgateway-session-attribute.md`):
-      - session: the `agentgateway.session` key, from `standardAttributes.session`
-      - request id: the `ak.request_id` key, added by `frontendPolicies.accessLog.database.add`
-      - a missing header leaves the key (or the `agentgateway_group` column) absent or `NULL`, read as `None`
-    - Documented operator config:
-      ```yaml
-      config:
-        standardAttributes:
-          user: request.headers["x-ak-user-id"]
-          group: request.headers["x-ak-agent-id"]
-          session: request.headers["x-ak-session-id"]
-      ```
-    - SQLite through stdlib `sqlite3`. `ak-py/uv.lock` locks no Postgres driver, so Postgres goes behind its own
-      extra (`cost-agentgateway`) with `require_extra`.
-    - Agentgateway prices an uncatalogued model at $0, which looks the same as free spend. Documented.
-  - Langfuse:
-    - A full built-in, built against self-hosted Langfuse 4.75.0 or later with the gateway image on the same version
-      (or Langfuse Cloud). The vendor labels the gateway beta; a compatibility suite pins the header and route
-      contract the adapter depends on.
-    - OpenAI and Anthropic formats are served on separate bases (`/openai/v1`, `/anthropic/v1`) without translation
-      between them. The adapter derives the base from the model's provider.
-    - Header limits: 1 KiB per value and 8 KiB in total, beyond which Langfuse drops every context header. The adapter
-      checks both before sending and raises rather than send attribution that would be silently dropped.
-    - `langfuse-metadata` is comma-separated `key:value` pairs, not JSON.
+  - Per-gateway mode notes, operator config and schema pins are in spec.md §5. The requirement-level points:
+    - LiteLLM `end_user` is the default (open source, every stable release). `customer_management` needs LiteLLM
+      1.111+, which is checked at startup. Without Enterprise it is capped at 5 orgs × 5 teams × 5 members, and it
+      supports native budgets only. Documented.
+    - Agentgateway 1.7.x: the adapter pins the request-log schema at startup and refuses unknown migrations. It reads
+      the database read-only (SQLite through stdlib; Postgres behind the `cost-agentgateway` extra). It needs the
+      documented `standardAttributes` mapping of the `x-ak-*` headers. An uncatalogued model is priced at $0, which
+      looks like free spend. Documented.
+    - Langfuse 4.75.0+ (or Cloud), gateway beta: a compatibility suite pins its contract. The adapter derives the
+      OpenAI or Anthropic base from the model's provider. It refuses attribution headers over Langfuse's 1 KiB per
+      value and 8 KiB total limits, rather than have them silently dropped.
 - `LLMGatewayFactory` follows the `core/util/factory.py` shape: `if/elif` built-ins, `require_extra`, `resolve_dotted`
   for BYO, `AKConfigError` otherwise.
 - `LLMGatewayContract` (`cost/testing.py`) checks every built-in against its declaration:
@@ -211,11 +187,14 @@ cost:
   by concurrent runs, so Agent Kernel never sets it.
 - A call outside any run (thread naming in `ThreadRecorder.pre_run`, which runs before `Runtime`) sends the
   attribution the caller passes explicitly (`GatewayLiteLLM.completion(..., attribution=...)`). Thread naming passes
-  the principal's subject and the session id it already holds; with no principal it sends `user_id=ak-system` and no
-  agent. Naming runs before the budget check, so an over-budget user still pays for one naming call per new thread
-  (the one documented exception). A refusal falls back to the prompt-prefix name.
+  the attributed user id (the configured `Attributor` applied to the principal) and the session id it already
+  holds. With no principal it sends `user_id=ak-system` and no agent. Naming runs before the budget check, so an
+  over-budget user still pays for one naming call per new thread (the one documented exception). A refusal falls back to the prompt-prefix name.
   - `ak-system` is used only at named system call sites. Any other call with no run context and no explicit
-    attribution logs a warning and is sent unattributed. `AnalyzeAttachmentsTool` captures attribution when bound.
+    attribution logs a warning and is sent unattributed. `AnalyzeAttachmentsTool` reads the current run's
+    attribution at call time. System tools are built once per agent,
+    so a capture when the tool is bound would charge the first run's user for every later call. Under CrewAI's sync
+    tool executor, which drops context, the call is sent unattributed with the warning. This is a documented gap.
   - `ak-system` is never refused: native budget sync always upserts it with no budget, and the fallback check skips it.
   - `ak-system` is reserved: a `budgets.users` key equal to it raises `AKConfigError`, and a principal whose subject
     is `ak-system` is denied.
@@ -228,33 +207,23 @@ cost:
   - The user builds the binding in place of the framework's own model class. It takes the model name and reads
     `base_url` and the key from `cost.gateway`. Constructing one without a `cost` block raises `AKConfigError`.
 
-  | Framework | Class the user builds | Binding | Granularity | Context reaches the call |
-  |---|---|---|---|---|
-  | openai-agents 0.20.0 | `GatewayLitellmModel` | `LitellmModel` subclass overriding `_merge_headers` (`agents/extensions/models/litellm_model.py:890`) | per call | yes (async) |
-  | google-adk 2.8.0 | `GatewayLiteLLMClient` (passed as `LiteLlm(llm_client=...)`) | `LiteLLMClient` subclass passed as `LiteLlm(llm_client=...)` (`google/adk/models/lite_llm.py:868`, `:3042`); merges with the request's own `extra_headers` | per call | yes (async) |
-  | smolagents 1.26.0 | `GatewayLiteLLMModel` | `LiteLLMModel` subclass overriding `_prepare_completion_kwargs` (`smolagents/models.py:502`) | per call | yes: AK calls `agent.run` via `asyncio.to_thread` (`framework/smolagents/smolagents.py:170`); parallel tools copy context (`smolagents/agents.py:1426`) |
-  | crewai 1.15.18 | `GatewayCrewLLM` | `LLM` subclass forcing `is_litellm=True` and overriding `_prepare_completion_params` (`crewai/llm.py:749`) | per call | yes: `kickoff_async` runs `kickoff` via `asyncio.to_thread` (`crewai/crew.py:1160`); async tasks and parallel tools copy context |
-  | agent-framework-core 1.24.0 (MAF) | `GatewayChatClient` | `BaseChatClient` subclass implementing `_inner_get_response` over `GatewayLiteLLM` (`agent_framework/_clients.py`) | per call | yes (async; sync tools via `asyncio.to_thread`) |
-  | LangChain / LangGraph | `GatewayChatLiteLLM` | `ChatLiteLLM` subclass from the `langchain-litellm` package | per call | yes (per call); covered by the binding's context test |
-  | claude-agent-sdk 0.2.179 | none: automatic in `ClaudeModule` when `cost` is configured | the Claude adapter sets `ANTHROPIC_BASE_URL` and `ANTHROPIC_CUSTOM_HEADERS` in `ClaudeAgentOptions.env` (`claude_agent_sdk/types.py:2492`), which is merged over the CLI subprocess environment (`_internal/transport/subprocess_cli.py:819`) | per run: one CLI process per run, so `request_id` identifies the run | n/a |
-  | Pydantic AI | none (`CostRunOptions.wrap`) | none: `LiteLLMProvider` (`pydantic_ai/providers/litellm.py:34`) wraps an `AsyncOpenAI` client, not the LiteLLM SDK | per run | run-options path below |
+  | Framework | Class the user builds | Granularity |
+  |---|---|---|
+  | openai-agents 0.20.0 | `GatewayLitellmModel` (a `LitellmModel` subclass) | per call |
+  | google-adk 2.8.0 | `GatewayLiteLLMClient`, passed as `LiteLlm(llm_client=...)` | per call |
+  | smolagents 1.26.0 | `GatewayLiteLLMModel` (a `LiteLLMModel` subclass) | per call |
+  | crewai 1.15.18 | `GatewayCrewLLM` (an `LLM` subclass) | per call |
+  | agent-framework-core 1.24.0 (MAF) | `GatewayChatClient` (a `BaseChatClient` over `GatewayLiteLLM`) | per call |
+  | LangChain / LangGraph | `GatewayChatLiteLLM` (from `langchain-litellm`, added to the `langgraph` extra) | per call |
+  | claude-agent-sdk 0.2.179 | none: automatic in `ClaudeModule` when `cost` is configured | per run (one CLI process per run) |
+  | Pydantic AI | none: `CostRunOptions.wrap` (no LiteLLM-SDK seam) | per run |
 
-  - CrewAI caveats, documented:
-    - Without `is_litellm=True`, `LLM.__new__` hands a native-provider model back instead of the subclass
-      (`crewai/llm.py:394-517`), so the binding forces it.
-    - `LLM.__copy__` rebuilds a plain `LLM` (`crewai/llm.py:2561`). Only `train` and `kickoff_for_each` copy agents,
-      and Agent Kernel calls neither.
-    - Sync tools run via `run_in_executor` without copying context (`crewai/tools/structured_tool.py:410`), so a
-      tool's own LLM call there must pass attribution explicitly.
-  - LangChain: the binding is `GatewayChatLiteLLM` over `ChatLiteLLM`. `ChatLiteLLM` is no longer in
-    `langchain-community` 0.4.2, and `langchain-litellm` is not locked, so the binding adds it as an optional
-    dependency of the `langgraph` extra. Using it is the user's choice, as with every binding.
-  - Claude Agent SDK: gateway routing supports **API-key authentication only**. A Claude subscription or OAuth login
-    is not routed through the gateway and is outside the tracked path. With `cost` configured and no API key, the
-    Claude adapter raises `AKConfigError` on the agent's first run (the key is resolved per run, so rotation is picked
-    up). Documented.
-  - LiteLLM itself keeps context: `acompletion` runs `completion` in an executor inside `copy_context()`
-    (`litellm/main.py:647`).
+  - The seams overridden, how context reaches each call, and the CrewAI caveats are in spec.md §6–§7, verified at the
+    `uv.lock` versions. Each binding's context test pins its seam.
+  - CrewAI sync tools drop context, so a tool's own LLM call there must pass attribution explicitly. Documented.
+  - Claude Agent SDK: gateway routing supports **API-key authentication only**. With `cost` configured and no API
+    key, the Claude adapter raises `AKConfigError` on the agent's first run (the key is resolved per run, so
+    rotation is picked up). Documented.
 - Users who bring their own client have two per-run routes. `default_headers` fixed when a client is built cannot
   carry per-run values, so neither uses them:
   - a #758 `run_options` factory that returns `CostManager.attribution_headers()` into the framework's native per-run
@@ -328,8 +297,9 @@ cost:
   - `provider_cost` always comes from the gateway and is never recomputed.
   - Built-in `passthrough` (the default): billed equals provider, `bills_at_cost = True`.
   - Built-in `static`: per-model rates in USD per 1M tokens for input, output and cached input, plus an optional
-    `markup` multiplier. `bills_at_cost` is false whenever a rate or markup is set. Cached input is priced at the
-    cached rate, falling back to the input rate, and is never charged twice.
+    `markup` multiplier. An unknown key in the block raises `AKConfigError`. `bills_at_cost` is false whenever a
+    rate or markup is set. Cached input is priced at the cached rate, falling back to the input rate, and is never
+    charged twice.
   - BYO via dotted path, for example credits or free tiers.
   - `PricingSourceContract`: `None` in gives `None` out; cached tokens are not double-charged.
 - Currency: Agent Kernel does not convert.
@@ -340,13 +310,13 @@ cost:
 ### Usage retrieval and aggregation
 
 - `UsageView` ABC (§9.5): `report(query, principal) -> UsageReport`. It applies authorization (which queries this
-  principal may run), aggregates and shapes the result. Built-in `default`, BYO via dotted path, `UsageViewContract`.
+  principal may run, compared against the principal's attributed user id), aggregates and shapes the result. Built-in `default`, BYO via dotted path, `UsageViewContract`.
   The default does the following:
   - `UsageQuery` fields: `user_id`, `agent_id`, `session_id`, `start`, `end`, `model`, `provider`.
   - The view calls `gateway.fetch_usage` and aggregates the pages **in memory, per request**. Nothing is persisted:
     no `UsageStore`, no usage rows held by Agent Kernel (the spend ledger holds budget aggregates only).
-  - Long windows are split into sub-windows that stay under the gateway's row caps (LiteLLM 10k, Langfuse 1000 per
-    page). A cap that is still hit is a `UsageTruncatedError`, never a partial total.
+  - The whole window is fetched first. Only a window that hits the gateway's row cap (LiteLLM 10k) is split, into
+    days and then hours. A cap that is still hit is a `UsageTruncatedError`, never a partial total.
 - `UsageReport` has one shape whatever the gateway:
   - `user_id`, `currency`, `window`
   - `total_cost` (billed) and `total_provider_cost`
@@ -380,7 +350,7 @@ cost:
   - A request with no cost counts as zero toward the amount. `SpendTotal.unpriced_requests` exposes it, a warning is
     logged once per model, and docs say a budget cannot see unpriced spend (the Agentgateway $0 case included).
 - **Native enforcement** (preferred):
-  - At startup `CostManager` calls `gateway.sync_budgets` for each per-user budget the gateway can express **exactly**:
+  - At startup `CostManager` calls `gateway.sync_budget_definitions` and `gateway.sync_budgets` for each per-user budget the gateway can express **exactly**:
     - `native_user_budget`
     - `action: block`
     - `pricing.bills_at_cost` (a gateway enforces on its own cost, not `billed_cost`)
@@ -398,6 +368,9 @@ cost:
       misconfigured, and retrying will not fix it
     - an unreachable gateway or a 5xx logs an error and does not stop startup. The sync retries in the background
       with capped exponential backoff until it succeeds, so a gateway outage never blocks a rollout
+    - startup waits only on the calls that can expose a config error: one budget definition per distinct budget,
+      plus the `ak-system` upsert. Per-user rows are written in the background, and a user is checked by the
+      fallback until their row is written. Startup cost therefore does not grow with the number of users
     - until a retried sync succeeds, the gateway keeps the budgets from the last successful sync (LiteLLM stores them
       in its database); a budget new in this config is enforced by the fallback check meanwhile
     - startup probes that need the gateway (the LiteLLM `customer_management` version check, the Agentgateway
@@ -409,8 +382,8 @@ cost:
     (LiteLLM: pre-request reservation).
   - The default budget covers users unknown at startup:
     - `end_user`: on a user's first run in each process, Agent Kernel upserts the default budget onto that customer
-      (`/customer/new` or `/customer/update` with the default budget's `budget_id`), cached per process. A failed
-      upsert falls back to the fallback check for that run. `max_end_user_budget_id` is not used: at 1.95.1 a value
+      (`/customer/new` or `/customer/update` with the default budget's `budget_id`), cached per process: one or two
+      admin calls on that user's first run. A failed upsert falls back to the fallback check for that run. `max_end_user_budget_id` is not used: at 1.95.1 a value
       written through `/config/update` is never applied by the proxy.
     - `customer_management`: written as the organization's default budget template.
     - Other gateways: enforced by the fallback check.
@@ -429,7 +402,8 @@ cost:
     - logs the existing resume-halted warning (`Runtime._warn_resume_halted`, `core/runtime.py:394`), as a pre-hook
       halt does (`:437`, `:498`)
     - returns the same deny shape as a fresh run
-- Gateway refusals mid-run: `ErrorUtil` asks `RunMeter.is_budget_refusal(error)` first and maps a match to the new
+- Gateway refusals mid-run: `ErrorUtil` asks the already-built `RunMeter` (never constructing one in the error path)
+  `is_budget_refusal(error)` first and maps a match to the new
   `ErrorCategory.BUDGET`, whose user-facing message is "Error: The usage budget for this request has been reached." (the sibling categories' prefix) Without
   a `cost` block nothing matches, and categories are unchanged.
   - Frameworks re-raise their own exceptions around LiteLLM's (openai-agents, CrewAI, LangChain). The check walks the
@@ -445,9 +419,16 @@ cost:
   - Docs name the gateway and setting needed for strict enforcement.
 - Cost on the hot path, per run of a user with a fallback budget:
   - `windowed_spend` gateways: one aggregate read (one SQL `SUM`, one metrics query), whatever the user's row count.
-  - ledger gateways: one incremental row read (only rows since the cursor), one ledger write and one ledger read.
-- Failure policy: `budgets.on_error` applies when `total_spend`, `fetch_usage_since` or the ledger fails, or the
-  gateway is unreachable.
+  - ledger gateways, in steady state:
+    - two gateway reads: the settled rows since the cursor (usually none) and the unsettled range of at most
+      `settle_lag`
+    - three ledger reads
+    - at most one ledger write
+    - A cold start adds one read and one write per batch, bounded by the catch-up budget (see Spend ledger).
+- Failure policy: `budgets.on_error` applies when any of these happens:
+  - `total_spend`, `fetch_usage_since` or the ledger fails
+  - the gateway is unreachable
+  - the ledger is still catching up when the catch-up budget runs out
   - `block` (default) denies the run with a distinct "budget could not be verified" message.
   - `allow` runs it and logs at warning level.
   - A retrieval failure is never read as zero spend.
@@ -467,7 +448,13 @@ cost:
     **atomically**, compare-and-set on `expected_cursor`. A stale cursor adds nothing, so two processes pulling the
     same rows never double-count.
   - `read(user_id, period, period_start) -> SpendTotal`
-- Check flow: `cursor` → `gateway.fetch_usage_since` → `add` → `read` → `pricing.bill_total`.
+- Check flow: `cursor` → repeat (`gateway.fetch_usage_since` → `add`) until caught up → `read` → `pricing.bill_total`.
+  - Catch-up is bounded and keeps its progress:
+    - each batch is committed with `add` as soon as it is read
+    - a fixed catch-up budget of 5 seconds (documented, not a config field) sits inside the check's time bound
+    - a check still behind when the budget runs out applies `budgets.on_error`, and never sums a partial total
+    - the next check continues from the committed cursor, so a heavy user's cold start (or an `in_memory` restart)
+      is denied for a bounded number of runs, never indefinitely. Documented
   - Late rows: a fixed `settle_lag` of 10 minutes (documented, not a config field) covers LiteLLM's batched spend
     writes. The settle line is `now − settle_lag`.
     - rows before the settle line are **settled**: `add` stores them, and the cursor never moves past the settle line
@@ -475,7 +462,8 @@ cost:
       written late but inside the lag is still counted
     - a row older than the settle line that arrives after the cursor has passed it is missed; documented as
       best-effort, like the rest of the fallback
-    - cost: each check re-reads at most the last 10 minutes of the user's rows
+    - the unsettled read always starts at the settle line, never at an old cursor, so each check re-reads at most
+      the last 10 minutes of the user's rows. Hitting the row cap there applies `budgets.on_error`
   - A user with no cursor starts at the start of the longest configured period, so the first check sees the whole
     current period.
   - A compare-and-set conflict re-reads the cursor and retries once, then applies `budgets.on_error`.
@@ -512,7 +500,8 @@ cost:
   - The window may span at most 93 days (a quarter), a fixed limit and not a config field: it bounds how many
     gateway calls one request can fan out to when windows are split under row caps.
   - `start` after `end`, or a window over the limit: 400, naming the parameter.
-- It always reports the caller's own usage (`user_id` from the principal).
+- It always reports the caller's own usage: the caller's attributed `user_id` (the configured `Attributor` applied to
+  the principal), so a BYO attributor keys the route the same way as the headers and budgets.
   - A `user_id` parameter naming someone else is a 403 until #603's authorization phase.
   - Anonymous callers get the inherited 401.
 - Statuses:
@@ -579,7 +568,7 @@ graph LR
 | Gateway auth failure (bad key) | Model calls: as above. Usage reads: `UsageRetrievalError` → 502. At startup: native budget sync fails with `AKConfigError` |
 | Gateway unreachable at startup | Logged; native sync and startup probes retry in the background with backoff; startup continues |
 | Budget refusal from the gateway | `ErrorCategory.BUDGET` with its user-facing message |
-| Budget check fails (`total_spend`, `fetch_usage_since` or ledger error) | `budgets.on_error`: `block` denies with a distinct message, `allow` runs and warns; never read as zero |
+| Budget check fails (`total_spend`, `fetch_usage_since` or ledger error, or the ledger still catching up) | `budgets.on_error`: `block` denies with a distinct message, `allow` runs and warns; never read as zero |
 | Ledger cursor conflict | Re-read and retry once, then `budgets.on_error` |
 | Usage retrieval fails | `UsageRetrievalError` → 502; never an empty report |
 | Missing records / unattributed rows | Excluded from user-scoped queries; counted only in unscoped admin views (none in #954) |
@@ -619,67 +608,41 @@ graph LR
 
 ### Testing
 
-- Gateway adapters: each built-in subclasses `LLMGatewayContract`.
-  - LiteLLM in both `api` modes, with `httpx.MockTransport`; `customer_management` refused below 1.111, and a
-    fallback budget in that mode refused.
-    - lazy default-budget upsert: once per user per process, and a failure falling back to the fallback check
-    - compatibility test against a real DB-backed LiteLLM proxy (Docker): `/spend/logs/v2` `startTime` order is
-      stable, `request_id` is present and unique per row, and a call's spend row appears within `settle_lag` under
-      default batch settings
-  - Agentgateway: an SQLite fixture built from the 1.7.x migrations, with rows shaped like the observed v1.7.0 row
-    (session and request id in `attributes_json`, and a row without them), plus an unknown migration version
-    refused at startup.
-  - Langfuse: a compatibility suite pinning the header names, the 1 KiB / 8 KiB limits, and the v2 observations and
-    metrics request and response shapes.
-  - Covered: headers, normalisation, pagination, capability differences, failures (unreachable, 401, 5xx, malformed),
-    truncation.
-- Client: `GatewayLiteLLM`
-  - headers per call from context
-  - concurrent runs never see each other's headers
-  - caller headers merged with Agent Kernel keys winning
+Test files, fixtures and patch targets are in spec.md (Testing). At design level, the requirements are:
+
+- Every built-in subclasses its contract suite: `LLMGatewayContract` (both LiteLLM modes), `SpendLedgerContract`
+  (each backend), and the attributor, pricing, budget-policy and view suites.
+- Gateways:
+  - headers, normalisation, paging, failures (unreachable, 401, 5xx, malformed) and truncation
+  - `total_spend` equal to the same rows' totals
+  - The pinned external contracts (LiteLLM's `/spend/logs/v2` order, row ids and settle timing; the Agentgateway
+    1.7.x schema; Langfuse's headers, limits and v2 shapes) each have a compatibility or fixture test.
+- Client and bindings:
+  - headers per call from context, never shared between concurrent runs, with Agent Kernel keys winning
   - `include_usage` on streams
-  - one test per framework binding, including context reaching a call made inside `asyncio.to_thread` (CrewAI,
-    smolagents)
-- Usage and cost:
-  - normalisation with missing tokens and cost
-  - provider vs billed cost
-  - static model pricing
-  - cached-token pricing
-  - currency mismatch
+  - context reaching each binding's call, including inside `asyncio.to_thread`
 - Attribution:
-  - user, agent and session
-  - user × agent aggregation
+  - only the principal sets the user, and spoofing is rejected or overwritten
   - anonymous runs
-  - missing or invalid metadata
-  - client body or run-option spoofing rejected or overwritten
+  - a BYO attributor used by the route, the view and thread naming
 - Budgets:
-  - default and per-user resolution
-  - period boundaries (UTC day, week and month edges)
-  - block and deny shapes for run and stream; `warn` logs and leaves the reply untouched
-  - concurrent checks documented as not strict
-  - native sync, including what is excluded and why
-  - fallback, via `total_spend` and via the ledger (LiteLLM with a mocked `/spend/logs/v2`)
-  - `on_error` with retrieval failure and with ledger failure
-  - `ak-system` never refused, natively or by the fallback; the reserved key rejected in config
-  - `budgets.users` key validation (empty and `ak-system` keys refused)
-- Spend ledger: each backend subclasses `SpendLedgerContract`
-  - add then read; period bucketing across day, week and month edges
-  - stale cursor adds nothing; concurrent adds never double-count
-  - settle lag: a late row inside the lag is counted; the cursor never passes the settle line
-  - expiry after the retention window
-- API:
-  - retrieval and filters
-  - 400 / 401 / 403 / 404 / 422 / 502
-  - one response format across all three gateways (a shared fixture)
+  - resolution, UTC period edges, and the deny and warn shapes for run and stream
+  - native sync eligibility, plus startup behaviour: auth failure is fatal, an outage is retried in the background,
+    and per-user rows are written in the background
+  - `on_error` for every failure kind
+  - `ak-system` never refused, and reserved keys rejected
+- Spend ledger:
+  - stale cursors and concurrent adds never double-count
+  - the settle lag and second-resolution dates handled
+  - catch-up committed batch by batch, never summed partially
+  - expiry
+- API: the 400 / 401 / 403 / 404 / 422 / 502 statuses, the window rules, and one response format across all three
+  gateways.
 - `Runtime`:
-  - `check` runs before pre-hooks and is skipped without a `cost` block
+  - the check runs before pre-hooks and is skipped without `cost`
   - `request_id` is threaded and minted
-  - a denied resume leaves the paused run answerable and logs the resume-halted warning
-  - `ErrorCategory.BUDGET` mapping, including refusals wrapped by each framework's exception
-- Startup: auth failure fatal; unreachable gateway logs, retries sync in the background, and does not block startup
-- Usage API window: defaults, timezone-less timestamps as UTC, inverted and over-93-day windows rejected
-- Framework bindings: each importable from `agentkernel.<fw>`; constructing one without a `cost` block raises
-  - Claude: `ANTHROPIC_CUSTOM_HEADERS` value format accepted by the CLI; no API key with `cost` configured raises
+  - a denied resume stays answerable
+  - `BUDGET` mapping through wrapped framework exceptions, with no `CostManager` built in the error path
 
 ## Non-goals
 
