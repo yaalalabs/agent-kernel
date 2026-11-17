@@ -10,7 +10,7 @@ from livekit import api, rtc
 
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, StreamChunk
-from ...core.realtime import EDGE_SAMPLE_RATE
+from ...realtime.audio import EDGE_SAMPLE_RATE
 from ...secret import SecretManager
 from ..adapter.base import EdgeLifecycleAdapter, EdgeLifecycleEvent, StatefulEdgeAdapter
 

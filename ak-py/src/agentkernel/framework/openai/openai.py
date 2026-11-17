@@ -18,7 +18,6 @@ from openai.types.responses.response_text_delta_event import ResponseTextDeltaEv
 
 from ...core import Agent as BaseAgent
 from ...core import Module
-from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
@@ -53,6 +52,7 @@ from ...core.model import (
 )
 from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
+from ...realtime.base import RealtimeRunner as BaseRealtimeRunner
 from ...secret import SecretManager
 from ...trace import Trace
 

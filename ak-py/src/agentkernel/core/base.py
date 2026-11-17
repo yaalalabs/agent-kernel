@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from .paused_run import PausedRun
 
 if TYPE_CHECKING:  # pragma: no cover: typing only; avoids a base <-> realtime import cycle
-    from .realtime import RealtimeRunner
+    from ..realtime.base import RealtimeRunner
 
 _log = logging.getLogger("ak.core.runner")
 

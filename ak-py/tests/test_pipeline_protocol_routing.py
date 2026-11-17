@@ -13,12 +13,12 @@ from agentkernel.core.model import ExecutionMode
 from agentkernel.integration.adapter.base import OutboundAdapter
 from agentkernel.pipeline.agent_runner import AgentRunner, RealtimeAgentRunner, StreamAgentRunner
 from agentkernel.pipeline.envelope import ATTR_INTEGRATION, ATTR_PROTOCOL, QueueMessage, QueueName
-from agentkernel.pipeline.realtime_pool import RealtimeConnectionPool
 from agentkernel.pipeline.response_handler import ResponseHandler
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 from agentkernel.pipeline.ws.base import WebSocketHandlerABC
+from agentkernel.realtime.pool import RealtimeConnectionPool
 
 # Every valid (mode, message_type) pair (#641), unset included.
 ALL_MODES = [

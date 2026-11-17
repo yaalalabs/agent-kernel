@@ -5,10 +5,10 @@ from abc import abstractmethod
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
-from ..base import Agent, Runner, Session
-from ..event import StreamEvent
-from ..model import AgentReply, AgentRequest
-from .pcm import EDGE_SAMPLE_RATE
+from ..core.base import Agent, Runner, Session
+from ..core.event import StreamEvent
+from ..core.model import AgentReply, AgentRequest
+from .audio import EDGE_SAMPLE_RATE
 
 
 class RealtimeRunner(Runner):

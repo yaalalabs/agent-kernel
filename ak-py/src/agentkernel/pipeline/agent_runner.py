@@ -7,6 +7,7 @@ from ..core.config import AKConfig
 from ..core.event import PausedInterruption
 from ..core.model import AgentPausedReplyAny, BaseRunRequest, ExecutionMode, Principal, StreamChunk
 from ..core.util.factory import AKConfigError
+from ..realtime.pool import RealtimeConnectionPool
 from .consumer import ConsumerLoop
 from .envelope import (
     ATTR_AGUI,
@@ -20,7 +21,6 @@ from .envelope import (
     QueueName,
 )
 from .integration_delivery import IntegrationDelivery
-from .realtime_pool import RealtimeConnectionPool
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
 

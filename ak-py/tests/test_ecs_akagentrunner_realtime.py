@@ -9,15 +9,15 @@ import pytest
 from agentkernel.core.base import Session
 from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _QueuesConfig
 from agentkernel.core.model import ExecutionMode
-from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.deployment.aws.containerized.akagentrunner import ECSAgentRunner, ECSRealtimeAgentRunner, ECSStreamAgentRunner
 from agentkernel.pipeline.envelope import QueueName
-from agentkernel.pipeline.realtime_pool import RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+from agentkernel.realtime.base import RealtimeRunner
+from agentkernel.realtime.pool import RealtimeConnectionPool
 
 
 def _make_record(requests, session_id: str = "room_01"):

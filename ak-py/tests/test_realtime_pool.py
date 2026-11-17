@@ -11,15 +11,15 @@ from agentkernel import Agent, Runner, Session
 from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _OutputQueueConfig, _QueuesConfig, _RealtimeConfig
 from agentkernel.core.event import TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, ExecutionMode, Principal, StreamChunk
-from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
 from agentkernel.pipeline.envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REALTIME_END, QueueName
-from agentkernel.pipeline.realtime_pool import RealtimeConnection, RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+from agentkernel.realtime.base import RealtimeRunner
+from agentkernel.realtime.pool import RealtimeConnection, RealtimeConnectionPool
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def _reset_pipeline_state(monkeypatch):
     async def send_inline(send, *args):
         return send(*args)
 
-    monkeypatch.setattr("agentkernel.pipeline.realtime_pool.asyncio.to_thread", send_inline)
+    monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
     InMemoryTransport.reset()
     ThreadRunner.shutdown_event.clear()
     yield
@@ -580,7 +580,7 @@ class TestRealtimePoolShutdown:
         import concurrent.futures
 
         monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool._SHUTDOWN_GRACE_SECONDS", 0.1)
+        monkeypatch.setattr("agentkernel.realtime.pool._SHUTDOWN_GRACE_SECONDS", 0.1)
         self._HangingAdapter.entered.clear()
 
         pool = RealtimeConnectionPool.initialize()
@@ -1091,7 +1091,7 @@ class TestRealtimeReconnectBackoff:
     @pytest.fixture
     def clock(self, monkeypatch):
         now = [1000.0]
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool.time", types.SimpleNamespace(time=lambda: now[0]))
+        monkeypatch.setattr("agentkernel.realtime.pool.time", types.SimpleNamespace(time=lambda: now[0]))
         return now
 
     @pytest.fixture
@@ -1412,7 +1412,7 @@ class TestBrokerRealtimeUserGate:
 
 class TestPoolLoop:
     def test_shutdown_wakes_the_pool_at_once(self, monkeypatch):
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool._SWEEP_INTERVAL_SECONDS", 30)
+        monkeypatch.setattr("agentkernel.realtime.pool._SWEEP_INTERVAL_SECONDS", 30)
         pool = RealtimeConnectionPool.initialize()
         thread = threading.Thread(target=pool.start, daemon=True)
         thread.start()
@@ -1424,7 +1424,7 @@ class TestPoolLoop:
         assert not thread.is_alive()
 
     def test_the_loop_sweeps_on_its_interval(self, monkeypatch):
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool._SWEEP_INTERVAL_SECONDS", 0.02)
+        monkeypatch.setattr("agentkernel.realtime.pool._SWEEP_INTERVAL_SECONDS", 0.02)
         pool = RealtimeConnectionPool.initialize()
         swept = threading.Event()
         monkeypatch.setattr(pool, "_sweep", lambda now: swept.set())

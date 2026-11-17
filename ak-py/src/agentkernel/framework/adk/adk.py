@@ -43,7 +43,6 @@ from agentkernel.core.model import (
 
 from ...core import Agent as AKBaseAgent
 from ...core import Module
-from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
@@ -65,6 +64,7 @@ from ...core.event import (
 )
 from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
+from ...realtime.base import RealtimeRunner as BaseRealtimeRunner
 from ...trace import Trace
 
 FRAMEWORK = "adk"

@@ -14,14 +14,23 @@ from ..core.base import Session
 from ..core.config import AKConfig
 from ..core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, TextDelta
 from ..core.model import Principal, StreamChunk
-from ..core.realtime import EDGE_SAMPLE_RATE, PCM16Resampler
-from ..core.realtime import RealtimeRunner as BaseRealtimeRunner
 from ..core.runtime import Runtime
 from ..core.tool import ToolContext
-from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REALTIME_END, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
-from .integration_delivery import IntegrationDelivery
-from .thread_runner import ThreadRunner
-from .transport.base import QueueTransport, QueueTransportFactory
+from ..pipeline.envelope import (
+    ATTR_INTEGRATION,
+    ATTR_REALTIME,
+    ATTR_REALTIME_END,
+    ATTR_REQUEST_ID,
+    ATTR_USER_ID,
+    REPLY_CONTEXT_PREFIX,
+    QueueMessage,
+    QueueName,
+)
+from ..pipeline.integration_delivery import IntegrationDelivery
+from ..pipeline.thread_runner import ThreadRunner
+from ..pipeline.transport.base import QueueTransport, QueueTransportFactory
+from .audio import EDGE_SAMPLE_RATE, PCM16Resampler
+from .base import RealtimeRunner as BaseRealtimeRunner
 
 if TYPE_CHECKING:  # typing only; the runners pass these in
     from ..core.chat_service import ChatService
