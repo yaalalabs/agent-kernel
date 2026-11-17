@@ -55,8 +55,8 @@ class RealtimeConnection:
        ``OPEN``, the ``[REALTIME CALL START]`` line is logged and the pacing task starts.
     2. Caller input arrives from consumer threads. ``append_audio`` and ``send_text`` schedule the send on the
        pool loop and wait, bounded by ``SEND_TIMEOUT_SECONDS``, so the input is normally acked once the model has it.
-       On the loop the input first runs through the pre-hooks (``on_stream_input`` for audio, ``run_pre_hooks`` for
-       typed text), and what they leave is sent to the model. A send that fails or times out is logged and the input
+       On the loop the input first runs through the pre-hooks (see Hooks below), and what they leave is sent
+       to the model. A send that fails or times out is logged and the input
        is still acked: the caller's audio keeps flowing, and one lost chunk or message does not fail the call.
     3. The runner reports events through ``handle_framework_event``. Audio, ``transcript_delta``, ``done``,
        ``agent_changed`` and ``input_transcript`` all ride one queue (``_output_queue``), so a control event
@@ -71,8 +71,21 @@ class RealtimeConnection:
        ``CLOSING`` and the pool evicts it on the next lookup. The native session is still open until
        ``close()`` runs.
     7. ``close()`` claims the connection (state ``CLOSED``), cancels a connect still in flight, stops pacing,
-       disconnects the runner, unpublishes the principal and clears the session's volatile cache (hook state ends with the call). A second call returns at once, so shutdown,
-       eviction and failure can all close one connection. Logs ``[REALTIME CALL END]`` when it finishes.
+       disconnects the runner, unpublishes the principal and clears the session's volatile cache (hook state ends
+       with the call). A second call returns at once, so shutdown, eviction and failure can all close one
+       connection. Logs ``[REALTIME CALL END]`` when it finishes.
+
+    Hooks (run on the pool loop, with ``Session.current()`` and ``Agent.current()`` set):
+
+    - Typed text goes through ``PreHook.on_run``. A hook that halts replies with one error chunk to the edge, as
+      ``Runtime.stream()`` does, and the call continues.
+    - Each audio chunk goes through ``PreHook.on_stream_input``. A failing audio hook drops that chunk, with no
+      error chunk (one per chunk would flood the edge). The first failure of a connection is logged at ERROR,
+      later ones at DEBUG.
+    - Every output event goes through ``PostHook.on_stream_event`` before it is paced. A ``StreamHalt``, or a
+      post-hook that fails, fails the call (step 5).
+    - The ``requests`` that post-hooks receive is the last typed turn, as the pre-hooks left it: empty on an
+      audio-only call.
     """
 
     # What each lifecycle state means, and who moves it:
@@ -225,6 +238,19 @@ class RealtimeConnection:
         if opened:
             self._log.info(f"[REALTIME CALL START] session_id={self.session_id} agent={self.agent.name}")
 
+    async def fail_to_connect(self, error: BaseException) -> None:
+        """Send the edge one terminal error chunk for a failed connect, then close what it opened.
+
+        :param error: What the connect raised (a timeout included).
+        """
+        self._log.error(f"Realtime session {self.session_id} could not start: {error!r}")
+        try:
+            await self._emit(StreamChunk(error=f"Realtime session could not start: {str(error) or type(error).__name__}", done=True))
+        except Exception:
+            self._log.exception(f"Realtime session {self.session_id}: could not report its failed start")
+        finally:
+            await self.close()
+
     async def close(self) -> None:
         """Stop pacing and disconnect the runner; a second call returns at once."""
         with self._state_lock:
@@ -264,36 +290,6 @@ class RealtimeConnection:
         RealtimeConnection._close_tasks.discard(task)
         if not task.cancelled() and task.exception() is not None:
             self._log.error(f"Realtime session {self.session_id}: failed to close: {task.exception()}")
-
-    async def _fail(self, message: str) -> None:
-        """Send the edge one terminal error chunk, mark the connection closed and close the runner."""
-        self._log.error(f"Realtime session {self.session_id} failed: {message}")
-        self.mark_closed("native session failed")
-        if self._pacing_task:
-            # Called from the pacing loop itself (a post-hook halted the call), cancelling would drop the chunk below.
-            if self._pacing_task is not asyncio.current_task():
-                self._pacing_task.cancel()
-            self._pacing_task = None
-        try:
-            await self._emit(StreamChunk(error=message, done=True))
-            # Only once the chunk is on the queue, so a failed send leaves the fallback in ``fail_to_connect`` available.
-            self.failure_reported = True
-        finally:
-            # Called from inside the runner's listener, which cannot await its own shutdown.
-            self.close_in_background(asyncio.get_running_loop())
-
-    async def fail_to_connect(self, error: BaseException) -> None:
-        """Send the edge one terminal error chunk for a failed connect, then close what it opened.
-
-        :param error: What the connect raised (a timeout included).
-        """
-        self._log.error(f"Realtime session {self.session_id} could not start: {error!r}")
-        try:
-            await self._emit(StreamChunk(error=f"Realtime session could not start: {str(error) or type(error).__name__}", done=True))
-        except Exception:
-            self._log.exception(f"Realtime session {self.session_id}: could not report its failed start")
-        finally:
-            await self.close()
 
     # -- identity, delivery context and hook scope ---------------------------------------------------------
 
@@ -356,6 +352,28 @@ class RealtimeConnection:
         self.last_activity_at = time.time()
         self._dispatch_send(self._process_text(request), "send_text")
 
+    def _dispatch_send(self, coro, action: str) -> None:
+        """Run a send on the pool loop, blocking (bounded by ``SEND_TIMEOUT_SECONDS``) so the input is normally acked once the model has it.
+
+        A failed or timed-out send is logged and not raised, so the input is still acked. On the pool loop itself the send is
+        scheduled instead, and a failure is logged.
+        """
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+
+        if running is self.loop:
+            task = self.loop.create_task(coro)
+            task.add_done_callback(lambda t: self._log_send_failure(t, action))
+            return
+
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        try:
+            future.result(timeout=self.SEND_TIMEOUT_SECONDS)
+        except Exception:
+            self._log.exception(f"Realtime session {self.session_id}: failed to {action}")
+
     async def _process_audio(self, request: AgentRequestVoice) -> None:
         """Run a chunk through ``on_stream_input``; audio goes to the model, text a hook made goes the typed-text way.
 
@@ -402,28 +420,6 @@ class RealtimeConnection:
             self._log.debug(f"Realtime session {self.session_id}: dropped {len(result) - len(prompts)} non-text request(s) a pre-hook returned")
         if prompts:
             await self.runner.send_text("\n".join(prompts))
-
-    def _dispatch_send(self, coro, action: str) -> None:
-        """Run a send on the pool loop, blocking (bounded by ``SEND_TIMEOUT_SECONDS``) so the input is normally acked once the model has it.
-
-        A failed or timed-out send is logged and not raised, so the input is still acked. On the pool loop itself the send is
-        scheduled instead, and a failure is logged.
-        """
-        try:
-            running = asyncio.get_running_loop()
-        except RuntimeError:
-            running = None
-
-        if running is self.loop:
-            task = self.loop.create_task(coro)
-            task.add_done_callback(lambda t: self._log_send_failure(t, action))
-            return
-
-        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
-        try:
-            future.result(timeout=self.SEND_TIMEOUT_SECONDS)
-        except Exception:
-            self._log.exception(f"Realtime session {self.session_id}: failed to {action}")
 
     def _log_send_failure(self, task: "asyncio.Task", action: str) -> None:
         if not task.cancelled() and task.exception() is not None:
@@ -486,42 +482,6 @@ class RealtimeConnection:
         for item in kept:
             await self._output_queue.put(item)
 
-    async def _emit_event(self, event: StreamEvent, audio_bytes: int | None = None) -> list[StreamEvent]:
-        """Run one output event through the post-hooks, emit each resulting event, and pace every audio event emitted.
-
-        Pacing is applied to whatever audio leaves, whichever event released it: a hook that held audio and releases it on
-        the turn end gets the same playback-speed delivery as audio passed straight through.
-
-        :param event: The event the native session produced, at the edge's sample rate when it is audio.
-        :param audio_bytes: Byte length of ``event``'s audio when it is an ``AudioDelta``, which spares a decode.
-        :return: The events that were emitted (empty when a hook dropped it).
-        :raises StreamHalt: When a hook ends the call; any other hook failure is logged and raised as one.
-        """
-        try:
-            with self._hook_context():
-                emitted = await self.runtime.run_stream_event_hooks(self.agent, self.session, self._last_turn, event)
-        except StreamHalt:
-            raise
-        except Exception as e:
-            self._log.exception(f"Realtime session {self.session_id}: a post-hook failed on a '{event.type}' event")
-            raise StreamHalt("Realtime output hook failed") from e
-        for out in emitted:
-            if isinstance(out, AudioDelta) and self._pace_played_ms == 0.0:
-                self._pace_start = time.time()
-            await self._emit(StreamChunk(delta=out.content if isinstance(out, TextDelta) else None, event=out))
-            if isinstance(out, AudioDelta):
-                await self._pace(out, audio_bytes if out is event else None)
-        return emitted
-
-    async def _pace(self, audio: AudioDelta, known_bytes: int | None) -> None:
-        """Wait until the audio just emitted is no more than ``playback_lead_ms`` ahead of real time."""
-        size = known_bytes if known_bytes is not None else len(base64.b64decode(audio.content))
-        self._pace_played_ms += (size / 2) / (EDGE_SAMPLE_RATE / 1000.0)
-        elapsed_ms = (time.time() - self._pace_start) * 1000.0
-        sleep_ms = (self._pace_played_ms - self._playback_lead_ms) - elapsed_ms
-        if sleep_ms > 0:
-            await asyncio.sleep(sleep_ms / 1000.0)
-
     async def _pacing_loop(self) -> None:
         """Emit queued audio at playback rate; other events follow the audio queued before them.
 
@@ -570,6 +530,42 @@ class RealtimeConnection:
             except Exception:
                 self._log.exception("Error in realtime pacing loop")
 
+    async def _emit_event(self, event: StreamEvent, audio_bytes: int | None = None) -> list[StreamEvent]:
+        """Run one output event through the post-hooks, emit each resulting event, and pace every audio event emitted.
+
+        Pacing is applied to whatever audio leaves, whichever event released it: a hook that held audio and releases it on
+        the turn end gets the same playback-speed delivery as audio passed straight through.
+
+        :param event: The event the native session produced, at the edge's sample rate when it is audio.
+        :param audio_bytes: Byte length of ``event``'s audio when it is an ``AudioDelta``, which spares a decode.
+        :return: The events that were emitted (empty when a hook dropped it).
+        :raises StreamHalt: When a hook ends the call; any other hook failure is logged and raised as one.
+        """
+        try:
+            with self._hook_context():
+                emitted = await self.runtime.run_stream_event_hooks(self.agent, self.session, self._last_turn, event)
+        except StreamHalt:
+            raise
+        except Exception as e:
+            self._log.exception(f"Realtime session {self.session_id}: a post-hook failed on a '{event.type}' event")
+            raise StreamHalt("Realtime output hook failed") from e
+        for out in emitted:
+            if isinstance(out, AudioDelta) and self._pace_played_ms == 0.0:
+                self._pace_start = time.time()
+            await self._emit(StreamChunk(delta=out.content if isinstance(out, TextDelta) else None, event=out))
+            if isinstance(out, AudioDelta):
+                await self._pace(out, audio_bytes if out is event else None)
+        return emitted
+
+    async def _pace(self, audio: AudioDelta, known_bytes: int | None) -> None:
+        """Wait until the audio just emitted is no more than ``playback_lead_ms`` ahead of real time."""
+        size = known_bytes if known_bytes is not None else len(base64.b64decode(audio.content))
+        self._pace_played_ms += (size / 2) / (EDGE_SAMPLE_RATE / 1000.0)
+        elapsed_ms = (time.time() - self._pace_start) * 1000.0
+        sleep_ms = (self._pace_played_ms - self._playback_lead_ms) - elapsed_ms
+        if sleep_ms > 0:
+            await asyncio.sleep(sleep_ms / 1000.0)
+
     async def _emit(self, chunk: StreamChunk) -> None:
         """Send a realtime output chunk to the output queue with the current delivery context."""
         attributes = {ATTR_REQUEST_ID: self.request_id or "unknown", ATTR_REALTIME: "true"}
@@ -583,6 +579,23 @@ class RealtimeConnection:
         body = json.dumps(chunk.model_dump(exclude_none=True, mode="json"))
         message = QueueMessage(body=body, attributes=attributes, group_id=self.session_id, dedup_id=str(uuid.uuid4()))
         await asyncio.to_thread(self._transport.send, QueueName.OUTPUT, message)
+
+    async def _fail(self, message: str) -> None:
+        """Send the edge one terminal error chunk, mark the connection closed and close the runner."""
+        self._log.error(f"Realtime session {self.session_id} failed: {message}")
+        self.mark_closed("native session failed")
+        if self._pacing_task:
+            # Called from the pacing loop itself (a post-hook halted the call), cancelling would drop the chunk below.
+            if self._pacing_task is not asyncio.current_task():
+                self._pacing_task.cancel()
+            self._pacing_task = None
+        try:
+            await self._emit(StreamChunk(error=message, done=True))
+            # Only once the chunk is on the queue, so a failed send leaves the fallback in ``fail_to_connect`` available.
+            self.failure_reported = True
+        finally:
+            # Called from inside the runner's listener, which cannot await its own shutdown.
+            self.close_in_background(asyncio.get_running_loop())
 
 
 class RealtimeConnectionPool:

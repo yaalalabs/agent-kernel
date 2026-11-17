@@ -63,7 +63,7 @@ class PreHook(ABC):
         self, session: "Session", agent: "Agent", request: AgentRequestVoice
     ) -> AgentRequestVoice | list[AgentRequestVoice | AgentRequestText] | None:
         """
-        Hook method called for every caller audio chunk of a realtime call, before it reaches the model. Optional:
+        Realtime calls only: called for every caller audio chunk before it reaches the model. Optional:
         the default passes the chunk on, so a hook that only implements `on_run` is unaffected. Typed text on a
         realtime call goes through `on_run`, like any other request.
 
