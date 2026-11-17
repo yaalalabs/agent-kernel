@@ -241,7 +241,7 @@ class TestCallEnd:
         assert [s["turn"] for s in store.stores] == [1, 2, 3]
 
     @pytest.mark.asyncio
-    async def test_a_slow_store_keeps_only_the_newest_waiting_turn(self, store):
+    async def test_a_slow_store_writes_every_turn_in_order(self, store):
         conn = _connection(store)
         await conn.connect()
         store.gate = threading.Event()
@@ -256,7 +256,7 @@ class TestCallEnd:
         store.gate.set()
         await conn.close()
 
-        assert [s["turn"] for s in store.stores] == [1, 4, 4]  # turn 1 was in flight, 2 and 3 replaced, then the close
+        assert [s["turn"] for s in store.stores] == [1, 2, 3, 4, 4]  # every turn, in order, then the close
 
     @pytest.mark.asyncio
     async def test_a_halted_turn_is_not_stored(self, store):

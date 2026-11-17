@@ -14,6 +14,7 @@ from ..core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, M
 from ..core.hooks import StreamHalt
 from ..core.model import AgentRequest, AgentRequestText, AgentRequestVoice, Principal, StreamChunk
 from ..core.runtime import Runtime
+from ..core.session.serde import BinarySerde
 from ..core.tool import ToolContext
 from ..pipeline.envelope import (
     ATTR_INTEGRATION,
@@ -27,7 +28,6 @@ from ..pipeline.envelope import (
 from ..pipeline.transport.base import QueueTransport
 from .audio import EDGE_SAMPLE_RATE, PCM16Resampler
 from .base import RealtimeRunner as BaseRealtimeRunner
-from .store import RealtimeTurnStore
 
 
 class RealtimeConnection:
@@ -52,8 +52,8 @@ class RealtimeConnection:
        ``agent_changed`` and ``input_transcript`` all ride one queue (``_output_queue``), so a control event
        cannot overtake the audio it belongs to. The pacing loop drains it: every event goes through the
        post-hooks first, and the audio that leaves is emitted at playback rate. When a turn ends (``done``),
-       the session is stored in the background (see :class:`RealtimeTurnStore`), so a call that fails later loses only
-       the turn in progress.
+       the session is saved in the background (see "session store" below), so a call that fails later loses
+       only the turn in progress.
     4. A barge-in (``interrupt``, or ``speech_started`` while paced audio is still queued) drops unheard
        audio and transcript deltas but keeps control events and ``input_transcript``.
     5. An ``error`` event, an event the contract does not list, or a post-hook that halts the call fails the
@@ -64,7 +64,7 @@ class RealtimeConnection:
        ``close()`` runs.
     7. ``close()`` claims the connection (state ``CLOSED``), cancels a connect still in flight, stops pacing,
        then, in this order: stops input (running pre-hooks are cancelled, new input is dropped), disconnects
-       the runner, waits for the turn writer, stores the final session (a failed call is not stored) and ends
+       the runner, stores the final session after any turn write still running (a failed call is not stored) and ends
        the run: the principal is unpublished and the volatile cache cleared (hook state ends with the call).
        A second call returns at once, so shutdown, eviction and failure can all close one connection.
        ``close_done`` is set and ``[REALTIME CALL END]`` is logged when it finishes.
@@ -161,7 +161,11 @@ class RealtimeConnection:
         # The first failing audio hook of a connection is logged at ERROR; later ones at DEBUG, since audio arrives at the chunk rate.
         self._input_failure_logged = False
         # Saves the session after each finished turn and at the end; a failed call stores nothing more.
-        self._store = RealtimeTurnStore(session_id, runtime, session, lambda: self._state is RealtimeConnection._State.CLOSED)
+        # The call failed (a native error, a halt, a failed connect): its session is not stored again, so the last
+        # finished turn is what the next call starts from.
+        self._failed = False
+        # The newest session write. Each write waits for the one before it, so turns land in order and the final one last.
+        self._last_write: asyncio.Task | None = None
         # Input (pre-hook) tasks still running. Close stops them and refuses new ones before it disconnects and stores,
         # so no hook can change the session or send to the model after the call's session was saved.
         self._input_tasks: set[asyncio.Task] = set()
@@ -244,7 +248,7 @@ class RealtimeConnection:
         :param error: What the connect raised (a timeout included).
         """
         self._log.error(f"Realtime session {self.session_id} could not start: {error!r}")
-        self._store.mark_failed()
+        self._failed = True
         try:
             await self._emit(StreamChunk(error=f"Realtime session could not start: {str(error) or type(error).__name__}", done=True))
         except Exception:
@@ -290,11 +294,10 @@ class RealtimeConnection:
             try:
                 # Save the session only after the runner has disconnected, because ADK writes its own
                 # data while disconnecting. Never save a call that failed.
-                if self._store.failed:
+                if self._failed:
                     self._log.debug(f"Realtime session {self.session_id}: session not stored, the call failed")
                 else:
-                    await self._store.wait_for_turns()
-                    await self._store.store_final()
+                    await self._write_session(self._last_write, lambda: self.session)
             finally:
                 # The call's identity and the hook state kept in the volatile cache end with the call, as when a
                 # Runtime run ends, also when the native session fails to close: the session store hands the next
@@ -543,7 +546,7 @@ class RealtimeConnection:
                         await self._emit_event(MessageEnd(message_id=self._turn_message_id or uuid.uuid4().hex))
                         self._turn_message_id = None
                         await self._emit(StreamChunk(done=True))
-                        self._store.save_turn()
+                        self._save_turn()
                     elif event_type == Event.INTERRUPT:
                         await self._emit_event(Interrupt())
                     elif event_type == Event.AGENT_CHANGED:
@@ -623,7 +626,7 @@ class RealtimeConnection:
     async def _fail(self, message: str) -> None:
         """Send the edge one terminal error chunk, mark the connection closed and close the runner."""
         self._log.error(f"Realtime session {self.session_id} failed: {message}")
-        self._store.mark_failed()
+        self._failed = True
         self.mark_closed("native session failed")
         if self._pacing_task:
             # Called from the pacing loop itself (a post-hook halted the call), cancelling would drop the chunk below.
@@ -637,3 +640,44 @@ class RealtimeConnection:
         finally:
             # Called from inside the runner's listener, which cannot await its own shutdown.
             self.close_in_background(asyncio.get_running_loop())
+
+    # -- session store: saved after each turn and at the end -------------------------------------------------
+
+    def _save_turn(self) -> None:
+        """Save the session after a finished turn, so a call that fails later loses only the turn in progress.
+
+        The session is copied here, on the pool loop where every change to it happens (ADK or a hook cannot change it
+        mid-copy), then written on a worker thread. Nothing is saved for a failed or closing call.
+        """
+        if self._failed or self._state is RealtimeConnection._State.CLOSED:
+            return
+        try:
+            snapshot = {key: BinarySerde.dumps(value) for key, value in self.session.get_all(volatile=False)}
+        except Exception:
+            self._log.exception(f"Realtime session {self.session_id}: copying the session at the end of a turn failed")
+            return
+        self._last_write = asyncio.create_task(self._write_session(self._last_write, lambda: self._rebuild(snapshot)))
+
+    def _rebuild(self, snapshot: dict[str, bytes]) -> Session:
+        """Build the session a turn's copy stands for. Runs on the worker thread: nothing else holds this object."""
+        session = Session(self.session.id)
+        for key, payload in snapshot.items():
+            session.set(key, BinarySerde.loads(payload))
+        return session
+
+    async def _write_session(self, previous: asyncio.Task | None, session_of) -> None:
+        """Store a session on a worker thread, after ``previous`` (the write before it) has finished.
+
+        Every call shares the pool loop and a store can take several network round trips, so the write never runs on
+        it. A failure is logged, never raised, so the call still ends.
+
+        :param previous: The write that must land first, or None.
+        :param session_of: Returns the session to store; called on the worker thread.
+        """
+        if previous is not None:
+            await asyncio.gather(previous, return_exceptions=True)
+        try:
+            await asyncio.to_thread(lambda: self.runtime.sessions().store(session_of()))
+            self._log.debug(f"Realtime session {self.session_id}: session stored")
+        except Exception:
+            self._log.exception(f"Realtime session {self.session_id}: storing the session failed")
