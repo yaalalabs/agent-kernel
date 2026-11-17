@@ -19,7 +19,8 @@ from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 from agentkernel.realtime.base import RealtimeRunner
-from agentkernel.realtime.pool import RealtimeConnection, RealtimeConnectionPool
+from agentkernel.realtime.connection import RealtimeConnection
+from agentkernel.realtime.pool import RealtimeConnectionPool
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +28,7 @@ def _reset_pipeline_state(monkeypatch):
     async def send_inline(send, *args):
         return send(*args)
 
-    monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
+    monkeypatch.setattr("agentkernel.realtime.connection.asyncio.to_thread", send_inline)
     InMemoryTransport.reset()
     ThreadRunner.shutdown_event.clear()
     yield

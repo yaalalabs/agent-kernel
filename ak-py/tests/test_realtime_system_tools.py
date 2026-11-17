@@ -43,7 +43,8 @@ from agentkernel.framework.openai.openai import OpenAIModule
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
-from agentkernel.realtime.pool import RealtimeConnection, RealtimeConnectionPool
+from agentkernel.realtime.connection import RealtimeConnection
+from agentkernel.realtime.pool import RealtimeConnectionPool
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.provider.base import ScheduleProvider
 from agentkernel.schedule.store.in_memory import InMemoryScheduleStore

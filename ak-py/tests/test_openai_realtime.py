@@ -35,6 +35,7 @@ from agentkernel.core.model import AgentRequestText, ExecutionMode
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIModule, OpenAIRealtimeRunner, OpenAIRunner
+from agentkernel.realtime.testing import RealtimeRunnerContract
 
 # --- a scripted model ---------------------------------------------------------------------------
 
@@ -786,12 +787,12 @@ class TestThroughThePool:
         from agentkernel.pipeline.envelope import QueueName
         from agentkernel.pipeline.transport.base import QueueTransportFactory
         from agentkernel.pipeline.transport.in_memory import InMemoryTransport
-        from agentkernel.realtime.pool import RealtimeConnection
+        from agentkernel.realtime.connection import RealtimeConnection
 
         async def send_inline(send, *args):
             return send(*args)
 
-        monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
+        monkeypatch.setattr("agentkernel.realtime.connection.asyncio.to_thread", send_inline)
         InMemoryTransport.reset()
         coordinator, billing = _team(billing_tools=[lookup_invoice])
         _no_system_tools(monkeypatch)
@@ -845,12 +846,12 @@ class TestThroughThePool:
         from agentkernel.pipeline.envelope import QueueName
         from agentkernel.pipeline.transport.base import QueueTransportFactory
         from agentkernel.pipeline.transport.in_memory import InMemoryTransport
-        from agentkernel.realtime.pool import RealtimeConnection
+        from agentkernel.realtime.connection import RealtimeConnection
 
         async def send_inline(send, *args):
             return send(*args)
 
-        monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
+        monkeypatch.setattr("agentkernel.realtime.connection.asyncio.to_thread", send_inline)
         InMemoryTransport.reset()
         CONTEXT_SEEN.clear()
         _no_system_tools(monkeypatch)
@@ -891,3 +892,49 @@ class TestThroughThePool:
         assert CONTEXT_SEEN["tool_context"].agent is agent
         assert CONTEXT_SEEN["session"] is session
         assert CONTEXT_SEEN["agent"] is agent
+
+
+# --- the shared runner contract (agentkernel.realtime.testing) -------------------------------------
+
+
+class TestOpenAIRealtimeRunnerContract(RealtimeRunnerContract):
+    """The OpenAI adapter over the scripted model above."""
+
+    @pytest.fixture(autouse=True)
+    def _native_call(self, runtime, monkeypatch):
+        _no_system_tools(monkeypatch)
+        self.model = ScriptedModel(response("r1", say="Hello"))
+
+    def make_runner(self):
+        return OpenAIRealtimeRunner()
+
+    def _agent(self, **options):
+        coordinator, _ = _team()
+        agent = OpenAIModule([coordinator]).get_agent("coordinator")
+        agent.run_options.update(model=self.model, **options)
+        return agent
+
+    async def start_call(self, runner, callback):
+        await runner.connect(Session("s"), self._agent(), callback)
+
+    async def speak(self, runner):
+        await runner.send_text("hi")
+
+    async def fail_native_session(self, runner):
+        from agents.realtime.model_events import RealtimeModelExceptionEvent
+
+        await self.model.emit(RealtimeModelExceptionEvent(exception=RuntimeError("socket dropped"), context="listener"))
+
+    async def start_invalid_call(self, runner, callback):
+        await runner.connect(Session("s"), self._agent(context=object()), callback)
+
+    async def start_failing_call(self, runner, callback):
+        class Refusing(ScriptedModel):
+            async def connect(self, options):
+                raise ConnectionError("no route to the model")
+
+        self.model = Refusing()
+        await runner.connect(Session("s"), self._agent(), callback)
+
+    def nothing_opened(self, runner):
+        return not self.model.connected and self.model.listeners == [] and runner._listen_task is None

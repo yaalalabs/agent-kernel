@@ -16,7 +16,9 @@ Threads:
 - **Response handler threads** deliver each output chunk to the edge, which runs on a thread of its own.
 
 Files: ``base.py`` (``RealtimeRunner`` contract and ``RealtimeRunner.Event``), ``audio.py`` (PCM16 helpers),
-``pool.py`` (``RealtimeConnectionPool``, ``RealtimeConnection``).
+``pool.py`` (``RealtimeConnectionPool``), ``connection.py`` (``RealtimeConnection``: one call),
+``store.py`` (``RealtimeTurnStore``: the session saved after each turn and at the end), ``testing.py``
+(``RealtimeRunnerContract``, for tests of a runner).
 
 Specs: ``docs/specs/405-livekit-realtime-voice/``, ``809-realtime-multi-agent-handoffs/``,
 ``810-native-realtime-agents/``; identity on a call is ``603-identity-rbac-registry/`` section 8.4.
@@ -31,8 +33,9 @@ _LAZY_EXPORTS = {
     "RealtimeRunner": ".base",
     "EDGE_SAMPLE_RATE": ".audio",
     "PCM16Resampler": ".audio",
-    "RealtimeConnection": ".pool",
+    "RealtimeConnection": ".connection",
     "RealtimeConnectionPool": ".pool",
+    "RealtimeTurnStore": ".store",
 }
 
 __all__ = sorted(_LAZY_EXPORTS)
@@ -40,7 +43,9 @@ __all__ = sorted(_LAZY_EXPORTS)
 if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves laziness at runtime
     from .audio import EDGE_SAMPLE_RATE, PCM16Resampler
     from .base import RealtimeRunner
-    from .pool import RealtimeConnection, RealtimeConnectionPool
+    from .connection import RealtimeConnection
+    from .pool import RealtimeConnectionPool
+    from .store import RealtimeTurnStore
 
 
 def __getattr__(name: str) -> Any:

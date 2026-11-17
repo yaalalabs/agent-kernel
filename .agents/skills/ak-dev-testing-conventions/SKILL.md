@@ -33,12 +33,14 @@ addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"
 
 Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`.
 
-Five subsystems ship a **reusable contract suite** a new backend must be run against, rather than
+Six subsystems ship a **reusable contract suite** a new backend must be run against, rather than
 per-backend assertions written from scratch: `QueueTransportContract` (`pipeline/testing.py`),
 `SandboxProviderContract` (`sandbox/testing.py`), `KnowledgeBaseContract` /
 `DocumentStoreContract` (`knowledgebase/testing.py`), `IdentityProviderContract` / `RoleMapperContract`
 (`identity/provider/testing.py`, #603), and `TraceFetchContract` (`trace/testing.py`,
-for tracers that implement `BaseTrace.fetch_spans`). All five ship next to the ABC they constrain,
+for tracers that implement `BaseTrace.fetch_spans`), and `RealtimeRunnerContract` (`realtime/testing.py`: the
+`RealtimeRunner.connect` / `disconnect` rules over a fake native session; the OpenAI and ADK realtime test files
+subclass it). All six ship next to the ABC they constrain,
 so a bring-your-own backend author can import and subclass them out of tree; each module imports
 `pytest` and is therefore kept out of its package's exports. In all five cases the contract classes
 are deliberately not named `Test*`, so pytest collects them only through the subclasses that supply a

@@ -26,7 +26,7 @@ from agentkernel.pipeline.envelope import QueueName
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 from agentkernel.realtime import RealtimeRunner
-from agentkernel.realtime.pool import RealtimeConnection
+from agentkernel.realtime.connection import RealtimeConnection
 
 HUMAN = Principal(subject="human", provider="realtime:livekit", namespace="lk-key")
 
