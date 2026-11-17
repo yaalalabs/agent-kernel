@@ -15,7 +15,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.10.0"
+  version: "0.10.1"
   category: user
 ---
 
@@ -65,7 +65,7 @@ Which capability would you like to add?
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.10.0",
+    "agentkernel[openai,api]>=0.10.1",
     # OpenAI guardrails use the openai extra — already included if using OpenAI framework
 ]
 ```
@@ -106,7 +106,7 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_input.json
   output:
     enabled: true
@@ -119,7 +119,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.10.0",
+    "agentkernel[openai,api,aws]>=0.10.1",
 ]
 ```
 
@@ -145,7 +145,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,walledai]>=0.10.0",
+    "agentkernel[openai,api,walledai]>=0.10.1",
 ]
 ```
 
@@ -182,7 +182,7 @@ export WALLED_API_KEY="your-walledai-api-key"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,langfuse]>=0.10.0",
+    "agentkernel[openai,api,langfuse]>=0.10.1",
 ]
 ```
 
@@ -207,7 +207,7 @@ export LANGFUSE_HOST="https://cloud.langfuse.com"   # or self-hosted URL
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,openllmetry]>=0.10.0",
+    "agentkernel[openai,api,openllmetry]>=0.10.1",
 ]
 ```
 
@@ -225,7 +225,7 @@ trace:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,logfire]>=0.10.0",
+    "agentkernel[openai,api,logfire]>=0.10.1",
 ]
 ```
 
@@ -248,7 +248,7 @@ export LOGFIRE_TOKEN="your-write-token"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,cloudwatch]>=0.10.0",
+    "agentkernel[openai,api,cloudwatch]>=0.10.1",
 ]
 ```
 
@@ -309,7 +309,7 @@ for trace in Trace.get().fetch_traces(session_id="session-123"):
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.10.0",
+    "agentkernel[openai,api,redis]>=0.10.1",
 ]
 ```
 
@@ -329,7 +329,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.10.0",
+    "agentkernel[openai,api,aws]>=0.10.1",
 ]
 ```
 
@@ -351,7 +351,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,azure]>=0.10.0",
+    "agentkernel[openai,api,azure]>=0.10.1",
 ]
 ```
 
@@ -373,7 +373,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gcp]>=0.10.0",
+    "agentkernel[openai,api,gcp]>=0.10.1",
 ]
 ```
 
@@ -407,13 +407,13 @@ Add durable knowledge tools that your agents can query and update across session
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,chromadb]>=0.10.0",  # for Chroma
-  # or "agentkernel[openai,api,neo4j]>=0.10.0"
-  # or "agentkernel[openai,api,trino]>=0.10.0"
+  "agentkernel[openai,api,chromadb]>=0.10.1",  # for Chroma
+  # or "agentkernel[openai,api,neo4j]>=0.10.1"
+  # or "agentkernel[openai,api,trino]>=0.10.1"
   # OKF needs NO extra - pyyaml is a core dependency:
-  #    "agentkernel[openai,api]>=0.10.0"
+  #    "agentkernel[openai,api]>=0.10.1"
   # ...unless the bundle is served from S3, which uses the aws extra:
-  #    "agentkernel[openai,api,aws]>=0.10.0"
+  #    "agentkernel[openai,api,aws]>=0.10.1"
 ]
 ```
 
@@ -538,7 +538,7 @@ Expose your agents as MCP (Model Context Protocol) tools so other AI systems can
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,mcp]>=0.10.0",
+    "agentkernel[openai,api,mcp]>=0.10.1",
 ]
 ```
 
@@ -559,8 +559,8 @@ mcp:
    is enqueued, the agent runner executes it, and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. With `expose_agents: true`, `RESTAPI.run(handlers=[...])`,
-     `RESTAPI.run()` on SQS/Kafka/NATS, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
-   - Split deployment (SQS/Kafka/NATS): import the same agent modules in the IO process as in the
+     `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
+   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
      agent runner (tools are built from the IO process's registry), configure a shared
      `execution.response_store` (redis, valkey or dynamodb) in every execution mode, and set
      `mcp.stateless_http: true` when more than one IO replica serves `/mcp`.
@@ -583,7 +583,7 @@ Enable Agent-to-Agent communication via Google's A2A protocol.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,a2a]>=0.10.0",
+    "agentkernel[openai,api,a2a]>=0.10.1",
 ]
 ```
 
@@ -606,8 +606,8 @@ a2a:
    and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on
-     SQS/Kafka/NATS, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
-   - Split deployment (SQS/Kafka/NATS): import the same agent modules in the IO process as in the
+     SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
+   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
      agent runner (cards are built from the IO process's registry), and configure a shared
      `execution.response_store` (redis, valkey or dynamodb) in every execution mode.
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
@@ -626,7 +626,7 @@ text, tool calls, reasoning, and an optional shared JSON state, all as one typed
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,agui]>=0.10.0",
+    "agentkernel[openai,api,agui]>=0.10.1",
 ]
 ```
 
@@ -909,7 +909,7 @@ Enable image and file processing in your agents.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,multimodal]>=0.10.0",
+    "agentkernel[openai,api,multimodal]>=0.10.1",
 ]
 ```
 
@@ -918,8 +918,8 @@ dependencies = [
 multimodal:
   enabled: true
   max_attachments: 20
-  description_model: "gpt-4o"          # Model for generating brief descriptions
-  analysis_model: "gpt-4o"             # Model for detailed analysis via tool
+  description_model: "gpt-6-luna"      # Model for generating brief descriptions
+  analysis_model: "gpt-6-luna"         # Model for detailed analysis via tool
 ```
 
 3. No further code changes needed. When enabled:
@@ -934,7 +934,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,multimodal]>=0.10.0",
+    "agentkernel[openai,api,redis,multimodal]>=0.10.1",
 ]
 ```
 
@@ -944,8 +944,8 @@ multimodal:
   enabled: true
   storage_type: redis
   max_attachments: 20
-  description_model: "gpt-4o"
-  analysis_model: "gpt-4o"
+  description_model: "gpt-6-luna"
+  analysis_model: "gpt-6-luna"
   redis:
     url: "redis://localhost:6379"
     prefix: "ak:attachments:"
@@ -957,7 +957,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,multimodal]>=0.10.0",
+    "agentkernel[openai,api,aws,multimodal]>=0.10.1",
 ]
 ```
 
@@ -967,8 +967,8 @@ multimodal:
   enabled: true
   storage_type: dynamodb
   max_attachments: 20
-  description_model: "gpt-4o"
-  analysis_model: "gpt-4o"
+  description_model: "gpt-6-luna"
+  analysis_model: "gpt-6-luna"
   dynamodb:
     table_name: "ak-attachments"
     ttl: 604800
@@ -1041,7 +1041,7 @@ Enable persistent, named conversation threads keyed by `session_id`.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.10.0",
+    "agentkernel[openai,api]>=0.10.1",
 ]
 ```
 
@@ -1074,14 +1074,14 @@ thread:
 **For LLM-based thread naming**, add the `thread` extra:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,thread]>=0.10.0",
+    "agentkernel[openai,api,thread]>=0.10.1",
 ]
 ```
 ```yaml
 thread:
   type: in_memory
   naming:
-    model: "gpt-4o-mini"   # LiteLLM model used to name threads
+    model: "gpt-6-luna"    # LiteLLM model used to name threads
     max_length: 80
 ```
 
@@ -1089,7 +1089,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,thread]>=0.10.0",
+    "agentkernel[openai,api,redis,thread]>=0.10.1",
 ]
 ```
 ```yaml
@@ -1105,7 +1105,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,valkey,thread]>=0.10.0",
+    "agentkernel[openai,api,valkey,thread]>=0.10.1",
 ]
 ```
 ```yaml
@@ -1121,7 +1121,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,thread]>=0.10.0",
+    "agentkernel[openai,api,aws,thread]>=0.10.1",
 ]
 ```
 ```yaml
@@ -1218,7 +1218,7 @@ means deploying in queue mode.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,cron]>=0.10.0",
+    "agentkernel[openai,api,cron]>=0.10.1",
 ]
 ```
 The `cron` extra brings `croniter`, needed for cron parsing.
@@ -1301,7 +1301,7 @@ curl -H "Authorization: Bearer $ALICE_TOKEN" -X DELETE http://localhost:8000/api
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,cron]>=0.10.0",
+    "agentkernel[openai,api,aws,cron]>=0.10.1",
 ]
 ```
 ```yaml
@@ -1323,7 +1323,7 @@ them. See the `ak-cloud-deploy` skill.
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,cron]>=0.10.0",   # or valkey
+    "agentkernel[openai,api,redis,cron]>=0.10.1",   # or valkey
 ]
 ```
 ```yaml
@@ -1340,7 +1340,7 @@ schedule:
 
 | Combination | Rejected because |
 |---|---|
-| `local` provider + a broker transport (`sqs`/`kafka`/`nats`) | The in-process timers are unreachable from the process serving the management routes — a cancellation would report success while the timer kept firing |
+| `local` provider + a broker transport (`sqs`/`kafka`/`nats`/`pubsub`) | The in-process timers are unreachable from the process serving the management routes — a cancellation would report success while the timer kept firing |
 | `local` provider + a shared store | Same split: the timers and the records must live together |
 | `in_memory` store + a broker transport | The records would be split across the runner and IO-handler processes |
 | `eventbridge` provider + a non-`sqs` transport | Delivery is baked into the schedule registration as an SQS target |

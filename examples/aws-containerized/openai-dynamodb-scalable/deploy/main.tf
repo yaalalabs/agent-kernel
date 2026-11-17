@@ -4,7 +4,7 @@
 module "containerized_agents" {
   # When using from registry:
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.0"
+  version = "0.10.1"
 
   providers            = { aws = aws, docker = docker }
   prefix               = var.prefix

@@ -283,7 +283,10 @@ class StatefulEdgeAdapter(ABC):
 
     @abstractmethod
     async def start(self) -> None:
-        """Connect and run the edge's loop until the process shuts down.
+        """Connect and run the edge's loop until the edge ends.
+
+        An edge ends when :meth:`stop` is called: by the platform's end event, by the edge itself (for a per-call edge, when its
+        last caller leaves), or at process shutdown.
 
         The edge runner calls it once per instance: an edge that fails to start is not retried, and the platform's next
         lifecycle webhook builds a new one.
@@ -291,7 +294,7 @@ class StatefulEdgeAdapter(ABC):
 
     @abstractmethod
     async def stop(self) -> None:
-        """Disconnect and release resources; must make start() return. Called by the edge runner at shutdown."""
+        """Disconnect and release resources; must make start() return. Called by the edge runner when the edge is to end: on the platform's end event or at process shutdown."""
 
     @property
     def ending(self) -> bool:

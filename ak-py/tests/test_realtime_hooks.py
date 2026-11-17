@@ -9,18 +9,18 @@ import time
 import pytest
 
 from agentkernel import Agent, Runner, Session
-from agentkernel.core.config import _GuardrailConfig, _GuardrailParamConfig
+from agentkernel.core.config import _ExecutionConfig, _GuardrailConfig, _GuardrailParamConfig, _RealtimeConfig
 from agentkernel.core.event import AgentChanged, AudioDelta, Interrupt, MessageEnd, TextDelta
 from agentkernel.core.hooks import PostHook, PreHook, StreamHalt
 from agentkernel.core.model import AgentReplyText, AgentRequestText, AgentRequestVoice, StreamChunk
-from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.pipeline.envelope import QueueName
-from agentkernel.pipeline.realtime_pool import RealtimeConnection, RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+from agentkernel.realtime.base import RealtimeRunner
+from agentkernel.realtime.pool import RealtimeConnection, RealtimeConnectionPool
 
 PCM_2S = base64.b64encode(b"\x00\x00" * 24000 * 2).decode()  # two seconds of edge-rate (24 kHz) audio
 
@@ -30,7 +30,7 @@ def _isolated(monkeypatch):
     async def send_inline(send, *args):
         return send(*args)
 
-    monkeypatch.setattr("agentkernel.pipeline.realtime_pool.asyncio.to_thread", send_inline)
+    monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
     # System hooks are cached per process; a test that wants some installs them itself.
     monkeypatch.setattr(Runtime, "_system_pre_hooks", [])
     monkeypatch.setattr(Runtime, "_system_post_hooks", [])
@@ -158,7 +158,15 @@ class _Post(PostHook):
 
 
 def _connection(agent=None, loop=None):
-    return RealtimeConnection("s1", agent or _Agent(), Runtime(InMemorySessionStore()), Session("s1"), loop or asyncio.get_running_loop())
+    return RealtimeConnection(
+        "s1",
+        agent or _Agent(),
+        Runtime(InMemorySessionStore()),
+        Session("s1"),
+        loop or asyncio.get_running_loop(),
+        transport=QueueTransportFactory.create(),
+        playback_lead_ms=_RealtimeConfig().playback_lead_ms,
+    )
 
 
 def _transport():
@@ -470,14 +478,14 @@ class TestInputHooks:
     @pytest.mark.asyncio
     async def test_with_no_hooks_audio_and_text_reach_the_model_as_before(self):
         conn = _connection()
-        conn.adapter.input_sample_rate = 16000
+        conn.runner.input_sample_rate = 16000
         conn.append_audio(AgentRequestVoice(audio_data=base64.b64encode(b"\x00\x00" * 2400).decode(), name="clip"))
         conn.send_text(AgentRequestText(prompt="hi"))
         await _settle()
 
-        [converted] = conn.adapter.audio
+        [converted] = conn.runner.audio
         assert len(base64.b64decode(converted)) == 3200  # 100 ms at 16 kHz
-        assert conn.adapter.texts == ["hi"]
+        assert conn.runner.texts == ["hi"]
 
     @pytest.mark.asyncio
     async def test_a_pre_hook_sees_the_audio_chunk_with_its_name_and_context(self):
@@ -491,7 +499,7 @@ class TestInputHooks:
         [seen] = pre.inputs
         assert (seen.name, seen.mime_type) == ("clip", "audio/pcm")
         assert all(session is conn.session and current is agent for session, current in pre.contexts)
-        assert len(conn.adapter.audio) == 1
+        assert len(conn.runner.audio) == 1
 
     @pytest.mark.asyncio
     async def test_none_drops_the_chunk_before_the_model(self):
@@ -501,7 +509,7 @@ class TestInputHooks:
         conn.append_audio(AgentRequestVoice(audio_data="QUFB", name="clip"))
         await _settle()
 
-        assert conn.adapter.audio == []
+        assert conn.runner.audio == []
 
     @pytest.mark.asyncio
     async def test_a_list_of_voice_sends_each_chunk_at_the_models_rate(self):
@@ -509,11 +517,11 @@ class TestInputHooks:
         chunk = AgentRequestVoice(audio_data=base64.b64encode(b"\x00\x00" * 2400).decode(), name="clip")
         agent.pre_hooks.append(_Pre(on_input=lambda r: [chunk, chunk]))
         conn = _connection(agent)
-        conn.adapter.input_sample_rate = 16000
+        conn.runner.input_sample_rate = 16000
         conn.append_audio(AgentRequestVoice(audio_data="QUFB", name="clip"))
         await _settle()
 
-        assert len(conn.adapter.audio) == 2 and all(len(base64.b64decode(a)) == 3200 for a in conn.adapter.audio)
+        assert len(conn.runner.audio) == 2 and all(len(base64.b64decode(a)) == 3200 for a in conn.runner.audio)
 
     @pytest.mark.asyncio
     async def test_text_a_hook_made_from_audio_goes_through_the_text_hooks_and_is_sent_once(self):
@@ -525,8 +533,8 @@ class TestInputHooks:
         conn.append_audio(AgentRequestVoice(audio_data="QUFB", name="clip"))
         await _settle()
 
-        assert conn.adapter.texts == ["HELLO"]
-        assert conn.adapter.audio == []
+        assert conn.runner.texts == ["HELLO"]
+        assert conn.runner.audio == []
         assert shout.inputs == []  # the list ended the audio chain
 
     @pytest.mark.asyncio
@@ -539,7 +547,7 @@ class TestInputHooks:
         conn.send_text(AgentRequestText(prompt="hi"))
         await _settle()
 
-        assert order == ["agent", "system"] and conn.adapter.texts == ["hi"]
+        assert order == ["agent", "system"] and conn.runner.texts == ["hi"]
 
     @pytest.mark.asyncio
     async def test_a_changed_turn_is_what_the_model_receives(self):
@@ -549,7 +557,7 @@ class TestInputHooks:
         conn.send_text(AgentRequestText(prompt="hi"))
         await _settle()
 
-        assert conn.adapter.texts == ["hi (context added)"]
+        assert conn.runner.texts == ["hi (context added)"]
 
     @pytest.mark.asyncio
     async def test_several_text_requests_are_one_send_and_other_types_are_dropped(self):
@@ -563,7 +571,7 @@ class TestInputHooks:
         conn.send_text(AgentRequestText(prompt="x"))
         await _settle()
 
-        assert conn.adapter.texts == ["a\nb"]
+        assert conn.runner.texts == ["a\nb"]
 
     @pytest.mark.asyncio
     async def test_nothing_is_sent_when_no_text_is_left(self):
@@ -573,7 +581,7 @@ class TestInputHooks:
         conn.send_text(AgentRequestText(prompt="x"))
         await _settle()
 
-        assert conn.adapter.texts == []
+        assert conn.runner.texts == []
 
     @pytest.mark.asyncio
     async def test_a_halting_pre_hook_sends_an_error_chunk_and_nothing_to_the_model(self):
@@ -585,7 +593,7 @@ class TestInputHooks:
 
         [chunk] = _chunks(_transport())
         assert (chunk.error, chunk.done) == ("I can't help with that", True)
-        assert conn.adapter.texts == [] and not conn.closed
+        assert conn.runner.texts == [] and not conn.closed
 
     @pytest.mark.asyncio
     async def test_a_raising_pre_hook_sends_a_generic_error_and_the_call_continues(self):
@@ -597,14 +605,14 @@ class TestInputHooks:
 
         [chunk] = _chunks(_transport())
         assert chunk.error == "Your message could not be processed." and chunk.done
-        assert conn.adapter.texts == [] and not conn.closed
+        assert conn.runner.texts == [] and not conn.closed
 
     @pytest.mark.asyncio
     async def test_a_raising_audio_hook_drops_the_chunk_and_logs_the_first_failure_only_at_error(self, caplog):
         agent = _Agent()
         agent.pre_hooks.append(_Pre(on_input=lambda r: RuntimeError("boom")))
         conn = _connection(agent)
-        with caplog.at_level(logging.DEBUG, logger="ak.pipeline.realtime_pool"):
+        with caplog.at_level(logging.DEBUG, logger="ak.realtime.connection"):
             for _ in range(3):
                 conn.append_audio(AgentRequestVoice(audio_data="QUFB", name="clip"))
             await _settle()
@@ -612,7 +620,7 @@ class TestInputHooks:
         errors = [r for r in caplog.records if r.levelno == logging.ERROR and "input hook failed" in r.getMessage()]
         debugs = [r for r in caplog.records if r.levelno == logging.DEBUG and "input hook failed" in r.getMessage()]
         assert len(errors) == 1 and len(debugs) == 2
-        assert conn.adapter.audio == [] and _chunks(_transport()) == []  # no error chunk per audio chunk
+        assert conn.runner.audio == [] and _chunks(_transport()) == []  # no error chunk per audio chunk
 
     @pytest.mark.asyncio
     async def test_a_hook_returning_the_wrong_type_drops_the_chunk(self):
@@ -622,7 +630,7 @@ class TestInputHooks:
         conn.append_audio(AgentRequestVoice(audio_data="QUFB", name="clip"))
         await _settle()
 
-        assert conn.adapter.audio == [] and conn.adapter.texts == []
+        assert conn.runner.audio == [] and conn.runner.texts == []
 
 
 class TestCallEnd:
@@ -653,12 +661,13 @@ class TestStartupWarning:
     @staticmethod
     def _pool_warnings(caplog):
         """Warnings the pool logged. Not every record: other loggers (Runtime.register logs at DEBUG) depend on test order."""
-        return [r for r in caplog.records if r.name == "ak.pipeline.realtime_pool" and r.levelno >= logging.WARNING]
+        return [r for r in caplog.records if r.name == "ak.realtime.pool" and r.levelno >= logging.WARNING]
 
     @staticmethod
     def _config(monkeypatch, input_enabled):
         class _Cfg:
             guardrail = _GuardrailConfig(input=_GuardrailParamConfig(enabled=input_enabled))
+            execution = _ExecutionConfig()  # the pool reads playback_lead_ms from it
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
@@ -672,8 +681,8 @@ class TestStartupWarning:
     def test_warns_once_for_each_realtime_agent_when_the_input_guardrail_is_on(self, monkeypatch, caplog):
         self._config(monkeypatch, True)
         self._runtime(monkeypatch)
-        with caplog.at_level(logging.WARNING, logger="ak.pipeline.realtime_pool"):
-            RealtimeConnectionPool()._warn_unchecked_audio()
+        with caplog.at_level(logging.WARNING, logger="ak.realtime.pool"):
+            RealtimeConnectionPool(playback_lead_ms=_RealtimeConfig().playback_lead_ms)._warn_unchecked_audio()
 
         [warning] = self._pool_warnings(caplog)
         assert "'voice'" in warning.getMessage() and "typed text only" in warning.getMessage()
@@ -681,15 +690,15 @@ class TestStartupWarning:
     def test_stays_silent_when_the_input_guardrail_is_off(self, monkeypatch, caplog):
         self._config(monkeypatch, False)
         self._runtime(monkeypatch)
-        with caplog.at_level(logging.WARNING, logger="ak.pipeline.realtime_pool"):
-            RealtimeConnectionPool()._warn_unchecked_audio()
+        with caplog.at_level(logging.WARNING, logger="ak.realtime.pool"):
+            RealtimeConnectionPool(playback_lead_ms=_RealtimeConfig().playback_lead_ms)._warn_unchecked_audio()
 
         assert self._pool_warnings(caplog) == []
 
     def test_initialize_warns_once_per_realtime_agent(self, monkeypatch, caplog):
         self._config(monkeypatch, True)
         self._runtime(monkeypatch)
-        with caplog.at_level(logging.WARNING, logger="ak.pipeline.realtime_pool"):
+        with caplog.at_level(logging.WARNING, logger="ak.realtime.pool"):
             RealtimeConnectionPool.initialize()
             RealtimeConnectionPool.initialize()  # the second call returns the pool and must not warn again
 
