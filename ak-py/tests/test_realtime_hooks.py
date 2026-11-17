@@ -337,6 +337,85 @@ class TestOutputHooks:
         assert _kinds(collected).count("audio_delta") == 3 and any(c.done for c in collected)
         assert time.monotonic() - started > 1.2  # 1.5 s of audio less the playback lead
 
+    @staticmethod
+    def _hold_audio_hook():
+        class HoldAudio(PostHook):
+            async def on_run(self, session, requests, agent, agent_reply):
+                return agent_reply
+
+            async def on_stream_event(self, session, requests, agent, event):
+                cache = session.get_volatile_cache()
+                if isinstance(event, AudioDelta):
+                    cache.set("held", [*(cache.get("held") or []), event])
+                    return None
+                if isinstance(event, MessageEnd):
+                    held = cache.get("held") or []
+                    cache.set("held", [])
+                    return [*held, event]
+                return event
+
+            def name(self):
+                return "hold-audio"
+
+        return HoldAudio()
+
+    async def _release_then(self, kind):
+        """Release 2 s of held audio at the turn end, send `kind` once the first piece has left, and collect the output."""
+        half_second = base64.b64encode(b"\x00\x00" * 12000).decode()
+        agent = _Agent()
+        agent.post_hooks.append(self._hold_audio_hook())
+        conn = _connection(agent)
+        await conn.connect()
+        for _ in range(4):
+            await conn.handle_framework_event("audio_delta", {"delta": half_second, "message_id": "m1"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        collected = []
+        started = time.monotonic()
+        while "audio_delta" not in _kinds(collected) and time.monotonic() - started < 2.0:
+            await asyncio.sleep(0.02)
+            collected += _chunks(_transport())
+        await conn.handle_framework_event(kind, {})
+        while not any(c.done for c in collected) and time.monotonic() - started < 4.0:
+            await asyncio.sleep(0.05)
+            collected += _chunks(_transport())
+        conn._pacing_task.cancel()
+        return _kinds(collected)
+
+    @pytest.mark.asyncio
+    async def test_an_interrupt_drops_the_released_audio_not_yet_emitted(self):
+        kinds = await self._release_then("interrupt")
+
+        assert kinds.count("audio_delta") < 4, "audio released before the interrupt kept playing over it"
+        assert "interrupt" in kinds
+
+    @pytest.mark.asyncio
+    async def test_the_caller_speaking_while_released_audio_plays_is_a_barge_in(self):
+        kinds = await self._release_then("speech_started")
+
+        assert "interrupt" in kinds and kinds.count("audio_delta") < 4
+
+    @pytest.mark.asyncio
+    async def test_audio_a_hook_changes_in_place_is_paced_by_its_new_length(self):
+        def lengthen(session, event):
+            if isinstance(event, AudioDelta):
+                event.content = PCM_2S
+            return event
+
+        agent = _Agent()
+        agent.post_hooks.append(_Post(on_event=lengthen))
+        conn = _connection(agent)
+        await conn.connect()
+        started = time.monotonic()
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB", "message_id": "m1"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        collected = []
+        while not any(c.done for c in collected) and time.monotonic() - started < 4.0:
+            await asyncio.sleep(0.05)
+            collected += _chunks(_transport())
+        conn._pacing_task.cancel()
+
+        assert time.monotonic() - started > 1.5  # paced by the 2 s the hook wrote, not the 3 bytes the model sent
+
     @pytest.mark.asyncio
     async def test_the_turn_end_carries_the_last_output_events_message_id(self):
         agent = _Agent()
