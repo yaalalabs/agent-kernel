@@ -55,9 +55,9 @@ Runs only when the transport is not `in_memory` and the body has `files` or `ima
 
 #### `_offload_attachments(body)`
 
-Runs only when the transport is not `in_memory`, `multimodal.enabled` is true, `body.files or body.images` is set, and `body.schedule is None`. With multimodal off, the check has already refused any file bytes, so only links are left, and they travel as they are.
+Runs only when the transport is not `in_memory`, `multimodal.enabled` is true, and `body.files or body.images` is set. With multimodal off, the check has already refused any file bytes, so only links are left, and they travel as they are.
 
-- A `schedule` block is skipped because `ScheduleManager.create_from_request` keeps only the prompt (`schedule/manager.py:95-111`). Saving files it will never read would only leave clutter behind.
+- With a `schedule` block, `files` and `images` are cleared and nothing is saved, because `ScheduleManager.create_from_request` keeps only the prompt (`schedule/manager.py:95-111`). Clearing them keeps the dropped bytes out of the broker message.
 
 Steps:
 
@@ -87,7 +87,7 @@ async def run_chat(self, body, request):
 #### `_warn_if_store_is_unshared()`
 
 - In `__init__`, when `multimodal.enabled`, the transport is not `in_memory`, and `store_is_shared()` is false: log one `warning` with the decision 6 message.
-- An `AKConfigError` from `store_is_shared()` is caught and logged as a warning too. Startup must not start failing for a config that serves text today.
+- An `AKConfigError` or `ImportError` from `store_is_shared()` is caught and logged as a warning too (`require_extra` raises `ImportError` when the driver extra is missing). Startup must not start failing for a config that serves text today.
 
 ### `ThreadRequestHandler` change (`integration/thread/thread_chat.py`)
 
@@ -164,8 +164,8 @@ All intentional. Each applies only to broker transports unless it says otherwise
 | Missing `redis`/`aws` extra | `require_extra` in `_build_driver` | The existing install-the-extra error |
 
 - A file saved but never queued (a later failure in the same request) is not deleted. It expires with the store's TTL, the same as every other attachment (decision 3).
-- **Thread safety:** `offload` runs in a worker thread through `asyncio.to_thread`. It builds a fresh `AttachmentStorageManager` per call, and each store builds its own driver, so the work shares no state with the event loop. This is the same pattern `_enqueue_request` already uses.
-- **Per-request cost:** only requests with base64 files pay it, one store write per file plus one index write (`dynamodb.py:63-90`). Text-only requests do no new work: the new code checks `body.files or body.images` before anything else.
+- **Thread safety:** `offload` runs in a worker thread through `asyncio.to_thread`. It builds a fresh `AttachmentStorageManager` per call, and each store builds its own driver, so the work shares no state with the event loop. This is the same pattern `_enqueue_request` already uses. The DynamoDB store's per-session `_index` is a read-modify-write (`dynamodb.py:63-90`), so two concurrent requests on one session can drop an id from the index; the file stays readable by id and expires with the TTL. This race exists today for every surface that saves attachments and is not changed here.
+- **Per-request cost:** only requests with base64 files pay it: per file, one store write, and on DynamoDB one index read and one index write (`dynamodb.py:63-90`). Text-only requests do no new work: the new code checks `body.files or body.images` before anything else.
 
 ## Testing
 
@@ -179,7 +179,7 @@ All intentional. Each applies only to broker transports unless it says otherwise
   - is described by `MultimodalPreHook` on the runner (patch `_described` to a fixed string, so no model call is made).
 - The same round trip with `execution.mode: rest_sync` and `message_type: delta` (SSE), over the stream workers.
 - A link (`https://...`) file travels untouched in `requests`. `offload` keeps a url-only record for it, as it does for chat apps and AG-UI.
-- A request with `schedule` set and a file: no store write.
+- A request with `schedule` set and a 200 KB file: no store write, and the queued message carries no file.
 - Rejections, each asserting a 400 and an empty input queue:
   - multimodal off;
   - `store_is_shared` false;

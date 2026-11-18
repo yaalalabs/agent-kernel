@@ -23,7 +23,7 @@ The order to build [spec.md](spec.md) in. Each iteration leaves the branch worki
 
 ## Iteration 3: Save files at the edge, open the upload route
 
-- **Goal:** uploads of any size up to `api.max_file_size` work on broker transports, and the queue message carries only IDs.
+- **Goal:** uploads up to `api.max_file_size` work on broker transports (on a `dynamodb` store, up to its 400 KB item limit, about 300 KB of file), and the queue message carries only IDs.
 - **Files:** `ak-py/src/agentkernel/pipeline/request_handler.py`.
 - **Steps:**
   1. Add `_offload_attachments` and call it after the check in `run_chat` (spec: `_offload_attachments`).
@@ -50,9 +50,9 @@ From spec Testing, gathered in one place so nothing is missed:
 
 Each surface below states something this change makes false:
 
-- `docs/docs/api/rest-api.md:432`: "`/api/v1/chat-multipart` is not registered, because of broker message-size limits." Replace it with: served on every transport, and broker transports need `multimodal` with a `redis` or `dynamodb` store.
+- `docs/docs/api/rest-api.md:432`: "`/api/v1/chat-multipart` is not registered, because of broker message-size limits." Replace it with: served on every transport, and broker transports need `multimodal` with a shared store: `redis`, `dynamodb`, or a custom store whose `shared` is `True`.
 - `.agents/skills/ak-dev-architecture/SKILL.md:1239`: "multipart route only on `in_memory`". Replace it with the edge offload and the new checks.
 - `.agents/skills/ak-dev-testing-conventions/SKILL.md:176`: "multipart-on-`in_memory` only". Replace it with the broker upload tests.
-- `ak-deployment/ak-aws/containerized/README.md`, `ak-deployment/ak-gcp/containerized/README.md`, `ak-deployment/ak-gcp/serverless/README.md`, `ak-deployment/ak-azure/containerized/README.md`: uploads in queue mode need `multimodal` with a Redis or DynamoDB store, and the edge and runner must share those settings. Give the gateway body limit: AWS 10 MB, GCP 32 MB, Azure "check your APIM tier" (spec: External facts).
+- `ak-deployment/ak-aws/containerized/README.md`, `ak-deployment/ak-gcp/containerized/README.md`, `ak-deployment/ak-gcp/serverless/README.md`, `ak-deployment/ak-azure/containerized/README.md`: uploads in queue mode need `multimodal` with a shared store (Redis, DynamoDB, or a custom `shared` store), and the edge and runner must share those settings. The AWS README also says ECS queue mode gets no uploads until #870 lands: its REST container still serves the older ECS handler, so the gateway route and the edge save both wait for it. Give the gateway body limit: AWS 10 MB, GCP 32 MB, Azure "check your APIM tier" (spec: External facts).
 - Check, and change only if they mention the in-memory-only upload route: `docs/docs/architecture/execution-flow.md`, `docs/docs/advanced/threads.md`, `ak-py/src/agentkernel/skills/ak-cloud-deploy/SKILL.md`.
 - Run the `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows before merge to catch anything missed above.

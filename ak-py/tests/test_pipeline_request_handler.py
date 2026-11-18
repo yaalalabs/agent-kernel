@@ -550,6 +550,15 @@ class TestBrokerUploadChecks:
             _broker_client(monkeypatch, storage_type="nonsense")
         assert "unknown multimodal storage_type 'nonsense'" in caplog.text
 
+    def test_startup_survives_a_missing_store_extra(self, monkeypatch, caplog):
+        def missing(cls):
+            raise ImportError("install agentkernel[redis]")
+
+        monkeypatch.setattr(AttachmentStorageManager, "store_is_shared", classmethod(missing))
+        with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
+            _broker_client(monkeypatch, storage_type="redis")
+        assert "File uploads will be refused: install agentkernel[redis]" in caplog.text
+
     def test_startup_is_quiet_with_a_shared_store(self, monkeypatch, caplog):
         with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
             _broker_client(monkeypatch, shared=True)
@@ -666,16 +675,19 @@ class TestBrokerUploads:
         [body] = [json.loads(sent) for sent in _CappedTransport.sent]
         assert body["requests"][1]["file_data"] == "https://example.com/a.txt"
 
-    def test_a_scheduled_request_saves_nothing(self, monkeypatch, dummy_agent):
-        client = _broker_client(monkeypatch, shared=True)
+    def test_a_scheduled_request_saves_and_queues_no_file(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True, transport=_CappedTransport())
+        _CappedTransport.sent = []
         monkeypatch.setattr(
             AttachmentStorageManager, "offload", classmethod(lambda cls, *a, **k: pytest.fail("a deferred request must not save files"))
         )
+        big = base64.b64encode(BIG_FILE).decode()
 
-        response = client.post(CHAT, json=_with_file(BASE64_HELLO, schedule={"at": "2099-01-01T00:00:00"}))
+        response = client.post(CHAT, json=_with_file(big, schedule={"at": "2099-01-01T00:00:00"}))
 
         assert response.status_code == 200
-        assert len(_queued()) == 1
+        [body] = [json.loads(sent) for sent in _CappedTransport.sent]
+        assert not body.get("files") and body["prompt"] == "hi"
 
     def test_a_save_the_store_refuses_is_a_400(self, monkeypatch, dummy_agent):
         client = _broker_client(monkeypatch, shared=True)

@@ -389,7 +389,7 @@ class RequestHandler(RestHandler):
             if AttachmentStorageManager.store_is_shared():
                 return
             message = self._unshared_store_message()
-        except AKConfigError as e:
+        except (AKConfigError, ImportError) as e:  # ImportError: the store's driver extra is missing
             message = str(e)
         self._log.warning(f"File uploads will be refused: {message}")
 
@@ -472,8 +472,8 @@ class RequestHandler(RestHandler):
         Runs after ``_reject_unqueueable_attachments``, so on a broker every file left here is a link
         or base64 a shared store can hold. ``MultimodalPreHook`` resolves the ids in the runner. The
         rewrite is the one ``ThreadRequestHandler`` does, so a body it already rewrote has nothing
-        left to save. A deferred request is skipped: its task keeps only the prompt, so its files
-        would be saved for nothing.
+        left to save. A deferred request's task keeps only the prompt, so its files are dropped
+        rather than saved or queued.
 
         :param body: The chat request, mutated in place into its queue-ready form.
         :raises HTTPException: 400 when building the requests or saving a file is refused
@@ -481,7 +481,11 @@ class RequestHandler(RestHandler):
         """
         if self._transport_type == "in_memory" or not self._config.multimodal.enabled:
             return
-        if not (body.files or body.images) or body.schedule is not None:
+        if not (body.files or body.images):
+            return
+        if body.schedule is not None:
+            body.files = None
+            body.images = None
             return
         try:
             requests = await RequestBuilder.from_base_request_async(body)
