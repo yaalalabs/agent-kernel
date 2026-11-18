@@ -69,6 +69,7 @@ class DummyAgent(Agent):
 def test_runtime_instance_redis_when_config(monkeypatch):
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "redis"
@@ -89,6 +90,7 @@ def test_runtime_instance_redis_when_config(monkeypatch):
 def test_runtime_instance_valkey_when_config(monkeypatch):
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "valkey"
@@ -112,6 +114,7 @@ def test_runtime_instance_invalid_type_fails_loud(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "not-a-real-type"
@@ -126,6 +129,7 @@ def test_runtime_instance_invalid_type_fails_loud(monkeypatch):
 async def test_runtime_run_calls_runner(monkeypatch):
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -158,6 +162,7 @@ async def test_runtime_current_default(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -181,6 +186,7 @@ async def test_runtime_current_context_manager(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -219,6 +225,7 @@ async def test_auxiliary_cache_get_volatile_with_session_id(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -246,6 +253,7 @@ async def test_auxiliary_cache_get_non_volatile_with_session_id(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -274,6 +282,7 @@ async def test_auxiliary_cache_get_volatile_without_session_id_raises(monkeypatc
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -294,6 +303,7 @@ async def test_auxiliary_cache_get_non_volatile_without_session_id_raises(monkey
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -317,6 +327,7 @@ async def test_auxiliary_cache_get_volatile_with_context_var(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -350,6 +361,7 @@ async def test_auxiliary_cache_get_non_volatile_with_context_var(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -383,6 +395,7 @@ async def test_auxiliary_cache_volatile_isolation_between_sessions(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -416,6 +429,7 @@ async def test_auxiliary_cache_non_volatile_isolation_between_sessions(monkeypat
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -449,6 +463,7 @@ async def test_auxiliary_cache_volatile_and_non_volatile_are_separate(monkeypatc
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -480,6 +495,7 @@ async def test_auxiliary_cache_operations_on_volatile_cache(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -528,6 +544,7 @@ async def test_auxiliary_cache_operations_on_non_volatile_cache(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -576,6 +593,7 @@ async def test_auxiliary_cache_with_complex_data_types(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -613,6 +631,7 @@ async def test_load_empty_session_id_creates_session(monkeypatch):
 
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"
@@ -696,6 +715,7 @@ class HaltingPreHook(PreHook):
 def _in_memory_runtime(monkeypatch):
     class FakeCfg:
         identity = None
+        registry = None
 
         class session:
             type = "in_memory"

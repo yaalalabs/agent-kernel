@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .model import ExecutionMode, ReplyMessageType
+from .model import AgentIdentitySpec, AgentSurface, ExecutionMode, ReplyMessageType
 from .util.config_yaml_util import YamlBaseSettingsModified
 from .util.factory import AKConfigError
 
@@ -1532,6 +1532,66 @@ class _IdentityConfig(BaseModel):
     )
 
 
+class _RegistryRedisConfig(_RedisConfig):
+    # Unlike sessions, descriptors carry no default expiry: one that expired would drop a running
+    # agent from the catalog, and nothing registers it again until its process restarts.
+    ttl: int = Field(default=0, description="Agent descriptor TTL in seconds (0 disables: descriptors do not expire)")
+    prefix: str = Field(default="ak:registry:", description="Key prefix for Redis agent registry storage")
+
+
+class _RegistryValkeyConfig(_ValkeyConfig):
+    ttl: int = Field(default=0, description="Agent descriptor TTL in seconds (0 disables: descriptors do not expire)")
+    prefix: str = Field(default="ak:registry:", description="Key prefix for Valkey agent registry storage")
+
+
+class _RegistryDynamoDBConfig(_DynamoDBConfig):
+    table_name: str = Field(
+        default="ak-agent-registry",
+        description="DynamoDB table name for the agent registry. Table should have a partition key named 'agent_id' (S) and no sort key",
+    )
+    ttl: int = Field(default=0, description="DynamoDB item TTL in seconds (0 disables: descriptors do not expire)")
+
+
+class _RegistryAgentOverlayConfig(BaseModel):
+    """The catalog fields a deployment sets for one agent, over what the agent's code declares.
+
+    Every field is optional; one left out keeps the value the adapter or `Module.describe` gave it.
+    Unknown keys are refused rather than ignored: a misspelt `surfaces` or `visibility` would
+    otherwise leave an agent more exposed than the configuration reads.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str | None = Field(default=None, description="The agent's version, as its catalog entry and A2A card report it")
+    description: str | None = Field(default=None, description="Catalog text for people and other agents; never the agent's instructions")
+    owner: str | None = Field(default=None, description="The subject that owns the agent")
+    tags: list[str] | None = Field(default=None, description="Free-form labels; a grant's 'tag:<name>' selects the agents carrying one")
+    visibility: Literal["private", "internal", "public"] | None = Field(default=None, description="Who may see the agent in the catalog")
+    surfaces: list[AgentSurface] | None = Field(
+        default=None, description="The protocol surfaces the agent is served on (rest, a2a, mcp, agui); omitted = every surface"
+    )
+    identity: AgentIdentitySpec | None = Field(default=None, description="How the agent identifies itself when it acts as a principal")
+
+
+class _RegistryConfig(BaseModel):
+    """Agent registry: where agent descriptors are kept, and the per-agent catalog overlay.
+
+    Absent, or with the default type, descriptors live in the memory of the process that hosts the
+    agents. A store-backed type shares them, so a process lists agents another process hosts.
+    """
+
+    type: str = Field(
+        default="in_memory",
+        description="Agent registry backend: a built-in short name (in_memory, redis, valkey, dynamodb) or a dotted path to an AgentRegistry subclass",
+    )
+    redis: _RegistryRedisConfig | None = None
+    valkey: _RegistryValkeyConfig | None = None
+    dynamodb: _RegistryDynamoDBConfig | None = None
+    agents: dict[str, _RegistryAgentOverlayConfig] = Field(
+        default_factory=dict, description="Catalog fields set per agent id, over the ones the agent's code declares"
+    )
+
+
 class _AGUIStateConfig(BaseModel):
     """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
 
@@ -1606,6 +1666,10 @@ class AKConfig(YamlBaseSettingsModified):
     identity: _IdentityConfig | None = Field(
         default=None,
         description="Identity capability configurations (the provider that authenticates callers, the role mapper). Absent = every request is the anonymous principal.",
+    )
+    registry: _RegistryConfig | None = Field(
+        default=None,
+        description="Agent registry configurations (the backend that keeps agent descriptors, the per-agent catalog overlay). Absent = an in-memory registry with no overlay.",
     )
     a2ui: _A2UIConfig = Field(description="A2UI labelling capability configurations", default_factory=_A2UIConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)

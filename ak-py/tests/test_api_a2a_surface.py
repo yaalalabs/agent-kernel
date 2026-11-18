@@ -275,6 +275,17 @@ class TestCardsFromTheRegistry:
         with Runtime(InMemorySessionStore(), registry=registry):
             assert A2A.get_agent_names() == ["kept"]
 
+    def test_a_card_carries_the_fields_the_registry_overlay_sets(self, _fresh_a2a, monkeypatch, tmp_path):
+        config = tmp_path / "config.yaml"
+        config.write_text(f"registry:\n  agents:\n    {AGENT}:\n      description: Files and tracks expense claims\n      version: 2.1.0\n")
+        _configure(monkeypatch, AK_CONFIG_PATH_OVERRIDE=str(config))
+
+        with Runtime(InMemorySessionStore()) as runtime:
+            runtime.register(_Agent(AGENT))  # its own descriptor says "Files expense claims", version 0.0.0
+            card = A2A.get_card(AGENT)
+
+        assert (card.description, card.version) == ("Files and tracks expense claims", "2.1.0")
+
     def test_an_adk_agent_gets_a_card_with_its_tools_as_skills(self, _fresh_a2a):
         pytest.importorskip("google.adk")
         from google.adk.agents import LlmAgent

@@ -9,6 +9,11 @@ from agentkernel.core.config import (
     _ExecutionConfig,
     _IdentityConfig,
     _IdentityProviderConfig,
+    _RegistryAgentOverlayConfig,
+    _RegistryConfig,
+    _RegistryDynamoDBConfig,
+    _RegistryRedisConfig,
+    _RegistryValkeyConfig,
     _ScheduleConfig,
     _SecretConfig,
     _StaticProviderConfig,
@@ -703,3 +708,72 @@ class TestIdentityConfig:
         provider = _IdentityProviderConfig(issuer="https://issuer.example", audience="ak")
         assert (provider.claims.subject, provider.claims.groups) == ("sub", "groups")
         assert (provider.algorithms, provider.leeway, provider.required_claims) == (["RS256", "ES256"], 30, [])
+
+
+class TestRegistryConfig:
+    """The `registry` block (#603): absent by default (an in-memory registry), a backend selector with its
+    connection block, and the per-agent overlay of deployment-owned catalog fields."""
+
+    def test_absent_by_default(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        assert AKConfig.get().registry is None
+
+    def test_a_block_parses_from_yaml_with_its_backend_and_overlay(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "registry:\n"
+            "  type: redis\n"
+            "  redis:\n"
+            "    url: redis://cache:6379\n"
+            "  agents:\n"
+            "    support-triage:\n"
+            "      version: 1.2.0\n"
+            "      description: Triage support tickets\n"
+            "      owner: cx-platform\n"
+            "      tags: [support]\n"
+            "      visibility: internal\n"
+            "      surfaces: [rest, agui]\n"
+            "      identity:\n"
+            "        subject: svc-triage\n"
+        )
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        registry = AKConfig.get().registry
+
+        assert (registry.type, registry.redis.url) == ("redis", "redis://cache:6379")
+        overlay = registry.agents["support-triage"]
+        assert (overlay.version, overlay.description, overlay.owner) == ("1.2.0", "Triage support tickets", "cx-platform")
+        assert (overlay.tags, overlay.visibility, overlay.surfaces) == (["support"], "internal", ["rest", "agui"])
+        assert overlay.identity.subject == "svc-triage"
+
+    def test_a_bare_block_is_the_in_memory_registry_with_no_overlay(self):
+        registry = _RegistryConfig()
+
+        assert registry.type == "in_memory"
+        assert (registry.redis, registry.valkey, registry.dynamodb) == (None, None, None)
+        assert registry.agents == {}
+
+    def test_the_store_blocks_default_to_the_registry_prefix_and_table_and_never_expire(self):
+        # Unlike the session defaults these inherit from: a descriptor that expired would drop a running agent from the catalog.
+        assert (_RegistryRedisConfig().prefix, _RegistryRedisConfig().ttl) == ("ak:registry:", 0)
+        assert (_RegistryValkeyConfig().prefix, _RegistryValkeyConfig().ttl) == ("ak:registry:", 0)
+        assert (_RegistryDynamoDBConfig().table_name, _RegistryDynamoDBConfig().ttl) == ("ak-agent-registry", 0)
+
+    def test_an_overlay_entry_sets_nothing_by_default(self):
+        assert _RegistryAgentOverlayConfig().model_dump(exclude_none=True) == {}
+
+    def test_an_overlay_key_the_descriptor_does_not_take_is_rejected(self):
+        # A misspelt `surfaces` silently ignored would leave an agent on every surface.
+        with pytest.raises(ValueError, match="surface"):
+            _RegistryAgentOverlayConfig.model_validate({"surface": ["rest"]})
+
+    @pytest.mark.parametrize("field, value", [("visibility", "secret"), ("surfaces", ["grpc"])])
+    def test_an_overlay_value_outside_the_descriptors_choices_is_rejected(self, field, value):
+        with pytest.raises(ValueError, match=field):
+            _RegistryAgentOverlayConfig.model_validate({field: value})
+
+    def test_a_registry_env_var_materializes_the_block(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_REGISTRY__TYPE", "valkey")
+
+        assert AKConfig.get().registry.type == "valkey"

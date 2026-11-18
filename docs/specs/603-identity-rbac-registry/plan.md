@@ -571,25 +571,27 @@ here.
 - **Goal:** the registry is pluggable and store-backed; an instance reads descriptors another
   instance registered.
 - **Files:** `core/config.py`, `core/registry.py` (the factory reads the block and applies the
-  overlay), `identity/registry/redis_like.py`, `identity/registry/redis.py`,
-  `identity/registry/valkey.py`, `identity/registry/dynamodb.py`, `identity/registry/testing.py`,
-  `pipeline/io_handler.py`.
+  overlay), `identity/registry/base.py`, `identity/registry/redis_like.py`,
+  `identity/registry/redis.py`, `identity/registry/valkey.py`, `identity/registry/dynamodb.py`,
+  `identity/registry/testing.py`, `pipeline/io_handler.py`.
 - **Steps:**
   1. `_RegistryConfig`, the defaults-only `_Registry*Config` subclasses,
-     `_RegistryAgentOverlayConfig`; `AKConfig.registry: Optional = None` (spec Config changes).
-  2. `_RedisLikeAgentRegistry`, the Redis, Valkey and DynamoDB backends,
-     `AgentRegistryContract` (spec 6).
-  3. The factory's store branches, the dotted-path branch and the overlay, whose `register` sets
-     the final descriptor back on the agent so the hosting process holds one record (spec 6,
-     descriptor source 3).
+     `_RegistryAgentOverlayConfig` (unknown keys refused); `AKConfig.registry: Optional = None`
+     (spec Config changes).
+  2. `StoreBackedAgentRegistry` (the hosted agents in process, the descriptors in a store),
+     `_RedisLikeAgentRegistry`, the Redis, Valkey and DynamoDB backends over it, and
+     `AgentRegistryContract`, which the in-memory registry's cases move into (spec 6).
+  3. The factory's store branches, the dotted-path branch and the overlay: a wrapper over any
+     backend whose `register` applies the entry and sets the final descriptor back on the agent,
+     so the hosting process holds one record (spec 6, descriptor source 3).
   4. `IOHandler._warn_if_no_agents` (`pipeline/io_handler.py`) asks the registry for descriptors
      where it asked the runtime for hosted agents, and its advice names the shared registry
      beside loading the agent modules (spec 6, A2A card).
 - **Verify:** `test_agent_registry` (all backends over fake drivers, factory, overlay,
   cross-instance read; the overlay on `agent.descriptor`, the run's actor subject following an
   overlaid `identity`); an overlaid description and version on the A2A card in
-  `test_api_a2a_surface`; `test_config` registry cases; the `FakeCfg` stubs gain
-  `registry = None`.
+  `test_api_a2a_surface`; `test_config` registry cases; the no-agents warning in
+  `test_pipeline_io_handler`; the `FakeCfg` stubs gain `registry = None`.
 
 ### Iteration 16: Catalog and exposure
 
