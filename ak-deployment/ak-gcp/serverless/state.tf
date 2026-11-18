@@ -95,13 +95,11 @@ locals {
     overwrite_path = "/api/v1/chat"
   }
 
-  # Queue mode drops the multipart route (the pipeline serves multipart only on the in_memory
-  # transport) and adds the poll route for rest_async.
+  # The multipart route is served in every mode (in queue mode the edge saves uploads and queues
+  # only their ids, #871); queue mode adds the poll route for rest_async.
   default_gateway_map = merge(
     {
-      "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}" = local.default_gateway_endpoint
-    },
-    var.queue_mode ? {} : {
+      "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}"     = local.default_gateway_endpoint
       "${upper(local.multipart_gateway_endpoint.method)} ${local.multipart_gateway_endpoint.path}" = local.multipart_gateway_endpoint
     },
     var.queue_mode && var.execution_mode == "rest_async" ? {
