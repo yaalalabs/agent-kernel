@@ -118,8 +118,9 @@ Agent Kernel's Smolagents adapter implements `Runner.stream()`, but structured o
 to non-streaming execution only. A streaming client receives text and tool-call events and reconstructs
 the final answer from them rather than receiving an `AgentReplyAny`.
 
-Token-level deltas need a model that implements `generate_stream`. Without it, smolagents yields whole
-steps, so the adapter emits each step's text and tool calls at once rather than token by token.
+Token-level deltas need a model that implements `generate_stream`. The adapter turns on smolagents'
+`stream_outputs` only for such a model; without it, smolagents yields whole steps, so the adapter emits each
+step's text and tool calls at once rather than token by token, and the run still completes.
 :::
 
 ## Per-run context/state

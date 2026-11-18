@@ -592,3 +592,55 @@ class TestSmolagentsRunnerStreaming:
 
         mock_sync.assert_called_once_with(agent, session)
         assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 5}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("has_generate_stream", [True, False])
+    async def test_stream_outputs_is_enabled_only_for_models_that_can_stream(self, has_generate_stream):
+        class _Model:
+            def generate_stream(self, *args, **kwargs):  # pragma: no cover - never called here
+                raise AssertionError
+
+        class _Native(_StreamingNativeSmolagent):
+            def run(self, task, **kwargs):
+                self.seen_stream_outputs = self.stream_outputs
+                return super().run(task, **kwargs)
+
+        native = _Native([FinalAnswerStep(output="ok")])
+        native.model = _Model() if has_generate_stream else object()
+        runner = SmolagentsRunner()
+        agent = _mock_agent()
+        agent.agent = native
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+        ):
+            _ = [event async for event in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        # A generate-only model keeps stream=True (whole steps) but never gets token streaming switched on.
+        assert native.seen_stream_outputs is has_generate_stream
+        assert native.calls[0][1]["stream"] is True
+        assert native.stream_outputs is False  # restored after the run
+
+    @pytest.mark.asyncio
+    async def test_stream_completes_when_framework_context_write_back_fails(self):
+        native = _StreamingNativeSmolagent([FinalAnswerStep(output="ok")])
+        native.state = {"seeded": 5}
+        runner = SmolagentsRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
+        agent = _mock_agent()
+        agent.agent = native
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch.object(runner, "_store_framework_context", side_effect=TypeError("not picklable")),
+            patch.object(runner, "_log_framework_context_stream_failure") as mock_log,
+        ):
+            events = [event async for event in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        # The answer already streamed, so the failure is logged instead of raised.
+        assert [event.content for event in events if isinstance(event, TextDelta)] == ["ok"]
+        mock_log.assert_called_once()
+        assert isinstance(mock_log.call_args.args[1], TypeError)

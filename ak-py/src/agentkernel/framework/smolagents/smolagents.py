@@ -477,9 +477,12 @@ class SmolagentsRunner(Runner):
             else:
                 run_kwargs.pop("additional_args", None)  # AK owns the key in both branches; the no-context call shape is unchanged
 
-            # Ask smolagents to emit token/tool deltas in addition to the completed steps.
+            # Ask smolagents to emit token/tool deltas in addition to the completed steps, but only when the model
+            # can stream: smolagents may call model.generate_stream whenever stream_outputs is set, without checking
+            # that the model has it. A generate-only model keeps stream=True and yields whole completed steps instead.
             previous_stream_outputs = getattr(agent.agent, "stream_outputs", False)
-            agent.agent.stream_outputs = True
+            if hasattr(getattr(agent.agent, "model", None), "generate_stream"):
+                agent.agent.stream_outputs = True
 
             generator = agent.agent.run(prompt, **run_kwargs)
             mapper = _SmolagentsStreamMapper()
@@ -497,10 +500,15 @@ class SmolagentsRunner(Runner):
 
             # Only the keys the caller seeded: agent.state also holds framework-internal entries with no prefix
             # to filter on, so a brand-new key a tool adds is not round-tripped.
-            produced: dict[str, Any] | None = None
-            if incoming is not None and hasattr(agent.agent, "state") and isinstance(agent.agent.state, dict):
-                produced = {k: agent.agent.state[k] for k in incoming if k in agent.agent.state}
-            self._store_framework_context(session, incoming, produced)
+            # The answer has already streamed, so a write-back failure is logged rather than raised: raising would
+            # skip the turn's session store and the done frame.
+            try:
+                produced: dict[str, Any] | None = None
+                if incoming is not None and hasattr(agent.agent, "state") and isinstance(agent.agent.state, dict):
+                    produced = {k: agent.agent.state[k] for k in incoming if k in agent.agent.state}
+                self._store_framework_context(session, incoming, produced)
+            except Exception as e:
+                self._log_framework_context_stream_failure(session, e)
         finally:
             close = getattr(generator, "close", None) if generator is not None else None
             if close is not None:
