@@ -13,7 +13,7 @@ Evidence is cited against `feature/603-identity-rbac-registry` at `d9d0d18bc` (a
 over the develop merge `287ec7485`; every `.py` cited is identical in both). The change ships as a
 breaking change with no compatibility window (design section 10).
 
-Eight places where detailing refined the design are listed in [Design refinements](#design-refinements)
+Nine places where detailing refined the design are listed in [Design refinements](#design-refinements)
 at the end; each is a mechanism change inside a settled decision, not a new decision, and each is
 reflected in `design.md`.
 
@@ -662,14 +662,30 @@ adapter, the native agent or `get_description()`.
 def ensure_agent_available(name: Optional[str], principal: Optional[Principal] = None) -> None
 ```
 
-`registry = Runtime.current().registry`; a named agent must have `registry.descriptor(name)`
-(`ValueError("No agent available")` otherwise, unchanged text); an unnamed one needs at least one
-descriptor. The agents the process hosts answer first (`registry.get(name)`, `registry.agents()`),
-so the store is read only for an agent that is not hosted here and a hosted agent costs no round
-trip per request. An unknown agent therefore stays a 400 on REST, as before. Open for iteration
-19, which maps the gate's `LookupError` to 404: a hidden agent (404) would then be told apart
-from an unknown one (400) on REST, which the error table's "indistinguishable from unknown" rules
-out; either the unknown case joins the 404 or the hidden case joins the 400.
+`registry = Runtime.current().registry`; a named agent must have `registry.descriptor(name)`, and
+an unnamed request needs at least one descriptor. The agents the process hosts answer first
+(`registry.get(name)`, `registry.agents()`), so the store is read only for an agent that is not
+hosted here and a hosted agent costs no round trip per request.
+
+The two failures are different errors (settled 2026-11-18, design refinement 9):
+
+- A request naming an agent the registry does not know raises `LookupError(f"Agent '{name}' not
+  found")`, which every surface answers with 404. It is the error, the text and the status of an
+  agent the caller may not see (section 7), so a hidden agent cannot be told apart from one that
+  does not exist. Left as the 400 it was beside the hidden agent's 404, the status alone would
+  have answered whether a name exists. AG-UI already answered 404 with this text.
+- A request naming no agent while the registry knows none raises `ValueError("No agent
+  available")`, a 400 as before: there is no name to hide.
+
+The `LookupError` lands in iteration 19, together with the mapping it needs; until then the
+unknown case keeps raising the `ValueError`, because a `LookupError` no surface maps is a 500.
+The mapping, each in its own section: `ChatService`'s presentation wrappers and the SSE branch of
+the chat route (8.1, 8.2); the pipeline precheck (8.3); the thread routes, before any write
+(8.10; `thread_chat.py:344-352` beside the 400 and 403 branches); the schedule routes'
+`_as_http_error` (8.11; `schedule/handler.py:158-176`), where the branch sits after the
+`KeyError` one so a missing schedule keeps its own text; and AG-UI's `_resolve_agent` (8.5),
+which catches it where it caught the `ValueError`. The schedule tools already turn any error into
+`{"error": ...}` and now carry this text; MCP keeps `ToolError("Agent not available")`.
 
 Then, when `AccessGate.get()` is not `None` and a name is given:
 `gate.authorize_agent(principal or Principal.anonymous(), name)`, which raises `PermissionError`
@@ -804,10 +820,13 @@ class AccessGate:
   `visible_agents` and `tool_filter` have `async` twins (`authorize_agent_async`, ...) and the
   sync names wrap them; `Runtime.run`/`stream` and `ensure_agent_available`'s async callers use
   the twins so a coroutine never blocks the loop on a remote engine.
-- `authorize_agent`: `descriptor = registry.descriptor(agent_id)`; `KeyError` when absent;
-  `level = agent_level(...)`; when `None`: `LookupError` if `not visible(principal, descriptor)`
-  (surfaces map it to 404) else `PermissionError(f"Principal '{principal.subject}' holds no level
-  on agent '{agent_id}'")` (403).
+- `authorize_agent`: `descriptor = registry.descriptor(agent_id)`; `LookupError(f"Agent
+  '{agent_id}' not found")` when absent, the error `ensure_agent_available` raises for an unknown
+  agent (section 6) and a plain `LookupError` rather than a `KeyError`, which the schedule routes
+  read as a missing schedule; `level = agent_level(...)`; when `None`: the same `LookupError`,
+  text included, if `not visible(principal, descriptor)` (surfaces map it to 404) else
+  `PermissionError(f"Principal '{principal.subject}' holds no level on agent '{agent_id}'")`
+  (403).
 - `visible`: `agent_level is not None`, or `visibility == "public"`, or `"internal"` and the
   principal is not anonymous. `visible_agents`: over `registry.descriptors()`, using
   `authorizer.visible_agents` when `capabilities.lists_resources` else the candidate walk.
@@ -1541,6 +1560,11 @@ Each is intentional; the justification is design section 10 unless stated.
     the agent's instructions. The tools are registered from the registry's descriptors, in id
     order, so a process over a store-backed registry exposes agents it does not host
     (section 8.6).
+34. A request naming an agent the registry does not know is answered 404 `Agent '<name>' not
+    found` on REST chat, threads and schedules, where it was 400 `No agent available`: the answer
+    a hidden agent gets, so the two cannot be told apart (AG-UI already answered so). The
+    schedule tools return that text in their `error`. A request naming no agent while none
+    exists stays 400 (section 6, Availability).
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (one optional
 `last_error` on schedule occurrences and `principal` on tasks aside); the queue envelope
@@ -1558,7 +1582,8 @@ for the two caches and the framework context; public exports other than those na
 | Malformed `Authorization` header | same | 401 `"Invalid authorization header"` when a provider is configured; without one the header is ignored unparsed and the request runs anonymous |
 | Anonymous caller on a surface that needs a user | `AuthorisedRESTRequestHandler._resolve_user` | 401 `"Authentication required"` |
 | No level on the agent | `AccessGate.authorize_agent` → `PermissionError` | 403 with the message; `StreamChunk(error, done=True)` on a stream; `ToolError("Agent not available")` on MCP; A2A `InternalError` |
-| Agent not visible | `LookupError` | 404 `"Agent '<name>' not found"` (indistinguishable from unknown) |
+| Agent named in a request is unknown to the registry, or not visible to the caller | `AgentService.ensure_agent_available`, `AccessGate.authorize_agent` → `LookupError` | 404 `"Agent '<name>' not found"`, one status and body for both, on REST chat, threads, schedules and AG-UI; `ToolError("Agent not available")` on MCP; `{"error": ...}` from the schedule tools |
+| No agent named and the registry knows none | `AgentService.ensure_agent_available` → `ValueError` | 400 `"No agent available"` |
 | Session owned by another principal | `authorize_session` → `PermissionError` | 403 at the choke point; thread path 403 before any write |
 | Resume by another subject | `_validate_resume` → `PermissionError` | 403; record kept |
 | Denied tool at call time | adapter gate | a tool result string with the reason; never an exception into the framework; a failure inside the gate denies with `"tool gate failed: <type>"` |
@@ -1648,6 +1673,13 @@ New files under `ak-py/tests/`:
 - `test_agent_registry.py` also holds `TestAvailability`: a named agent known only through the
   registry is available, an unknown one is not, an unnamed request needs some descriptor, and a
   hosted agent is answered without a store read.
+- With the unknown-agent `LookupError` (iteration 19), the cases that pin the unknown named agent
+  as a `ValueError` or a 400 follow it: `TestAvailability`'s unknown case,
+  `tests/test_chat_service_core.py:108-111, 282-287, 400-447`, `tests/test_schedule_manager.py:260`,
+  `tests/test_schedule_tools.py:376` and `tests/test_thread_integration.py:265` expect the
+  `LookupError`, the 404 and the `Agent '<name>' not found` text; the unnamed case keeps its
+  `ValueError`. `test_api_http` gains the parity case: an unknown agent and a hidden one answer
+  with the same status and body.
 - `test_api_catalog.py`: `GET /api/v1/agents` descriptors, filtering by caller, `tools`
   narrowing and the `skills` narrowed with it (a tool-backed skill goes with its tool, a declared
   skill that names no tool stays), cursor and limit, 400 on a bad cursor, `surfaces` narrowing
@@ -1951,3 +1983,12 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    built from the hosted agents and carried their instructions; an agent with no declared text
    gets a neutral sentence about the call instead of an empty description, since a client chooses
    a tool by that text (section 8.6).
+9. **An unknown agent answers like a hidden one** (decided 2026-11-18, after iteration 16). The
+   design makes a hidden agent indistinguishable from one that does not exist, and gives it a
+   404; detailing had left the agent that really does not exist as the 400 it was before the
+   change (`ValueError("No agent available")`), and the gate's own absent-descriptor case as a
+   `KeyError`, so the status told the two apart. One error now covers all three:
+   `LookupError(f"Agent '{name}' not found")`, from `ensure_agent_available` for an unknown name
+   and from `AccessGate.authorize_agent` for an absent or invisible one, mapped to 404 with that
+   body on every surface. A request naming no agent stays a 400. It lands in iteration 19 with
+   the mapping (section 6, Availability; section 7).

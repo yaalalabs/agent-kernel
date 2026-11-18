@@ -507,8 +507,10 @@ and `research/design-options.md` section 4).
     through `visibility`; one warning at startup names the empty block.
 - `AccessGate` (class, `identity/authz/gate.py`): the one consumer of registry plus authorizer.
   `get()` returns `None` when authorization is not configured. Methods: `authorize_agent(principal,
-  agent_id) -> AccessLevel` (raises `PermissionError` when `None`; raises `KeyError` when the
-  registry has no descriptor), `visible(principal, descriptor) -> bool` (`agent_level is not None`,
+  agent_id) -> AccessLevel` (raises `PermissionError` when `None`; raises `LookupError("Agent
+  '<id>' not found")` when the registry has no descriptor, the error and the 404 of an agent the
+  caller may not see and of an unknown agent named in a request, spec refinement 9),
+  `visible(principal, descriptor) -> bool` (`agent_level is not None`,
   or `visibility` admits: `public` everyone, `internal` non-anonymous, `private` nobody; settled Q5:
   visibility never confers a level), `visible_agents(principal) -> list[AgentDescriptor]`,
   `tool_filter(principal, agent) -> ToolFilter` (the per-run allow set over

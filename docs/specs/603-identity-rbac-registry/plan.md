@@ -604,7 +604,8 @@ here.
   `aws-containerized/mcp/multi` and `k8s/openai-queue-mode/config.{kafka,nats}.yaml`.
 - **Steps:**
   1. `ensure_agent_available` resolves through the registry, the hosted agents first; an unknown
-     agent stays `ValueError("No agent available")` (spec 6).
+     agent stays `ValueError("No agent available")` until 19 gives it the hidden agent's 404
+     (spec 6).
   2. `GET /api/v1/agents?cursor=&limit=&tags=` over the agents exposed on `rest`, paged by
      `AgentDescriptorPage.of` (spec 6); filtering by caller is added in 19.
   3. MCP tool registration, A2A cards and AG-UI exposure read `exposed_on`; AG-UI resolves and
@@ -663,25 +664,36 @@ here.
 
 ### Iteration 19: Service, pipeline and schedule enforcement
 
-- **Goal:** an unauthorized request is a 403 or 404 before anything is enqueued or run, the
-  catalog shows only visible agents, and a scheduled task whose owner lost access is skipped
-  and recorded.
-- **Files:** `core/chat_service.py`, `pipeline/request_handler.py`, `api/handler.py`,
-  `schedule/manager.py`, `schedule/store/*`.
+- **Goal:** an unauthorized request is a 403 or 404 before anything is enqueued or run, an
+  unknown agent answers exactly like a hidden one, the catalog shows only visible agents, and a
+  scheduled task whose owner lost access is skipped and recorded.
+- **Files:** `core/service.py`, `core/chat_service.py`, `pipeline/request_handler.py`,
+  `api/handler.py`, `integration/thread/thread_chat.py`, `integration/agui/handler.py`,
+  `schedule/handler.py`, `schedule/manager.py`, `schedule/store/*`. Thirteen source files or
+  so, over the size rule: steps 1 and 2 (the 404) and steps 3 to 5 split cleanly if the diff
+  reads long.
 - **Steps:**
-  1. `ChatService` maps `LookupError` to 404 (the `PermissionError` to 403 branch landed in 3)
-     (spec 8.1). Decide here whether an unknown agent, a 400 `ValueError("No agent available")`
-     since before this change, becomes the same 404, so that a hidden agent is not told apart
-     from an unknown one on REST (spec 6, Availability).
-  2. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
+  1. `ensure_agent_available` raises `LookupError(f"Agent '{name}' not found")` for a named
+     agent the registry does not know; a request naming none while none exists keeps its
+     `ValueError` (spec 6, design refinement 9; settled 2026-11-18).
+  2. `LookupError` maps to 404 with that text wherever the availability check is answered:
+     `ChatService`'s presentation wrappers (the `PermissionError` to 403 branch landed in 3) and
+     the chat route's SSE branch, the thread routes before any write, the schedule routes'
+     `_as_http_error` after its `KeyError` branch, and AG-UI's `_resolve_agent` in place of the
+     `ValueError` it caught (spec 6, 8.1).
+  3. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
      403 reply and the warning (spec 8.1, 8.11).
-  3. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
-  4. The catalog filtered by `visible_agents`, each entry's `tools` and tool-backed `skills`
+  4. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
+  5. The catalog filtered by `visible_agents`, each entry's `tools` and tool-backed `skills`
      narrowed to the caller; `get_router()` calls `validate_configuration` (spec 6, 7).
-- **Verify:** 403/404 cases in `test_api_http`; `test_pipeline_request_handler` (the riskiest
-  consumer: the precheck on a store-backed registry with no local agents); the fire-time skip
-  in `test_schedule_principal`; visibility and the `tools` and `skills` narrowing in
-  `test_api_catalog`.
+- **Verify:** 403/404 cases in `test_api_http`, with the parity case (an unknown agent and a
+  hidden one answer with one status and body); the cases that pinned the unknown named agent as
+  a 400 or a `ValueError`, now a 404 and a `LookupError`, in `test_agent_registry`
+  (`TestAvailability`), `test_chat_service_core`, `test_schedule_manager`,
+  `test_schedule_tools` and `test_thread_integration`; `test_agui_handler`;
+  `test_pipeline_request_handler` (the riskiest consumer: the precheck on a store-backed
+  registry with no local agents); the fire-time skip in `test_schedule_principal`; visibility
+  and the `tools` and `skills` narrowing in `test_api_catalog`.
 
 ### Iteration 20: Protocol surface enforcement
 
