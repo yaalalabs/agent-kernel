@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..api.handler import AgentRESTRequestHandler
-from ..core.chat_service import ChatService
+from ..core.chat_service import ChatService, RequestBuilder
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ChatRunRequest, ExecutionMode, FileData, ImageData
 from ..core.multimodal.storage import AttachmentStorageManager
@@ -361,6 +361,10 @@ class RequestHandler(RestHandler):
 
     # Attachment values that carry no bytes of their own: the adapter fetches them, so they cross any broker.
     _LINK_PREFIXES = ("http://", "https://", "s3://")
+    _MULTIMODAL_OFF_ERROR = (
+        "This request carries file bytes, but multimodal support is disabled. On a queue transport files are saved to "
+        "the attachment store first: set multimodal.enabled: true with storage_type redis or dynamodb."
+    )
 
     def __init__(self):
         super().__init__(logger_name="ak.pipeline.request_handler")
@@ -403,10 +407,8 @@ class RequestHandler(RestHandler):
         router.add_api_route(self.AGENTS_PATH, self.list_agents, methods=["GET"])
         router.add_api_route(self.CHAT_PATH, self.run_chat, methods=["POST"])
         router.add_api_route(self.CHAT_POLL_PATH, self.poll_response, methods=["GET"])
-        if self._transport_type == "in_memory":
-            # Multipart uploads fit in-process messages; broker transports keep the ECS behavior
-            # (no multipart route) because of broker message-size limits.
-            router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart_chat, methods=["POST"])
+        # Served on every transport: on a broker, run_chat saves the uploads and queues only their ids (#871).
+        router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart_chat, methods=["POST"])
         return router
 
     async def run_chat(self, body: ChatRunRequest, request: Request):
@@ -422,6 +424,7 @@ class RequestHandler(RestHandler):
         self._reject_unprocessable(body)
         self._reject_unroutable(body)
         self._reject_unqueueable_attachments(body)
+        await self._offload_attachments(body)
         if self._config.execution.is_sse:
             return await self._run_chat_stream(body)
         return await self.enqueue_and_wait(body, request)
@@ -453,11 +456,7 @@ class RequestHandler(RestHandler):
         if not payloads:
             return
         if not self._config.multimodal.enabled:
-            self._reject_attachment(
-                body,
-                "This request carries file bytes, but multimodal support is disabled. On a queue transport files are saved to "
-                "the attachment store first: set multimodal.enabled: true with storage_type redis or dynamodb.",
-            )
+            self._reject_attachment(body, self._MULTIMODAL_OFF_ERROR)
         if not AttachmentStorageManager.store_is_shared():
             self._reject_attachment(body, self._unshared_store_message())
         max_size = self._config.api.max_file_size
@@ -466,6 +465,39 @@ class RequestHandler(RestHandler):
             size = len(payload) * 3 // 4 - payload[-2:].count("=")
             if size > max_size:
                 self._reject_attachment(body, f"File {name} exceeds maximum size ({size / (1024 * 1024):.2f} MB)")
+
+    async def _offload_attachments(self, body: BaseRunRequest) -> None:
+        """Save file bytes to the attachment store and rewrite the body to carry only their ids.
+
+        Runs after ``_reject_unqueueable_attachments``, so on a broker every file left here is a link
+        or base64 a shared store can hold. ``MultimodalPreHook`` resolves the ids in the runner. The
+        rewrite is the one ``ThreadRequestHandler`` does, so a body it already rewrote has nothing
+        left to save. A deferred request is skipped: its task keeps only the prompt, so its files
+        would be saved for nothing.
+
+        :param body: The chat request, mutated in place into its queue-ready form.
+        :raises HTTPException: 400 when building the requests or saving a file is refused
+            (a missing mime type, a file over the store's item limit).
+        """
+        if self._transport_type == "in_memory" or not self._config.multimodal.enabled:
+            return
+        if not (body.files or body.images) or body.schedule is not None:
+            return
+        try:
+            requests = await RequestBuilder.from_base_request_async(body)
+            # Saving waits on the store, so it runs off the event loop as the enqueue does.
+            requests, _ = await asyncio.to_thread(
+                AttachmentStorageManager.offload,
+                body.session_id,
+                requests,
+                attachments_disabled_error=self._MULTIMODAL_OFF_ERROR,
+                session_cache_error=self._unshared_store_message(),
+            )
+        except ValueError as e:
+            self._reject_attachment(body, str(e))
+        body.requests = requests
+        body.files = None
+        body.images = None
 
     @staticmethod
     def _reject_attachment(body: BaseRunRequest, message: str) -> NoReturn:

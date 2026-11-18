@@ -55,7 +55,7 @@ Runs only when the transport is not `in_memory` and the body has `files` or `ima
 
 #### `_offload_attachments(body)`
 
-Runs only when the transport is not `in_memory`, `body.files or body.images` is set, and `body.schedule is None`.
+Runs only when the transport is not `in_memory`, `multimodal.enabled` is true, `body.files or body.images` is set, and `body.schedule is None`. With multimodal off, the check has already refused any file bytes, so only links are left, and they travel as they are.
 
 - A `schedule` block is skipped because `ScheduleManager.create_from_request` keeps only the prompt (`schedule/manager.py:95-111`). Saving files it will never read would only leave clutter behind.
 
@@ -178,7 +178,7 @@ All intentional. Each applies only to broker transports unless it says otherwise
   - is sent as a message under 64 KB, with `requests` holding `AgentRequestAttachmentRef` entries and no `files`/`images`;
   - is described by `MultimodalPreHook` on the runner (patch `_described` to a fixed string, so no model call is made).
 - The same round trip with `execution.mode: rest_sync` and `message_type: delta` (SSE), over the stream workers.
-- A link (`https://...`) file travels untouched, and no store write happens.
+- A link (`https://...`) file travels untouched in `requests`. `offload` keeps a url-only record for it, as it does for chat apps and AG-UI.
 - A request with `schedule` set and a file: no store write.
 - Rejections, each asserting a 400 and an empty input queue:
   - multimodal off;

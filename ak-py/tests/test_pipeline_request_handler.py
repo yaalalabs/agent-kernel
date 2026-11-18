@@ -1,3 +1,4 @@
+import base64
 import json
 import threading
 
@@ -10,6 +11,7 @@ from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest
+from agentkernel.core.multimodal.hooks import MultimodalPreHook
 from agentkernel.core.multimodal.storage import AttachmentStorageManager
 from agentkernel.core.runtime import Runtime
 from agentkernel.pipeline import request_handler
@@ -441,27 +443,29 @@ class TestMultipart:
         assert response.status_code == 400
         assert "Invalid image type" in response.json()["detail"]["error"]
 
-    def test_multipart_route_absent_on_broker_transports(self, monkeypatch, dummy_agent):
-        _configure(monkeypatch, mode="rest_sync")
-        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
-        response = _client().post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "x", "session_id": "s1"})
-        assert response.status_code == 404
+    def test_multipart_route_served_on_broker_transports(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, multimodal=False)
+        response = client.post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "x", "session_id": "s1", "agent": AGENT_NAME})
+        assert response.status_code == 200
+        assert len(_queued()) == 1
 
 
 BASE64_HELLO = "aGVsbG8="
 
 
-def _broker_client(monkeypatch, *, multimodal=True, storage_type="in_memory", shared=None) -> TestClient:
+def _broker_client(
+    monkeypatch, *, multimodal=True, storage_type="in_memory", shared=None, mode="rest_async", message_type=None, transport=None
+) -> TestClient:
     """A handler on a broker transport (#871), with the in-memory transport and store injected so nothing dials out."""
     if multimodal:
         monkeypatch.setenv("AK_MULTIMODAL__ENABLED", "true")
         monkeypatch.setenv("AK_MULTIMODAL__STORAGE_TYPE", storage_type)
-    _configure(monkeypatch, mode="rest_async")
+    _configure(monkeypatch, mode=mode, message_type=message_type)
     monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
     if shared is not None:
         monkeypatch.setattr(AttachmentStorageManager, "store_is_shared", classmethod(lambda cls: shared))
     handler = RequestHandler()
-    handler._transport = InMemoryTransport()
+    handler._transport = transport or InMemoryTransport()
     handler._response_store = InMemoryResponseStore()
     app = FastAPI()
     app.include_router(handler.get_router())
@@ -550,6 +554,124 @@ class TestBrokerUploadChecks:
         with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
             _broker_client(monkeypatch, shared=True)
         assert "File uploads will be refused" not in caplog.text
+
+
+class _CappedTransport(InMemoryTransport):
+    """A broker stand-in: refuses an input message over LIMIT bytes, as SQS, Kafka and NATS do, and keeps what it sent."""
+
+    LIMIT = 64 * 1024
+    sent: list[str] = []
+
+    def send(self, queue, message):
+        if queue == QueueName.INPUT:
+            assert len(message.body.encode()) <= self.LIMIT, f"input message of {len(message.body.encode())} bytes is over the broker limit"
+            _CappedTransport.sent.append(message.body)
+        return super().send(queue, message)
+
+
+BIG_FILE = b"x" * (200 * 1024)  # well over the 64 KB cap once base64-encoded
+
+
+@pytest.fixture
+def broker_uploads(monkeypatch):
+    """Multimodal on in the runner: the system hooks rebuild from this config, and the description model is stubbed."""
+    _CappedTransport.sent = []
+    monkeypatch.setattr(Runtime, "_system_pre_hooks", None)
+    # The runner and responder build their store through the factory, which refuses in_memory on a broker.
+    monkeypatch.setattr(ResponseStoreFactory, "create", staticmethod(lambda *a, **k: InMemoryResponseStore()))
+    described: list[str] = []
+
+    async def describe(self, data, mime_type="image/jpeg"):
+        described.append(data)
+        return "a greeting"
+
+    monkeypatch.setattr(MultimodalPreHook, "_describe_attachment_briefly", describe)
+    return described
+
+
+class TestBrokerUploads:
+    """#871: on a broker, uploads are saved at the edge and only their ids ride the queue."""
+
+    def _client(self, monkeypatch, **kwargs) -> TestClient:
+        return _broker_client(monkeypatch, shared=True, mode="rest_sync", transport=_CappedTransport(), **kwargs)
+
+    def _assert_only_ids_were_queued(self) -> None:
+        [body] = [json.loads(sent) for sent in _CappedTransport.sent]
+        assert body.get("files") is None and body.get("images") is None
+        assert [req["type"] for req in body["requests"]] == ["text", "attachment_ref"]
+
+    def test_a_json_upload_over_the_broker_limit_round_trips(self, monkeypatch, dummy_agent, workers, broker_uploads):
+        client = self._client(monkeypatch)
+        workers()
+
+        response = client.post(CHAT, json=_with_file(base64.b64encode(BIG_FILE).decode()))
+
+        assert response.status_code == 200
+        assert "a greeting" in response.json()["result"]  # the runner loaded the file by its id and described it
+        assert broker_uploads == [base64.b64encode(BIG_FILE).decode()]
+        self._assert_only_ids_were_queued()
+
+    def test_a_multipart_upload_over_the_broker_limit_round_trips(self, monkeypatch, dummy_agent, workers, broker_uploads):
+        client = self._client(monkeypatch)
+        workers()
+
+        response = client.post(
+            RequestHandler.CHAT_MULTIPART_PATH,
+            data={"prompt": "hi", "session_id": "s1", "agent": AGENT_NAME},
+            files=[("files", ("big.bin", BIG_FILE, "application/octet-stream"))],
+        )
+
+        assert response.status_code == 200
+        assert "a greeting" in response.json()["result"]
+        self._assert_only_ids_were_queued()
+
+    def test_a_streamed_upload_over_the_broker_limit_round_trips(self, monkeypatch, dummy_agent, workers, broker_uploads):
+        client = self._client(monkeypatch, message_type="delta")
+        # The in-memory response store is process-local; here edge and runner share the process.
+        monkeypatch.setattr(RequestHandler, "_store_can_serve_sse", lambda self: True)
+        workers(stream=True)
+
+        with client.stream("POST", CHAT, json=_with_file(base64.b64encode(BIG_FILE).decode())) as response:
+            assert response.status_code == 200
+            frames = [json.loads(line[len("data: ") :]) for line in response.iter_lines() if line.startswith("data: ")]
+
+        assert frames[-1]["done"] is True
+        assert broker_uploads == [base64.b64encode(BIG_FILE).decode()]
+        self._assert_only_ids_were_queued()
+
+    def test_a_link_travels_untouched(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True, transport=_CappedTransport())
+        _CappedTransport.sent = []
+
+        assert client.post(CHAT, json=_with_file("https://example.com/a.txt")).status_code == 200
+
+        [body] = [json.loads(sent) for sent in _CappedTransport.sent]
+        assert body["requests"][1]["file_data"] == "https://example.com/a.txt"
+
+    def test_a_scheduled_request_saves_nothing(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True)
+        monkeypatch.setattr(
+            AttachmentStorageManager, "offload", classmethod(lambda cls, *a, **k: pytest.fail("a deferred request must not save files"))
+        )
+
+        response = client.post(CHAT, json=_with_file(BASE64_HELLO, schedule={"at": "2099-01-01T00:00:00"}))
+
+        assert response.status_code == 200
+        assert len(_queued()) == 1
+
+    def test_a_save_the_store_refuses_is_a_400(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True)
+
+        def refuse(cls, *args, **kwargs):
+            raise ValueError("Attachment a.txt is 500 KB stored, over DynamoDB's 400 KB item limit.")
+
+        monkeypatch.setattr(AttachmentStorageManager, "offload", classmethod(refuse))
+
+        response = client.post(CHAT, json=_with_file(BASE64_HELLO))
+
+        assert response.status_code == 400
+        assert "400 KB item limit" in response.json()["detail"]["error"]
+        assert _queued() == []
 
 
 class TestWebSocketModeGuards:
