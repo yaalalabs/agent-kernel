@@ -33,6 +33,11 @@ class DynamoDBAttachmentStore(AttachmentStore):
 
     _log = logging.getLogger("ak.core.multimodal.storage.dynamodb")
 
+    # DynamoDB's hard cap on one item: attribute names and values together.
+    MAX_ITEM_BYTES = 400 * 1024
+    # Room for the attribute names and the expiry_time number the driver adds, on top of the values measured.
+    _ITEM_OVERHEAD_BYTES = 64
+
     def __init__(self, session_id: str, table_name: str, ttl: int):
         """
         Initializes a DynamoDBAttachmentStore instance.
@@ -44,12 +49,24 @@ class DynamoDBAttachmentStore(AttachmentStore):
         self._driver = DynamoDBDriver(table_name=table_name, partition_key="session_id", sort_key="attachment_id", ttl=ttl)
 
     def _put(self, attachment_id: str, data) -> None:
-        """Store a single item, JSON-encoding its data attribute."""
+        """Store a single item, JSON-encoding its data attribute.
+
+        :raises ValueError: If the item would exceed DynamoDB's 400 KB item limit. Raised before
+            the write, so the caller gets a clear message instead of botocore's ValidationException.
+        """
+        payload = json.dumps(data)
+        size = len(payload.encode()) + len(self._session_id.encode()) + len(attachment_id.encode()) + self._ITEM_OVERHEAD_BYTES
+        if size > self.MAX_ITEM_BYTES:
+            name = data.get("name") if isinstance(data, dict) else None
+            raise ValueError(
+                f"Attachment {name or attachment_id} is {size // 1024} KB stored, over DynamoDB's 400 KB item limit. "
+                "Use multimodal.storage_type: redis for large files."
+            )
         self._driver.put(
             {
                 "session_id": self._session_id,
                 "attachment_id": attachment_id,
-                "data": json.dumps(data),
+                "data": payload,
             }
         )
 

@@ -5,11 +5,11 @@ The order to build [spec.md](spec.md) in. Each iteration leaves the branch worki
 ## Iteration 1: DynamoDB store knows its size limit
 
 - **Goal:** saving a file over 400 KB to DynamoDB raises a clear `ValueError`, not an AWS error.
-- **Files:** `ak-py/src/agentkernel/core/multimodal/storage/dynamodb.py`, new `ak-py/tests/test_dynamodb_attachment_store.py`.
+- **Files:** `ak-py/src/agentkernel/core/multimodal/storage/dynamodb.py`, new `ak-py/tests/test_multimodal_dynamodb_store.py`.
 - **Steps:**
   1. Add `MAX_ITEM_BYTES` and the size check in `_put` (spec: `DynamoDBAttachmentStore` change).
   2. Add the two tests (under and over the cap) with a fake driver.
-- **Verify:** `cd ak-py && uv run pytest tests/test_dynamodb_attachment_store.py tests/test_attachment_offload.py -q`
+- **Verify:** `cd ak-py && uv run pytest tests/test_multimodal_dynamodb_store.py tests/test_attachment_offload.py -q`
 
 ## Iteration 2: Edge checks and startup warning
 
@@ -41,7 +41,7 @@ The order to build [spec.md](spec.md) in. Each iteration leaves the branch worki
 
 From spec Testing, gathered in one place so nothing is missed:
 
-- New: `TestBrokerUploads` in `ak-py/tests/test_pipeline_request_handler.py`, one thread test in `ak-py/tests/test_thread_pipeline_recording.py`, and `ak-py/tests/test_dynamodb_attachment_store.py`.
+- New: `TestBrokerUploads` in `ak-py/tests/test_pipeline_request_handler.py`, one thread test in `ak-py/tests/test_thread_pipeline_recording.py`, and `ak-py/tests/test_multimodal_dynamodb_store.py`.
 - Replaced: `test_multipart_route_absent_on_broker_transports` → `test_multipart_route_served_on_broker_transports`.
 - Patch targets: `QueueTransportFactory.resolve_type`, `AttachmentStorageManager.store_is_shared`, `MultimodalPreHook._described`, `agentkernel.core.multimodal.storage.dynamodb.DynamoDBDriver`.
 - **Verify:** `cd ak-py && uv run pytest -q`, then `make lint-check-all` from the repo root.

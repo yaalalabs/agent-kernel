@@ -190,7 +190,7 @@ All intentional. Each applies only to broker transports unless it says otherwise
 
 `tests/test_thread_pipeline_recording.py`: one test. On a broker with multimodal off, a file request gets 400 and no thread is created.
 
-`tests/test_dynamodb_attachment_store.py` (new file): patch `agentkernel.core.multimodal.storage.dynamodb.DynamoDBDriver` with a fake that records `put` calls.
+`tests/test_multimodal_dynamodb_store.py` (new file): patch `agentkernel.core.multimodal.storage.dynamodb.DynamoDBDriver` with a fake that records `put` calls.
 
 - An item under 400 KB is written.
 - An item over 400 KB raises `ValueError` naming the file and `redis`, and nothing is written.
@@ -203,7 +203,7 @@ All intentional. Each applies only to broker transports unless it says otherwise
 ### Command
 
 ```bash
-cd ak-py && uv run pytest tests/test_pipeline_request_handler.py tests/test_thread_pipeline_recording.py tests/test_dynamodb_attachment_store.py tests/test_attachment_offload.py -q
+cd ak-py && uv run pytest tests/test_pipeline_request_handler.py tests/test_thread_pipeline_recording.py tests/test_multimodal_dynamodb_store.py tests/test_attachment_offload.py -q
 ```
 
 Then the full suite with `uv run pytest -q`, `make lint-check-all` from the repo root (the CI lint check), and `terraform validate` in each changed module.
