@@ -74,8 +74,8 @@ class Runner(ABC):
 | `PydanticAIRunner` | Pydantic AI | ✅ (`run_stream_events`) |
 | `ClaudeRunner` | Claude Agent SDK | ✅ (partial messages) |
 | `MAFRunner` | Microsoft Agent Framework | ✅ (`agent.run(..., stream=True)`) |
-| `CrewAIRunner` | CrewAI | ❌ raises `NotImplementedError` |
-| `SmolagentsRunner` | Smolagents | ❌ raises `NotImplementedError` |
+| `CrewAIRunner` | CrewAI | ✅ (`kickoff_async` with `stream=True`) |
+| `SmolagentsRunner` | Smolagents | ✅ (`run(..., stream=True)`) |
 
 Each runner follows the same shape internally:
 
@@ -150,9 +150,8 @@ async for chunk in service.stream_multi(requests):
 
 `delta` is populated only when `chunk.event` is a `TextDelta`, so a plain-text consumer can keep
 concatenating `delta` unchanged; a consumer that wants tool calls, reasoning, or message/step
-boundaries reads the full `event`. Frameworks without native token streaming (CrewAI, Smolagents)
-declare `supports_streaming = False` and raise `NotImplementedError` from `stream()`; use the default
-synchronous mode (or `rest_sync` on AWS) with those frameworks.
+boundaries reads the full `event`. Every built-in adapter implements native token streaming; the
+per-adapter mapping details differ, so check each framework's page for fidelity notes.
 
 ## Execution Flow
 
@@ -375,7 +374,7 @@ except Exception as e:
 
 - Runners execute framework-specific agent logic and expose both `run()` and `stream()`
 - Each framework has its own Runner implementation
-- OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK support native token streaming (as AK `StreamEvent`s); the CrewAI and Smolagents adapters do not implement it yet
+- All built-in adapters (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK) support native token streaming as AK `StreamEvent`s
 - Runners convert typed requests/replies and manage framework session state
 - Runners inject the reserved `framework_context` into the native call and write the produced state back on success (fidelity varies per framework)
 - Always use async/await, and prefer `Runtime.run()`/`AgentService` over calling runners directly

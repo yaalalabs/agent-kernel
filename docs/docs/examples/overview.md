@@ -33,6 +33,8 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
 - **`claude/`** - Claude Agent SDK subagents and a bound tool served through the REST chat endpoint
 - **`claude-hitl/`** - Claude Agent SDK tool approval: pause a REST request, approve or deny it, and resume the same session
 - **`claude-streaming/`** - Claude Agent SDK token streaming over SSE (`execution.message_type: delta`), including a bound tool's call, arguments and result as stream events
+- **`crewai-streaming/`** - CrewAI token streaming over SSE (`execution.message_type: delta`), with text deltas and message boundaries
+- **`smolagents-streaming/`** - smolagents token streaming over SSE (`execution.message_type: delta`), including the `final_answer` tool call and its result
 
 ### 📁 CLI Examples (`/examples/cli`)
 

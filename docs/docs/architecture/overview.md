@@ -267,7 +267,7 @@ sequenceDiagram
 - Each `StreamChunk` carries `delta`, `event`, `done`, `error`, and `session_id` fields. `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) is carried in `event` alone.
 - Post-hooks see **every** event via `on_stream_event()` — tool arguments and results included — and can rewrite one in place, return `None` to drop it, or return a list to emit several in its place. Raising `StreamHalt` ends the run.
 - Delivery depends on the mode: `rest_sync` serves chunks as **Server-Sent Events** (`text/event-stream`) on the REST API; `async` pushes each chunk as a separate `STREAM_CHUNK` WebSocket message on AWS serverless and AWS ECS containerized (optionally through SQS queues).
-- OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents declare `supports_streaming = False` and do not support token streaming (their runners raise `NotImplementedError` with `execution.message_type: delta`).
+- All built-in framework adapters stream natively as AK `StreamEvent`s; see [Framework Runners](../core-concepts/runner#framework-runners) for the per-adapter mapping.
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
 

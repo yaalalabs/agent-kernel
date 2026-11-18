@@ -6,10 +6,12 @@ import pytest
 pytest.importorskip("crewai")
 
 from crewai import Agent as CrewAgent
+from crewai.types.streaming import StreamChunk, StreamChunkType, ToolCallChunk
 from pydantic import BaseModel
 
 from agentkernel.core import Session
 from agentkernel.core.builder import SessionStoreBuilder
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallArgs, ToolCallEnd, ToolCallStart
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.framework.crewai.crewai import CrewAIAgent, CrewAIModule, CrewAIRunner
@@ -371,7 +373,7 @@ class TestCrewAIRunOptions:
     """Declared run options reach the per-run Crew(...) constructor; agents/tasks/memory stay AK-owned (spec #754)."""
 
     def test_reserved_keys(self):
-        assert set(CrewAIAgent.RESERVED_RUN_OPTIONS) == {"agents", "tasks", "memory"}
+        assert set(CrewAIAgent.RESERVED_RUN_OPTIONS) == {"agents", "tasks", "memory", "stream"}
 
     @pytest.mark.asyncio
     async def test_options_reach_crew_and_verbose_is_overridable(self):
@@ -402,7 +404,7 @@ class TestCrewAIRunOptions:
             await runner.run(agent, Session("s"), [AgentRequestText(prompt="research AI")])
 
         kwargs = crew_cls.call_args.kwargs
-        assert set(kwargs) == {"agents", "tasks", "verbose", "memory"}
+        assert set(kwargs) == {"agents", "tasks", "verbose", "memory", "stream"}
         assert kwargs["verbose"] is False
 
     @pytest.mark.asyncio
@@ -423,7 +425,7 @@ class TestCrewAIRunOptions:
         assert kwargs["max_rpm"] == 5
         assert kwargs["verbose"] is True
         assert kwargs["agents"] == agent.crew
-        assert set(kwargs) == {"agents", "tasks", "verbose", "memory", "max_rpm"}
+        assert set(kwargs) == {"agents", "tasks", "verbose", "memory", "max_rpm", "stream"}
 
     @pytest.mark.asyncio
     async def test_a_rejected_request_returns_before_resolving(self):
@@ -483,3 +485,156 @@ class TestCrewAIRunnerCannotPause:
         with pytest.raises(NotImplementedError, match=runner.name):
             async for _ in runner.resume_stream(None, Session("s"), [], [], None):
                 pass
+
+
+class _CrewAsyncStream:
+    """Minimal stand-in for CrewAI's CrewStreamingOutput."""
+
+    def __init__(self, chunks, result):
+        self._chunks = chunks
+        self._result = result
+
+    def __aiter__(self):
+        async def iterate():
+            for chunk in self._chunks:
+                yield chunk
+
+        return iterate()
+
+    async def aclose(self):
+        return None
+
+    @property
+    def result(self):
+        return self._result
+
+
+class TestCrewAIRunnerStreaming:
+    def test_supports_streaming_is_true(self):
+        assert CrewAIRunner().supports_streaming is True
+
+    @pytest.mark.asyncio
+    async def test_stream_maps_text_and_tool_calls_and_updates_the_transcript(self):
+        chunks = [
+            StreamChunk(content="Hello ", chunk_type=StreamChunkType.TEXT),
+            StreamChunk(content="world", chunk_type=StreamChunkType.TEXT),
+            StreamChunk(
+                content="",
+                chunk_type=StreamChunkType.TOOL_CALL,
+                tool_call=ToolCallChunk(tool_id="t1", tool_name="lookup", arguments='{"q": "x"}', index=0),
+            ),
+            StreamChunk(content="answer", chunk_type=StreamChunkType.TEXT),
+        ]
+        output = _crew_output(raw="answer")
+        crew = MagicMock()
+        crew.kickoff_async = AsyncMock(return_value=_CrewAsyncStream(chunks, output))
+        crew_cls = MagicMock(return_value=crew)
+
+        runner = CrewAIRunner()
+        session = Session("s")
+        agent = _mock_agent()
+
+        with (
+            patch.object(runner, "_memory", return_value=None),
+            patch("agentkernel.framework.crewai.crewai.Task"),
+            patch("agentkernel.framework.crewai.crewai.Crew", crew_cls),
+        ):
+            events = [event async for event in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert [event.type for event in events] == [
+            "message_start",
+            "text_delta",
+            "text_delta",
+            "message_end",
+            "tool_call_start",
+            "tool_call_args",
+            "tool_call_end",
+            "message_start",
+            "text_delta",
+            "message_end",
+        ]
+        assert [event.content for event in events if isinstance(event, TextDelta)] == ["Hello ", "world", "answer"]
+        start = next(event for event in events if isinstance(event, ToolCallStart))
+        assert (start.tool_call_id, start.name) == ("t1", "lookup")
+        assert next(event for event in events if isinstance(event, ToolCallArgs)).delta == '{"q": "x"}'
+        assert crew_cls.call_args.kwargs["stream"] is True
+        assert session.get(CrewAIRunner.TRANSCRIPT_KEY) == ["User: hi", "Assistant: answer"]
+
+    @pytest.mark.asyncio
+    async def test_stream_closes_an_open_tool_call_before_the_final_message_end(self):
+        chunks = [
+            StreamChunk(
+                content="",
+                chunk_type=StreamChunkType.TOOL_CALL,
+                tool_call=ToolCallChunk(tool_id="t1", tool_name="lookup", arguments='{"q": "x"}', index=0),
+            )
+        ]
+        crew = MagicMock()
+        crew.kickoff_async = AsyncMock(return_value=_CrewAsyncStream(chunks, _crew_output(raw="")))
+        runner = CrewAIRunner()
+
+        with (
+            patch.object(runner, "_memory", return_value=None),
+            patch("agentkernel.framework.crewai.crewai.Task"),
+            patch("agentkernel.framework.crewai.crewai.Crew", return_value=crew),
+        ):
+            events = [event async for event in runner.stream(_mock_agent(), Session("s"), [AgentRequestText(prompt="hi")])]
+
+        assert [event.type for event in events] == ["tool_call_start", "tool_call_args", "tool_call_end"]
+
+    @pytest.mark.asyncio
+    async def test_stream_does_not_reuse_a_closed_call_id_for_an_id_less_call(self):
+        chunks = [
+            StreamChunk(
+                content="",
+                chunk_type=StreamChunkType.TOOL_CALL,
+                tool_call=ToolCallChunk(tool_id="t1", tool_name="lookup", arguments="{}", index=0),
+            ),
+            StreamChunk(content="between", chunk_type=StreamChunkType.TEXT),
+            StreamChunk(
+                content="",
+                chunk_type=StreamChunkType.TOOL_CALL,
+                tool_call=ToolCallChunk(tool_id="", tool_name="lookup", arguments="{}", index=0),
+            ),
+        ]
+        crew = MagicMock()
+        crew.kickoff_async = AsyncMock(return_value=_CrewAsyncStream(chunks, _crew_output(raw="")))
+        runner = CrewAIRunner()
+
+        with (
+            patch.object(runner, "_memory", return_value=None),
+            patch("agentkernel.framework.crewai.crewai.Task"),
+            patch("agentkernel.framework.crewai.crewai.Crew", return_value=crew),
+        ):
+            events = [event async for event in runner.stream(_mock_agent(), Session("s"), [AgentRequestText(prompt="hi")])]
+
+        starts = [event.tool_call_id for event in events if isinstance(event, ToolCallStart)]
+        assert len(starts) == 2
+        assert starts[0] != starts[1]
+
+    @pytest.mark.asyncio
+    async def test_stream_emits_the_rejection_reply_for_an_invalid_prompt(self):
+        runner = CrewAIRunner()
+
+        events = [event async for event in runner.stream(_mock_agent(), Session("s"), [AgentRequestText(prompt="   ")])]
+
+        assert [event.type for event in events] == ["message_start", "text_delta", "message_end"]
+        assert events[1].content
+
+    @pytest.mark.asyncio
+    async def test_run_builds_a_non_streaming_crew(self):
+        output = _crew_output(raw="answer")
+        crew = MagicMock()
+        crew.kickoff_async = AsyncMock(return_value=output)
+        crew_cls = MagicMock(return_value=crew)
+        runner = CrewAIRunner()
+
+        with (
+            patch.object(runner, "_memory", return_value=None),
+            patch("agentkernel.framework.crewai.crewai.Task"),
+            patch("agentkernel.framework.crewai.crewai.Crew", crew_cls),
+        ):
+            reply = await runner.run(_mock_agent(), Session("s"), [AgentRequestText(prompt="hi")])
+
+        assert isinstance(reply, AgentReplyText)
+        assert crew_cls.call_args.kwargs["stream"] is False

@@ -69,9 +69,8 @@ When adding or touching an adapter:
   forcing uniformity across adapters is itself an opinion the architecture avoids.
 - **No feature-forcing.** Don't require a capability the underlying framework/service doesn't
   natively support (e.g. don't invent a fake token stream when the SDK has no streaming API —
-  raise `NotImplementedError` until a real mapping exists). CrewAI and smolagents *do* stream in
-  their SDKs; their AK adapters still raise because that wiring is not implemented yet — same
-  `NotImplementedError` shape, different reason.
+  raise `NotImplementedError` until a real mapping exists). Every built-in adapter wires its
+  framework's native streaming API; raise only when the SDK genuinely has no streaming surface.
 - **No hidden defaults that change behavior.** Config-driven, explicit choices (`AKConfig`) beat
   adapter-internal heuristics. If an adapter needs a default, make it the same default the native
   tool itself would use.

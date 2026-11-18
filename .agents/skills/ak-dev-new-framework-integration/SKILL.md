@@ -168,7 +168,7 @@ async def stream(self, agent, session: Session, requests: list[AgentRequest]) ->
         tool_context.reset()
 ```
 
-**If the framework has no native token streaming** (e.g. CrewAI, smolagents), override `supports_streaming` to `False` and implement `stream()` as a generator that always raises, so a caller can check the property before invoking `stream()` instead of provoking the raise, while `stream()` itself still satisfies the abstract method contract and fails fast with a clear message:
+**If the framework has no native token streaming**, override `supports_streaming` to `False` and implement `stream()` as a generator that always raises, so a caller can check the property before invoking `stream()` instead of provoking the raise, while `stream()` itself still satisfies the abstract method contract and fails fast with a clear message:
 
 ```python
 async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:

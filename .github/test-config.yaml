@@ -163,6 +163,10 @@ e2e:
     - type: api
       path: examples/api/maf-streaming
     - type: api
+      path: examples/api/crewai-streaming
+    - type: api
+      path: examples/api/smolagents-streaming
+    - type: api
       path: examples/api/agui
     - type: api
       path: examples/api/schedule-openai
