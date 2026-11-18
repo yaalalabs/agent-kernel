@@ -333,6 +333,19 @@ execution:
 instance, and Cloud Run instances are not individually addressable. Enable the
 `pubsub.googleapis.com` API first.
 
+**File uploads in queue mode.** The `-multipart` route is exposed. The edge saves each uploaded file
+to the multimodal attachment store and queues only its ID, so the edge and the agent-runner service must
+read the same store, with identical settings in both:
+
+```yaml
+multimodal:
+  enabled: true
+  storage_type: redis # or dynamodb; set multimodal.redis.url to the same Redis in both services
+```
+
+Without a shared store, requests that carry files get a 400; text chats still work, and the edge logs a
+warning at startup. API Gateway accepts request bodies up to 32 MB, above the default 10 MB `api.max_file_size`.
+
 Set `queue_mode = false` for the single-service deployment, where the agents run inside the
 service and nothing here (Pub/Sub, the agent-runner service, the automatic Memorystore) is created.
 

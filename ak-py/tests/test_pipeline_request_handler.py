@@ -639,6 +639,24 @@ class TestBrokerUploads:
         assert broker_uploads == [base64.b64encode(BIG_FILE).decode()]
         self._assert_only_ids_were_queued()
 
+    def test_a_streamed_multipart_upload_over_the_broker_limit_round_trips(self, monkeypatch, dummy_agent, workers, broker_uploads):
+        client = self._client(monkeypatch, message_type="delta")
+        monkeypatch.setattr(RequestHandler, "_store_can_serve_sse", lambda self: True)
+        workers(stream=True)
+
+        with client.stream(
+            "POST",
+            RequestHandler.CHAT_MULTIPART_PATH,
+            data={"prompt": "hi", "session_id": "s1", "agent": AGENT_NAME},
+            files=[("files", ("big.bin", BIG_FILE, "application/octet-stream"))],
+        ) as response:
+            assert response.status_code == 200
+            frames = [json.loads(line[len("data: ") :]) for line in response.iter_lines() if line.startswith("data: ")]
+
+        assert frames[-1]["done"] is True
+        assert broker_uploads == [base64.b64encode(BIG_FILE).decode()]
+        self._assert_only_ids_were_queued()
+
     def test_a_link_travels_untouched(self, monkeypatch, dummy_agent):
         client = _broker_client(monkeypatch, shared=True, transport=_CappedTransport())
         _CappedTransport.sent = []

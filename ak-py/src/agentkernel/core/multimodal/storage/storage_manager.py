@@ -161,11 +161,11 @@ class AttachmentStorageManager:
     ) -> tuple[list[AgentRequest], list[StoredAttachment]]:
         """Save each image/file request's bytes and replace it, in place, with a reference.
 
-        Two surfaces need this same rewrite before an agent request leaves the process it was
-        built in: conversation threads (the bytes must not be re-sent on every turn) and messaging
-        integrations (the bytes must not ride the queue, whose brokers cap a message far below
-        ``api.max_file_size``). ``MultimodalPreHook`` resolves the references later; no raw bytes
-        travel past storage.
+        Several surfaces need this same rewrite before an agent request leaves the process it was
+        built in: conversation threads (the bytes must not be re-sent on every turn), and messaging
+        integrations, AG-UI and the REST pipeline on a broker (the bytes must not ride the queue,
+        whose brokers cap a message far below ``api.max_file_size``). ``MultimodalPreHook``
+        resolves the references later; no raw bytes travel past storage.
 
         Requests that carry no attachment bytes pass through unchanged and keep their order, and a
         list with no attachments at all is returned as-is.
