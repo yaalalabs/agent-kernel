@@ -48,9 +48,12 @@ Code references are at `develop` @ `d0453388`.
 
 - On a broker transport, when a REST chat request carries file or image bytes, the edge offloads them before enqueueing.
   - This covers both `POST /api/v1/chat` (base64 in JSON) and `POST /api/v1/chat-multipart` (form upload). The multipart route already ends in `run_chat`, so it is one change in one place.
+  - The offload runs in `run_chat`, right after `_reject_unroutable` and before the streaming (SSE) branch (`pipeline/request_handler.py:394-398`). Both reply paths then get the offloaded request: `_run_chat_stream` and `enqueue_and_wait` each enqueue the body they are given (`pipeline/request_handler.py:472`, `pipeline/request_handler.py:261`).
+  - Saving a file is blocking I/O, so the offload runs off the event loop (`asyncio.to_thread`), like the enqueue already does.
   - The edge builds the request list with the existing `RequestBuilder` (the code that turns a chat request into agent inputs), so its checks still run: a missing `mime_type` is still rejected, and extra fields still reach the agent.
   - It sends that list in the existing `requests` field, and sends no `files` or `images`.
   - Files given as a link (`http://`, `https://`, `s3://`) have no bytes to save. They travel as they do today.
+  - A file given as a plain-text `data:` URI (no `;base64` marker, e.g. `data:text/plain,hello%20world`) carries its contents inline, and the store can't save it as is (`core/multimodal/source.py:30-31`). On a broker transport it is rejected with HTTP 400: "send the file as base64 or as a link". (Decision 5.)
 - The queue message never contains file bytes on a broker transport.
 - The `in_memory` transport is unchanged. Edge and runner share one process there, so nothing needs to be offloaded.
 - `POST /api/v1/chat-multipart` is served on every transport.
@@ -63,7 +66,10 @@ Code references are at `develop` @ `d0453388`.
 ### When files can't be stored
 
 - **Multimodal off, broker transport, request has file bytes**: rejected with HTTP 400 and a clear message: "enable `multimodal` with a shared store (redis or dynamodb)". Requests without files are unaffected. (Decision 1.)
-- **A store the runner can't read** (`in_memory`, `session_cache`) on a broker transport: startup fails with the existing message, as it already does for chat apps and AG-UI. The check runs only when multimodal is on.
+- **A store the runner can't read** (`in_memory`, `session_cache`) on a broker transport, with multimodal on:
+  - The service still starts. The REST pipeline has no such check today, so text-only chats on these deployments work and must keep working.
+  - Startup logs a warning that names the store and says uploads need `redis` or `dynamodb`.
+  - A request that carries file bytes gets HTTP 400 with the existing message from the chat-app check (`integration/adapter/producer.py:52-58`). Requests without files are unaffected. (Decision 6.)
 - **File too big for the store**: DynamoDB items are capped at 400 KB, so files over about 300 KB can't be saved (base64 adds a third). The edge returns HTTP 400 that names the limit and suggests `redis`, instead of a 500 from AWS. (Decision 2.)
 - **File over `api.max_file_size`**: rejected as today (`pipeline/request_handler.py:548-549`). The JSON route gets the same check.
 
@@ -77,13 +83,16 @@ Code references are at `develop` @ `d0453388`.
 - No new configuration. Existing settings switch the feature on:
   - `multimodal.enabled: true` plus `multimodal.storage_type: redis` or `dynamodb` turns on file uploads for broker transports.
   - `api.max_file_size` stays the size limit.
+- The edge and the runner must point at the same store, with identical connection settings in the reused block: `multimodal.redis` (`_MultimodalStorageRedisConfig`, a `_RedisConfig`) or `multimodal.dynamodb` (`_MultimodalStorageDynamoDBConfig`, a `_DynamoDBConfig`) (`core/config.py:410-417`).
+  - Why: the shared-store check looks only at the store type (`core/multimodal/storage/storage_manager.py:112`). If the two processes use different Redis URLs or DynamoDB tables, the runner can't find the file. The pre-hook then drops it with only a warning (`core/multimodal/hooks.py:224-226`).
 
 ### Deployments
 
 - AWS ECS: expose `POST <agent>-multipart` in queue mode too. It stays hidden in WebSocket mode.
 - GCP (containerized and serverless): the same change.
 - Azure: already exposed. It starts working once the code change lands.
-- Each deployment README says that uploads in queue mode need `multimodal` with a Redis (or DynamoDB) store, and states the gateway's request body limit (decision 4). ECS can already create Redis (`create_redis_cluster`, `ak-aws/containerized/state.tf:80-83`).
+- Each deployment README says that uploads in queue mode need `multimodal` with a Redis (or DynamoDB) store, and states the gateway's request body limit (decision 4).
+- Each deployment gives the edge and the runner the same `multimodal` store settings (see Configuration). ECS can already create Redis (`create_redis_cluster`, `ak-aws/containerized/state.tf:80-83`).
 
 ### Tests
 
@@ -91,8 +100,9 @@ Code references are at `develop` @ `d0453388`.
   - the request succeeds;
   - the queued message holds only attachment IDs, and is under the limit;
   - the runner gets the file back from the store.
-- Both routes are covered (JSON and multipart).
-- The error cases above each have a test: multimodal off, an unreadable store, and a file too big for DynamoDB.
+- Both routes are covered (JSON and multipart), each with streaming (SSE) on and off.
+- The error cases above each have a test: multimodal off, an unreadable store, a file too big for DynamoDB, and a plain-text `data:` URI.
+- With an unreadable store, the service still starts, logs the warning, and serves a text-only chat.
 - The `in_memory` transport path keeps its current behavior (the existing tests stay green).
 
 ## Non-goals
@@ -117,3 +127,8 @@ Code references are at `develop` @ `d0453388`.
    - Cloud gateways may refuse a request body near 10 MB before Agent Kernel sees it (AWS HTTP API caps payloads at 10 MB; Azure APIM and GCP limits are checked against the provider docs during `spec.md`).
    - Each deployment README states its gateway's body limit.
    - Why: lowering the default would also change it for direct-mode and local users.
+5. **Plain-text `data:` URIs on a broker transport: rejected with a clear 400.**
+   - Why: their contents would ride the queue, which breaks the "no file bytes in the message" rule. The format is rare, and rejecting it needs no new decoding code.
+6. **A store the runner can't read: only file-bearing requests are rejected; startup still succeeds with a warning.**
+   - Why: failing startup would break deployments that serve text-only chats today.
+   - This differs from chat apps and AG-UI, which fail at startup. They never served traffic with such a store, so they have nothing to break.
