@@ -2,6 +2,7 @@ import asyncio
 import functools
 import inspect
 import json
+import logging
 from collections.abc import AsyncGenerator, Callable, Mapping
 from typing import Any, ClassVar
 from uuid import uuid4
@@ -36,6 +37,7 @@ from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "smolagents"
+_log = logging.getLogger("ak.smolagents.runner")
 SmolagentsSupportedAgent = MultiStepAgent | CodeAgent | ToolCallingAgent
 
 
@@ -506,7 +508,7 @@ class SmolagentsRunner(Runner):
                     close()
                 except Exception as e:
                     # A generator already unwound by an exception can refuse to close; the run is over either way.
-                    logging.getLogger("ak.smolagents.runner").debug(f"smolagents stream generator was already closed: {e}")
+                    _log.debug(f"smolagents stream generator was already closed: {e}")
             if previous_stream_outputs is not None:
                 agent.agent.stream_outputs = previous_stream_outputs
             if context is not None:
@@ -522,7 +524,7 @@ class SmolagentsAgent(BaseAgent):
         "task": "built from the AgentRequest list by the runner",
         "reset": "fixed to False so memory persists across turns",
         "additional_args": "populated from the session's framework_context; seed it with Session.set_framework_context()",
-        "stream": "the runner maps a single return value, not a step stream",
+        "stream": "the runner sets it per run: True for stream(), False for run()",
         "return_full_result": "the runner maps the final answer, not a RunResult",
     }
 
