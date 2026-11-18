@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncGenerator, Callable, Mapping
 from typing import Any, ClassVar
 from uuid import uuid4
+from weakref import WeakKeyDictionary
 
 from smolagents import (
     ActionStep,
@@ -291,6 +292,25 @@ class SmolagentsRunner(Runner):
         Initializes a SmolagentsRunner instance.
         """
         super().__init__(FRAMEWORK)
+        self._native_locks: WeakKeyDictionary[Any, asyncio.Lock] = WeakKeyDictionary()
+
+    def _native_lock(self, agent: Any) -> asyncio.Lock:
+        """
+        Returns the lock that serializes runs on one native smolagents agent.
+
+        The native agent holds the run's memory, `state` and `stream_outputs` on itself, so two overlapping runs
+        (different sessions, or a stream pulled between yields) would overwrite each other's hydrated memory and
+        leave the flag set. A run takes the lock before hydrating and releases it after memory is synced and the
+        flag restored, once its worker thread has stopped.
+
+        :param agent: The smolagents-backed agent wrapper.
+        :return: The lock for that agent's native object.
+        """
+        native = agent.agent
+        lock = self._native_locks.get(native)
+        if lock is None:
+            lock = self._native_locks[native] = asyncio.Lock()
+        return lock
 
     @staticmethod
     def _prompt(requests: list[AgentRequest]) -> tuple[str, AgentReplyText | None]:
@@ -389,6 +409,7 @@ class SmolagentsRunner(Runner):
         """
         context: ToolContext | None = None
         prompt = ""
+        lock: asyncio.Lock | None = None  # set only once this run holds it
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
             prompt, invalid = self._prompt(requests)
@@ -397,6 +418,11 @@ class SmolagentsRunner(Runner):
 
             # Resolved once per run: the static options with a declared factory's result merged over them.
             options = await agent.resolve_run_options(session, requests)
+
+            # Exclusive use of the native agent until its memory is synced back.
+            native_lock = self._native_lock(agent)
+            await native_lock.acquire()
+            lock = native_lock
 
             # Rehydrate framework memory from the AgentKernel session before execution.
             self._hydrate_memory(agent, session)
@@ -431,6 +457,8 @@ class SmolagentsRunner(Runner):
         except Exception as e:
             return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
+            if lock is not None:
+                lock.release()
             if context is not None:
                 context.reset()
 
@@ -452,6 +480,7 @@ class SmolagentsRunner(Runner):
         context: ToolContext | None = None
         generator: Any = None
         previous_stream_outputs: Any = None
+        lock: asyncio.Lock | None = None  # set only once this run holds it
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
             prompt, invalid = self._prompt(requests)
@@ -464,6 +493,11 @@ class SmolagentsRunner(Runner):
 
             # Resolved once per run: the static options with a declared factory's result merged over them.
             options = await agent.resolve_run_options(session, requests)
+
+            # Exclusive use of the native agent, flag included, until the run's worker has stopped.
+            native_lock = self._native_lock(agent)
+            await native_lock.acquire()
+            lock = native_lock
 
             # Rehydrate framework memory from the AgentKernel session before execution.
             self._hydrate_memory(agent, session)
@@ -519,6 +553,8 @@ class SmolagentsRunner(Runner):
                     _log.debug(f"smolagents stream generator was already closed: {e}")
             if previous_stream_outputs is not None:
                 agent.agent.stream_outputs = previous_stream_outputs
+            if lock is not None:
+                lock.release()
             if context is not None:
                 context.reset()
 

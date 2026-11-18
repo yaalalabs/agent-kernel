@@ -644,3 +644,47 @@ class TestSmolagentsRunnerStreaming:
         assert [event.content for event in events if isinstance(event, TextDelta)] == ["ok"]
         mock_log.assert_called_once()
         assert isinstance(mock_log.call_args.args[1], TypeError)
+
+    @pytest.mark.asyncio
+    async def test_overlapping_streams_on_one_native_agent_run_one_at_a_time(self):
+        import asyncio
+
+        class _Model:
+            def generate_stream(self, *args, **kwargs):  # pragma: no cover
+                raise AssertionError
+
+        class _Native(_StreamingNativeSmolagent):
+            active = 0
+            max_active = 0
+
+            def run(self, task, **kwargs):
+                def items():
+                    type(self).active += 1
+                    type(self).max_active = max(type(self).max_active, type(self).active)
+                    try:
+                        yield FinalAnswerStep(output="ok")
+                    finally:
+                        type(self).active -= 1
+
+                return items()
+
+        native = _Native([])
+        native.model = _Model()
+        runner = SmolagentsRunner()
+        agent = _mock_agent()
+        agent.agent = native
+
+        async def drain():
+            async for _ in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")]):
+                await asyncio.sleep(0)
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+        ):
+            await asyncio.gather(drain(), drain())
+
+        # Without the lock the two runs overlap, and the second restores the first's True, leaving the flag set.
+        assert _Native.max_active == 1
+        assert native.stream_outputs is False
+        assert not runner._native_lock(agent).locked()
