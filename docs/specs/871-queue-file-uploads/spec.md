@@ -44,7 +44,7 @@ class RequestHandler(RestHandler):
 
 Runs only when the transport is not `in_memory` and the body has `files` or `images`. It raises `HTTPException(400, detail={"error": <msg>, "session_id": ...})`, the error shape the chat route already uses (`pipeline/request_handler.py:414`). The checks, in order:
 
-1. **Plain-text `data:` URI** (decision 5). For each `FileData.file_data` / `ImageData.image_data`, a value that starts with `data:` and whose header (before the first comma) does not end in `;base64`. Message: `"File <name> is a plain-text data: URI; on a queue transport send it as base64 or as a link"`.
+1. **Plain-text `data:` URI** (decision 5). For each `FileData.file_data` / `ImageData.image_data`, a value that starts with `data:` and whose header (before the first comma) does not end in `;base64` is skipped, like a link: it travels inline.
    - The check matches `AttachmentSource._resolve` (`core/multimodal/source.py:102-106`), but works on the raw field, so it needs no `RequestBuilder` call.
 2. **File bytes present?** A value is file bytes when it is not a link (`http://`, `https://`, `s3://`) and not a plain-text `data:` URI. If no value is file bytes, return. Links travel as they do today.
 3. **Multimodal off** (decision 1). Message: `"This request carries file bytes, but multimodal support is disabled. On a queue transport files are saved to the attachment store first: set multimodal.enabled: true with storage_type redis or dynamodb."`
@@ -137,7 +137,7 @@ All intentional. Each applies only to broker transports unless it says otherwise
 2. JSON and multipart requests with base64 files are saved to the store, and the queue message carries IDs. Before, the bytes rode the queue and the runner's `MultimodalPreHook` saved them. With multimodal on, the agent sees the same description and ID either way.
 3. Base64 files with multimodal off now get 400 (decision 1). Before, small ones worked and large ones failed at the broker.
 4. Base64 files with an unshared store get 400 (decision 6). Before, small ones worked, because the runner saved them in its own process.
-5. Plain-text `data:` URIs get 400 (decision 5).
+5. Plain-text `data:` URIs travel inline, unchanged (decision 5).
 6. JSON-route files over `api.max_file_size` get 400. Before, nothing checked them on the JSON route.
 7. Startup logs a warning for multimodal on with an unshared store (decision 6).
 8. **All transports, all callers:** a DynamoDB attachment over 400 KB raises `ValueError` with a clear message, instead of botocore's `ClientError` (`ValidationException`). Every caller of `save_attachment` sees this: chat-app adapters, AG-UI, the thread manager, and `MultimodalPreHook` on the runner. On the REST edge it becomes a 400.
@@ -183,7 +183,6 @@ All intentional. Each applies only to broker transports unless it says otherwise
 - Rejections, each asserting a 400 and an empty input queue:
   - multimodal off;
   - `store_is_shared` false;
-  - a plain-text `data:` URI;
   - a JSON file over `api.max_file_size` (set `AK_API__MAX_FILE_SIZE` small).
 - A text-only chat with an unshared store returns 200, and the handler's startup logged the warning (`caplog`).
 - **Replaced:** `test_multipart_route_absent_on_broker_transports` becomes `test_multipart_route_served_on_broker_transports`.

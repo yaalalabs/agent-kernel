@@ -495,9 +495,30 @@ class TestBrokerUploadChecks:
         assert response.json()["detail"]["session_id"] == "s1"
         assert _queued() == []
 
-    def test_a_plain_text_data_uri_is_refused(self, monkeypatch, dummy_agent):
+    def test_a_plain_text_data_uri_travels_inline(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True, transport=_CappedTransport())
+        _CappedTransport.sent = []
+
+        assert client.post(CHAT, json=_with_file("data:text/plain,hello%20world")).status_code == 200
+
+        [body] = [json.loads(sent) for sent in _CappedTransport.sent]
+        assert body["requests"][1]["file_data"] == "data:text/plain,hello%20world"
+
+    def test_a_store_config_error_is_a_400(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, storage_type="nonsense")
+        self._assert_refused(client.post(CHAT, json=_with_file(BASE64_HELLO)), "unknown multimodal storage_type 'nonsense'")
+
+    def test_saved_files_are_capped_at_max_attachments(self, monkeypatch, dummy_agent):
+        monkeypatch.setenv("AK_MULTIMODAL__MAX_ATTACHMENTS", "1")
         client = _broker_client(monkeypatch, shared=True)
-        self._assert_refused(client.post(CHAT, json=_with_file("data:text/plain,hello%20world")), "plain-text data: URI")
+        seen = []
+        real_offload = AttachmentStorageManager.offload.__func__
+        monkeypatch.setattr(
+            AttachmentStorageManager, "offload", classmethod(lambda cls, *a, **k: seen.append(k["max_attachments"]) or real_offload(cls, *a, **k))
+        )
+
+        assert client.post(CHAT, json=_with_file(BASE64_HELLO)).status_code == 200
+        assert seen == [1 + 2]  # the cap plus this request's prompt and file
 
     def test_file_bytes_without_multimodal_are_refused(self, monkeypatch, dummy_agent):
         client = _broker_client(monkeypatch, multimodal=False)
@@ -688,6 +709,7 @@ class TestBrokerUploads:
         assert response.status_code == 200
         [body] = [json.loads(sent) for sent in _CappedTransport.sent]
         assert not body.get("files") and body["prompt"] == "hi"
+        assert body["schedule"]["at"].startswith("2099-01-01T00:00:00")
 
     def test_a_save_the_store_refuses_is_a_400(self, monkeypatch, dummy_agent):
         client = _broker_client(monkeypatch, shared=True)

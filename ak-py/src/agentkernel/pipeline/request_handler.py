@@ -434,7 +434,8 @@ class RequestHandler(RestHandler):
 
         On a broker transport file bytes are saved to the attachment store at the edge and only
         their ids ride the queue (spec #871), so a request whose bytes cannot be saved where the
-        runner reads them is refused here. Links carry no bytes and pass. The ``in_memory``
+        runner reads them is refused here. Links and plain-text ``data:`` URIs carry no stored
+        bytes and pass. The ``in_memory``
         transport keeps bytes in-process and is never checked. No I/O.
 
         :param body: The chat request.
@@ -451,13 +452,17 @@ class RequestHandler(RestHandler):
             if scheme.startswith("data:"):
                 header, _, data = data.partition(",")
                 if not header.lower().endswith(";base64"):
-                    self._reject_attachment(body, f"File {name} is a plain-text data: URI; on a queue transport send it as base64 or as a link")
+                    continue  # plain-text data: URI: small text that travels inline like a link (offload records it as a url)
             payloads.append((name, data))
         if not payloads:
             return
         if not self._config.multimodal.enabled:
             self._reject_attachment(body, self._MULTIMODAL_OFF_ERROR)
-        if not AttachmentStorageManager.store_is_shared():
+        try:
+            shared = AttachmentStorageManager.store_is_shared()
+        except (AKConfigError, ImportError) as e:  # the refusal the startup warning promised
+            self._reject_attachment(body, str(e))
+        if not shared:
             self._reject_attachment(body, self._unshared_store_message())
         max_size = self._config.api.max_file_size
         for name, payload in payloads:
@@ -496,6 +501,8 @@ class RequestHandler(RestHandler):
                 requests,
                 attachments_disabled_error=self._MULTIMODAL_OFF_ERROR,
                 session_cache_error=self._unshared_store_message(),
+                # Unlike a thread, nothing here needs old files kept; the headroom keeps this request's own.
+                max_attachments=self._config.multimodal.max_attachments + len(requests),
             )
         except ValueError as e:
             self._reject_attachment(body, str(e))

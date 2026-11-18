@@ -389,11 +389,10 @@ A request that carries file bytes is refused with a 400, before anything is queu
 
 - `multimodal.enabled` is false.
 - `multimodal.storage_type` keeps files in one process (`in_memory`, `session_cache`). `redis`, `dynamodb` and a custom store whose `shared` is `True` work. Text chats still work, and the edge logs a warning at startup.
-- A file is a plain-text `data:` URI (no `;base64`). Send it as base64 or as a link instead.
 - A file is larger than `api.max_file_size`.
-- The store is `dynamodb` and a file is over about 300 KB: a DynamoDB item holds at most 400 KB. Use `redis` for large files. Files saved earlier in the same request stay stored until they expire.
+- The store is `dynamodb` and a file is over about 300 KB: a DynamoDB item holds at most 400 KB. Use `redis` for large files. Files saved earlier in the same request are deleted.
 
-Files given as links (`http://`, `https://`, `s3://`) carry no bytes and pass through as they are. Saved files expire with the store's TTL (`multimodal.redis.ttl` or `multimodal.dynamodb.ttl`, 7 days by default), so the agent can look at them again in later turns. The `in_memory` transport is unchanged: edge and runner share one process, so files stay in the message.
+Files given as links (`http://`, `https://`, `s3://`) or plain-text `data:` URIs (no `;base64`) carry no stored bytes and pass through as they are. Saved files expire with the store's TTL (`multimodal.redis.ttl` or `multimodal.dynamodb.ttl`, 7 days by default), so the agent can look at them again in later turns. Each session keeps at most `multimodal.max_attachments` files; older ones are removed. The `in_memory` transport is unchanged: edge and runner share one process, so files stay in the message.
 
 ## Custom Routes
 

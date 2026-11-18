@@ -54,7 +54,7 @@ Code references are at `develop` @ `d0453388`.
   - The edge builds the request list with the existing `RequestBuilder` (the code that turns a chat request into agent inputs), so its checks still run: a missing `mime_type` is still rejected, and extra fields still reach the agent.
   - It sends that list in the existing `requests` field, and sends no `files` or `images`.
   - Files given as a link (`http://`, `https://`, `s3://`) have no bytes to save. They travel as they do today.
-  - A file given as a plain-text `data:` URI (no `;base64` marker, e.g. `data:text/plain,hello%20world`) carries its contents inline, and the store can't save it as is (`core/multimodal/source.py:30-31`). On a broker transport it is rejected with HTTP 400: "send the file as base64 or as a link". (Decision 5.)
+  - A file given as a plain-text `data:` URI (no `;base64` marker, e.g. `data:text/plain,hello%20world`) carries its contents inline, and the store can't save it as is (`core/multimodal/source.py:30-31`). On a broker transport it travels inline like a link: `offload` records it as a url. (Decision 5.)
 - The queue message never contains file bytes on a broker transport.
 - The `in_memory` transport is unchanged. Edge and runner share one process there, so nothing needs to be offloaded.
 - `POST /api/v1/chat-multipart` is served on every transport.
@@ -103,7 +103,7 @@ Code references are at `develop` @ `d0453388`.
   - the queued message holds only attachment IDs, and is under the limit;
   - the runner gets the file back from the store.
 - Both routes are covered (JSON and multipart), each with streaming (SSE) on and off.
-- The error cases above each have a test: multimodal off, an unreadable store, a file too big for DynamoDB, and a plain-text `data:` URI.
+- The error cases above each have a test: multimodal off, an unreadable store, and a file too big for DynamoDB.
 - With an unreadable store, the service still starts, logs the warning, and serves a text-only chat.
 - The `in_memory` transport path keeps its current behavior (the existing tests stay green).
 
@@ -129,8 +129,8 @@ Code references are at `develop` @ `d0453388`.
    - Cloud gateways may refuse a request body near 10 MB before Agent Kernel sees it (AWS HTTP API caps payloads at 10 MB; Azure APIM and GCP limits are checked against the provider docs during `spec.md`).
    - Each deployment README states its gateway's body limit.
    - Why: lowering the default would also change it for direct-mode and local users.
-5. **Plain-text `data:` URIs on a broker transport: rejected with a clear 400.**
-   - Why: their contents would ride the queue, which breaks the "no file bytes in the message" rule. The format is rare, and rejecting it needs no new decoding code.
+5. **Plain-text `data:` URIs on a broker transport: travel inline, as they did before.**
+   - Why: `AttachmentSource` and `offload` already treat them like links, as threads and messaging integrations do. They are small text, so riding the queue costs little, and refusing them would break callers that work today.
 6. **A store the runner can't read: only file-bearing requests are rejected; startup still succeeds with a warning.**
    - Why: failing startup would break deployments that serve text-only chats today.
    - This differs from chat apps and AG-UI, which fail at startup. They never served traffic with such a store, so they have nothing to break.
