@@ -396,6 +396,33 @@ class TestOutputHooks:
         assert "interrupt" in kinds and kinds.count("audio_delta") < 4
 
     @pytest.mark.asyncio
+    async def test_the_caller_speaking_while_a_slow_hook_holds_the_last_audio_is_a_barge_in(self):
+        class SlowAudioHook(PostHook):
+            async def on_run(self, session, requests, agent, agent_reply):
+                return agent_reply
+
+            async def on_stream_event(self, session, requests, agent, event):
+                if isinstance(event, AudioDelta):
+                    await asyncio.sleep(0.3)
+                return event
+
+            def name(self):
+                return "slow-audio"
+
+        agent = _Agent()
+        agent.post_hooks.append(SlowAudioHook())
+        conn = _connection(agent)
+        await conn.connect()
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB", "message_id": "m1"})
+        await asyncio.sleep(0.1)  # the only queued audio is now inside the hook
+        await conn.handle_framework_event("speech_started", {})
+        await asyncio.sleep(0.6)
+        conn._pacing_task.cancel()
+
+        kinds = _kinds(_chunks(_transport()))
+        assert "interrupt" in kinds and "audio_delta" not in kinds, "the audio the hook released played over the caller"
+
+    @pytest.mark.asyncio
     async def test_audio_a_hook_changes_in_place_is_paced_by_its_new_length(self):
         def lengthen(session, event):
             if isinstance(event, AudioDelta):

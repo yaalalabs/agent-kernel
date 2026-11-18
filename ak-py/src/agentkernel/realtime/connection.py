@@ -581,13 +581,15 @@ class RealtimeConnection:
                     self._pace_played_ms = 0.0
                     continue
 
-                self._queued_audio = max(0, self._queued_audio - 1)
-
                 pcm16 = PCM16Resampler.resample(base64.b64decode(data["delta"]), self.runner.output_sample_rate, EDGE_SAMPLE_RATE)
                 message_id = data.get("message_id") or ""
                 self._turn_message_id = message_id or self._turn_message_id
                 audio = AudioDelta(message_id=message_id, content=base64.b64encode(pcm16).decode("utf-8"))
-                await self._emit_event(audio, len(pcm16))
+                try:
+                    await self._emit_event(audio, len(pcm16))
+                finally:
+                    # Counted until emitted, hooks and pacing wait included: the caller speaking meanwhile is a barge-in.
+                    self._queued_audio = max(0, self._queued_audio - 1)
 
             except asyncio.CancelledError:
                 break
