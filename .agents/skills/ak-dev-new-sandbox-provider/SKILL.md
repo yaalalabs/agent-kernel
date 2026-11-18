@@ -232,7 +232,7 @@ if type_name == "<provider>":
 _BUILTIN_PROVIDER_NAMES = ["local_subprocess", "docker", "<provider>"]   # add your name
 ```
 
-`require_extra` produces the friendly `pip install "agentkernel[<extra>]"` message when the SDK
+`require_extra` produces the friendly `uv add "agentkernel[<extra>]"` message when the SDK
 is missing. A bring-your-own provider needs none of this — a dotted-path `type` resolves via
 `resolve_dotted` automatically.
 

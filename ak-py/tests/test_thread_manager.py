@@ -64,12 +64,21 @@ class TestConversationThreadManager:
         assert created.user_id == "u1"
         assert created.group_id == "g1"
 
-        # Second call: user_id/group_id are fixed at creation; only an explicit name applies
-        loaded = thread_enabled.get_or_create_thread("s1", "u2", group_id="g2", name="other")
+        # Second call: group_id is fixed at creation; only an explicit name applies
+        loaded = thread_enabled.get_or_create_thread("s1", "u1", group_id="g2", name="other")
         assert loaded.user_id == "u1"
         assert loaded.group_id == "g1"
         assert loaded.name == "other"
         assert loaded.name_locked is True
+
+    def test_get_or_create_refuses_another_users_thread(self, thread_enabled):
+        """A thread is one user's conversation: a second user neither loads nor renames it (#603)."""
+        thread_enabled.get_or_create_thread("s1", "u1", first_prompt="Hello")
+
+        with pytest.raises(PermissionError, match="Thread s1 is not owned by user u2"):
+            thread_enabled.get_or_create_thread("s1", "u2", name="other")
+
+        assert thread_enabled.get_thread("s1").name == "Hello"
 
     def test_explicit_name_wins_over_prompt(self, thread_enabled):
         thread = thread_enabled.get_or_create_thread("s1", "u1", name="My thread", first_prompt="Hello world")
@@ -283,13 +292,30 @@ class TestLLMThreadNaming:
         assert thread.name == "Paris Trip Planning"
         assert thread.name_locked is False
         completion.assert_called_once()
-        assert completion.call_args.kwargs["model"] == "gpt-4o-mini"
+        assert completion.call_args.kwargs["model"] == "gpt-6-luna"
+        assert completion.call_args.kwargs["max_tokens"] == 50
+        assert completion.call_args.kwargs["reasoning_effort"] == "none"
+        assert completion.call_args.kwargs["drop_params"] is True
 
     def test_llm_naming_model_config_honored(self, thread_enabled_llm):
-        AKConfig.get().thread.naming.model = "gpt-4o"
+        AKConfig.get().thread.naming.model = "anthropic/claude-sonnet-4-5"
         with patch("litellm.completion", return_value=_llm_response("Title")) as completion:
             thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Hello there")
-        assert completion.call_args.kwargs["model"] == "gpt-4o"
+        assert completion.call_args.kwargs["model"] == "anthropic/claude-sonnet-4-5"
+        assert completion.call_args.kwargs["max_tokens"] == 50
+        assert completion.call_args.kwargs["reasoning_effort"] == "none"
+        assert completion.call_args.kwargs["drop_params"] is True
+
+    @pytest.mark.parametrize("model", ["gemini/gemini-2.5-pro", "gpt-4.1-mini"])
+    def test_llm_naming_skips_reasoning_off_where_the_model_cannot(self, thread_enabled_llm, model):
+        """Gemini 2.5 Pro can't turn thinking off and gpt-4.1-mini doesn't reason, so neither is sent reasoning_effort."""
+        AKConfig.get().thread.naming.model = model
+        with patch("litellm.completion", return_value=_llm_response("Title")) as completion:
+            thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Hello there")
+        assert completion.call_args.kwargs["model"] == model
+        assert completion.call_args.kwargs["max_tokens"] == 50
+        assert "reasoning_effort" not in completion.call_args.kwargs
+        assert completion.call_args.kwargs["drop_params"] is True
 
     def test_llm_name_surrounding_quotes_stripped(self, thread_enabled_llm):
         with patch("litellm.completion", return_value=_llm_response('  "Paris Trip"  ')):
@@ -357,7 +383,7 @@ class TestLLMThreadNaming:
 
     def test_naming_config_defaults(self):
         config = _ThreadNamingConfig()
-        assert config.model == "gpt-4o-mini"
+        assert config.model == "gpt-6-luna"
         assert config.max_length == 80
 
     def test_missing_litellm_warns_at_construction(self, caplog):

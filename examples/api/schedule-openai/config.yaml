@@ -19,3 +19,16 @@ execution:
   mode: rest_sync
   queues:
     type: in_memory
+
+# Who may call. A scheduled task belongs to the principal whose request created it, so scheduling
+# needs an authenticated caller and the management routes serve the caller's own tasks. The static
+# provider maps one credential to the `alice` principal; its value is never written here: the key
+# names a secret the secret capability resolves at startup (the environment by default), so export
+# ALICE_TOKEN before `python app.py` and send that value as the bearer token.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        ALICE_TOKEN:
+          subject: alice

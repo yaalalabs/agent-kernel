@@ -5,15 +5,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agentkernel.api.http import RESTAPI
-from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.core.config import _ExecutionConfig
-from agentkernel.core.model import BaseRequest, ExecutionMode
+from agentkernel.core.model import BaseRequest, ExecutionMode, Principal
+from agentkernel.core.util.factory import AKConfigError
 from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
     AWSWebsocketAPI,
     ECSWebSocketRequestHandler,
     ECSWebSocketSystemRequestHandler,
 )
 from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandler
+from agentkernel.identity import IdentityProviderFactory
+
+U1 = Principal(subject="u1", provider="static", namespace="static")
 
 
 def _fake_config(mode=ExecutionMode.REST_SYNC, message_type=None):
@@ -24,22 +27,18 @@ def _fake_config(mode=ExecutionMode.REST_SYNC, message_type=None):
             connection_table=SimpleNamespace(table_name="ak-connections", ttl=3600),
         ),
         execution=_ExecutionConfig(mode=mode, message_type=message_type),
+        identity=None,
     )
-
-
-class _FakeValidator(AuthValidator):
-    def validate(self, token, context=None) -> ValidationResult:
-        return ValidationResult(is_valid=True, claims={"userId": "u1"})
 
 
 @pytest.fixture(autouse=True)
 def _reset_ws_state(monkeypatch):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _fake_config()))
     AWSWebsocketAPI._ws_custom_routes = {}
-    AWSWebsocketAPI._ws_auth_validator = None
+    IdentityProviderFactory.reset()
     yield
     AWSWebsocketAPI._ws_custom_routes = {}
-    AWSWebsocketAPI._ws_auth_validator = None
+    IdentityProviderFactory.reset()
 
 
 def _make_handler(custom_routes=None):
@@ -49,7 +48,7 @@ def _make_handler(custom_routes=None):
 def _ctx(handler):
     return handler.WSRouteContext(
         message={"request_id": "r1", "foo": "bar"},
-        user_id="u1",
+        principal=U1,
         connection_id="c1",
         endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",
     )
@@ -79,7 +78,7 @@ async def _invoke(handler, func):
 
 @pytest.mark.parametrize("route", ["connect", "disconnect", "default"])
 def test_register_rejects_reserved_routes(route):
-    """Bare names already owned by the system routers (POST /ws/connect etc.) must be rejected —
+    """Bare names already owned by the system routers (POST /ws/connect etc.) must be rejected:
     registering them would silently be dead code, since those routers are mounted first."""
     with pytest.raises(ValueError, match="already registered"):
         AWSWebsocketAPI.register(route)
@@ -142,7 +141,7 @@ def _fake_request(body: dict):
 async def test_build_route_context_chat_parses_base_request():
     handler = _make_handler()
     ws_mock = MagicMock()
-    ws_mock.get_user_id.return_value = "u1"
+    ws_mock.get_principal.return_value = U1
     handler.get_websocket_handler = lambda: ws_mock
 
     request = _fake_request({"route": "chat", "request_id": "r1", "body": {"session_id": "s1", "prompt": "hi"}})
@@ -151,13 +150,14 @@ async def test_build_route_context_chat_parses_base_request():
     assert isinstance(ctx.message, BaseRequest)
     assert ctx.message.request_id == "r1"
     assert ctx.message.body.session_id == "s1"
+    assert (ctx.principal, ctx.user_id) == (U1, "u1")
 
 
 @pytest.mark.asyncio
 async def test_build_route_context_custom_route_keeps_raw_dict():
     handler = _make_handler()
     ws_mock = MagicMock()
-    ws_mock.get_user_id.return_value = "u1"
+    ws_mock.get_principal.return_value = U1
     handler.get_websocket_handler = lambda: ws_mock
 
     raw_body = {"foo": "bar", "nested": {"baz": 1}}
@@ -176,7 +176,7 @@ async def test_wrap_dict_return_broadcasts_and_200():
     handler = _make_handler()
 
     def func(ctx):
-        return {"status": "OK", "user_id": ctx["user_id"]}
+        return {"status": "OK", "user_id": ctx["principal"].subject}
 
     response, broadcast = await _invoke(handler, func)
 
@@ -189,7 +189,7 @@ async def test_wrap_dict_return_broadcasts_and_200():
 
 
 @pytest.mark.asyncio
-async def test_wrap_func_receives_message_and_user_id_only():
+async def test_wrap_func_receives_message_and_principal_only():
     handler = _make_handler()
     received = {}
 
@@ -199,7 +199,8 @@ async def test_wrap_func_receives_message_and_user_id_only():
 
     await _invoke(handler, func)
 
-    assert received == {"message": {"request_id": "r1", "foo": "bar"}, "user_id": "u1"}
+    assert received == {"message": {"request_id": "r1", "foo": "bar"}, "principal": U1}
+    assert "user_id" not in received
     assert "connection_id" not in received
     assert "endpoint_url" not in received
 
@@ -299,7 +300,13 @@ def test_get_router_chat_only_when_no_custom_routes():
     assert [route.path for route in router.routes] == ["/ws/chat"]
 
 
-def test_get_default_handlers_builds_two_carrying_all_routes():
+def test_get_default_handlers_requires_an_identity_block():
+    """The system handler authenticates $connect through the provider; with none it cannot be built."""
+    with pytest.raises(AKConfigError, match="identity block"):
+        AWSWebsocketAPI.get_default_handlers()
+
+
+def test_get_default_handlers_builds_two_carrying_all_routes(static_identity):
     @AWSWebsocketAPI.register("status")
     def status(ctx):
         return {}
@@ -308,7 +315,6 @@ def test_get_default_handlers_builds_two_carrying_all_routes():
     def ping(ctx):
         return None
 
-    AWSWebsocketAPI.set_auth_handler(auth_validator=_FakeValidator())
     handlers = AWSWebsocketAPI.get_default_handlers()
 
     assert len(handlers) == 2
@@ -318,7 +324,7 @@ def test_get_default_handlers_builds_two_carrying_all_routes():
     assert set(app._custom_routes) == {"status", "ping"}
 
 
-def test_run_builds_default_handlers(monkeypatch):
+def test_run_builds_default_handlers(monkeypatch, static_identity):
     captured = {}
 
     def fake_run(cls, handlers=None):
@@ -330,7 +336,6 @@ def test_run_builds_default_handlers(monkeypatch):
     def status(ctx):
         return {}
 
-    AWSWebsocketAPI.set_auth_handler(auth_validator=_FakeValidator())
     AWSWebsocketAPI.run()
 
     assert len(captured["handlers"]) == 2
@@ -423,7 +428,7 @@ async def test_handle_chat_async_delta_routes_to_direct_stream(monkeypatch):
     handler.build_route_context = AsyncMock(
         return_value=handler.WSRouteContext(
             message=BaseRequest.from_payload({"request_id": "r1", "body": {"session_id": "s1", "prompt": "hi"}}),
-            user_id="u1",
+            principal=U1,
             connection_id="c1",
             endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",
         )
@@ -432,14 +437,14 @@ async def test_handle_chat_async_delta_routes_to_direct_stream(monkeypatch):
     called = {}
 
     async def _fake_stream(body, user_id, endpoint_url):
-        called["invoked"] = True
+        called["principal"] = body.principal
         return handler.build_success_http_response("ok", user_id=user_id)
 
     handler._process_chat_direct_stream = _fake_stream
 
     response = await handler._handle_chat(request=MagicMock())
 
-    assert called.get("invoked") is True
+    assert called["principal"] == U1
     assert response.status_code == 200
 
 
@@ -458,7 +463,7 @@ async def test_handle_chat_queue_mode_unaffected_by_delta_setting(monkeypatch):
     handler.build_route_context = AsyncMock(
         return_value=handler.WSRouteContext(
             message=BaseRequest.from_payload({"request_id": "r1", "body": {"session_id": "s1", "prompt": "hi"}}),
-            user_id="u1",
+            principal=U1,
             connection_id="c1",
             endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",
         )

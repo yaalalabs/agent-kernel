@@ -190,7 +190,8 @@ wsGateway:
   replicaCount: 2
   # Optional per-component image; repository/tag fall back to the top-level image block.
   image: {}
-  # The entry file in your image that calls WebSocketGateway.run(auth_validator=...).
+  # The entry file in your image that calls WebSocketGateway.run(); the gateway authenticates
+  # handshakes through the identity block in the image's config.yaml.
   command: ["python", "app_ws_gateway.py"]
   port: 8000
   auth:

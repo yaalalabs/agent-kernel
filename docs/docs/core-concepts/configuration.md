@@ -69,6 +69,7 @@ mcp:
   expose_agents: true
   agents:
     - "*"  # Expose all agents as MCP tools
+  url: "http://localhost:8000/mcp"  # Public URL of the endpoint, named by the OAuth resource metadata (default: http://localhost:8000/mcp)
   stateless_http: false  # Run in stateless HTTP mode (default: false)
 
 # WebSocket API configuration (for AWS serverless deployments)
@@ -83,7 +84,7 @@ execution:
   mode: rest_sync  # Execution mode: rest_sync, rest_async, async (WebSocket), or realtime. Unset runs as rest_sync
   message_type: complete  # Reply delivery: complete (one whole reply) or delta (one message per chunk). Unset: delta for realtime, complete otherwise
   queues:
-    type: sqs  # Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
+    type: sqs  # Queue transport: in_memory | sqs | kafka | nats | pubsub | servicebus, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
@@ -92,6 +93,16 @@ execution:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
       no_of_consumers: 2  # Containerized deployments only - consumer threads polling the output queue (default: 2, ignored by serverless)
+    # pubsub:  # Google Cloud Pub/Sub (type: pubsub, `pubsub` extra). The GCP modules inject these as AK_EXECUTION__QUEUES__PUBSUB__*
+    #   project_id: my-project  # Unset uses the Application Default Credentials project
+    #   input_topic: agent-input  # Topic carrying chat requests
+    #   input_subscription: agent-input  # Subscription the agent runner pulls (ordering enabled)
+    #   output_topic: agent-output  # Topic carrying agent replies
+    #   output_subscription: agent-output  # Subscription the response handler pulls (ordering enabled)
+    #   dlq_suffix: "-dlq"  # Dead-letter topic suffix: permanently failed messages are copied there
+    #   ack_wait: 300  # Seconds a pulled message stays leased before redelivery: exceed your longest turn
+    #   request_timeout: 10  # Seconds to wait for a Pub/Sub call
+    #   auto_provision: false  # Create missing topics/subscriptions at startup (emulator and dev only)
   response_store:
     type: redis  # Response store type: redis, valkey, or dynamodb (required for rest_sync and rest_async modes)
     retry_count: 5  # Number of retry attempts for response store reads
@@ -114,8 +125,8 @@ multimodal:
   storage_type: in_memory  # in_memory | redis | dynamodb | session_cache
   max_attachments: 20
   description_max_length: 200
-  description_model: gpt-4o  # Vision LLM for brief attachment descriptions
-  analysis_model: gpt-4o  # Vision LLM for the analyze_attachments tool
+  description_model: gpt-6-luna  # Vision LLM for brief attachment descriptions
+  analysis_model: gpt-6-luna  # Vision LLM for the analyze_attachments tool
   redis:
     url: "redis://localhost:6379"
     ttl: 604800
@@ -125,11 +136,12 @@ multimodal:
     ttl: 604800
 
 # Conversation threads (optional - feature is enabled by the presence of this block;
-# requires user_id on every chat request. See /docs/advanced/threads)
+# the thread routes serve authenticated callers only, so an identity block is needed too.
+# See /docs/advanced/threads)
 thread:
   type: in_memory  # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
   naming:
-    model: gpt-4o-mini  # LLM used to auto-name threads (requires the thread extra)
+    model: gpt-6-luna  # LLM used to auto-name threads (requires the thread extra)
     max_length: 80
   redis:
     url: "redis://localhost:6379"
@@ -193,39 +205,95 @@ secret:
       mount_path: /var/run/secrets/agentkernel  # Directory the Kubernetes Secrets are mounted under; read only by the kubernetes provider
   cache_ttl: 300  # Seconds a provider hit is served from the process cache; 0 disables caching
 
+# Identity (optional - without this block every request is the anonymous principal and an
+# Authorization header is ignored; with it, a credential that is present must validate. The thread,
+# schedule and AG-UI handlers refuse to construct without it. See /docs/advanced/identity-and-access)
+identity:
+  provider:
+    type: static  # static | oidc | cognito | entra | firebase, or a dotted path to an IdentityProvider subclass
+    # oidc serves any OpenID Connect issuer; Auth0, Keycloak and Okta are configurations of it. oidc, cognito,
+    # entra and firebase need the auth extra (agentkernel[auth]); static needs nothing extra.
+    issuer: "https://<tenant>.<region>.auth0.com/"  # required by oidc (Auth0 issues it with the trailing slash); derived by cognito, entra and firebase
+    audience: "<api-identifier>"  # required by oidc: the audience a token must carry
+    jwks_uri: null  # discovered from the issuer when omitted
+    algorithms: [RS256, ES256]  # allowed signing algorithms; an empty list, none, an unknown name or a symmetric one fails at startup
+    leeway: 30  # seconds of clock skew tolerated on exp and nbf
+    required_claims: []  # claims a token must carry beyond the standard set
+    claims:
+      subject: sub  # claim path of the subject; dotted segments reach into a nested claim
+      groups: groups  # claim path of the group list, e.g. realm_access.roles (Keycloak) or https://<namespace>/roles (Auth0)
+    cognito:  # required when type is cognito
+      region: eu-west-1
+      user_pool_id: eu-west-1_XXXXXXXXX
+      token_use: access  # access | id; any other value is a startup error
+    entra:  # required when type is entra
+      tenant_id: "<tenant-id>"
+    firebase:  # required when type is firebase
+      project_id: "<project-id>"
+    static:  # required when type is static: credential secret key -> principal; at least one entry
+      principals:
+        ALICE_TOKEN:  # names a secret resolved through the secret capability (the environment wins); the value is never in the file
+          subject: alice
+          kind: user  # user | agent | service
+          groups: [ops]
+          roles: []  # roles the provider issues directly; a role_mapper replaces them
+          claims: {}
+  role_mapper:  # optional - derives Principal.roles from the provider's facts, replacing a static entry's roles
+    type: mapping  # mapping, or a dotted path to a RoleMapper subclass (its own settings arrive in model_extra)
+    pass_through: null  # a claim path whose string or list value becomes roles as it is
+    mapping:  # group name, or a value of a claim listed in claims -> the roles it grants
+      ops: [admin]
+    claims: []  # claim paths whose string or list values are also looked up in mapping; only groups by default,
+                # since a user sets many of their own claims (a display name, a username, an email)
+
 # Messaging platform integrations
 slack:
   agent: ""  # Default agent for Slack
   agent_acknowledgement: ""  # Acknowledgement message
+  bot_token: ""  # Bot token
+  bot_token_key: "SLACK_BOT_TOKEN"  # Secret key used when bot_token is empty
+  signing_secret: ""  # Signing secret for request verification
+  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key used when signing_secret is empty
 
 whatsapp:
   agent: ""  # Default agent for WhatsApp
   agent_acknowledgement: ""  # Acknowledgement message
   verify_token: ""  # Webhook verify token
+  verify_token_key: "AK_WHATSAPP__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""  # Business API access token
+  access_token_key: "AK_WHATSAPP__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""  # App secret for signature verification
+  app_secret_key: "AK_WHATSAPP__APP_SECRET"  # Secret key used when app_secret is empty
   phone_number_id: ""  # Business phone number ID
   api_version: "v24.0"  # API version
 
 messenger:
   agent: ""  # Default agent for Facebook Messenger
   verify_token: ""  # Webhook verify token
+  verify_token_key: "AK_MESSENGER__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""  # Page access token
+  access_token_key: "AK_MESSENGER__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""  # App secret for signature verification
+  app_secret_key: "AK_MESSENGER__APP_SECRET"  # Secret key used when app_secret is empty
   api_version: "v24.0"  # Graph API version
 
 instagram:
   agent: ""  # Default agent for Instagram
   verify_token: ""  # Webhook verify token
+  verify_token_key: "AK_INSTAGRAM__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""  # Business access token
+  access_token_key: "AK_INSTAGRAM__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""  # App secret for signature verification
+  app_secret_key: "AK_INSTAGRAM__APP_SECRET"  # Secret key used when app_secret is empty
   instagram_account_id: ""  # Business Account ID (IGSID)
   api_version: "v21.0"  # Graph API version
 
 telegram:
   agent: ""  # Default agent for Telegram
   bot_token: ""  # Bot token from BotFather
+  bot_token_key: "AK_TELEGRAM__BOT_TOKEN"  # Secret key used when bot_token is empty
   webhook_secret: ""  # Optional webhook security token
+  webhook_secret_key: "AK_TELEGRAM__WEBHOOK_SECRET"  # Secret key used when webhook_secret is empty
   api_version: "bot"  # Bot API version prefix
 
 teams:
@@ -233,6 +301,7 @@ teams:
   agent_acknowledgement: ""  # Message sent when a Teams message is received
   app_id: ""  # Azure Bot / Entra ID application (client) ID
   app_password: ""  # Azure Bot / Entra ID application client secret
+  app_password_key: "AK_TEAMS__APP_PASSWORD"  # Secret key used when app_password is empty
   tenant_id: ""  # Bot app registration's own tenant; empty for a multi-tenant bot
 
 # A2UI labelling (optional - off unless `enabled` is true)
@@ -250,7 +319,7 @@ guardrail:
     type: openai  # Guardrail provider: openai, bedrock, or walledai
     pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
-    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    model: gpt-6-luna  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
@@ -260,7 +329,7 @@ guardrail:
     type: openai  # Guardrail provider: openai, bedrock, or walledai
     pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
-    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    model: gpt-6-luna  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
@@ -327,6 +396,7 @@ Alternatively, use `config.json`:
     "enabled": true,
     "expose_agents": true,
     "agents": ["*"],
+    "url": "http://localhost:8000/mcp",
     "stateless_http": false
   },
   "websocket_api": {
@@ -417,13 +487,13 @@ Alternatively, use `config.json`:
     "input": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": ""
     },
     "output": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": ""
     }
   },
@@ -532,6 +602,7 @@ export AK_A2A__TASK_STORE_TYPE=redis  # Options: 'in_memory', 'redis' (default: 
 export AK_MCP__ENABLED=true  # default: false
 export AK_MCP__EXPOSE_AGENTS=true  # Expose agents as MCP tools (default: false)
 export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
+export AK_MCP__URL=https://agents.example.com/mcp  # Public URL of the MCP endpoint (default: http://localhost:8000/mcp)
 export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Session-Id (default: false)
 # Note: MCP is always served at /mcp on the main API server. Use AK_API__PORT to change the port.
 ```
@@ -547,6 +618,21 @@ export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by a
 export AK_SECRET__CACHE_TTL=300  # Seconds a provider hit is cached; 0 disables caching (default: 300)
 ```
 
+### Identity
+
+See [Identity and access](../advanced/identity-and-access.md) for the providers and what each surface does with the principal.
+
+```bash
+export AK_IDENTITY__PROVIDER__TYPE=oidc  # Options: 'static', 'oidc', 'cognito', 'entra', 'firebase', or a dotted path to an IdentityProvider subclass
+export AK_IDENTITY__PROVIDER__ISSUER=https://<tenant>.<region>.auth0.com/  # oidc only: the issuer URL (Auth0 issues it with the trailing slash)
+export AK_IDENTITY__PROVIDER__AUDIENCE=<api-identifier>  # oidc only: the audience a token must carry
+export AK_IDENTITY__PROVIDER__CLAIMS__GROUPS=https://<namespace>/roles  # claim path of the group list (default: groups)
+export AK_IDENTITY__PROVIDER__COGNITO__REGION=eu-west-1  # cognito only
+export AK_IDENTITY__PROVIDER__COGNITO__USER_POOL_ID=eu-west-1_XXXXXXXXX  # cognito only
+export AK_IDENTITY__PROVIDER__ENTRA__TENANT_ID=<tenant-id>  # entra only
+export AK_IDENTITY__PROVIDER__FIREBASE__PROJECT_ID=<project-id>  # firebase only
+```
+
 ### Test Configuration {#test-configuration-env-vars}
 
 These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration; see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. `AK_TEST__MODE` accepts the renamed `score`/`llm`/`fallback` values, and `AK_TEST__JUDGE__*` was renamed to `AK_TEST__LLM__*`:
@@ -559,7 +645,7 @@ export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: '
 export AK_TEST__EVALUATOR=deepeval  # default: 'deepeval'
 
 # Llm configuration (for LLM-based evaluation)
-export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__MODEL=gpt-6-luna  # LLM model (default: gpt-6-luna)
 export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```
@@ -649,7 +735,7 @@ export AK_GUARDRAIL__INPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walled
 export AK_GUARDRAIL__INPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific input guardrail configuration
-export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__INPUT__MODEL=gpt-6-luna  # LLM model for validation (default: gpt-6-luna)
 export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json  # Path to guardrail config file
 
 # Bedrock-specific input guardrail configuration
@@ -665,7 +751,7 @@ export AK_GUARDRAIL__OUTPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walle
 export AK_GUARDRAIL__OUTPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific output guardrail configuration
-export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-6-luna  # LLM model for validation (default: gpt-6-luna)
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path to guardrail config file
 
 # Bedrock-specific output guardrail configuration
@@ -757,7 +843,7 @@ Create `test-config.yaml` in the directory you run your tests from:
 mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallback)
 evaluator: deepeval  # Built-in evaluator short name, or a dotted path to your own AKEvaluator subclass (default: deepeval)
 llm:
-  model: gpt-4o-mini  # LLM model for llm evaluation (default: gpt-4o-mini)
+  model: gpt-6-luna  # LLM model for llm evaluation (default: gpt-6-luna)
   provider: openai  # LLM provider for llm evaluation (default: openai)
   embedding_model: text-embedding-3-small  # Embedding model, unconsumed by any built-in v1 metric (default: text-embedding-3-small)
 ```
@@ -771,7 +857,7 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 - `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik use a `GEval` metric; JEV asks one yes/no Noul question) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`), see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below, it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
 
 ### Custom Test Configuration File Path
 
@@ -793,7 +879,7 @@ export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: '
 export AK_TEST__EVALUATOR=deepeval  # Built-in short name, or a dotted path (default: 'deepeval')
 
 # Llm configuration (for LLM-based evaluation)
-export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__MODEL=gpt-6-luna  # LLM model (default: gpt-6-luna)
 export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```
@@ -801,7 +887,7 @@ export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (
 :::warning Migration note
 Earlier versions read test configuration from a `test:` section in the application's `config.yaml`. That section is now ignored; move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`.
 
-A later release renamed the comparison modes (`fuzzy`→`score`, `judge`→`llm`) and the `judge:`/`AK_TEST__JUDGE__*` block to `llm:`/`AK_TEST__LLM__*`. Setting `mode: fuzzy` or `mode: judge` (or `AK_TEST__MODE=fuzzy`/`judge`) now raises a configuration error naming the new spelling. A leftover `judge:` key in `test-config.yaml` or `AK_TEST__JUDGE__*` environment variable, however, is silently ignored rather than raising — it is treated as an unknown field, and `llm` keeps its own default instead of reading from it, so rename it to `llm:`/`AK_TEST__LLM__*` to have it take effect. It also added the `evaluator` key (default `deepeval`) and moved thresholds from a 0-100 scale to `[0.0, 1.0]`.
+A later release renamed the comparison modes (`fuzzy`→`score`, `judge`→`llm`) and the `judge:`/`AK_TEST__JUDGE__*` block to `llm:`/`AK_TEST__LLM__*`. Setting `mode: fuzzy` or `mode: judge` (or `AK_TEST__MODE=fuzzy`/`judge`) now raises a configuration error naming the new spelling. A leftover `judge:` key in `test-config.yaml` or `AK_TEST__JUDGE__*` environment variable, however, is silently ignored rather than raising: it is treated as an unknown field, and `llm` keeps its own default instead of reading from it, so rename it to `llm:`/`AK_TEST__LLM__*` to have it take effect. It also added the `evaluator` key (default `deepeval`) and moved thresholds from a 0-100 scale to `[0.0, 1.0]`.
 :::
 
 For how the test harness uses these settings, see [Testing](../testing/overview.md).
@@ -838,7 +924,7 @@ session:
     database_id: "(default)"    # Firestore database ID (optional)
     ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
   cache:                        # Optional process-local session cache; omit this whole block to disable
-    size: 256                   # Number of sessions to cache (size: 0 raises an error — omit `cache` instead)
+    size: 256                   # Number of sessions to cache (size: 0 raises an error, omit `cache` instead)
 
 # API server configuration
 api:
@@ -865,41 +951,58 @@ mcp:
   expose_agents: false          # Expose agents as MCP tools
   agents:                       # List of agents to expose as MCP tools
     - "*"                       # "*" exposes all agents
+  url: "http://localhost:8000/mcp"  # Public URL clients reach the endpoint at (behind a proxy, the public one). With an
+                                # OpenID-family identity provider it is the resource the RFC 9728 metadata names
   stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
 
 # Messaging platform integrations
 slack:
   agent: ""                     # Default agent for Slack interactions
   agent_acknowledgement: ""     # Acknowledgement message when message received
+  bot_token: ""                 # Slack bot token
+  bot_token_key: "SLACK_BOT_TOKEN"  # Secret key used when bot_token is empty
+  signing_secret: ""            # Slack signing secret for request verification
+  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key used when signing_secret is empty
 
 whatsapp:
   agent: ""                     # Default agent for WhatsApp interactions
   agent_acknowledgement: ""     # Acknowledgement message when message received
   verify_token: ""              # WhatsApp webhook verify token
+  verify_token_key: "AK_WHATSAPP__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""              # WhatsApp Business API access token
+  access_token_key: "AK_WHATSAPP__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""                # WhatsApp app secret for signature verification
+  app_secret_key: "AK_WHATSAPP__APP_SECRET"  # Secret key used when app_secret is empty
   phone_number_id: ""           # WhatsApp Business phone number ID
   api_version: "v24.0"          # WhatsApp API version
 
 messenger:
   agent: ""                     # Default agent for Facebook Messenger interactions
   verify_token: ""              # Facebook Messenger webhook verify token
+  verify_token_key: "AK_MESSENGER__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""              # Facebook Page access token
+  access_token_key: "AK_MESSENGER__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""                # Facebook app secret for signature verification
+  app_secret_key: "AK_MESSENGER__APP_SECRET"  # Secret key used when app_secret is empty
   api_version: "v24.0"          # Facebook Graph API version
 
 instagram:
   agent: ""                     # Default agent for Instagram interactions
   verify_token: ""              # Instagram webhook verify token
+  verify_token_key: "AK_INSTAGRAM__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""              # Instagram Business access token
+  access_token_key: "AK_INSTAGRAM__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""                # Instagram app secret for signature verification
+  app_secret_key: "AK_INSTAGRAM__APP_SECRET"  # Secret key used when app_secret is empty
   instagram_account_id: ""      # Instagram Business Account ID (IGSID)
   api_version: "v21.0"          # Instagram Graph API version
 
 telegram:
   agent: ""                     # Default agent for Telegram interactions
   bot_token: ""                 # Telegram bot token from BotFather
+  bot_token_key: "AK_TELEGRAM__BOT_TOKEN"  # Secret key used when bot_token is empty
   webhook_secret: ""            # Optional secret token for webhook security
+  webhook_secret_key: "AK_TELEGRAM__WEBHOOK_SECRET"  # Secret key used when webhook_secret is empty
   api_version: "bot"            # Telegram Bot API version prefix
 
 teams:
@@ -907,6 +1010,7 @@ teams:
   agent_acknowledgement: ""     # Message sent as an acknowledgement when a Teams message is received
   app_id: ""                    # Azure Bot / Entra ID application (client) ID
   app_password: ""              # Azure Bot / Entra ID application client secret
+  app_password_key: "AK_TEAMS__APP_PASSWORD"  # Secret key used when app_password is empty
   tenant_id: ""                 # Entra ID tenant that owns the bot's app registration. Required
                                 # only for a single-tenant registration; empty for a multi-tenant
                                 # bot. Also the fallback tenant for the app-only token used to
@@ -923,13 +1027,13 @@ guardrail:
     enabled: false              # Enable input guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
-    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    model: "gpt-6-luna"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
   output:                       # Output guardrail configuration
     enabled: false              # Enable output guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
-    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    model: "gpt-6-luna"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
 
 # Execution configuration (for AWS serverless and containerized deployments)
@@ -937,7 +1041,7 @@ execution:
   mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'async', or 'realtime'
   message_type: "complete"      # Reply delivery: 'complete' or 'delta' (unset: delta for realtime, complete otherwise)
   queues:                       # Queue transport + coordinates for queue-based execution
-    type: "sqs"                 # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
+    type: "sqs"                 # in_memory | sqs | kafka | nats | pubsub | servicebus, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed
@@ -1102,7 +1206,7 @@ export LANGFUSE_HOST=https://cloud.langfuse.com
 Install the langfuse extra:
 
 ```bash
-pip install agentkernel[langfuse]
+uv add "agentkernel[langfuse]"
 ```
 
 **OpenLLMetry (Traceloop):**
@@ -1121,7 +1225,7 @@ export TRACELOOP_BASE_URL=https://api.traceloop.com
 Install the openllmetry extra:
 
 ```bash
-pip install agentkernel[openllmetry]
+uv add "agentkernel[openllmetry]"
 ```
 
 **Pydantic Logfire:**
@@ -1131,14 +1235,14 @@ pip install agentkernel[openllmetry]
 export AK_TRACE__ENABLED=true
 export AK_TRACE__TYPE=logfire
 
-# Logfire credentials (optional — without a token, Logfire runs locally and does not ship traces)
+# Logfire credentials (optional: without a token, Logfire runs locally and does not ship traces)
 export LOGFIRE_TOKEN=your-write-token
 ```
 
 Install the logfire extra:
 
 ```bash
-pip install agentkernel[logfire]
+uv add "agentkernel[logfire]"
 ```
 
 **AWS CloudWatch:**
@@ -1159,7 +1263,7 @@ export AWS_REGION=us-east-1
 Install the cloudwatch extra:
 
 ```bash
-pip install agentkernel[cloudwatch]
+uv add "agentkernel[cloudwatch]"
 ```
 
 CloudWatch Transaction Search must be enabled in the account, and the agent's role needs `AWSXrayWriteOnlyAccess`. See [Traceability](../advanced/traceability.md#getting-started-with-aws-cloudwatch).

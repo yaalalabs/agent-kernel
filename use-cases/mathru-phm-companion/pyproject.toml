@@ -6,17 +6,17 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "agentkernel[api,cli,openai,whatsapp]>=0.9.3,<0.10",
-    "python-dotenv>=1.0.0",
-    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "pyyaml>=6.0,<7.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "agentkernel[test]>=0.9.3,<0.10",
-    "black>=23.0.0",
-    "isort>=5.0.0",
-    "mypy>=1.0.0",
-    "pytest>=8.0.0",
+    "black>=26.10.1,<27.0.0",
+    "isort>=5.0.0,<10.0.0",
+    "mypy>=1.0.0,<3.0.0",
+    "pytest>=8.0.0,<10.0.0",
 ]
 
 [tool.uv]

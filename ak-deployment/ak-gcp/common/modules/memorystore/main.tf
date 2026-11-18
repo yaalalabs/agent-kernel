@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    null = {
+      source  = "hashicorp/null"
+      version = "3.2.4"
+    }
+  }
+}
+
 # Memorystore for Redis — GCP's managed Redis service
 # Equivalent of ElastiCache (AWS) or Azure Cache for Redis
 resource "google_redis_instance" "redis" {

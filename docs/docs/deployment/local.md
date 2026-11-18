@@ -23,6 +23,23 @@ Run:
 python my_agent.py
 ```
 
+### Running as an authenticated caller
+
+With an `identity` block in `config.yaml`, give the CLI a credential for the configured provider,
+either as `--token <credential>` or in the `AK_CLI_TOKEN` environment variable (used when `--token`
+is absent). Prefer the variable: it keeps the credential out of `ps` and your shell history. The
+token is authenticated once, when the CLI starts, and that principal runs every prompt of the
+session; a token the provider refuses exits with `Authentication failed: <reason>`. Without a token
+the CLI runs as the anonymous principal, and without an `identity` block a token is ignored with a
+warning. See [Identity and Access](../advanced/identity-and-access.md).
+
+```bash
+export AK_CLI_TOKEN="$ALICE_TOKEN"   # the value a static provider entry resolves, or an OIDC access token
+python my_agent.py
+```
+
+`--token` is matched exactly (no abbreviations such as `--to`), so the script embedding the CLI can
+keep flags of its own.
 
 ## CLI Features
 
@@ -84,7 +101,7 @@ graph LR
 You get the production queue semantics locally: per-session FIFO ordering with parallel
 sessions, bounded retry with a permanent-failure error path, and request deduplication: with
 zero backing services, and the same wire responses as before. The same app moves to a durable
-broker (SQS on AWS; Kafka/NATS on-prem or Kubernetes via the
+broker (SQS on AWS; Pub/Sub on GCP; Kafka/NATS on-prem or Kubernetes via the
 [Helm chart](./onprem-kubernetes)) purely by configuration. See the
 [Queue Mode Guide](../advanced/queue-mode-guide#running-queue-mode-locally-in_memory) for the
 config knobs and

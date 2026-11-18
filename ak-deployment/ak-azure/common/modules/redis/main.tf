@@ -29,7 +29,7 @@ resource "azurerm_network_security_rule" "allow_redis_from_function" {
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
-  source_address_prefix       = data.azurerm_subnet.function_subnet.address_prefix
+  source_address_prefixes     = data.azurerm_subnet.function_subnet.address_prefixes
   source_port_range           = "*"
   destination_address_prefix  = "*"
   destination_port_range      = "*"
@@ -102,11 +102,10 @@ resource "azurerm_private_dns_zone" "redis" {
 
 # Link DNS Zone to VNet
 resource "azurerm_private_dns_zone_virtual_network_link" "redis" {
-  name                  = "${var.prefix}-redis-dns-link"
-  resource_group_name   = data.azurerm_resource_group.current_group.name
-  private_dns_zone_name = azurerm_private_dns_zone.redis.name
-  virtual_network_id    = data.azurerm_virtual_network.vnet.id
-  tags                  = var.tags
+  name                = "${var.prefix}-redis-dns-link"
+  private_dns_zone_id = azurerm_private_dns_zone.redis.id
+  virtual_network_id  = data.azurerm_virtual_network.vnet.id
+  tags                = var.tags
   lifecycle {
     ignore_changes = [
       virtual_network_id

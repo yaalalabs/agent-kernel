@@ -1,4 +1,16 @@
+# Queue mode on Cloud Run. The app declares the transport and the stores; Terraform injects only the
+# coordinates: the project, topics and subscription (AK_EXECUTION__QUEUES__PUBSUB__*), the
+# Memorystore URL (AK_EXECUTION__RESPONSE_STORE__REDIS__URL, AK_SESSION__REDIS__URL), and the mode.
 debug: true
+execution:
+  queues:
+    type: pubsub
+    pubsub:
+      ack_wait: 300            # lease ceiling for the replies the edge pulls
+  response_store:
+    type: redis
+    retry_count: 100           # with delay: a rest_sync request waits up to 100 s for its reply,
+    delay: 1                   # inside the gateway's 110 s backend deadline (deploy/main.tf)
 session:
   type: firestore
   firestore:

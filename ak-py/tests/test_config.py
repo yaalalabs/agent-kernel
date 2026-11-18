@@ -4,7 +4,17 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from agentkernel.core.config import AKConfig, _ExecutionConfig, _ScheduleConfig, _SecretConfig, _ThreadStoreConfig, _ThreadValkeyConfig
+from agentkernel.core.config import (
+    AKConfig,
+    _ExecutionConfig,
+    _IdentityConfig,
+    _IdentityProviderConfig,
+    _ScheduleConfig,
+    _SecretConfig,
+    _StaticProviderConfig,
+    _ThreadStoreConfig,
+    _ThreadValkeyConfig,
+)
 from agentkernel.core.model import ExecutionMode, ReplyMessageType
 from agentkernel.core.util.factory import AKConfigError
 
@@ -407,6 +417,77 @@ def test_queues_transport_yaml_and_env(tmp_path, monkeypatch):
     assert AKConfig.get().execution.queues.type == "kafka"
 
 
+def test_pubsub_block_absent_by_default(monkeypatch):
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    assert AKConfig.get().execution.queues.pubsub is None
+
+
+def test_pubsub_block_defaults_and_yaml(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  queues:\n" "    type: pubsub\n" "    pubsub:\n" "      project_id: my-project\n" "      auto_provision: true\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    pubsub = AKConfig.get().execution.queues.pubsub
+
+    assert AKConfig.get().execution.queues.type == "pubsub"
+    assert (pubsub.project_id, pubsub.auto_provision) == ("my-project", True)
+    assert (pubsub.input_topic, pubsub.input_subscription) == ("agent-input", "agent-input")
+    assert (pubsub.output_topic, pubsub.output_subscription) == ("agent-output", "agent-output")
+    assert (pubsub.dlq_suffix, pubsub.ack_wait, pubsub.request_timeout) == ("-dlq", 300.0, 10.0)
+
+
+def test_pubsub_block_from_env_beside_a_declared_type(tmp_path, monkeypatch):
+    """Terraform injects only coordinates; the application's config.yaml declares the type (#886)."""
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("execution:\n  queues:\n    type: pubsub\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__PROJECT_ID", "env-project")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__INPUT_TOPIC", "prod-agent-input")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__DLQ_SUFFIX", "-dead")
+
+    pubsub = AKConfig.get().execution.queues.pubsub
+
+    assert (pubsub.project_id, pubsub.input_topic, pubsub.dlq_suffix) == ("env-project", "prod-agent-input", "-dead")
+
+
+def test_injected_pubsub_coordinates_without_a_declared_type_fail_at_load(monkeypatch):
+    """A deployment cannot pick the transport for the application: the type stays mandatory."""
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__INPUT_TOPIC", "prod-agent-input")
+
+    with pytest.raises(ValidationError, match="execution.queues.type"):
+        AKConfig.get()
+
+
+def test_servicebus_queue_block_yaml_and_env(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  queues:\n" "    type: servicebus\n" "    servicebus:\n" "      ack_wait: 120\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    cfg = AKConfig.get()
+    assert cfg.execution.queues.type == "servicebus"
+    assert cfg.execution.queues.servicebus.ack_wait == 120
+    assert cfg.execution.queues.servicebus.connection_string is None
+
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__SERVICEBUS__ACK_WAIT", "30")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__SERVICEBUS__CONNECTION_STRING", "Endpoint=sb://localhost/;UseDevelopmentEmulator=true")
+    AKConfig._reset()
+    servicebus = AKConfig.get().execution.queues.servicebus
+    assert servicebus.ack_wait == 30
+    assert servicebus.connection_string == "Endpoint=sb://localhost/;UseDevelopmentEmulator=true"
+
+
+def test_queues_block_without_servicebus_leaves_it_unset(tmp_path, monkeypatch):
+    """Old YAML loads unchanged: the servicebus block is optional."""
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("execution:\n  queues:\n    type: sqs\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    assert AKConfig.get().execution.queues.servicebus is None
+
+
 def test_response_store_accepts_in_memory_type(tmp_path, monkeypatch):
     yaml_text = "execution:\n" "  response_store:\n" "    type: in_memory\n"
     cfg_path = tmp_path / "config.yaml"
@@ -560,3 +641,65 @@ class TestExecutionMessageType:
 
     def test_execution_mode_has_no_stream_member(self):
         assert "stream" not in {m.value for m in ExecutionMode}
+
+
+class TestIdentityConfig:
+    """The `identity` block (#603): absent by default, present means configured, and a block that cannot
+    authenticate anyone fails at load time rather than on the first request."""
+
+    def test_absent_by_default(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        assert AKConfig.get().identity is None
+
+    def test_a_static_block_parses_from_yaml(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "identity:\n"
+            "  provider:\n"
+            "    type: static\n"
+            "    static:\n"
+            "      principals:\n"
+            "        ALICE_TOKEN:\n"
+            "          subject: alice\n"
+            "          groups: [ops]\n"
+            "  role_mapper:\n"
+            "    mapping:\n"
+            "      ops: [operator]\n"
+        )
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        identity = AKConfig.get().identity
+
+        assert identity is not None and identity.provider.type == "static"
+        assert identity.provider.static.principals["ALICE_TOKEN"].groups == ["ops"]
+        assert identity.provider.static.principals["ALICE_TOKEN"].kind == "user"
+        assert identity.role_mapper.type == "mapping" and identity.role_mapper.mapping == {"ops": ["operator"]}
+
+    def test_the_default_provider_is_oidc_and_needs_issuer_and_audience(self):
+        assert _IdentityProviderConfig(issuer="https://issuer.example", audience="ak").type == "oidc"
+        with pytest.raises(AKConfigError, match="identity.provider.issuer and identity.provider.audience"):
+            _IdentityConfig()
+
+    @pytest.mark.parametrize("name", ["cognito", "entra", "firebase", "static"])
+    def test_a_named_provider_needs_its_block(self, name):
+        with pytest.raises(AKConfigError, match=f"identity.provider.{name}"):
+            _IdentityProviderConfig(type=name)
+
+    def test_a_dotted_provider_validates_its_own_settings(self):
+        assert _IdentityProviderConfig(type="my.module.Provider").type == "my.module.Provider"
+
+    def test_a_static_block_without_principals_still_parses(self):
+        """An empty map parses; StaticIdentityProvider refuses it at construction (test_identity_providers)."""
+        assert _IdentityProviderConfig(type="static", static=_StaticProviderConfig()).static.principals == {}
+
+    def test_an_identity_env_var_materializes_the_block_and_fails_fast(self, monkeypatch):
+        """Any AK_IDENTITY__* variable creates the block; the default oidc type without an issuer is the intended startup failure."""
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_IDENTITY__PROVIDER__LEEWAY", "10")
+        with pytest.raises(AKConfigError, match="identity.provider.issuer"):
+            AKConfig.get()
+
+    def test_claim_paths_and_algorithms_default(self):
+        provider = _IdentityProviderConfig(issuer="https://issuer.example", audience="ak")
+        assert (provider.claims.subject, provider.claims.groups) == ("sub", "groups")
+        assert (provider.algorithms, provider.leeway, provider.required_claims) == (["RS256", "ES256"], 30, [])

@@ -18,13 +18,10 @@ import { A2UI_MEDIA_TYPE } from "./a2ui/types.ts";
 import type { A2UIMessage, ChatResponse, ThreadListResponse, ThreadMessage, ThreadResponse, ThreadSummary } from "./a2ui/types.ts";
 
 /**
- * Two halves of one identity, because the server treats them differently: the chat route takes
- * `user_id` from the body, while the thread read routes resolve the caller from a Bearer token
- * through the `Authoriser` in `app.py`. A real app issues the token at login and sends only that.
- *
- * `TOKEN` is a demo string matched against a static map, not a credential.
+ * One identity, sent the same way everywhere: the chat route and the thread read routes all resolve
+ * the caller from the Bearer token through the identity provider configured in `config.yaml`. A real
+ * app issues the token at login; this one is the demo credential the static provider maps to `demo-user`.
  */
-const USER_ID = "demo-user";
 const TOKEN = "demo-token";
 
 type Turn =
@@ -172,7 +169,7 @@ export default function App(): JSX.Element {
 
   const refreshThreads = useCallback(async () => {
     try {
-      setThreads(await fetchAll<ThreadSummary, ThreadListResponse>(`/api/v1/threads?user_id=${encodeURIComponent(USER_ID)}`, (body) => body.threads));
+      setThreads(await fetchAll<ThreadSummary, ThreadListResponse>("/api/v1/threads", (body) => body.threads));
     } catch {
       // The rail is a convenience; a failed refresh leaves the last list rather than emptying it.
     }
@@ -190,8 +187,8 @@ export default function App(): JSX.Element {
     try {
       const response = await fetch("/api/v1/chat", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt, session_id: sessionId, user_id: USER_ID, agent: "expenses" }),
+        headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ prompt, session_id: sessionId, agent: "expenses" }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body: ChatResponse = await response.json();

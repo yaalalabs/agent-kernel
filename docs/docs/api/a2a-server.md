@@ -52,9 +52,10 @@ separate process only in split deployments.
 |---|---|
 | `RESTAPI.run()` with no `execution.queues` block (the laptop default) | ✅ one process, in-memory queue |
 | `IOHandler.run(handlers=[...])`, any transport | ✅ through the queue |
-| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
+| `CloudRun.run()` on GCP, any transport | ✅ through the queue (it starts `IOHandler`) |
+| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
 
-- **Split deployments** (SQS, Kafka or NATS, with the agent runner in its own process): import the
+- **Split deployments** (SQS, Kafka, NATS, Pub/Sub or Service Bus, with the agent runner in its own process): import the
   same agent modules in the IO process as in the runner, because agent cards are built from the
   IO process's registry. Without them the IO process logs a warning and serves an empty catalog.
   The response store must be shared (`redis`, `valkey` or `dynamodb`) in every execution mode.
@@ -62,6 +63,16 @@ separate process only in split deployments.
   `execution.response_store.delay` (1 s without a `response_store` block), and the wait gives up
   after `retry_count` reads (about 59 s without a block).
 - **Execution mode**: A2A ignores `execution.mode` and always waits for one whole reply.
+
+### Authentication
+
+The A2A routes are mounted on the REST server, so the identity dependency applies to them as to every
+other route. With an `identity` block, a `message:send` carrying `Authorization: Bearer <credential>`
+runs as the principal the identity provider resolves (the executor hands it to the queued request, so
+the agent, its hooks and its tools see the caller), a refused credential is a 401, and a request without
+one runs as the anonymous principal. Without an `identity` block every request is anonymous. The
+providers (`static`, `oidc` for Auth0, Keycloak, Okta or any OpenID Connect issuer, `cognito`, `entra`,
+`firebase`) are described in [Identity and access](../advanced/identity-and-access.md).
 
 ## Agent Capabilities
 

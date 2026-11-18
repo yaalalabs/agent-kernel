@@ -8,8 +8,10 @@ Those routes are served **in this process**, not through the queues: they talk t
 DynamoDB task store and EventBridge Scheduler directly, so a listing or a cancellation does not
 need a round trip through the queues.
 
-Add `authoriser=...` to the `ScheduleRESTRequestHandler(...)` call below to protect them; without
-one they are open and accept any `user_id`.
+Who is calling comes from the `identity` block in config.yaml: the identity dependency on every
+route turns the bearer token into the request's principal, a task belongs to the principal whose
+request created it, and the management routes serve the caller's own tasks. The handler refuses to
+build without the block.
 """
 
 from agentkernel.aws import ECSIOHandler

@@ -168,8 +168,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Conversation Threads",
         description:
-          "Persistent, named conversation threads keyed by session, readable over REST with cursor pagination and auto-named from the first prompt.",
-        tags: ["Threads", "REST", "Auto-naming"],
+          "Persistent, named conversation threads keyed by session, readable over REST with cursor pagination and auto-named from the first prompt. A paused run and the decision answering it are recorded as messages of their own.",
+        tags: ["Threads", "REST", "Auto-naming", "Human in the loop"],
         docs: "/docs/advanced/threads",
         example: "api/thread-openai",
       },
@@ -213,11 +213,12 @@ export const FEATURE_TABS: FeatureTab[] = [
         example: "cli/openai-secret",
       },
       {
-        title: "Authentication",
+        title: "Identity & Access",
         description:
-          "Bring your own validator for REST and WebSocket routes, with JWT and JWKS validation, cloud API gateway authorizers, and per-user scoping of threads and schedules.",
-        tags: ["JWT", "JWKS", "Authorisers"],
-        docs: "/docs/api/rest-api",
+          "One configured identity provider authenticates every surface: any OIDC issuer (Auth0, Keycloak, Okta), Amazon Cognito, Microsoft Entra ID, Firebase, a static credential map, or your own. Tools, hooks, threads and scheduled tasks see the same principal; a role mapper derives roles from groups and claims.",
+        tags: ["OIDC", "Auth0", "Cognito", "Entra ID", "Firebase", "Principal"],
+        // Drop `next` once the release that carries the identity layer is published.
+        docs: "/docs/next/advanced/identity-and-access",
         example: "aws-serverless/openai-auth",
       },
       {
@@ -255,8 +256,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Queue Pipeline",
         description:
-          "Request handler, input queue, agent runner, output queue, response handler. In-memory locally; SQS, Kafka or NATS JetStream in production, with per-session FIFO, retries and dedup.",
-        tags: ["SQS", "Kafka", "NATS", "FIFO"],
+          "Request handler, input queue, agent runner, output queue, response handler. In-memory locally; SQS, Kafka, NATS JetStream, Google Cloud Pub/Sub or Azure Service Bus in production, with per-session FIFO, retries and dedup.",
+        tags: ["SQS", "Kafka", "NATS", "Pub/Sub", "Service Bus", "FIFO"],
         docs: "/docs/advanced/queue-mode-guide",
         example: "transport/kafka",
       },
@@ -279,8 +280,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Human in the Loop",
         description:
-          "Pause a run for a person's approval or answer and resume from their decision later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming and AG-UI.",
-        tags: ["Approvals", "Pause & resume", "AG-UI"],
+          "Pause a run for a person's approval or answer and resume from their decision later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming, AG-UI and Slack or Telegram buttons.",
+        tags: ["Approvals", "Pause & resume", "AG-UI", "Slack & Telegram"],
         docs: "/docs/advanced/human-in-the-loop",
         example: "api/hitl",
       },

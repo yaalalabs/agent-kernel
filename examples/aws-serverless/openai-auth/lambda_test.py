@@ -1,15 +1,30 @@
+"""Tests for the deployed authenticated example.
+
+Set:
+- AK_TEST_ENDPOINT: the module's `agent_invoke_url` output (the chat route).
+- AK_TEST_TOKEN: a credential the identity provider in config.yaml accepts. With the static
+  provider that is the `demo_auth_token` the stack was deployed with. With the Auth0 block from the
+  README it is an access token for the API, for example from the client-credentials flow:
+
+      curl -s --request POST https://<tenant>.<region>.auth0.com/oauth/token \\
+        -H 'content-type: application/json' \\
+        -d '{"client_id": "...", "client_secret": "...", "audience": "<API identifier>", "grant_type": "client_credentials"}'
+
+  and `AK_TEST_TOKEN` is the `access_token` of the reply.
+"""
+
 import asyncio
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
 
 import httpx
-import jwt
 import pytest
 import pytest_asyncio
 from agentkernel.test import Test
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
+
+TOKEN = os.getenv("AK_TEST_TOKEN", "")
 
 
 class APITestClient:
@@ -17,34 +32,11 @@ class APITestClient:
         self.url = url
         self.session_id = str(uuid.uuid4())
 
-    def generate_jwt_token(self, email="test@test.com"):
-        """Generate a JWT token for testing authentication."""
-        payload = {
-            "email": email,
-            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
-            "iat": datetime.now(timezone.utc),
-        }
-        # Using a dummy secret since the validator doesn't verify signature
-        token = jwt.encode(payload, "dummy-secret", algorithm="HS256")
-        return token
-
-    async def send(self, prompt, endpoint: str = "", additional_context=None, body=None, email="test@test.com"):
-        """Send request with JWT authentication."""
-        token = self.generate_jwt_token(email)
-
-        payload = (
-            {
-                "prompt": prompt,
-                "session_id": self.session_id,
-                "agent": "triage",
-                "additional_context": additional_context,
-            }
-            if body is None
-            else body
-        )
-
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-
+    async def post(self, payload, token=TOKEN, endpoint: str = ""):
+        """Send a request, with the bearer token unless `token` is None, retrying cold-start failures."""
+        headers = {"Content-Type": "application/json"}
+        if token is not None:
+            headers["Authorization"] = f"Bearer {token}"
         async with httpx.AsyncClient(timeout=30.0) as client:
             # Retry 5xx and timeouts: serverless cold starts can exceed the gateway timeout
             for attempt in range(3):
@@ -55,40 +47,35 @@ class APITestClient:
                         raise
                     continue
                 if resp.status_code < 500 or attempt == 2:
-                    break
+                    return resp
                 await asyncio.sleep(5)
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("result", "")
-
-    async def send_unauthenticated(self, prompt, endpoint: str = "", additional_context=None, body=None):
-        """Send request without authentication for testing auth failure."""
-        payload = (
-            {
-                "prompt": prompt,
-                "session_id": self.session_id,
-                "agent": "triage",
-                "additional_context": additional_context,
-            }
-            if body is None
-            else body
-        )
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(f"{self.url}{endpoint}", json=payload)
             return resp
+
+    async def send(self, prompt, additional_context=None):
+        """Send an authenticated chat request and return the agent's reply."""
+        payload = {
+            "prompt": prompt,
+            "session_id": self.session_id,
+            "agent": "triage",
+            "additional_context": additional_context,
+        }
+        resp = await self.post(payload)
+        resp.raise_for_status()
+        return resp.json().get("result", "")
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
     endpoint = os.getenv("AK_TEST_ENDPOINT")
+    assert endpoint, "Set AK_TEST_ENDPOINT to the deployment's agent_invoke_url"
+    assert TOKEN, "Set AK_TEST_TOKEN to a credential the identity provider accepts"
     yield APITestClient(endpoint)
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(1)
 async def test_history_agent_with_valid_auth(http_client):
-    """Test history agent with valid JWT token."""
+    """Test history agent with a valid token."""
     response = await http_client.send("Who won the 1996 cricket world cup?, answer with only the country name")
     Test.compare(response, ["Sri Lanka"])
 
@@ -104,20 +91,19 @@ async def test_history_agent_followup_with_valid_auth(http_client):
 
 @pytest.mark.asyncio
 @pytest.mark.order(3)
-async def test_unauthenticated_request(http_client):
-    """Test that unauthenticated requests are rejected."""
-    resp = await http_client.send_unauthenticated("What is 2 + 2?")
-    assert resp.status_code == 401 or resp.status_code == 403
+async def test_a_request_without_a_token_is_rejected(http_client):
+    """The authorizer denies a request that carries no credential."""
+    resp = await http_client.post(
+        {"prompt": "What is 2 + 2?", "session_id": http_client.session_id, "agent": "triage"}, token=None
+    )
+    assert resp.status_code in (401, 403)
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(4)
-async def test_invalid_email_auth(http_client):
-    """Test that requests with invalid email are rejected."""
-    try:
-        response = await http_client.send("What is 2 + 2?", email="wrong@email.com")
-        # If we get here, authentication didn't fail as expected
-        assert False, "Request with invalid email should have been rejected"
-    except httpx.HTTPStatusError as e:
-        # Expect 401 or 403 for invalid authentication
-        assert e.response.status_code == 401 or e.response.status_code == 403
+async def test_a_refused_token_is_rejected(http_client):
+    """A credential the identity provider does not accept is denied, with no hint as to why."""
+    resp = await http_client.post(
+        {"prompt": "What is 2 + 2?", "session_id": http_client.session_id, "agent": "triage"}, token="not-the-token"
+    )
+    assert resp.status_code in (401, 403)

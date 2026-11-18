@@ -8,6 +8,7 @@ from fastapi import Request
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
+from ...secret import SecretManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 from ..adapter.meta import MetaSendAPIClient, answer_challenge, verify_signature
 from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
@@ -20,12 +21,24 @@ _log = logging.getLogger("ak.integration.messenger")
 
 def _client() -> MetaSendAPIClient:
     config = AKConfig.get().messenger
-    if not all([config.access_token, config.verify_token]):
-        _log.error("Facebook Messenger configuration is incomplete. Please set access_token and verify_token.")
-        raise ValueError("Incomplete Facebook Messenger configuration.")
+    secrets = SecretManager.current()
+    access_token = config.access_token or secrets.get(config.access_token_key, default="")
+    verify_token = config.verify_token or secrets.get(config.verify_token_key, default="")
+    missing = [
+        secrets.describe(key, field)
+        for field, key, value in (
+            ("messenger.access_token", config.access_token_key, access_token),
+            ("messenger.verify_token", config.verify_token_key, verify_token),
+        )
+        if not value
+    ]
+    if missing:
+        message = f"Incomplete Facebook Messenger configuration: set {'; '.join(missing)}."
+        _log.error(message)
+        raise ValueError(message)
     return MetaSendAPIClient(
         base_url=f"https://graph.facebook.com/{config.api_version or 'v24.0'}",
-        access_token=config.access_token,
+        access_token=access_token,
         message_fields={"messaging_type": "RESPONSE"},
         log=_log,
     )
@@ -44,8 +57,9 @@ class MessengerInboundAdapter(InboundAdapter):
         config = AKConfig.get()
         self._agent = config.messenger.agent or None
         self._max_file_size = config.api.max_file_size
-        self._app_secret = config.messenger.app_secret
-        self._verify_token = config.messenger.verify_token
+        secrets = SecretManager.current()
+        self._app_secret = config.messenger.app_secret or secrets.get(config.messenger.app_secret_key, default="")
+        self._verify_token = config.messenger.verify_token or secrets.get(config.messenger.verify_token_key, default="")
         self._api = _client()
 
     def missing_verification_settings(self) -> list[str]:
@@ -91,7 +105,7 @@ class MessengerInboundAdapter(InboundAdapter):
             if not text and not attachments:
                 self._log.warning("Message has no text content or attachments")
                 return None
-            return await self._build(sender_id, message_id, text, attachments)
+            return await self._build(sender_id, message_id, text, attachments, self._recipient_id(event))
 
         if "postback" in event:
             postback = event["postback"]
@@ -101,7 +115,7 @@ class MessengerInboundAdapter(InboundAdapter):
                 return None
             # A postback carries no message id of its own; the sender plus the payload is what
             # distinguishes one button press from the next.
-            return await self._build(sender_id, f"{NAME}:{sender_id}:{postback.get('payload') or text}", text, [])
+            return await self._build(sender_id, f"{NAME}:{sender_id}:{postback.get('payload') or text}", text, [], self._recipient_id(event))
 
         if "delivery" in event:
             self._log.debug(f"Message delivery confirmation: {event['delivery']}")
@@ -109,7 +123,12 @@ class MessengerInboundAdapter(InboundAdapter):
             self._log.debug(f"Message read receipt: {event['read']}")
         return None
 
-    async def _build(self, sender_id: str, request_id: str, text: str, attachments: list) -> InboundRequest | None:
+    @staticmethod
+    def _recipient_id(event: dict) -> str | None:
+        """The page the event was delivered to: the scope a page-scoped sender id is unique within (#603)."""
+        return (event.get("recipient") or {}).get("id") or None
+
+    async def _build(self, sender_id: str, request_id: str, text: str, attachments: list, namespace: str | None) -> InboundRequest | None:
         requests: list[AgentRequest] = []
         if text:
             requests.append(AgentRequestText(prompt=text))
@@ -133,6 +152,7 @@ class MessengerInboundAdapter(InboundAdapter):
             prompt=text,
             agent=self._agent,
             user_id=sender_id,
+            namespace=namespace,
             reply_context={"recipient_id": sender_id},
         )
 

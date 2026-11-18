@@ -8,3 +8,16 @@ a2ui:
 # page reload, which is the point, but not a restart of app.py.
 thread:
   type: in_memory
+
+# Who may call. A thread belongs to someone, so the thread handler refuses to build without this
+# block. The static provider maps one credential to the `demo-user` principal (one entry, since this
+# example has one user; the sibling thread-openai example is where ownership across users is shown).
+# The credential's value is resolved through the secret capability at startup (the environment by
+# default), so export DEMO_TOKEN before starting the app; the frontend sends `demo-token`.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_TOKEN:
+          subject: demo-user

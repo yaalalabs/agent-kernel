@@ -1,5 +1,11 @@
 """Authorizer Lambda: bearer-token auth for the chat route, and a bypass for Slack's webhook.
 
+The chat route is authenticated through the identity provider named in config.yaml (the static
+provider here, its one credential resolved from the DEMO_AUTH_TOKEN environment variable that
+deploy/main.tf passes in; swap it for an `oidc`, `cognito`, `entra` or `firebase` block to validate
+real tokens, after adding `auth` to the `authorizer` extra in pyproject.toml, since those providers
+need PyJWT, cryptography and httpx).
+
 Slack sends no bearer token: it signs the body, and the authorizer event carries no body. So the
 bypass lets `POST /<api_base_path>/<api_version>/slack/events` through by method and path alone,
 never by header, and the Slack adapter's signature check in the request-handler Lambda is the real
@@ -10,22 +16,7 @@ deploy/main.tf): with a TTL, API Gateway answers a request that has no Authoriza
 401 before calling this Lambda.
 """
 
-import hmac
-import os
-
-from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.aws import APIGatewayAuthorizer
 from agentkernel.integration.adapter import WebhookRouteMatcher
 
-
-class DemoValidator(AuthValidator):
-    """Accepts one shared demo token. Replace it with your identity provider's token check."""
-
-    def __init__(self) -> None:
-        self._token = os.environ["DEMO_AUTH_TOKEN"]
-
-    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
-        return ValidationResult(is_valid=hmac.compare_digest(token, self._token), subject="demo-user")
-
-
-handler = APIGatewayAuthorizer(validator=DemoValidator(), bypass=WebhookRouteMatcher.for_integrations("slack")).handle
+handler = APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("slack")).handle

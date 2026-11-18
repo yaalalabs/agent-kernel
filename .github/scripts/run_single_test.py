@@ -164,22 +164,36 @@ def _read_tfvar(deploy_path: Path, key: str) -> str | None:
 SSM_SEEDED_KEYS = ["OPENAI_API_KEY"]
 
 
-def seed_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
-    """Write SSM_SEEDED_KEYS from the environment to SSM when the example resolves secrets from aws_ssm."""
+def _ssm_scope(path: str, deploy_dir: str):
+    """(prefix, region) for an example that resolves secrets from aws_ssm; None when it does not.
+
+    :raises ValueError: If the example uses aws_ssm but its terraform.tfvars has no prefix or region.
+    """
     import yaml
 
     config = yaml.safe_load((Path(path) / 'config.yaml').read_text()) or {}
     provider_type = ((config.get('secret') or {}).get('provider') or {}).get('type')
     if provider_type != 'aws_ssm':
-        print(f"⏭️  Skipping SSM seeding - {path} does not use the aws_ssm secret provider")
-        return True
-
+        return None
     deploy_path = Path(path) / deploy_dir
     prefix = _read_tfvar(deploy_path, 'prefix')
     region = _read_tfvar(deploy_path, 'region')
     if not (prefix and region):
-        print(f"❌ Could not resolve prefix/region from {deploy_path / 'terraform.tfvars'}")
+        raise ValueError(f"Could not resolve prefix/region from {deploy_path / 'terraform.tfvars'}")
+    return prefix, region
+
+
+def seed_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
+    """Write SSM_SEEDED_KEYS from the environment to SSM when the example resolves secrets from aws_ssm."""
+    try:
+        scope = _ssm_scope(path, deploy_dir)
+    except ValueError as e:
+        print(f"❌ {e}")
         return False
+    if scope is None:
+        print(f"⏭️  Skipping SSM seeding - {path} does not use the aws_ssm secret provider")
+        return True
+    prefix, region = scope
 
     for key in SSM_SEEDED_KEYS:
         value = os.environ.get(key)
@@ -202,6 +216,35 @@ def seed_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
             except subprocess.CalledProcessError as e:
                 print(f"❌ Failed to seed {name}: {e}")
                 return False
+    return True
+
+
+def delete_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
+    """Delete the parameters seed_ssm_secrets wrote, once the example's deployment is destroyed.
+
+    A parameter that is already gone is not an error: delete-parameters lists it as invalid and succeeds.
+    """
+    try:
+        scope = _ssm_scope(path, deploy_dir)
+    except ValueError as e:
+        print(f"❌ {e}")
+        return False
+    if scope is None:
+        print(f"⏭️  Skipping SSM cleanup - {path} does not use the aws_ssm secret provider")
+        return True
+    prefix, region = scope
+
+    names = [f"/ak/{prefix}/{key.lower()}" for key in SSM_SEEDED_KEYS]
+    print(f"🧹 Deleting {', '.join(names)} (region {region})")
+    try:
+        subprocess.run(
+            ['aws', 'ssm', 'delete-parameters', '--region', region, '--names', *names],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to delete the SSM parameters: {e}")
+        return False
     return True
 
 
@@ -696,7 +739,28 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to retrieve agent_invoke_url output: {e}")
         return False
-    
+
+    # Queue-mode examples also expose their Service Bus namespace, for the live transport contract.
+    result = subprocess.run(
+        ['terraform', 'output', '-raw', 'servicebus_namespace'],
+        cwd=str(deploy_path), capture_output=True, text=True
+    )
+    # A missing output fails, and the setup-terraform wrapper may still print to stdout.
+    namespace = result.stdout.strip() if result.returncode == 0 else ''
+    pytest_cmd = ['uv', 'run', 'pytest']
+    if namespace:
+        test_env['AK_TEST_SERVICEBUS_NAMESPACE'] = namespace
+        # The contract authenticates as the CI principal through the az CLI; a long deploy can outlive
+        # the OIDC login, so refresh it the same way the serverless deploy does.
+        auth_cmd = os.environ.get('AK_PRE_DEPLOY_AUTH_CMD')
+        if auth_cmd and not run_command(['bash', '-c', auth_cmd], description="Refreshing Azure CLI login"):
+            return False
+        # The contract imports the transport under test, so the test venv needs the LOCAL wheel
+        # (same as the aws-containerized tests); --no-sync keeps uv.lock from reverting it.
+        if not run_command(['./build.sh', 'local'], cwd=path, description=f"Building {path} with local agentkernel"):
+            return False
+        pytest_cmd = ['uv', 'run', '--no-sync', 'pytest']
+
     #remove the config.yaml till the issue with it is being solved
     
     delete_config = run_command(
@@ -709,7 +773,7 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
+        pytest_cmd + ['-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env
@@ -1008,7 +1072,7 @@ def main():
                        help='Type of test to run')
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
-    parser.add_argument('--action', choices=['deploy', 'test', 'destroy', 'seed-secrets'], default='test', help='Action to perform')
+    parser.add_argument('--action', choices=['deploy', 'test', 'destroy', 'seed-secrets', 'delete-secrets'], default='test', help='Action to perform')
     parser.add_argument('--vpc-id', default=None, help='VPC ID from base deployment')
     parser.add_argument('--private-subnet-ids', default=None, help='Private subnet IDs (JSON array) from base deployment')
     parser.add_argument('--request-handler-security-group-id', default=None, help='Request handler security group ID from base deployment; sets TF_VAR_request_handler_security_group_id (used for aws-serverless jobs)')
@@ -1028,6 +1092,12 @@ def main():
             success = seed_ssm_secrets(args.path, args.deploy_dir)
         else:
             print(f"⚠️  Seed-secrets action not applicable for type: {args.type}")
+            success = True
+    elif args.action == 'delete-secrets':
+        if args.type in ['aws-containerized', 'aws-serverless']:
+            success = delete_ssm_secrets(args.path, args.deploy_dir)
+        else:
+            print(f"⚠️  Delete-secrets action not applicable for type: {args.type}")
             success = True
     elif args.action == 'deploy':
         if args.type in ['aws-containerized', 'aws-serverless']:

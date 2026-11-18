@@ -476,7 +476,7 @@ class TestAnAgentRebountToAnotherFramework:
         record = PausedRunState.get(session, paused.run_id)
         record.runner = None
         PausedRunState.clear(session, record.id)
-        session.get_non_volatile_cache().set("ak.paused_runs", [record])
+        session.get_non_volatile_cache()._set_reserved("ak.paused_runs", [record])
 
         reply = await runtime.run(agent, session, _resume_requests("i1", run_id=paused.run_id))
 

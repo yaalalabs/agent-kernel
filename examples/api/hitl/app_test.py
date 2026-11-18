@@ -1,4 +1,5 @@
 import asyncio
+import os
 import subprocess
 import sys
 import time
@@ -39,13 +40,15 @@ class APITestClient:
             {"session_id": self.session_id, "agent": "support", "resume": {"decisions": [decision]}}
         )
 
-    async def answer(self, interruption_id, value, agent="planner"):
-        """Supply a *value* — a chosen option or free text — rather than a verdict."""
+    async def answer(self, *answers, agent="planner"):
+        """Answer one or more questions in a single resume, as (interruption_id, value) pairs."""
         return await self._post(
             {
                 "session_id": self.session_id,
                 "agent": agent,
-                "resume": {"decisions": [{"id": interruption_id, "payload": value}]},
+                "resume": {
+                    "decisions": [{"id": interruption_id, "payload": value} for interruption_id, value in answers]
+                },
             }
         )
 
@@ -87,7 +90,10 @@ async def app_server():
     enough locally is therefore short enough in CI for the first requests to be refused outright,
     which is why the wait polls rather than guesses.
     """
-    proc = subprocess.Popen([sys.executable, "app.py"], stdout=sys.stdout, stderr=sys.stderr)
+    # The identity block in config.yaml names the DEMO_TOKEN credential; the static provider must
+    # resolve it at startup even though these tests use the REST route without a token.
+    env = {**os.environ, "DEMO_TOKEN": "demo-token"}
+    proc = subprocess.Popen([sys.executable, "app.py"], stdout=sys.stdout, stderr=sys.stderr, env=env)
     try:
         await _wait_until_serving(proc)
         yield f"http://{HOST}:{PORT}"
@@ -174,37 +180,45 @@ async def test_an_ungated_tool_still_answers_in_one_turn(http_client):
 
 @pytest.mark.asyncio
 @pytest.mark.order(5)
-async def test_a_choice_comes_back_with_its_options(http_client):
+async def test_both_questions_arrive_in_one_pause(http_client):
+    """Two nodes interrupting in the same superstep, so the human is asked once, not twice."""
     body = await http_client.ask("Plan the refund for ORD-1001.", agent="planner")
 
     assert body["status"] == "PAUSED", body
-    interruption = body["interruptions"][0]
     # `input_required`, not `tool_call`: the agent wants a value, not permission.
-    assert interruption["kind"] == "input_required"
-    assert interruption["payload"]["options"] == ["Original card", "Store credit", "Bank transfer"]
+    assert [i["kind"] for i in body["interruptions"]] == ["input_required", "input_required"]
+
+    choice = next(i for i in body["interruptions"] if "options" in i["payload"])
+    free_text = next(i for i in body["interruptions"] if "options" not in i["payload"])
+    assert choice["payload"]["options"] == ["Original card", "Store credit", "Bank transfer"]
+    assert "tell the customer" in free_text["payload"]["question"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(6)
-async def test_answering_the_choice_asks_the_free_text_question(http_client):
-    """Two interrupts in one node: the second is reached only once the first has an answer."""
+async def test_answering_only_one_question_re_asks_the_other(http_client):
+    """LangGraph drops an unanswered question and asks it again — a fresh pause, the same id."""
     paused = await http_client.ask("Plan the refund for ORD-1002.", agent="planner")
+    choice = next(i for i in paused["interruptions"] if "options" in i["payload"])
+    free_text = next(i for i in paused["interruptions"] if "options" not in i["payload"])
 
-    body = await http_client.answer(paused["interruptions"][0]["id"], "Store credit")
+    body = await http_client.answer((choice["id"], "Store credit"))
 
     assert body["status"] == "PAUSED", body
-    assert "free text" in body["interruptions"][0]["payload"]["question"]
-    assert "options" not in body["interruptions"][0]["payload"]
+    assert len(body["interruptions"]) == 1
+    assert "tell the customer" in body["interruptions"][0]["payload"]["question"]
+    assert body["interruptions"][0]["id"] == free_text["id"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(7)
 async def test_both_answers_reach_the_model(http_client):
-    """The chosen option and the typed note both land in the confirmation the model writes."""
+    """Both questions answered in one resume, and both land in the confirmation the model writes."""
     paused = await http_client.ask("Plan the refund for ORD-1001.", agent="planner")
-    second = await http_client.answer(paused["interruptions"][0]["id"], "Bank transfer")
+    choice = next(i for i in paused["interruptions"] if "options" in i["payload"])
+    free_text = next(i for i in paused["interruptions"] if "options" not in i["payload"])
 
-    body = await http_client.answer(second["interruptions"][0]["id"], "Apologise for the delay.")
+    body = await http_client.answer((choice["id"], "Bank transfer"), (free_text["id"], "Apologise for the delay."))
 
     assert body.get("status") != "PAUSED", body
     Test.compare(

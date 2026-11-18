@@ -1,8 +1,8 @@
 import importlib.metadata
 from threading import RLock
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .model import ExecutionMode, ReplyMessageType
 from .util.config_yaml_util import YamlBaseSettingsModified
@@ -127,7 +127,8 @@ class _WebSocketAPIConfig(BaseModel):
     push_auth_token: str | None = Field(
         default=None,
         description="Shared secret authenticating pod-to-pod pushes to the pipeline's internal push endpoint "
-        "(required for WebSocket modes on a broker transport; unused by API-Gateway-based deployments)",
+        "(required for WebSocket modes on a broker transport; unused by API-Gateway-based deployments). When unset, "
+        "resolved through SecretManager as AK_WEBSOCKET_API__PUSH_AUTH_TOKEN (the environment, then the configured secret provider)",
     )
     push_port: int | None = Field(
         default=None,
@@ -148,6 +149,10 @@ class _MCPConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable MCP")
     expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
     agents: list[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
+    url: str = Field(
+        default="http://localhost:8000/mcp",
+        description="Public URL of the MCP endpoint; with an OpenID identity provider it is the protected resource the RFC 9728 metadata names",
+    )
     stateless_http: bool = Field(
         default=False,
         description="Run MCP in stateless HTTP mode. Each request is independent (no Mcp-Session-Id). "
@@ -158,6 +163,25 @@ class _MCPConfig(BaseModel):
 
 class _SlackConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Slack interactions")
+    bot_token: str = Field(
+        default="",
+        description="Slack bot token. When empty, resolved through SecretManager under bot_token_key (the environment, then the configured secret provider)",
+    )
+    bot_token_key: str = Field(
+        default="SLACK_BOT_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Slack bot token when bot_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    signing_secret: str = Field(
+        default="",
+        description="Slack signing secret for request verification. When empty, resolved through SecretManager under signing_secret_key "
+        "(the environment, then the configured secret provider)",
+    )
+    signing_secret_key: str = Field(
+        default="SLACK_SIGNING_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Slack signing secret when signing_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
     agent_acknowledgement: str = Field(
         default="",
         description="The message to send as an acknowledgement when a Slack message is received",
@@ -174,9 +198,33 @@ class _WhatsAppConfig(BaseModel):
         default="",
         description="The message to send as an acknowledgement when a WhatsApp message is received",
     )
-    verify_token: str = Field(default="", description="WhatsApp webhook verify token")
-    access_token: str = Field(default="", description="WhatsApp Business API access token")
-    app_secret: str = Field(default="", description="WhatsApp app secret for signature verification")
+    verify_token: str = Field(
+        default="",
+        description="WhatsApp webhook verify token. When empty, resolved through SecretManager under verify_token_key (the environment, then the configured secret provider)",
+    )
+    verify_token_key: str = Field(
+        default="AK_WHATSAPP__VERIFY_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the WhatsApp webhook verify token when verify_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    access_token: str = Field(
+        default="",
+        description="WhatsApp Business API access token. When empty, resolved through SecretManager under access_token_key (the environment, then the configured secret provider)",
+    )
+    access_token_key: str = Field(
+        default="AK_WHATSAPP__ACCESS_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the WhatsApp Business API access token when access_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    app_secret: str = Field(
+        default="",
+        description="WhatsApp app secret for signature verification. When empty, resolved through SecretManager under app_secret_key (the environment, then the configured secret provider)",
+    )
+    app_secret_key: str = Field(
+        default="AK_WHATSAPP__APP_SECRET",
+        description="Secret key (an environment-variable-style name) holding the WhatsApp app secret when app_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
     phone_number_id: str = Field(default="", description="WhatsApp Business phone number ID")
     api_version: str = Field(default="v24.0", description="WhatsApp API version")
     outbound_adapter: str = Field(
@@ -187,9 +235,33 @@ class _WhatsAppConfig(BaseModel):
 
 class _MessengerConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Facebook Messenger interactions")
-    verify_token: str = Field(default="", description="Facebook Messenger webhook verify token")
-    access_token: str = Field(default="", description="Facebook Page access token")
-    app_secret: str = Field(default="", description="Facebook app secret for signature verification")
+    verify_token: str = Field(
+        default="",
+        description="Facebook Messenger webhook verify token. When empty, resolved through SecretManager under verify_token_key (the environment, then the configured secret provider)",
+    )
+    verify_token_key: str = Field(
+        default="AK_MESSENGER__VERIFY_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Messenger webhook verify token when verify_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    access_token: str = Field(
+        default="",
+        description="Facebook Page access token. When empty, resolved through SecretManager under access_token_key (the environment, then the configured secret provider)",
+    )
+    access_token_key: str = Field(
+        default="AK_MESSENGER__ACCESS_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Facebook Page access token when access_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    app_secret: str = Field(
+        default="",
+        description="Facebook app secret for signature verification. When empty, resolved through SecretManager under app_secret_key (the environment, then the configured secret provider)",
+    )
+    app_secret_key: str = Field(
+        default="AK_MESSENGER__APP_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Facebook app secret when app_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
     outbound_adapter: str = Field(
         default="",
@@ -199,9 +271,33 @@ class _MessengerConfig(BaseModel):
 
 class _InstagramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Instagram interactions")
-    verify_token: str = Field(default="", description="Instagram webhook verify token")
-    access_token: str = Field(default="", description="Instagram Business access token")
-    app_secret: str = Field(default="", description="Instagram app secret for signature verification")
+    verify_token: str = Field(
+        default="",
+        description="Instagram webhook verify token. When empty, resolved through SecretManager under verify_token_key (the environment, then the configured secret provider)",
+    )
+    verify_token_key: str = Field(
+        default="AK_INSTAGRAM__VERIFY_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Instagram webhook verify token when verify_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    access_token: str = Field(
+        default="",
+        description="Instagram Business access token. When empty, resolved through SecretManager under access_token_key (the environment, then the configured secret provider)",
+    )
+    access_token_key: str = Field(
+        default="AK_INSTAGRAM__ACCESS_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Instagram Business access token when access_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    app_secret: str = Field(
+        default="",
+        description="Instagram app secret for signature verification. When empty, resolved through SecretManager under app_secret_key (the environment, then the configured secret provider)",
+    )
+    app_secret_key: str = Field(
+        default="AK_INSTAGRAM__APP_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Instagram app secret when app_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
     instagram_account_id: str = Field(default="", description="Instagram Business Account ID (IGSID)")
     api_version: str = Field(default="v21.0", description="Instagram Graph API version")
     outbound_adapter: str = Field(
@@ -212,8 +308,24 @@ class _InstagramConfig(BaseModel):
 
 class _TelegramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Telegram")
-    bot_token: str = Field(default="", description="Telegram bot token from BotFather")
-    webhook_secret: str = Field(default="", description="Optional secret token for webhook security")
+    bot_token: str = Field(
+        default="",
+        description="Telegram bot token from BotFather. When empty, resolved through SecretManager under bot_token_key (the environment, then the configured secret provider)",
+    )
+    bot_token_key: str = Field(
+        default="AK_TELEGRAM__BOT_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Telegram bot token when bot_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    webhook_secret: str = Field(
+        default="",
+        description="Optional secret token for webhook security. When empty, resolved through SecretManager under webhook_secret_key (the environment, then the configured secret provider)",
+    )
+    webhook_secret_key: str = Field(
+        default="AK_TELEGRAM__WEBHOOK_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Telegram webhook secret when webhook_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
     outbound_adapter: str = Field(
         default="",
@@ -228,7 +340,15 @@ class _TeamsConfig(BaseModel):
         description="The message to send as an acknowledgement when a Teams message is received",
     )
     app_id: str = Field(default="", description="Azure Bot / Entra ID application (client) ID")
-    app_password: str = Field(default="", description="Azure Bot / Entra ID application client secret")
+    app_password: str = Field(
+        default="",
+        description="Azure Bot / Entra ID application client secret. When empty, resolved through SecretManager under app_password_key (the environment, then the configured secret provider)",
+    )
+    app_password_key: str = Field(
+        default="AK_TEAMS__APP_PASSWORD",
+        description="Secret key (an environment-variable-style name) holding the Azure Bot / Entra ID client secret when app_password is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
     tenant_id: str = Field(
         default="",
         description="Entra ID tenant that owns the bot's app registration. Required only for a single-tenant registration, whose channel tokens must be issued by its own tenant; leave empty for a multi-tenant bot. Also the fallback tenant for the app-only token used to download attachments whose URL is not pre-authenticated, when the incoming activity carries none",
@@ -241,6 +361,24 @@ class _TeamsConfig(BaseModel):
 
 class _GmailConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Gmail")
+    client_id: str = Field(
+        default="",
+        description="Gmail OAuth2 client ID. When empty, resolved through SecretManager under client_id_key (the environment, then the configured secret provider)",
+    )
+    client_id_key: str = Field(
+        default="AK_GMAIL__CLIENT_ID",
+        description="Secret key (an environment-variable-style name) holding the Gmail OAuth2 client ID when client_id is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    client_secret: str = Field(
+        default="",
+        description="Gmail OAuth2 client secret. When empty, resolved through SecretManager under client_secret_key (the environment, then the configured secret provider)",
+    )
+    client_secret_key: str = Field(
+        default="AK_GMAIL__CLIENT_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Gmail OAuth2 client secret when client_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
     token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
     poll_interval: int = Field(default=30, description="Email polling interval in seconds")
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
@@ -259,8 +397,14 @@ class _LiveKitConfig(BaseModel):
 
     agent: str = Field(default="", description="Default agent to use for LiveKit interactions")
     url: str = Field(default="", description="LiveKit server WebSocket URL")
-    api_key: str = Field(default="", description="LiveKit API Key")
-    api_secret: str = Field(default="", description="LiveKit API Secret")
+    api_key: str = Field(
+        default="",
+        description="LiveKit API Key. When empty, resolved through SecretManager as AK_LIVEKIT__API_KEY (the environment, then the configured secret provider)",
+    )
+    api_secret: str = Field(
+        default="",
+        description="LiveKit API Secret. When empty, resolved through SecretManager as AK_LIVEKIT__API_SECRET (the environment, then the configured secret provider)",
+    )
 
 
 class _MultimodalStorageRedisConfig(_RedisConfig):
@@ -291,11 +435,11 @@ class _MultimodalConfig(BaseModel):
     max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
     description_max_length: int = Field(default=200, description="Maximum length of attachment description text")
     description_model: str = Field(
-        default="gpt-4o",
+        default="gpt-6-luna",
         description="LiteLLM model used to generate brief descriptions when an attachment is first received (called by the pre-hook)",
     )
     analysis_model: str = Field(
-        default="gpt-4o",
+        default="gpt-6-luna",
         description=(
             "LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment; "
             "a remote image is handed to it as a fetchable image URL, so the model must be able to fetch that address, "
@@ -338,7 +482,7 @@ class _ThreadCosmosDBConfig(BaseModel):
 
 
 class _ThreadNamingConfig(BaseModel):
-    model: str = Field(default="gpt-4o-mini", description="LiteLLM model used to generate thread names")
+    model: str = Field(default="gpt-6-luna", description="LiteLLM model used to generate thread names")
     max_length: int = Field(default=80, description="Maximum length of an auto-generated thread name")
 
 
@@ -480,7 +624,7 @@ class _GuardrailParamConfig(BaseModel):
     )
     pii: bool = Field(default=True, description="Enable PII redaction/unmasking (WalledAI only)")
     config_path: str | None = Field(default=None, description="Path to guardrail configuration file (OpenAI only)")
-    model: str | None = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail (OpenAI only)")
+    model: str | None = Field(default="gpt-6-luna", description="LLM model name to use for guardrail (OpenAI only)")
     id: str | None = Field(default=None, description="AWS Bedrock guardrail ID (Bedrock only)")
     version: str | None = Field(default="DRAFT", description="AWS Bedrock guardrail version (Bedrock only)")
 
@@ -518,7 +662,7 @@ class _ResponseStoreConfig(BaseModel):
 
 
 class _InputQueueConfig(BaseModel):
-    url: str = Field(default=None, description="Input queue URL (sqs transport only)")
+    url: str = Field(default=None, description="Input queue URL (sqs: queue URL; servicebus: https://<namespace>.servicebus.windows.net/<queue>)")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
@@ -534,7 +678,7 @@ class _InputQueueConfig(BaseModel):
 
 
 class _OutputQueueConfig(BaseModel):
-    url: str = Field(default=None, description="Output queue URL (sqs transport only)")
+    url: str = Field(default=None, description="Output queue URL (sqs: queue URL; servicebus: https://<namespace>.servicebus.windows.net/<queue>)")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
@@ -624,10 +768,65 @@ class _NatsQueueConfig(BaseModel):
     )
 
 
+class _PubSubQueueConfig(BaseModel):
+    project_id: str | None = Field(
+        default=None,
+        description="GCP project that owns the topics and subscriptions. Unset uses the project of Application Default Credentials",
+    )
+    input_topic: str = Field(default="agent-input", description="Topic carrying chat requests")
+    input_subscription: str = Field(
+        default="agent-input",
+        description="Subscription the agent runner pulls chat requests from. Must have message ordering enabled",
+    )
+    output_topic: str = Field(default="agent-output", description="Topic carrying agent replies")
+    output_subscription: str = Field(
+        default="agent-output",
+        description="Subscription the response handler pulls replies from. Must have message ordering enabled",
+    )
+    dlq_suffix: str = Field(
+        default="-dlq",
+        description="Suffix appended to a topic name for its dead-letter topic, where permanently failed messages are copied",
+    )
+    ack_wait: float = Field(
+        default=300.0,
+        description=(
+            "Seconds a fetched message stays leased before Pub/Sub redelivers it. Must exceed your longest agent turn: "
+            "a turn that outlives it is redelivered and executed a second time."
+        ),
+    )
+    request_timeout: float = Field(default=10.0, description="Seconds to wait for a Pub/Sub call (publish, ack, admin) to complete")
+    auto_provision: bool = Field(
+        default=False,
+        description=(
+            "Create the topics, dead-letter topics and subscriptions at startup if missing. For the emulator and dev only; "
+            "leave false in production, where Terraform owns them and a missing object should fail loudly."
+        ),
+    )
+
+
+class _ServiceBusQueueConfig(BaseModel):
+    ack_wait: float = Field(
+        default=300.0,
+        description=(
+            "Seconds a received message's session lock is renewed while the agent works: at least ack_wait, "
+            "and up to 2 x ack_wait for a message taken on a freshly accepted session. After that the lock "
+            "lapses and the message is redelivered (within the queue's lock duration). Keep it above your "
+            "longest agent turn, or a slow turn runs twice."
+        ),
+    )
+    connection_string: str | None = Field(
+        default=None,
+        description=(
+            "Service Bus connection string, for the local emulator and development only. Unset uses Azure "
+            "managed identity (DefaultAzureCredential) against the namespace in input.url / output.url."
+        ),
+    )
+
+
 class _QueuesConfig(BaseModel):
     type: str = Field(
         description=(
-            "Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport "
+            "Queue transport: in_memory | sqs | kafka | nats | pubsub | servicebus, or a dotted path to a QueueTransport "
             "subclass. Mandatory whenever this block is declared: the transport decides the "
             "deployment topology, so it is declared by the application rather than inferred from "
             "whichever queue coordinates a deployment happens to inject. Omitting the whole block "
@@ -639,6 +838,8 @@ class _QueuesConfig(BaseModel):
     in_memory: _InMemoryQueueConfig | None = Field(default=None, description="in_memory transport settings")
     kafka: _KafkaQueueConfig | None = Field(default=None, description="kafka transport settings")
     nats: _NatsQueueConfig | None = Field(default=None, description="nats transport settings")
+    pubsub: _PubSubQueueConfig | None = Field(default=None, description="pubsub (Google Cloud Pub/Sub) transport settings")
+    servicebus: _ServiceBusQueueConfig | None = Field(default=None, description="servicebus transport settings")
     batch_size: int | None = Field(
         default=None,
         description=(
@@ -896,7 +1097,11 @@ _E2B_KERNELS = {"python", "javascript", "typescript", "r", "java", "bash"}  # ru
 
 
 class _SandboxE2BConfig(_SandboxProviderPackageConfig):
-    api_key_env: str = Field(default="E2B_API_KEY", description="Name of the environment variable holding the E2B API key")
+    api_key_env: str = Field(
+        default="E2B_API_KEY",
+        description="Secret key (an environment-variable-style name) holding the E2B API key, resolved through SecretManager: "
+        "the environment first, then the configured secret provider",
+    )
     # run_code needs the Jupyter server the code-interpreter template ships; `base` has none (port 49999 never opens)
     template: str = Field(default="code-interpreter-v1", description="E2B sandbox template to launch; must ship the code-interpreter Jupyter server")
     languages: list[str] = Field(
@@ -918,7 +1123,11 @@ class _SandboxE2BConfig(_SandboxProviderPackageConfig):
 
 
 class _SandboxDaytonaConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
-    api_key_env: str = Field(default="DAYTONA_API_KEY", description="Name of the environment variable holding the Daytona API key")
+    api_key_env: str = Field(
+        default="DAYTONA_API_KEY",
+        description="Secret key (an environment-variable-style name) holding the Daytona API key, resolved through SecretManager: "
+        "the environment first, then the configured secret provider",
+    )
     # python always runs via the SDK's native code_run, so it is always declared and needs no argv here.
     language_runtimes: dict[str, list[str]] = Field(
         default_factory=dict,
@@ -1200,6 +1409,129 @@ class _SecretConfig(BaseModel):
     )
 
 
+class _ClaimPathsConfig(BaseModel):
+    """Where the OIDC-family providers read the subject and the groups in a validated token."""
+
+    subject: str = Field(
+        default="sub", description="Claim path of the subject (a claim name, or dotted segments into a nested claim); a token without it is refused"
+    )
+    groups: str = Field(
+        default="groups",
+        description="Claim path of the group list: a claim name, dotted segments into a nested claim (realm_access.roles), or a "
+        "namespaced name containing dots such as Auth0's https://acme.com/roles, tried whole first; a missing claim yields no groups",
+    )
+
+
+class _CognitoProviderConfig(BaseModel):
+    """Settings of the `cognito` provider."""
+
+    region: str = Field(description="AWS region of the user pool, e.g. eu-west-1")
+    user_pool_id: str = Field(description="Cognito user pool id; the issuer is derived from region and pool")
+    token_use: Literal["access", "id"] = Field(default="access", description="Required token_use claim: access or id")
+
+
+class _EntraProviderConfig(BaseModel):
+    """Settings of the `entra` provider."""
+
+    tenant_id: str = Field(description="Entra ID tenant; the issuer is derived from it and the tid claim must match")
+
+
+class _FirebaseProviderConfig(BaseModel):
+    """Settings of the `firebase` provider."""
+
+    project_id: str = Field(description="Firebase project id; the issuer and audience are derived from it")
+
+
+class _StaticPrincipalConfig(BaseModel):
+    """One principal of the `static` provider: who a credential authenticates as."""
+
+    subject: str = Field(description="Stable identifier of the principal")
+    kind: Literal["user", "agent", "service"] = Field(default="user", description="What the subject is")
+    groups: list[str] = Field(default_factory=list, description="Group memberships the provider asserts")
+    roles: list[str] = Field(default_factory=list, description="Roles this provider issues directly; a configured role mapper replaces them")
+    claims: dict[str, Any] = Field(default_factory=dict, description="Further facts kept on the principal for authorizers and tools")
+
+
+class _StaticProviderConfig(BaseModel):
+    """Settings of the `static` provider: the development, test and CLI provider."""
+
+    principals: dict[str, _StaticPrincipalConfig] = Field(
+        default_factory=dict,
+        description="Credential secret key -> principal. The key names a secret resolved through the secret capability at "
+        "startup; the credential value itself is never written here",
+    )
+
+
+class _IdentityProviderConfig(BaseModel):
+    """Which identity provider authenticates inbound credentials, and its settings."""
+
+    # A bring-your-own provider (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(
+        default="oidc",
+        description="Identity provider: oidc, cognito, entra, firebase, static, or a dotted path to an IdentityProvider subclass",
+    )
+    issuer: str | None = Field(default=None, description="OIDC issuer URL; required by oidc, derived by the other built-ins")
+    audience: str | None = Field(default=None, description="Audience a token must carry; required by oidc")
+    jwks_uri: str | None = Field(default=None, description="JWK set URL; omitted, it is discovered from the issuer")
+    algorithms: list[str] = Field(default_factory=lambda: ["RS256", "ES256"], description="Allowed signing algorithms; symmetric ones are refused")
+    leeway: int = Field(default=30, ge=0, description="Clock skew in seconds tolerated on exp and nbf")
+    required_claims: list[str] = Field(default_factory=list, description="Claims a token must carry beyond the standard set")
+    claims: _ClaimPathsConfig = Field(default_factory=_ClaimPathsConfig, description="Claim paths of the subject and the groups")
+    cognito: _CognitoProviderConfig | None = Field(default=None, description="Settings of the cognito provider")
+    entra: _EntraProviderConfig | None = Field(default=None, description="Settings of the entra provider")
+    firebase: _FirebaseProviderConfig | None = Field(default=None, description="Settings of the firebase provider")
+    static: _StaticProviderConfig | None = Field(default=None, description="Settings of the static provider")
+
+    @model_validator(mode="after")
+    def _check_provider_settings(self) -> "_IdentityProviderConfig":
+        """Fail at load time when the named provider cannot be built from the block.
+
+        A dotted-path provider validates its own settings in its constructor.
+        """
+        key = self.type.lower()
+        if key == "oidc":
+            if not self.issuer or not self.audience:
+                raise AKConfigError("identity.provider.type oidc requires identity.provider.issuer and identity.provider.audience")
+        elif key in ("cognito", "entra", "firebase", "static"):
+            if getattr(self, key) is None:
+                raise AKConfigError(f"identity.provider.type {key} requires the identity.provider.{key} block")
+        return self
+
+
+class _RoleMapperConfig(BaseModel):
+    """How roles are derived from what the provider asserted; absent means no roles."""
+
+    # A bring-your-own mapper (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(default="mapping", description="Role mapper: mapping, or a dotted path to a RoleMapper subclass")
+    pass_through: str | None = Field(
+        default=None,
+        description="Claim path (a claim name, a namespaced name with dots, or dotted segments) whose string or list value becomes roles as it is",
+    )
+    mapping: dict[str, list[str]] = Field(
+        default_factory=dict, description="Group name, or a value of a claim listed in claims, -> the Agent Kernel roles it grants"
+    )
+    claims: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Claim paths whose string or list values are looked up in mapping beside the groups. Only groups are looked up "
+            "by default, since a user sets many of their own claims (a display name, a username, an email address)"
+        ),
+    )
+
+
+class _IdentityConfig(BaseModel):
+    """Identity capability: the provider that authenticates callers and the role mapper. Presence enables it."""
+
+    provider: _IdentityProviderConfig = Field(default_factory=_IdentityProviderConfig, description="The identity provider and its settings")
+    role_mapper: _RoleMapperConfig | None = Field(
+        default=None, description="Derives Principal.roles from the provider's facts; absent means no roles"
+    )
+
+
 class _AGUIStateConfig(BaseModel):
     """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
 
@@ -1271,6 +1603,10 @@ class AKConfig(YamlBaseSettingsModified):
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     sandbox: _SandboxConfig = Field(description="Sandbox capability configurations", default_factory=_SandboxConfig)
     secret: _SecretConfig = Field(description="Secret resolution configurations", default_factory=_SecretConfig)
+    identity: _IdentityConfig | None = Field(
+        default=None,
+        description="Identity capability configurations (the provider that authenticates callers, the role mapper). Absent = every request is the anonymous principal.",
+    )
     a2ui: _A2UIConfig = Field(description="A2UI labelling capability configurations", default_factory=_A2UIConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)

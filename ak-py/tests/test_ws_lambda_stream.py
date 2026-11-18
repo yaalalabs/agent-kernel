@@ -2,7 +2,10 @@ import json
 from unittest.mock import MagicMock, patch
 
 from agentkernel.core.config import _ExecutionConfig
+from agentkernel.core.model import Principal
 from agentkernel.deployment.aws.serverless.core.router.ws_lambda import LambdaWSHandler, SystemRoutesHandler
+
+USER_1 = Principal(subject="user-1", provider="static", namespace="static")
 
 
 def _make_ws_event(user_id="user-1", session_id="s1", request_id="req-1"):
@@ -15,7 +18,6 @@ def _make_ws_event(user_id="user-1", session_id="s1", request_id="req-1"):
         "body": json.dumps(
             {
                 "request_id": request_id,
-                "user_id": user_id,
                 "body": {
                     "prompt": "Hello",
                     "session_id": session_id,
@@ -94,7 +96,7 @@ def test_handle_queue_mode_sends_to_sqs_and_returns_200():
 
     event = _make_ws_event()
 
-    handler.get_user_id = MagicMock(return_value="user-1")
+    handler.get_principal = MagicMock(return_value=USER_1)
 
     with (
         patch("agentkernel.deployment.aws.serverless.core.router.ws_lambda.AWSWebSocketHandler") as mock_ws_cls,
@@ -116,7 +118,7 @@ def test_handle_queue_mode_returns_500_on_error():
     handler = _make_system_routes_handler()
 
     event = _make_ws_event()
-    handler.get_user_id = MagicMock(side_effect=RuntimeError("connection error"))
+    handler.get_principal = MagicMock(side_effect=RuntimeError("connection error"))
 
     status, body = handler._handle_queue_mode(event)
 
@@ -131,7 +133,7 @@ def test_handle_stream_direct_streams_chunks_and_returns_200():
     _set_execution(handler, ExecutionMode.ASYNC, "delta")
 
     event = _make_ws_event()
-    handler.get_user_id = MagicMock(return_value="user-1")
+    handler.get_principal = MagicMock(return_value=USER_1)
     handler.broadcast = MagicMock()
 
     def _mock_process_stream_sync(req, sse_format=False):
@@ -163,7 +165,7 @@ def test_handle_stream_direct_broadcasts_error_chunk_on_failure():
     _set_execution(handler, ExecutionMode.ASYNC, "delta")
 
     event = _make_ws_event()
-    handler.get_user_id = MagicMock(return_value="user-1")
+    handler.get_principal = MagicMock(return_value=USER_1)
     handler.broadcast = MagicMock()
 
     def _mock_process_stream_sync_error(req, sse_format=False):
@@ -193,7 +195,7 @@ def test_handle_stream_direct_broadcasts_error_chunk_with_session_id_on_failure(
     _set_execution(handler, ExecutionMode.ASYNC, "delta")
 
     event = _make_ws_event(session_id="session-123")
-    handler.get_user_id = MagicMock(return_value="user-1")
+    handler.get_principal = MagicMock(return_value=USER_1)
     handler.broadcast = MagicMock()
 
     def _mock_process_stream_sync_error(req, sse_format=False):

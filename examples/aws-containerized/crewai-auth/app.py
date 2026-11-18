@@ -1,11 +1,12 @@
-import os
-
-import jwt
-from agentkernel.api import RESTAPI, AgentRESTRequestHandler
-from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
+from agentkernel.api import RESTAPI
 from agentkernel.crewai import CrewAIModule
-from crewai import Agent
+from agentkernel.secret import SecretManager
+from crewai import LLM, Agent
 from fastapi import APIRouter
+
+# OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
+# handed to the CrewAI LLM in memory; it is never written back to os.environ.
+openai_key = SecretManager.current().get("OPENAI_API_KEY")
 
 math_agent = Agent(
     role="math",
@@ -13,7 +14,7 @@ math_agent = Agent(
     backstory="You provide help with math problems. Explain your reasoning at each step and include examples. \
         If prompted for anything else you refuse to answer.",
     verbose=False,
-    llm="openai/gpt-4.1-mini",
+    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
 )
 
 history_agent = Agent(
@@ -21,7 +22,7 @@ history_agent = Agent(
     goal="Specialist agent for historical questions",
     backstory="You provide assistance with historical queries. Explain important events and context clearly.",
     verbose=False,
-    llm="openai/gpt-4.1-mini",
+    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
 )
 
 router = APIRouter()
@@ -30,6 +31,8 @@ router = APIRouter()
 # Adding a custom route
 # Example custom route to support application-specific endpoints.
 # All custom routes are prefixed with "/custom" by default. Refer to the config documentation for more details.
+# Custom routes run the identity dependency too: a token, if sent, must be valid (a refused one is a
+# 401); without one the route runs as the anonymous principal.
 @router.get("/version")
 def get_app_name():
     return {"name": "my_custom_app", "version": "1.0.0"}
@@ -41,25 +44,12 @@ RESTAPI.add(router)
 CrewAIModule([math_agent, history_agent])
 
 
-# Defining the Custom Auth validator for auth token validation
-class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
-        """Validate JWT token and return validation result."""
-        try:
-            payload = jwt.decode(token, options={"verify_signature": False})
-            email = payload.get("email", "")
-            if email == "test@test.com":
-                return ValidationResult(is_valid=True)
-            return ValidationResult(is_valid=False, error_msg="Invalid token")
-        except jwt.DecodeError as e:
-            return ValidationResult(is_valid=False, error_msg=f"Token decode error: {str(e)}")
-        except Exception as e:
-            return ValidationResult(is_valid=False, error_msg=f"Token validation error: {str(e)}")
-
-
-# Adding Auth handlers to the REST API
-RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])
-
-
 def main():
+    # Authentication is configuration, not code: the `identity` block in config.yaml names the
+    # provider every route authenticates the bearer token with (the static provider here; swap it
+    # for oidc, cognito, entra or firebase to validate real tokens).
     RESTAPI.run()
+
+
+if __name__ == "__main__":
+    main()

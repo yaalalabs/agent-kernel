@@ -1,6 +1,11 @@
 whatsapp:
   agent: "general"
   api_version: "v24.0"
+  # Keys the WhatsApp credentials are read from through the secret manager when the matching
+  # field (access_token, ...) is unset: the environment first, then the configured secret provider
+  access_token_key: AK_WHATSAPP__ACCESS_TOKEN
+  verify_token_key: AK_WHATSAPP__VERIFY_TOKEN
+  app_secret_key: AK_WHATSAPP__APP_SECRET
 
 logging:
   ak:

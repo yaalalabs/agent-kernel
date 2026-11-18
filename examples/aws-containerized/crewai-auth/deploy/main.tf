@@ -5,7 +5,7 @@
 # /api/v1/app_info - Custom endpoint created by a custom handler
 module "containered_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.5"
+  version = "0.10.1"
 
   providers = { aws = aws, docker = docker }
   # Basic ECS configuration
@@ -28,16 +28,20 @@ module "containered_agents" {
     }
   ]
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   rest_service = {
     package_path   = "../dist"
     container_port = 8000
     # Environment variables passed to container
     environment_variables = {
-      OPENAI_API_KEY     = var.openai_api_key,
+      # The credential of the static identity provider in config.yaml (identity.provider.static.principals).
+      DEMO_AUTH_TOKEN    = var.demo_auth_token,
       CREWAI_STORAGE_DIR = "/tmp/crewai",
       EMBEDCHAIN_DB_PATH = "/tmp/crewai/embedchain.db",
-      HOME               = "/tmp",
-      SOME_OTHER_KEY     = "Some Other Value"
+      HOME               = "/tmp"
     }
   }
 }

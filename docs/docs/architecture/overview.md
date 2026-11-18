@@ -129,7 +129,7 @@ carries the full request envelope, and agent/session resolution happens fresh pe
 | | `AgentService` | `ChatService` |
 |---|----------------|---------------|
 | Statefulness | Stateful: holds the selected agent and session across calls (`select()`, `new()`, `clear()`, `load()`) | Stateless: a fresh agent/session resolution on every call |
-| Input | A prompt string (`run`) or an `AgentRequest` list (`run_multi`/`stream_multi`) | A `BaseChatRequest` envelope (prompt, agent, session_id, user_id, ...), optionally with a prebuilt `AgentRequest` list |
+| Input | A prompt string (`run`) or an `AgentRequest` list (`run_multi`/`stream_multi`) | A `BaseChatRequest` envelope (prompt, agent, session_id, principal, ...), optionally with a prebuilt `AgentRequest` list |
 | Validation and building | None: the caller prepares everything | Validates the envelope; builds the request list from the payload, or accepts a prebuilt one |
 | Output | Typed `AgentReply` / raw `StreamChunk`s | Execution core: typed reply plus session id. Presentation wrappers: JSON dicts, SSE frames, `HTTPException` |
 | Error handling | Exceptions propagate | Core: exceptions propagate. Wrappers: `ValueError` maps to 400, anything else to 500 |
@@ -169,7 +169,7 @@ All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAM
 Built-in support for:
 - Multi-cloud session persistence (AWS, Azure, GCP)
 - Event streaming (SSE over REST, WebSocket on AWS serverless)
-- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (deployed by the [Helm chart](../deployment/onprem-kubernetes))
+- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Pub/Sub-backed on GCP Cloud Run, Kafka and NATS JetStream for on-prem / Kubernetes (deployed by the [Helm chart](../deployment/onprem-kubernetes))
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
 - Observability and tracing (Langfuse, OpenLLMetry, Logfire, CloudWatch)
@@ -339,6 +339,7 @@ The queue transport is a pluggable backend (`execution.queues.type`):
 | `in_memory` | ✅ the default | In-process only | Local development, single-container deployments: full queue semantics (per-session FIFO, bounded retry, deduplication) with zero backing services |
 | SQS | ✅ on AWS Lambda and ECS (via the deployment adapters) | Durable, FIFO | Production on AWS |
 | `kafka`, `nats` | ✅ (`kafka`/`nats` extras) | Durable | Production on-prem / Kubernetes |
+| `pubsub` | ✅ (`pubsub` extra) | Durable, ordered per session | Production on GCP Cloud Run (the GCP modules' queue mode) |
 
 **One pipeline, three topologies.** The logical components map onto processes per deployment:
 

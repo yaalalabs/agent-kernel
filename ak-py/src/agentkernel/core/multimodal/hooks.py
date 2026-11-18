@@ -22,6 +22,7 @@ from ..model import (
     AgentRequestImage,
     AgentRequestText,
 )
+from ..util.reasoning import reasoning_off_params
 from .source import AttachmentSource, ExtractedAttachment
 from .storage import AttachmentStorageManager
 
@@ -85,6 +86,9 @@ class MultimodalPreHook(PreHook):
                         }
                     ],
                     max_tokens=50,
+                    # Keep the short budget for the description: reasoning off where the model can turn it off.
+                    **reasoning_off_params(model_name),
+                    drop_params=True,
                 )
                 description = response.choices[0].message.content.strip()
                 self._log.debug(f"Generated attachment description: {description}")
@@ -109,6 +113,9 @@ class MultimodalPreHook(PreHook):
                         }
                     ],
                     max_tokens=50,
+                    # Keep the short budget for the description: reasoning off where the model can turn it off.
+                    **reasoning_off_params(model_name),
+                    drop_params=True,
                 )
                 return resp.choices[0].message.content.strip()
 
@@ -117,7 +124,7 @@ class MultimodalPreHook(PreHook):
                 return f"File ({mime_type}) - Content not currently visible. Use analyze_attachments to analyze."
 
         except ImportError:
-            self._log.error("LiteLLM not installed. Install with: pip install litellm")
+            self._log.error('LiteLLM not installed. Install with: uv add "agentkernel[multimodal]"')
             return "Attachment (LiteLLM missing)"
         except Exception as e:
             self._log.error(f"Error describing attachment: {e}")

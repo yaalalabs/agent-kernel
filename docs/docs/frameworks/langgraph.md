@@ -9,7 +9,7 @@ Integrate LangGraph's graph-based orchestration with Agent Kernel.
 ## Installation
 
 ```bash
-pip install agentkernel[langgraph]
+uv add "agentkernel[langgraph]"
 ```
 
 ## Basic Usage

@@ -15,9 +15,10 @@ from agentkernel.core.model import (
     AgentRequestText,
     BaseChatRequest,
     BaseRunRequest,
+    Principal,
     StreamChunk,
 )
-from agentkernel.core.runtime import ACTING_USER_CACHE_KEY, Runtime
+from agentkernel.core.runtime import Runtime
 
 ACTING_USER_AGENT = "acting-user-agent"
 INCREMENTAL_AGENT = "incremental-stream-agent"
@@ -38,11 +39,11 @@ def _stream_handler(chunks):
     handler = MagicMock()
     handler.get_response_session_id.side_effect = lambda sid: sid
 
-    async def _achunks(requests, acting_user_id=None):
+    async def _achunks(requests, principal=None):
         for chunk in chunks:
             yield chunk
 
-    def _chunks(requests, acting_user_id=None):
+    def _chunks(requests, principal=None):
         # A generator, not a list: run_stream_sync hands back an iterator now (#741), and the
         # wrapper closes it, so a double that returns a list no longer matches the interface.
         yield from chunks
@@ -179,7 +180,7 @@ class TestExecuteStream:
 
     @pytest.mark.asyncio
     async def test_in_stream_exception_becomes_error_chunk(self):
-        async def _failing(requests, acting_user_id=None):
+        async def _failing(requests, principal=None):
             yield StreamChunk(delta="par")
             raise RuntimeError("stream blew up")
 
@@ -205,7 +206,7 @@ class TestExecuteStreamSync:
         assert collected == chunks
 
     def test_in_stream_exception_becomes_error_chunk(self):
-        def _failing(requests, acting_user_id=None):
+        def _failing(requests, principal=None):
             yield StreamChunk(delta="par")
             raise RuntimeError("stream blew up")
 
@@ -287,21 +288,27 @@ class TestProcessWrappers:
 
 
 class _ActingUserRunner(Runner):
-    """Records the acting user visible from inside the run, the way a hook or tool would read it."""
+    """Records the run principal's subject visible from inside the run, the way a hook or tool would
+    read it; None for an anonymous run."""
 
     def __init__(self):
         super().__init__("ActingUserRunner")
         self.seen: list = []
 
+    @staticmethod
+    def _subject(session):
+        principal = session.get_principal()
+        return None if principal is None or principal.is_anonymous else principal.subject
+
     async def run(self, agent, session, requests):
-        self.seen.append(session.get_volatile_cache().get(ACTING_USER_CACHE_KEY))
+        self.seen.append(self._subject(session))
         return AgentReplyText(response="ok")
 
     async def stream(self, agent, session, requests):
         # A runner owns its own boundaries. Worth knowing why the tests below also assert on errors:
         # ChatService.execute_stream converts a mid-stream raise into an error chunk, so asserting
         # `seen` alone could not tell a working stream from a broken one.
-        self.seen.append(session.get_volatile_cache().get(ACTING_USER_CACHE_KEY))
+        self.seen.append(self._subject(session))
         yield MessageStart(message_id="acting-1")
         yield TextDelta(message_id="acting-1", content="ok")
         yield MessageEnd(message_id="acting-1")
@@ -324,9 +331,9 @@ class _ActingUserAgent(Agent):
         pass
 
 
-class TestActingUserPropagation:
-    """A run whose request carries user_id exposes it in the session volatile cache, so hooks and
-    tools can attribute work to the caller (#629 Phase 2)."""
+class TestPrincipalPropagation:
+    """A run whose request carries a principal exposes it through Session.get_principal(), so hooks
+    and tools can attribute work to the caller (#603 iteration 2)."""
 
     @pytest.fixture
     def runner(self, monkeypatch):
@@ -339,42 +346,43 @@ class TestActingUserPropagation:
         Runtime.current().deregister(agent)
         AKConfig._reset()
 
-    def _request(self, session_id: str, user_id=None) -> BaseRunRequest:
-        return BaseRunRequest(prompt="hi", session_id=session_id, agent=ACTING_USER_AGENT, user_id=user_id)
+    def _request(self, session_id: str, subject=None) -> BaseRunRequest:
+        principal = Principal(subject=subject, provider="static", namespace="static") if subject else None
+        return BaseRunRequest(prompt="hi", session_id=session_id, agent=ACTING_USER_AGENT, principal=principal)
 
     @pytest.mark.asyncio
-    async def test_execute_exposes_the_acting_user(self, runner):
-        await ChatService().execute(self._request("s-acting-1", user_id="u-1"))
+    async def test_execute_exposes_the_principal(self, runner):
+        await ChatService().execute(self._request("s-acting-1", subject="u-1"))
         assert runner.seen == ["u-1"]
 
-    def test_execute_sync_exposes_the_acting_user(self, runner):
-        ChatService().execute_sync(self._request("s-acting-2", user_id="u-2"))
+    def test_execute_sync_exposes_the_principal(self, runner):
+        ChatService().execute_sync(self._request("s-acting-2", subject="u-2"))
         assert runner.seen == ["u-2"]
 
     @pytest.mark.asyncio
-    async def test_execute_stream_exposes_the_acting_user(self, runner):
-        chunks = await ChatService().execute_stream(self._request("s-acting-3", user_id="u-3"))
+    async def test_execute_stream_exposes_the_principal(self, runner):
+        chunks = await ChatService().execute_stream(self._request("s-acting-3", subject="u-3"))
         collected = [chunk async for chunk in chunks]
         assert runner.seen == ["u-3"]
         # execute_stream turns a mid-stream raise into an error chunk, so asserting `seen` alone
         # cannot tell a working stream from a broken one.
         assert [chunk.error for chunk in collected if chunk.error] == []
 
-    def test_execute_stream_sync_exposes_the_acting_user(self, runner):
-        list(ChatService().execute_stream_sync(self._request("s-acting-4", user_id="u-4")))
+    def test_execute_stream_sync_exposes_the_principal(self, runner):
+        list(ChatService().execute_stream_sync(self._request("s-acting-4", subject="u-4")))
         assert runner.seen == ["u-4"]
 
     @pytest.mark.asyncio
-    async def test_request_without_a_user_id_publishes_nothing(self, runner):
+    async def test_request_without_a_principal_runs_anonymous(self, runner):
         await ChatService().execute(self._request("s-acting-5"))
         assert runner.seen == [None]
 
     @pytest.mark.asyncio
-    async def test_key_does_not_survive_into_the_next_run_of_the_same_session(self, runner):
-        """Runtime clears the volatile cache when a run ends, so the acting user is per-run and
-        never attributed to a later, unauthenticated request on the same session."""
+    async def test_the_principal_does_not_survive_into_the_next_run_of_the_same_session(self, runner):
+        """Runtime unpublishes the principal when a run ends, so it is per-run and never attributed
+        to a later, unauthenticated request on the same session."""
         service = ChatService()
-        await service.execute(self._request("s-acting-6", user_id="u-6"))
+        await service.execute(self._request("s-acting-6", subject="u-6"))
         await service.execute(self._request("s-acting-6"))
         assert runner.seen == ["u-6", None]
 
@@ -561,3 +569,22 @@ class TestSyncStreamIsIncremental:
         stream.close()
 
         assert runner.torn_down is True
+
+
+class TestUserIdIsRefused:
+    """``user_id`` left the request models (#603): a body still carrying one is refused before anything runs."""
+
+    @pytest.mark.asyncio
+    async def test_a_request_carrying_user_id_is_rejected_before_anything_runs(self):
+        handler = _mock_handler(AgentReplyText(response="never"))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(ValueError, match="user_id is not a request field"):
+                await ChatService().execute(BaseRunRequest(prompt="hi", session_id="s1", user_id="u-1"))
+        handler.run_async.assert_not_called()
+
+    def test_the_sync_path_refuses_it_too(self):
+        handler = _mock_handler(AgentReplyText(response="never"))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(ValueError, match="user_id is not a request field"):
+                ChatService().execute_sync(BaseRunRequest(prompt="hi", session_id="s1", user_id="u-1"))
+        handler.run_sync.assert_not_called()

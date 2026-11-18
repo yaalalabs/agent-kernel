@@ -1,4 +1,5 @@
 import asyncio
+import os
 import subprocess
 import sys
 import uuid
@@ -14,18 +15,19 @@ class APITestClient:
     def __init__(self, url):
         self.url = url
         self.session_id = str(uuid.uuid4())
-        self.user_id = "demo-user"
-        self.token = "demo-token"  # the thread read routes are behind app.py's DemoAuthoriser
+        # The credential of the one principal in config.yaml; every thread-handler route takes it.
+        self.token = "demo-token"
 
     async def send(self, prompt, session_id=None):
         payload = {
             "prompt": prompt,
             "session_id": session_id or self.session_id,
-            "user_id": self.user_id,
             "agent": "expenses",
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(f"{self.url}/api/v1/chat", json=payload)
+            resp = await client.post(
+                f"{self.url}/api/v1/chat", json=payload, headers={"Authorization": f"Bearer {self.token}"}
+            )
             resp.raise_for_status()
             return resp.json()
 
@@ -45,6 +47,7 @@ async def http_client():
         ["python3", "app.py"],
         stdout=sys.stdout,
         stderr=sys.stderr,
+        env={**os.environ, "DEMO_TOKEN": "demo-token"},
     )
     await asyncio.sleep(5)
     try:

@@ -1,9 +1,15 @@
+import argparse
 import asyncio
 import logging
 import readline  # Enables line editing and history features for input() in the CLI
 import threading
 
 from ..core import AgentService
+from ..core.model import AgentRequestText, Principal
+from ..identity.errors import AuthenticationError
+from ..identity.provider.base import RequestContext
+from ..identity.provider.factory import IdentityProviderFactory
+from ..secret import SecretManager
 
 ak_cli_logger = logging.getLogger("ak.cli")
 
@@ -18,8 +24,37 @@ class CLI:
     CLI class provides a command-line interface for interacting with agents.
     """
 
-    def __init__(self):
+    TOKEN_ENV = "AK_CLI_TOKEN"
+
+    def __init__(self, token: str | None = None):
+        """
+        :param token: A credential for the configured identity provider; ``AK_CLI_TOKEN`` when omitted.
+            Authenticated once when the REPL starts, and the resulting principal runs every prompt.
+        """
         self._service = AgentService()
+        self._token = token or SecretManager.current().get(self.TOKEN_ENV, default=None)
+        self._principal: Principal | None = None
+
+    async def _authenticate(self) -> None:
+        """Resolve the token once, before the first prompt.
+
+        Without an identity block the token is ignored with a warning and the session runs as the
+        anonymous principal, as every other surface does; a refused token exits with its reason,
+        since a REPL nobody can use is worse than no REPL.
+
+        :raises SystemExit: If the provider refuses the token.
+        """
+        if not self._token:
+            return
+        provider = IdentityProviderFactory.get()
+        if provider is None:
+            ak_cli_logger.warning("A token was given but no identity block is configured: running as the anonymous principal")
+            return
+        try:
+            self._principal = await provider.authenticate(self._token, RequestContext(path="cli"))
+        except AuthenticationError as e:
+            raise SystemExit(f"Authentication failed: {e}") from e
+        ak_cli_logger.info(f"Authenticated as {self._principal.subject}")
 
     @staticmethod
     def _print(message: str = "", **kwargs):
@@ -74,6 +109,7 @@ class CLI:
         return await future
 
     async def run(self):
+        await self._authenticate()
         self._print("AgentKernel CLI (type !help for commands or !quit to exit):")
         self._service.select()
 
@@ -116,7 +152,8 @@ class CLI:
                     continue
 
                 if self._service.agent:
-                    self._print(f"\033[35m{await self._service.run(prompt=prompt)}\033[0m")
+                    reply = await self._service.run_multi([AgentRequestText(prompt=prompt)], principal=self._principal)
+                    self._print(f"\033[35m{reply}\033[0m")
                     self._print()
                 else:
                     self._print("No agent selected. Please select an agent using !select <agent_name>.")
@@ -128,8 +165,17 @@ class CLI:
 
     @classmethod
     def main(cls):
+        # allow_abbrev=False: the CLI shares argv with the script that embeds it, whose own "--to x"
+        # would otherwise be read as an abbreviated --token.
+        parser = argparse.ArgumentParser(prog="agentkernel.cli", add_help=False, allow_abbrev=False)
+        parser.add_argument(
+            "--token",
+            default=None,
+            help=f"Credential for the configured identity provider; defaults to {cls.TOKEN_ENV}, which keeps it out of ps and shell history",
+        )
+        args, _ = parser.parse_known_args()
         try:
-            cli = cls()
+            cli = cls(token=args.token)
             asyncio.run(cli.run())
         except asyncio.CancelledError:
             cls._print()

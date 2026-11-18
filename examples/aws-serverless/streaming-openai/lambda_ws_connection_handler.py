@@ -1,22 +1,12 @@
-import jwt
-from agentkernel.auth import AuthValidator, ValidationResult
+"""WebSocket connection handler Lambda: the `$connect` and `$disconnect` routes.
+
+There is no code to write. `$connect` authenticates the `?token=` query parameter through the
+identity provider named in config.yaml (the static provider here, its one credential resolved from
+the DEMO_AUTH_TOKEN environment variable that deploy/main.tf passes in) and keys the connection by
+the principal's subject, storing the whole principal for the frames that follow. A missing or refused
+token closes the connection before it opens.
+"""
+
 from agentkernel.aws import WebsocketConnectionHandler
 
-
-class CustomAuthTokenValidator(AuthValidator):
-    def validate(self, token: str) -> ValidationResult:
-        """Validate JWT token and return validation result."""
-        try:
-            # WARNING: Signature verification is disabled here for documentation purposes only.
-            # This makes the example auth trivially forgeable; use real JWT verification in production.
-            payload = jwt.decode(token, options={"verify_signature": False})
-            email = payload.get("email", "")
-            user_id = payload.get("userId", "")
-            if user_id in ["user-1", "user-2"] and email in ["test1@test.com", "test2@test.com"]:
-                return ValidationResult(is_valid=True, claims={"userId": user_id})
-            return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
-        except Exception as e:
-            return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
-
-
-handler = WebsocketConnectionHandler.set_auth_validator(CustomAuthTokenValidator()).handler
+handler = WebsocketConnectionHandler.handler

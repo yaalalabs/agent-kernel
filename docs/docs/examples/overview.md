@@ -143,6 +143,8 @@ Azure Container Apps deployment examples:
 
 - **`adk/`** - Google ADK agents deployed on Azure Container Apps
 - **`crewai/`** - CrewAI agents deployed on Azure Container Apps
+- **`openai-cosmos/`** - OpenAI agents on Azure Container Apps with Cosmos DB session storage
+- **`openai-queue-mode/`** - OpenAI agents in queue mode on Azure Container Apps, with Azure Service Bus as the queue transport (separate API and agent-runner apps)
 
 ### 📁 Azure Serverless Examples (`/examples/azure-serverless`)
 
@@ -155,15 +157,16 @@ Azure Functions serverless deployment examples:
 
 ### 📁 GCP Serverless Examples (`/examples/gcp-serverless`)
 
-GCP Cloud Run serverless deployment examples (scale-to-zero):
+GCP Cloud Run serverless deployment examples (scale-to-zero). All run in queue mode: an edge service and an agent-runner service over Pub/Sub.
 
 - **`openai/`** - OpenAI agents on Cloud Run with Redis sessions
 - **`openai-auth/`** - OpenAI agents with JWT authentication via API Gateway
 - **`openai-firestore/`** - OpenAI agents with Firestore session storage
+- **`openai-queue-mode/`** - Queue mode: an edge service and a push-driven agent-runner service over Pub/Sub, both scaling to zero
 
 ### 📁 GCP Containerized Examples (`/examples/gcp-containerized`)
 
-GCP Cloud Run containerized deployment examples (always-on):
+GCP Cloud Run containerized deployment examples (always-on). Both run in queue mode: an edge service and an agent-runner service over Pub/Sub.
 
 - **`openai/`** - OpenAI agents on Cloud Run with Redis sessions
 - **`openai-auth/`** - OpenAI agents with JWT authentication via API Gateway

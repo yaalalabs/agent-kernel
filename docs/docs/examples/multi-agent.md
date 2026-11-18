@@ -57,9 +57,9 @@ if __name__ == "__main__":
 ## Running the Example
 
 ```bash
-pip install agentkernel[crewai]
+uv add "agentkernel[crewai]"
 export OPENAI_API_KEY=sk-...
-python multi_agent.py
+uv run python multi_agent.py
 ```
 
 ## Next Steps

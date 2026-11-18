@@ -1,6 +1,6 @@
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.5"
+  version = "0.10.1"
 
   providers = { aws = aws, docker = docker }
   # Basic configuration
@@ -23,6 +23,10 @@ module "serverless_agents" {
     { route = "app_info" }
   ]
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   # Request handler configuration
   request_handler = {
     function_name        = "rqh-func"
@@ -32,9 +36,6 @@ module "serverless_agents" {
     package_path         = "../dist_request_handler.zip"
     memory_size          = 256
     timeout              = 45
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # Agent runner configuration
@@ -46,9 +47,6 @@ module "serverless_agents" {
     handler_path         = "lambda_agent_runner.handler"
     package_path         = "../dist_agent_runner"
     package_type         = "Image"
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # Response handler configuration
@@ -70,6 +68,10 @@ module "serverless_agents" {
     memory_size          = 256
     handler_path         = "lambda_ws_connection_handler.handler"
     package_path         = "../dist_ws_connection_handler.zip"
+    environment_variables = {
+      # The credential of the static identity provider in config.yaml, validated on $connect.
+      "DEMO_AUTH_TOKEN" = var.demo_auth_token
+    }
   }
 
   # Queue configuration for streaming pipeline

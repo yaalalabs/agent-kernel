@@ -14,7 +14,9 @@ from agentkernel.test import Test
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
 TEST_IMAGE_PATH = Path(__file__).parent / "test_image.webp"
+# The credential values of the two principals in config.yaml; app.py is started with them below.
 ALICE_TOKEN = "alice-token"
+BOB_TOKEN = "bob-token"
 
 
 class APITestClient:
@@ -22,17 +24,18 @@ class APITestClient:
         self.url = url
         self.session_id = str(uuid.uuid4())
 
-    async def chat(self, prompt, user_id="alice", images=None):
+    async def chat(self, prompt, token=ALICE_TOKEN, images=None):
         payload = {
             "prompt": prompt,
             "session_id": self.session_id,
             "agent": "general",
-            "user_id": user_id,
         }
         if images:
             payload["images"] = images
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(f"{self.url}/api/v1/chat", json=payload)
+            resp = await client.post(
+                f"{self.url}/api/v1/chat", json=payload, headers={"Authorization": f"Bearer {token}"}
+            )
             resp.raise_for_status()
             return resp.json().get("result", "")
 
@@ -44,7 +47,7 @@ class APITestClient:
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def app_client():
-    env = os.environ.copy()
+    env = {**os.environ, "ALICE_TOKEN": ALICE_TOKEN, "BOB_TOKEN": BOB_TOKEN}
 
     proc = subprocess.Popen(
         [sys.executable, "app.py"],
@@ -102,7 +105,7 @@ async def test_thread_stores_attachment_reference(app_client):
     resp = await app_client.get(f"/api/v1/threads/{app_client.session_id}", token=ALICE_TOKEN)
     assert resp.status_code == 200
     thread = resp.json()
-    assert thread["user_id"] == "alice"
+    assert thread["user_id"] == "alice"  # the owner is the principal the token authenticated
 
     messages = thread["messages"]
     assert [m["role"] for m in messages] == ["user", "assistant"]

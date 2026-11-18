@@ -31,7 +31,7 @@ sequenceDiagram
 
 - **No raw binary in session history**: Images/files are stored externally; only text descriptions enter the conversation. This prevents session bloat.
 - **Pluggable storage**: Choose between in-memory, Redis, or DynamoDB depending on your deployment.
-- **Automatic description**: A vision-capable LLM generates brief descriptions of each attachment.
+- **Automatic description**: A vision-capable LLM generates brief descriptions of each attachment. The call is capped at 50 tokens and passes `reasoning_effort="none"` to reasoning models that can turn reasoning off, so they spend that budget on the description rather than on thinking; other models (including ones that always think, like Gemini 2.5 Pro) don't get the setting.
 - **System tool for recall**: The agent can call `analyze_attachments` to retrieve previously stored images/files.
 
 ## Supported Attachment Source Forms

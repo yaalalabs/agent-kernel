@@ -100,7 +100,7 @@ class TestMessengerContract(_ConfiguredContract):
         return MessengerOutboundAdapter()
 
     def valid_delivery(self):
-        event = {"sender": {"id": "psid-123"}, "message": {"mid": "mid.1", "text": "hello"}}
+        event = {"sender": {"id": "psid-123"}, "recipient": {"id": "page-1"}, "message": {"mid": "mid.1", "text": "hello"}}
         return _signed({"object": "page", "entry": [{"messaging": [event]}]})
 
     def ignorable_delivery(self):
@@ -131,7 +131,7 @@ class TestInstagramContract(_ConfiguredContract):
         return InstagramOutboundAdapter()
 
     def valid_delivery(self):
-        event = {"sender": {"id": "igsid-123"}, "message": {"mid": "mid.1", "text": "hello"}}
+        event = {"sender": {"id": "igsid-123"}, "recipient": {"id": "ig-acct-1"}, "message": {"mid": "mid.1", "text": "hello"}}
         return _signed({"object": "instagram", "entry": [{"messaging": [event]}]})
 
     def ignorable_delivery(self):
@@ -146,7 +146,7 @@ class TestInstagramContract(_ConfiguredContract):
 
 
 class TestTelegramContract(_ConfiguredContract):
-    ENV = {"AK_TELEGRAM__BOT_TOKEN": "bot-token", "AK_TELEGRAM__WEBHOOK_SECRET": "webhook-secret"}
+    ENV = {"AK_TELEGRAM__BOT_TOKEN": "123456:bot-token", "AK_TELEGRAM__WEBHOOK_SECRET": "webhook-secret"}
 
     def make_inbound(self):
         from agentkernel.integration.telegram.adapter import TelegramInboundAdapter
@@ -167,6 +167,10 @@ class TestTelegramContract(_ConfiguredContract):
 
     def unauthentic_delivery(self):
         return _fake_request(b"{}", headers={"X-Telegram-Bot-Api-Secret-Token": "wrong"})
+
+    async def decision_request(self):
+        callback_query = {"id": "cb-1", "data": "akhitl:a:call_1", "message": {"message_id": 7}}
+        return self.make_inbound()._decision(callback_query, chat_id=4242, data="akhitl:a:call_1", sender="99")
 
     expected_session_id = "4242"
     expected_request_id = "100"
@@ -194,6 +198,7 @@ class TestGmailContract(_ConfiguredContract):
         users = client.users.return_value
         users.messages.return_value.get.return_value.execute.return_value = message
         users.threads.return_value.get.return_value.execute.return_value = {"messages": []}
+        users.getProfile.return_value.execute.return_value = {"emailAddress": "agent@example.com"}
         return client
 
     def make_inbound(self):
@@ -227,6 +232,7 @@ class TestSlackContract(_ConfiguredContract):
         adapter._agent = None
         adapter._max_file_size = 10 * 1024 * 1024
         adapter._bot_id = "B_BOT"
+        adapter._team_id = None
         adapter._app = MagicMock()
         adapter._app.client.chat_postMessage = AsyncMock()
         return adapter
@@ -237,7 +243,7 @@ class TestSlackContract(_ConfiguredContract):
         return SlackOutboundAdapter()
 
     def valid_delivery(self):
-        return {"user": "U123", "text": "hello", "channel": "C9", "ts": "111.222"}
+        return {"user": "U123", "text": "hello", "channel": "C9", "ts": "111.222", "team": "T1"}
 
     def ignorable_delivery(self):
         return {"user": "B_BOT", "text": "the bot's own message", "channel": "C9", "ts": "111.222"}
@@ -251,6 +257,16 @@ class TestSlackContract(_ConfiguredContract):
     async def test_an_ignorable_delivery_is_not_an_error(self):
         adapter = self.make_inbound()
         assert await adapter._to_request(self.ignorable_delivery()) is None
+
+    async def decision_request(self):
+        press = {
+            "actions": [{"value": "call_1:approved"}],
+            "channel": {"id": "C9"},
+            "container": {"message_ts": "111.222", "thread_ts": "111.222"},
+            "team": {"id": "T1", "domain": "acme"},
+            "user": {"id": "U123"},
+        }
+        return await self.make_inbound()._decision_from_press(press)
 
     expected_session_id = "111.222"
     expected_request_id = "C9:111.222"
@@ -302,6 +318,7 @@ class TestTeamsContract(_ConfiguredContract):
                 "text": "hello",
                 "from": {"id": "user-1", "name": "Alice"},
                 "conversation": {"id": "conv-1"},
+                "channelData": {"tenant": {"id": "tenant-1"}},
                 "recipient": {"id": "28:bot", "name": "AgentBot"},
                 "serviceUrl": "https://smba.trafficmanager.net/emea/",
             }
@@ -324,3 +341,25 @@ class TestTeamsContract(_ConfiguredContract):
 
     expected_session_id = "conv-1"
     expected_request_id = "act-1"
+
+
+def test_every_adapter_knows_the_same_decision_verbs_as_the_model():
+    """A platform's verb vocabulary has to match `ResumeDecision`, or a press goes nowhere.
+
+    Each adapter keeps its own list: Slack validates a press against `DECISION_VERBS`, Telegram
+    maps each verb to a one-letter wire code. Neither can be derived from the model at import
+    without obscuring what the wire carries, so the copies are pinned here instead. Adding a verb
+    to `ResumeDecision` without adding it to an adapter fails this test rather than silently
+    dropping every press that carries it — Slack filters an unknown verb out and answers nothing.
+    """
+    from typing import get_args
+
+    from agentkernel.core.model import ResumeDecision
+    from agentkernel.integration.slack.adapter import DECISION_VERBS
+    from agentkernel.integration.telegram.adapter import VERB_CODES
+
+    verbs = {verb for arg in get_args(ResumeDecision.model_fields["status"].annotation) for verb in get_args(arg)}
+
+    assert set(DECISION_VERBS) == verbs, "Slack would drop a press carrying a verb it does not list"
+    assert set(VERB_CODES) == verbs, "Telegram would raise drawing a keyboard for a verb it has no code for"
+    assert len(set(VERB_CODES.values())) == len(VERB_CODES), "a wire code is never reused: a message outlives a deploy"

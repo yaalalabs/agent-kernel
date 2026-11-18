@@ -33,6 +33,9 @@ def _in_memory_transport(monkeypatch):
     monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
 
 
+PRINCIPAL = {"subject": "u1", "provider": "static", "namespace": "static"}
+
+
 def _trigger_message(attributes=None, **body_extras) -> QueueMessage:
     """An input message whose body carries the trigger metadata, as a schedule provider sends it."""
     body = {"prompt": "run the weekly report", "session_id": "s1", "agent": None, **body_extras}
@@ -59,7 +62,7 @@ class TestAgentRunnerBodyFallback:
     def test_body_request_id_is_resolved_and_forwarded_to_the_output(self):
         transport = InMemoryTransport()
 
-        _runner(transport).process(_trigger_message(request_id="sched-run-1", user_id="u1"))
+        _runner(transport).process(_trigger_message(request_id="sched-run-1", principal=PRINCIPAL))
 
         [out] = _fetch_output(transport)
         assert out.attributes["request_id"] == "sched-run-1"
@@ -68,7 +71,7 @@ class TestAgentRunnerBodyFallback:
     def test_body_metadata_is_injected_into_the_input_message(self):
         """ResponseHandler._store_response reads request_id from the attributes, so the resolved
         value has to land there and not just in the log line."""
-        message = _trigger_message(request_id="sched-run-1", user_id="u1")
+        message = _trigger_message(request_id="sched-run-1", principal=PRINCIPAL)
 
         _runner(InMemoryTransport()).process(message)
 
@@ -84,9 +87,11 @@ class TestAgentRunnerBodyFallback:
         [out] = _fetch_output(transport)
         assert out.attributes["request_id"] == "from-attribute"
 
-    def test_body_user_id_does_not_override_an_existing_attribute(self):
+    def test_body_principal_does_not_override_an_existing_attribute(self):
         transport = InMemoryTransport()
-        message = _trigger_message(attributes={"user_id": "from-attribute"}, request_id="sched-run-1", user_id="from-body")
+        message = _trigger_message(
+            attributes={"user_id": "from-attribute"}, request_id="sched-run-1", principal={**PRINCIPAL, "subject": "from-body"}
+        )
 
         _runner(transport).process(message)
 
@@ -105,7 +110,7 @@ class TestStreamAgentRunnerBodyFallback:
         chat_service = MagicMock()
         chat_service.process_stream_chat_sync.return_value = iter([json.dumps({"done": True, "session_id": "s1"})])
 
-        StreamAgentRunner(transport=transport, chat_service=chat_service).process(_trigger_message(request_id="sched-run-1", user_id="u1"))
+        StreamAgentRunner(transport=transport, chat_service=chat_service).process(_trigger_message(request_id="sched-run-1", principal=PRINCIPAL))
 
         [out] = _fetch_output(transport)
         assert out.attributes["request_id"] == "sched-run-1"

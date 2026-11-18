@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Mapping, Sequence
@@ -120,6 +121,20 @@ class CheckPointer(BaseCheckpointSaver):
         self.__dict__.update(state)
 
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
+        """
+        The stored checkpoint for one thread and namespace, as a copy the caller may mutate.
+
+        The copy is the contract. `get_state()` does not only read: it runs `prepare_next_tasks`
+        and `apply_writes` on the checkpoint handed back, bumping the marks that record which nodes
+        have run. Handed the stored object, those edits land in the store and a graph parked inside
+        an interrupting node comes back with its pending task already done, so the next
+        `Command(resume=...)` finds nothing to run. LangGraph's own savers deserialize on every read
+        and so never meet this; this one keeps live objects. Only the streaming path reads state
+        back mid-run, which is why REST never showed it.
+
+        :param config: The config naming the thread and namespace.
+        :return: The checkpoint tuple, or None when nothing is stored for them.
+        """
         thread_id = config.get("configurable", {}).get("thread_id")
         checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns", "")
 
@@ -135,7 +150,7 @@ class CheckPointer(BaseCheckpointSaver):
         checkpoint = checkpoint_data["checkpoint"]
         return CheckpointTuple(
             config=config,
-            checkpoint=checkpoint,
+            checkpoint=copy.deepcopy(checkpoint),
             metadata=checkpoint_data.get("metadata", {}),
             parent_config=checkpoint_data.get("parent_config"),
             pending_writes=self._pending_writes(thread_id, checkpoint_ns, checkpoint.get("id", "")),

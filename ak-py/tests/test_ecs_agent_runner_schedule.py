@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentkernel.core.model import Principal
 from agentkernel.deployment.aws.containerized.akagentrunner import ECSAgentRunner
 from agentkernel.deployment.aws.core.sqs_handler import SQSHandler
 
@@ -29,7 +30,13 @@ def _make_record(body: dict, request_id: str | None = "req-1", user_id: str | No
 
 
 def _trigger_body(**extras) -> dict:
-    return {"prompt": "run the weekly report", "session_id": "s1", "request_id": "sched-run-1", "user_id": "sched-user", **extras}
+    return {
+        "prompt": "run the weekly report",
+        "session_id": "s1",
+        "request_id": "sched-run-1",
+        "principal": {"subject": "sched-user", "provider": "static", "namespace": "static"},
+        **extras,
+    }
 
 
 def _custom_attribute(mock_send, name: str) -> str | None:
@@ -57,7 +64,7 @@ class TestRequestMetadataBodyFallback:
     def test_already_validated_body_is_reused_instead_of_reparsed(self):
         """process_message passes the body it validated; the record's own JSON is then irrelevant."""
         record = _make_record({"prompt": "hi", "session_id": "s1"}, request_id=None, user_id=None)
-        body = MagicMock(request_id="from-caller", user_id="caller-user")
+        body = MagicMock(request_id="from-caller", principal=Principal(subject="caller-user", provider="static", namespace="static"))
 
         attrs = ECSAgentRunner._get_record_attributes(raw_queue_message=record, body=body)
 

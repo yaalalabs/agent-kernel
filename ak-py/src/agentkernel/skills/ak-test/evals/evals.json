@@ -1,7 +1,7 @@
 {
   "skill": "ak-test",
   "description": "Evaluations for the ak-test (testing and debugging) skill",
-  "version": "0.9.5",
+  "version": "0.10.1",
   "evals": [
     {
       "id": "test-setup-cli",
@@ -134,7 +134,7 @@
       "input": "I get ModuleNotFoundError for agents package",
       "expected_outputs": [
         "agentkernel[openai]",
-        "pip install",
+        "uv add",
         "extras"
       ]
     },

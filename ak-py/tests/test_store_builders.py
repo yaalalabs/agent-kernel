@@ -173,7 +173,7 @@ def test_thread_builder_valkey_missing_extra_points_at_pip_extra(monkeypatch):
         mock_get.return_value = cfg
         with pytest.raises(ImportError) as exc_info:
             ThreadStoreBuilder.build()
-    assert 'pip install "agentkernel[valkey]"' in str(exc_info.value)
+    assert 'uv add "agentkernel[valkey]"' in str(exc_info.value)
 
 
 def test_builtin_thread_stores_lists_valkey_for_the_unknown_type_error():

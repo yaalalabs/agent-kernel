@@ -1,17 +1,12 @@
-import jwt
-from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
+"""Authorizer Lambda: authenticates the bearer token of every request through the identity provider.
+
+There is no code to write. `config.yaml` names the provider (`identity.provider`): the static
+provider here, with its one credential resolved from the DEMO_AUTH_TOKEN environment variable that
+deploy/main.tf passes in, or an `oidc` block for Auth0, Keycloak, Okta or any other OIDC issuer (see
+the README). An accepted token yields an Allow policy whose context carries the principal, which the
+request-handler Lambda puts on the request; anything else is a Deny.
+"""
+
 from agentkernel.aws import APIGatewayAuthorizer
 
-
-class CustomAuthTokenValidator(AuthValidator):
-    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
-        """Validate JWT token and return validation result."""
-        payload = jwt.decode(token, options={"verify_signature": False})
-        print("Payload", payload)
-        email = payload.get("email", "")
-        if email == "test@test.com":
-            return ValidationResult(is_valid=True)
-        return ValidationResult(is_valid=False)
-
-
-handler = APIGatewayAuthorizer(validator=CustomAuthTokenValidator()).handle
+handler = APIGatewayAuthorizer().handle

@@ -5,7 +5,9 @@ description: >
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
   A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support,
   scheduled tasks (deferred and recurring chat execution), the sandbox capability
-  (isolated code execution), and secret resolution (environment first, then AWS SSM
+  (isolated code execution), identity and authentication (who may call: an identity
+  provider such as Auth0, Keycloak or Okta through oidc, Amazon Cognito, Microsoft Entra ID,
+  Firebase, static credentials or your own, plus role mapping), and secret resolution (environment first, then AWS SSM
   Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
@@ -13,7 +15,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.9.5"
+  version: "0.10.1"
   category: user
 ---
 
@@ -48,6 +50,7 @@ Which capability would you like to add?
 13. **Secret Resolution** — Read API keys through `SecretManager` (environment first, then AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider)
 14. **Human in the Loop** — Pause a run for a person's approval or answer and resume from their decision (a gated tool or an interrupt, a `resume` block on the next request)
 15. **A2UI** — Let an agent answer with an interface instead of prose: its JSON reply is labelled so the client receives a document, not a string
+16. **Identity** - Authenticate callers through a configured identity provider (static credentials, any OIDC issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft Entra ID, Firebase, or your own) and read the caller as a `Principal` in tools and hooks
 
 ### Step 3: Generate Changes
 
@@ -62,7 +65,7 @@ Which capability would you like to add?
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.9.5",
+    "agentkernel[openai,api]>=0.10.1",
     # OpenAI guardrails use the openai extra — already included if using OpenAI framework
 ]
 ```
@@ -103,7 +106,7 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_input.json
   output:
     enabled: true
@@ -116,7 +119,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.9.5",
+    "agentkernel[openai,api,aws]>=0.10.1",
 ]
 ```
 
@@ -142,7 +145,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,walledai]>=0.9.5",
+    "agentkernel[openai,api,walledai]>=0.10.1",
 ]
 ```
 
@@ -179,7 +182,7 @@ export WALLED_API_KEY="your-walledai-api-key"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,langfuse]>=0.9.5",
+    "agentkernel[openai,api,langfuse]>=0.10.1",
 ]
 ```
 
@@ -204,7 +207,7 @@ export LANGFUSE_HOST="https://cloud.langfuse.com"   # or self-hosted URL
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,openllmetry]>=0.9.5",
+    "agentkernel[openai,api,openllmetry]>=0.10.1",
 ]
 ```
 
@@ -222,7 +225,7 @@ trace:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,logfire]>=0.9.5",
+    "agentkernel[openai,api,logfire]>=0.10.1",
 ]
 ```
 
@@ -245,7 +248,7 @@ export LOGFIRE_TOKEN="your-write-token"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,cloudwatch]>=0.9.5",
+    "agentkernel[openai,api,cloudwatch]>=0.10.1",
 ]
 ```
 
@@ -306,7 +309,7 @@ for trace in Trace.get().fetch_traces(session_id="session-123"):
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.9.5",
+    "agentkernel[openai,api,redis]>=0.10.1",
 ]
 ```
 
@@ -326,7 +329,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.9.5",
+    "agentkernel[openai,api,aws]>=0.10.1",
 ]
 ```
 
@@ -348,7 +351,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,azure]>=0.9.5",
+    "agentkernel[openai,api,azure]>=0.10.1",
 ]
 ```
 
@@ -370,7 +373,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gcp]>=0.9.5",
+    "agentkernel[openai,api,gcp]>=0.10.1",
 ]
 ```
 
@@ -404,13 +407,13 @@ Add durable knowledge tools that your agents can query and update across session
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,chromadb]>=0.9.5",  # for Chroma
-  # or "agentkernel[openai,api,neo4j]>=0.9.5"
-  # or "agentkernel[openai,api,trino]>=0.9.5"
+  "agentkernel[openai,api,chromadb]>=0.10.1",  # for Chroma
+  # or "agentkernel[openai,api,neo4j]>=0.10.1"
+  # or "agentkernel[openai,api,trino]>=0.10.1"
   # OKF needs NO extra - pyyaml is a core dependency:
-  #    "agentkernel[openai,api]>=0.9.5"
+  #    "agentkernel[openai,api]>=0.10.1"
   # ...unless the bundle is served from S3, which uses the aws extra:
-  #    "agentkernel[openai,api,aws]>=0.9.5"
+  #    "agentkernel[openai,api,aws]>=0.10.1"
 ]
 ```
 
@@ -535,7 +538,7 @@ Expose your agents as MCP (Model Context Protocol) tools so other AI systems can
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,mcp]>=0.9.5",
+    "agentkernel[openai,api,mcp]>=0.10.1",
 ]
 ```
 
@@ -547,7 +550,7 @@ mcp:
   # agents:                       # Or list specific agents
   #   - name: general
   #   - name: math
-  url: "http://localhost:8000"    # Base URL of your server
+  url: "http://localhost:8000/mcp"  # Public URL of the MCP endpoint (behind a proxy, the public one)
 ```
 
 3. No code changes needed. The MCP server endpoint is automatically available.
@@ -556,14 +559,20 @@ mcp:
    is enqueued, the agent runner executes it, and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. With `expose_agents: true`, `RESTAPI.run(handlers=[...])`,
-     `RESTAPI.run()` on SQS/Kafka/NATS, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
-   - Split deployment (SQS/Kafka/NATS): import the same agent modules in the IO process as in the
+     `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
+   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
      agent runner (tools are built from the IO process's registry), configure a shared
      `execution.response_store` (redis, valkey or dynamodb) in every execution mode, and set
      `mcp.stateless_http: true` when more than one IO replica serves `/mcp`.
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
      block); failures reach the client as a fixed message, with details in the logs only.
    - Tools you add yourself to `MCP.get()` are your own code and still run in the IO process.
+   - With an `identity` block (see Identity), FastMCP enforces the bearer token: a call without an
+     accepted token is a 401, and the tool runs as the token's principal. Without the block the
+     server stays open and every call runs anonymous. With an OpenID-family provider (`oidc`,
+     `cognito`, `entra`, `firebase`) the 401 points MCP clients at RFC 9728 resource metadata the app
+     serves at `<origin of mcp.url>/.well-known/oauth-protected-resource/mcp/`, naming `mcp.url` as
+     the resource and the issuer as the authorization server, so set `mcp.url` to the address clients use.
 
 ---
 
@@ -574,7 +583,7 @@ Enable Agent-to-Agent communication via Google's A2A protocol.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,a2a]>=0.9.5",
+    "agentkernel[openai,api,a2a]>=0.10.1",
 ]
 ```
 
@@ -597,12 +606,14 @@ a2a:
    and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on
-     SQS/Kafka/NATS, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
-   - Split deployment (SQS/Kafka/NATS): import the same agent modules in the IO process as in the
+     SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
+   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
      agent runner (cards are built from the IO process's registry), and configure a shared
      `execution.response_store` (redis, valkey or dynamodb) in every execution mode.
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
      block). `message:stream` is refused: the cards declare `streaming: false`.
+   - With an `identity` block (see Identity), a bearer token on the A2A routes is authenticated and
+     the message runs as its principal; a refused token is a 401, no token runs anonymous.
 
 ---
 
@@ -615,7 +626,7 @@ text, tool calls, reasoning, and an optional shared JSON state, all as one typed
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,agui]>=0.9.5",
+    "agentkernel[openai,api,agui]>=0.10.1",
 ]
 ```
 
@@ -631,18 +642,23 @@ agui:
     enabled: true             # attaches read-only get_forwarded_props / get_agui_context
 ```
 
-3. Mount `AGUIRequestHandler` with an `Authoriser` (or `AuthValidator`) — AG-UI has no anonymous
-   mode, because a run executes an agent on the caller's behalf:
+3. Mount `AGUIRequestHandler`. AG-UI has no anonymous mode, because a run executes an agent on the
+   caller's behalf: the handler requires an `identity` block in `config.yaml` (it refuses to build
+   without one) and answers 401 to a request without an accepted bearer token (see Identity):
+```yaml
+identity:
+  provider:
+    type: static               # or oidc (Auth0, Keycloak, Okta), cognito, entra, firebase, a dotted path
+    static:
+      principals:
+        DEMO_TOKEN:            # names a secret, resolved from the environment first; never the value
+          subject: demo-user
+```
 ```python
 from agentkernel.agui import AGUIRequestHandler
 from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
 
-class MyAuthoriser(Authoriser):
-    def authorise(self, token: str) -> str | None:
-        ...  # validate the token, return the caller's user_id or None
-
-RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=MyAuthoriser())])
+RESTAPI.run(handlers=[AGUIRequestHandler()])
 ```
 
 4. Routes are served under `agui.prefix`: `GET {prefix}/agents`, `POST {prefix}/{agent_name}`, and
@@ -657,7 +673,7 @@ RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=MyAuthoriser())])
 from agentkernel.agui import AGUIPipelineRequestHandler
 from agentkernel.pipeline import IOHandler
 
-IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
+IOHandler.run(handlers=[AGUIPipelineRequestHandler()])
 ```
    It needs a response store that can stream chunks — `in_memory` locally, `redis` or `valkey` on a
    broker transport — and refuses to start otherwise, naming the setting to change. On a broker it
@@ -891,7 +907,7 @@ Enable image and file processing in your agents.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,multimodal]>=0.9.5",
+    "agentkernel[openai,api,multimodal]>=0.10.1",
 ]
 ```
 
@@ -900,8 +916,8 @@ dependencies = [
 multimodal:
   enabled: true
   max_attachments: 20
-  description_model: "gpt-4o"          # Model for generating brief descriptions
-  analysis_model: "gpt-4o"             # Model for detailed analysis via tool
+  description_model: "gpt-6-luna"      # Model for generating brief descriptions
+  analysis_model: "gpt-6-luna"         # Model for detailed analysis via tool
 ```
 
 3. No further code changes needed. When enabled:
@@ -916,7 +932,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,multimodal]>=0.9.5",
+    "agentkernel[openai,api,redis,multimodal]>=0.10.1",
 ]
 ```
 
@@ -926,8 +942,8 @@ multimodal:
   enabled: true
   storage_type: redis
   max_attachments: 20
-  description_model: "gpt-4o"
-  analysis_model: "gpt-4o"
+  description_model: "gpt-6-luna"
+  analysis_model: "gpt-6-luna"
   redis:
     url: "redis://localhost:6379"
     prefix: "ak:attachments:"
@@ -939,7 +955,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,multimodal]>=0.9.5",
+    "agentkernel[openai,api,aws,multimodal]>=0.10.1",
 ]
 ```
 
@@ -949,8 +965,8 @@ multimodal:
   enabled: true
   storage_type: dynamodb
   max_attachments: 20
-  description_model: "gpt-4o"
-  analysis_model: "gpt-4o"
+  description_model: "gpt-6-luna"
+  analysis_model: "gpt-6-luna"
   dynamodb:
     table_name: "ak-attachments"
     ttl: 604800
@@ -1023,7 +1039,7 @@ Enable persistent, named conversation threads keyed by `session_id`.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.9.5",
+    "agentkernel[openai,api]>=0.10.1",
 ]
 ```
 
@@ -1044,23 +1060,26 @@ thread:
 ```
 
 4. When enabled:
-   - `user_id` becomes required on the thread handler's chat requests (other surfaces are unaffected)
+   - The thread handler requires an `identity` block (see Identity) and a credential on every request
+     (`Authorization: Bearer <credential>`): a thread belongs to the authenticated principal, an
+     anonymous request is a 401, and a `user_id` in the body is a 400 (the caller comes from the credential)
    - A thread is auto-created on a session's first request
-   - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` are served by the same handler for reading thread history (open by default, or protected by a pluggable `Authoriser`)
+   - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` are served by the same handler for reading thread history, scoped to the caller: the listing is the caller's own threads (no `user_id` query parameter) and another principal's thread is refused
    - Threads are auto-named by an LLM call deriving a concise title from the first prompt (falls back to a truncated prompt prefix without `litellm`/an API key)
    - Sending `thread_name` on any chat request sets/renames the thread and locks it against automatic naming
+   - Structured messages carry a sibling `media_type` next to `content`; with Human in the Loop, a pause (`assistant`, `content.interruptions`) and its decision (`user`, `content.resume.decisions`) are recorded as `application/json` messages
 
 **For LLM-based thread naming**, add the `thread` extra:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,thread]>=0.9.5",
+    "agentkernel[openai,api,thread]>=0.10.1",
 ]
 ```
 ```yaml
 thread:
   type: in_memory
   naming:
-    model: "gpt-4o-mini"   # LiteLLM model used to name threads
+    model: "gpt-6-luna"    # LiteLLM model used to name threads
     max_length: 80
 ```
 
@@ -1068,7 +1087,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,thread]>=0.9.5",
+    "agentkernel[openai,api,redis,thread]>=0.10.1",
 ]
 ```
 ```yaml
@@ -1084,7 +1103,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,valkey,thread]>=0.9.5",
+    "agentkernel[openai,api,valkey,thread]>=0.10.1",
 ]
 ```
 ```yaml
@@ -1100,7 +1119,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,thread]>=0.9.5",
+    "agentkernel[openai,api,aws,thread]>=0.10.1",
 ]
 ```
 ```yaml
@@ -1131,23 +1150,31 @@ thread:
     table_name: "akagentthreads"
 ```
 
-**Protecting the read endpoints with an Authoriser:**
+**Who owns a thread:** the `identity` block in `config.yaml` (see Identity). The static provider
+below maps two credentials to two users; the keys name secrets resolved from the environment
+(`ALICE_TOKEN=... BOB_TOKEN=... python app.py`), so no credential value lives in the file:
+
+```yaml
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        ALICE_TOKEN:
+          subject: alice
+        BOB_TOKEN:
+          subject: bob
+```
 
 ```python
 from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
 from agentkernel.thread import AgentThreadRequestHandler
 
-class DemoAuthoriser(Authoriser):
-    def authorise(self, token: str) -> str | None:
-        # Validate the ****** against your own auth provider, return the user_id or None.
-        return {"alice-token": "alice", "bob-token": "bob"}.get(token)
-
-RESTAPI.run(handlers=[AgentThreadRequestHandler(authoriser=DemoAuthoriser())])
+RESTAPI.run(handlers=[AgentThreadRequestHandler()])
 ```
 
-With an Authoriser configured, thread listings are scoped to the resolved `user_id` and reading another
-user's thread is rejected (403). Without one, the read routes are open.
+Thread listings are scoped to the authenticated principal, reading another user's thread is refused,
+and a request without a credential is a 401. The handler refuses to build without the block.
 
 **Attachments in thread mode:** require `multimodal.enabled: true` with a shared attachment store —
 `in_memory`, `redis`, or `dynamodb` (`session_cache` is rejected).
@@ -1157,7 +1184,8 @@ user's thread is rejected (403). Without one, the read routes are open.
 ```bash
 curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "What is the capital of France?", "session_id": "ses-1", "user_id": "alice", "thread_name": "Capitals quiz"}'
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "What is the capital of France?", "session_id": "ses-1", "thread_name": "Capitals quiz"}'
 ```
 
 See `examples/api/thread-openai` and `examples/api/multimodal/thread-openai`.
@@ -1188,7 +1216,7 @@ means deploying in queue mode.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,cron]>=0.9.5",
+    "agentkernel[openai,api,cron]>=0.10.1",
 ]
 ```
 The `cron` extra brings `croniter`, needed for cron parsing.
@@ -1227,12 +1255,14 @@ if __name__ == "__main__":
      timestamp, must be in the future) or `cron` (standard 5-field expression), plus `timezone`
      (IANA, default `UTC`) and `session_mode` (`reuse` the originating session, or `new` for a fresh
      session per occurrence)
-   - `user_id` becomes **required** on any request that schedules: it is the owner the task is stored
-     under and the identity later reads and changes are checked against
+   - A request that schedules must carry a credential (`Authorization: Bearer <credential>`, see
+     Identity): the task is stored under the authenticated principal, later reads and changes are
+     checked against it, and an anonymous scheduling request is a 403 (`scheduling requires an
+     authenticated principal`)
    - `GET /api/v1/schedules` (cursor-paginated) and `GET`/`PUT`/`DELETE /api/v1/schedules/{task_id}`
-     are mounted for listing, reading, amending and cancelling (open by default, or protected by a
-     pluggable `Authoriser`). There is deliberately no `POST` — creation is the chat block or the
-     agent tool
+     are mounted for listing, reading, amending and cancelling; they require the `identity` block,
+     answer 401 to an anonymous caller and serve the caller's own tasks (no `user_id` query
+     parameter). There is deliberately no `POST`: creation is the chat block or the agent tool
    - `PUT` is full-replacement: send every value, including the ones that are not changing. `status`
      covers the `active`/`paused` switch; a cancelled task keeps its record as the audit trail
    - The five schedule tools and their guidance are injected into every agent's system prompt; each
@@ -1246,7 +1276,8 @@ if __name__ == "__main__":
 # One-time
 curl -i -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1",
        "schedule": {"at": "2030-01-31T09:00:00", "timezone": "Asia/Colombo"}}'
 
 # HTTP/1.1 202 Accepted
@@ -1255,19 +1286,20 @@ curl -i -X POST http://localhost:8000/api/v1/chat \
 # Recurring, each occurrence in a fresh session
 curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Send the weekly report", "session_id": "ses-2", "user_id": "alice",
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "Send the weekly report", "session_id": "ses-2",
        "schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"}}'
 
-# Manage
-curl "http://localhost:8000/api/v1/schedules?user_id=alice"
-curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
+# Manage (the caller's own tasks)
+curl -H "Authorization: Bearer $ALICE_TOKEN" "http://localhost:8000/api/v1/schedules"
+curl -H "Authorization: Bearer $ALICE_TOKEN" -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
 ```
 
 **For production on AWS (EventBridge Scheduler + DynamoDB):**
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,cron]>=0.9.5",
+    "agentkernel[openai,api,aws,cron]>=0.10.1",
 ]
 ```
 ```yaml
@@ -1289,7 +1321,7 @@ them. See the `ak-cloud-deploy` skill.
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,cron]>=0.9.5",   # or valkey
+    "agentkernel[openai,api,redis,cron]>=0.10.1",   # or valkey
 ]
 ```
 ```yaml
@@ -1306,30 +1338,34 @@ schedule:
 
 | Combination | Rejected because |
 |---|---|
-| `local` provider + a broker transport (`sqs`/`kafka`/`nats`) | The in-process timers are unreachable from the process serving the management routes — a cancellation would report success while the timer kept firing |
+| `local` provider + a broker transport (`sqs`/`kafka`/`nats`/`pubsub`) | The in-process timers are unreachable from the process serving the management routes — a cancellation would report success while the timer kept firing |
 | `local` provider + a shared store | Same split: the timers and the records must live together |
 | `in_memory` store + a broker transport | The records would be split across the runner and IO-handler processes |
 | `eventbridge` provider + a non-`sqs` transport | Delivery is baked into the schedule registration as an SQS target |
 
-**Protecting the management routes with an Authoriser:** the routes are mounted by the application,
-so pass the `Authoriser` to the `ScheduleRESTRequestHandler` constructor:
+**Who owns a task:** the `identity` block in `config.yaml` (see Identity); the management routes
+are mounted by the application and carry the identity dependency like every other route:
+
+```yaml
+identity:
+  provider:
+    type: static               # or oidc (Auth0, Keycloak, Okta), cognito, entra, firebase, a dotted path
+    static:
+      principals:
+        ALICE_TOKEN:           # names a secret resolved from the environment; never the value
+          subject: alice
+```
 
 ```python
-from agentkernel.auth import Authoriser
 from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
 
-class DemoAuthoriser(Authoriser):
-    def authorise(self, token: str) -> str | None:
-        # Validate the ****** against your own auth provider, return the user_id or None.
-        return {"alice-token": "alice", "bob-token": "bob"}.get(token)
-
 if __name__ == "__main__":
-    IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=DemoAuthoriser())])
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
 ```
 
-With an Authoriser configured, listings are scoped to the resolved `user_id` and reading or changing
-another user's schedule is rejected (403). Without one, the routes are open.
+Listings are scoped to the authenticated principal, reading or changing another user's task is
+refused (403), an anonymous caller is a 401, and the handler refuses to build without the block.
 
 See `examples/api/schedule-openai`.
 
@@ -1395,6 +1431,14 @@ curl -X POST http://localhost:8000/api/v1/chat -H "Content-Type: application/jso
 }'
 ```
 
+**If the agent is behind a Slack or Telegram integration, the pause is answered by pressing a
+button** — no extra code and no config: a press becomes the same decision the `curl` above sends.
+Slack's Deny opens a short form for the reason. Say two things when you set that up: Slack needs
+**Interactivity & Shortcuts** turned on with the same Request URL as its event subscription, or the
+buttons do nothing; and anyone who can see the message can press, since Agent Kernel ships no
+approver policy (the presser's id reaches the run as `acting_user_id`, for a `PreHook` to check).
+Every other platform gets the pause as readable text.
+
 A decision takes `status` (`approved` | `denied` | `cancelled` — "nobody decided", which never reaches
 the model as a refusal), an optional `message` for the human's own words, and an optional `payload`
 for a structured answer. `run_id` is optional: the run resolves from the interruption ids.
@@ -1405,6 +1449,8 @@ object on an approval, since it becomes the call's `override_args`; ADK refuses 
 and cannot tell `cancelled` from `denied` there. Point the user at the
 [Human in the Loop](https://kernel.yaala.ai/docs/advanced/human-in-the-loop) page for the full table
 before they design the question.
+
+With conversation threads enabled, the pause and the decision are recorded as thread messages (`media_type` `application/json`), so reopening a thread shows what was asked and decided.
 
 #### Sandbox
 
@@ -1426,7 +1472,7 @@ process can wait, the `queue` broker flavor runs them on a separate worker
 **1. Install the extra (docker only):**
 
 ```bash
-pip install "agentkernel[sandbox-docker]"
+uv add "agentkernel[sandbox-docker]"
 ```
 
 **2. Add a `sandbox` block to `config.yaml`.**
@@ -1487,10 +1533,140 @@ the agent's instructions about *what* to do; the sandbox usage is injected.
 `docker` (or another isolating provider) in production.
 :::
 
-For per-user identity (running sandboxed code under the invoking user's identity), set
-`principal_resolver` to a dotted path and a profile's `identity.mode: user`; see the
+For per-user identity (running sandboxed code under the invoking user's identity), set a profile's
+`identity.mode: user`: the default resolver reads the principal the identity provider established
+for the run (see Identity; a profile left on `agent` mode keeps running as the agent), and `principal_resolver` (a dotted path) replaces it when the sandbox
+identity must be derived differently. A run for a messaging or realtime sender (a `messaging:` or
+`realtime:` principal, whose subject is a platform id) resolves to agent mode like an anonymous run,
+so a `user`-mode profile refuses it; see the
 [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) and the
 `examples/sandbox/identity` example.
+
+---
+
+#### Identity
+
+**What it does:** one identity provider per deployment, named by the `identity` block in `config.yaml`,
+turns a caller's credential into a `Principal` (`subject`, `kind`, `provider`, `namespace`, `groups`,
+`roles`, `claims`) that every surface carries into the run. No validator code: a bearer token on REST,
+AG-UI, MCP and A2A, `?token=` on a WebSocket handshake and `--token` (or `AK_CLI_TOKEN`) on the CLI
+all go through the same provider. Without the block every request runs as the anonymous principal
+and an `Authorization` header is ignored; with it, a request without a credential is anonymous and a
+present credential must validate (401 otherwise, with the provider's reason in the logs only).
+Threads, scheduled tasks and AG-UI refuse anonymous callers; chat routes allow them.
+
+**Ask:** Which provider? `static` (demo and service credentials named as secret keys), `oidc` (any
+OpenID Connect issuer: Auth0, Keycloak, Okta), `cognito`, `entra`, `firebase`, or a dotted path to
+your own `IdentityProvider` subclass.
+
+**1. Install the extra (JWT providers only; `static` needs nothing):**
+
+```bash
+uv add "agentkernel[auth]"
+```
+
+**2. Add an `identity` block to `config.yaml`:**
+
+```yaml
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        ALICE_TOKEN:               # names a secret: the environment first, then the secret provider
+          subject: alice
+          groups: [ops]            # optional facts: kind (user | agent | service), groups, roles, claims
+        SERVICE_KEY:
+          subject: reporting-job
+          kind: service
+```
+
+The credential values never go in the file: start the app with `ALICE_TOKEN=... SERVICE_KEY=...` (or
+put them in the configured secret provider); a key that resolves to nothing, or an empty
+`principals` map, is an `AKConfigError` at startup.
+
+Auth0 is an `oidc` block (so are Keycloak and Okta, with their own issuer, audience and groups claim):
+
+```yaml
+identity:
+  provider:
+    type: oidc
+    issuer: https://<tenant>.<region>.auth0.com/   # or the custom domain; trailing slash as Auth0 issues it
+    audience: <the API identifier of your Auth0 API>
+    claims:
+      groups: https://<your namespace>/roles       # the namespaced claim an Auth0 Action sets; omit if none
+```
+
+The `oidc` provider discovers the JWK set from the issuer (`jwks_uri` overrides it), accepts `RS256`
+and `ES256` by default (an empty list, `none`, an unknown name or a symmetric algorithm fails at
+startup), tolerates `leeway` seconds of clock skew
+and reads the subject and groups from `claims.subject` / `claims.groups` (a claim name, or dotted
+segments such as `realm_access.roles`). The cloud providers derive the issuer themselves:
+
+```yaml
+identity:
+  provider:
+    type: cognito                  # cognito: {region, user_pool_id, token_use: access | id}
+    cognito:
+      region: eu-west-1
+      user_pool_id: eu-west-1_abc123
+    # entra: {tenant_id}           # type: entra
+    # firebase: {project_id}       # type: firebase
+```
+
+Entra accepts v2.0 tokens only: set `requestedAccessTokenVersion: 2` on the app registration
+(Terraform `azuread_application`: `api { requested_access_token_version = 2 }`), or its access tokens
+carry the v1 issuer `https://sts.windows.net/<tid>/` and are refused.
+
+An optional `role_mapper` derives `Principal.roles` (`type: mapping` with `mapping: {ops: [admin]}`
+and/or `pass_through: <claim path>`; or a dotted path to a `RoleMapper`, whose own settings arrive in
+`config.model_extra`). `mapping` looks up only the principal's groups by default; list the claim paths
+whose values it should also look up in `claims: [...]` (e.g. `claims: [permissions]` for Auth0 RBAC).
+Map only claims the issuer controls: a user sets many of their own (a display name, a username, an
+email), and matching those would let one of them grant a role. Nothing enforces roles yet; read them
+in a hook or tool if you need them now.
+
+```yaml
+identity:
+  # provider: the Auth0 oidc block above
+  role_mapper:
+    type: mapping
+    mapping:
+      ops: [admin]                 # a group
+      "read:reports": [reader]     # a value of the listed claim
+    claims: [permissions]
+```
+
+**3. Read the principal where it matters:**
+
+```python
+from agentkernel.core import Agent, PreHook, Session, ToolContext
+from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest
+
+def whoami() -> str:
+    principal = ToolContext.get().principal        # the caller, with the agent as `actor`
+    return f"{principal.subject} in {principal.groups}"
+
+class OnlyOps(PreHook):
+    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
+        principal = session.get_principal()         # the run's principal; session.get_owner() is who opened the session
+        if "ops" not in principal.groups:
+            return AgentReplyText(response="This agent serves the ops group only.")  # a reply ends the run
+        return requests
+
+    def name(self) -> str:
+        return "only-ops"
+```
+
+Messaging integrations build the principal at the edge (`provider: messaging:<platform>`, the
+platform user as `subject`, the workspace or tenant as `namespace`), so the same tools work on
+Slack as on REST. A bring-your-own provider subclasses `agentkernel.identity.IdentityProvider`
+(`name`, `async authenticate(credential, context)` returning a `Principal` or raising
+`AuthenticationError`, `security_scheme()`), is selected by its dotted path in `identity.provider.type`,
+and can be checked with the `agentkernel.identity.provider.testing.IdentityProviderContract` pytest
+suite. See `examples/api/thread-openai` (two users), `examples/api/agui` (one credential),
+`examples/aws-serverless/openai-auth` (the static block and an Auth0 block in its README) and the
+`ak-cloud-deploy` skill for where the block lives on each deployment target.
 
 ---
 
@@ -1511,7 +1687,7 @@ subclass?
 **1. Install the extra (aws_ssm only):**
 
 ```bash
-pip install "agentkernel[aws]"
+uv add "agentkernel[aws]"
 ```
 
 **2. Add a `secret` block to `config.yaml`** (optional for `env`, which is the default):

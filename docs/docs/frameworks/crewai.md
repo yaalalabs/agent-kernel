@@ -9,7 +9,7 @@ Integrate CrewAI's role-based agent framework with Agent Kernel.
 ## Installation
 
 ```bash
-pip install agentkernel[crewai]
+uv add "agentkernel[crewai]"
 ```
 
 ## Basic Usage

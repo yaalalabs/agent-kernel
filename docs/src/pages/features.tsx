@@ -32,6 +32,7 @@ import {
   MdMessage,
   MdCloudUpload,
   MdFactCheck,
+  MdVerifiedUser,
 } from "react-icons/md";
 import {
   FaSlack,
@@ -864,7 +865,7 @@ function CoreFeatures() {
         "Agents run code, shell commands, file operations, and permitted package installs in isolated sandboxes. The Execution Broker routes every execution to a pluggable, policy-governed provider, in-process or over a queue to a separate worker fleet.",
       highlights: [
         "local_subprocess, docker, kubernetes, e2b, daytona, ec2_ssm",
-        "Queue broker over SQS, Kafka, or NATS for long-running executions",
+        "Queue broker over SQS, Kafka, NATS, Pub/Sub, or Azure Service Bus for long-running executions",
         "Session-persistent workspaces",
         "Fail-closed network, filesystem, CPU, and memory policies; per-profile language and package-install permissions; configurable language runtimes on Docker and Kubernetes",
         "Agent or end-user identity",
@@ -884,7 +885,7 @@ function CoreFeatures() {
         "GCP Cloud Run (Serverless)",
         "GCP Cloud Run (Containerized)",
         "On-Prem Kubernetes (Helm chart: bare metal, EKS, air-gapped)",
-        "Queue-backed scaling: ingress and agent execution scale independently",
+        "Queue-backed scaling: ingress and agent execution scale independently (SQS on AWS, Pub/Sub on GCP)",
       ],
       link: "/docs/deployment/overview",
     },
@@ -929,6 +930,20 @@ function CoreFeatures() {
         "Off-topic filtering",
       ],
       link: "/docs/advanced/guardrails",
+    },
+    {
+      icon: <MdVerifiedUser />,
+      title: "Identity & Access",
+      description:
+        "One identity provider, configured not coded, authenticates every surface and gives tools, hooks and threads the caller as a principal.",
+      highlights: [
+        "Any OIDC issuer: Auth0, Keycloak, Okta",
+        "Amazon Cognito, Microsoft Entra ID, Firebase",
+        "Static credentials through the secret capability",
+        "REST, WebSocket, AG-UI, MCP, A2A, CLI and messaging",
+      ],
+      // The identity page is only in the unreleased docs until the next release; drop `next` once it ships.
+      link: "/docs/next/advanced/identity-and-access",
     },
     {
       icon: <MdNetworkCheck />,

@@ -75,9 +75,19 @@ handler = Lambda.handler
 - Put the platform credentials in both `request_handler.environment_variables` and
   `response_handler.environment_variables`. WhatsApp, Messenger and Instagram need their `app_secret`
   and Telegram its `webhook_secret`: `LambdaWebhookHost` refuses to start without them.
+  Alternatively keep them out of the environment: an empty credential field is resolved through
+  `SecretManager` (environment, then the configured secret provider such as `aws_ssm`) under the key its
+  `<field>_key` config names (`slack.bot_token_key`, `whatsapp.access_token_key`, ...); with
+  `ssm_enabled = true` the response handler gets SSM access too.
 - Behind an API Gateway authorizer, pass
   `bypass=WebhookRouteMatcher.for_integrations("<platform>")` to `APIGatewayAuthorizer` and set
-  `result_ttl_in_seconds = 0` (see the `ak-cloud-deploy` skill, AWS Serverless).
+  `result_ttl_in_seconds = 0` (see the `ak-cloud-deploy` skill, AWS Serverless). The authorizer
+  itself takes no validator: the `identity` block in the `config.yaml` packaged with it names the
+  provider that authenticates every non-webhook request.
+- Platform senders reach the agent as a `Principal` built at the edge (`provider:
+  messaging:<platform>`, the platform user id as `subject`, the workspace or tenant as `namespace`),
+  so tools reading `ToolContext.get().principal` work on every channel; no bearer token is
+  involved on webhook routes.
 - Gmail (polling) is not supported on Lambda.
 
 #### For Slack
@@ -87,7 +97,7 @@ handler = Lambda.handler
 Add `slack` to the extras:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack]>=0.9.5",
+    "agentkernel[openai,api,slack]>=0.10.1",
 ]
 ```
 
@@ -133,7 +143,7 @@ export SLACK_SIGNING_SECRET="..."          # App signing secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,whatsapp]>=0.9.5",
+    "agentkernel[openai,api,whatsapp]>=0.10.1",
 ]
 ```
 
@@ -180,7 +190,7 @@ export AK_WHATSAPP__APP_SECRET="..."           # App secret for signature verifi
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,messenger]>=0.9.5",
+    "agentkernel[openai,api,messenger]>=0.10.1",
 ]
 ```
 
@@ -224,7 +234,7 @@ export AK_MESSENGER__APP_SECRET="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,instagram]>=0.9.5",
+    "agentkernel[openai,api,instagram]>=0.10.1",
 ]
 ```
 
@@ -262,7 +272,7 @@ export AK_INSTAGRAM__INSTAGRAM_ACCOUNT_ID="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,telegram]>=0.9.5",
+    "agentkernel[openai,api,telegram]>=0.10.1",
 ]
 ```
 
@@ -304,7 +314,7 @@ export AK_TELEGRAM__WEBHOOK_SECRET="..."       # Your webhook secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gmail]>=0.9.5",
+    "agentkernel[openai,api,gmail]>=0.10.1",
 ]
 ```
 
@@ -343,7 +353,7 @@ if __name__ == "__main__":
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,teams]>=0.9.5",
+    "agentkernel[openai,api,teams]>=0.10.1",
 ]
 ```
 
@@ -409,7 +419,7 @@ if __name__ == "__main__":
 Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.9.5",
+    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.10.1",
 ]
 ```
 

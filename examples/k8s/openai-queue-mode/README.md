@@ -10,15 +10,15 @@ sessions and responses. A Kafka variant is one values switch away.
 app_agents.py           the agents, shared by the io and runner images
 app_io_handler.py       OpenAIModule(agents) + IOHandler.run()    the io image's entry point
 app_agent_runner.py     OpenAIModule(agents) + AgentRunner.run()  the runner image's entry point
-app_ws_gateway.py       WebSocketGateway.run(validator)           the gateway image's entry point
+app_ws_gateway.py       WebSocketGateway.run()                    the gateway image's entry point
 ws_client.py            demo client for the WebSocket walkthrough (runs on your machine)
-protocol_client.py      demo A2A + MCP client (runs on your machine, and in CI's kind smoke)
+protocol_client.py      demo A2A + MCP client, sends DEMO_AUTH_TOKEN as the bearer token (runs on your machine, and in CI's kind smoke)
 config.nats.yaml        baked in as config.yaml by package.sh (default)
 config.kafka.yaml       the Kafka variant
 deploy/Dockerfile.*     one image per component, python:3.12-slim + staged dependencies
 deploy/package.sh       stages dependencies and builds the three images
 deploy/deploy.sh        installs the chart release: the published chart, or "local" for this checkout's chart
-ak-values.yaml          chart overlay: the example images + the OpenAI credentials Secret mount
+ak-values.yaml          chart overlay: the example images + the OpenAI credentials Secret mount + the demo credential for the io and gateway tiers
 ```
 
 The same wire behavior can be exercised without Kubernetes:
@@ -54,11 +54,19 @@ k3d cluster create ak
 k3d image import -c ak ak-example-io-handler:dev ak-example-agent-runner:dev
 ```
 
-Give the pods the OpenAI key as a Secret, then install the chart release with the dev flavor
-(`ak-values.yaml` layers the example images and the Secret mount on top of it):
+Give the pods the OpenAI key and the demo credential as Secrets, then install the chart release with
+the dev flavor (`ak-values.yaml` layers the example images, the Secret mount and the credential's
+environment variable on top of it). `DEMO_AUTH_TOKEN` is the one credential the `identity` block in
+`config.*.yaml` accepts: REST requests may carry it as a bearer token, and the WebSocket walkthrough
+below must. Keep it exported, the client reads it. To authenticate against a real issuer instead,
+replace the `static` block with an `oidc` one (Auth0, Keycloak and Okta are `oidc` configurations;
+Cognito, Entra ID and Firebase have their own types), which needs no Secret: see
+[Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access).
 
 ```bash
 kubectl create secret generic openai-credentials --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY"
+export DEMO_AUTH_TOKEN="$(openssl rand -hex 16)"
+kubectl create secret generic demo-credentials --from-literal=DEMO_AUTH_TOKEN="$DEMO_AUTH_TOKEN"
 
 deploy/deploy.sh            # or deploy/deploy.sh local to install this checkout's chart
 kubectl rollout status deployment/ak-agent-kernel-io deployment/ak-agent-kernel-agent-runner
@@ -144,9 +152,24 @@ cert-manager as prerequisites) instead of the dev flavor:
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb" sh -
 ```
 
-The chart install is identical to the baremetal instructions in
-[ak-deployment/ak-k8s/README.md](../../../ak-deployment/ak-k8s/README.md); the dev-flavor
-walkthrough above also works on k3s unchanged (k3s ships a local-path StorageClass).
+The chart install follows [ak-deployment/ak-k8s/README.md](../../../ak-deployment/ak-k8s/README.md)
+with `-f ./chart/values-baremetal.yaml` in place of the dev flavor, plus one step that install does
+not take: this example's images need the identity block's credential, and without it the io pod
+crash-loops (the `static` provider cannot resolve `DEMO_AUTH_TOKEN` at startup). Create the Secret
+as in the k3d walkthrough and hand it to the io handler (and to `wsGateway.extraEnv` too once the
+gateway tier is on):
+
+```bash
+kubectl create secret generic demo-credentials --from-literal=DEMO_AUTH_TOKEN="$DEMO_AUTH_TOKEN"
+helm install ak ./chart -f ./chart/values-baremetal.yaml <the image and OpenAI key flags> \
+  --set 'ioHandler.extraEnv[0].name=DEMO_AUTH_TOKEN' \
+  --set 'ioHandler.extraEnv[0].valueFrom.secretKeyRef.name=demo-credentials' \
+  --set 'ioHandler.extraEnv[0].valueFrom.secretKeyRef.key=DEMO_AUTH_TOKEN'
+```
+
+`FLAVOR=baremetal deploy/deploy.sh` does the same from this directory: it layers `ak-values.yaml`,
+which carries those entries and the `openai-credentials` mount, on the baremetal flavor. The
+dev-flavor walkthrough above also works on k3s unchanged (k3s ships a local-path StorageClass).
 
 ## A2A and MCP
 
@@ -166,14 +189,17 @@ the waiting caller reads it. Two consequences:
 replicas, and a stateful MCP session would be pinned to one of them. A2A answers `message:send`
 only: the cards declare `streaming: false`, so `message:stream` is refused.
 
-With the port-forward from the walkthrough running:
+With the port-forward from the walkthrough running, and `DEMO_AUTH_TOKEN` still exported (the
+client sends it as the bearer token on both calls; MCP refuses a call without one once an
+`identity` block is configured, A2A would run it anonymous):
 
 ```bash
 uv run python protocol_client.py http://localhost:8000
 ```
 
 It prints both replies and exits non-zero when either is empty or an error. CI's kind smoke runs
-it right after the chat request.
+it right after the chat request, with the same credential it created the `demo-credentials`
+Secret from.
 
 ## Secrets
 
@@ -198,6 +224,11 @@ chart's `secretStore` in `ak-values.yaml` mounts each listed Secret read-only at
   `secret.cache_ttl`.
 - **Upgrading from the `extraEnv` version of this example:** create `openai-credentials` as above; the old `openai`
   Secret is no longer referenced.
+- **The demo credential is the exception.** `DEMO_AUTH_TOKEN`, the credential of the `identity` block, is read by
+  the io handler and the WebSocket gateway at startup, and neither of those tiers has the `secretStore` mount, so
+  `ak-values.yaml` injects it as an environment variable from the `demo-credentials` Secret through
+  `ioHandler.extraEnv` and `wsGateway.extraEnv`. The per-tier keys keep it off the agent runner, the tier that
+  runs the LLM's tools and never builds the provider; the top-level `extraEnv` would reach every tier.
 - **Published flow.** `deploy/deploy.sh` without `local` works only once a release publishes a chart and an
   `agentkernel` version that carry the Kubernetes provider and `secretStore`; `deploy/deploy.sh local` uses this
   checkout for both.
@@ -229,8 +260,9 @@ not API.
 
 The REST modes above need no gateway tier. For token streaming, the third image
 (`ak-example-ws-gateway`, from `app_ws_gateway.py`) runs the WebSocket gateway: it
-authenticates each handshake with a demo JWT validator (users `user-1`/`user-2`, signature
-verification off, demo only), enqueues chat frames straight to the transport, and receives
+authenticates each handshake's `?token=` through the identity provider in `config.*.yaml` (the
+`static` provider, whose one credential is the `DEMO_AUTH_TOKEN` you created above, mapped to the
+principal `demo-user`), enqueues chat frames straight to the transport, and receives
 each reply chunk from the Response Handler on its authenticated `/internal/push` endpoint.
 The connection table rides the session store, which values-dev already puts on Valkey.
 
@@ -251,7 +283,7 @@ kubectl rollout status deployment/ak-agent-kernel-ws-gateway
 ```
 
 Then connect and stream (the client lives in this directory; `./build.sh` installed its
-dependencies):
+dependencies, and it sends the `DEMO_AUTH_TOKEN` you exported as the handshake's token):
 
 ```bash
 kubectl port-forward service/ak-agent-kernel-ws-gateway 18001:8000 &

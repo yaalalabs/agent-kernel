@@ -1,6 +1,6 @@
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.9.5"
+  version = "0.10.1"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration
@@ -28,6 +28,12 @@ module "containerized_agents" {
       overwrite_path = "/app_info"
     }
   ]
+
+  # Queue mode (the module's default): this service is the edge, and Pub/Sub pushes each request
+  # to a second, private agent-runner service built from the same image.
+  agent_runner = {
+    command = ["python", "-c", "from app import runner; runner()"]
+  }
 
   # Environment variables passed to container
   environment_variables = {

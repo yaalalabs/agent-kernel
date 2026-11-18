@@ -78,6 +78,8 @@ class SimpleModule(Module):
 
 def test_module_add_updates_agents(monkeypatch):
     class FakeCfg:
+        identity = None
+
         class session:
             type = "in_memory"
 

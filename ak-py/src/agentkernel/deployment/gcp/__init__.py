@@ -9,5 +9,5 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .akauthorizer import GCPAuthorizer
+from .akagentrunner import CloudRunAgentRunner
 from .akcloudrun import CloudRun

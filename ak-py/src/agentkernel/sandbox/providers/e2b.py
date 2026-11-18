@@ -18,13 +18,13 @@ explicitly on every SDK call.
 """
 
 import logging
-import os
 import time
 
 from e2b.exceptions import NotFoundException, TimeoutException
 from e2b.sandbox.commands.command_handle import CommandExitException
 from e2b_code_interpreter import AsyncSandbox
 
+from ...secret import SecretManager
 from ..base import Sandbox, SandboxProvider
 from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxError, SandboxGoneError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
@@ -139,10 +139,12 @@ class E2BSandboxProvider(SandboxProvider):
         return E2BSandbox(sandbox, capabilities=self.capabilities, installer=self._installer)
 
     def _api_key(self) -> str:
-        """Read the API key from the configured environment variable; missing fails loud."""
-        api_key = os.environ.get(self._config.api_key_env)
+        """Resolve the API key named by api_key_env (environment, then the secret provider); missing fails loud."""
+        api_key = SecretManager.current().get(self._config.api_key_env, default=None)
         if not api_key:
-            raise SandboxConfigError(f"e2b provider requires the {self._config.api_key_env} environment variable")
+            raise SandboxConfigError(
+                f"e2b provider requires {self._config.api_key_env}: set {SecretManager.current().describe(self._config.api_key_env)}"
+            )
         return api_key
 
     async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:

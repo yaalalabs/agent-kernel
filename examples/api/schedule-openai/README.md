@@ -17,29 +17,33 @@ A broker transport puts the management routes in a different process from the sc
 cancellation would report success while the timer kept firing.
 
 The management routes (`GET`/`PUT`/`DELETE /api/v1/schedules`) are mounted by the app, exactly like
-a Slack handler — `app.py` passes `ScheduleRESTRequestHandler()` to `IOHandler.run()`. Deferring a
+a Slack handler: `app.py` passes `ScheduleRESTRequestHandler()` to `IOHandler.run()`. Deferring a
 chat and the agent's own scheduling tools need no handler at all; only the management routes do.
 
-They are open here. To protect them, supply your own `Authoriser` — a subclass that validates the
-Bearer token against your authentication provider and resolves the caller's `user_id`:
-
-    from agentkernel.pipeline import IOHandler
-    from agentkernel.schedule import ScheduleRESTRequestHandler
-
-    IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=MyAuthoriser())])
-
-With an Authoriser configured, listings are scoped to the resolved user and reading or changing
-another user's schedule is rejected.
+Who is calling comes from the `identity` block in `config.yaml`, which names the provider that turns
+the bearer token into the request's principal. A task belongs to the principal whose request created
+it, so the management routes serve authenticated callers only (401 without a token), listings are
+always the caller's own, and reading or changing another user's schedule is a 403. Here the `static`
+provider maps one credential to the principal `alice`; the credential's value is not in the file but
+resolved from the environment (`ALICE_TOKEN`) when the app starts. To validate real tokens, swap the
+provider for `oidc` (Auth0, Keycloak, Okta or any other OIDC issuer), `cognito`, `entra` or
+`firebase`; [`examples/aws-serverless/openai-auth`](../../aws-serverless/openai-auth/README.md) shows
+an Auth0 block.
 
 The same capability is available to the agent itself: Agent Kernel injects the scheduling tools
 (`create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`, `delete_schedule`) and
 their guidance into every agent's system prompt, so the assistant can defer work when a user asks
 it to — the agent authors never describe these tools in their own instructions.
 
-Every scheduling request must carry a `user_id`: it is the owner the task is stored under and the
-identity later reads and changes are checked against.
+Every scheduling request must carry a bearer token: the principal it authenticates is the owner the
+task is stored under and the identity later reads and changes are checked against. A request nothing
+authenticated cannot schedule (403), and a `user_id` in the body is a 400: the acting user comes from
+the credential, never from the client.
 
-`OPENAI_API_KEY` must be set in the environment.
+`OPENAI_API_KEY` and `ALICE_TOKEN` must be set in the environment:
+
+    export OPENAI_API_KEY=sk-...
+    export ALICE_TOKEN=alice-token
 
 Install dependencies using:
 
@@ -59,8 +63,9 @@ Defer a chat to a one-time moment — `at` is a local wall-clock timestamp read 
 must be in the future:
 
     curl -i -X POST http://localhost:8000/api/v1/chat \
+      -H "Authorization: Bearer alice-token" \
       -H "Content-Type: application/json" \
-      -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
+      -d '{"prompt": "Send me the daily summary", "session_id": "ses-1",
            "schedule": {"at": "2030-01-31T09:00:00", "timezone": "Asia/Colombo"}}'
 
 The acknowledgement carries the task id and comes back as 202, not 200 — the request was accepted,
@@ -75,30 +80,34 @@ Defer a recurring chat — `cron` is a standard 5-field expression, and `session
 occurrence in its own fresh session instead of continuing `ses-2`:
 
     curl -i -X POST http://localhost:8000/api/v1/chat \
+      -H "Authorization: Bearer alice-token" \
       -H "Content-Type: application/json" \
-      -d '{"prompt": "Send the weekly report", "session_id": "ses-2", "user_id": "alice",
+      -d '{"prompt": "Send the weekly report", "session_id": "ses-2",
            "schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"}}'
 
 An unusable schedule is rejected at creation rather than at fire time:
 
     curl -i -X POST http://localhost:8000/api/v1/chat \
+      -H "Authorization: Bearer alice-token" \
       -H "Content-Type: application/json" \
-      -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
+      -d '{"prompt": "Send me the daily summary", "session_id": "ses-1",
            "schedule": {"at": "2020-01-01T09:00:00"}}'
 
     HTTP/1.1 400 Bad Request
 
     {"detail":{"error":"schedule 'at' must be in the future: '2020-01-01T09:00:00' has already passed in UTC","session_id":"ses-1"}}
 
-List a user's schedules (most recently updated first):
+List the caller's schedules (most recently updated first; the listing is always the caller's own):
 
-    curl "http://localhost:8000/api/v1/schedules?user_id=alice"
+    curl http://localhost:8000/api/v1/schedules -H "Authorization: Bearer alice-token"
 
     {
       "schedules": [
         {
           "task_id": "ae9a043b-27f7-480f-8655-5903fbfd200a",
           "user_id": "alice",
+          "principal": {"subject": "alice", "kind": "user", "provider": "static", "namespace": "static",
+                        "groups": [], "roles": [], "claims": {}, "actor": null, "credential_ref": null},
           "prompt": "Send the weekly report",
           "agent": null,
           "session_id": "ses-2",
@@ -119,13 +128,15 @@ Read one schedule (`trigger_count`, `last_triggered_at` and `last_request_id` tr
 occurrences, so a fired one-time task reads back as `"status": "completed"` with
 `"trigger_count": 1`):
 
-    curl http://localhost:8000/api/v1/schedules/ae9a043b-27f7-480f-8655-5903fbfd200a
+    curl http://localhost:8000/api/v1/schedules/ae9a043b-27f7-480f-8655-5903fbfd200a \
+      -H "Authorization: Bearer alice-token"
 
 Amend a schedule. `PUT` replaces the full amendable state rather than merging, so send every value,
 including the ones that are not changing. `status` covers the paused/active switch — a paused
 schedule keeps its record but stops firing:
 
     curl -X PUT http://localhost:8000/api/v1/schedules/ae9a043b-27f7-480f-8655-5903fbfd200a \
+      -H "Authorization: Bearer alice-token" \
       -H "Content-Type: application/json" \
       -d '{"prompt": "Send the weekly report", "cron": "0 8 * * 1", "timezone": "Asia/Colombo",
            "session_mode": "new", "status": "paused"}'
@@ -133,16 +144,18 @@ schedule keeps its record but stops firing:
 Cancel a schedule. The record survives as the audit trail, so the response is the task with
 `"status": "cancelled"`:
 
-    curl -X DELETE http://localhost:8000/api/v1/schedules/ae9a043b-27f7-480f-8655-5903fbfd200a
+    curl -X DELETE http://localhost:8000/api/v1/schedules/ae9a043b-27f7-480f-8655-5903fbfd200a \
+      -H "Authorization: Bearer alice-token"
 
 Let the agent schedule the work itself — this runs now, and the assistant calls `create_schedule`
 and replies with the task id it registered, which then shows up in `GET /api/v1/schedules`:
 
     curl -X POST http://localhost:8000/api/v1/chat \
+      -H "Authorization: Bearer alice-token" \
       -H "Content-Type: application/json" \
       -d '{"prompt": "Every weekday at 8am in Asia/Colombo, remind me to review the overnight alerts.",
-           "session_id": "ses-3", "user_id": "alice"}'
+           "session_id": "ses-3"}'
 
-To run tests:
+To run tests (the suite starts `app.py` with the token above):
 
     uv run pytest -s

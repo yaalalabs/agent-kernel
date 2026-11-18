@@ -62,11 +62,14 @@ def _delivery(*events):
     return {"object": "instagram", "entry": [{"messaging": list(events)}]}
 
 
+ACCOUNT = "ig-acct-1"
+
+
 def _message_event(text="hello", mid="mid.1", attachments=None):
     message = {"mid": mid, "text": text}
     if attachments:
         message["attachments"] = attachments
-    return {"sender": {"id": SENDER}, "message": message}
+    return {"sender": {"id": SENDER}, "recipient": {"id": ACCOUNT}, "message": message}
 
 
 def _fake_request(body, headers=None, query=None):
@@ -89,6 +92,7 @@ class TestParse:
         # Instagram has no thread: the Instagram-scoped user is the conversation.
         assert request.session_id == SENDER
         assert request.user_id == SENDER
+        assert request.namespace == ACCOUNT, "the business account is the scope an Instagram-scoped id is unique within (#603)"
         assert request.request_id == "mid.1", "the platform message id dedupes a retry"
         assert request.reply_context == {"recipient_id": SENDER}
         assert isinstance(request.requests[0], AgentRequestText)

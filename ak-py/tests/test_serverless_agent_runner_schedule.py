@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agentkernel.core.model import Principal
 from agentkernel.deployment.aws.serverless.akagentrunner import ServerlessAgentRunner, ServerlessStreamAgentRunner
 
 ENDPOINT_URL = "https://example.execute-api.us-east-1.amazonaws.com/prod"
@@ -30,7 +31,13 @@ def _make_record(body: dict, request_id: str | None = None, user_id: str | None 
 
 
 def _trigger_body(**extras) -> dict:
-    return {"prompt": "run the weekly report", "session_id": "s1", "request_id": "sched-run-1", "user_id": "sched-user", **extras}
+    return {
+        "prompt": "run the weekly report",
+        "session_id": "s1",
+        "request_id": "sched-run-1",
+        "principal": {"subject": "sched-user", "provider": "static", "namespace": "static"},
+        **extras,
+    }
 
 
 @pytest.mark.parametrize("runner", [ServerlessAgentRunner, ServerlessStreamAgentRunner])
@@ -51,7 +58,7 @@ class TestRequestMetadataBodyFallback:
 
     def test_already_validated_body_is_reused_instead_of_reparsed(self, runner):
         record = _make_record({"prompt": "hi", "session_id": "s1"})
-        body = MagicMock(request_id="from-caller", user_id="caller-user")
+        body = MagicMock(request_id="from-caller", principal=Principal(subject="caller-user", provider="static", namespace="static"))
 
         attrs = runner._get_record_attributes(raw_queue_message=record, body=body)
 

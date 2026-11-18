@@ -91,6 +91,11 @@ class TestKeyValueCacheLogging:
     def test_clear_logs(self, cache_log):
         KeyValueCache(data={"name": "John"}).clear()
 
+        assert _messages(cache_log) == ["Cleared application keys"]
+
+    def test_clear_all_logs(self, cache_log):
+        KeyValueCache(data={"name": "John", "ak.principal": "p"})._clear_all()
+
         assert _messages(cache_log) == ["Cleared all keys"]
 
     def test_logs_are_debug_level(self, cache_log):
