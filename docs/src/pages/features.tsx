@@ -33,6 +33,7 @@ import {
   MdCloudUpload,
   MdFactCheck,
   MdVerifiedUser,
+  MdListAlt,
 } from "react-icons/md";
 import {
   FaSlack,
@@ -946,6 +947,20 @@ function CoreFeatures() {
       link: "/docs/next/advanced/identity-and-access",
     },
     {
+      icon: <MdListAlt />,
+      title: "Agent Registry & Catalog",
+      description:
+        "Every agent carries one descriptor, declared in code or in configuration, and the agent catalog, A2A cards, MCP tools and the AG-UI listing are all built from it.",
+      highlights: [
+        "Name, version, description, owner, tags, skills and tools",
+        "GET /api/v1/agents catalog with tag filter and pagination",
+        "Per-agent surfaces: REST, A2A, MCP, AG-UI",
+        "In-memory, Redis, Valkey or DynamoDB backend",
+      ],
+      // The agent registry is only in the unreleased docs until the next release; drop `next` once it ships.
+      link: "/docs/next/core-concepts/configuration#agent-registry",
+    },
+    {
       icon: <MdNetworkCheck />,
       title: "MCP & A2A Protocols",
       description:
@@ -953,6 +968,7 @@ function CoreFeatures() {
       highlights: [
         "MCP Server mode",
         "A2A Server mode",
+        "Agent cards and tool descriptions from the agent registry",
         "Cross-agent coordination",
         "Protocol-future-proofed",
       ],
@@ -1920,7 +1936,7 @@ function ProtocolSupport() {
       icon: <MdExtension />,
       title: "MCP - Model Context Protocol",
       description:
-        "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP tools.",
+        "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP tools, each described by the text you declare for its agent.",
       link: "/docs/api/mcp-server",
       linkLabel: "MCP Server Docs",
     },
@@ -1929,7 +1945,7 @@ function ProtocolSupport() {
       icon: <MdHub />,
       title: "A2A - Agent-to-Agent",
       description:
-        "Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.",
+        "Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration, with each agent's card built from its registry descriptor and declaring the security scheme of your identity provider.",
       link: "/docs/api/a2a-server",
       linkLabel: "A2A Server Docs",
     },

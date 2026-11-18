@@ -21,6 +21,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
 - **AG-UI Server**: Built-in [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) handler for driving any streaming-capable agent from an AG-UI frontend, with opt-in shared state and client-context tools
+- **Agent Registry**: One descriptor per agent (name, version, description, owner, tags, skills, tools and the surfaces it is served on), declared with `Module.describe` or `registry.agents.<id>`; the agent catalog (`GET /api/v1/agents`), A2A cards, MCP agent tools and the AG-UI listing are built from it, with pluggable backends (`in_memory`, `redis`, `valkey`, `dynamodb`)
 - **A2UI**: Label a JSON reply as [A2UI](https://a2ui.org/) from two config keys, so a client receives a generative-UI document as an object with its format named rather than a string to parse twice
 - **REST API**: Built-in REST API server for agent interaction
 - **Test Automation**: Built-in test suite for testing agents

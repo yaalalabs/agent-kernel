@@ -53,7 +53,7 @@ registry:
 ```
 
 An agent's instructions are never published. An agent with no declared description still gets a tool, described
-only as "Sends a prompt to the '<id>' agent and returns its reply.", and a warning at startup names it.
+only as `Sends a prompt to the '<id>' agent and returns its reply.`, and a warning at startup names it.
 
 Every agent is exposed unless its descriptor's `surfaces` leaves `mcp` out (`rest`, `a2a`, `mcp`, `agui`; unset
 means all of them):

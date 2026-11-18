@@ -645,7 +645,15 @@ the spec section it changes.
   `integrations/agui.md`, `core-concepts/configuration.md`, `core-concepts/module.md`,
   `advanced/queue-mode-guide.md`), `ak-py/README.md`, the dev skills `ak-dev-architecture`,
   `ak-dev-new-framework-integration` and `ak-dev-testing-conventions`, and the user skill
-  `ak-add-capabilities` with its evals. The landing and feature pages were not touched.
+  `ak-add-capabilities` with its evals.
+- **Landing and feature pages.** An "Agent Registry & Catalog" card on the landing page's Connect
+  tab (`FeatureExplorer/data.tsx`) and under Core Capabilities on the features page
+  (`features.tsx`), both linking to the unreleased `configuration#agent-registry` section; the
+  Redis, Valkey and DynamoDB marquee tiles name the agent registry among the stores they back;
+  the MCP and A2A cards say where a tool's text and a card come from; and the What's New tip in
+  `docs/docs/intro.md` and the Features list in `ak-py/README.md` each carry an Agent Registry
+  entry. The `WhatsNewBanner` in `index.tsx`, the persona pages and the root `README.md` were
+  left as they were.
 
 ## Phase D: Authorization (iterations 17 to 20)
 
@@ -864,7 +872,9 @@ user-skill updates), and those for phase C with phase C (see "Phase C as shipped
      description and version, and notes that an agent registered after a process mounted its A2A
      routes is served there after a restart (spec 6, A2A card); `api/mcp-server.md` says the same
      of an agent's MCP tool (spec 8.6). Still to write: what the access gate changes on each of
-     these pages (caller filtering, the 403 and 404), and the landing and feature pages.
+     these pages (caller filtering, the 403 and 404), and what phases D to F add to the landing
+     and feature pages (the registry card, the store tiles and the What's New entry landed with
+     phase C).
 - **Verify:** `grep -rn "AuthValidator\|Authoriser\|acting_user_id\|mcp.agents\|a2a.agents\|
   agui.agents\|userId\|get_a2a_card" docs/docs ak-py/README.md README.md ak-deployment` returns
   only the frozen `docs/versioned_docs/` snapshots, the Gmail API's `userId="me"`, and the
