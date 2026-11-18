@@ -153,7 +153,7 @@ Set the default test mode via a `test-config.yaml` file in the directory you run
 mode: fallback  # Options: score, llm, fallback
 evaluator: deepeval  # Built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -168,7 +168,7 @@ Or via environment variables:
 
 ```bash
 export AK_TEST__MODE=llm
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```

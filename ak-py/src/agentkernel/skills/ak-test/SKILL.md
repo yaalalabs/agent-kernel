@@ -53,7 +53,7 @@ For llm mode, configure the llm model:
 ```yaml
 mode: llm
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
 ```
 

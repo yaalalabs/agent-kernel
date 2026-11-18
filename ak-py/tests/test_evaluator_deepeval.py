@@ -135,6 +135,7 @@ def test_evaluate_by_llm_success(evaluator):
     (fake,) = _FakeGEval.instances
     assert fake.kwargs["criteria"] is None
     assert fake.kwargs["evaluation_steps"] == _DEFAULT_LLM_EVALUATION_STEPS
+    assert fake.kwargs["top_logprobs"] == 5  # newer OpenAI models reject GEval's default of 20
     assert fake.test_case.input == "capital of France?"
     assert fake.test_case.actual_output == "It's Paris."
     assert fake.test_case.expected_output == "Paris"
@@ -185,9 +186,9 @@ def test_llm_model_is_lazily_created_and_cached(monkeypatch, evaluator):
     created = []
 
     class _FakeLiteLLMModel:
-        def __init__(self, model_name):
+        def __init__(self, model_name, **kwargs):
             self.model_name = model_name
-            created.append(model_name)
+            created.append((model_name, kwargs))
 
     monkeypatch.setattr(ak_deepeval_module, "LiteLLMModel", _FakeLiteLLMModel)
     assert created == []  # never constructed by __init__
@@ -196,4 +197,35 @@ def test_llm_model_is_lazily_created_and_cached(monkeypatch, evaluator):
     evaluator.evaluate_by_llm(case)
     evaluator.evaluate_by_llm(case)
 
-    assert created == ["openai/gpt-4o-mini"]  # constructed once, then cached
+    # constructed once, then cached
+    assert created == [("openai/gpt-6-luna", {"generation_kwargs": {"reasoning_effort": "none", "drop_params": True}})]
+
+
+@pytest.mark.parametrize(
+    "provider, model, reasoning_params",
+    [
+        ("openai", "gpt-6-luna", {"reasoning_effort": "none"}),
+        ("anthropic", "claude-sonnet-4-5", {"reasoning_effort": "none"}),
+        ("gemini", "gemini-2.5-flash", {"reasoning_effort": "none"}),
+        ("gemini", "gemini-2.5-pro", {}),  # can't turn thinking off: LiteLLM's thinkingBudget=0 would be rejected
+        ("openai", "gpt-4.1-mini", {}),  # not a reasoning model
+    ],
+)
+def test_llm_model_turns_reasoning_off_where_the_model_can(monkeypatch, provider, model, reasoning_params):
+    """Every judge gets plain LiteLLM params, asking for reasoning off only from models that can turn it off."""
+    import agentkernel.test.core.evaluator.deepeval as ak_deepeval_module
+
+    created = []
+
+    class _FakeLiteLLMModel:
+        def __init__(self, model_name, **kwargs):
+            created.append((model_name, kwargs))
+
+    monkeypatch.setattr(ak_deepeval_module, "LiteLLMModel", _FakeLiteLLMModel)
+    config = AKTestConfig()
+    config.llm.provider = provider
+    config.llm.model = model
+
+    DeepevalAKEvaluator(config).evaluate_by_llm(AKEvaluationCase(user_input="q", actual="a", expected="e"))
+
+    assert created == [(f"{provider}/{model}", {"generation_kwargs": {**reasoning_params, "drop_params": True}})]
