@@ -322,6 +322,7 @@ class ThreadRequestHandler(RequestHandler):
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
         self._reject_unprocessable(body)
         self._reject_unroutable(body)
+        self._reject_unqueueable_attachments(body)
         if body.schedule is None:
             await self._record_user_message(body)
         return await super().run_chat(body, request)

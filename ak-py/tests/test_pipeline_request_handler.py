@@ -10,6 +10,7 @@ from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest
+from agentkernel.core.multimodal.storage import AttachmentStorageManager
 from agentkernel.core.runtime import Runtime
 from agentkernel.pipeline import request_handler
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
@@ -445,6 +446,110 @@ class TestMultipart:
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
         response = _client().post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "x", "session_id": "s1"})
         assert response.status_code == 404
+
+
+BASE64_HELLO = "aGVsbG8="
+
+
+def _broker_client(monkeypatch, *, multimodal=True, storage_type="in_memory", shared=None) -> TestClient:
+    """A handler on a broker transport (#871), with the in-memory transport and store injected so nothing dials out."""
+    if multimodal:
+        monkeypatch.setenv("AK_MULTIMODAL__ENABLED", "true")
+        monkeypatch.setenv("AK_MULTIMODAL__STORAGE_TYPE", storage_type)
+    _configure(monkeypatch, mode="rest_async")
+    monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
+    if shared is not None:
+        monkeypatch.setattr(AttachmentStorageManager, "store_is_shared", classmethod(lambda cls: shared))
+    handler = RequestHandler()
+    handler._transport = InMemoryTransport()
+    handler._response_store = InMemoryResponseStore()
+    app = FastAPI()
+    app.include_router(handler.get_router())
+    return TestClient(app)
+
+
+def _queued() -> list:
+    return InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05)
+
+
+def _with_file(file_data: str, **extra) -> dict:
+    return {
+        "prompt": "hi",
+        "session_id": "s1",
+        "agent": AGENT_NAME,
+        "files": [{"file_data": file_data, "name": "a.txt", "mime_type": "text/plain"}],
+        **extra,
+    }
+
+
+class TestBrokerUploadChecks:
+    """#871: on a broker, files that cannot be saved where the runner reads them are refused before the queue."""
+
+    def _assert_refused(self, response, fragment: str) -> None:
+        assert response.status_code == 400
+        assert fragment in response.json()["detail"]["error"]
+        assert response.json()["detail"]["session_id"] == "s1"
+        assert _queued() == []
+
+    def test_a_plain_text_data_uri_is_refused(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True)
+        self._assert_refused(client.post(CHAT, json=_with_file("data:text/plain,hello%20world")), "plain-text data: URI")
+
+    def test_file_bytes_without_multimodal_are_refused(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, multimodal=False)
+        self._assert_refused(client.post(CHAT, json=_with_file(BASE64_HELLO)), "multimodal support is disabled")
+
+    def test_an_image_counts_as_file_bytes(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, multimodal=False)
+        body = {"prompt": "hi", "session_id": "s1", "images": [{"image_data": f"data:image/png;base64,{BASE64_HELLO}", "name": "a.png"}]}
+        self._assert_refused(client.post(CHAT, json=body), "multimodal support is disabled")
+
+    def test_file_bytes_with_an_unshared_store_are_refused(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, storage_type="in_memory")
+        self._assert_refused(client.post(CHAT, json=_with_file(BASE64_HELLO)), "keeps files in the process that saved them")
+
+    def test_a_json_file_over_max_file_size_is_refused(self, monkeypatch, dummy_agent):
+        monkeypatch.setenv("AK_API__MAX_FILE_SIZE", "4")
+        client = _broker_client(monkeypatch, shared=True)
+        self._assert_refused(client.post(CHAT, json=_with_file(BASE64_HELLO)), "exceeds maximum size")
+
+    def test_a_file_at_max_file_size_passes(self, monkeypatch, dummy_agent):
+        monkeypatch.setenv("AK_API__MAX_FILE_SIZE", "5")  # "hello" decodes to exactly 5 bytes
+        client = _broker_client(monkeypatch, shared=True)
+        assert client.post(CHAT, json=_with_file(BASE64_HELLO)).status_code == 200
+        assert len(_queued()) == 1
+
+    def test_a_link_needs_no_store(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, multimodal=False)
+        assert client.post(CHAT, json=_with_file("https://example.com/a.txt")).status_code == 200
+        assert len(_queued()) == 1
+
+    def test_a_text_chat_works_with_an_unshared_store(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, storage_type="in_memory")
+        assert client.post(CHAT, json={"prompt": "hi", "session_id": "s1", "agent": AGENT_NAME}).status_code == 200
+        assert len(_queued()) == 1
+
+    def test_the_in_memory_transport_is_never_checked(self, monkeypatch, dummy_agent):
+        _configure(monkeypatch, mode="rest_async")  # multimodal off: refused on a broker, fine in-process
+        response = _client().post(CHAT, json=_with_file("data:text/plain,hello"))
+        assert response.status_code == 200
+        assert len(_queued()) == 1
+
+    def test_startup_warns_about_an_unshared_store(self, monkeypatch, caplog):
+        with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
+            _broker_client(monkeypatch, storage_type="in_memory")
+        assert "File uploads will be refused" in caplog.text
+        assert "multimodal.storage_type 'in_memory'" in caplog.text
+
+    def test_startup_survives_an_unknown_store(self, monkeypatch, caplog):
+        with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
+            _broker_client(monkeypatch, storage_type="nonsense")
+        assert "unknown multimodal storage_type 'nonsense'" in caplog.text
+
+    def test_startup_is_quiet_with_a_shared_store(self, monkeypatch, caplog):
+        with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
+            _broker_client(monkeypatch, shared=True)
+        assert "File uploads will be refused" not in caplog.text
 
 
 class TestWebSocketModeGuards:
