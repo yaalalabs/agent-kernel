@@ -1,0 +1,215 @@
+---
+sidebar_position: 9
+---
+
+# On-Prem / Kubernetes Deployment
+
+Deploy Agent Kernel's queue-execution pipeline to any Kubernetes cluster with the official
+Helm chart: an `io-handler` Deployment (REST API + Response Handler), an `agent-runner`
+Deployment (the consumers executing your agents), and an optional `ws-gateway` Deployment for
+WebSocket delivery. Backing services (Valkey, NATS JetStream) ship as condition-gated
+dependencies of their official charts, and deployment flavors (dev, baremetal, AWS EKS) are
+values files over one set of templates.
+
+The chart lives at
+[`ak-deployment/ak-k8s`](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
+and is published as an OCI artifact.
+
+## Topology
+
+```mermaid
+flowchart LR
+    C[Client] --> GW[Gateway API<br/>HTTPRoute]
+    GW -->|REST| IO[io-handler<br/>Request + Response Handler]
+    GW -->|WebSocket| WSG[ws-gateway]
+    IO --> IN[(Input queue<br/>nats / kafka / sqs)]
+    WSG --> IN
+    IN --> AR[agent-runner<br/>executes agents]
+    AR --> OUT[(Output queue)]
+    OUT --> IO
+    IO -->|reply push| WSG
+    IO --> RS[(Valkey<br/>responses + sessions)]
+    AR --> RS
+
+    style IO fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style WSG fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+This is the same five-component [queue pipeline](../advanced/queue-mode-guide) that runs
+in-process locally and over SQS on AWS, split into the two-process topology: the transport is
+configuration, not code.
+
+A2A and MCP are served by the io-handler and executed by the agent-runner through the same queues;
+see the example's [A2A and MCP section](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode#a2a-and-mcp)
+for the setup (agents loaded in both images, `mcp.stateless_http` for several io-handler replicas).
+
+## Quick Start
+
+Build your application images (the
+[`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
+example walks this end to end on k3d, microk8s, and k3s), load them into your cluster, then:
+
+```bash
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 \
+  -f agent-kernel/values-dev.yaml \
+  --set ioHandler.image.repository=<io image> \
+  --set agentRunner.image.repository=<runner image> --set image.tag=<tag>
+
+kubectl port-forward service/ak-agent-kernel-io 8000:80
+curl -s -X POST http://localhost:8000/api/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "Hello", "session_id": "s1", "agent": "triage"}'
+```
+
+The chart is published to GHCR as an OCI artifact with every Agent Kernel release, versioned
+like the package, and the flavor values files (`values-dev.yaml`, `values-baremetal.yaml`,
+`values-eks.yaml`) ship inside it, which is what the `helm pull --untar` unpacks. To work from
+a repository checkout instead (unreleased chart changes), add the valkey and nats chart repos,
+run `helm dependency build ak-deployment/ak-k8s/chart`, and install from that path.
+
+The dev flavor runs single replicas over in-cluster NATS and Valkey with the JetStream
+objects auto-provisioned at startup. The smallest install is the single-process profile
+documented in `values-dev.yaml`: one pod, in-process queues, no backing services at all.
+
+## The Application Image Contract
+
+The chart runs *your* images: your `config.yaml` (baked into the image) declares what runs,
+and the chart injects where it runs as `AK_*` environment variables, the same app/infra split
+the ECS Terraform deployment uses.
+
+| Deployment | Entry point |
+|---|---|
+| io-handler | `IOHandler.run()`, or `IOHandler.run(handlers=[WebhookRESTRequestHandler(...)])` to serve messaging webhooks alongside the chat route; REST routes authenticate through the `identity` block in your `config.yaml`, and the single-process profile's co-hosted WebSocket route needs that block |
+| agent-runner | registers your agent modules, then `AgentRunner.run()` |
+| ws-gateway | `WebSocketGateway.run()`; it authenticates each handshake's `?token=` through the identity provider named by the `identity` block in your `config.yaml` and refuses to start without one |
+
+### The poller tier (Gmail)
+
+A *polled* integration has no webhook, so it runs as its own workload calling
+`PollerRunner.run(GmailInboundAdapter())`, at **one replica**. It serves no HTTP, so it must not
+ride the io tier's CPU autoscaler: scaling the webhook tier for Slack load would otherwise
+multiply the poll rate for no reason, and the poller's already-handled record is per process.
+
+The chart does not template this Deployment yet; run it as your own workload (a copy of the
+`agent-runner` Deployment with `replicas: 1` and your poller entry point is enough). On the
+`in_memory` transport there is no separate container at all: pass
+`IOHandler.run(pollers=[PollerRunner(adapter)])` and it runs as a peer thread.
+
+## Secret Resolution (Kubernetes Secrets)
+
+Model provider credentials are yours to provide. Either inject them as environment variables
+through `extraEnv` (a `secretKeyRef`), or mount whole Secrets with `secretStore` and select
+`secret.provider.type: kubernetes` in your `config.yaml`:
+
+```yaml
+secretStore:
+  enabled: true
+  secrets:
+    - name: openai-credentials   # created by you, with a data key named OPENAI_API_KEY
+```
+
+Each listed Secret is mounted read-only at `/var/run/secrets/agentkernel/<name>` into the tier that
+executes agents only (`agent-runner`, or `io-handler` in the single-process profile), with no RBAC.
+`SecretManager.current().get("OPENAI_API_KEY")` then reads the file, and a set environment variable
+still wins. New keys and rotated values reach the mount without a restart. For the lookup rules,
+key naming, rotation and security notes, see the
+[Secret Resolution guide](../advanced/secrets.md) and the
+[chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s).
+
+The credentials of a `static` identity provider resolve the same way: each key under
+`identity.provider.static.principals` names a secret, never a value. The io-handler and ws-gateway
+tiers build the provider, and the mount reaches only the agent-executing tier, so in the split
+topology deliver the credential through `extraEnv` from a Secret: the per-tier `ioHandler.extraEnv`
+and `wsGateway.extraEnv` keep it off the agent runner, as [examples/k8s/openai-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
+does with its `demo-credentials` Secret and `DEMO_AUTH_TOKEN`. In the single-process profile the
+io handler is that tier and can read the credential from its mount. An `oidc`, `cognito`, `entra` or
+`firebase` provider needs no secret, only the `auth` extra in the image; see
+[Identity and Access](../advanced/identity-and-access.md).
+
+## Flavors
+
+Flavors never fork templates: every difference is a value.
+
+| Values file | Posture |
+|---|---|
+| `values-dev.yaml` | Micro-cluster (k3d, kind, microk8s, k3s): single replicas, auto-provisioned JetStream, TLS off, port-forward entry |
+| `values-baremetal.yaml` | Envoy Gateway class, cert-manager issuer annotations, NACK-managed JetStream objects, OpenEBS hostpath storage, MetalLB prerequisite |
+| `values-eks.yaml` | AWS Load Balancer Controller gateway classes (ALB), ACM certificates, EBS gp3 storage, Pod Identity; `sqs`, `kafka`, and `nats` transports all valid |
+
+Prerequisites (Gateway API CRDs and an implementation, MetalLB, cert-manager, KEDA, the NACK
+controller, the Strimzi operator) are documented per flavor and deliberately never installed
+by the chart.
+
+## Transports
+
+`transport.type` selects the broker; the pipeline semantics (per-session ordering, bounded
+retry, dedup, permanent-failure replies) are identical over all of them:
+
+- **`nats`** (default, recommended on-prem): JetStream work-queue streams with one durable
+  consumer per partition. Dev clusters auto-provision; production manages the objects
+  declaratively through the chart's NACK CRs and fails loudly on a missing object.
+- **`kafka`**: pair with the Strimzi operator; the chart renders the cluster, node pool, and
+  topics as CRs.
+- **`sqs`**: no broker to operate; the EKS option via Pod Identity.
+
+## WebSocket Mode (async)
+
+Enabling `wsGateway` adds the gateway tier for the `async` execution mode, with either message
+type (the chart's `execution.messageType` value, injected as `AK_EXECUTION__MESSAGE_TYPE`:
+`complete` for one reply, `delta` for token chunks): gateway
+pods own the client sockets, enqueue chat frames directly to the transport, and receive each
+reply or token chunk from the Response Handler on an authenticated internal push endpoint,
+addressed through a shared connection store on the session backend. Replies reach all of a
+user's connections on whichever gateway pod holds them, and io/runner pods roll without
+dropping a single connection. See the
+[WebSocket delivery section of the Queue Mode Guide](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-async)
+for the mechanism and the
+[chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
+for the values.
+
+## Sandbox Worker Tier
+
+Enabling `sandboxWorker` adds the sandbox broker worker: it consumes sandbox execution
+requests from the sandbox queues (same transport, its own queue names), runs them through a
+sandbox provider (typically `kubernetes` pods running as a ServiceAccount the chart binds to
+nothing, so the RBAC you grant it is the security boundary), and returns completions over the sandbox output queue into the shared response
+store. The tier ships with its own ServiceAccount and RBAC, KEDA scaling on the sandbox input
+backlog, and values-gated namespace hardening (Pod Security Admission, default-deny egress,
+quotas).
+
+The tier also installs **standalone**: when the rest of Agent Kernel runs outside the cluster
+(Lambda mode, ECS), disable `ioHandler` and `agentRunner` and this chart deploys only the
+sandbox worker; the agent side and the worker then meet solely on the shared sandbox queues
+and response store. See the
+[chart README's sandbox worker section](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
+for the values and the agent-side mirror configuration.
+
+**Upgrade the sandbox worker before the agent tier.** The worker enforces the sandbox
+permissions the agent side sends (`policy.languages`, `policy.package_install`); an older
+worker would ignore them. See [Sandbox → The `queue` flavor](../advanced/sandbox.md#the-queue-flavor).
+
+## Autoscaling
+
+The `agent-runner` tier scales on queue depth via KEDA (Kafka consumer lag, NATS JetStream
+pending, or SQS queue length, selected by the transport), because LLM-bound work idles the CPU
+while requests back up. The `io-handler` tier scales on plain CPU. Runners drain gracefully on
+SIGTERM: consumers stop claiming work and finish in-flight turns within
+`terminationGracePeriodSeconds`.
+
+## Observability and Air-Gap
+
+Observability ships as documented recipes (kube-prometheus-stack, per-broker exporters, an
+OpenTelemetry Collector funnel for the Langfuse/OpenLLMetry/Logfire/CloudWatch tracing providers), not as
+chart dependencies. Air-gapped installs set `global.imageRegistry` (application images and
+Valkey) plus `global.image.registry` (the NATS subchart) and mirror the per-release
+`images.txt` manifest. Both are covered in the
+[chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s).
+
+## Next Steps
+
+- [The end-to-end example (k3d / microk8s / k3s)](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
+- [Chart README: values, prerequisites, flavors, publishing](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
+- [Queue Mode Guide](../advanced/queue-mode-guide)
+- [Deployment Overview](./overview)
