@@ -475,6 +475,10 @@ class MAFRunner(Runner):
         :param agent: The agent that paused.
         :param session: The session the record is written to.
         :param native_session: The native session holding the pending tool calls.
+        `answer_together` mirrors what :meth:`_reject_unresumable` enforces, so a surface drawing
+        controls can offer one submit for the whole pause rather than a control per question that
+        would be refused on its own.
+
         :param approvals: The `function_approval_request` items MAF returned.
         :return: The paused reply, carrying the assigned run id.
         :raises ValueError: If the run has no session to record the pause in.
@@ -491,7 +495,9 @@ class MAFRunner(Runner):
             interruptions=interruptions,
             payload={"session": native_session.to_dict(), "requests": {i.id: request.to_dict() for i, request in zip(interruptions, approvals)}},
         )
-        return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
+        return AgentPausedReplyAny(
+            run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions, answer_together=True
+        )
 
     @classmethod
     def _interruption(cls, request: Content) -> PausedInterruption:

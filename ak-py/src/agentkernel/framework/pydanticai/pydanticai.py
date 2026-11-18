@@ -247,6 +247,10 @@ class PydanticAIRunner(BaseRunner):
 
         :param agent: The agent that paused.
         :param session: The session the record is written to.
+        `answer_together` mirrors what :meth:`_reject_partial` enforces, so a surface drawing
+        controls can offer one submit for the whole pause rather than a control per question that
+        would be refused on its own.
+
         :param result: The run result whose `output` is a `DeferredToolRequests`.
         :return: The paused reply, carrying the assigned run id.
         """
@@ -263,7 +267,9 @@ class PydanticAIRunner(BaseRunner):
             interruptions=interruptions,
             payload={"messages": to_jsonable_python(result.all_messages())},
         )
-        return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
+        return AgentPausedReplyAny(
+            run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions, answer_together=True
+        )
 
     @staticmethod
     def _interruption(part: Any, kind: Literal["tool_call", "input_required"]) -> PausedInterruption:
@@ -388,9 +394,7 @@ class PydanticAIRunner(BaseRunner):
         """
         if decision.status == "approved":
             return ToolApproved(override_args=decision.payload) if decision.payload is not None else ToolApproved()
-        if decision.status == "denied":
-            return ToolDenied(message=decision.message) if decision.message else ToolDenied()
-        return ToolDenied(message=self.CANCELLED_DECISION_MESSAGE)
+        return ToolDenied(message=self._rejection_text(decision))
 
     async def resume(
         self,
