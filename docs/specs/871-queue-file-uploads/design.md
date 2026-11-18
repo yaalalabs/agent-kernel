@@ -50,6 +50,7 @@ Code references are at `develop` @ `d0453388`.
   - This covers both `POST /api/v1/chat` (base64 in JSON) and `POST /api/v1/chat-multipart` (form upload). The multipart route already ends in `run_chat`, so it is one change in one place.
   - The offload runs in `run_chat`, right after `_reject_unroutable` and before the streaming (SSE) branch (`pipeline/request_handler.py:394-398`). Both reply paths then get the offloaded request: `_run_chat_stream` and `enqueue_and_wait` each enqueue the body they are given (`pipeline/request_handler.py:472`, `pipeline/request_handler.py:261`).
   - Saving a file is blocking I/O, so the offload runs off the event loop (`asyncio.to_thread`), like the enqueue already does.
+  - With threads on, `ThreadRequestHandler` already saves files at the edge and sends only IDs (`integration/thread/thread_chat.py:329-355`). It gains only the new checks below, run before it writes anything to the thread.
   - The edge builds the request list with the existing `RequestBuilder` (the code that turns a chat request into agent inputs), so its checks still run: a missing `mime_type` is still rejected, and extra fields still reach the agent.
   - It sends that list in the existing `requests` field, and sends no `files` or `images`.
   - Files given as a link (`http://`, `https://`, `s3://`) have no bytes to save. They travel as they do today.
@@ -69,7 +70,7 @@ Code references are at `develop` @ `d0453388`.
 - **A store the runner can't read** (`in_memory`, `session_cache`) on a broker transport, with multimodal on:
   - The service still starts. The REST pipeline has no such check today, so text-only chats on these deployments work and must keep working.
   - Startup logs a warning that names the store and says uploads need `redis` or `dynamodb`.
-  - A request that carries file bytes gets HTTP 400 with the existing message from the chat-app check (`integration/adapter/producer.py:52-58`). Requests without files are unaffected. (Decision 6.)
+  - A request that carries file bytes gets HTTP 400, worded like the chat-app check (`integration/adapter/producer.py:52-58`) but naming the REST route. Requests without files are unaffected. (Decision 6.)
 - **File too big for the store**: DynamoDB items are capped at 400 KB, so files over about 300 KB can't be saved (base64 adds a third). The edge returns HTTP 400 that names the limit and suggests `redis`, instead of a 500 from AWS. (Decision 2.)
 - **File over `api.max_file_size`**: rejected as today (`pipeline/request_handler.py:548-549`). The JSON route gets the same check.
 
@@ -89,6 +90,7 @@ Code references are at `develop` @ `d0453388`.
 ### Deployments
 
 - AWS ECS: expose `POST <agent>-multipart` in queue mode too. It stays hidden in WebSocket mode.
+  - This depends on #870. On `develop`, ECS queue mode serves the plain `RestHandler` (`deployment/aws/containerized/core/api/rest_api.py:6`), which has no upload route and doesn't save files. #870 moves ECS onto the pipeline `RequestHandler`, which this change updates.
 - GCP (containerized and serverless): the same change.
 - Azure: already exposed. It starts working once the code change lands.
 - Each deployment README says that uploads in queue mode need `multimodal` with a Redis (or DynamoDB) store, and states the gateway's request body limit (decision 4).
