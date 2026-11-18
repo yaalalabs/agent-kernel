@@ -352,6 +352,7 @@ What a hook can not do:
 - `TextDelta` and `AudioDelta` are separate events. Rewriting one does not change the other.
 - Audio that has already played cannot be taken back.
 - A hook runs on the playback path, so a slow hook delays the audio and every event behind it. Agent Kernel sets no time limit.
+- A hook that holds audio and releases it at the turn end, when the caller barges in during that release: the interrupt reaches the edge after the turn's `done`, so the LiveKit edge keeps its interrupted state until the next `done` and drops that next turn's caption once.
 - The input guardrail checks typed text only. Agent Kernel logs one startup warning per realtime agent when `guardrail.input.enabled` is on.
 
 ## Implementing Hooks
