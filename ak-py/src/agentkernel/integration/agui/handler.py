@@ -8,11 +8,10 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from ...api.handler import AuthorisedRESTRequestHandler
-from ...core.base import Agent
 from ...core.chat_service import AgentHandler, ChatService
 from ...core.config import AKConfig
 from ...core.event import RunPaused
-from ...core.model import Principal
+from ...core.model import AgentDescriptor, Principal
 from ...core.runtime import Runtime
 from ...core.service import AgentService
 from .mapping import AGUIMapper
@@ -25,7 +24,8 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
     def __init__(self):
         """
-        :raises ValueError: If the `agui` extra is missing, or `agui.default_agent` is not in `agui.agents`.
+        :raises ValueError: If the `agui` extra is missing, or `agui.default_agent` names an agent that is not
+            exposed on AG-UI: one the agent registry does not know yet, or whose surfaces leave AG-UI out.
         :raises AKConfigError: If no identity provider is configured (the ``AuthorisedRESTRequestHandler``
             rule). The AG-UI routes run agents on a caller's behalf, so they are never served
             anonymously; with nobody able to authenticate, mounting them is a configuration error
@@ -46,28 +46,30 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         config = AKConfig.get().agui
         if config.default_agent is not None and not self._is_exposed(config.default_agent):
             raise ValueError(
-                f"agui.default_agent is '{config.default_agent}', which agui.agents does not expose. "
-                f"Add it to agui.agents, or remove the default_agent setting."
+                f"agui.default_agent is '{config.default_agent}', which is not exposed on AG-UI: either the agent registry "
+                f"knows no agent with that id yet, or registry.agents.{config.default_agent}.surfaces leaves out agui. Load "
+                f"the agent before building this handler and expose it on agui, or remove the default_agent setting."
             )
 
     @staticmethod
     def _is_exposed(agent_name: str) -> bool:
-        """Whether `agui.agents` publishes this agent.
+        """Whether an agent is served over AG-UI.
 
-        :param agent_name: Agent name to test.
-        :return: True when `agui.agents` is unset (every agent is reachable) or names this one.
+        :param agent_name: Agent id to test.
+        :return: True when the agent registry knows the agent and its descriptor's surfaces include AG-UI
+            (they do when the descriptor names none).
         """
-        exposed = AKConfig.get().agui.agents
-        return exposed is None or agent_name in exposed
+        descriptor = Runtime.current().registry.descriptor(agent_name)
+        return descriptor is not None and descriptor.exposed_on("agui")
 
-    def _warn_if_unreadable(self, agent: Agent, run_input: Any) -> None:
+    def _warn_if_unreadable(self, agent: AgentDescriptor, run_input: Any) -> None:
         """Warn about inbound fields no tool can read.
 
         `state`, `forwardedProps` and `context` are stored on the session regardless, but the tools
         that read them are attached only when their config block is enabled. Without this the field
         is accepted and silently unreachable, which looks like the model ignoring the data.
 
-        :param agent: The agent this run resolved to.
+        :param agent: The descriptor of the agent this run resolved to.
         :param run_input: The parsed RunAgentInput.
         """
         from ...core.tool import SystemToolFactory
@@ -77,7 +79,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         def enabled(block_name: str) -> bool:
             """Whether a config block is enabled *and* in scope for this agent."""
             block = getattr(agui, block_name, None)
-            return bool(block and block.enabled and SystemToolFactory._agent_allowed(block, agent.name))
+            return bool(block and block.enabled and SystemToolFactory._agent_allowed(block, agent.id))
 
         ignored = []
         if run_input.state is not None and not enabled("state"):
@@ -89,35 +91,39 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         for field, flag in ignored:
             self._log.warning(
-                f"Agent '{agent.name}' received '{field}' but {flag} is not enabled for it, so no tool can read it "
+                f"Agent '{agent.id}' received '{field}' but {flag} is not enabled for it, so no tool can read it "
                 f"and the value is ignored. Set {flag}.enabled to expose it."
             )
 
-    def _resolve_agent(self, agent_name: str) -> Agent:
-        """Resolve a path agent name to a streaming-capable, exposed agent.
+    def _resolve_agent(self, agent_name: str) -> AgentDescriptor:
+        """Resolve a path agent name to the descriptor of a streaming-capable agent exposed on AG-UI.
 
-        :param agent_name: Agent name taken from the route path.
-        :return: The resolved Agent.
+        Everything checked here is on the descriptor (that the agent exists, its surfaces, whether its
+        runner streams), so the agent need not be hosted by this process: the queue-mode handler
+        enqueues the run for the process that hosts it.
+
+        :param agent_name: Agent id taken from the route path.
+        :return: The agent's descriptor, as the registry holds it.
         :raises HTTPException: 404 when the agent is unknown *or* not exposed — deliberately
                                indistinguishable, so the surface never confirms that a hidden name
                                exists. 400 when the agent's runner cannot stream.
         """
         try:
-            AgentService().ensure_agent_available(agent_name)
+            AgentService.ensure_agent_available(agent_name)
         except ValueError:
             raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
-        if not self._is_exposed(agent_name):
+        descriptor = Runtime.current().registry.descriptor(agent_name)
+        if descriptor is None or not descriptor.exposed_on("agui"):
             raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
-        agent = Runtime.current().agents()[agent_name]
-        if not agent.runner.supports_streaming:
+        if not descriptor.supports_streaming:
             raise HTTPException(
                 status_code=400,
-                detail=f"Agent '{agent_name}' runs on the '{agent.runner.name}' framework, whose Agent Kernel runner "
+                detail=f"Agent '{agent_name}' runs on the '{descriptor.runner}' framework, whose Agent Kernel runner "
                 f"does not implement streaming yet. AG-UI delivers a run as a stream of events, so the agent "
                 f"becomes reachable here as soon as its runner declares supports_streaming — this is a pending "
                 f"capability, not a permanent limit.",
             )
-        return agent
+        return descriptor
 
     def get_router(self) -> APIRouter:
         """Build the AG-UI router under `agui.prefix`.
@@ -141,8 +147,10 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             :return: {"agents": [name, ...]}.
             """
             self._resolve_user(request)
-            agents = Runtime.current().agents()
-            return {"agents": [name for name, agent in agents.items() if agent.runner.supports_streaming and self._is_exposed(name)]}
+            # From the registry's descriptors, which carry whether the runner streams, so agents hosted by
+            # another process are listed too; in id order, the same from every process.
+            descriptors = sorted(Runtime.current().registry.descriptors(), key=lambda descriptor: descriptor.id)
+            return {"agents": [descriptor.id for descriptor in descriptors if descriptor.supports_streaming and descriptor.exposed_on("agui")]}
 
         @router.post("/{agent_name}")
         async def run_agent(agent_name: str, request: Request) -> StreamingResponse:
@@ -168,7 +176,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         return router
 
-    async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[Principal, Agent, Any, list]:
+    async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[Principal, AgentDescriptor, Any, list]:
         """Everything that can still be reported as an HTTP status, before any state is written.
 
         Shared verbatim with the queue-mode handler (spec #710 §7) so the two execution models
@@ -177,7 +185,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         :param agent_name: Agent to run.
         :param request: Incoming request carrying the RunAgentInput body.
-        :return: The caller's principal, the agent, the parsed run input, and the mapped requests.
+        :return: The caller's principal, the agent's descriptor, the parsed run input, and the mapped requests.
         :raises HTTPException: 401 for a request nothing authenticated, 400 for an unparsable or
             unusable body, 404/400 from agent resolution.
         """
@@ -217,8 +225,9 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         session = handler.service.session if handler.service is not None else None
         if session is None:
             self._log.error(
-                f"Agent '{agent_name}' passed the AG-UI availability check but AgentService could not select it, "
-                f"so no session was created. The two agent-resolution paths disagree."
+                f"Agent '{agent_name}' is known to the agent registry but AgentService could not select it, so no session "
+                f"was created: this process does not host the agent. This handler runs agents in process; load the "
+                f"agent's module here, or serve AG-UI through AGUIPipelineRequestHandler, which enqueues the run."
             )
             raise HTTPException(status_code=500, detail=f"Agent '{agent_name}' could not be selected for this run")
         AGUIRunInput.set_agui_session_keys(session, run_input)

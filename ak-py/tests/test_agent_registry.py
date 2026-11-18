@@ -22,6 +22,7 @@ from agentkernel.core.model import AgentDescriptor, AgentIdentitySpec, AgentRepl
 from agentkernel.core.module import Module
 from agentkernel.core.registry import AgentDescriptorPage, AgentRegistrationError, AgentRegistry, AgentRegistryFactory, InMemoryAgentRegistry
 from agentkernel.core.runtime import Runtime
+from agentkernel.core.service import AgentService
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.util.driver.valkey import ValkeyDriver
 from agentkernel.core.util.factory import AKConfigError
@@ -796,3 +797,41 @@ class TestModuleDescribe:
 
         actor = agent.runner.principals[0].actor
         assert (actor.kind, actor.subject, actor.provider) == ("agent", "svc-billing", "agentkernel")
+
+
+class TestAvailability:
+    """`AgentService.ensure_agent_available` asks the registry, so a process answers for agents it does not host."""
+
+    def test_a_named_agent_the_registry_knows_is_available_without_being_hosted(self, descriptor_only_registry):
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([_descriptor("billing")])):
+            AgentService.ensure_agent_available("billing")
+
+    def test_a_named_agent_the_registry_does_not_know_is_not_available(self, descriptor_only_registry):
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([_descriptor("billing")])):
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService.ensure_agent_available("support")
+
+    def test_an_unnamed_request_needs_the_registry_to_know_some_agent(self, descriptor_only_registry):
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([])):
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService.ensure_agent_available(None)
+
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([_descriptor("billing")])):
+            AgentService.ensure_agent_available(None)
+
+    def test_an_agent_this_process_hosts_is_available_without_reading_the_store(self):
+        class _HostedOnly(InMemoryAgentRegistry):
+            """Fails on a store read: a hosted agent must be answered from the process's own agents."""
+
+            def descriptor(self, id):
+                raise AssertionError("the registry's store was read for an agent this process hosts")
+
+            def descriptors(self):
+                raise AssertionError("the registry's store was read while this process hosts an agent")
+
+        runtime = Runtime(InMemorySessionStore(), registry=_HostedOnly())
+        runtime.register(StubAgent("billing"))
+
+        with runtime:
+            AgentService.ensure_agent_available("billing")
+            AgentService.ensure_agent_available(None)

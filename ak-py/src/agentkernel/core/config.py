@@ -138,17 +138,38 @@ class _WebSocketAPIConfig(BaseModel):
     )
 
 
-class _A2AConfig(BaseModel):
+class _SurfaceConfig(BaseModel):
+    """Base for the protocol surface blocks (``a2a``, ``mcp``, ``agui``) that used to carry an ``agents`` allow-list.
+
+    Which surfaces serve an agent is part of the agent's descriptor now (``registry.agents.<id>.surfaces``,
+    every surface when unset). A block that still sets the removed list is refused at load: ignoring it
+    would leave every agent on the surface the list was written to narrow.
+    """
+
+    SURFACE: ClassVar[str]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_agents(cls, data: Any) -> Any:
+        """Fail the removed ``agents`` list with where the setting went, instead of dropping it silently."""
+        if isinstance(data, dict) and "agents" in data:
+            raise AKConfigError(f"{cls.SURFACE}.agents was removed: set registry.agents.<id>.surfaces instead")
+        return data
+
+
+class _A2AConfig(_SurfaceConfig):
+    SURFACE: ClassVar[str] = "a2a"
+
     enabled: bool = Field(default=False, description="Enable A2A")
-    agents: list[str] = Field(default=["*"], description="List of agent names to enable A2A")
     url: str = Field(default="http://localhost:8000/a2a", description="A2A URL")
     task_store_type: str = Field(default="in_memory", pattern="^(in_memory|redis)$")
 
 
-class _MCPConfig(BaseModel):
+class _MCPConfig(_SurfaceConfig):
+    SURFACE: ClassVar[str] = "mcp"
+
     enabled: bool = Field(default=False, description="Enable MCP")
     expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
-    agents: list[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     url: str = Field(
         default="http://localhost:8000/mcp",
         description="Public URL of the MCP endpoint; with an OpenID identity provider it is the protected resource the RFC 9728 metadata names",
@@ -1609,11 +1630,12 @@ class _AGUIClientContextConfig(BaseModel):
     agents: list[str] | None = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 
-class _AGUIConfig(BaseModel):
+class _AGUIConfig(_SurfaceConfig):
     """Parameterizes a mounted AGUIRequestHandler. Mounting the handler is what enables AG-UI;
     this block never switches the surface on. The two nested blocks do switch on agent-facing tools."""
 
-    agents: list[str] | None = Field(default=None, description="Agent names reachable over AG-UI; omitted = all streaming-capable agents")
+    SURFACE: ClassVar[str] = "agui"
+
     prefix: str = Field(default="/agui", description="Route prefix for the AG-UI surface")
     default_agent: str | None = Field(default=None, description="Agent served on the bare prefix route")
     state: _AGUIStateConfig = Field(default_factory=_AGUIStateConfig)

@@ -6,9 +6,12 @@ from pydantic import ValidationError
 
 from agentkernel.core.config import (
     AKConfig,
+    _A2AConfig,
+    _AGUIConfig,
     _ExecutionConfig,
     _IdentityConfig,
     _IdentityProviderConfig,
+    _MCPConfig,
     _RegistryAgentOverlayConfig,
     _RegistryConfig,
     _RegistryDynamoDBConfig,
@@ -777,3 +780,38 @@ class TestRegistryConfig:
         monkeypatch.setenv("AK_REGISTRY__TYPE", "valkey")
 
         assert AKConfig.get().registry.type == "valkey"
+
+
+class TestRemovedAgentLists:
+    """`a2a.agents`, `mcp.agents` and `agui.agents` are gone (#603): an agent's surfaces are part of its
+    descriptor. A configuration that still sets one fails at load with where the setting went, rather than
+    being ignored and leaving every agent on the surface."""
+
+    @pytest.mark.parametrize("block, model", [("a2a", _A2AConfig), ("mcp", _MCPConfig), ("agui", _AGUIConfig)])
+    def test_a_block_that_still_lists_agents_fails_with_the_migration_message(self, block, model):
+        with pytest.raises(AKConfigError, match=f"{block}.agents was removed: set registry.agents.<id>.surfaces instead"):
+            model.model_validate({"agents": ["triage"]})
+
+    @pytest.mark.parametrize("block, model", [("a2a", _A2AConfig), ("mcp", _MCPConfig), ("agui", _AGUIConfig)])
+    def test_the_blocks_no_longer_carry_an_agents_field(self, block, model):
+        assert "agents" not in model.model_fields
+
+    def test_a_yaml_file_that_still_sets_one_fails_at_load(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text("mcp:\n  enabled: true\n  agents: ['*']\n")
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        with pytest.raises(AKConfigError, match="mcp.agents was removed"):
+            AKConfig.get()
+
+    def test_an_environment_variable_that_still_sets_one_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_A2A__AGENTS", '["triage"]')
+
+        with pytest.raises(AKConfigError, match="a2a.agents was removed"):
+            AKConfig.get()
+
+    def test_the_tool_scoping_lists_under_agui_are_untouched(self):
+        agui = _AGUIConfig.model_validate({"state": {"enabled": True, "agents": ["a"]}, "client_context": {"agents": ["b"]}})
+
+        assert (agui.state.agents, agui.client_context.agents) == (["a"], ["b"])

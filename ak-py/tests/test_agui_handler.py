@@ -28,10 +28,10 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner, Session
-from agentkernel.core.config import _AGUIConfig, _GuardrailConfig
+from agentkernel.core.config import _AGUIConfig, _GuardrailConfig, _RegistryConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallStart
 from agentkernel.core.hooks import PreHook
-from agentkernel.core.model import AgentReplyText, Principal
+from agentkernel.core.model import AgentDescriptor, AgentReplyText, Principal
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
@@ -149,13 +149,18 @@ class CopyingSessionStore(InMemorySessionStore):
         return deepcopy(super().load(session_id, strict))
 
 
-def _install_cfg(monkeypatch, agui_cfg):
+def _hidden_from_agui(*agent_ids: str) -> _RegistryConfig:
+    """A registry block whose overlay keeps the named agents off the AG-UI surface."""
+    return _RegistryConfig(agents={agent_id: {"surfaces": ["rest", "a2a", "mcp"]} for agent_id in agent_ids})
+
+
+def _install_cfg(monkeypatch, agui_cfg, registry_cfg=None):
     """Point AKConfig.get() at a stub carrying every section this path reads."""
 
     class _Cfg:
         agui = agui_cfg
         identity = None
-        registry = None
+        registry = registry_cfg
         multimodal = None
         sandbox = None
         guardrail = _GuardrailConfig()
@@ -167,13 +172,17 @@ def _install_cfg(monkeypatch, agui_cfg):
 
 
 @contextmanager
-def serving(monkeypatch, agents, agui_cfg=None, store=None):
-    """Mount the AG-UI router over a runtime holding the given agents, behind the identity dependency."""
-    _install_cfg(monkeypatch, agui_cfg if agui_cfg is not None else _AGUIConfig())
+def serving(monkeypatch, agents, agui_cfg=None, store=None, registry_cfg=None, registry=None):
+    """Mount the AG-UI router over a runtime holding the given agents, behind the identity dependency.
+
+    ``registry_cfg`` is the `registry` configuration block (its overlay sets an agent's surfaces);
+    ``registry`` replaces the runtime's registry outright, for agents this process does not host.
+    """
+    _install_cfg(monkeypatch, agui_cfg if agui_cfg is not None else _AGUIConfig(), registry_cfg)
     provider = _with_provider(monkeypatch, _TestProvider())
     Runtime._system_pre_hooks = []
     Runtime._system_post_hooks = []
-    runtime = Runtime(store if store is not None else InMemorySessionStore())
+    runtime = Runtime(store if store is not None else InMemorySessionStore(), registry=registry)
     for agent in agents:
         runtime.register(agent)
     try:
@@ -238,10 +247,25 @@ class TestDiscovery:
         with serving(monkeypatch, agents) as (client, _):
             assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["streamer"]}
 
-    def test_lists_the_intersection_with_the_agents_allowlist(self, monkeypatch):
+    def test_lists_only_the_streaming_agents_exposed_on_agui(self, monkeypatch):
         agents = [ScriptedAgent("exposed"), ScriptedAgent("hidden"), ScriptedAgent("batch-only", streaming=False)]
-        with serving(monkeypatch, agents, _AGUIConfig(agents=["exposed", "batch-only"])) as (client, _):
+        with serving(monkeypatch, agents, registry_cfg=_hidden_from_agui("hidden")) as (client, _):
             assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["exposed"]}
+
+    def test_lists_in_id_order_whatever_the_registration_order(self, monkeypatch):
+        with serving(monkeypatch, [ScriptedAgent("support"), ScriptedAgent("billing")]) as (client, _):
+            assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["billing", "support"]}
+
+    def test_lists_an_agent_the_process_does_not_host(self, monkeypatch, descriptor_only_registry):
+        """From the registry's descriptors, which carry whether the agent's runner streams."""
+        known = descriptor_only_registry(
+            [
+                AgentDescriptor(id="remote", name="remote", runner="openai", supports_streaming=True),
+                AgentDescriptor(id="remote-batch", name="remote-batch", runner="crewai", supports_streaming=False),
+            ]
+        )
+        with serving(monkeypatch, [], registry=known) as (client, _):
+            assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["remote"]}
 
     def test_discovery_publishes_names_only(self, monkeypatch):
         """Not agent.get_description(): several adapters return the agent's instructions from it, so
@@ -293,12 +317,22 @@ class TestConstructorGuards:
         with pytest.raises(AKConfigError, match="requires an identity block"):
             AGUIRequestHandler()
 
-    def test_a_default_agent_the_allowlist_hides_is_a_startup_error(self, monkeypatch):
+    def test_a_default_agent_not_exposed_on_agui_is_a_startup_error(self, monkeypatch):
         """A startup error, not a per-request one: the route would exist but always 404."""
-        _install_cfg(monkeypatch, _AGUIConfig(agents=["exposed"], default_agent="hidden"))
+        _install_cfg(monkeypatch, _AGUIConfig(default_agent="hidden"), _hidden_from_agui("hidden"))
         _with_provider(monkeypatch, _TestProvider())
-        with pytest.raises(ValueError, match="agui.default_agent"):
-            AGUIRequestHandler()
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(ScriptedAgent("hidden"))
+        with runtime:
+            with pytest.raises(ValueError, match="agui.default_agent is 'hidden'.*registry.agents.hidden.surfaces"):
+                AGUIRequestHandler()
+
+    def test_a_default_agent_the_registry_does_not_know_is_a_startup_error(self, monkeypatch):
+        _install_cfg(monkeypatch, _AGUIConfig(default_agent="nobody"))
+        _with_provider(monkeypatch, _TestProvider())
+        with Runtime(InMemorySessionStore()):
+            with pytest.raises(ValueError, match="agui.default_agent is 'nobody'"):
+                AGUIRequestHandler()
 
 
 class TestAgentResolution:
@@ -310,11 +344,26 @@ class TestAgentResolution:
     def test_an_unexposed_agent_is_404_indistinguishable_from_unknown(self, monkeypatch):
         """Identical status *and* detail, so the surface never confirms that a name exists."""
         agents = [ScriptedAgent("exposed"), ScriptedAgent("hidden")]
-        with serving(monkeypatch, agents, _AGUIConfig(agents=["exposed"])) as (client, _):
+        with serving(monkeypatch, agents, registry_cfg=_hidden_from_agui("hidden")) as (client, _):
             hidden = client.post("/agui/hidden", headers=AUTH, json=body())
             unknown = client.post("/agui/nobody", headers=AUTH, json=body())
             assert hidden.status_code == unknown.status_code == 404
             assert hidden.json()["detail"].replace("hidden", "X") == unknown.json()["detail"].replace("nobody", "X")
+
+    def test_an_agent_known_to_the_registry_and_not_hosted_here_cannot_be_run_in_process(self, monkeypatch, descriptor_only_registry):
+        """It resolves (the queue-mode handler enqueues it), but this handler runs agents itself."""
+        known = descriptor_only_registry([AgentDescriptor(id="remote", name="remote", runner="openai", supports_streaming=True)])
+        with serving(monkeypatch, [], registry=known) as (client, _):
+            response = client.post("/agui/remote", headers=AUTH, json=body())
+            assert response.status_code == 500
+            assert "'remote'" in response.json()["detail"]
+
+    def test_a_non_streaming_agent_known_only_through_the_registry_is_400_naming_its_framework(self, monkeypatch, descriptor_only_registry):
+        known = descriptor_only_registry([AgentDescriptor(id="crew", name="crew", runner="crewai", supports_streaming=False)])
+        with serving(monkeypatch, [], registry=known) as (client, _):
+            response = client.post("/agui/crew", headers=AUTH, json=body())
+            assert response.status_code == 400
+            assert "crewai" in response.json()["detail"]
 
     def test_a_non_streaming_agent_is_400_naming_its_framework(self, monkeypatch):
         """A live path from day one for any app with a CrewAI or smolagents agent, so the message

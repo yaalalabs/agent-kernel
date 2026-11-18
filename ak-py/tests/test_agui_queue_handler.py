@@ -18,7 +18,15 @@ from fastapi import HTTPException
 from agentkernel.core.base import Session
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, PausedInterruption, RunPaused, TextDelta
-from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestImage, ExecutionMode, Principal, ReplyMessageType, StreamChunk
+from agentkernel.core.model import (
+    AgentDescriptor,
+    AgentRequestAttachmentRef,
+    AgentRequestImage,
+    ExecutionMode,
+    Principal,
+    ReplyMessageType,
+    StreamChunk,
+)
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.identity import IdentityProvider, IdentityProviderFactory
 from agentkernel.integration.agui.queue_handler import AGUIPipelineRequestHandler
@@ -413,7 +421,7 @@ def _edge_handler(monkeypatch, requests=None, store=None):
     skip it and hand `_run` the agent and requests it would have produced.
     """
     handler = TestPreconditions._construct(store or InMemoryResponseStore(), "in_memory")
-    agent = type("_Agent", (), {"name": "planner"})()
+    agent = AgentDescriptor(id="planner", name="Planner")  # what the edge resolves: the registry's record, by id
 
     async def _resolved(agent_name, request):
         return PRINCIPAL, agent, _RunInputStub(), list(requests or [])

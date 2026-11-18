@@ -46,12 +46,20 @@ session:
 # executes, and the caller's reply waits in the response store above.
 a2a:
   enabled: true
-  agents: ["triage"]
 mcp:
   enabled: true
   expose_agents: true
-  agents: ["triage"]
   stateless_http: true         # the chart runs 2 io-handler replicas outside dev; a stateful MCP session is pinned to one
+
+# Which surfaces serve an agent is part of the agent's descriptor: every surface unless it says
+# otherwise. Only triage is published over A2A and MCP; the two specialists it hands off to stay
+# reachable through REST alone.
+registry:
+  agents:
+    math:
+      surfaces: [rest]
+    history:
+      surfaces: [rest]
 
 logging:
   ak:

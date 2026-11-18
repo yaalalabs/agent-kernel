@@ -138,12 +138,13 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         await asyncio.to_thread(
             self._producer.enqueue,
             # The caller's principal rides the body: the runner publishes it for the run (#603).
-            AGUIRunRequest(session_id=run_input.thread_id, agent=agent.name, requests=requests, agui=envelope, principal=principal),
+            # The agent travels by its id: the edge resolved a descriptor, and need not host the agent.
+            AGUIRunRequest(session_id=run_input.thread_id, agent=agent.id, requests=requests, agui=envelope, principal=principal),
             request_id=request_id,
             attributes={ATTR_AGUI: "1"},
             group_id=run_input.thread_id,
         )
-        self._log.info(f"[AGUI ENQUEUED] request_id={request_id}, thread_id={run_input.thread_id}, agent={agent.name}")
+        self._log.info(f"[AGUI ENQUEUED] request_id={request_id}, thread_id={run_input.thread_id}, agent={agent.id}")
 
         encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
         return StreamingResponse(self._events_from_store(encoder, request_id, run_input), media_type=encoder.get_content_type())

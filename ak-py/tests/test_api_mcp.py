@@ -377,14 +377,19 @@ class TestAgentTools:
         assert [name for name, _ in tools] == ["billing", "support"]
 
     @pytest.mark.asyncio
-    async def test_the_allow_list_selects_agents_by_descriptor_id(self, descriptor_only_registry, monkeypatch):
-        monkeypatch.setenv("AK_MCP__AGENTS", '["kept"]')
-        AKConfig._reset()
+    async def test_only_agents_exposed_on_mcp_get_a_tool(self, descriptor_only_registry):
         registry = descriptor_only_registry(
-            [AgentDescriptor(id="kept", name="kept", description="Kept"), AgentDescriptor(id="dropped", name="dropped", description="Dropped")]
+            [
+                AgentDescriptor(id="everywhere", name="everywhere", description="On every surface"),
+                AgentDescriptor(id="mcp-too", name="mcp-too", description="On two surfaces", surfaces=["rest", "mcp"]),
+                AgentDescriptor(id="rest-only", name="rest-only", description="Not here", surfaces=["rest"]),
+                AgentDescriptor(id="nowhere", name="nowhere", description="On no surface", surfaces=[]),
+            ]
         )
 
-        assert await self._listed(Runtime(InMemorySessionStore(), registry=registry)) == [("kept", "Kept")]
+        tools = await self._listed(Runtime(InMemorySessionStore(), registry=registry))
+
+        assert [name for name, _ in tools] == ["everywhere", "mcp-too"]
 
     @pytest.mark.asyncio
     async def test_no_agent_tool_is_registered_when_agents_are_not_exposed(self, descriptor_only_registry, monkeypatch):

@@ -268,12 +268,31 @@ class TestCardsFromTheRegistry:
         assert (card.name, card.description, card.version) == ("Remote agent", "Runs in another process", "3.0.0")
         assert card.supported_interfaces[0].url == f"{A2A_URL}/remote"
 
-    def test_the_allow_list_selects_agents_by_descriptor_id(self, _fresh_a2a, monkeypatch, descriptor_only_registry):
-        _configure(monkeypatch, AK_A2A__AGENTS='["kept"]')
-        registry = descriptor_only_registry([_descriptor(id="kept", name="Kept"), _descriptor(id="dropped", name="Dropped")])
+    def test_only_agents_exposed_on_a2a_get_a_card(self, _fresh_a2a, descriptor_only_registry):
+        registry = descriptor_only_registry(
+            [
+                _descriptor(id="everywhere", name="everywhere"),
+                _descriptor(id="a2a-too", name="a2a-too", surfaces=["rest", "a2a"]),
+                _descriptor(id="rest-only", name="rest-only", surfaces=["rest"]),
+                _descriptor(id="nowhere", name="nowhere", surfaces=[]),
+            ]
+        )
 
         with Runtime(InMemorySessionStore(), registry=registry):
-            assert A2A.get_agent_names() == ["kept"]
+            assert A2A.get_agent_names() == ["a2a-too", "everywhere"]
+
+    @pytest.mark.asyncio
+    async def test_the_routes_of_an_agent_hosted_elsewhere_are_served(self, _fresh_a2a, descriptor_only_registry):
+        remote = _descriptor(id="remote", name="Remote agent", description="Runs in another process")
+
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([remote])):
+            app = RESTAPI.build_app(handlers=[])
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://ak.test") as http:
+                card = await http.get("/a2a/remote/.well-known/agent-card.json", headers={"A2A-Version": "1.0"})
+                tasks = await http.get("/a2a/remote/tasks", headers={"A2A-Version": "1.0"})
+
+        assert (card.status_code, tasks.status_code) == (200, 200)
+        assert card.json()["name"] == "Remote agent"
 
     def test_a_card_carries_the_fields_the_registry_overlay_sets(self, _fresh_a2a, monkeypatch, tmp_path):
         config = tmp_path / "config.yaml"

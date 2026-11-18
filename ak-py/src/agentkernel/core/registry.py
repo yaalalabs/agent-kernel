@@ -12,6 +12,7 @@ live under `identity/registry/`, and the factory imports them only when the conf
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from typing import Any
 
 from pydantic import BaseModel
@@ -36,6 +37,28 @@ class AgentDescriptorPage(BaseModel):
 
     agents: list[AgentDescriptor]
     next_cursor: str | None = None
+
+    @classmethod
+    def of(
+        cls, descriptors: Iterable[AgentDescriptor], cursor: str | None = None, limit: int | None = None, tags: list[str] | None = None
+    ) -> "AgentDescriptorPage":
+        """
+        Cuts one page out of a set of descriptors: those carrying every requested tag, ordered by id.
+
+        The one paging rule of every agent listing, whatever narrowed the set beforehand (a surface, a
+        caller's visibility), so a page is never short because of an agent it may not show.
+        :param descriptors: The descriptors to page over.
+        :param cursor: The `next_cursor` of the page before; None for the first page.
+        :param limit: The page size, clamped to the shared maximum; the shared default when omitted.
+        :param tags: Keep only the agents carrying every one of these tags; None or empty keeps all.
+        :return: The page and the cursor of the one after it.
+        :raises ValueError: If the cursor is malformed.
+        """
+        offset = decode_cursor(cursor)
+        wanted = set(tags or ())
+        matching = sorted((descriptor for descriptor in descriptors if wanted.issubset(descriptor.tags)), key=lambda descriptor: descriptor.id)
+        page, next_offset = paginate(matching, clamp_limit(limit, DEFAULT_PAGE_SIZE), offset)
+        return cls(agents=page, next_cursor=encode_cursor(next_offset))
 
 
 class AgentRegistry(ABC):
@@ -136,11 +159,7 @@ class AgentRegistry(ABC):
         :return: The page and the cursor of the one after it.
         :raises ValueError: If the cursor is malformed.
         """
-        offset = decode_cursor(cursor)
-        wanted = set(tags or ())
-        matching = sorted((descriptor for descriptor in self.descriptors() if wanted.issubset(descriptor.tags)), key=lambda descriptor: descriptor.id)
-        page, next_offset = paginate(matching, clamp_limit(limit, DEFAULT_PAGE_SIZE), offset)
-        return AgentDescriptorPage(agents=page, next_cursor=encode_cursor(next_offset))
+        return AgentDescriptorPage.of(self.descriptors(), cursor=cursor, limit=limit, tags=tags)
 
 
 class InMemoryAgentRegistry(AgentRegistry):

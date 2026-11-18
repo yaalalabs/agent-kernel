@@ -573,7 +573,8 @@ class AgentRegistry(ABC):
     @abstractmethod def agents(self) -> dict[str, Agent]                       # the Runtime.agents() contract
     @abstractmethod def descriptors(self) -> list[AgentDescriptor]             # every known descriptor
     def list(self, cursor: Optional[str] = None, limit: Optional[int] = None, tags: Optional[list[str]] = None) -> AgentDescriptorPage
-        # concrete: descriptors() filtered by tags (every tag present), sorted by id, paged with
+        # concrete: AgentDescriptorPage.of(self.descriptors(), cursor, limit, tags), the one
+        # paging rule: filtered by tags (every tag present), sorted by id, paged with
         # core/util/pagination.py decode_cursor / clamp_limit / paginate / encode_cursor
     def clear(self) -> None
 ```
@@ -663,10 +664,18 @@ def ensure_agent_available(name: Optional[str], principal: Optional[Principal] =
 
 `registry = Runtime.current().registry`; a named agent must have `registry.descriptor(name)`
 (`ValueError("No agent available")` otherwise, unchanged text); an unnamed one needs at least one
-descriptor. Then, when `AccessGate.get()` is not `None` and a name is given:
+descriptor. The agents the process hosts answer first (`registry.get(name)`, `registry.agents()`),
+so the store is read only for an agent that is not hosted here and a hosted agent costs no round
+trip per request. An unknown agent therefore stays a 400 on REST, as before. Open for iteration
+19, which maps the gate's `LookupError` to 404: a hidden agent (404) would then be told apart
+from an unknown one (400) on REST, which the error table's "indistinguishable from unknown" rules
+out; either the unknown case joins the 404 or the hidden case joins the 400.
+
+Then, when `AccessGate.get()` is not `None` and a name is given:
 `gate.authorize_agent(principal or Principal.anonymous(), name)`, which raises `PermissionError`
-(no level) or `LookupError` (not visible; section 7). `select` (`core/service.py:72-101`) still
-needs the local `Agent` and raises `ValueError` when the process does not host it.
+(no level) or `LookupError` (not visible; section 7). `select` (`core/service.py:72-101`) is
+unchanged and still needs the local `Agent`: for an agent the process does not host it selects
+nothing, and the run that follows raises `ValueError("No agent selected...")`.
 
 **Catalog** (`api/handler.py:102-103`, `list_agents`): becomes
 `GET /api/v1/agents?cursor=&limit=&tags=` returning `{"agents": [descriptor...],
@@ -677,8 +686,12 @@ the stored list filtered by `check_tool` through the authorizer (the io-handler 
 `skills` are narrowed with it: a skill whose `id` is one of the descriptor's tool names stays only
 when that tool does, and a skill that names no tool (declared through `Module.describe`) stays;
 otherwise a denied tool's name would still be listed, since the skills default to one per tool.
-With no gate the full descriptor list is returned. `limit` is clamped by `clamp_limit(limit,
-DEFAULT_PAGE_SIZE)`; a malformed cursor is 400.
+With no gate the full descriptor list is returned. The narrowing (surface, and later the caller)
+happens before the page is cut, by handing the narrowed list to `AgentDescriptorPage.of(
+descriptors, cursor, limit, tags)`, so a page is never short because of an agent it may not show;
+`tags` is a repeated query parameter and keeps the agents carrying every one. `limit` is clamped
+by `clamp_limit(limit, DEFAULT_PAGE_SIZE)`; a malformed cursor is 400. The queue-mode
+`RequestHandler` mounts the same `list_agents` (`pipeline/request_handler.py:342, 375`).
 
 **A2A card** (`core/builder.py:40-74`): `A2ACardBuilder.build(descriptor: AgentDescriptor) ->
 AgentCard` replaces `build(name, description, skills)`: `name = descriptor.name`, `description =
@@ -1008,11 +1021,19 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   anonymously" check with the same guarantee. `_is_exposed` (60-68) reads
   `descriptor.exposed_on("agui")` through the registry; the `agui.default_agent` validation
   (53-58) becomes "exposed on agui".
+  The default agent must be known to the registry when the handler is built, so the agents are
+  loaded (or a shared registry holds them) before it is constructed.
 - `/agents` (140-152): `AccessGate.visible_agents(principal)` narrowed by `exposed_on("agui")` and
-  `runner.supports_streaming`; names only, as today.
+  the descriptor's `supports_streaming`; ids only, in id order. Without a gate the source is
+  `registry.descriptors()`, so agents another process hosts are listed.
 - `_resolve_agent` (103-127): 404 for unknown or hidden, 403 for a visible agent the principal
   holds no level on (`PermissionError` from `ensure_agent_available`), 400 for a non-streaming
-  runner, unchanged order.
+  runner, unchanged order. It returns the agent's `AgentDescriptor`, not the `Agent`: everything
+  it checks (existence, surfaces, `supports_streaming`, the `runner` name its 400 cites) is on
+  the descriptor, so the queue-mode handler resolves and enqueues, by `descriptor.id`, an agent
+  its process does not host. The direct handler still runs agents in process: for an agent the
+  registry knows and this process does not host, `AgentService.select` finds nothing and the
+  existing "could not be selected" 500 answers, with a log line naming both remedies.
 - `_resolve_run_inputs` (178-201) returns the `Principal`; `_events` passes
   `principal=principal` at line 280; `AGUIPipelineRequestHandler._run` (`queue_handler.py:112-151`)
   enqueues `AGUIRunRequest(..., principal=principal, ...)` instead of `user_id=user_id` (143).
@@ -1409,7 +1430,8 @@ class AKConfig(...):
   `AgentIdentitySpec` from `core/model.py`; the `secret` block for the static credentials and the
   encryption key; the `auth` extra for PyJWT.
 - Removed fields: `_A2AConfig.agents` (142), `_MCPConfig.agents` (150), `_AGUIConfig.agents`
-  (1228). Each model gains a `mode="before"` validator, the `_reject_legacy_stream` shape
+  (1228). The three models share a base, `_SurfaceConfig`, which names its block in a `SURFACE`
+  class variable and carries one `mode="before"` validator, the `_reject_legacy_stream` shape
   (730-736), that raises `AKConfigError(f"{block}.agents was removed: set registry.agents.<id>.
   surfaces instead")` when the raw input (YAML or `AK_<BLOCK>__AGENTS`) carries the key. The
   `agui.default_agent` validation moves to `AGUIRequestHandler` as "exposed on agui".
@@ -1446,7 +1468,9 @@ Each is intentional; the justification is design section 10 unless stated.
 4. WebSocket connections are keyed by `principal.subject`, not by a `userId` claim; a token whose
    provider yields a subject always connects. The WS ack frame carries `subject`.
 5. `GET /api/v1/agents` returns descriptors filtered by the caller and paginated, not a list of
-   names.
+   names: `{"agents": [<descriptor>...], "next_cursor": ...}`, narrowed to the agents exposed on
+   `rest`, in id order. AG-UI's `/agents` lists ids in id order too, where it followed the
+   registration order, and lists agents another process hosts.
 6. MCP `tools/list` and `/a2a/catalog` return only the agents the caller may see; a hidden
    agent's A2A card is 404; calling a hidden MCP tool is refused by FastMCP.
 7. With an `authorization` block, an agent run is refused before pre-hooks (403), a hidden agent
@@ -1621,6 +1645,9 @@ New files under `ak-py/tests/`:
   keyword-for-keyword unchanged (asserted on the mocked native call as the `test_*_runner.py`
   files already do); `ungated_tool_names` for LangGraph (unmarked `StructuredTool` in a
   `ToolNode`) and smolagents (a tool added after wrap).
+- `test_agent_registry.py` also holds `TestAvailability`: a named agent known only through the
+  registry is available, an unknown one is not, an unnamed request needs some descriptor, and a
+  hosted agent is answered without a store read.
 - `test_api_catalog.py`: `GET /api/v1/agents` descriptors, filtering by caller, `tools`
   narrowing and the `skills` narrowed with it (a tool-backed skill goes with its tool, a declared
   skill that names no tool stays), cursor and limit, 400 on a bad cursor, `surfaces` narrowing

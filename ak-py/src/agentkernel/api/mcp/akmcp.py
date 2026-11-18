@@ -148,12 +148,11 @@ class MCP:
             # None without an identity block: MCP stays open and every call runs anonymous.
             cls._fastmcp = FastMCP("Agent Kernel FastMCP Instance", auth=AKMCPAuthProvider.from_config())
         if AKConfig.get().mcp.expose_agents:
-            allowed = AKConfig.get().mcp.agents
             # From the registry's descriptors, not the agents this process hosts: a tool needs only the agent's
             # id and catalog text, so a process over a shared registry exposes agents that run elsewhere. In id
             # order, so every process lists the same tools whatever order its registry answers in.
             for descriptor in sorted(Runtime.current().registry.descriptors(), key=lambda descriptor: descriptor.id):
-                if allowed != ["*"] and descriptor.id not in allowed:
+                if not descriptor.exposed_on("mcp"):
                     continue
                 if not descriptor.description:
                     cls._log.warning(

@@ -51,11 +51,13 @@ class AgentService:
         """
         Checks that a request naming ``name`` could be served, without selecting anything.
 
-        Applies the same rule select() applies when it selects: a named agent must be
-        registered, and an unnamed one needs at least one agent to default to. Surfaces that
-        commit state before the agent ever runs — a thread write, a scheduled task — call this
-        first, so a request that could never be answered fails while the caller is still
-        listening instead of at run time.
+        A named agent must be known to the agent registry, and an unnamed request needs the
+        registry to know at least one agent to default to. The registry is asked, not this
+        process's own agents, so a process that only accepts requests (the io handler over a
+        shared registry) answers for agents another process hosts; select() still needs the agent
+        to be hosted here. Surfaces that commit state before the agent ever runs — a thread
+        write, a scheduled task — call this first, so a request that could never be answered
+        fails while the caller is still listening instead of at run time.
 
         Static because it only interrogates the agent registry: it holds no agent and no session,
         so the callers that are not mid-conversation (the thread and schedule surfaces) reach it as
@@ -65,8 +67,13 @@ class AgentService:
         :param name: Name of the requested agent, or None for the default agent.
         :raises ValueError: If no matching agent is available.
         """
-        agents = Runtime.current().agents()
-        if (name and name not in agents) or (not name and not agents):
+        registry = Runtime.current().registry
+        # The agents this process hosts answer first: the store is read only for what is not hosted here.
+        if name:
+            available = registry.get(name) is not None or registry.descriptor(name) is not None
+        else:
+            available = bool(registry.agents()) or bool(registry.descriptors())
+        if not available:
             raise ValueError("No agent available")
 
     def select(self, session_id: str | None = None, name: str | None = None):

@@ -597,21 +597,30 @@ here.
 
 - **Goal:** the catalog route serves descriptors, the protocol surfaces expose agents from
   `descriptor.exposed_on`, and the three removed config lists fail loudly.
-- **Files:** `core/config.py` (the `mode="before"` validators on `_A2AConfig`, `_MCPConfig`,
-  `_AGUIConfig`), `core/service.py`, `api/handler.py`, `api/mcp/akmcp.py`, `api/a2a/a2a.py`,
-  `api/a2a/handler.py`, `integration/agui/handler.py`; the example configs
+- **Files:** `core/config.py` (the `_SurfaceConfig` base and its `mode="before"` validator under
+  `_A2AConfig`, `_MCPConfig`, `_AGUIConfig`), `core/service.py`, `core/registry.py`
+  (`AgentDescriptorPage.of`), `api/handler.py`, `api/mcp/akmcp.py`, `api/a2a/a2a.py`,
+  `integration/agui/handler.py`, `integration/agui/queue_handler.py`; the example configs
   `aws-containerized/mcp/multi` and `k8s/openai-queue-mode/config.{kafka,nats}.yaml`.
 - **Steps:**
-  1. `ensure_agent_available` resolves through the registry (`LookupError` for an unknown
-     agent) (spec 6).
-  2. `GET /api/v1/agents?cursor=&limit=&tags=` (spec 6); filtering by caller is added in 19.
-  3. MCP tool registration, A2A cards and AG-UI exposure read `exposed_on`; the removed-list
-     validators; the example configs move to `registry.agents.<id>.surfaces` (spec 8.5 to 8.7,
-     Config changes).
-- **Verify:** new `tests/test_api_catalog.py`; `test_config` cases for the removed lists;
-  changed `test_api_mcp`, `test_api_a2a_surface` (exposure from `exposed_on`; a card and its
-  routes for a descriptor the process hosts no agent for, now that availability resolves through
-  the registry), `test_agui_handler`.
+  1. `ensure_agent_available` resolves through the registry, the hosted agents first; an unknown
+     agent stays `ValueError("No agent available")` (spec 6).
+  2. `GET /api/v1/agents?cursor=&limit=&tags=` over the agents exposed on `rest`, paged by
+     `AgentDescriptorPage.of` (spec 6); filtering by caller is added in 19.
+  3. MCP tool registration, A2A cards and AG-UI exposure read `exposed_on`; AG-UI resolves and
+     lists from the descriptor, so the queue-mode handler serves an agent its process does not
+     host; the removed-list validator; the example configs move to
+     `registry.agents.<id>.surfaces` (spec 8.5 to 8.7, Config changes).
+- **Verify:** new `tests/test_api_catalog.py`; `TestAvailability` in `test_agent_registry`;
+  `test_config` cases for the removed lists; changed `test_api_mcp`, `test_api_a2a_surface`
+  (exposure from `exposed_on`; a card and its routes for a descriptor the process hosts no agent
+  for, now that availability resolves through the registry), `test_agui_handler`,
+  `test_agui_queue_handler`, `test_pipeline_request_handler`.
+- **Phase-end run (2026-11-18):** the full `ak-py` suite passes but for one local-only case
+  (6699 passed, 127 skipped; `test_the_auth_package_is_gone` fails on a leftover untracked
+  `auth/__pycache__` in this checkout), and isort, black and ruff are clean over `src` and
+  `tests`. The CrewAI suites are among the skipped ones here (the extra conflicts with `test`);
+  they last ran in iteration 14.
 
 ## Phase D: Authorization (iterations 17 to 20)
 
@@ -661,7 +670,9 @@ here.
   `schedule/manager.py`, `schedule/store/*`.
 - **Steps:**
   1. `ChatService` maps `LookupError` to 404 (the `PermissionError` to 403 branch landed in 3)
-     (spec 8.1).
+     (spec 8.1). Decide here whether an unknown agent, a 400 `ValueError("No agent available")`
+     since before this change, becomes the same 404, so that a hidden agent is not told apart
+     from an unknown one on REST (spec 6, Availability).
   2. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
      403 reply and the warning (spec 8.1, 8.11).
   3. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).

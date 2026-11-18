@@ -146,12 +146,11 @@ class A2A:
             return
         if not AKConfig.get().a2a.enabled:
             return
-        allowed = AKConfig.get().a2a.agents
         # From the registry's descriptors, not the agents this process hosts: a card needs nothing the
         # descriptor does not carry, so a process over a shared registry serves agents that run elsewhere.
         # In id order, so every process lists the same catalog whatever order its registry answers in.
         for descriptor in sorted(Runtime.current().registry.descriptors(), key=lambda descriptor: descriptor.id):
-            if allowed != ["*"] and descriptor.id not in allowed:
+            if not descriptor.exposed_on("a2a"):
                 continue
             if not descriptor.description:
                 cls._log.warning(
