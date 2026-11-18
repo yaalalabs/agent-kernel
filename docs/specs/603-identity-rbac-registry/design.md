@@ -445,8 +445,10 @@ and `research/design-options.md` section 4).
 - Catalog: `GET /api/v1/agents` returns `{"agents": [<descriptor>...]}` filtered by the caller
   (section 6), paginated with the shared cursor helpers; the `tools` field of each entry lists only
   the tools at or below the caller's level, and the `skills` backed by those tools are narrowed
-  with it (spec refinement 8). The same filtered list feeds AG-UI's `/agents`, the MCP
-  tool list and `/a2a/catalog`, each narrowed by the descriptor's `surfaces`.
+  with it (spec refinement 8). An entry leaves out the descriptor's `identity`, which the
+  registry keeps for the process that hosts the agent (spec 6, Catalog). The same filtered list
+  feeds AG-UI's `/agents`, the MCP tool list and `/a2a/catalog`, each narrowed by the
+  descriptor's `surfaces`.
 - `A2ACardBuilder.build` takes the descriptor and emits the a2a-sdk 1.x card: `name`,
   `description`, `version` (the descriptor's, not `library_version`), `supported_interfaces`,
   `skills` (one per skill descriptor), `security_schemes` and `security_requirements` derived from

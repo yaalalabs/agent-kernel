@@ -149,7 +149,8 @@ class A2A:
         # From the registry's descriptors, not the agents this process hosts: a card needs nothing the
         # descriptor does not carry, so a process over a shared registry serves agents that run elsewhere.
         # In id order, so every process lists the same catalog whatever order its registry answers in.
-        for descriptor in sorted(Runtime.current().registry.descriptors(), key=lambda descriptor: descriptor.id):
+        descriptors = Runtime.current().registry.descriptors()
+        for descriptor in sorted(descriptors, key=lambda descriptor: descriptor.id):
             if not descriptor.exposed_on("a2a"):
                 continue
             if not descriptor.description:
@@ -158,6 +159,15 @@ class A2A:
                     f"Module.describe(agent, description=...) or registry.agents.{descriptor.id}.description"
                 )
             cls._cards[descriptor.id] = A2ACardBuilder.build(descriptor)
+        if descriptors and not cls._cards:
+            # Agents exist and none is served: without this the catalog is simply empty and every agent
+            # route a 404. A registry that knows no agent at all is the host's to report (IOHandler).
+            cls._log.warning(
+                f"A2A is enabled but serves no agent: none of the {len(descriptors)} agents the registry knows is exposed on a2a. "
+                f"An agent is on every surface unless its descriptor's surfaces leave one out; add a2a to "
+                f"registry.agents.<id>.surfaces (or Module.describe(agent, surfaces=[...])) for the agents A2A should serve, "
+                f"or set a2a.enabled to false"
+            )
         cls._built = True
 
     @classmethod

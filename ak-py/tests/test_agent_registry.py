@@ -222,6 +222,17 @@ class TestRedisAgentRegistry(AgentRegistryContract):
         assert descriptor.updated_at is None
         assert datetime.fromisoformat(registry.descriptor("billing").updated_at).utcoffset() is not None
 
+    def test_the_stored_descriptor_keeps_the_identity_the_catalog_leaves_out(self, registry, peer):
+        """Left out of what is published, not of what is stored: the process that hosts the agent reads it back."""
+        identity = {"subject": "svc-billing", "client_id": "billing-client", "client_secret_key": "BILLING_CLIENT_SECRET"}
+
+        registry.register(_descriptor("billing", identity=identity), StubAgent("billing"))
+
+        stored = peer.descriptor("billing")
+        assert stored.identity == AgentIdentitySpec(**identity)
+        assert "identity" not in stored.catalog_entry()
+        assert stored.catalog_entry()["id"] == "billing"
+
     def test_deregister_deletes_the_document_and_its_index_membership(self, registry, client):
         registry.register(_descriptor("billing"), StubAgent("billing"))
 

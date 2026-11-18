@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -104,21 +104,20 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         self._max_file_size = Config.get().api.max_file_size
         self.chat_service = ChatService(rest_api_mode=True)
 
-    def list_agents(
-        self, cursor: str | None = None, limit: int | None = None, tags: Annotated[list[str] | None, Query()] = None
-    ) -> AgentDescriptorPage:
+    def list_agents(self, cursor: str | None = None, limit: int | None = None, tags: Annotated[list[str] | None, Query()] = None) -> dict[str, Any]:
         """
         The agent catalog: one page of the descriptors of the agents exposed on the REST surface, ordered by id.
-        Served from the registry, so it lists agents this process does not host.
+        Served from the registry, so it lists agents this process does not host. An entry is the agent's
+        descriptor without its `identity`, which is the agent's own and not a caller's to read.
         :param cursor: The `next_cursor` of the page before; omitted for the first page.
         :param limit: The page size, clamped to the shared maximum.
         :param tags: Keep only the agents carrying every one of these tags (repeat the parameter for several).
-        :return: The descriptors and the cursor of the next page.
+        :return: `{"agents": [<catalog entry>, ...], "next_cursor": <cursor or null>}`.
         :raises HTTPException: 400 for a malformed cursor.
         """
         exposed = [descriptor for descriptor in Runtime.current().registry.descriptors() if descriptor.exposed_on("rest")]
         try:
-            return AgentDescriptorPage.of(exposed, cursor=cursor, limit=limit, tags=tags)
+            return AgentDescriptorPage.of(exposed, cursor=cursor, limit=limit, tags=tags).catalog()
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 

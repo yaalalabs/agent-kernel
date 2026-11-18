@@ -210,6 +210,7 @@
         "mcp:",
         "enabled: true",
         "expose_agents:",
+        "description",
         "agentkernel[",
         "mcp"
       ]
@@ -221,7 +222,8 @@
       "expected_outputs": [
         "a2a:",
         "enabled: true",
-        "agents:",
+        "registry:",
+        "description",
         "agentkernel[",
         "a2a",
         ".well-known/agent-card.json"

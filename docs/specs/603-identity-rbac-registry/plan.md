@@ -623,6 +623,30 @@ here.
   `tests`. The CrewAI suites are among the skipped ones here (the extra conflicts with `test`);
   they last ran in iteration 14.
 
+### Phase C as shipped
+
+What changed in phase C after iteration 16, before it merged (2026-11-18). Each is recorded in
+the spec section it changes.
+
+- **Unknown agents (decision).** A request naming an agent the registry does not know will answer
+  like a hidden one, a 404 `LookupError`, from iteration 19 (spec 6, design refinement 9).
+- **Empty surface warning.** `A2A._build` and `MCP._build` warn once when agents are known and
+  none is exposed on the surface; the surface was otherwise mounted empty and silent (spec 6,
+  8.6; `api/a2a/a2a.py`, `api/mcp/akmcp.py`).
+- **Catalog entries.** `GET /api/v1/agents` returns each descriptor without its `identity`
+  (`AgentDescriptor.catalog_entry`, `AgentDescriptorPage.catalog`); the registry still stores it
+  (spec 2, 6; `core/model.py`, `core/registry.py`, `api/handler.py`).
+- **Examples.** The four examples that expose agents over A2A or MCP declare a description for
+  each agent: `api/mcp/multi`, `aws-containerized/mcp/multi` and `api/a2a/multi` with
+  `Module.describe`, `k8s/openai-queue-mode` through `registry.agents` in both configs, since
+  its two processes share the file.
+- **Docs and skills.** The phase C part of iterations 27 and 28 landed here: the docs site
+  (`api/a2a-server.md`, `api/mcp-server.md`, `api/agui-server.md`, `api/rest-api.md`,
+  `integrations/agui.md`, `core-concepts/configuration.md`, `core-concepts/module.md`,
+  `advanced/queue-mode-guide.md`), `ak-py/README.md`, the dev skills `ak-dev-architecture`,
+  `ak-dev-new-framework-integration` and `ak-dev-testing-conventions`, and the user skill
+  `ak-add-capabilities` with its evals. The landing and feature pages were not touched.
+
 ## Phase D: Authorization (iterations 17 to 20)
 
 ### Iteration 17: Authorizer
@@ -806,7 +830,8 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
 
 The docs and skills for phases A and B landed with phase B itself (PR #937: the identity page,
 the docs-site and README updates, the landing-page tiles, `ak-dev-new-identity-provider` and the
-user-skill updates), so iterations 27 and 28 cover what phases C to F add and re-verify the rest.
+user-skill updates), and those for phase C with phase C (see "Phase C as shipped"), so iterations
+27 and 28 cover what phases D to F add and re-verify the rest.
 
 ### Iteration 26: Test walk
 
@@ -833,16 +858,18 @@ user-skill updates), so iterations 27 and 28 cover what phases C to F add and re
      (decided 2026-11-10); `configuration.md` says the same where it lists the provider types.
   2. Confirm the Terraform resources need no change (the connections table keeps its `user_id`
      hash key; the authorizer Lambda keeps its `handler_path` contract).
-  3. `api/a2a-server.md` says a card is built from the agent's descriptor (not by the adapter's
-     `get_a2a_card()`, which is gone), shows `Module.describe` and
-     `registry.agents.<id>.description` as the way to give a card its description and version,
-     and notes that an agent registered after a process mounted its A2A routes is served there
-     after a restart (spec 6, A2A card). `api/mcp-server.md` says the same of an agent's MCP
-     tool: its text is the declared description, not the agent's instructions (spec 8.6).
+  3. Landed with phase C, re-verify here: `api/a2a-server.md` says a card is built from the
+     agent's descriptor (not by the adapter's `get_a2a_card()`, which is gone), shows
+     `Module.describe` and `registry.agents.<id>.description` as the way to give a card its
+     description and version, and notes that an agent registered after a process mounted its A2A
+     routes is served there after a restart (spec 6, A2A card); `api/mcp-server.md` says the same
+     of an agent's MCP tool (spec 8.6). Still to write: what the access gate changes on each of
+     these pages (caller filtering, the 403 and 404), and the landing and feature pages.
 - **Verify:** `grep -rn "AuthValidator\|Authoriser\|acting_user_id\|mcp.agents\|a2a.agents\|
   agui.agents\|userId\|get_a2a_card" docs/docs ak-py/README.md README.md ak-deployment` returns
-  only the frozen `docs/versioned_docs/` snapshots and the Gmail API's `userId="me"`; the docs
-  site builds (`NODE_ENV=production`, 6 GB heap).
+  only the frozen `docs/versioned_docs/` snapshots, the Gmail API's `userId="me"`, and the
+  sentences that say the three lists and `get_a2a_card` were removed; the docs site builds
+  (`NODE_ENV=production`, 6 GB heap).
 
 ### Iteration 28: Skills
 
@@ -857,10 +884,11 @@ user-skill updates), so iterations 27 and 28 cover what phases C to F add and re
 - **Steps:**
   1. Run `ak-dev-sync-skills-from-branch` over the branch; write the two new dev skills from
      spec sections 4 and 7 and their contract suites.
-  2. `ak-dev-new-framework-integration` describes the adapter contract as it now stands: no
-     `get_a2a_card`, and `get_tool_names`, `_tool_descriptions` and `ungated_tool_names` in its
-     place (the card comes from the descriptor); the stub agent in `ak-dev-testing-conventions`
-     loses the method too. Verify no update is needed for `ak-dev-write-spec`,
+  2. Landed with phase C, re-verify here: `ak-dev-new-framework-integration` describes the
+     adapter contract without `get_a2a_card`, with `get_tool_names` and `_tool_descriptions` in
+     its place (the card comes from the descriptor), and the stub agent in
+     `ak-dev-testing-conventions` lost the method. Still to add: `ungated_tool_names` and the tool
+     gate, with phase E. Verify no update is needed for `ak-dev-write-spec`,
      `ak-dev-review-pr`, the other `ak-dev-new-*` skills, `ak-build`, `ak-init` and `ak-test`.
   3. Wherever `ak-add-capabilities` and `ak-cloud-deploy` list the identity providers, Auth0 is
      named as a supported provider with its `oidc` block (decided 2026-11-10), and the

@@ -54,11 +54,10 @@ api:
     agents: true
 
 # Agent-to-Agent communication
+# Every agent is served unless its descriptor's surfaces leave a2a out (see the registry block below).
 a2a:
   enabled: true
   url: http://localhost:8000/a2a
-  agents:
-    - "*"  # Enable for all agents
   task_store_type: redis
 
 # Model Context Protocol
@@ -66,9 +65,7 @@ a2a:
 # Full endpoint: http://{api.host}:{api.port}/mcp - use api.port to change the port.
 mcp:
   enabled: true
-  expose_agents: true
-  agents:
-    - "*"  # Expose all agents as MCP tools
+  expose_agents: true  # Every agent becomes a tool unless its descriptor's surfaces leave mcp out
   url: "http://localhost:8000/mcp"  # Public URL of the endpoint, named by the OAuth resource metadata (default: http://localhost:8000/mcp)
   stateless_http: false  # Run in stateless HTTP mode (default: false)
 
@@ -246,6 +243,30 @@ identity:
     claims: []  # claim paths whose string or list values are also looked up in mapping; only groups by default,
                 # since a user sets many of their own claims (a display name, a username, an email)
 
+# Agent registry (optional - without this block agent descriptors live in the memory of the process that
+# loads the agents, and every agent is on every surface. See "Agent Registry" below)
+registry:
+  type: in_memory  # in_memory | redis | valkey | dynamodb, or a dotted path to an AgentRegistry subclass
+  redis:  # required when type is redis
+    url: redis://localhost:6379
+    prefix: "ak:registry:"
+    ttl: 0  # seconds; 0 keeps descriptors until they are deregistered
+  valkey:  # required when type is valkey
+    url: valkey://localhost:6379
+    prefix: "ak:registry:"
+    ttl: 0
+  dynamodb:  # required when type is dynamodb; partition key agent_id (S), no sort key
+    table_name: ak-agent-registry
+    ttl: 0
+  agents:  # catalog fields set per agent id, over what the agent's code declares
+    support-triage:
+      description: Triage support tickets  # catalog text: the A2A card and the MCP tool carry it
+      version: 1.2.0
+      owner: cx-platform
+      tags: [support]
+      visibility: internal  # private | internal | public
+      surfaces: [rest, agui]  # rest | a2a | mcp | agui; omitted = every surface
+
 # Messaging platform integrations
 slack:
   agent: ""  # Default agent for Slack
@@ -389,13 +410,11 @@ Alternatively, use `config.json`:
   "a2a": {
     "enabled": true,
     "url": "http://localhost:8000/a2a",
-    "agents": ["*"],
     "task_store_type": "redis"
   },
   "mcp": {
     "enabled": true,
     "expose_agents": true,
-    "agents": ["*"],
     "url": "http://localhost:8000/mcp",
     "stateless_http": false
   },
@@ -591,9 +610,11 @@ export AK_API__ENABLED_ROUTES__AGENTS=true  # Enable agent routes (default: true
 # Enable A2A functionality
 export AK_A2A__ENABLED=true  # default: false
 export AK_A2A__URL=http://localhost:8000/a2a  # default: http://localhost:8000/a2a
-export AK_A2A__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
 export AK_A2A__TASK_STORE_TYPE=redis  # Options: 'in_memory', 'redis' (default: 'in_memory')
 ```
+
+Which agents A2A serves is set per agent, not here: see [Agent Registry](#agent-registry). `AK_A2A__AGENTS` was
+removed, and setting it stops the application at startup.
 
 ### Model Context Protocol (MCP) Server
 
@@ -601,11 +622,13 @@ export AK_A2A__TASK_STORE_TYPE=redis  # Options: 'in_memory', 'redis' (default: 
 # Enable MCP functionality
 export AK_MCP__ENABLED=true  # default: false
 export AK_MCP__EXPOSE_AGENTS=true  # Expose agents as MCP tools (default: false)
-export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
 export AK_MCP__URL=https://agents.example.com/mcp  # Public URL of the MCP endpoint (default: http://localhost:8000/mcp)
 export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Session-Id (default: false)
 # Note: MCP is always served at /mcp on the main API server. Use AK_API__PORT to change the port.
 ```
+
+Which agents become MCP tools is set per agent, not here: see [Agent Registry](#agent-registry). `AK_MCP__AGENTS` was
+removed, and setting it stops the application at startup.
 
 ### Secret Resolution
 
@@ -632,6 +655,33 @@ export AK_IDENTITY__PROVIDER__COGNITO__USER_POOL_ID=eu-west-1_XXXXXXXXX  # cogni
 export AK_IDENTITY__PROVIDER__ENTRA__TENANT_ID=<tenant-id>  # entra only
 export AK_IDENTITY__PROVIDER__FIREBASE__PROJECT_ID=<project-id>  # firebase only
 ```
+
+### Agent Registry
+
+Every agent has a **descriptor**: its id, name, version, description, tags, the tools it reports and the surfaces
+it is served on. The agent registry keeps the descriptors, and the agent catalog (`GET /api/v1/agents`), A2A cards,
+MCP agent tools and the AG-UI listing are all built from them.
+
+```bash
+export AK_REGISTRY__TYPE=redis  # Options: 'in_memory', 'redis', 'valkey', 'dynamodb', or a dotted path to an AgentRegistry subclass (default: 'in_memory')
+export AK_REGISTRY__REDIS__URL=redis://localhost:6379  # redis only (the valkey block takes the same keys)
+export AK_REGISTRY__REDIS__PREFIX=ak:registry:  # default: 'ak:registry:'
+export AK_REGISTRY__REDIS__TTL=0  # seconds; 0 keeps descriptors until they are deregistered (default: 0)
+export AK_REGISTRY__DYNAMODB__TABLE_NAME=ak-agent-registry  # dynamodb only; partition key agent_id (S), no sort key
+```
+
+- **Backend.** Without a `registry` block, or with `type: in_memory`, descriptors live in the process that loads the
+  agents. A store-backed type (`redis`, `valkey`, `dynamodb`) shares them, so a process that only accepts requests
+  (the IO process of a split deployment) can list and serve agents that run in another process. A store type needs
+  its connection block; the same extras as the session store apply (`agentkernel[redis]`, `[valkey]`, `[aws]`).
+- **Per-agent fields.** `registry.agents.<id>` sets `description`, `version`, `owner`, `tags`, `visibility`,
+  `surfaces` and `identity` for one agent, over what the code declares. The same fields can be declared in code with
+  `Module.describe(agent, description=..., surfaces=[...])`; where both set a field, the configuration wins. An
+  unknown key under an agent is a startup error, so a misspelt `surfaces` cannot silently leave an agent exposed.
+- **Surfaces.** `surfaces` lists where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Left unset, the agent is on
+  every surface; `[]` puts it on none. This replaces the `a2a.agents`, `mcp.agents` and `agui.agents` lists.
+- **Description.** The description is catalog text you write for people and other agents. It is what an A2A card
+  and an MCP tool publish; an agent's instructions are never published.
 
 ### Test Configuration {#test-configuration-env-vars}
 
@@ -939,8 +989,6 @@ api:
 a2a:
   enabled: false                # Enable A2A functionality
   url: "http://localhost:8000/a2a"  # A2A endpoint URL
-  agents:                       # List of agents to enable for A2A
-    - "*"                       # "*" enables all agents
   task_store_type: "in_memory"  # Task storage: 'in_memory' or 'redis'
 
 # Model Context Protocol
@@ -949,8 +997,6 @@ a2a:
 mcp:
   enabled: false                # Enable MCP functionality
   expose_agents: false          # Expose agents as MCP tools
-  agents:                       # List of agents to expose as MCP tools
-    - "*"                       # "*" exposes all agents
   url: "http://localhost:8000/mcp"  # Public URL clients reach the endpoint at (behind a proxy, the public one). With an
                                 # OpenID-family identity provider it is the resource the RFC 9728 metadata names
   stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
@@ -1185,8 +1231,10 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 # Enable Model Context Protocol
 export AK_MCP__ENABLED=true
 export AK_MCP__EXPOSE_AGENTS=true
-export AK_MCP__AGENTS="my-agent,another-agent"  # Specific agents
 ```
+
+Every agent becomes a tool. To leave one out, list the surfaces it should be on under
+`registry.agents.<id>.surfaces` (see [Agent Registry](#agent-registry)).
 
 ### Observability / Tracing Setup
 

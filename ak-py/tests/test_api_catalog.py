@@ -92,6 +92,19 @@ class TestCatalog:
         assert entry["description"] == ""  # declared catalog text, never the agent's instructions
         assert response.json()["next_cursor"] is None
 
+    def test_an_entry_never_carries_how_the_agent_authenticates(self, descriptor_only_registry):
+        """The catalog is read by any caller; the agent's own subject, client id and the name of its secret are not theirs to see."""
+        identity = {"subject": "svc-billing", "client_id": "billing-client", "client_secret_key": "BILLING_CLIENT_SECRET"}
+        registry = descriptor_only_registry([_descriptor("billing", owner="finance-team", identity=identity)])
+
+        response = _get(Runtime(InMemorySessionStore(), registry=registry))
+
+        [entry] = response.json()["agents"]
+        assert "identity" not in entry
+        assert entry["owner"] == "finance-team"  # the rest of the entry is still there
+        for private in ("svc-billing", "billing-client", "BILLING_CLIENT_SECRET"):
+            assert private not in response.text
+
     def test_an_agent_the_process_does_not_host_is_listed(self, descriptor_only_registry):
         remote = _descriptor("billing", description="Answers invoice questions", version="1.2.0")
 

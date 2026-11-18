@@ -595,6 +595,17 @@ class AgentDescriptor(BaseModel):
         """Whether the agent is served on ``surface`` (``rest``, ``a2a``, ``mcp`` or ``agui``)."""
         return True if self.surfaces is None else surface in self.surfaces
 
+    def catalog_entry(self) -> dict[str, Any]:
+        """The descriptor as a catalog publishes it: every field but ``identity``.
+
+        ``identity`` says how the agent authenticates itself (its subject, its client id, the name of
+        its secret). The registry stores it for the process that hosts the agent; a caller listing
+        agents has no use for it and no claim to it.
+
+        :return: The JSON-ready entry.
+        """
+        return self.model_dump(mode="json", exclude={"identity"})
+
 
 class SystemTool(BaseModel):
     name: str

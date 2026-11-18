@@ -55,6 +55,8 @@ path is pinned in `test_identity_providers.py`.
 |-----------|-------|
 | `test_base.py` | Session, Agent, Runner abstractions; `Agent.run_options` / `RESERVED_RUN_OPTIONS` / `validate_run_options` and `Runner._native_kwargs` (#754); the `RunOptionsFactory` export, `Agent.run_options_factory` and `resolve_run_options` (no-factory copy, sync and async merge, argument identity, non-mapping `TypeError`, reserved-key `ValueError`, propagation, static dict untouched) (#758) |
 | `test_runtime.py` | Runtime registration, execution, hooks |
+| `test_agent_registry.py` | The agent registry (#603): `AgentRegistryContract` (`agentkernel.identity.registry.testing`) run over the in-memory, Redis (a fake client injected at `registry._driver._client`) and DynamoDB (a fake driver) backends, with the shared-store cases through a second registry over the same fake; Valkey's wiring; `AgentRegistryFactory` (each built-in type, a missing block, a dotted path, an unknown type, a missing extra); the `registry.agents` overlay (wins over `Module.describe`, reaches `agent.descriptor`, the actor subject follows an overlaid identity); the descriptor an agent builds (tools, one skill per tool with its description, built on first read); `Module.describe` errors and merge; `Runtime` delegating to the registry; `AgentService.ensure_agent_available` through the registry |
+| `test_api_catalog.py` | `GET /api/v1/agents` (#603): descriptors not names, agents the process does not host, id order and cursor paging, tag filtering, the `rest` surface narrowing applied before the page is cut, a 400 for a malformed cursor, and the agent's `identity` never published |
 | `test_identity_models.py` | The identity models (#603): `AccessLevel` a total order over three members, `Principal` frozen and copied by its helpers (`anonymous()`, `with_actor`), `ToolFilter` answering for an unknown name, `AgentDescriptor` treating a missing `surfaces` list as every surface |
 | `test_runtime_principal.py` | `Runtime`'s identity publication (#603): every run has a principal (anonymous when the surface established none), published into the session for the run with the agent as its `actor`, recorded as the session's owner on the first authenticated run, and a resume checked against the principal that paused; the tool filter is always absent until the access gate |
 | `test_session_identity.py` | Session-level identity publication (#603): the `ak.` cache prefix is reserved (application code can read a reserved key but not `set`, `delete` or `clear` one, which keeps the published principal unforgeable and pending HITL decisions safe), `Session` fronts the principal, tool filter and owner through accessors, `ToolContext` reads the same, and a paused run records who paused it |
@@ -262,8 +264,11 @@ class DummyAgent(Agent):
     def get_description(self) -> str:
         return "Test agent"
 
-    def get_a2a_card(self):
-        return None
+    def override_system_prompt(self, prompt: str) -> None:
+        pass
+
+    def attach_tool(self, tool) -> None:
+        pass
 ```
 
 **A double that *does* exercise streaming yields events, not strings.** `Runner.stream()` is typed

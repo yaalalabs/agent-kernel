@@ -167,6 +167,36 @@ def options_for(agent, session, requests):
 OpenAIModule([agent]).run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
 ```
 
+### Describing an agent
+
+Every loaded agent has a **descriptor**: the record the agent registry keeps for it and the agent catalog,
+A2A cards, MCP agent tools and the AG-UI listing are built from. The framework adapter fills in what it can
+see (the agent's name, its tools, its runner). `describe(agent, **fields)` declares what only your
+application knows, and is chained like `pre_hook` / `post_hook` / `run_options`:
+
+```python
+OpenAIModule([triage, math]).describe(
+    triage,
+    description="Routes a question to the right specialist",
+    version="1.2.0",
+    tags=["support"],
+).describe(math, description="Solves math problems", surfaces=["rest"])
+```
+
+| Field | Meaning |
+|---|---|
+| `description` | Catalog text for people and other agents. An A2A card and an MCP tool publish it; the agent's instructions are never published, so it is empty until you declare it |
+| `version` | The agent's version (default `0.0.0`) |
+| `owner`, `tags` | Free-form metadata; the catalog route filters by tag |
+| `visibility` | `private` (default), `internal` or `public` |
+| `surfaces` | Where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Unset means every surface |
+| `skills` | The skills an A2A card lists; by default one per tool |
+
+Repeated calls merge, the later call winning per field. A field the descriptor does not have, a value it
+does not accept, or the agent's `id` raises `ValueError` at declaration. The same fields can be set per agent
+id in configuration under `registry.agents.<id>`, which wins over what the code declares; see
+[Configuration → Agent Registry](./configuration.md#agent-registry).
+
 ## Best Practices
 
 ### One Module Per Application

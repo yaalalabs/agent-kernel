@@ -546,24 +546,40 @@ dependencies = [
 ```yaml
 mcp:
   enabled: true
-  expose_agents: true             # Auto-expose all registered agents
-  # agents:                       # Or list specific agents
-  #   - name: general
-  #   - name: math
+  expose_agents: true             # Every agent becomes a tool, named by its id
   url: "http://localhost:8000/mcp"  # Public URL of the MCP endpoint (behind a proxy, the public one)
 ```
 
-3. No code changes needed. The MCP server endpoint is automatically available.
+3. Declare a description for each exposed agent. It is the tool's description, which a client model
+   chooses the tool by; the agent's instructions are never published, and an agent with no
+   declared description gets only a generic sentence (a warning at startup names it). Declare it
+   where the agent is loaded, or per agent id in `config.yaml`:
+```python
+OpenAIModule([general, math]).describe(general, description="Answers general questions").describe(
+    math, description="Solves math problems"
+)
+```
+```yaml
+registry:
+  agents:
+    math:
+      description: Solves math problems
+      surfaces: [rest]            # to keep an agent off MCP, list the surfaces it should be on
+```
+   Every agent is exposed unless its `surfaces` (`rest`, `a2a`, `mcp`, `agui`) leaves `mcp` out.
+   There is no `mcp.agents` list any more: setting it stops the application at startup. The MCP
+   server endpoint is automatically available.
 
 4. Know how agent tools run: through the queue pipeline, never on the HTTP request thread. Each call
    is enqueued, the agent runner executes it, and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. With `expose_agents: true`, `RESTAPI.run(handlers=[...])`,
      `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
-   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
-     agent runner (tools are built from the IO process's registry), configure a shared
-     `execution.response_store` (redis, valkey or dynamodb) in every execution mode, and set
-     `mcp.stateless_http: true` when more than one IO replica serves `/mcp`.
+   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): the IO process must know the agents, since tools are
+     built from the agent registry when it starts. Import the same agent modules in the IO process as in the
+     agent runner, or share the registry (`registry.type: redis`, `valkey` or `dynamodb`) and start the runner
+     first. Configure a shared `execution.response_store` (redis, valkey or dynamodb) in every execution mode,
+     and set `mcp.stateless_http: true` when more than one IO replica serves `/mcp`.
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
      block); failures reach the client as a fixed message, with details in the logs only.
    - Tools you add yourself to `MCP.get()` are your own code and still run in the IO process.
@@ -591,12 +607,22 @@ dependencies = [
 ```yaml
 a2a:
   enabled: true
-  agents:
-    - general         # List agents to expose via A2A
   url: "http://localhost:8000/a2a"   # public base of the A2A routes; each card advertises {url}/{agent}
+registry:
+  agents:
+    general:
+      description: Answers general questions   # the card's description; A2A requires one
+      version: 1.0.0
+    math:
+      surfaces: [rest]                         # keeps an agent off A2A; unset = every surface
 ```
+   Every agent is served over A2A unless its `surfaces` leaves `a2a` out. There is no `a2a.agents`
+   list any more: setting it stops the application at startup.
 
-3. No code changes needed. Each agent's card is served at `/a2a/{agent}/.well-known/agent-card.json`
+3. Declare each served agent's description, in `config.yaml` as above or in code with
+   `Module.describe(agent, description=..., version=...)`. The card is built from the agent's
+   descriptor and never carries its instructions, so an undeclared description is empty (a warning
+   at startup names the agent). Each agent's card is served at `/a2a/{agent}/.well-known/agent-card.json`
    (all cards at `/a2a/catalog`). Agent Kernel serves A2A 1.0 only (`a2a-sdk` 1.2.3): callers need
    an `a2a-sdk` 1.x client, built with `ClientFactory` (it sends the required `A2A-Version: 1.0`
    header). A reply labelled by the A2UI capability arrives as a data part.
@@ -607,9 +633,10 @@ a2a:
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on
      SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
-   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
-     agent runner (cards are built from the IO process's registry), and configure a shared
-     `execution.response_store` (redis, valkey or dynamodb) in every execution mode.
+   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): the IO process must know the agents, since cards are
+     built from the agent registry when it starts. Import the same agent modules in the IO process as in the
+     agent runner, or share the registry (`registry.type: redis`, `valkey` or `dynamodb`) and start the runner
+     first. Configure a shared `execution.response_store` (redis, valkey or dynamodb) in every execution mode.
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
      block). `message:stream` is refused: the cards declare `streaming: false`.
    - With an `identity` block (see Identity), a bearer token on the A2A routes is authenticated and
@@ -633,14 +660,16 @@ dependencies = [
 2. Update `config.yaml`:
 ```yaml
 agui:
-  agents: ["general"]        # omitted = every streaming-capable agent is reachable
   prefix: "/agui"
-  default_agent: "general"   # also serves POST /agui; must be one of `agents` when both are set
+  default_agent: "general"   # also serves POST /agui; the agent must be loaded and exposed on agui
   state:
     enabled: true             # attaches get_agui_state / update_agui_state
   client_context:
     enabled: true             # attaches read-only get_forwarded_props / get_agui_context
 ```
+   Every streaming-capable agent is reachable. To keep one off AG-UI, list the surfaces it should be
+   on under `registry.agents.<id>.surfaces` (for example `[rest]`); the `agui.agents` list no longer
+   exists, and setting it stops the application at startup.
 
 3. Mount `AGUIRequestHandler`. AG-UI has no anonymous mode, because a run executes an agent on the
    caller's behalf: the handler requires an `identity` block in `config.yaml` (it refuses to build

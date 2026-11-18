@@ -119,15 +119,52 @@ and for the session-store setting this depends on.
 
 ### GET /api/v1/agents
 
-List all available agents.
+The agent catalog: one page of the agents served on the REST surface, ordered by id. Each entry is the
+agent's **descriptor**, the record the [agent registry](../core-concepts/configuration.md#agent-registry)
+keeps for it.
+
+| Query parameter | Meaning |
+|---|---|
+| `limit` | Page size (default 50, at most 200) |
+| `cursor` | The `next_cursor` of the page before; omit it for the first page |
+| `tags` | Keep only the agents carrying this tag; repeat the parameter to require several |
 
 **Response:**
 
 ```json
 {
-  "agents": ["assistant", "math", "code"]
+  "agents": [
+    {
+      "id": "math",
+      "name": "math",
+      "version": "1.2.0",
+      "description": "Solves math problems and returns the final answer",
+      "owner": null,
+      "tags": ["calculation"],
+      "visibility": "private",
+      "surfaces": null,
+      "skills": [{"id": "add", "name": "add", "description": "Add two numbers", "tags": []}],
+      "tools": ["add"],
+      "runner": "openai",
+      "supports_streaming": true,
+      "updated_at": null
+    }
+  ],
+  "next_cursor": null
 }
 ```
+
+- `description`, `version`, `owner`, `tags`, `visibility` and `surfaces` are what the application declares, with
+  `Module.describe` or under `registry.agents.<id>`. The description is never the agent's instructions, so it is
+  empty until declared.
+- `tools` and `skills` come from the agent's framework: the tools it can call, and one skill per tool.
+- `surfaces` is `null` for an agent served on every surface. An agent whose `surfaces` leaves out `rest` is not
+  listed here.
+- With a shared registry the listing includes agents another process hosts.
+- A malformed `cursor` is a 400.
+
+Earlier versions returned a plain list of names (`{"agents": ["assistant", "math"]}`); read `id` from each
+entry instead.
 
 ### GET /health
 

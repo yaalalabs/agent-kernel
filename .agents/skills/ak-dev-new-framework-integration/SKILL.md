@@ -270,18 +270,18 @@ class <Name>Agent(Agent):
         # Return the agent's description from the native framework object
         return self._native_agent.instructions  # framework-specific
 
-    def get_a2a_card(self):
-        from agentkernel.core.builder import A2ACardBuilder
-        return A2ACardBuilder.build(
-            name=self.name,
-            description=self.get_description(),
-            skills=[...]  # extract from agent tools
-        )
+    def get_tool_names(self) -> list[str]:
+        # The names of the tools the native agent can call, as an authorization policy will name them
+        return [tool.name for tool in self._native_agent.tools]
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        # Tool name -> the native tool's description; the descriptor's skills carry it
+        return {tool.name: tool.description or "" for tool in self._native_agent.tools}
 ```
 
 **Key requirements:**
 - `get_description()` must return a meaningful description from the native framework agent
-- `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder` (a2a-sdk 1.x protobuf types, #762). Pass a `str` description (anything else is emptied with a warning); `AgentSkill(..., tags=[])` is fine, the builder tags an untagged skill with the agent name. Returning `None` means the agent is not served over A2A (logged)
+- `get_tool_names()` and `_tool_descriptions()` report the native agent's tools (#603). The base class builds the agent's descriptor from them, once, on first read, so read the native agent in these methods rather than caching anything in `__init__` (system tools are attached after the base constructor returns). Do not build an A2A card: `get_a2a_card()` was removed, and the A2A surface builds every card from the registry's descriptor (`A2ACardBuilder.build(descriptor)`); MCP agent tools and the catalog route read the same record. Add the descriptor cases to `tests/test_tool_<name>.py` (tool names in order, one skill per tool with its description)
 - Store the native agent in `self._native_agent` for access in the Runner
 - Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
 

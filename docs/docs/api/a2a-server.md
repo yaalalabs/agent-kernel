@@ -15,7 +15,6 @@ A2A is a protocol for agents to discover and communicate with each other across 
 ```bash
 export AK_A2A__ENABLED=true
 export AK_A2A__URL=https://your-domain.com/a2a
-export AK_A2A__AGENTS="*"            # or a comma-separated list of agent names
 export AK_A2A__TASK_STORE_TYPE=in_memory  # 'in_memory' or 'redis'
 ```
 
@@ -25,12 +24,36 @@ or
 a2a:
   enabled: true
   url: https://your-domain.com/a2a
-  agents:
-    - "*"          # expose all agents (or list specific agent names)
   task_store_type: in_memory
 ```
 
 The A2A routes are mounted on the main REST API server under `/a2a`; use `api.port` (or `AK_API__PORT`) to change the port.
+
+### Choosing which agents are served
+
+Every agent is served over A2A unless its descriptor says otherwise. An agent's `surfaces` lists the
+surfaces it is on (`rest`, `a2a`, `mcp`, `agui`); leave it unset and the agent is on all of them. Set it
+in configuration, per agent id:
+
+```yaml
+registry:
+  agents:
+    math:
+      surfaces: [rest]          # reachable through the REST API only
+    triage:
+      surfaces: [rest, a2a]     # also served over A2A
+```
+
+or in code, where the agent is loaded:
+
+```python
+OpenAIModule([triage, math]).describe(math, surfaces=["rest"])
+```
+
+The `a2a.agents` list (and `AK_A2A__AGENTS`) no longer exists. A configuration that still sets it stops
+the application at startup with a message pointing at `registry.agents.<id>.surfaces`. If A2A is enabled
+and no agent is exposed on it, a warning at startup says so; the catalog is then empty and every agent
+route answers 404.
 
 ## Starting A2A Server
 
@@ -55,9 +78,12 @@ separate process only in split deployments.
 | `CloudRun.run()` on GCP, any transport | ✅ through the queue (it starts `IOHandler`) |
 | `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
 
-- **Split deployments** (SQS, Kafka, NATS, Pub/Sub or Service Bus, with the agent runner in its own process): import the
-  same agent modules in the IO process as in the runner, because agent cards are built from the
-  IO process's registry. Without them the IO process logs a warning and serves an empty catalog.
+- **Split deployments** (SQS, Kafka, NATS, Pub/Sub or Service Bus, with the agent runner in its own process): agent
+  cards are built from the [agent registry](../core-concepts/configuration.md#agent-registry), so the IO process has
+  to know the agents. Either import the same agent modules in the IO process as in the runner, or share the registry
+  (`registry.type: redis`, `valkey` or `dynamodb`) so the IO process reads the descriptors the runner registered. Cards
+  are built once, when the IO process starts: start the runner first, and restart the IO process after adding an agent.
+  An IO process whose registry knows no agent logs a warning and serves an empty catalog.
   The response store must be shared (`redis`, `valkey` or `dynamodb`) in every execution mode.
 - **Latency**: the reply is picked up by polling the response store, so it takes at least one
   `execution.response_store.delay` (1 s without a `response_store` block), and the wait gives up
@@ -74,17 +100,42 @@ one runs as the anonymous principal. Without an `identity` block every request i
 providers (`static`, `oidc` for Auth0, Keycloak, Okta or any OpenID Connect issuer, `cognito`, `entra`,
 `firebase`) are described in [Identity and access](../advanced/identity-and-access.md).
 
+With an `identity` block, every agent card also tells a client how to authenticate. It declares one
+security scheme and requires it, on the card and on each skill: HTTP bearer for the `static` provider and
+for a provider of your own, OpenID Connect with the issuer's discovery URL for the `oidc` family. Without
+an `identity` block a card declares no security.
+
 ## Agent Capabilities
 
-Each exposed agent automatically publishes an A2A **agent card** (via the framework adapter's `get_a2a_card()`), describing its name, description, and endpoint.
+Each exposed agent automatically publishes an A2A **agent card**. Agent Kernel builds the card from the
+agent's **descriptor**, the record the agent registry keeps for it, so every framework gets a card the same way.
 
+- **Name, description and version** are the descriptor's. The description is the catalog text you declare,
+  never the agent's instructions, so it is empty until you set one (a warning at startup names each agent
+  served without it, and A2A requires the field). Declare it where the agent is loaded, or per agent id in
+  configuration:
+
+  ```python
+  OpenAIModule([triage]).describe(triage, description="Routes a question to the right specialist", version="1.2.0")
+  ```
+
+  ```yaml
+  registry:
+    agents:
+      triage:
+        description: Routes a question to the right specialist
+        version: 1.2.0
+  ```
+
+- **Skills:** one per tool the agent has, with the tool's own description. Pass `skills=[...]` to
+  `Module.describe` to publish a list of your own instead.
 - **Protocol:** A2A 1.0 over HTTP+JSON, built on `a2a-sdk` 1.2.3 (pinned exactly). The card has one
   entry in `supportedInterfaces`: `{a2a.url}/{agent}`, protocol version `1.0`.
 - **Modes:** `text/plain` in and out. An agent whose replies the [A2UI capability](../advanced/a2ui.md)
   labels also lists `application/a2ui+json` as an output mode, and declares the A2UI extension
   (`https://a2ui.org/a2a-extension/a2ui/v0.9.1`, not required) in `capabilities.extensions`.
-- Agents whose framework has no A2A card (Google ADK today) are not served over A2A; a warning
-  says so at startup.
+- **Every framework:** the card needs nothing from the framework adapter, so Google ADK agents are served
+  over A2A like the rest.
 
 ## Agent Discovery
 
@@ -138,8 +189,9 @@ Agent Kernel serves A2A 1.0 only. A 0.3 client gets 404 on the old `/a2a/{agent}
   `supported_protocol_bindings=["HTTP+JSON"]`), or set the `A2A-Version: 1.0` header yourself.
 - Read the card's endpoint from `supportedInterfaces`; the card no longer has `url` or
   `preferredTransport`, and its JSON is camelCase.
-- Code that builds `a2a` types (a custom `get_a2a_card()`, your own client) moves to the 1.x
-  protobuf types, e.g. `Part(text=...)`, `Role.ROLE_USER`, `SendMessageRequest(message=...)`.
+- Code that builds `a2a` types (your own client) moves to the 1.x protobuf types, e.g. `Part(text=...)`,
+  `Role.ROLE_USER`, `SendMessageRequest(message=...)`. A framework adapter of your own no longer builds a card:
+  `get_a2a_card()` is gone, and the card comes from the agent's descriptor.
 
 ## Multi-Agent Network
 

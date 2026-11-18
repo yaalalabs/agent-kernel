@@ -108,16 +108,31 @@ read it through `session.get_principal()` and `ToolContext.get().principal`. A r
 credential, or with one the provider refuses, is a 401. See
 [Identity and access](../advanced/identity-and-access.md).
 
-An agent that `agui.agents` does not expose is treated exactly as an unknown agent, a 404, so the
+An agent that is not exposed on AG-UI is treated exactly as an unknown agent, a 404, so the
 surface never confirms that a name exists but is hidden.
+
+### Choosing which agents are reachable
+
+Every streaming-capable agent is reachable unless its descriptor's `surfaces` leaves `agui` out
+(`rest`, `a2a`, `mcp`, `agui`; unset means all of them). Set it per agent id in configuration, or
+with `Module.describe(agent, surfaces=[...])` where the agent is loaded:
+
+```yaml
+registry:
+  agents:
+    reviewer:
+      surfaces: [rest]     # not reachable over AG-UI
+```
+
+The `agui.agents` list (and `AK_AGUI__AGENTS`) no longer exists; a configuration that still sets it
+stops the application at startup with a message pointing at `registry.agents.<id>.surfaces`.
 
 ## Configuration
 
 ```yaml
 agui:
   prefix: /agui            # route prefix
-  agents: [planner]        # omitted = every streaming-capable agent is reachable
-  default_agent: planner   # serves POST /agui in addition to POST /agui/planner
+  default_agent: planner   # serves POST /agui in addition to POST /agui/planner; must be exposed on agui
   state:
     enabled: true          # attaches get_agui_state / update_agui_state
     agents: [planner]      # omitted = all agents

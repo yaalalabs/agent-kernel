@@ -161,6 +161,7 @@ class AgentDescriptor(BaseModel):
     identity: AgentIdentitySpec = AgentIdentitySpec()
     updated_at: Optional[str] = None   # set by store-backed registries
     def exposed_on(self, surface: str) -> bool: ...
+    def catalog_entry(self) -> dict: ...   # model_dump(mode="json") without `identity`
 ```
 
 - `Principal.frozen` means a hook or tool holding one cannot mutate it; `with_actor` and
@@ -709,6 +710,15 @@ descriptors, cursor, limit, tags)`, so a page is never short because of an agent
 by `clamp_limit(limit, DEFAULT_PAGE_SIZE)`; a malformed cursor is 400. The queue-mode
 `RequestHandler` mounts the same `list_agents` (`pipeline/request_handler.py:342, 375`).
 
+An entry is `AgentDescriptor.catalog_entry()`, the descriptor without its `identity`, and the
+response is `AgentDescriptorPage.catalog()` (added 2026-11-18, before phase C merged). `identity`
+says how the agent authenticates itself (its subject, its client id, the name of its secret): the
+registry stores it for the process that hosts the agent, and any caller can read the catalog, so
+it is left out of what is published and kept in what is stored. The endpoint returns the dict
+itself rather than relying on a response model, so no mount of the route can publish the field.
+Until the gate filters the listing by caller (iteration 19), every agent exposed on `rest` is
+listed to every caller, whatever its `visibility`.
+
 **A2A card** (`core/builder.py:40-74`): `A2ACardBuilder.build(descriptor: AgentDescriptor) ->
 AgentCard` replaces `build(name, description, skills)`: `name = descriptor.name`, `description =
 descriptor.description`, `version = descriptor.version` (not `library_version`, line 69),
@@ -750,6 +760,11 @@ Cards are built by the A2A surface from the registry, not by the adapters (desig
   agent whose descriptor reaches a shared registry after a process mounted its routes is served
   by that process only after it restarts. Stored descriptors do not expire, so this concerns a
   first deployment and a newly added agent; it is a documented boundary, not solved here.
+- When the registry knows agents and none is exposed on `a2a`, `_build` logs one warning naming
+  `registry.agents.<id>.surfaces` and `a2a.enabled` (added 2026-11-18): the surface is otherwise
+  mounted empty and silent, an empty catalog with every agent route a 404. A registry that knows
+  no agent at all stays the host's to report (`IOHandler._warn_if_no_agents`), so the two never
+  say the same thing twice.
 
 ### 7. Authorization (`identity/authz/`)
 
@@ -1088,7 +1103,9 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `Module.describe` and `registry.agents.<id>.description`, since a client chooses a tool by
   that text. Unlike a card's description this one is not left empty: it describes the tool, and
   an empty one leaves a client nothing to choose by. Tools are registered once, at build, so an
-  agent registered later is exposed after a restart (the A2A boundary, section 6).
+  agent registered later is exposed after a restart (the A2A boundary, section 6). With
+  `expose_agents` on, agents known and none exposed on `mcp`, `_build` logs one warning naming
+  `registry.agents.<id>.surfaces` and `mcp.expose_agents`, as A2A does (section 6).
 - Each agent tool is registered with `cls._fastmcp.tool(execute, name=..., description=...,
   auth=visible_check)` where `visible_check: AuthCheck` (`fastmcp/utilities/authorization.py:47`)
   reads the principal off the context's access token and returns `AccessGate.visible(principal,
@@ -1488,8 +1505,9 @@ Each is intentional; the justification is design section 10 unless stated.
    provider yields a subject always connects. The WS ack frame carries `subject`.
 5. `GET /api/v1/agents` returns descriptors filtered by the caller and paginated, not a list of
    names: `{"agents": [<descriptor>...], "next_cursor": ...}`, narrowed to the agents exposed on
-   `rest`, in id order. AG-UI's `/agents` lists ids in id order too, where it followed the
-   registration order, and lists agents another process hosts.
+   `rest`, in id order, each descriptor without its `identity`. AG-UI's `/agents` lists ids in
+   id order too, where it followed the registration order, and lists agents another process
+   hosts.
 6. MCP `tools/list` and `/a2a/catalog` return only the agents the caller may see; a hidden
    agent's A2A card is 404; calling a hidden MCP tool is refused by FastMCP.
 7. With an `authorization` block, an agent run is refused before pre-hooks (403), a hidden agent
@@ -1599,6 +1617,7 @@ for the two caches and the framework context; public exports other than those na
 | Unknown key or out-of-range value under `registry.agents.<id>` | the config model | a validation error at load |
 | Agent served over A2A with no description | `A2A._build` | one warning per agent at mount; the card is served with an empty description |
 | Agent exposed as an MCP tool with no description | `MCP._build` | one warning per agent at build; the tool carries the neutral `UNDESCRIBED_TOOL_TEXT` |
+| A2A, or MCP agent tools, enabled while no known agent is exposed on the surface | `A2A._build`, `MCP._build` | one warning at build naming `registry.agents.<id>.surfaces`; the surface serves nothing |
 | Policy naming an unknown tool on a hosted agent; LangGraph/smolagents ungated tools | `AccessGate.validate_configuration` | `AKConfigError` at `Module.load` / `get_router()` |
 | Removed config lists present | `_A2AConfig`/`_MCPConfig`/`_AGUIConfig` validators | `AKConfigError` naming `registry.agents.<id>.surfaces` |
 | Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; catalog routes 500 |
@@ -1680,6 +1699,10 @@ New files under `ak-py/tests/`:
   `LookupError`, the 404 and the `Agent '<name>' not found` text; the unnamed case keeps its
   `ValueError`. `test_api_http` gains the parity case: an unknown agent and a hidden one answer
   with the same status and body.
+- `test_api_catalog.py` also pins that an entry never carries the agent's `identity`, and
+  `test_agent_registry` that the stored descriptor keeps it. `test_api_a2a_surface` and
+  `test_api_mcp` cover the empty-surface warning: once when agents are known and none is exposed,
+  not when one is exposed, and not when the registry knows no agent.
 - `test_api_catalog.py`: `GET /api/v1/agents` descriptors, filtering by caller, `tools`
   narrowing and the `skills` narrowed with it (a tool-backed skill goes with its tool, a declared
   skill that names no tool stays), cursor and limit, 400 on a bad cursor, `surfaces` narrowing
@@ -1823,8 +1846,14 @@ before enqueue on a store-backed registry with no local agents), gets dedicated 
 ## Documentation, skills and examples
 
 Surfaces the implementation invalidates, from a sweep of the tree at `d9d0d18bc`. The phase A and
-B portion landed with phase B itself (PR #937); `plan.md`'s docs and skills iterations (27 and 28)
-cover phases C to F, and the sync skills verify them before merge.
+B portion landed with phase B itself (PR #937), and the phase C portion with phase C (2026-11-18:
+the `registry` block, descriptors and `Module.describe`, the catalog response, where A2A cards
+and MCP tool text come from, per-agent `surfaces` in place of the three removed lists, and the
+adapter contract without `get_a2a_card`, across the docs site, `ak-py/README.md`, the dev skills
+`ak-dev-architecture`, `ak-dev-new-framework-integration` and `ak-dev-testing-conventions`, the
+user skill `ak-add-capabilities` with its evals, and the four examples that expose agents over A2A
+or MCP, which now declare a description for each agent). `plan.md`'s docs and skills iterations
+(27 and 28) cover phases D to F, and the sync skills verify the whole before merge.
 
 - **Docs site (`docs/docs/`)**: new `advanced/identity-and-access.md`; `api/rest-api.md`
   (the Authentication section 474-499 and the `user_id` context claim 192-207, already

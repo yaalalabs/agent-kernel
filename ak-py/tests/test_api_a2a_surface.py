@@ -281,6 +281,38 @@ class TestCardsFromTheRegistry:
         with Runtime(InMemorySessionStore(), registry=registry):
             assert A2A.get_agent_names() == ["a2a-too", "everywhere"]
 
+    def test_enabled_with_agents_known_and_none_exposed_on_a2a_warns_once_naming_the_setting(self, _fresh_a2a, descriptor_only_registry, caplog):
+        """An empty surface that says nothing reads as a broken deployment: the catalog is empty and every agent route is a 404."""
+        registry = descriptor_only_registry(
+            [_descriptor(id="triage", name="triage", surfaces=["rest"]), _descriptor(id="math", name="math", surfaces=[])]
+        )
+
+        with caplog.at_level("WARNING", logger="ak.a2a"):
+            with Runtime(InMemorySessionStore(), registry=registry):
+                assert A2A.get_agent_names() == []
+                assert A2A.get_cards() == []  # built once: asking again does not warn again
+
+        [warning] = [record.getMessage() for record in caplog.records if record.name == "ak.a2a"]
+        assert "none of the 2 agents" in warning
+        assert "registry.agents.<id>.surfaces" in warning and "a2a.enabled" in warning
+
+    def test_no_empty_surface_warning_when_an_agent_is_exposed(self, _fresh_a2a, descriptor_only_registry, caplog):
+        registry = descriptor_only_registry([_descriptor(id="triage", name="triage"), _descriptor(id="math", name="math", surfaces=["rest"])])
+
+        with caplog.at_level("WARNING", logger="ak.a2a"):
+            with Runtime(InMemorySessionStore(), registry=registry):
+                assert A2A.get_agent_names() == ["triage"]
+
+        assert [record.getMessage() for record in caplog.records if record.name == "ak.a2a"] == []
+
+    def test_no_empty_surface_warning_when_the_registry_knows_no_agent(self, _fresh_a2a, descriptor_only_registry, caplog):
+        """That case is the host's to report (IOHandler names the fix for it); the surface does not say it twice."""
+        with caplog.at_level("WARNING", logger="ak.a2a"):
+            with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([])):
+                assert A2A.get_agent_names() == []
+
+        assert [record.getMessage() for record in caplog.records if record.name == "ak.a2a"] == []
+
     @pytest.mark.asyncio
     async def test_the_routes_of_an_agent_hosted_elsewhere_are_served(self, _fresh_a2a, descriptor_only_registry):
         remote = _descriptor(id="remote", name="Remote agent", description="Runs in another process")

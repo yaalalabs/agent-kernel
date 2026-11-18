@@ -392,6 +392,30 @@ class TestAgentTools:
         assert [name for name, _ in tools] == ["everywhere", "mcp-too"]
 
     @pytest.mark.asyncio
+    async def test_agents_known_and_none_exposed_on_mcp_warns_once_naming_the_setting(self, descriptor_only_registry, caplog):
+        """Agent tools switched on and none registered is otherwise silent: the tool list simply has no agents in it."""
+        registry = descriptor_only_registry(
+            [
+                AgentDescriptor(id="triage", name="triage", description="Routes", surfaces=["rest", "a2a"]),
+                AgentDescriptor(id="math", name="math", description="Adds", surfaces=[]),
+            ]
+        )
+
+        with caplog.at_level("WARNING", logger="ak.mcp"):
+            assert await self._listed(Runtime(InMemorySessionStore(), registry=registry)) == []
+
+        [warning] = [record.getMessage() for record in caplog.records if record.name == "ak.mcp"]
+        assert "none of the 2 agents" in warning
+        assert "registry.agents.<id>.surfaces" in warning and "mcp.expose_agents" in warning
+
+    @pytest.mark.asyncio
+    async def test_no_empty_surface_warning_when_the_registry_knows_no_agent(self, descriptor_only_registry, caplog):
+        with caplog.at_level("WARNING", logger="ak.mcp"):
+            assert await self._listed(Runtime(InMemorySessionStore(), registry=descriptor_only_registry([]))) == []
+
+        assert [record.getMessage() for record in caplog.records if record.name == "ak.mcp"] == []
+
+    @pytest.mark.asyncio
     async def test_no_agent_tool_is_registered_when_agents_are_not_exposed(self, descriptor_only_registry, monkeypatch):
         monkeypatch.setenv("AK_MCP__EXPOSE_AGENTS", "false")
         AKConfig._reset()

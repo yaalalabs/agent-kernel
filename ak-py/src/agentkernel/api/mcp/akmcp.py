@@ -151,7 +151,8 @@ class MCP:
             # From the registry's descriptors, not the agents this process hosts: a tool needs only the agent's
             # id and catalog text, so a process over a shared registry exposes agents that run elsewhere. In id
             # order, so every process lists the same tools whatever order its registry answers in.
-            for descriptor in sorted(Runtime.current().registry.descriptors(), key=lambda descriptor: descriptor.id):
+            descriptors = Runtime.current().registry.descriptors()
+            for descriptor in sorted(descriptors, key=lambda descriptor: descriptor.id):
                 if not descriptor.exposed_on("mcp"):
                     continue
                 if not descriptor.description:
@@ -166,5 +167,14 @@ class MCP:
                     name=descriptor.id,
                     # Always given: left out, FastMCP would publish the executor's own docstring.
                     description=descriptor.description or cls.UNDESCRIBED_TOOL_TEXT.format(agent=descriptor.id),
+                )
+            if descriptors and not cls._executors:
+                # Agents exist and none became a tool: without this the tool list just has no agents in it.
+                # A registry that knows no agent at all is the host's to report (IOHandler).
+                cls._log.warning(
+                    f"MCP agent tools are enabled (mcp.expose_agents) but no agent became a tool: none of the {len(descriptors)} "
+                    f"agents the registry knows is exposed on mcp. An agent is on every surface unless its descriptor's surfaces "
+                    f"leave one out; add mcp to registry.agents.<id>.surfaces (or Module.describe(agent, surfaces=[...])) for "
+                    f"the agents MCP should expose, or set mcp.expose_agents to false"
                 )
         cls._built = True

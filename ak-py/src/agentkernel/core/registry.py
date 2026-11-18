@@ -60,6 +60,14 @@ class AgentDescriptorPage(BaseModel):
         page, next_offset = paginate(matching, clamp_limit(limit, DEFAULT_PAGE_SIZE), offset)
         return cls(agents=page, next_cursor=encode_cursor(next_offset))
 
+    def catalog(self) -> dict[str, Any]:
+        """
+        The page as a catalog route answers with it: each agent's catalog entry, which leaves out how the
+        agent authenticates, and the cursor of the next page.
+        :return: The JSON-ready response body.
+        """
+        return {"agents": [descriptor.catalog_entry() for descriptor in self.agents], "next_cursor": self.next_cursor}
+
 
 class AgentRegistry(ABC):
     """
