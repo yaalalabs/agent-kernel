@@ -411,3 +411,43 @@ class TestTwoRunsOutstanding:
         assert events(response)[-1]["type"] == "RUN_ERROR"
         assert agent.runner.resumed_with is None
         assert len(still_open) == 2
+
+
+class TestThreadHistory:
+    """A pause and its decision land in the thread the same way #827 records them on REST."""
+
+    def test_the_pause_and_the_decision_are_recorded(self, monkeypatch):
+        from agentkernel.core.config import AKConfig, _ThreadStoreConfig
+        from agentkernel.integration.thread import ConversationThreadManager, ThreadNamingStrategy
+        from agentkernel.integration.thread.model import HITL_MEDIA_TYPE
+        from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
+
+        class FixedNaming(ThreadNamingStrategy):
+            def generate_name(self, prompt: str) -> str:
+                return "thread"
+
+        monkeypatch.setattr(AKConfig.get(), "thread", _ThreadStoreConfig(type="in_memory"), raising=False)
+        ConversationThreadManager.reset()
+        ConversationThreadManager.set_naming_strategy(FixedNaming())
+        InMemoryThreadStore._threads.clear()
+        InMemoryThreadStore._messages.clear()
+        try:
+            with serving(monkeypatch, [PausingAgent()]) as (client, _):
+                client.post("/agui/refunds", json=body(), headers=AUTH)
+                client.post("/agui/refunds", json=body(resume=[{"interruptId": "i1", "status": "resolved", "payload": True}]), headers=AUTH)
+
+            messages = ConversationThreadManager.get().get_messages("session-1").messages
+        finally:
+            ConversationThreadManager.reset()
+            InMemoryThreadStore._threads.clear()
+            InMemoryThreadStore._messages.clear()
+
+        assert [(m.role, m.media_type) for m in messages] == [
+            ("user", None),
+            ("assistant", HITL_MEDIA_TYPE),
+            ("user", HITL_MEDIA_TYPE),
+            ("assistant", None),
+        ]
+        assert messages[1].content["interruptions"][0]["id"] == "i1"
+        assert messages[2].content["resume"]["decisions"][0]["status"] == "approved"
+        assert messages[3].content == "resumed"

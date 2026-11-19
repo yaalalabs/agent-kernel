@@ -108,7 +108,7 @@ agent = runtime.agents().get("assistant")
 session = runtime.sessions().get("user-123") or runtime.sessions().new("user-123")
 ```
 
-When chat is served by the thread handler (`AgentThreadRequestHandler`), the request must be authenticated (the thread belongs to the caller's principal; see [Identity and Access](../advanced/identity-and-access.md)) and the user message (with any attachments) is recorded to the [conversation thread](../advanced/threads) before the run. Other surfaces do not record threads.
+When chat is served by the thread handler (`AgentThreadRequestHandler`), the request must be authenticated (the thread belongs to the caller's principal; see [Identity and Access](../advanced/identity-and-access.md)) and the user message (with any attachments) is recorded to the [conversation thread](../advanced/threads) before the run. AG-UI records the same way whenever a `thread` block is present; other surfaces do not record threads.
 
 ### 3. Agent Execution
 

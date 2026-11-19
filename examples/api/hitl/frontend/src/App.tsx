@@ -50,7 +50,7 @@ export default function App() {
     void run({ prompt: text });
   }
 
-  async function decide(lineId: string, verdict: Verdict, settled: string) {
+  async function decide(lineId: string, verdict: Verdict, pending: string, settled: string) {
     // Answer goes back to the agent that asked, not the one selected now — switching the picker
     // while a pause is open would otherwise post it to an agent the record does not belong to, which
     // Agent Kernel rejects as an agent mismatch.
@@ -58,7 +58,7 @@ export default function App() {
     if (asked?.kind !== "pause") return;
 
     const staged: Line[] = lines.map((line) =>
-      line.id === lineId && line.kind === "pause" ? { ...line, staged: { verdict, settled } } : line,
+      line.id === lineId && line.kind === "pause" ? { ...line, staged: { verdict, pending, settled } } : line,
     );
     setLines(staged);
 
@@ -69,8 +69,13 @@ export default function App() {
 
     // Retire the questions only once the run accepted them. A failed resume leaves the pause in
     // place precisely so it can be answered again, which a card with no buttons left cannot do.
+    // Its staged answers are cleared, since whether the server applied them is unknown.
     const resume = answers.map(({ line, staged: answer }) => ({ interruptId: line.interrupt.id, verdict: answer.verdict }));
-    if (!(await run({ agent: asked.agent, resume }))) return;
+    const batch = new Set(answers.map(({ line }) => line.id));
+    if (!(await run({ agent: asked.agent, resume }))) {
+      setLines((current) => current.map((line) => (line.kind === "pause" && batch.has(line.id) ? { ...line, staged: undefined } : line)));
+      return;
+    }
     const settledById = new Map(answers.map(({ line, staged: answer }) => [line.id, answer.settled]));
     setLines((current) =>
       current.map((line) => (line.kind === "pause" && settledById.has(line.id) ? { ...line, settled: settledById.get(line.id) } : line)),
@@ -135,7 +140,7 @@ export default function App() {
                   lineId={line.id}
                   interrupt={line.interrupt}
                   settled={line.settled}
-                  staged={line.staged?.settled}
+                  staged={line.staged?.pending}
                   busy={running}
                   onDecide={decide}
                 />

@@ -6,6 +6,7 @@ from agentkernel.api import RESTAPI
 from agentkernel.core import Session
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.pipeline import IOHandler
+from agentkernel.thread import ThreadRESTRequestHandler
 from agents import Agent, ModelSettings
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -102,8 +103,11 @@ def runner() -> None:
 
     AG-UI has no anonymous mode: the handler refuses to build without the `identity` block in
     config.yaml, whose provider turns the bearer token into the run's principal.
+
+    The thread read routes are mounted beside AG-UI: the `thread` block records the runs, and these
+    routes are how a client reads them back.
     """
-    IOHandler.run(handlers=[AGUIPipelineRequestHandler()])
+    IOHandler.run(handlers=[AGUIPipelineRequestHandler(), ThreadRESTRequestHandler()])
 
 
 if __name__ == "__main__":

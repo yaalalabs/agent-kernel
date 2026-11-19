@@ -29,6 +29,14 @@ session:
     url: valkey://localhost:6379
     prefix: "ak:agui:session:"
 
+thread:
+  # The API records the user turn and the runner records the reply, in different processes, so the
+  # thread store must be shared. Same Valkey as the session store.
+  type: valkey
+  valkey:
+    url: valkey://localhost:6379
+    prefix: "ak:agui:thread:"
+
 execution:
   queues:
     type: nats

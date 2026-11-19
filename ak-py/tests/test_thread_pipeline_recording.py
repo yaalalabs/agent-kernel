@@ -14,20 +14,21 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from agentkernel.core.base import Agent, Runner
+from agentkernel.core.base import Agent, Runner, Session
 from agentkernel.core.chat_service import ResponseBuilder
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
-from agentkernel.core.model import AgentReplyText, AgentRequestText, Principal, ScheduleSpec
+from agentkernel.core.event import MessageEnd, MessageStart, PausedInterruption, RunPaused, TextDelta
+from agentkernel.core.model import AgentReplyText, AgentRequestText, Principal, ScheduleSpec, StreamChunk
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator
+from agentkernel.integration.agui.run_input import AGUIRunRequest
 from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRequestHandler
 from agentkernel.integration.thread.model import HITL_MEDIA_TYPE
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.consumer import ConsumerLoop
-from agentkernel.pipeline.envelope import ATTR_THREAD, QueueMessage, QueueName
+from agentkernel.pipeline.envelope import ATTR_AGUI, ATTR_THREAD, QueueMessage, QueueName
 from agentkernel.pipeline.io_handler import IOHandler
 from agentkernel.pipeline.request_handler import RequestHandler
 from agentkernel.pipeline.response_handler import ResponseHandler
@@ -535,6 +536,106 @@ class TestStreamRunnerRecording:
         self._stream_runner([{"done": True}]).process(_marked_message())
 
         assert [m.role for m in manager.get_messages("s1").messages] == ["user"]
+
+
+class _AGUIHandler:
+    """Stands in for the AgentHandler `_process_agui` prepares: a real session, scripted chunks."""
+
+    def __init__(self, chunks):
+        self.service = MagicMock()
+        self.service.session = Session("s1")
+        self._chunks = chunks
+
+    def run_stream_sync(self, requests, principal=None):
+        yield from self._chunks
+
+
+def _agui_message(marked=True) -> QueueMessage:
+    body = AGUIRunRequest(
+        session_id="s1",
+        agent=AGENT_NAME,
+        principal=Principal(subject="u1", provider="static", namespace="static"),
+        requests=[AgentRequestText(prompt="hello")],
+    )
+    return QueueMessage(
+        body=body.model_dump_json(exclude_none=True),
+        attributes={"request_id": "r1", ATTR_AGUI: "1", **({ATTR_THREAD: "1"} if marked else {})},
+        group_id="s1",
+        dedup_id="d1",
+        message_id="m1",
+    )
+
+
+class TestAGUIRunnerRecording:
+    """`_process_agui` records the reply when the AG-UI edge marked the message (#836)."""
+
+    def _runner(self, chunks, transport=None):
+        chat_service = MagicMock()
+        chat_service.prepare_agent_handler.return_value = _AGUIHandler(chunks)
+        return AgentRunner(transport=transport or InMemoryTransport(), chat_service=chat_service)
+
+    def test_the_reply_is_recorded_after_the_terminal_chunk_is_sent(self, monkeypatch):
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        transport = InMemoryTransport()
+        order = []
+        monkeypatch.setattr(transport, "send", MagicMock(side_effect=lambda *a, **k: order.append("send")))
+        record = manager.append_message
+        monkeypatch.setattr(manager, "append_message", MagicMock(side_effect=lambda *a, **k: order.append("record") or record(*a, **k)))
+
+        self._runner([StreamChunk(delta="he"), StreamChunk(delta="llo"), StreamChunk(done=True)], transport).process(_agui_message())
+
+        assert order == ["send", "send", "send", "record"]
+        assert [(m.role, m.content) for m in manager.get_messages("s1").messages] == [("user", "hello"), ("assistant", "hello")]
+
+    def test_a_pause_is_recorded(self, monkeypatch):
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        pause = RunPaused(run_id="run-1", agent=AGENT_NAME, interruptions=[PausedInterruption(id="i1", kind="tool_call")])
+
+        self._runner([StreamChunk(delta="Let me check"), StreamChunk(event=pause), StreamChunk(done=True)]).process(_agui_message())
+
+        reply = manager.get_messages("s1").messages[-1]
+        assert (reply.role, reply.media_type) == ("assistant", HITL_MEDIA_TYPE)
+        assert reply.content["run_id"] == "run-1"
+
+    def test_an_error_records_nothing(self, monkeypatch):
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+
+        self._runner([StreamChunk(delta="he"), StreamChunk(error="boom", done=True)]).process(_agui_message())
+
+        assert [m.role for m in manager.get_messages("s1").messages] == ["user"]
+
+    def test_an_unmarked_message_records_nothing(self, monkeypatch):
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+
+        self._runner([StreamChunk(delta="hello"), StreamChunk(done=True)]).process(_agui_message(marked=False))
+
+        assert [m.role for m in manager.get_messages("s1").messages] == ["user"]
+
+    def test_an_unmarked_message_gathers_no_reply(self, monkeypatch):
+        gathered = MagicMock()
+        monkeypatch.setattr("agentkernel.integration.thread.recorder.StreamedReply", gathered)
+        transport = InMemoryTransport()
+        sent = MagicMock()
+        monkeypatch.setattr(transport, "send", sent)
+
+        self._runner([StreamChunk(delta="hello"), StreamChunk(done=True)], transport).process(_agui_message(marked=False))
+
+        gathered.assert_not_called()
+        assert sent.call_count == 2
+
+    def test_a_runner_without_thread_config_warns_and_drops_the_reply(self, monkeypatch, caplog):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+        ConversationThreadManager.reset()
+
+        with caplog.at_level("WARNING"):
+            self._runner([StreamChunk(delta="hello"), StreamChunk(done=True)]).process(_agui_message())
+
+        assert "no 'thread' config block" in caplog.text
 
 
 class TestMounting:
