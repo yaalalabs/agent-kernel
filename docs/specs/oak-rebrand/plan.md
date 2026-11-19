@@ -289,3 +289,18 @@ particle hero and the integration ledger are not, the level tiles are to be redo
   2. Keyboard pass on every marketing page.
   3. Production build; the screenshot set; a check of the drawings in Safari and Firefox.
 - **Verify:** the build passes; a scan reports no unused class in the page stylesheets.
+
+## Iteration 27: second review round of 2026-11-19
+
+- **Status:** done.
+- **Goal:** the seven points from the maintainer's second review.
+- **Steps:**
+  1. Light is the default colour mode (`docs/docusaurus.config.js`); the dark mode stays on the navbar switch.
+  2. The hero install line switches between `pip install agentkernel` and `uv add agentkernel`.
+  3. The persona pages have a "Back to path selection" link at the top of the page header (`PageHero` takes a `back` prop) and a button at the foot.
+  4. The architecture diagram is rebuilt: the runtime is one panel as tall as the columns beside it, so each card joins it with one straight rail. No connector bends, crosses a box or stops short, and the diagram needs no script.
+  5. The chat launcher is a flat labelled button ("Ask OAK"), and the panel is rebuilt on solid surfaces: in the light mode it had been translucent, with a white heading on white.
+  6. The hero is a particle mark on the GPU (`docs/src/components/ParticleLogo/`), following the maintainer's brief and the reference they named: it builds from particles on load, ripples, swirls and leans under the pointer, and scatters as the page scrolls. This supersedes iteration 18. `gsap` and `three` are removed from `package.json`.
+  7. Blog banners: the eight existing ones are recoloured and carry the new mark (text baked into them keeps the old name), and the ten posts without one have a banner from a template kept in `branding/blog-banner/`. The blog index thumbnail takes the banners' shape.
+- **Verify:** the production build passes on an isolated copy; captures of each change in both colour modes. Not checked: Safari and Firefox, and the particle hero on a low-power device.
+- **Open:** whether other parts of the home page should use particle drawings; the maintainer asked to be consulted first.

@@ -1,8 +1,8 @@
+import React, { type CSSProperties } from 'react';
+import Link from '@docusaurus/Link';
+import clsx from 'clsx';
 import SectionHeader from '@site/src/components/ui/SectionHeader';
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import Link from "@docusaurus/Link";
-import clsx from "clsx";
-import styles from "./styles.module.css";
+import styles from './styles.module.css';
 import {
   CORE_LABEL,
   CORE_PILLS,
@@ -13,196 +13,43 @@ import {
   SOURCES_LABEL,
   type ArchCard,
   type Chip,
-} from "./data";
+} from './data';
 
-/** Below this width the three columns stack and the connector overlay is not drawn. Keep in sync with styles.module.css. */
-const STACKED_BREAKPOINT = 1100;
+/* ─── Architecture ────────────────────────────────────────────────────────
+   Three columns: what sends requests, the runtime, and what the runtime
+   drives. The runtime panel is as tall as the columns beside it, so every
+   card joins it with one straight rail across the gap: no bends, nothing
+   to cross. The rails and their dots are drawn in the stylesheet, so the
+   diagram needs no measuring and is complete without script. */
 
-/** Gap between a connector's end and the core box, so the arrowhead sits just outside the border. */
-const CORE_INSET = 6;
-
-interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-interface Connector {
-  d: string;
-  kind: "source" | "destination" | "pill";
-}
-
-function rectWithin(el: Element, container: Element): Rect {
-  const c = container.getBoundingClientRect();
-  const r = el.getBoundingClientRect();
-  return { x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height };
-}
-
-/** A horizontal-vertical-horizontal path from (x1, y1) to (x2, y2) that turns at xm, with rounded corners. */
-function elbowPath(x1: number, y1: number, xm: number, y2: number, x2: number, radius = 12): string {
-  if (Math.abs(y2 - y1) < 1) {
-    return `M ${x1} ${y1} H ${x2}`;
-  }
-  const dirX1 = Math.sign(xm - x1);
-  const dirY = Math.sign(y2 - y1);
-  const dirX2 = Math.sign(x2 - xm);
-  const r = Math.min(radius, Math.abs(y2 - y1) / 2, Math.abs(xm - x1), Math.abs(x2 - xm));
-  return [
-    `M ${x1} ${y1}`,
-    `H ${xm - dirX1 * r}`,
-    `Q ${xm} ${y1} ${xm} ${y1 + dirY * r}`,
-    `V ${y2 - dirY * r}`,
-    `Q ${xm} ${y2} ${xm + dirX2 * r} ${y2}`,
-    `H ${x2}`,
-  ].join(" ");
-}
-
-function ChipLink({ chip }: { chip: Chip }) {
+function ChipLink({ chip }: { chip: Chip }): JSX.Element {
   return (
     <Link to={chip.href} className={styles.chip} title={chip.name} aria-label={chip.name}>
-      {chip.icon ?? (
-        <img
-          src={chip.logo}
-          alt=""
-          loading="lazy"
-          className={clsx(styles.chipImg, chip.mono && styles.mono)}
-        />
-      )}
+      {chip.icon ?? <img src={chip.logo} alt="" loading="lazy" className={clsx(styles.chipImg, chip.mono && styles.mono)} />}
     </Link>
   );
 }
 
-const Card = React.forwardRef<HTMLDivElement, { card: ArchCard }>(function Card({ card }, ref) {
+/** A card and the rail that joins it to the runtime. `order` staggers the dots. */
+function Card({ card, side, order }: { card: ArchCard; side: 'in' | 'out'; order: number }): JSX.Element {
   return (
-    <div ref={ref} className={styles.card}>
-      <div className={styles.cardTitle}>{card.title}</div>
+    <div className={styles.card}>
+      <h3 className={styles.cardTitle}>{card.title}</h3>
       <div className={styles.chipRow}>
         {card.chips.map((chip) => (
           <ChipLink key={chip.name} chip={chip} />
         ))}
       </div>
-    </div>
-  );
-});
-
-function ColumnLabel({ children, align }: { children: React.ReactNode; align: "start" | "center" | "end" }) {
-  return (
-    <div className={clsx(styles.columnLabel, styles[`align-${align}`])}>
-      <span className={styles.columnRule} aria-hidden="true" />
-      <span>{children}</span>
+      <span className={clsx(styles.rail, side === 'in' ? styles.railIn : styles.railOut)} aria-hidden="true">
+        <span className={styles.dot} style={{ animationDelay: `${-order * 0.8 - (side === 'out' ? 1.2 : 0)}s` } as CSSProperties} />
+      </span>
     </div>
   );
 }
 
-export default function ArchitectureOverview() {
-  const diagramRef = useRef<HTMLDivElement>(null);
-  const coreRef = useRef<HTMLDivElement>(null);
-  const sourceRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const destinationRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const pillRefs = useRef<(HTMLAnchorElement | null)[]>([]);
-  const [connectors, setConnectors] = useState<Connector[]>([]);
-
-  const measure = useCallback(() => {
-    const diagram = diagramRef.current;
-    const core = coreRef.current;
-    if (!diagram || !core) return;
-    if (window.innerWidth <= STACKED_BREAKPOINT) {
-      setConnectors([]);
-      return;
-    }
-
-    const box = rectWithin(core, diagram);
-    const attachY = (index: number, count: number) => box.y + (box.h * (index + 1)) / (count + 1);
-    const next: Connector[] = [];
-
-    const sources = sourceRefs.current.filter((el): el is HTMLDivElement => el !== null);
-    sources.forEach((el, index) => {
-      const r = rectWithin(el, diagram);
-      const x1 = r.x + r.w;
-      const y1 = r.y + r.h / 2;
-      const x2 = box.x - CORE_INSET;
-      const xm = x1 + (x2 - x1) * 0.5;
-      next.push({ d: elbowPath(x1, y1, xm, attachY(index, sources.length), x2), kind: "source" });
-    });
-
-    const destinations = destinationRefs.current.filter((el): el is HTMLDivElement => el !== null);
-    destinations.forEach((el, index) => {
-      const r = rectWithin(el, diagram);
-      // Same gap as the core end of a source path, so the arrowhead sits just outside the card border.
-      const x1 = r.x - CORE_INSET;
-      const y1 = r.y + r.h / 2;
-      const x2 = box.x + box.w + CORE_INSET;
-      const xm = x1 - (x1 - x2) * 0.5;
-      next.push({ d: elbowPath(x1, y1, xm, attachY(index, destinations.length), x2), kind: "destination" });
-    });
-
-    // Each pill ties to the nearest corner of the core with a short dotted lead.
-    const coreCenterX = box.x + box.w / 2;
-    const coreCenterY = box.y + box.h / 2;
-    pillRefs.current.forEach((el) => {
-      if (!el) return;
-      const r = rectWithin(el, diagram);
-      const pillCenterX = r.x + r.w / 2;
-      const pillCenterY = r.y + r.h / 2;
-      const left = pillCenterX < coreCenterX;
-      const above = pillCenterY < coreCenterY;
-      const startX = left ? r.x + r.w : r.x;
-      const startY = above ? r.y + r.h : r.y;
-      const endX = left ? box.x : box.x + box.w;
-      const endY = above ? box.y : box.y + box.h;
-      next.push({ d: `M ${startX} ${startY} L ${endX} ${endY}`, kind: "pill" });
-    });
-
-    setConnectors(next);
-  }, []);
-
-  // The dots on the rails move only for visitors who have not asked for reduced motion,
-  // and only while the diagram is on screen.
-  const overlayRef = useRef<SVGSVGElement>(null);
-  const [live, setLive] = useState(false);
-
-  useEffect(() => {
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setLive(!reduced.matches);
-    update();
-    reduced.addEventListener("change", update);
-    return () => reduced.removeEventListener("change", update);
-  }, []);
-
-  useEffect(() => {
-    const overlay = overlayRef.current;
-    if (!overlay || !live) return undefined;
-    let onScreen = true;
-    const sync = () => {
-      if (onScreen && !document.hidden) overlay.unpauseAnimations();
-      else overlay.pauseAnimations();
-    };
-    const seen = new IntersectionObserver(([entry]) => {
-      onScreen = entry.isIntersecting;
-      sync();
-    });
-    seen.observe(overlay);
-    document.addEventListener("visibilitychange", sync);
-    return () => {
-      seen.disconnect();
-      document.removeEventListener("visibilitychange", sync);
-    };
-  }, [live]);
-
-  useEffect(() => {
-    measure();
-    const observer = new ResizeObserver(() => measure());
-    if (diagramRef.current) observer.observe(diagramRef.current);
-    window.addEventListener("resize", measure);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [measure]);
-
+export default function ArchitectureOverview(): JSX.Element {
   return (
-    <section id="architecture" className={styles.section}>
+    <section id="architecture" className="ak-section">
       <div className="ak-container">
         <SectionHeader
           index="02"
@@ -210,128 +57,69 @@ export default function ArchitectureOverview() {
           title="One runtime between your channels and your agents"
           lead="Requests arrive from any channel or protocol. OAK runs your framework-native agents with sessions, guardrails, queues and sandboxes, on whichever cloud you choose."
         />
-      </div>
 
-      <div ref={diagramRef} className={styles.diagram}>
-        <svg ref={overlayRef} className={styles.connectors} aria-hidden="true">
-          <defs>
-            <marker id="ak-arch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 1 1 L 9 5 L 1 9" className={styles.arrowHead} />
-            </marker>
-          </defs>
-          {connectors.map((connector, index) => {
-            // Requests flow into the core and responses back out, so a source path carries its arrowhead
-            // at the core end and a destination path at the card end (the marker's auto-start-reverse
-            // orientation flips it to point into the card).
-            const arrow = "url(#ak-arch-arrow)";
-            // A destination path is written from the card to the core, so its dot runs it backwards.
-            const outward = connector.kind === "destination";
-            return (
-              <React.Fragment key={index}>
-                <path
-                  d={connector.d}
-                  className={clsx(styles.connector, styles[`connector-${connector.kind}`])}
-                  markerEnd={connector.kind === "source" ? arrow : undefined}
-                  markerStart={outward ? arrow : undefined}
-                />
-                {live && connector.kind !== "pill" && (
-                  <circle className={styles.connectorDot} r={3}>
-                    <animateMotion
-                      path={connector.d}
-                      dur="2.8s"
-                      begin={`${-(index % 5) * 0.55}s`}
-                      repeatCount="indefinite"
-                      calcMode="linear"
-                      keyPoints={outward ? "1;0" : "0;1"}
-                      keyTimes="0;1"
-                    />
-                  </circle>
-                )}
-              </React.Fragment>
-            );
-          })}
-        </svg>
-
-        <div className={styles.columns}>
-          <div className={styles.column}>
-            <ColumnLabel align="start">{SOURCES_LABEL}</ColumnLabel>
-            {SOURCES.map((card, index) => (
-              <Card
-                key={card.title}
-                card={card}
-                ref={(el) => {
-                  sourceRefs.current[index] = el;
-                }}
-              />
-            ))}
-          </div>
-
-          <div className={styles.stackArrow} aria-hidden="true">↓</div>
-
-          <div className={clsx(styles.column, styles.centerColumn)}>
-            <ColumnLabel align="center">{CORE_LABEL}</ColumnLabel>
-            <div className={styles.core}>
-              <div className={styles.coreRing} aria-hidden="true" />
-              <div ref={coreRef} className={styles.coreBox}>
-                <img
-                  src="/img/branding/oak-mark-orange.svg"
-                  alt=""
-                  className={styles.coreLogo}
-                />
+        <div className={styles.diagram}>
+          <div className={styles.columns}>
+            <div className={styles.column}>
+              <p className={clsx('ak-label', styles.columnLabel)}>{SOURCES_LABEL}</p>
+              <div className={styles.cards}>
+                {SOURCES.map((card, index) => (
+                  <Card key={card.title} card={card} side="in" order={index} />
+                ))}
               </div>
-              <div className={styles.coreName}>OAK</div>
-              <div className={styles.coreSub}>Runtime</div>
-              <div className={styles.pills}>
-                {CORE_PILLS.map((pill, index) => (
-                  <Link
-                    key={pill.label}
-                    to={pill.href}
-                    className={clsx(styles.pill, styles[`pill-${index}`])}
-                    ref={(el) => {
-                      pillRefs.current[index] = el;
-                    }}
-                  >
-                    <span className={styles.pillDot} aria-hidden="true" />
-                    {pill.label}
-                  </Link>
+            </div>
+
+            <div className={styles.stackArrow} aria-hidden="true">
+              &darr;
+            </div>
+
+            <div className={styles.column}>
+              <p className={clsx('ak-label', styles.columnLabel, styles.labelCentre)}>{CORE_LABEL}</p>
+              <div className={clsx('ak-dark', styles.core)}>
+                <img src="/img/branding/oak-mark-orange.svg" alt="" className={styles.coreLogo} />
+                <p className={clsx('ak-h3', styles.coreName)}>OAK runtime</p>
+                <ul className={styles.capabilities}>
+                  {CORE_PILLS.map((pill) => (
+                    <li key={pill.label}>
+                      <Link to={pill.href} className={styles.capability}>
+                        {pill.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className={styles.stackArrow} aria-hidden="true">
+              &darr;
+            </div>
+
+            <div className={styles.column}>
+              <p className={clsx('ak-label', styles.columnLabel, styles.labelEnd)}>{DESTINATIONS_LABEL}</p>
+              <div className={styles.cards}>
+                {DESTINATIONS.map((card, index) => (
+                  <Card key={card.title} card={card} side="out" order={index} />
                 ))}
               </div>
             </div>
           </div>
 
-          <div className={styles.stackArrow} aria-hidden="true">↓</div>
-
-          <div className={styles.column}>
-            <ColumnLabel align="end">{DESTINATIONS_LABEL}</ColumnLabel>
-            {DESTINATIONS.map((card, index) => (
-              <Card
-                key={card.title}
-                card={card}
-                ref={(el) => {
-                  destinationRefs.current[index] = el;
-                }}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className={styles.footer}>
-          <div className={styles.flowLabel}>
-            <span>Request · Inbound</span>
-            <span className={styles.flowLine} aria-hidden="true" />
-          </div>
-          <div className={styles.flowWords}>
-            {FLOW_WORDS.map((entry, index) => (
-              <React.Fragment key={entry.word}>
-                {index > 0 && <span className={styles.flowSeparator} aria-hidden="true">·</span>}
-                <span className={clsx(entry.accent && styles.flowAccent)}>{entry.word}</span>
-              </React.Fragment>
-            ))}
-          </div>
-          <div className={styles.flowLabel}>
-            <span>Response · Outbound</span>
-            <span className={styles.flowLine} aria-hidden="true" />
-          </div>
+          <p className={clsx('ak-label', styles.flow)}>
+            <span>Request in</span>
+            <span className={styles.flowWords}>
+              {FLOW_WORDS.map((entry, index) => (
+                <React.Fragment key={entry.word}>
+                  {index > 0 && (
+                    <span className={styles.flowSeparator} aria-hidden="true">
+                      &rarr;
+                    </span>
+                  )}
+                  <span className={styles.flowWord}>{entry.word}</span>
+                </React.Fragment>
+              ))}
+            </span>
+            <span>Response out</span>
+          </p>
         </div>
       </div>
     </section>

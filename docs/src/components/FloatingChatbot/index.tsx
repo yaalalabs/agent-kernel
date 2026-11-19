@@ -143,52 +143,29 @@ const FloatingChatbot: React.FC = () => {
 
   return (
     <>
-      {/* Trigger Button */}
+      {/* Launcher: a flat labelled button, so it says what it does before it is opened */}
       {!isMaximized && (
         <div className={styles.chatButtonContainer}>
-          {!isOpen && (
-            <span className={styles.chatButtonLabel}>Ask OAK</span>
-          )}
           <button
+            type="button"
             className={`${styles.chatButton} ${isOpen ? styles.chatButtonOpen : ''}`}
             onClick={toggleChat}
-            aria-label={isOpen ? 'Close chat' : 'Open Agent Kernel AI'}
+            aria-label={isOpen ? 'Close chat' : 'Ask OAK: open the assistant'}
+            aria-expanded={isOpen}
           >
             {isOpen ? (
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             ) : (
-              <span className={`${styles.chatButtonInner} ak-dark`}>
-                <span className={styles.pulseRing} aria-hidden="true" />
-                <span className={styles.pulseRingDelayed} aria-hidden="true" />
-                <div className={styles.orb} aria-hidden="true">
-                  <span className={styles.orbGradient} />
-                  <span className={styles.orbGradientReverse} />
-                  <span className={styles.orbBlobField}>
-                    <span className={`${styles.orbBlob} ${styles.orbBlob1}`} />
-                    <span className={`${styles.orbBlob} ${styles.orbBlob2}`} />
-                    <span className={`${styles.orbBlob} ${styles.orbBlob3}`} />
-                    <span className={`${styles.orbBlob} ${styles.orbBlob4}`} />
-                  </span>
-                  <span className={styles.orbShine} />
-                  <span className={styles.orbVignette} />
-                </div>
-                <img
-                  src="/img/branding/oak-mark-white.svg"
-                  alt=""
-                  className={styles.buttonLogo}
-                />
-              </span>
+              <>
+                <svg className={styles.buttonLogo} viewBox="0 0 86.86 86.85" aria-hidden="true" focusable="false">
+                  <path d="M19.74,39.48v15.79l12.48,5.06c4.39,1.76,7.26,6.01,7.26,10.73v15.79l-27.78-11.11c-7.07-2.83-11.7-9.67-11.7-17.27V0l27.79,11.11c7.06,2.83,11.69,9.67,11.69,17.27v19.07L19.74,39.48Z" />
+                  <path d="M86.86,0v58.47c0,7.6-4.64,14.44-11.7,17.27l-27.78,11.11v-23.69c0-4.72,2.87-8.97,7.26-10.73l12.48-5.06v-15.79l-19.74,7.97v-11.17c0-7.6,4.63-14.44,11.69-17.27L86.86,0Z" />
+                </svg>
+                <span className={styles.chatButtonLabel}>Ask OAK</span>
+              </>
             )}
           </button>
         </div>
@@ -198,7 +175,7 @@ const FloatingChatbot: React.FC = () => {
       {isOpen && (
         <div className={`${styles.chatWindow} ${isMaximized ? styles.maximized : ''}`}>
           {/* Header */}
-          <div className={styles.chatHeader}>
+          <div className={`${styles.chatHeader} ak-dark`}>
             <div className={styles.headerLeft}>
               <img
                 src="/img/branding/oak-horizontal-white-orange.svg"
@@ -256,10 +233,7 @@ const FloatingChatbot: React.FC = () => {
           <div className={styles.chatMessages}>
             {messages.length === 0 && (
               <div className={styles.welcomeMessage}>
-                <div className={styles.welcomeEyebrow}>
-                  <span className={styles.welcomeEyebrowDot} />
-                  OAK AI
-                </div>
+                <div className={styles.welcomeEyebrow}>OAK assistant</div>
                 <div className={styles.welcomeIcon}>
                   <img
                     src="/img/branding/oak-mark-orange.svg"
@@ -268,7 +242,7 @@ const FloatingChatbot: React.FC = () => {
                   />
                 </div>
                 <h4>How can I help?</h4>
-                <p>Ask me anything about OAK - setup, agents, integrations, and more.</p>
+                <p>Ask me anything about OAK: setup, agents, integrations and more.</p>
                 <div className={styles.promptChips}>
                   {QUICK_PROMPTS.map((prompt) => (
                     <button

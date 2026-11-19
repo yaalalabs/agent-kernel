@@ -3,10 +3,12 @@ slug: /blog/announcing-agent-kernel
 title: Introducing Agent Kernel - Framework-Agnostic AI Agent Runtime
 authors: [yaala]
 tags: [agent-kernel, announcement, opensource, ai-agents]
-image: /img/card.png
+image: /img/blog/announcing-agent-kernel-banner.png
 ---
 
 # Introducing Agent Kernel: The Framework-Agnostic AI Agent Runtime
+
+![The framework-agnostic AI agent runtime. Develop, test and deploy AI agents across any framework and environment.](/img/blog/announcing-agent-kernel-banner.png)
 
 We're thrilled to announce **Agent Kernel (AK)** - an open-source, versatile runtime solution that revolutionizes how you develop, test, and deploy AI agents across any framework and environment!
 

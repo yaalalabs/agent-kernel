@@ -2,23 +2,28 @@ import React, { useState } from 'react';
 import Link from '@docusaurus/Link';
 import clsx from 'clsx';
 import { TbCheck, TbCopy } from 'react-icons/tb';
-import OakMark from '@site/src/components/OakMark';
+import ParticleLogo from '@site/src/components/ParticleLogo';
 import styles from './hero.module.css';
 
-const INSTALL_COMMAND = 'pip install agentkernel';
+// The two ways to install, as the installation guide gives them.
+const INSTALLERS = [
+  { id: 'pip', command: 'pip install agentkernel' },
+  { id: 'uv', command: 'uv add agentkernel' },
+] as const;
 
 /* ─── Hero ────────────────────────────────────────────────────────────────
-   One column of copy with the mark to its right. Type, spacing and buttons
-   come from the design system in custom.css. The visual on the right is under
-   review: see iteration 18 in docs/specs/oak-rebrand/plan.md. */
+   One column of copy, with the mark built from particles behind and to the
+   right of it (components/ParticleLogo). Type, spacing and buttons come from
+   the design system in custom.css. */
 
 export function Hero(): JSX.Element {
   const [copied, setCopied] = useState(false);
+  const [installer, setInstaller] = useState<(typeof INSTALLERS)[number]>(INSTALLERS[0]);
 
   const handleCopy = async () => {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return;
     try {
-      await navigator.clipboard.writeText(INSTALL_COMMAND);
+      await navigator.clipboard.writeText(installer.command);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -28,6 +33,7 @@ export function Hero(): JSX.Element {
 
   return (
     <section className={styles.hero}>
+      <ParticleLogo />
       <div className={clsx('ak-container', styles.grid)}>
         <div className={styles.copy}>
           <div className={styles.heading}>
@@ -56,11 +62,27 @@ export function Hero(): JSX.Element {
           </div>
 
           <div className={styles.install}>
+            <div className={styles.installers} role="group" aria-label="Package manager">
+              {INSTALLERS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={clsx(styles.installer, option.id === installer.id && styles.installerActive)}
+                  aria-pressed={option.id === installer.id}
+                  onClick={() => {
+                    setInstaller(option);
+                    setCopied(false);
+                  }}
+                >
+                  {option.id}
+                </button>
+              ))}
+            </div>
             <code className={styles.command}>
               <span className={styles.prompt} aria-hidden="true">
                 $
               </span>
-              {INSTALL_COMMAND}
+              {installer.command}
             </code>
             <button
               type="button"
@@ -82,9 +104,6 @@ export function Hero(): JSX.Element {
           </p>
         </div>
 
-        <div className={styles.art}>
-          <OakMark variant="hero" />
-        </div>
       </div>
     </section>
   );

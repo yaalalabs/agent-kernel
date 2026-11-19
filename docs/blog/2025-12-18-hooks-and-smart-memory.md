@@ -3,10 +3,12 @@ slug: /hooks-and-smart-memory
 title: "Power Up Your Agents: Execution Hooks and Smart Memory in Agent Kernel"
 authors: [yaala]
 tags: [agent-kernel, hooks, memory, RAG, guard-rails, cache, execution-hooks, pre-hooks, post-hooks]
-image: /img/card.png
+image: /img/blog/hooks-and-smart-memory-banner.png
 ---
 
 # Power Up Your Agents: Execution Hooks and Smart Memory in Agent Kernel
+
+![Execution hooks and smart memory. Control over how your agents think, remember and respond.](/img/blog/hooks-and-smart-memory-banner.png)
 
 Ever wished you could intercept your AI agent's thoughts before they speak? Or give them a photographic memory that lasts exactly as long as you need? We've got you covered.
 

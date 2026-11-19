@@ -230,6 +230,7 @@ export default function AIEngineerPage(): JSX.Element {
       description="How the Open Agent Kernel runtime compares, where it sits in a request, and the memory, hook and queue machinery you can build on."
     >
       <PageHero
+        back={{ to: '/#levels', label: 'Back to path selection' }}
         art={<LevelStack active={2} />}
         label="Level 03 / AI engineers"
         title="Inside the runtime that runs your agents"

@@ -148,6 +148,7 @@ export default function DeveloperPage(): JSX.Element {
       description="The route from an empty folder to a deployed, tested AI agent with Open Agent Kernel: write, run, configure, deploy and test."
     >
       <PageHero
+        back={{ to: '/#levels', label: 'Back to path selection' }}
         art={<LevelStack active={1} />}
         label="Level 02 / Developers"
         title="Build your first agent, then ship it"

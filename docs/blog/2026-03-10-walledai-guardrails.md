@@ -3,10 +3,12 @@ slug: /walledai-guardrails
 title: "Walled AI Guardrails in Practice"
 authors: [yaala]
 tags: [agent-kernel, guardrails, walledai, pii, safety, privacy, production]
-image: /img/card.png
+image: /img/blog/walledai-guardrails-banner.png
 ---
 
 # Walled AI Guardrails in Practice
+
+![Walled AI guardrails in practice. A practical safety and PII masking pipeline for agent input and output.](/img/blog/walledai-guardrails-banner.png)
 
 Walled AI gives us a clean, practical safety + PII masking pipeline for agent input/output flows. It is easy to integrate, fast to test, and useful for production guardrail baselines.
 

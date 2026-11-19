@@ -127,6 +127,26 @@ rails: fine blue rails, dots that travel along them, and one orange element per 
 (the three reading levels as one stack). A new drawing uses the same two colours and stroke width, pauses
 when it is off screen, and shows a still frame when the visitor asks for reduced motion.
 
+## Blog banners
+
+Every blog post has a banner: it is the post's `image:` in the front matter and the first image under its
+title. Banners are 3200 by 1680 px (1600 by 840 CSS px at twice the density), on the pale background with
+the Primary lockup, a short headline whose last words are in Tiger Flame Orange, one line of subtitle, and
+one still from the stage drawings.
+
+To make a banner for a new post:
+
+1. Add an entry to `blog-banner/banners.json`: a `slug`, a `label` for the pill, the `title` and its
+   `accent` (the last words of the headline), a `subtitle`, and a `drawing` (`build`, `connect`,
+   `remember`, `guard`, `scale` or `observe`). Take the words from the post; do not add claims of your own.
+2. Run `node branding/blog-banner/render.mjs <slug>`. It needs Node 22 or later and Google Chrome, and
+   writes `docs/static/img/blog/<slug>-banner.png`.
+3. In the post, set `image: /img/blog/<slug>-banner.png` and put the same image under the title.
+
+The page that is rendered is `blog-banner/template.html`. Open it in a browser with the entry's fields as
+the query string to preview a banner. The eight banners that predate the template were recoloured from
+their pixels and keep their own layouts; their headlines still carry the earlier name.
+
 ## Source files
 
 The designer's originals (the Illustrator file, the guideline PDF and PNG exports) live in `branding/source/`,

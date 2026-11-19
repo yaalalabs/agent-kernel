@@ -119,9 +119,10 @@
   margin-top: 1.9rem;
 }
 
+/* The banners are 1.9 to 1: the thumbnail keeps that shape, so nothing is cut off the sides */
 .thumb {
   width: 190px;
-  height: 126px;
+  height: 100px;
   object-fit: cover;
   border-radius: 4px;
   display: block;
@@ -148,6 +149,6 @@
 
   .thumb {
     width: 100px;
-    height: 70px;
+    height: 53px;
   }
 }

@@ -3,10 +3,12 @@ slug: /agent-skills-cli
 title: "Agent Skills: Agent Kernel Builds Enterprise Agents for You"
 authors: [yaala]
 tags: [agent-kernel, skills, cli, copilot, claude, cursor, windsurf, developer-experience]
-image: /img/card.png
+image: /img/blog/agent-skills-cli-banner.png
 ---
 
 # Agent Skills: Agent Kernel Builds Enterprise Agents for You
+
+![Enterprise agents, built for you. Tell your coding assistant what you want. Agent skills handle the rest.](/img/blog/agent-skills-cli-banner.png)
 
 What if you never had to read a single page of Agent Kernel documentation?
 

@@ -3,10 +3,12 @@ slug: /blog/observability-support-langfuse-openllmetry
 title: "Production-Grade Observability: Agent Kernel Integrates Langfuse and OpenLLMetry"
 authors: [yaala]
 tags: [agent-kernel, observability, langfuse, traceloop, openllmetry, tracing, monitoring]
-image: /img/card.png
+image: /img/blog/observability-support-banner.png
 ---
 
 # Production-Grade Observability: Agent Kernel Integrates Langfuse and OpenLLMetry
+
+![Production-grade observability. Tracing with Langfuse and OpenLLMetry, for insight into your AI agent systems.](/img/blog/observability-support-banner.png)
 
 We're excited to announce that Agent Kernel now includes comprehensive observability support through integrations with **Langfuse** and **OpenLLMetry (Traceloop)** - giving you powerful insights into your AI agent systems!
 

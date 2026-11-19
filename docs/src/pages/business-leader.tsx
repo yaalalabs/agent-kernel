@@ -98,6 +98,7 @@ export default function BusinessLeaderPage(): JSX.Element {
       description="What AI agents change for a business, what Open Agent Kernel is in plain words, and what adopting it commits you to."
     >
       <PageHero
+        back={{ to: '/#levels', label: 'Back to path selection' }}
         art={<LevelStack active={0} />}
         label="Level 01 / Business leaders"
         title="Put AI agents to work across your business"

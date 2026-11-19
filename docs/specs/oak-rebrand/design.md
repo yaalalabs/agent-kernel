@@ -81,7 +81,7 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
 
 ### Colour theme
 
-- The site has two colour modes. Dark is the default; a navbar switch selects the light mode and the choice is remembered.
+- The site has two colour modes. Light is the default (changed from dark on 2026-11-19 at the maintainer's request); a navbar switch selects the dark mode and the choice is remembered.
   - both modes use the same token names, so a component never branches on the mode
   - the footer stays navy in both modes
 - Role mapping:
@@ -206,8 +206,8 @@ surface, in a flat and clean style.
 - **Release announcement.** `.github/workflows/publish.yaml:207` posts "Agent Kernel v${VERSION}". It is a workflow file, so it is left unchanged. Change it with this work, or with the code rename?
 - **Blog.** Post bodies keep the old name inside the new theme.
 - **Dead media.** Resolved on 2026-11-19: the three models under `docs/static/models/` were deleted with the other dead code.
-- **Hero visual.** Four versions have been turned down: a fade-in mark, an extruded mark, the particle mark and a system drawing. The particle mark is a placeholder. Which direction next: a cinematic mark in WebGL like the original video (it needs glow, so the hero would stay dark in both modes), ambient line art, a product-in-action terminal, or type only? Nothing is built until one is chosen.
-- **Blog banners.** Seven banners are bespoke illustrations that carry each post's diagram. Redraw each in the brand palette, replace them with one template and lose the diagrams, or leave them as history?
+- **Hero visual.** Resolved on 2026-11-19: the maintainer asked for a particle animation that builds the mark on load, animates under the pointer and scatters on scroll. It is `docs/src/components/ParticleLogo/`.
+- **Blog banners.** Resolved on 2026-11-19: the existing banners were recoloured and given the new mark, and posts without one got a banner from `branding/blog-banner/`. Text baked into the older banners keeps the old name.
 - **Membership badges.** The Linux Foundation and Agentic AI Foundation badges in the footer are the
   foundations' own artwork and are shown unmodified. Is a monochrome treatment acceptable to them?
 - **Former-name note.** Should the README and the docs intro carry one line saying that Open Agent Kernel

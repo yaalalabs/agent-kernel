@@ -1,231 +1,100 @@
-/* ─── Architecture Overview ─────────────────────────────────────────────── */
+/* Architecture: three columns joined by straight rails. Flat surfaces, colours from tokens. */
 
-.section {
-  position: relative;
-  padding: 5rem 1.5rem 5.5rem;
-  text-align: center;
-  background: transparent;
-  overflow: hidden;
-}
-
-.topGlow {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(var(--ak-fg-rgb), 0.15) 20%,
-    rgba(var(--ak-fg-rgb), 0.4) 50%,
-    rgba(var(--ak-fg-rgb), 0.15) 80%,
-    transparent 100%
-  );
-}
-
-.topGlow::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 60%;
-  height: 150px;
-  background: radial-gradient(
-    ellipse at top center,
-    rgba(var(--ak-fg-rgb), 0.07) 0%,
-    rgba(var(--ak-fg-rgb), 0.03) 40%,
-    transparent 70%
-  );
-  pointer-events: none;
-}
-
-/* Header */
-.header {
-  max-width: 760px;
-  margin: 0 auto 3.25rem;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.35rem 1rem;
-  border: 2px solid var(--ak-border);
-  border-radius: var(--ak-radius-control);
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: rgba(var(--ak-sky-rgb), 0.9);
-  letter-spacing: 0.01em;
-  margin-bottom: 1.25rem;
-  background: var(--ak-surface-raised);
-}
-
-.badgeStar {
-  font-size: 0.875rem;
-}
-
-.title {
-  color: var(--ak-fg);
-  font-size: 2.4rem;
-  font-weight: 600;
-  background: none;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: currentColor;
-  background-clip: text;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
-  margin: 0;
-}
-
-.subtitle {
-  font-size: 1.05rem;
-  color: var(--ak-text-secondary);
-  line-height: 1.7;
-  margin: 0.9rem 0 0;
-}
-
-/* ─── Diagram frame ─────────────────────────────────────────────────────── */
 .diagram {
-  position: relative;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2.5rem 2rem 2rem;
-  border: 1px solid rgba(var(--ak-fg-rgb), 0.08);
+  /* The gap between columns, which is also the length of every rail */
+  --gap: 4.5rem;
+  padding: var(--ak-space-32);
+  border: 1px solid var(--ak-border);
   border-radius: var(--ak-radius-card);
-  background-color: var(--ak-bg);
-  text-align: left;
+  background-color: var(--ak-bg-alt);
 }
 
-.connectors {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: visible;
-}
-
-/* Rails and dots, as in the stage drawings: a fine solid line, and a dot that travels it */
-.connector {
-  fill: none;
-  stroke: rgba(var(--ak-blue-rgb), 0.45);
-  stroke-width: 1.25;
-  stroke-linecap: round;
-}
-
-.connector-pill {
-  stroke: rgba(var(--ak-blue-rgb), 0.3);
-  stroke-dasharray: 2 5;
-}
-
-.connectorDot {
-  fill: var(--ak-blue);
-}
-
-.arrowHead {
-  fill: none;
-  stroke: rgba(var(--ak-blue-rgb), 0.8);
-  stroke-width: 1.25;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-
-/* ─── Columns ───────────────────────────────────────────────────────────── */
 .columns {
-  position: relative;
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(380px, 1.2fr) minmax(260px, 1fr);
-  gap: 2.75rem;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.8fr) minmax(0, 1fr);
+  column-gap: var(--gap);
+  align-items: stretch;
 }
 
+/* A label, then content that fills the rest: the runtime panel is as tall as the cards beside it */
 .column {
-  display: flex;
-  flex-direction: column;
-  gap: 1.4rem;
-}
-
-.centerColumn {
-  align-items: center;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: var(--ak-space-16);
+  min-width: 0;
 }
 
 .columnLabel {
+  /* Labels can wrap to two lines on a narrow column; reserve both so the columns stay level */
+  min-height: 2.8em;
   display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(var(--ak-fg-rgb), 0.5);
+  align-items: flex-end;
 }
 
-.columnRule {
-  display: block;
-  width: 64px;
-  height: 1px;
-  background: rgba(var(--ak-sky-rgb), 0.5);
-}
-
-.align-start {
-  align-items: flex-start;
-  text-align: left;
-}
-
-.align-center {
-  align-items: center;
+.labelCentre {
+  justify-content: center;
   text-align: center;
 }
 
-.align-end {
-  align-items: flex-end;
+.labelEnd {
+  justify-content: flex-end;
   text-align: right;
 }
 
-/* Hidden on desktop; a down-arrow between stacked columns on small screens. */
+.cards {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--ak-space-16);
+}
+
+/* Hidden on a wide screen; a down arrow between the stacked columns on a small one */
 .stackArrow {
   display: none;
 }
 
-/* ─── Cards ─────────────────────────────────────────────────────────────── */
+/* ── Cards ── */
+
 .card {
   position: relative;
-  padding: 1rem 1.15rem 1.1rem;
-  border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
+  padding: var(--ak-space-16) var(--ak-space-16) var(--ak-space-16);
+  border: 1px solid var(--ak-border);
   border-radius: var(--ak-radius-card);
-  background: rgba(var(--ak-bg-rgb), 0.92);
-  box-shadow: none;
+  background-color: var(--ak-bg);
 }
 
 .cardTitle {
-  font-size: 0.98rem;
+  margin: 0;
+  font-size: var(--ak-type-body);
   font-weight: 600;
-  color: var(--ak-fg);
+  line-height: 1.3;
   letter-spacing: -0.01em;
+  color: var(--ak-fg);
 }
 
 .chipRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-top: 0.8rem;
+  gap: var(--ak-space-8);
+  margin-top: var(--ak-space-12);
 }
 
-/* Sized so seven chips fit one row in a side column at the 1280px frame width. */
 .chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--ak-border);
   border-radius: var(--ak-radius-control);
-  border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
-  background: var(--ak-bg);
+  background-color: var(--ak-bg);
   color: var(--ak-fg);
-  transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+  transition: border-color 0.15s ease;
+}
+
+.chip:hover {
+  border-color: var(--ak-primary);
+  color: var(--ak-fg);
 }
 
 .chip:focus-visible {
@@ -233,374 +102,222 @@
   outline-offset: 2px;
 }
 
-.chip:hover,
-.chip:focus-visible {
-  border-color: rgba(var(--ak-sky-rgb), 0.55);
-  background: rgba(var(--ak-fg-rgb), 0.05);
-  transform: translateY(-2px);
-  color: var(--ak-fg);
-}
-
 .chip svg {
-  width: 19px;
-  height: 19px;
+  width: 1.2rem;
+  height: 1.2rem;
 }
 
 .chipImg {
-  max-width: 21px;
-  max-height: 21px;
+  display: block;
   width: auto;
   height: auto;
+  max-width: 1.3rem;
+  max-height: 1.3rem;
   object-fit: contain;
-  display: block;
 }
 
 .mono {
   filter: var(--ak-mono-filter);
 }
 
-/* ─── Core ──────────────────────────────────────────────────────────────── */
+/* ── Rails: one straight line from each card to the runtime, with an arrowhead and a dot ── */
+
+.rail {
+  position: absolute;
+  top: 50%;
+  width: var(--gap);
+  height: 0;
+  border-top: 1.25px solid rgba(var(--ak-blue-rgb), 0.5);
+  pointer-events: none;
+}
+
+.railIn {
+  left: 100%;
+}
+
+.railOut {
+  right: 100%;
+}
+
+/* The arrowhead points the way the request travels: into the runtime, then into the card */
+.rail::after {
+  content: '';
+  position: absolute;
+  top: -4.5px;
+  right: 1px;
+  width: 7px;
+  height: 7px;
+  border-top: 1.25px solid rgba(var(--ak-blue-rgb), 0.9);
+  border-right: 1.25px solid rgba(var(--ak-blue-rgb), 0.9);
+  transform: rotate(45deg);
+}
+
+.dot {
+  position: absolute;
+  top: -3.5px;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--ak-blue);
+  animation: arch-travel 3.2s linear infinite;
+}
+
+@keyframes arch-travel {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  12% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(calc(var(--gap) - 14px));
+  }
+}
+
+/* ── The runtime: the one solid block in the diagram ── */
+
 .core {
-  position: relative;
-  width: 100%;
-  min-height: 460px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-}
-
-.coreRing {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 300px;
-  height: 300px;
-  transform: translate(-50%, -58%);
-  border: 1px dashed rgba(var(--ak-sky-rgb), 0.35);
+  gap: var(--ak-space-16);
+  padding: var(--ak-space-32) var(--ak-space-24);
+  border: 1px solid var(--ak-border);
   border-radius: var(--ak-radius-card);
-  pointer-events: none;
-}
-
-.coreBox {
-  position: relative;
-  width: 232px;
-  height: 232px;
-  margin-top: -2.4rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--ak-radius-card);
-  border: 1px solid rgba(var(--ak-sky-rgb), 0.4);
   background-color: var(--ak-bg-alt);
+  text-align: center;
 }
 
 .coreLogo {
-  width: 96px;
-  height: 96px;
   display: block;
-  filter: none;
+  width: 5.5rem;
+  height: 5.5rem;
 }
 
 .coreName {
-  position: relative;
-  margin-top: 1rem;
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--ak-fg);
-  letter-spacing: -0.01em;
+  margin: 0;
 }
 
-.coreSub {
-  position: relative;
-  font-size: 0.8125rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ak-text-secondary);
+.capabilities {
+  align-self: stretch;
+  margin: var(--ak-space-8) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--ak-border);
 }
 
-/* Pills sit at the four corners of the core column on desktop. */
-.pills {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.pill {
-  pointer-events: auto;
-  position: absolute;
-  display: inline-flex;
+.capability {
+  display: flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.5rem 0.95rem;
-  border-radius: var(--ak-radius-control);
-  border: 1px solid rgba(var(--ak-fg-rgb), 0.14);
-  background: var(--ak-bg-alt);
-  box-shadow: none;
-  font-size: 0.875rem;
+  justify-content: space-between;
+  gap: var(--ak-space-12);
+  padding: var(--ak-space-12) var(--ak-space-4);
+  border-bottom: 1px solid var(--ak-border);
+  font-size: var(--ak-type-small);
   font-weight: 500;
-  color: var(--ak-fg);
-  white-space: nowrap;
+  text-align: left;
+  color: var(--ak-text);
   text-decoration: none;
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  transition: color 0.15s ease;
 }
 
-.pill:focus-visible {
+.capability::after {
+  content: '\2192';
+  color: var(--ak-primary-text);
+  transition: transform 0.15s ease;
+}
+
+.capability:hover {
+  color: var(--ak-fg);
+  text-decoration: none;
+}
+
+.capability:hover::after {
+  transform: translateX(3px);
+}
+
+.capability:focus-visible {
   outline: 2px solid var(--ak-primary);
   outline-offset: 2px;
 }
 
-.pill:hover,
-.pill:focus-visible {
-  border-color: rgba(var(--ak-sky-rgb), 0.55);
-  color: var(--ak-fg);
-  text-decoration: none;
-  transform: translateY(-1px);
-}
+/* ── The six stages, in the order a request meets them ── */
 
-.pillDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ak-primary);
-  box-shadow: none;
-}
-
-.pill-0 {
-  top: 4%;
-  left: -1.25rem;
-}
-
-.pill-1 {
-  top: 4%;
-  right: -1.25rem;
-}
-
-.pill-2 {
-  bottom: 9%;
-  right: -1.25rem;
-}
-
-.pill-3 {
-  bottom: 9%;
-  left: -1.25rem;
-}
-
-/* ─── Footer flow line ─────────────────────────────────────────────────── */
-.footer {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(380px, 1.2fr) minmax(260px, 1fr);
-  gap: 2.75rem;
-  align-items: end;
-  margin-top: 2.75rem;
-}
-
-.flowLabel {
+.flow {
   display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  text-align: center;
-  color: rgba(var(--ak-fg-rgb), 0.5);
-}
-
-.flowLine {
-  position: relative;
-  display: block;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(var(--ak-fg-rgb), 0.3), rgba(var(--ak-fg-rgb), 0.08));
-}
-
-.flowLine::after {
-  content: "";
-  position: absolute;
-  right: -1px;
-  top: -4px;
-  border: 4.5px solid transparent;
-  border-left-color: rgba(var(--ak-fg-rgb), 0.4);
-  border-right: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ak-space-16) var(--ak-space-32);
+  flex-wrap: wrap;
+  margin-top: var(--ak-space-32);
+  padding-top: var(--ak-space-24);
+  border-top: 1px solid var(--ak-border);
 }
 
 .flowWords {
-  display: flex;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
-  align-items: baseline;
-  gap: 0.55rem;
-  padding-bottom: 0.7rem;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  gap: var(--ak-space-8) var(--ak-space-12);
+}
+
+.flowWord {
   color: var(--ak-fg);
 }
 
 .flowSeparator {
-  color: rgba(var(--ak-fg-rgb), 0.35);
-}
-
-.flowAccent {
   color: var(--ak-primary-text);
 }
 
-/* ─── Reduced motion ───────────────────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-}
+/* ── Small screens: the columns stack and the rails give way to arrows ── */
 
-/* ─── Stacked layout (≤ 1100px) ────────────────────────────────────────── */
 @media (max-width: 1100px) {
   .diagram {
-    padding: 2rem 1.25rem 1.75rem;
-  }
-
-  .connectors {
-    display: none;
+    padding: var(--ak-space-24) var(--ak-space-16);
   }
 
   .columns {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--ak-space-16);
   }
 
-  .column {
-    gap: 1rem;
+  .columnLabel {
+    min-height: 0;
   }
 
-  .align-end {
-    align-items: flex-start;
+  .labelCentre,
+  .labelEnd {
+    justify-content: flex-start;
     text-align: left;
+  }
+
+  .rail {
+    display: none;
   }
 
   .stackArrow {
     display: block;
-    text-align: center;
-    font-size: 1.4rem;
-    color: rgba(var(--ak-sky-rgb), 0.6);
+    font-size: var(--ak-type-h3);
     line-height: 1;
+    text-align: center;
+    color: var(--ak-text-muted);
   }
 
-  .core {
-    min-height: 0;
-    padding: 1.5rem 0 0;
+  .flow {
+    justify-content: flex-start;
   }
+}
 
-  .coreRing {
+@media (prefers-reduced-motion: reduce) {
+  .dot {
     display: none;
   }
-
-  .coreBox {
-    width: 180px;
-    height: 180px;
-    margin-top: 0;
-    border-radius: var(--ak-radius-card);
-  }
-
-  .coreLogo {
-    width: 72px;
-    height: 72px;
-  }
-
-  .pills {
-    position: static;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.6rem;
-    margin-top: 1.4rem;
-    pointer-events: auto;
-  }
-
-  .pill,
-  .pill-0,
-  .pill-1,
-  .pill-2,
-  .pill-3 {
-    position: static;
-    inset: auto;
-  }
-
-  .footer {
-    grid-template-columns: 1fr;
-    gap: 1.25rem;
-    margin-top: 2rem;
-  }
-
-  .flowWords {
-    order: 2;
-    flex-wrap: wrap;
-    padding-bottom: 0;
-  }
-
-  .flowLabel:first-child {
-    order: 1;
-  }
-
-  .flowLabel:last-child {
-    order: 3;
-  }
 }
-
-/* ─── Mobile (≤ 540px) ─────────────────────────────────────────────────── */
-@media (max-width: 540px) {
-  .section {
-    padding: 3rem 1rem 3.5rem;
-  }
-
-  .header {
-    margin-bottom: 2rem;
-  }
-
-  .title {
-    font-size: 1.8rem;
-  }
-
-  .subtitle {
-    font-size: 0.95rem;
-  }
-
-  .diagram {
-    padding: 1.5rem 1rem 1.5rem;
-    border-radius: var(--ak-radius-card);
-  }
-
-  .chip {
-    width: 34px;
-    height: 34px;
-  }
-
-  .chip svg {
-    width: 18px;
-    height: 18px;
-  }
-
-  .chipImg {
-    max-width: 20px;
-    max-height: 20px;
-  }
-
-  .flowWords {
-    font-size: 0.875rem;
-    gap: 0.4rem;
-  }
-
-  .topGlow::after {
-    width: 100%;
-    height: 160px;
-  }
-}
-
-/* ── Design system: section spacing and alignment ── */
-
-.section {
-  padding: var(--ak-section-pad) 0;
-  text-align: left;
-}
-
-.diagram {
-  max-width: calc(var(--ak-container) + 2 * var(--ak-gutter) - 2 * var(--ak-gutter));
-  margin-inline: auto;
-  text-align: center;
-}
-

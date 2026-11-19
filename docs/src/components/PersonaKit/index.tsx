@@ -222,8 +222,8 @@ export function OtherLevels({ current }: { current: LevelId }): JSX.Element {
             </li>
           ))}
         </ul>
-        <Link to="/#levels" className="ak-link">
-          All three levels
+        <Link to="/#levels" className="ak-btn ak-btn--secondary">
+          Back to path selection
         </Link>
       </div>
     </nav>

@@ -544,6 +544,38 @@ body {
   max-width: 52rem;
 }
 
+/* The way back: a text link with the arrow in front */
+.ak-page-hero__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: var(--ak-space-8);
+  font-size: var(--ak-type-small);
+  font-weight: 600;
+  color: var(--ak-text-secondary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.ak-page-hero__back::before {
+  content: '\2190';
+  transition: transform 0.15s ease;
+}
+
+.ak-page-hero__back:hover {
+  color: var(--ak-fg);
+  text-decoration: none;
+}
+
+.ak-page-hero__back:hover::before {
+  transform: translateX(-3px);
+}
+
+.ak-page-hero__back:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 3px;
+}
+
 .ak-page-hero__actions {
   display: flex;
   flex-wrap: wrap;
