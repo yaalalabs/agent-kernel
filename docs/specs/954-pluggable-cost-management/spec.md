@@ -96,6 +96,12 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     `native_user_budget` (§5.1). In `end_user` mode the `budget_id` hash normalizes the amount, and
     `UsageRetrievalError` gains `detail` (the response text, never in the message or logs) so the adapter can tell
     "already exists" from other 400s.
+26. **Agentgateway reads.** SQLite `started_at` text has a variable fraction (sqlx AutoSi), so SQLite reads bound by
+    whole seconds and filter exactly in Python, and SQLite `total_spend` sums `fetch_usage` rows; Postgres keeps the
+    SQL aggregate with `cost::numeric` in both reads, so totals equal row sums exactly. Every read keeps only model
+    calls (`gen_ai_provider_name IS NOT NULL`), and `unpriced` is `cost IS NULL`, matching `SpendTotal.from_rows`. The
+    probe requires migrations 1 and 2. All four header ids go through `gateway_user_id`. A `sqlite:` / `sqlite://`
+    URL prefix is accepted. `cost-agentgateway` repeats the `cost` requirements (§5.2, Config changes).
 
 ## Design
 
@@ -584,7 +590,8 @@ the installed proxy has no source for these routes, so the shapes cannot be veri
 - `native_user_budget` and `request_level_budget_check`: no.
 - `filters`: all six. `row_cap`: `None` (SQL returns everything asked for).
 
-**Headers**: `x-ak-user-id`, `x-ak-agent-id`, `x-ak-session-id`, `x-ak-request-id`, omitted when `None`.
+**Headers**: `x-ak-user-id`, `x-ak-agent-id`, `x-ak-session-id`, `x-ak-request-id`, each through `gateway_user_id`
+(rule 5) and omitted when `None`.
 
 **Operator config, documented** (moved from design.md). The gateway records attribution only when its config maps the
 headers:
@@ -618,8 +625,9 @@ config:
 **`probe`**
 
 - Runs `SELECT version FROM _agentgateway_request_log_migrations`.
-- Accepted versions are `{1, 2, 3}` on Postgres and `{1, 2}` on SQLite. Anything else raises `AKConfigError` naming the
-  versions found.
+- Accepted when `{1, 2} ⊆ found ⊆ allowed`, with `allowed` `{1, 2, 3}` on Postgres and `{1, 2}` on SQLite (migration 2
+  adds `cache_read_input_tokens`, which the reads select). Anything else raises `AKConfigError` naming the versions
+  found.
 - An unreachable database is an availability error (§11.5).
 
 **`total_spend`**
@@ -629,15 +637,20 @@ SELECT gen_ai_provider_name AS provider,
        COALESCE(gen_ai_response_model, gen_ai_request_model) AS model,
        COUNT(*) AS requests,
        SUM(input_tokens), SUM(output_tokens), SUM(cache_read_input_tokens),
-       SUM(cost),
-       SUM(CASE WHEN cost IS NULL AND input_tokens IS NOT NULL THEN 1 ELSE 0 END) AS unpriced
+       SUM(cost::numeric),
+       SUM(CASE WHEN cost IS NULL THEN 1 ELSE 0 END) AS unpriced
 FROM request_logs
-WHERE agentgateway_user = :user AND started_at >= :start AND started_at < :end
+WHERE gen_ai_provider_name IS NOT NULL AND agentgateway_user = :user AND started_at >= :start AND started_at < :end
 GROUP BY 1, 2
 ```
 
-On SQLite, `:start` and `:end` are `datetime.isoformat()` strings in UTC. That matches the stored form
-(`2026-11-17T07:54:37.326796+00:00`, research), so the comparison is lexicographic and correct.
+This aggregate is the Postgres path, and `fetch_usage` reads `cost::numeric` too, so both agree exactly. On SQLite,
+`total_spend` is `SpendTotal.from_rows(fetch_usage(window))`: sqlx stores `started_at` with chrono's
+`SecondsFormat::AutoSi` (`sqlx-sqlite/src/types/chrono.rs:69`), a 0/3/6/9-digit fraction, which compares correctly as
+text only against a whole second (`…37.500+00:00` sorts before `…37.500000+00:00`), and costs are floats. SQLite
+reads therefore bound `started_at` by whole seconds (`floor(start)`, `ceil(end)`) and filter exactly in Python
+(deviation 26). Every read keeps only model calls (`gen_ai_provider_name IS NOT NULL`, the predicate agentgateway's
+own migration 2 uses), because the request log also holds MCP and plain HTTP traffic.
 
 **`fetch_usage`**
 
@@ -1536,7 +1549,7 @@ loudly, rather than enabling the feature silently.
 | Extra | Contents | Reason |
 |---|---|---|
 | `cost` (new) | `httpx>=0.27.0,<0.29.0`, `litellm>=1.100.3,<2.0.0` | gateway HTTP and the client. Both ranges match the existing extras (`httpx` as in `auth`; `litellm` as in `thread` and `multimodal`). The `litellm` range overlaps the `langgraph`/`adk` cap (`<1.106`), so `cost` co-installs with them |
-| `cost-agentgateway` (new) | `agentkernel[cost]`, `psycopg[binary]>=3.2,<4` | Postgres request-log database. `psycopg` is not locked today, so the version is fixed when the lock is regenerated |
+| `cost-agentgateway` (new) | the `cost` requirements repeated, plus `psycopg[binary]>=3.2,<4` (locked 3.3.9) | Postgres request-log database. No extra here refers to `agentkernel[...]`, so it lists `cost`'s requirements itself (deviation 26) |
 | `langgraph` | add `langchain-litellm` | `GatewayChatLiteLLM` (§7.6) |
 
 ### Deployment: AWS Terraform (`ak-deployment/ak-aws/`)
