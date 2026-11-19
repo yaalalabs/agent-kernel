@@ -1,7 +1,0 @@
-logging:
-  ak:
-    level: DEBUG
-session:
-  type: redis
-  redis:
-    prefix: "ak:openai:example:"
