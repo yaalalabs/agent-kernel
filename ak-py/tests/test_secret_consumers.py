@@ -602,6 +602,7 @@ NOT_CREDENTIALS = {
 NON_LITERAL_ALLOWED = {
     ("core/util/config_yaml_util.py", "settings_cls.yaml_file_env_var"),  # config.yaml location
     ("deployment/aws/serverless/core/webhook_host.py", "name"),  # API_BASE_PATH / API_VERSION / AGENT_ENDPOINT
+    ("deployment/aws/serverless/core/protocol_host.py", "name"),  # the same three, checked by LambdaProtocolGuard
     ("trace/cloudwatch/cloudwatch.py", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"),  # collector URL
     ("trace/cloudwatch/cloudwatch.py", "OTEL_EXPORTER_OTLP_ENDPOINT"),
 }
