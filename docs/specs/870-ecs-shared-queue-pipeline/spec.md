@@ -250,9 +250,17 @@ All intentional.
 4. **Async + delta needs `user_id`** where it used to need `endpoint_url` (`agent_runner.py:367-368` vs
    `akagentrunner.py:208-211`). ECS frames carry both (`websocket_api.py:353-361`). The missing `endpoint_url`
    now fails at delivery instead, through §4.
-5. **Edge validation on the REST chat route.** `RequestHandler.run_chat` (`request_handler.py:384-399`) returns
-   400 for a missing `session_id` or prompt, or a request `ChatService` would refuse, before anything is
-   enqueued. Before, these were enqueued and the runner's reply carried the error.
+5. **The REST chat route's 400 body changes shape.** These requests were already refused before enqueueing, by
+   `RestHandler.enqueue_and_wait` (`request_handler.py:243-251`). Now `RequestHandler.run_chat`
+   (`request_handler.py:384-399`) answers them, with the direct-mode body:
+   - missing `session_id`: `{"detail": "session_id is required"}` becomes
+     `{"detail": {"error": "No session_id is provided in the request"}}`
+   - missing prompt: `{"detail": "prompt is required"}` becomes
+     `{"detail": {"error": "No prompt provided in the request", "session_id": ...}}`
+   - `ChatService.reject_unprocessable`: `{"detail": "<reason>"}` becomes
+     `{"detail": {"error": "<reason>", "session_id": ...}}`
+
+   A client that reads `detail` as a string must read `detail.error` instead.
 6. **Stored `session_id` falls back to the message group.** `_store_response` uses `body.session_id or group_id`
    (`response_handler.py:238`), where ECS stored `body.get("session_id")`, which could be `None`
    (`akoutputconsumer.py:156`).

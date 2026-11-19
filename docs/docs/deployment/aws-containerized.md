@@ -220,6 +220,16 @@ commands, SQS message shapes and attributes are unchanged, so rolling deploys wo
 | `ECSIOHandler.run` | `IOHandler.run` (`from agentkernel.pipeline import IOHandler`) in REST modes; `AWSWebsocketAPI.run` (`from agentkernel.aws import AWSWebsocketAPI`) in WebSocket mode |
 | `ECSOutputConsumer`, `AWSRestAPI`, `ECSQueueRequestHandler` | Nothing: `IOHandler.run` starts the shared `ResponseHandler` and `RequestHandler` itself |
 
+**REST 400 error body changes shape.** A chat request refused before it reaches the queue (missing
+`session_id` or prompt, or one the agent service would refuse) now returns the same body as direct mode.
+`detail` is an object, not a string. Clients that read `detail` as a string must read `detail.error` instead:
+
+| Case | Before | After |
+|------|--------|-------|
+| Missing `session_id` | `{"detail": "session_id is required"}` | `{"detail": {"error": "No session_id is provided in the request"}}` |
+| Missing prompt | `{"detail": "prompt is required"}` | `{"detail": {"error": "No prompt provided in the request", "session_id": "..."}}` |
+| Refused request | `{"detail": "<reason>"}` | `{"detail": {"error": "<reason>", "session_id": "..."}}` |
+
 ### Terraform
 
 Enable queue mode in the `yaalalabs/ak-containerized/aws` module:
