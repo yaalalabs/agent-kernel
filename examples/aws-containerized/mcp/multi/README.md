@@ -83,7 +83,6 @@ In addition to Terraform, MCP must be enabled at the application level using `co
 mcp:
   enabled: true
   expose_agents: true
-  agents: ['*']
   stateless_http: true  # recommended for load-balanced/recyclable ECS deployments
 ```
 
@@ -95,9 +94,13 @@ mcp:
 | ------------------ | ------------------------------------------------------------------------------------------------ |
 | `enabled`          | Enables the MCP server                                                                           |
 | `expose_agents`    | Automatically exposes agents as MCP tools                                                        |
-| `agents`           | List of agent names to expose (`'*'` = all agents)                                               |
 | `stateless_http`   | Stateless HTTP mode — each request is independent, no `Mcp-Session-Id` (default: `false`)        |
 
+
+Every agent becomes an MCP tool unless its descriptor says otherwise. To keep one off MCP, list the surfaces it
+should be on under `registry.agents.<agent>.surfaces` (for example `[rest]`). Each tool is described by the
+description the agent declares, which `server.py` sets with `Module.describe`; an agent's instructions are never
+published.
 
 > **Both Terraform (`enable_mcp_server = true`) and `config.yaml` MCP settings are required** for MCP to work correctly.
 

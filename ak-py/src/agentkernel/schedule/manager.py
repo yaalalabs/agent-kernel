@@ -56,6 +56,9 @@ class ScheduleManager:
         self._validate_transport_compatibility()
         self._validate_local_provider_topology()
         self._validate_store_topology()
+        # On the in-memory transport every occurrence is run by this process, so a task's agent has to be
+        # hosted here; on a broker the agent runner is another process and the registry says what exists.
+        self._runs_occurrences = QueueTransportFactory.resolve_type() == "in_memory"
 
     @classmethod
     def get(cls) -> Optional["ScheduleManager"]:
@@ -145,9 +148,10 @@ class ScheduleManager:
         # Every occurrence runs unattended, so a named agent that does not exist has to fail here,
         # where the caller still sees it, rather than in the runner at each fire time. Only a named
         # agent is checked: an unnamed one resolves to whatever default the firing process has, and
-        # that process is not necessarily this one.
+        # that process is not necessarily this one. Where this process is the one that fires, the agent
+        # must be hosted here: a descriptor a removed agent left in a shared registry is not enough.
         if agent:
-            AgentService.ensure_agent_available(agent)
+            AgentService.ensure_agent_available(agent, hosted=self._runs_occurrences)
         OccurrenceCalculator.validate(spec)
 
         now = utc_now_iso()

@@ -67,9 +67,6 @@ class DummyAgent(Agent):
     def get_description(self) -> str:
         return "Test agent"
 
-    def get_a2a_card(self):
-        return None
-
     def override_system_prompt(self, prompt):
         pass
 
@@ -88,6 +85,7 @@ def _install_schedule_cfg(monkeypatch, schedule, multimodal_agents=None) -> None
         multimodal = _Multimodal
         sandbox = None
         identity = None
+        registry = None
 
     _Cfg.schedule = schedule
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))

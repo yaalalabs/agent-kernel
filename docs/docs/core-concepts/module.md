@@ -167,6 +167,57 @@ def options_for(agent, session, requests):
 OpenAIModule([agent]).run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
 ```
 
+### Describing an agent
+
+Every loaded agent has a **descriptor**: the record the agent registry keeps for it and the agent catalog,
+A2A cards, MCP agent tools and the AG-UI listing are built from. The framework adapter fills in what it can
+see (the agent's name, its tools, its runner). `describe(agent, **fields)` declares what only your
+application knows, and is chained like `pre_hook` / `post_hook` / `run_options`:
+
+```python
+OpenAIModule([triage, math]).describe(
+    triage,
+    description="Routes a question to the right specialist",
+    version="1.2.0",
+    tags=["support"],
+).describe(math, description="Solves math problems", surfaces=["rest"])
+```
+
+| Field | Meaning |
+|---|---|
+| `description` | Catalog text for people and other agents. An A2A card and an MCP tool publish it. Defaults to the description your framework keeps for the agent, where it has one apart from the instructions (see below); the agent's instructions are never published |
+| `version` | The agent's version (default `0.0.0`) |
+| `owner`, `tags` | Free-form metadata; the catalog route filters by tag |
+| `visibility` | `private` (default), `internal` or `public`. Recorded and published in the catalog, not enforced yet: until authorization ships every listed agent is listed to every caller, and `surfaces` is what keeps an agent off a listing |
+| `surfaces` | Where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Unset means every surface, `[]` none |
+| `skills` | The skills an A2A card lists; by default one per tool |
+| `identity` | How the agent identifies itself when it acts as a principal |
+
+**Where the description comes from.** When you declare none, Agent Kernel uses the description the native
+agent carries, if its framework keeps one separately from the instructions:
+
+| Framework | Field used as the default description |
+|---|---|
+| OpenAI Agents SDK | `handoff_description` |
+| Google ADK | `description` |
+| Pydantic AI | `description` |
+| Microsoft Agent Framework | `description` |
+| Claude Agent SDK | `ClaudeAgentSpec.description` |
+| Smolagents | `description` |
+| CrewAI, LangGraph | none: declare one |
+
+Instructions, system prompts, goals and backstories are never used. A description you declare with `describe`
+or in configuration replaces the native one, and declaring an empty one (`description=""`) keeps the native
+text off every surface.
+
+Repeated calls merge, the later call winning per field. A field the descriptor does not have, a value it
+does not accept, or the agent's `id` raises `ValueError` at declaration. So do `tools`, `runner`,
+`supports_streaming` and `updated_at`, which the agent's adapter, its runner and the registry report: a
+surface decides from them whether the agent can be served, and the tool list is what an authorization
+policy names tools by. Configuration sets `description`, `version`, `owner`, `tags`, `visibility`, `surfaces`
+and `identity` per agent id under `registry.agents.<id>`, which wins over what the code declares (`skills` is
+declared in code only); see [Configuration → Agent Registry](./configuration.md#agent-registry).
+
 ## Best Practices
 
 ### One Module Per Application

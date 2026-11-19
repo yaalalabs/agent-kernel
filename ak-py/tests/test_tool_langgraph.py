@@ -252,3 +252,45 @@ class TestEdgeCases:
     def test_tool_return_direct_defaults_false(self):
         [tool] = LangGraphToolBuilder.bind([get_weather])
         assert tool.return_direct is False
+
+
+# What the adapter reports of the compiled graph's tools (#603): the descriptor's tools and skills
+class TestLangGraphAgentToolReporting:
+
+    def _agent(self, *tool_lists):
+        """A compiled graph with one ToolNode per list of functions, chained from START to END."""
+        from langgraph.graph import END, START, MessagesState, StateGraph
+        from langgraph.prebuilt import ToolNode
+
+        from agentkernel.framework.langgraph.langgraph import LangGraphAgent, LangGraphRunner
+
+        builder = StateGraph(MessagesState)
+        builder.add_node("model", lambda state: {})
+        builder.add_edge(START, "model")
+        previous = "model"
+        for index, functions in enumerate(tool_lists):
+            builder.add_node(f"tools_{index}", ToolNode(LangGraphToolBuilder.bind(functions)))
+            builder.add_edge(previous, f"tools_{index}")
+            previous = f"tools_{index}"
+        builder.add_edge(previous, END)
+        return LangGraphAgent(name="graph", runner=LangGraphRunner(), agent=builder.compile())
+
+    def test_the_catalog_description_is_not_seeded_for_a_compiled_graph(self):
+        # A compiled graph carries no description of its own.
+        assert self._agent([get_weather]).descriptor.description == ""
+
+    def test_tool_names_are_the_tools_of_the_graphs_tool_node(self):
+        assert self._agent([get_weather, add]).get_tool_names() == ["get_weather", "add"]
+
+    def test_the_tools_of_every_tool_node_are_reported_each_once(self):
+        assert self._agent([get_weather, add], [add, no_params]).get_tool_names() == ["get_weather", "add", "no_params"]
+
+    def test_each_skill_carries_its_tools_description(self):
+        from agentkernel.core.model import AgentSkillDescriptor
+
+        assert self._agent([get_weather]).descriptor.skills == [
+            AgentSkillDescriptor(id="get_weather", name="get_weather", description="Returns the weather for a given city.")
+        ]
+
+    def test_a_graph_with_no_tool_node_reports_no_tools(self):
+        assert self._agent().get_tool_names() == []

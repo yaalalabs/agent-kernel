@@ -1194,12 +1194,61 @@ class GoogleADKAgent(AKBaseAgent):
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, GoogleADKToolBuilder.bind([tool]))
 
-    def get_a2a_card(self):
+    def _native_description(self) -> str:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the native agent's `description`, which ADK keeps apart from its `instruction`, without the
+        system-tool guidance this adapter appends to it (`override_system_prompt`): that text is Agent Kernel's,
+        not the agent's, and is still there when the same native agent is wrapped again.
         """
-        # TODO Add A2A card support
-        pass
+        from ...core.tool import SystemToolFactory
+
+        description = getattr(self.agent, "description", None)
+        if not isinstance(description, str):
+            return ""
+        guidance = SystemToolFactory.get_system_prompt_suffix(self.name)
+        return description.replace(guidance, "") if guidance else description
+
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names of the tools of every `LlmAgent` reachable from the root, the root's first, each once.
+
+        Not reported: a toolset's tools (an MCP toolset lists them only inside a run), the agents of a `Workflow`
+        nested in another, and a callable object that has neither a `name` nor a function name.
+        """
+        return list(self._named_tools())
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each reachable tool by name: a tool object's own, a plain function's docstring.
+        """
+        # The docstring only for a function: asked of a tool object, getdoc answers with its class's.
+        return {
+            name: getattr(tool, "description", None) or (inspect.getdoc(tool) if inspect.isroutine(tool) else None) or ""
+            for name, tool in self._named_tools().items()
+        }
+
+    def _named_tools(self) -> dict[str, Any]:
+        """
+        Returns the tools of every `LlmAgent` reachable from the root, by name: the root itself or a workflow's
+        nodes, then each level of `sub_agents`. A tool object is named by its `name`, a plain callable by its
+        function name, as ADK names them; a toolset, which lists its tools only inside a run, has no name here and
+        is left out.
+        """
+        found: dict[str, Any] = {}
+        seen: set[int] = set()
+        pending = GoogleADKRealtimeRunner._workflow_nodes(self._agent) if isinstance(self._agent, Workflow) else [self._agent]
+        while pending:
+            node = pending.pop(0)
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, LlmAgent):
+                for tool in node.tools:
+                    name = self._native_tool_name(tool)
+                    if name:
+                        found.setdefault(name, tool)
+            pending.extend(getattr(node, "sub_agents", None) or [])
+        return found
 
 
 class GoogleADKModule(Module):

@@ -112,7 +112,7 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "MCP Server",
         description:
-          "Expose agents as MCP tools so any Model Context Protocol client can call them, with the same sessions and hooks as every other surface.",
+          "Expose agents as MCP tools, each described by the text you declare for its agent, so any Model Context Protocol client can call them with the same sessions and hooks as every other surface.",
         tags: ["MCP", "Tools", "FastMCP"],
         docs: "/docs/api/mcp-server",
         example: "api/mcp",
@@ -120,7 +120,7 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "A2A Server",
         description:
-          "Publish an agent card and serve agent-to-agent calls over the A2A protocol by switching configuration.",
+          "Publish a card for each agent, built from its registry descriptor and declaring your identity provider's security scheme, and serve agent-to-agent calls over the A2A protocol by switching configuration.",
         tags: ["A2A", "Agent card", "Delegation"],
         docs: "/docs/api/a2a-server",
         example: "api/a2a",
@@ -132,6 +132,15 @@ export const FEATURE_TABS: FeatureTab[] = [
         tags: ["AG-UI", "CopilotKit", "Shared state"],
         docs: "/docs/api/agui-server",
         example: "api/agui",
+      },
+      {
+        title: "Agent Registry & Catalog",
+        description:
+          "Every agent carries one descriptor: name, version, description, owner, tags, skills and tools. The REST catalog, A2A cards, MCP tools and the AG-UI listing are built from it, each agent chooses the surfaces it is served on, and a Redis, Valkey or DynamoDB backend shares the registry across processes.",
+        tags: ["Descriptors", "Catalog API", "Per-agent surfaces", "Shared registry"],
+        // Drop `next` once the release that carries the agent registry is published.
+        docs: "/docs/next/core-concepts/configuration#agent-registry",
+        example: "api/a2a/multi",
       },
       {
         title: "Interactive CLI",

@@ -9,7 +9,7 @@ from a2a.server.tasks import InMemoryTaskStore, TaskStore
 from a2a.types import AgentCard, InternalError, Message, UnsupportedOperationError
 
 from ...a2ui.hook import A2UIPostHook
-from ...core import Agent
+from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import BaseRunRequest, Principal
 from ...core.runtime import Runtime
@@ -146,17 +146,28 @@ class A2A:
             return
         if not AKConfig.get().a2a.enabled:
             return
-        agents: dict[str, Agent] = Runtime.current().agents()
-        for name, agent in agents.items():
-            whitelisted = AKConfig.get().a2a.agents == ["*"] or name in AKConfig.get().a2a.agents
-            if not whitelisted:
+        # From the registry's descriptors, not the agents this process hosts: a card needs nothing the
+        # descriptor does not carry, so a process over a shared registry serves agents that run elsewhere.
+        # In id order, so every process lists the same catalog whatever order its registry answers in.
+        descriptors = Runtime.current().registry.descriptors()
+        for descriptor in sorted(descriptors, key=lambda descriptor: descriptor.id):
+            if not descriptor.exposed_on("a2a"):
                 continue
-            # get card
-            card: AgentCard | None = agent.get_a2a_card()
-            if card is None:
-                cls._log.warning(f"Agent '{name}' has no A2A card; it is not served over A2A")
-                continue
-            cls._cards.update({name: card})
+            if not descriptor.description:
+                cls._log.warning(
+                    f"Agent '{descriptor.id}' has no description, so its A2A card says only that it is the '{descriptor.id}' agent; "
+                    f"declare one with Module.describe(agent, description=...) or registry.agents.{descriptor.id}.description"
+                )
+            cls._cards[descriptor.id] = A2ACardBuilder.build(descriptor)
+        if descriptors and not cls._cards:
+            # Agents exist and none is served: without this the catalog is simply empty and every agent
+            # route a 404. A registry that knows no agent at all is the host's to report (IOHandler).
+            cls._log.warning(
+                f"A2A is enabled but serves no agent: none of the {len(descriptors)} agents the registry knows is exposed on a2a. "
+                f"An agent is on every surface unless its descriptor's surfaces leave one out; add a2a to "
+                f"registry.agents.<id>.surfaces (or Module.describe(agent, surfaces=[...])) for the agents A2A should serve, "
+                f"or set a2a.enabled to false"
+            )
         cls._built = True
 
     @classmethod

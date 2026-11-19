@@ -4,8 +4,9 @@ A2A authentication hand-off (spec `docs/specs/603-identity-rbac-registry/` 8.7, 
 The A2A routers are included by `RESTAPI`, so the identity dependency has already put the
 principal on `request.state` when the SDK builds its call context; `AKCallContextBuilder` copies
 it into the context's state, and the executor reads it from there onto the queued body, falling
-back to the request-scoped contextvar and then to the anonymous principal. The cards' security
-schemes and the catalog filtering arrive with the registry and the access gate.
+back to the request-scoped contextvar and then to the anonymous principal. A card advertises the
+configured identity provider's security scheme (iteration 14); the catalog filtering arrives with
+the access gate.
 """
 
 import uuid
@@ -16,6 +17,7 @@ from a2a.helpers import get_message_text
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
+from a2a.server.request_handlers.response_helpers import agent_card_to_dict
 from a2a.types import Message, Part, Role, SendMessageRequest
 from starlette.requests import Request
 
@@ -26,7 +28,7 @@ from agentkernel.core.base import Agent, Runner
 from agentkernel.core.builder import A2ACardBuilder
 from agentkernel.core.chat_service import ResponseBuilder
 from agentkernel.core.config import AKConfig
-from agentkernel.core.model import AgentReplyText, Principal
+from agentkernel.core.model import AgentDescriptor, AgentReplyText, AgentSkillDescriptor, Principal
 from agentkernel.core.runtime import Runtime
 from agentkernel.identity import IdentityProviderFactory, RequestAuthenticator
 from agentkernel.pipeline.request_handler import QueuedReply
@@ -140,8 +142,8 @@ class _Agent(Agent):
     def __init__(self, name: str):
         super().__init__(name, _NoRunner())
 
-    def get_a2a_card(self):
-        return A2ACardBuilder.build(name=self.name, description="Triages tickets", skills=[])
+    def _build_descriptor(self) -> AgentDescriptor:
+        return super()._build_descriptor().model_copy(update={"description": "Triages tickets"})
 
     def get_description(self):
         return "Triages tickets"
@@ -209,3 +211,54 @@ class TestOverHttp:
 
         assert (await self._send(app, {"Authorization": "Bearer nope"})).status_code == 401
         assert client.calls == []
+
+
+class TestCardSecurity:
+    """A card advertises the configured identity provider's scheme and requires it; with no provider it declares nothing."""
+
+    DESCRIPTOR = AgentDescriptor(
+        id=AGENT, name=AGENT, description="Triages tickets", skills=[AgentSkillDescriptor(id="route", name="route", description="Routes a ticket")]
+    )
+    REQUIRES_AK = [{"schemes": {"ak": {}}}]
+
+    @pytest.fixture(autouse=True)
+    def _no_identity_block(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+        IdentityProviderFactory.reset()
+        yield
+        IdentityProviderFactory.reset()
+        AKConfig._reset()
+
+    def _served(self) -> dict:
+        return agent_card_to_dict(A2ACardBuilder.build(self.DESCRIPTOR))
+
+    def test_a_static_provider_is_advertised_as_http_bearer_and_required(self, static_identity):
+        served = self._served()
+
+        assert served["securitySchemes"] == {"ak": {"httpAuthSecurityScheme": {"scheme": "bearer"}}}
+        assert served["securityRequirements"] == self.REQUIRES_AK
+
+    def test_an_oidc_provider_is_advertised_as_openid_connect_with_its_discovery_url(self, monkeypatch):
+        from agentkernel.identity import OIDCIdentityProvider
+
+        provider = OIDCIdentityProvider(issuer="https://issuer.example", audience="ak")
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
+
+        served = self._served()
+
+        assert served["securitySchemes"] == {
+            "ak": {"openIdConnectSecurityScheme": {"openIdConnectUrl": "https://issuer.example/.well-known/openid-configuration"}}
+        }
+        assert served["securityRequirements"] == self.REQUIRES_AK
+
+    def test_every_skill_repeats_the_cards_requirement(self, static_identity):
+        [skill] = self._served()["skills"]
+
+        assert skill["securityRequirements"] == self.REQUIRES_AK
+
+    def test_without_an_identity_provider_neither_the_card_nor_a_skill_declares_security(self):
+        served = self._served()
+
+        assert "securitySchemes" not in served and "securityRequirements" not in served
+        assert "securityRequirements" not in served["skills"][0]

@@ -19,7 +19,6 @@ from agentkernel.api.a2a.a2a import A2A
 from agentkernel.api.http import RESTAPI
 from agentkernel.api.mcp.akmcp import MCP
 from agentkernel.core.base import Agent, Runner
-from agentkernel.core.builder import A2ACardBuilder
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
@@ -65,8 +64,9 @@ class CountingAgent(Agent):
     def get_description(self) -> str:
         return "Round-trip test agent"
 
-    def get_a2a_card(self):
-        return A2ACardBuilder.build(name=AGENT_NAME, description="Round-trip test agent", skills=[])
+    def _build_descriptor(self):
+        # The catalog text the A2A card carries; the card is built from the descriptor.
+        return super()._build_descriptor().model_copy(update={"description": "Round-trip test agent"})
 
     def override_system_prompt(self, prompt):
         pass

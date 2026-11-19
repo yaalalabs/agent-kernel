@@ -91,9 +91,6 @@ class DummyAgent(Agent):
     def get_description(self) -> str:
         return "Test agent"
 
-    def get_a2a_card(self):
-        return None
-
     def override_system_prompt(self, prompt):
         pass
 
@@ -264,6 +261,27 @@ class TestAgentThreadRequestHandler:
         assert exc.value.status_code == 400
         assert exc.value.detail["error"] == "No agent available"
         assert thread_enabled.get_thread("s1") is None
+
+    @pytest.mark.asyncio
+    async def test_an_agent_another_process_hosts_is_refused_before_any_thread_write(self, thread_enabled, descriptor_only_registry):
+        """This handler runs the agent itself: one a shared registry only knows could never be selected here, so
+        its user message must not be recorded first (#603)."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.runtime import Runtime
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService()
+        registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as exc:
+                await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent="billing"))
+
+        assert exc.value.status_code == 400
+        assert exc.value.detail["error"] == "No agent available"
+        assert thread_enabled.get_thread("s1") is None
+        assert handler.chat_service.calls == []
 
     @pytest.mark.asyncio
     async def test_stream_accumulates_deltas_into_assistant_message(self, thread_enabled, registered_agent):
