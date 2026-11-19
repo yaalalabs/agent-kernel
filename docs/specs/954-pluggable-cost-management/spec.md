@@ -85,6 +85,11 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
 23. **`gateway_user_id` also encodes an id that already starts with `ak~`**, so the inverse is exact: without it a
     raw subject such as `ak~%41` would read back as `A`. Every gateway, built-in or bring-your-own, uses the base
     class's transform (§1, rule 5).
+24. **LiteLLM: agent tags use rule 5, and refusals are read from either body shape.** §5.1 first replaced `,` in an
+    agent name with `_`, which left CR/LF in the header and could not be reversed; the tag now carries
+    `gateway_user_id(agent_id)`. `is_budget_refusal` first checked only `body["error"]["type"]`, which misses OpenAI SDK
+    errors, whose `body` is the inner object (§5.1). `LLMGateway.capabilities` is a plain class attribute, not a
+    `ClassVar`, so LiteLLM can set it per instance (§4).
 
 ## Design
 
@@ -357,7 +362,7 @@ The check runs inside `async with session` and after `_publish` / `agent._activa
 ```python
 class LLMGateway(ABC):
     name: ClassVar[str]
-    capabilities: ClassVar[GatewayCapabilities]
+    capabilities: GatewayCapabilities   # class default; LiteLLM sets it per instance from its mode (§5.1)
 
     def __init__(self, config: _CostGatewayConfig, secrets: SecretManager): ...   # explicit; no AKConfig reads
 
@@ -462,7 +467,7 @@ mode as its own subclass.
   - `x-litellm-customer-id: <gateway_user_id>`. It is the first of `STANDARD_CUSTOMER_ID_HEADERS`
     (`litellm/constants.py:1330-1333`), which the proxy reads for the end user with no configuration
     (`proxy/auth/auth_utils.py:1169`).
-  - `x-litellm-tags: ak-agent:<agent_id>`. The proxy splits this header on `,` (`proxy/litellm_pre_call_utils.py:1227-1229`), so a comma in an agent name is replaced by `_` (the name is not otherwise escaped).
+  - `x-litellm-tags: ak-agent:<gateway_user_id(agent_id)>`. The proxy splits this header on `,` (`proxy/litellm_pre_call_utils.py:1227-1229`); rule 5's transform never leaves a `,` (or CR/LF) in the value, and row mapping reverses it exactly (deviation 24).
   - `x-litellm-spend-logs-metadata`: `json.dumps({"ak_session_id": ..., "ak_request_id": ..., "ak_agent_id": ...})`. The proxy parses it with `safe_json_loads` (`:721-723`).
 - `customer_management`:
   - `x-litellm-customer-org-alias: <customer_org_alias>`
@@ -543,14 +548,14 @@ recorded-response test.
 
 **`is_budget_refusal`**
 
-- The error is first unwrapped to a body:
-  - `getattr(error, "body", None)` when it is a dict (OpenAI SDK errors)
-  - otherwise `error.response.json()` when `error.response` is an `httpx.Response`
-  - otherwise `None`
-- A match is `body["error"]["type"] == "budget_exceeded"` or `body["litellm_error_type"] == "budget_exceeded"`.
+- The candidate bodies are `error.body` and `error.response.json()` (when `error.response` is an `httpx.Response`),
+  each kept only when it is a dict.
+- A match is `type` or `litellm_error_type` equal to `"budget_exceeded"` on a candidate or on its `"error"` sub-dict.
+  The OpenAI SDK stores the inner `"error"` object as `body` (`openai/_client.py:687`, `body.get("error", body)`),
+  while a raw response holds the whole envelope (deviation 24).
   At 1.95.1 the proxy raises `ProxyException(type=ProxyErrorTypes.budget_exceeded, code=429)`
   (`proxy/auth/auth_exception_handler.py:142-147`; the enum value is at `proxy/_types.py:3854`).
-- With no body, it matches when `str(error)` contains `ExceededBudget:` (the proxy's message prefix,
+- With no dict candidate, it matches when `str(error)` contains `ExceededBudget:` (the proxy's message prefix,
   `proxy/auth/auth_checks.py:1121`) **and** `budget_exceeded`.
 - The status code is never read.
 

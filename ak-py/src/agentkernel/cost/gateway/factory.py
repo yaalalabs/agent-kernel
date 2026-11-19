@@ -3,7 +3,7 @@
 import logging
 from typing import TYPE_CHECKING
 
-from ...core.util.factory import AKConfigError, resolve_dotted
+from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ...secret import SecretManager
 from .base import LLMGateway
 
@@ -26,6 +26,11 @@ class LLMGatewayFactory:
         """
         LLMGatewayFactory._log.info(f"Building '{config.type}' LLM gateway")
         key = config.type.lower()
+        if key == "litellm":
+            with require_extra("cost", "cost.gateway.type: litellm"):
+                from .litellm import LiteLLMGateway
+
+            return LiteLLMGateway(config, SecretManager.current())
         if "." not in key:
             raise AKConfigError(
                 f"unknown cost.gateway.type '{config.type}'; expected one of litellm, agentgateway, langfuse or a dotted path to an LLMGateway subclass"

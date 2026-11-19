@@ -360,7 +360,7 @@ class TestLLMGatewayFactory:
         assert isinstance(gateway, _FakeGateway)
         assert gateway.config is config and gateway.secrets is secrets
 
-    @pytest.mark.parametrize("type_", ["nosuchgateway", "litellm"])
+    @pytest.mark.parametrize("type_", ["nosuchgateway", "langfuse"])
     def test_an_unknown_name_raises(self, type_):
         with pytest.raises(AKConfigError, match="unknown cost.gateway.type"):
             LLMGatewayFactory.create(_config(type_))

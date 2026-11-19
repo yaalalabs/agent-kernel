@@ -38,7 +38,8 @@ class LLMGateway(ABC):
     """
 
     name: ClassVar[str]
-    capabilities: ClassVar[GatewayCapabilities] = GatewayCapabilities()
+    # Not a ClassVar: a gateway whose capabilities depend on its config (LiteLLM's mode) sets them per instance.
+    capabilities: GatewayCapabilities = GatewayCapabilities()
 
     def __init__(self, config: "_CostGatewayConfig", secrets: "SecretManager") -> None:
         self.config = config
