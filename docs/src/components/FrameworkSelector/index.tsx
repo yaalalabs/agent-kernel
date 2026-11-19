@@ -1,3 +1,4 @@
+import { BRAND } from '@site/src/lib/brand';
 import React, { useState } from "react";
 import Link from "@docusaurus/Link";
 import styles from "./styles.module.css";
@@ -156,7 +157,7 @@ function ToolbarIcons() {
 export default function FrameworkSelector({
   showTitle = true,
   showDescription = true,
-  accentColor = "#CC7D21",
+  accentColor = BRAND.orange, // a hex value: the component derives an rgb triplet from it
 }: FrameworkSelectorProps) {
   const [selectedFramework, setSelectedFramework] = useState<string>("openai");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);

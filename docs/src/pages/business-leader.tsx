@@ -248,7 +248,6 @@ export default function BusinessLeaderPage() {
 
   return (
     <Layout
-      wrapperClassName="ak-dark-surface"
       title="Open Agent Kernel for Business Leaders"
       description="Learn how Open Agent Kernel helps business leaders implement AI agents that scale across their organization."
     >
@@ -472,7 +471,7 @@ export default function BusinessLeaderPage() {
               </p>
 
               <div className={styles.devArchitectureWrapper}>
-                <AgentKernelArchDiagram accentColor="#D946EF" />
+                <AgentKernelArchDiagram />
               </div>
             </div>
 
@@ -497,10 +496,6 @@ export default function BusinessLeaderPage() {
                     <a
                       className={styles.goDeeperCard}
                       href="/features"
-                      style={{
-                        '--card-accent': '#6F45CC',
-                        '--card-glow-color': '#230E23'
-                      } as React.CSSProperties}
                     >
                       <h3 className={styles.goDeeperCardTitle}>Features</h3>
                       <p className={styles.goDeeperCardBody}>
@@ -514,10 +509,6 @@ export default function BusinessLeaderPage() {
                     <a
                       className={styles.goDeeperCard}
                       href="/use-cases"
-                      style={{
-                        '--card-accent': '#6F45CC',
-                        '--card-glow-color': '#230E23'
-                      } as React.CSSProperties}
                     >
                       <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
                       <p className={styles.goDeeperCardBody}>

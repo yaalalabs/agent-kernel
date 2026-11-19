@@ -1,9 +1,10 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
+import { onThemeChange, themeChannels } from '@site/src/lib/brand';
 import clsx from 'clsx';
 import styles from './styles.module.css';
 
 type OakMarkProps = {
-  /** `hero` is the animated 3D scene; `hub` and `cta` are the flat mark with a glow. */
+  /** `hero` is the particle rendition; `hub` and `cta` are the flat mark with a glow. */
   variant?: 'hero' | 'hub' | 'cta';
   /** Set to false for a static mark. Reduced-motion users always get the static mark. */
   animated?: boolean;
@@ -15,7 +16,6 @@ const LEFT =
   'M19.74,39.48v15.79l12.48,5.06c4.39,1.76,7.26,6.01,7.26,10.73v15.79l-27.78-11.11c-7.07-2.83-11.7-9.67-11.7-17.27V0l27.79,11.11c7.06,2.83,11.69,9.67,11.69,17.27v19.07L19.74,39.48Z';
 const RIGHT =
   'M86.86,0v58.47c0,7.6-4.64,14.44-11.7,17.27l-27.78,11.11v-23.69c0-4.72,2.87-8.97,7.26-10.73l12.48-5.06v-15.79l-19.74,7.97v-11.17c0-7.6,4.63-14.44,11.69-17.27L86.86,0Z';
-const VIEW_BOX = '0 0 86.86 86.85';
 
 function useSafeId(prefix: string): string {
   return `${prefix}-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -48,193 +48,215 @@ function FlatMark({ variant, animated, className }: Required<Pick<OakMarkProps, 
   );
 }
 
-/* ── Hero scene: the kernel in 3D with agents in orbit ───────────────────── */
+/* ── Hero: the mark formed from particles ────────────────────────────────── */
 
-const DEPTH = 14; // slices that make up the extruded body
-const SLICE_PX = 2.2; // distance between slices
+const MARK_SIZE = 86.86; // the mark's viewBox edge, in path units
 
-/** Shade for an extrusion slice: 0 is just behind the face, 1 is the back. */
-function sideColour(t: number): string {
-  const from = [214, 72, 34];
-  const to = [112, 34, 14];
-  const c = from.map((v, i) => Math.round(v + (to[i] - v) * t));
-  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+type Particle = {
+  hx: number; hy: number; // home, in path units (dust: polar angle and radius factor)
+  x: number; y: number; vx: number; vy: number; // position and velocity, in CSS pixels
+  r: number; alpha: number; phase: number; speed: number; wobble: number;
+  delay: number; // seconds before the particle starts travelling home
+  kind: 0 | 1 | 2; // 0 body, 1 outline, 2 ambient dust
+  tone: number; // index into the colour table
+};
+
+/** Small deterministic generator, so every visit sees the same arrangement. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-type Ring = { rx: number; ry: number; rotate: number };
-const RINGS: Ring[] = [
-  { rx: 186, ry: 52, rotate: -16 },
-  { rx: 232, ry: 82, rotate: 12 },
-  { rx: 270, ry: 110, rotate: -5 },
-];
+// Orange tones across the mark, light at the top left to soft at the bottom right.
+const ORANGE_TONES = ['255, 132, 96', '255, 110, 70', '255, 94, 50', '247, 120, 78', '245, 138, 94'];
 
-// Agents travelling the rings. `begin` is negative so they start spread out.
-type Satellite = { ring: number; dur: number; begin: number; r: number; accent?: boolean };
-const SATELLITES: Satellite[] = [
-  { ring: 0, dur: 15, begin: -2, r: 6.5, accent: true },
-  { ring: 1, dur: 23, begin: -9, r: 5 },
-  { ring: 1, dur: 23, begin: -20, r: 3.5 },
-  { ring: 2, dur: 33, begin: -6, r: 4.5 },
-  { ring: 2, dur: 33, begin: -23, r: 6, accent: true },
-];
-
-// Fixed positions for the background specks, so server and client render the same scene.
-const SPECKS: Array<[number, number, number, number]> = [
-  [-232, -168, 1.6, 0], [-150, -236, 1.2, 1.4], [-40, -250, 1.8, 2.6], [96, -228, 1.3, 0.8],
-  [206, -182, 1.7, 3.1], [252, -66, 1.2, 1.9], [240, 96, 1.6, 0.3], [150, 214, 1.3, 2.2],
-  [18, 246, 1.7, 3.6], [-120, 226, 1.2, 1.1], [-222, 138, 1.6, 2.9], [-256, -24, 1.3, 0.6],
-];
-
-function ellipsePath({ rx, ry }: Ring): string {
-  // Starts at the right, comes round the front (below the centre line), returns round the back.
-  return `M${rx},0 A${rx},${ry} 0 1,1 ${-rx},0 A${rx},${ry} 0 1,1 ${rx},0`;
-}
-
-function OrbitLayer({ side, ids, moving }: { side: 'back' | 'front'; ids: { upper: string; lower: string }; moving: boolean }): JSX.Element {
-  const clip = side === 'back' ? ids.upper : ids.lower;
-  return (
-    <svg className={clsx(styles.orbits, side === 'back' ? styles.orbitsBack : styles.orbitsFront)} viewBox="-300 -300 600 600" focusable="false">
-      <defs>
-        <clipPath id={ids.upper}>
-          <rect x="-320" y="-320" width="640" height="320" />
-        </clipPath>
-        <clipPath id={ids.lower}>
-          <rect x="-320" y="0" width="640" height="320" />
-        </clipPath>
-      </defs>
-      {side === 'back' &&
-        SPECKS.map(([x, y, r, delay]) => (
-          <circle key={`${x}-${y}`} className={styles.speck} cx={x} cy={y} r={r} style={{ animationDelay: `${delay}s` }} />
-        ))}
-      {RINGS.map((ring, index) => (
-        <g key={ring.rx} transform={`translate(0 34) rotate(${ring.rotate})`}>
-          <g clipPath={`url(#${clip})`}>
-            <ellipse className={styles.ring} rx={ring.rx} ry={ring.ry} />
-            {SATELLITES.filter((s) => s.ring === index).map((s) => (
-              <circle
-                key={`${s.ring}-${s.begin}`}
-                className={clsx(styles.satellite, s.accent && styles.satelliteAccent)}
-                r={side === 'back' ? s.r * 0.72 : s.r}
-                // The resting position, used when motion is off: spread around the front of the ring.
-                cx={moving ? 0 : ring.rx * Math.cos(s.begin)}
-                cy={moving ? 0 : Math.abs(ring.ry * Math.sin(s.begin)) * (side === 'back' ? -1 : 1)}
-              >
-                {moving && <animateMotion dur={`${s.dur}s`} begin={`${s.begin}s`} repeatCount="indefinite" path={ellipsePath(ring)} />}
-              </circle>
-            ))}
-          </g>
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-function Half({ side, gradientId, clipId }: { side: 'left' | 'right'; gradientId: string; clipId: string }): JSX.Element {
-  const d = side === 'left' ? LEFT : RIGHT;
-  const slices = Array.from({ length: DEPTH }, (_, i) => DEPTH - i); // back to front
-  return (
-    <div className={clsx(styles.half, side === 'left' ? styles.halfLeft : styles.halfRight)}>
-      {slices.map((i) => (
-        <svg key={i} className={styles.slice} viewBox={VIEW_BOX} style={{ transform: `translateZ(${-i * SLICE_PX}px)` }} focusable="false">
-          <path d={d} fill={sideColour((i - 1) / (DEPTH - 1))} />
-        </svg>
-      ))}
-      <svg className={styles.slice} viewBox={VIEW_BOX} focusable="false">
-        <defs>
-          <clipPath id={clipId}>
-            <path d={d} />
-          </clipPath>
-        </defs>
-        <path d={d} fill={`url(#${gradientId})`} />
-        <g clipPath={`url(#${clipId})`}>
-          <g transform="skewX(-22)">
-            <rect className={styles.shine} x="-40" y="-10" width="26" height="110" />
-          </g>
-        </g>
-        <path className={styles.edge} d={d} />
-      </svg>
-    </div>
-  );
-}
-
-function HeroScene({ animated, className }: { animated: boolean; className?: string }): JSX.Element {
-  const sceneRef = useRef<HTMLDivElement>(null);
-  const [moving, setMoving] = useState(false);
-  const gradientId = useSafeId('oak-face');
-  const clipLeft = useSafeId('oak-clip-l');
-  const clipRight = useSafeId('oak-clip-r');
-  const orbitIds = { upper: useSafeId('oak-upper'), lower: useSafeId('oak-lower') };
-  const orbitIdsFront = { upper: useSafeId('oak-upper-f'), lower: useSafeId('oak-lower-f') };
+function ParticleMark({ animated, className }: { animated: boolean; className?: string }): JSX.Element {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pathRef = useRef<SVGPathElement>(null);
 
   useEffect(() => {
-    if (!animated) return undefined;
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (reduce.matches) return undefined;
-    setMoving(true);
+    const host = hostRef.current;
+    const canvas = canvasRef.current;
+    const pathEl = pathRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!host || !canvas || !pathEl || !ctx) return undefined;
 
-    // The mark leans toward the pointer anywhere over the hero section.
-    const scene = sceneRef.current;
-    const host = scene?.closest('section') ?? scene;
-    if (!scene || !host) return undefined;
-    let frame = 0;
+    const still = !animated || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const rnd = mulberry32(20261119);
+    const compact = host.clientWidth < 520;
+    const counts = compact ? { body: 1300, outline: 620, dust: 36 } : { body: 2700, outline: 1150, dust: 90 };
+
+    // Sample the mark: points inside the two halves, and points along their outlines.
+    const scratch = document.createElement('canvas').getContext('2d');
+    const halves = [new Path2D(LEFT), new Path2D(RIGHT)];
+    const inside = (x: number, y: number) => !!scratch && halves.some((half) => scratch.isPointInPath(half, x, y));
+    const particles: Particle[] = [];
+    const make = (hx: number, hy: number, kind: 0 | 1 | 2): Particle => ({
+      hx, hy, x: 0, y: 0, vx: 0, vy: 0,
+      r: kind === 1 ? 0.7 + rnd() * 0.75 : kind === 0 ? 0.45 + rnd() * 0.8 : 0.5 + rnd() * 0.9,
+      alpha: kind === 1 ? 0.7 + rnd() * 0.3 : kind === 0 ? 0.28 + rnd() * 0.5 : 0.12 + rnd() * 0.3,
+      phase: rnd() * Math.PI * 2, speed: 0.5 + rnd() * 1.1, wobble: kind === 1 ? 0.35 + rnd() * 0.5 : 0.6 + rnd() * 1.3,
+      delay: rnd() * 0.9, kind,
+      tone: kind === 2 || rnd() < 0.06 ? -1 : Math.min(ORANGE_TONES.length - 1, Math.floor(((hx + hy) / (2 * MARK_SIZE)) * ORANGE_TONES.length + rnd() * 0.9)),
+    });
+    let guard = 0;
+    while (particles.length < counts.body && guard++ < counts.body * 12) {
+      const x = rnd() * MARK_SIZE;
+      const y = rnd() * MARK_SIZE;
+      if (inside(x, y)) particles.push(make(x, y, 0));
+    }
+    for (const d of [LEFT, RIGHT]) {
+      pathEl.setAttribute('d', d);
+      const length = pathEl.getTotalLength();
+      const n = Math.round(counts.outline / 2);
+      for (let i = 0; i < n; i++) {
+        const point = pathEl.getPointAtLength(((i + rnd()) / n) * length);
+        particles.push(make(point.x + (rnd() - 0.5) * 0.5, point.y + (rnd() - 0.5) * 0.5, 1));
+      }
+    }
+    for (let i = 0; i < counts.dust; i++) particles.push(make(rnd() * Math.PI * 2, 0.66 + rnd() * 0.62, 2));
+
+    // Layout: the canvas fills the host; the mark sits in the middle.
+    let width = 0, height = 0, scale = 1, originX = 0, originY = 0, markPx = 0;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let dark = document.documentElement.getAttribute('data-theme') !== 'light';
+    let ambient = themeChannels('blue');
+    const homeOf = (p: Particle, time: number): [number, number] => {
+      if (p.kind === 2) {
+        const angle = p.hx + time * 0.035 * p.speed;
+        return [width / 2 + Math.cos(angle) * markPx * p.hy, height / 2 + Math.sin(angle) * markPx * p.hy * 0.86];
+      }
+      return [originX + p.hx * scale, originY + p.hy * scale];
+    };
+    const layout = (scatter: boolean) => {
+      width = host.clientWidth; height = host.clientHeight;
+      canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
+      markPx = Math.min(Math.min(width, height) * 0.56, 400);
+      scale = markPx / MARK_SIZE; originX = (width - markPx) / 2; originY = (height - markPx) / 2;
+      for (const p of particles) {
+        const [hx, hy] = homeOf(p, 0);
+        if (scatter && p.kind !== 2) {
+          // start on a wide ring, with a little sideways motion so the particles curve in
+          const angle = rnd() * Math.PI * 2;
+          const radius = markPx * (0.75 + rnd() * 1.05);
+          p.x = width / 2 + Math.cos(angle) * radius; p.y = height / 2 + Math.sin(angle) * radius;
+          p.vx = -Math.sin(angle) * (1.5 + rnd() * 2.5); p.vy = Math.cos(angle) * (1.5 + rnd() * 2.5);
+        } else { p.x = hx; p.y = hy; p.vx = 0; p.vy = 0; }
+      }
+    };
+
+    const pointer = { x: 0, y: 0, active: false };
+    let shiftX = 0, shiftY = 0;
+    const draw = (time: number, step: number) => {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.globalCompositeOperation = dark ? 'lighter' : 'source-over';
+      // the whole mark eases a few pixels toward the pointer
+      const wantX = pointer.active ? (pointer.x - width / 2) * 0.018 : 0;
+      const wantY = pointer.active ? (pointer.y - height / 2) * 0.018 : 0;
+      shiftX += (wantX - shiftX) * 0.05; shiftY += (wantY - shiftY) * 0.05;
+      const reach = markPx * 0.3;
+      let style = '';
+      for (const p of particles) {
+        const [hx, hy] = homeOf(p, time);
+        if (step > 0) {
+          if (time >= p.delay) {
+            const tx = hx + shiftX + Math.sin(time * p.speed + p.phase) * p.wobble;
+            const ty = hy + shiftY + Math.cos(time * p.speed * 0.8 + p.phase * 1.3) * p.wobble;
+            p.vx += (tx - p.x) * 0.042 * step; p.vy += (ty - p.y) * 0.042 * step;
+            if (pointer.active && p.kind !== 2) {
+              const dx = p.x - pointer.x, dy = p.y - pointer.y;
+              const dist = Math.hypot(dx, dy);
+              if (dist < reach && dist > 0.01) {
+                const push = (1 - dist / reach) ** 2 * 2.4 * step;
+                p.vx += (dx / dist) * push; p.vy += (dy / dist) * push;
+              }
+            }
+          }
+          const damping = Math.pow(0.86, step);
+          p.vx *= damping; p.vy *= damping;
+          p.x += p.vx * step; p.y += p.vy * step;
+        }
+        const fadeIn = still ? 1 : Math.min(1, Math.max(0, (time - p.delay * 0.6) / 0.9));
+        const twinkle = still ? 1 : 0.78 + 0.22 * Math.sin(time * (0.9 + p.speed) + p.phase);
+        const alpha = p.alpha * fadeIn * twinkle * (dark ? 1 : 1.25);
+        if (alpha <= 0.01) continue;
+        const next = `rgba(${p.tone < 0 ? ambient : ORANGE_TONES[p.tone]}, ${Math.min(1, alpha).toFixed(3)})`;
+        if (next !== style) { ctx.fillStyle = next; style = next; }
+        ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
+      }
+    };
+
+    let frame = 0, last = 0, start = 0, visible = true;
+    const tick = (now: number) => {
+      if (!start) { start = now; last = now; }
+      const step = Math.min(2.5, (now - last) / 16.67);
+      last = now;
+      draw((now - start) / 1000, step);
+      if (visible) frame = requestAnimationFrame(tick);
+    };
+    const redrawStill = () => draw(10, 0);
+
+    layout(!still);
+    if (still) redrawStill(); else frame = requestAnimationFrame(tick);
+
+    const resize = new ResizeObserver(() => { layout(false); if (still) redrawStill(); });
+    resize.observe(host);
+    const seen = new IntersectionObserver(([entry]) => {
+      const was = visible; visible = entry.isIntersecting;
+      if (!still && visible && !was) { last = 0; start = start || 0; frame = requestAnimationFrame((now) => { last = now; tick(now); }); }
+    });
+    seen.observe(host);
+    const stopTheme = onThemeChange(() => {
+      dark = document.documentElement.getAttribute('data-theme') !== 'light';
+      ambient = themeChannels('blue');
+      if (still) redrawStill();
+    });
+
+    const section = host.closest('section') ?? host;
     const onMove = (event: PointerEvent) => {
-      const box = host.getBoundingClientRect();
-      const x = (event.clientX - box.left) / box.width - 0.5;
-      const y = (event.clientY - box.top) / box.height - 0.5;
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        scene.style.setProperty('--oak-ry', `${(x * 26).toFixed(2)}deg`);
-        scene.style.setProperty('--oak-rx', `${(-y * 16).toFixed(2)}deg`);
-      });
+      const box = canvas.getBoundingClientRect();
+      pointer.x = event.clientX - box.left; pointer.y = event.clientY - box.top; pointer.active = true;
     };
-    const onLeave = () => {
-      scene.style.setProperty('--oak-ry', '0deg');
-      scene.style.setProperty('--oak-rx', '0deg');
-    };
-    host.addEventListener('pointermove', onMove);
-    host.addEventListener('pointerleave', onLeave);
+    const onLeave = () => { pointer.active = false; };
+    if (!still) {
+      section.addEventListener('pointermove', onMove);
+      section.addEventListener('pointerleave', onLeave);
+    }
     return () => {
       cancelAnimationFrame(frame);
-      host.removeEventListener('pointermove', onMove);
-      host.removeEventListener('pointerleave', onLeave);
+      resize.disconnect(); seen.disconnect(); stopTheme();
+      section.removeEventListener('pointermove', onMove);
+      section.removeEventListener('pointerleave', onLeave);
     };
   }, [animated]);
 
   return (
-    <div ref={sceneRef} className={clsx(styles.scene, animated && styles.sceneAnimated, className)} aria-hidden="true">
-      <svg width="0" height="0" className={styles.defs} focusable="false">
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#FF7A52" />
-            <stop offset="45%" stopColor="var(--ak-primary)" />
-            <stop offset="100%" stopColor="var(--ak-primary-soft)" />
-          </linearGradient>
-        </defs>
+    <div ref={hostRef} className={clsx(styles.particles, className)} aria-hidden="true">
+      <div className={styles.particlesGlow} />
+      <canvas ref={canvasRef} className={styles.particlesCanvas} />
+      <svg width="0" height="0" className={styles.measure} focusable="false">
+        <path ref={pathRef} />
       </svg>
-      <div className={styles.sceneGlow} />
-      <OrbitLayer side="back" ids={orbitIds} moving={moving} />
-      <div className={styles.stage}>
-        <div className={styles.pointerTilt}>
-          <div className={styles.sway}>
-            <Half side="left" gradientId={gradientId} clipId={clipLeft} />
-            <Half side="right" gradientId={gradientId} clipId={clipRight} />
-          </div>
-        </div>
-      </div>
-      <div className={styles.shadow} />
-      <OrbitLayer side="front" ids={orbitIdsFront} moving={moving} />
     </div>
   );
 }
 
 /**
- * The brand mark, drawn in code. The hero variant is a 3D scene: the mark's two halves fold
- * together, the extruded body tilts toward the pointer, and agents orbit it. It replaces the
- * hero video. The other variants are the flat mark, used in diagram hubs and calls to action.
+ * The brand mark, drawn in code. The hero variant forms the mark from particles: they drift in
+ * and settle into its shape, shimmer, and part around the pointer. It replaces the hero video.
+ * The other variants are the flat mark, used in diagram hubs and calls to action.
  */
 export default function OakMark({ variant = 'hero', animated = true, className }: OakMarkProps): JSX.Element {
   if (variant === 'hero') {
-    return <HeroScene animated={animated} className={className} />;
+    return <ParticleMark animated={animated} className={className} />;
   }
   return <FlatMark variant={variant} animated={animated} className={className} />;
 }

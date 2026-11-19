@@ -165,9 +165,9 @@
 }
 
 .node_memory {
-  --node-surface: rgba(22, 43, 34, 0.75);
+  --node-surface: rgba(var(--ak-prussian-rgb), 0.75);
   border-radius: 999px;
-  border-color: rgba(34, 197, 94, 0.45);
+  border-color: rgba(var(--ak-blue-rgb), 0.45);
 }
 
 .node_memory .flowNodeLabel {
@@ -202,11 +202,11 @@
 }
 
 .node_tool {
-  --node-surface: rgba(43, 37, 16, 0.75);
+  --node-surface: rgba(var(--ak-bg-rgb), 0.75);
   width: 100%;
   min-height: 2.75rem;
   border-radius: 0.5rem;
-  border-color: rgba(250, 204, 21, 0.28);
+  border-color: rgba(var(--ak-blue-rgb), 0.28);
   justify-content: flex-start;
   text-align: left;
 }

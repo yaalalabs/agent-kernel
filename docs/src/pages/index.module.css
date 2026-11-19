@@ -614,7 +614,7 @@
 
 /* Each card has an accent glow driven by --card-accent */
 .exploreCard {
-  --card-accent: #00c896;
+  --card-accent: var(--ak-blue-dark);
   /* default accent — override per page */
 
   display: flex;
@@ -743,7 +743,7 @@
 }
 
 .goDeeperCard {
-  --card-accent: #00c896;
+  --card-accent: var(--ak-blue-dark);
   /* default accent fallback */
   --card-glow-color: color-mix(in srgb, var(--card-accent) 24%, transparent);
 
@@ -1761,7 +1761,7 @@
 .blHighlightEyebrow {
   font-size: 1rem;
   font-weight: 600;
-  color: #A1FCEA;
+  color: var(--ak-primary-text);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin: 0 auto 0.75rem auto;
@@ -1908,8 +1908,8 @@
 .blTabActive {
   color: #ffffff !important;
   border-color: transparent !important;
-  background: linear-gradient(90deg, var(--ak-sky) 0%, #db2777 100%) !important;
-  box-shadow: 0 0 16px rgba(var(--ak-sky-rgb), 0.45), 0 0 8px rgba(219, 39, 119, 0.25);
+  background: linear-gradient(90deg, var(--ak-sky) 0%, var(--ak-primary) 100%) !important;
+  box-shadow: 0 0 16px rgba(var(--ak-sky-rgb), 0.45), 0 0 8px rgba(var(--ak-primary-rgb), 0.25);
 }
 
 /* ─── Scenario content area ──────────────────────────────────────────────────── */
@@ -2889,7 +2889,7 @@
   background:
     radial-gradient(38% 50% at 22% 70%, rgba(var(--ak-blue-rgb), 0.16) 0%, transparent 70%),
     radial-gradient(42% 55% at 78% 78%, rgba(var(--ak-sky-rgb), 0.18) 0%, transparent 72%),
-    radial-gradient(34% 46% at 52% 90%, rgba(255, 181, 71, 0.1) 0%, transparent 70%);
+    radial-gradient(34% 46% at 52% 90%, rgba(var(--ak-blue-rgb), 0.1) 0%, transparent 70%);
   filter: blur(40px);
   animation: levelsAuroraDrift 18s ease-in-out infinite alternate;
   mask-image: linear-gradient(to bottom, transparent 0%, #000 30%, #000 85%, transparent 100%);
@@ -3424,9 +3424,9 @@
   position: absolute;
   inset: 0;
   background: linear-gradient(to top,
-      #512847 0%,
-      rgba(81, 40, 71, 0.6) 25%,
-      rgba(81, 40, 71, 0.2) 60%,
+      var(--ak-surface-raised) 0%,
+      rgba(var(--ak-prussian-rgb), 0.6) 25%,
+      rgba(var(--ak-prussian-rgb), 0.2) 60%,
       transparent 90%);
   opacity: 0;
   z-index: 0;
@@ -3452,7 +3452,7 @@
 .contentCardLabel {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #A1FCEA;
+  color: var(--ak-primary-text);
   margin: 0 0 0.5rem 0;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -3473,7 +3473,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.875rem;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(var(--ak-scrim-rgb), 0.25);
   border: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   border-radius: 1.25rem;
 }
@@ -3488,7 +3488,7 @@
 }
 
 .bulletCheck {
-  color: #e879a0;
+  color: var(--ak-primary-text);
   font-size: 1.1rem;
   flex-shrink: 0;
   display: inline-flex;
@@ -3527,7 +3527,7 @@
   gap: 0.5rem;
   font-size: 0.7rem;
   font-weight: 700;
-  color: #E07B2A;
+  color: var(--ak-primary-text);
   text-transform: uppercase;
   letter-spacing: 0.18em;
   margin-bottom: 1.25rem;
@@ -3544,7 +3544,7 @@
   display: inline-block;
   width: 10px;
   height: 10px;
-  background: #E07B2A;
+  background: var(--ak-primary);
   flex-shrink: 0;
 }
 
@@ -3602,7 +3602,7 @@
   width: 10px;
   height: 10px;
   min-width: 10px;
-  background: #E07B2A;
+  background: var(--ak-primary);
   border-radius: 50%;
   margin-top: 6px;
   flex-shrink: 0;
@@ -3640,32 +3640,32 @@
 
 /* Developer Architecture */
 .developerArchitectureLayerGroup:hover .layerNumberCircle {
-  border-color: rgba(204, 125, 33, 0.4);
-  background-color: rgba(204, 125, 33, 0.1);
+  border-color: rgba(var(--ak-primary-rgb), 0.4);
+  background-color: rgba(var(--ak-primary-rgb), 0.1);
 }
 
 .developerArchitectureLayerGroup:hover .layerConnector {
-  background-color: rgba(204, 125, 33, 0.4);
+  background-color: rgba(var(--ak-primary-rgb), 0.4);
 }
 
 .developerArchitectureLayerGroup:hover .layerContentBox {
-  border-color: rgba(204, 125, 33, 0.4);
-  background-color: rgba(204, 125, 33, 0.1);
+  border-color: rgba(var(--ak-primary-rgb), 0.4);
+  background-color: rgba(var(--ak-primary-rgb), 0.1);
 }
 
 /* AI Engineering Architecture*/
 .aiEngineeringLayerGroup:hover .layerNumberCircle {
-  border-color: rgba(38, 166, 77, 0.4);
-  background-color: rgba(38, 166, 77, 0.1);
+  border-color: rgba(var(--ak-primary-rgb), 0.4);
+  background-color: rgba(var(--ak-primary-rgb), 0.1);
 }
 
 .aiEngineeringLayerGroup:hover .layerConnector {
-  background-color: rgba(38, 166, 77, 0.4);
+  background-color: rgba(var(--ak-primary-rgb), 0.4);
 }
 
 .aiEngineeringLayerGroup:hover .layerContentBox {
-  border-color: rgba(38, 166, 77, 0.4);
-  background-color: rgba(38, 166, 77, 0.1);
+  border-color: rgba(var(--ak-primary-rgb), 0.4);
+  background-color: rgba(var(--ak-primary-rgb), 0.1);
 }
 
 /* Top border & radial glow effects for Developer Architecture cards */
@@ -3679,7 +3679,7 @@
   background: linear-gradient(90deg,
       transparent 0%,
       rgba(var(--ak-fg-rgb), 0.1) 20%,
-      rgba(252, 207, 161, 0.25) 50%,
+      rgba(var(--ak-blue-rgb), 0.25) 50%,
       rgba(var(--ak-fg-rgb), 0.1) 80%,
       transparent 100%);
   z-index: 2;
@@ -3690,7 +3690,7 @@
   background: linear-gradient(90deg,
       transparent 0%,
       rgba(var(--ak-fg-rgb), 0.15) 20%,
-      rgba(252, 207, 161, 0.4) 50%,
+      rgba(var(--ak-primary-rgb), 0.4) 50%,
       rgba(var(--ak-fg-rgb), 0.15) 80%,
       transparent 100%);
 }
@@ -3703,7 +3703,7 @@
   right: 10%;
   height: 40px;
   background: radial-gradient(50% 50% at 50% 0%,
-      rgba(252, 207, 161, 0.06) 0%,
+      rgba(var(--ak-blue-rgb), 0.06) 0%,
       transparent 100%);
   pointer-events: none;
   z-index: 1;
@@ -3712,7 +3712,7 @@
 
 .developerArchitectureLayerGroup:hover .layerContentBox::after {
   background: radial-gradient(50% 50% at 50% 0%,
-      rgba(252, 207, 161, 0.12) 0%,
+      rgba(var(--ak-primary-rgb), 0.12) 0%,
       transparent 100%);
 }
 
@@ -3727,7 +3727,7 @@
   background: linear-gradient(90deg,
       transparent 0%,
       rgba(var(--ak-fg-rgb), 0.1) 20%,
-      rgba(38, 166, 77, 0.25) 50%,
+      rgba(var(--ak-blue-rgb), 0.25) 50%,
       rgba(var(--ak-fg-rgb), 0.1) 80%,
       transparent 100%);
   z-index: 2;
@@ -3738,7 +3738,7 @@
   background: linear-gradient(90deg,
       transparent 0%,
       rgba(var(--ak-fg-rgb), 0.15) 20%,
-      rgba(38, 166, 77, 0.4) 50%,
+      rgba(var(--ak-primary-rgb), 0.4) 50%,
       rgba(var(--ak-fg-rgb), 0.15) 80%,
       transparent 100%);
 }
@@ -3751,7 +3751,7 @@
   right: 10%;
   height: 40px;
   background: radial-gradient(50% 50% at 50% 0%,
-      rgba(38, 166, 77, 0.06) 0%,
+      rgba(var(--ak-blue-rgb), 0.06) 0%,
       transparent 100%);
   pointer-events: none;
   z-index: 1;
@@ -3760,7 +3760,7 @@
 
 .aiEngineeringLayerGroup:hover .layerContentBox::after {
   background: radial-gradient(50% 50% at 50% 0%,
-      rgba(38, 166, 77, 0.12) 0%,
+      rgba(var(--ak-primary-rgb), 0.12) 0%,
       transparent 100%);
 }
 
@@ -4038,7 +4038,7 @@
   gap: 0.5rem;
   font-size: 0.7rem;
   font-weight: 700;
-  color: #26A64D;
+  color: var(--ak-primary-text);
   text-transform: uppercase;
   letter-spacing: 0.18em;
   margin-bottom: 1.25rem;
@@ -4050,7 +4050,7 @@
   display: inline-block;
   width: 10px;
   height: 10px;
-  background: #26A64D;
+  background: var(--ak-primary);
   flex-shrink: 0;
 }
 
@@ -4098,7 +4098,7 @@
 
 /* ── Panel wrapper ── */
 .akComparePanel {
-  border: 1px solid rgba(38, 166, 77, 0.35);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.35);
   border-radius: 0.5rem;
   background: var(--ak-bg);
   overflow: hidden;
@@ -4106,7 +4106,7 @@
 }
 
 .akComparePanel:hover {
-  border-color: rgba(38, 166, 77, 0.5);
+  border-color: rgba(var(--ak-primary-rgb), 0.5);
 }
 
 /* ── Scroll hint (tablet) ── */
@@ -4119,7 +4119,7 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgba(var(--ak-fg-rgb), 0.45);
-  border-bottom: 1px solid rgba(38, 166, 77, 0.15);
+  border-bottom: 1px solid rgba(var(--ak-blue-rgb), 0.15);
 }
 
 /* ── Table wrapper ── */
@@ -4127,7 +4127,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  scrollbar-color: rgba(38, 166, 77, 0.3) transparent;
+  scrollbar-color: rgba(var(--ak-blue-rgb), 0.3) transparent;
 }
 
 /* ── Table base ── */
@@ -4153,10 +4153,10 @@
 .akCompareTable thead tr {
   background: linear-gradient(
     90deg,
-    rgba(10, 60, 20, 0.85) 0%,
-    rgba(20, 100, 40, 0.95) 35%,
-    rgba(20, 100, 40, 0.95) 65%,
-    rgba(10, 60, 20, 0.85) 100%
+    rgba(var(--ak-prussian-rgb), 0.85) 0%,
+    rgba(var(--ak-prussian-rgb), 0.95) 35%,
+    rgba(var(--ak-prussian-rgb), 0.95) 65%,
+    rgba(var(--ak-prussian-rgb), 0.85) 100%
   );
 }
 
@@ -4165,7 +4165,7 @@
 .akCompareTable td {
   padding: 0.9rem 1rem;
   vertical-align: middle;
-  border: 1px solid rgba(38, 166, 77, 0.18);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.18);
   text-align: center;
 }
 
@@ -4191,9 +4191,9 @@
 
 /* Agent Kernel header — bright green text, stronger green bg */
 .akCompareHeadCellHighlight {
-  color: #26A64D;
-  background: rgba(20, 80, 35, 0.6);
-  border-color: rgba(38, 166, 77, 0.4);
+  color: var(--ak-primary-text);
+  background: rgba(var(--ak-prussian-rgb), 0.6);
+  border-color: rgba(var(--ak-primary-rgb), 0.4);
 }
 
 /* ── Feature column (left) ── */
@@ -4239,12 +4239,12 @@
 
 /* Agent Kernel data column highlight */
 .akCompareDataCellHighlight {
-  background: #040E08 !important;
-  border-color: rgba(38, 166, 77, 0.25);
+  background: var(--ak-bg) !important;
+  border-color: rgba(var(--ak-blue-rgb), 0.25);
 }
 
 .akCompareTable tbody tr:nth-child(even) .akCompareDataCellHighlight {
-  background: #040E08;
+  background: var(--ak-bg);
 }
 
 /* ── Cell content wrapper ── */
@@ -4261,7 +4261,7 @@
   flex-shrink: 0;
   width: 1.1rem;
   height: 1.1rem;
-  color: #26A64D;
+  color: var(--ak-primary-text);
 }
 
 .akCompareIconNeg {
@@ -4273,7 +4273,7 @@
 
 /* ── Text values ── */
 .akCompareTextPos {
-  color: #26A64D;
+  color: var(--ak-primary-text);
   font-weight: 600;
   font-size: 0.8125rem;
 }
@@ -4296,11 +4296,11 @@
   padding: 1rem 1.5rem;
   background: linear-gradient(
     90deg,
-    rgba(6, 30, 12, 0.9) 0%,
-    rgba(15, 70, 28, 0.95) 50%,
-    rgba(6, 30, 12, 0.9) 100%
+    rgba(var(--ak-bg-rgb), 0.9) 0%,
+    rgba(var(--ak-prussian-rgb), 0.95) 50%,
+    rgba(var(--ak-bg-rgb), 0.9) 100%
   );
-  border-top: 1px solid rgba(38, 166, 77, 0.35);
+  border-top: 1px solid rgba(var(--ak-blue-rgb), 0.35);
   color: rgba(var(--ak-fg-rgb), 0.75);
   font-size: 0.9rem;
   line-height: 1.6;
@@ -4321,10 +4321,10 @@
 }
 
 .akCompareMobileCard {
-  border: 1px solid rgba(38, 166, 77, 0.2);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.2);
   border-radius: 0.75rem;
   padding: 1rem;
-  background: rgba(10, 20, 12, 0.6);
+  background: rgba(var(--ak-bg-rgb), 0.6);
 }
 
 .akCompareMobileFeature {
@@ -4353,8 +4353,8 @@
 }
 
 .akCompareMobileRowHighlight {
-  background: rgba(15, 50, 22, 0.7);
-  border-color: rgba(38, 166, 77, 0.3);
+  background: rgba(var(--ak-prussian-rgb), 0.7);
+  border-color: rgba(var(--ak-blue-rgb), 0.3);
 }
 
 .akCompareMobileLabel {
@@ -4458,15 +4458,15 @@
 }
 
 .aiBuildTabCard:hover {
-  border-color: rgba(34, 197, 94, 0.35);
+  border-color: rgba(var(--ak-primary-rgb), 0.35);
 }
 
 .aiBuildTabCardActive {
-  border-color: rgba(34, 197, 94, 0.7);
+  border-color: rgba(var(--ak-primary-rgb), 0.7);
   box-shadow:
-    0 0 0 1px rgba(34, 197, 94, 0.25),
-    0 0 24px rgba(34, 197, 94, 0.12),
-    inset 0 0 20px rgba(34, 197, 94, 0.04);
+    0 0 0 1px rgba(var(--ak-primary-rgb), 0.25),
+    0 0 24px rgba(var(--ak-primary-rgb), 0.12),
+    inset 0 0 20px rgba(var(--ak-primary-rgb), 0.04);
 }
 
 /* small green icon badge */
@@ -4477,12 +4477,12 @@
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 0.65rem;
-  border: 1.5px solid rgba(34, 197, 94, 0.6);
-  background: rgba(34, 197, 94, 0.03);
-  color: #22c55e;
+  border: 1.5px solid rgba(var(--ak-primary-rgb), 0.6);
+  background: rgba(var(--ak-primary-rgb), 0.03);
+  color: var(--ak-primary-text);
   flex-shrink: 0;
   position: relative;
-  box-shadow: 0 0 12px rgba(34, 197, 94, 0.15), inset 0 0 6px rgba(34, 197, 94, 0.12);
+  box-shadow: 0 0 12px rgba(var(--ak-primary-rgb), 0.15), inset 0 0 6px rgba(var(--ak-primary-rgb), 0.12);
   margin-bottom: 0.5rem;
   transition: border-color 0.25s ease, background-color 0.25s ease;
 }
@@ -4491,7 +4491,7 @@
   content: '';
   position: absolute;
   inset: -4px;
-  border: 1px solid rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.15);
   border-radius: 0.8rem;
   pointer-events: none;
 }
@@ -4503,8 +4503,8 @@
 }
 
 .aiBuildTabCard:hover .aiBuildTabIcon {
-  border-color: rgba(34, 197, 94, 0.85);
-  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(var(--ak-primary-rgb), 0.85);
+  background: rgba(var(--ak-primary-rgb), 0.08);
 }
 
 .aiBuildTabTitle {
@@ -4537,7 +4537,7 @@
   left: 0;
   /* GSAP sets translateX to center it under the active tab */
   line-height: 0;
-  filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.7));
+  filter: drop-shadow(0 0 6px rgba(var(--ak-blue-rgb), 0.7));
   will-change: transform;
 }
 
@@ -4545,13 +4545,13 @@
 .aiBuildPanel {
   margin-top: 0;
   background: transparent;
-  border: 1.5px solid rgba(34, 197, 94, 0.7);
+  border: 1.5px solid rgba(var(--ak-blue-rgb), 0.7);
   border-radius: 1rem;
   padding: 1.75rem 2rem 2rem;
   will-change: transform, opacity;
   box-shadow:
-    0 0 0 1px rgba(34, 197, 94, 0.25),
-    0 0 24px rgba(34, 197, 94, 0.12);
+    0 0 0 1px rgba(var(--ak-blue-rgb), 0.25),
+    0 0 24px rgba(var(--ak-blue-rgb), 0.12);
 }
 
 .aiBuildPanelHeader {
@@ -4583,7 +4583,7 @@
     padding-bottom: 0.75rem;
     justify-content: flex-start;
     scrollbar-width: thin;
-    scrollbar-color: rgba(34, 197, 94, 0.3) transparent;
+    scrollbar-color: rgba(var(--ak-blue-rgb), 0.3) transparent;
   }
 
   .aiBuildTabCard {
@@ -4759,13 +4759,13 @@
 }
 
 .devFeatureCard:hover {
-  border-color: rgba(204, 125, 33, 0.4);
-  background-color: rgba(204, 125, 33, 0.1);
+  border-color: rgba(var(--ak-primary-rgb), 0.4);
+  background-color: rgba(var(--ak-primary-rgb), 0.1);
 }
 
 .aiEngineerFeatureCard:hover {
-  border-color: rgba(38, 166, 77, 0.4);
-  background-color: rgba(38, 166, 77, 0.1);
+  border-color: rgba(var(--ak-primary-rgb), 0.4);
+  background-color: rgba(var(--ak-primary-rgb), 0.1);
 }
 
 .devFeatureCardHeader {
@@ -5609,7 +5609,7 @@
 }
 
 .devPageSection {
-  background: radial-gradient(ellipse 60% 55% at 50% 50%, #291503 0%, var(--ak-bg) 70%);
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, var(--ak-bg-alt) 0%, var(--ak-bg) 70%);
   background-size: 250% 250%;
   animation: gradientShiftDev 16s ease-in-out infinite;
 }
@@ -5638,7 +5638,7 @@
 }
 
 .aiEngineerSection {
-  background: radial-gradient(ellipse 60% 55% at 50% 50%, #0f261b 0%, var(--ak-bg) 70%);
+  background: radial-gradient(ellipse 60% 55% at 50% 50%, var(--ak-bg-alt) 0%, var(--ak-bg) 70%);
   background-size: 250% 250%;
   animation: gradientShiftAI 16s ease-in-out infinite;
 }
@@ -5659,7 +5659,7 @@
 
 /* ─── Developer Page Features Layout Overrides ────────────────────────────── */
 .devPageSection .devFeatureGroupTitle {
-  color: #FCCFA1;
+  color: var(--ak-blue);
   text-align: left;
 }
 
@@ -5670,12 +5670,12 @@
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 0.65rem;
-  border: 1.5px solid rgba(252, 207, 161, 0.6);
-  background: rgba(252, 207, 161, 0.03);
-  color: #FCCFA1;
+  border: 1.5px solid rgba(var(--ak-blue-rgb), 0.6);
+  background: rgba(var(--ak-blue-rgb), 0.03);
+  color: var(--ak-blue);
   flex-shrink: 0;
   position: relative;
-  box-shadow: 0 0 12px rgba(252, 207, 161, 0.15), inset 0 0 6px rgba(252, 207, 161, 0.12);
+  box-shadow: 0 0 12px rgba(var(--ak-blue-rgb), 0.15), inset 0 0 6px rgba(var(--ak-blue-rgb), 0.12);
   transition: border-color 0.25s ease, background-color 0.25s ease;
 }
 
@@ -5683,20 +5683,20 @@
   content: '';
   position: absolute;
   inset: -4px;
-  border: 1px solid rgba(252, 207, 161, 0.15);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.15);
   border-radius: 0.8rem;
   pointer-events: none;
 }
 
 .devPageSection .devFeatureCard:hover .devFeatureIconWrap {
-  border-color: rgba(252, 207, 161, 0.85);
-  background: rgba(252, 207, 161, 0.08);
+  border-color: rgba(var(--ak-primary-rgb), 0.85);
+  background: rgba(var(--ak-primary-rgb), 0.08);
 }
 
 .devPageSection .devFeatureIcon {
   width: 1.35rem;
   height: 1.35rem;
-  color: #CC7D21;
+  color: var(--ak-primary-text);
 }
 
 /* Card Inner Glow Effects */
@@ -5708,8 +5708,8 @@
 }
 
 .devPageSection .devFeatureCard:hover {
-  border-color: rgba(252, 207, 161, 0.35);
-  background-color: rgba(252, 207, 161, 0.03);
+  border-color: rgba(var(--ak-primary-rgb), 0.35);
+  background-color: rgba(var(--ak-primary-rgb), 0.03);
 }
 
 .devPageSection .devFeatureCard::before {
@@ -5722,7 +5722,7 @@
   background: linear-gradient(90deg,
       transparent 0%,
       rgba(var(--ak-fg-rgb), 0.1) 20%,
-      rgba(252, 207, 161, 0.25) 50%,
+      rgba(var(--ak-blue-rgb), 0.25) 50%,
       rgba(var(--ak-fg-rgb), 0.1) 80%,
       transparent 100%);
   z-index: 2;
@@ -5733,7 +5733,7 @@
   background: linear-gradient(90deg,
       transparent 0%,
       rgba(var(--ak-fg-rgb), 0.15) 20%,
-      rgba(252, 207, 161, 0.4) 50%,
+      rgba(var(--ak-primary-rgb), 0.4) 50%,
       rgba(var(--ak-fg-rgb), 0.15) 80%,
       transparent 100%);
 }
@@ -5746,7 +5746,7 @@
   right: 10%;
   height: 40px;
   background: radial-gradient(50% 50% at 50% 0%,
-      rgba(252, 207, 161, 0.06) 0%,
+      rgba(var(--ak-blue-rgb), 0.06) 0%,
       transparent 100%);
   pointer-events: none;
   z-index: 1;
@@ -5755,13 +5755,13 @@
 
 .devPageSection .devFeatureCard:hover::after {
   background: radial-gradient(50% 50% at 50% 0%,
-      rgba(252, 207, 161, 0.12) 0%,
+      rgba(var(--ak-primary-rgb), 0.12) 0%,
       transparent 100%);
 }
 
 /* ─── AI Engineer Page Features Layout Overrides ──────────────────────────── */
 .aiEngineerSection .devFeatureGroupTitle {
-  color: #86FEAB;
+  color: var(--ak-blue);
   text-align: left;
 }
 
@@ -5772,12 +5772,12 @@
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 0.65rem;
-  border: 1.5px solid rgba(38, 166, 77, 0.6);
-  background: rgba(38, 166, 77, 0.03);
-  color: #26A64D;
+  border: 1.5px solid rgba(var(--ak-primary-rgb), 0.6);
+  background: rgba(var(--ak-primary-rgb), 0.03);
+  color: var(--ak-primary-text);
   flex-shrink: 0;
   position: relative;
-  box-shadow: 0 0 12px rgba(38, 166, 77, 0.15), inset 0 0 6px rgba(38, 166, 77, 0.12);
+  box-shadow: 0 0 12px rgba(var(--ak-primary-rgb), 0.15), inset 0 0 6px rgba(var(--ak-primary-rgb), 0.12);
   transition: border-color 0.25s ease, background-color 0.25s ease;
 }
 
@@ -5785,20 +5785,20 @@
   content: '';
   position: absolute;
   inset: -4px;
-  border: 1px solid rgba(38, 166, 77, 0.15);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.15);
   border-radius: 0.8rem;
   pointer-events: none;
 }
 
 .aiEngineerSection .aiEngineerFeatureCard:hover .devFeatureIconWrap {
-  border-color: rgba(38, 166, 77, 0.85);
-  background: rgba(38, 166, 77, 0.08);
+  border-color: rgba(var(--ak-primary-rgb), 0.85);
+  background: rgba(var(--ak-primary-rgb), 0.08);
 }
 
 .aiEngineerSection .devFeatureIcon {
   width: 1.35rem;
   height: 1.35rem;
-  color: #26A64D;
+  color: var(--ak-primary-text);
 }
 
 /* Card Inner Glow Effects (Green) */
@@ -5810,8 +5810,8 @@
 }
 
 .aiEngineerSection .aiEngineerFeatureCard:hover {
-  border-color: rgba(38, 166, 77, 0.35);
-  background-color: rgba(38, 166, 77, 0.03);
+  border-color: rgba(var(--ak-primary-rgb), 0.35);
+  background-color: rgba(var(--ak-primary-rgb), 0.03);
 }
 
 .aiEngineerSection .aiEngineerFeatureCard::before {
@@ -5824,7 +5824,7 @@
   background: linear-gradient(90deg,
       transparent 0%,
       rgba(var(--ak-fg-rgb), 0.1) 20%,
-      rgba(38, 166, 77, 0.25) 50%,
+      rgba(var(--ak-blue-rgb), 0.25) 50%,
       rgba(var(--ak-fg-rgb), 0.1) 80%,
       transparent 100%);
   z-index: 2;
@@ -5835,7 +5835,7 @@
   background: linear-gradient(90deg,
       transparent 0%,
       rgba(var(--ak-fg-rgb), 0.15) 20%,
-      rgba(38, 166, 77, 0.4) 50%,
+      rgba(var(--ak-primary-rgb), 0.4) 50%,
       rgba(var(--ak-fg-rgb), 0.15) 80%,
       transparent 100%);
 }
@@ -5848,7 +5848,7 @@
   right: 10%;
   height: 40px;
   background: radial-gradient(50% 50% at 50% 0%,
-      rgba(38, 166, 77, 0.06) 0%,
+      rgba(var(--ak-blue-rgb), 0.06) 0%,
       transparent 100%);
   pointer-events: none;
   z-index: 1;
@@ -5857,7 +5857,7 @@
 
 .aiEngineerSection .aiEngineerFeatureCard:hover::after {
   background: radial-gradient(50% 50% at 50% 0%,
-      rgba(38, 166, 77, 0.12) 0%,
+      rgba(var(--ak-primary-rgb), 0.12) 0%,
       transparent 100%);
 }
 
@@ -5882,13 +5882,13 @@
 }
 
 .aiBuildDot:hover {
-  background-color: rgba(34, 197, 94, 0.5);
+  background-color: rgba(var(--ak-primary-rgb), 0.5);
   transform: scale(1.15);
 }
 
 .aiBuildDotActive {
-  background-color: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
+  background-color: var(--ak-primary);
+  box-shadow: 0 0 8px rgba(var(--ak-primary-rgb), 0.7);
   transform: scale(1.15);
 }
 
@@ -5905,9 +5905,9 @@
   width: 100%;
   height: 2px;
   background: linear-gradient(90deg, 
-    rgba(34, 197, 94, 0.2) 0%, 
-    rgba(34, 197, 94, 0.7) 50%, 
-    rgba(34, 197, 94, 0.2) 100%
+    rgba(var(--ak-primary-rgb), 0.2) 0%, 
+    rgba(var(--ak-primary-rgb), 0.7) 50%, 
+    rgba(var(--ak-primary-rgb), 0.2) 100%
   );
 }
 
@@ -5919,8 +5919,8 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+  background-color: var(--ak-primary);
+  box-shadow: 0 0 8px rgba(var(--ak-primary-rgb), 0.8);
 }
 
 @media (max-width: 900px) {

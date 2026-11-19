@@ -96,6 +96,7 @@
 
   --ak-gradient-blue: linear-gradient(225deg, #011C37 0%, #02284F 45%, #3F598A 100%);
   --ak-shadow-rgb: 0, 0, 0;
+  --ak-scrim-rgb: 0, 0, 0;   /* translucent fills that darken a surface */
   --ak-mono-filter: brightness(0) invert(1);   /* single-colour logos render white */
 }
 
@@ -156,6 +157,7 @@
 
   --ak-gradient-blue: linear-gradient(225deg, #FFFFFF 0%, #EEF4FB 45%, #DCE8F6 100%);
   --ak-shadow-rgb: 2, 40, 79;
+  --ak-scrim-rgb: 214, 225, 240;   /* the same fills tint a white surface instead */
   --ak-mono-filter: brightness(0) invert(0.14);   /* single-colour logos render near-black */
 
   /* Docusaurus primary: the darkened orange, so links meet AA on white */
@@ -327,12 +329,6 @@ article {
 }
 
 .navbar__logo {
-  height: 2.75rem;
-}
-
-/* The docs sidebar repeats the navbar logo when the navbar hides on scroll.
-   The three-line Open Agent Kernel lockup needs the same height there to stay legible. */
-.theme-doc-sidebar-container [class*='sidebarLogo'] img {
   height: 2.75rem;
 }
 

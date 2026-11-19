@@ -349,7 +349,6 @@ export default function DeveloperPage() {
 
   return (
     <Layout
-      wrapperClassName="ak-dark-surface"
       title="Open Agent Kernel for Developers"
       description="Learn how OAK helps developers build and deploy AI agents quickly without reinventing the wheel."
     >
@@ -623,7 +622,7 @@ export default function DeveloperPage() {
               </p>
 
               <div className={styles.devArchitectureWrapper}>
-                <AgentKernelArchDiagram accentColor="#CC7D21" />
+                <AgentKernelArchDiagram />
               </div>
             </div>
 
@@ -648,7 +647,6 @@ export default function DeveloperPage() {
                     <a
                       className={styles.goDeeperCard}
                       href="/features"
-                      style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
                     >
                       <h3 className={styles.goDeeperCardTitle}>Features</h3>
                       <p className={styles.goDeeperCardBody}>
@@ -662,7 +660,6 @@ export default function DeveloperPage() {
                     <a
                       className={styles.goDeeperCard}
                       href="/use-cases"
-                      style={{ '--card-accent': '#CC7D21' } as React.CSSProperties}
                     >
                       <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
                       <p className={styles.goDeeperCardBody}>

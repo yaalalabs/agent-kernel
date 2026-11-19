@@ -44,9 +44,9 @@ const DEPLOY_X = [90, 225, 450, 675, 810];
 
 export interface AgentKernelArchDiagramProps {
   /**
-   * CSS color value for the accent (default: var(--ak-accent, #26A64D)).
+   * CSS color value for the accent (default: the brand accent, var(--ak-primary)).
    * Pass any valid CSS color — hex, rgb, hsl, or a var().
-   * Example: accentColor="#CC7D21" or accentColor="var(--brand-color)"
+   * Example: accentColor="var(--ak-blue)"
    */
   accentColor?: string;
 }

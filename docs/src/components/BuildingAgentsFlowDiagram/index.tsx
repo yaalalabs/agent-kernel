@@ -1,4 +1,3 @@
-import { BRAND } from '@site/src/lib/brand';
 import React, { useCallback, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
@@ -16,20 +15,20 @@ type FlowNode = {
 };
 
 const FLOW_NODES: FlowNode[] = [
-  { id: 'input', label: 'Input Message', kind: 'message', color: '#f472b6' },
-  { id: 'guardIn', label: 'Guardrails', kind: 'guardrail', color: '#c084fc' },
-  { id: 'memory', label: 'Agent Memory', kind: 'memory', color: '#4ade80' },
-  { id: 'supervisor', label: 'Supervisor Agent', kind: 'supervisor', color: BRAND.ice },
-  { id: 'general', label: 'General Agent', kind: 'agent', color: '#c084fc' },
-  { id: 'travel', label: 'Travel Expert Agent', kind: 'agent', color: '#c084fc' },
-  { id: 'booking', label: 'Booking Agent', kind: 'agent', color: '#c084fc' },
-  { id: 'toolDest', label: 'Destination Discovery Tool', kind: 'tool', color: '#facc15' },
-  { id: 'toolKnowledge', label: 'Localized Knowledge Query Tool', kind: 'tool', color: '#facc15' },
-  { id: 'toolFlight', label: 'Flight Booking Tool', kind: 'tool', color: '#facc15' },
-  { id: 'toolHotel', label: 'Hotel Booking Tool', kind: 'tool', color: '#facc15' },
-  { id: 'toolLang', label: 'Language Detection and Translation Tool', kind: 'tool', color: '#facc15' },
-  { id: 'guardOut', label: 'Guardrails', kind: 'guardrail', color: '#c084fc' },
-  { id: 'output', label: 'Output Message', kind: 'message', color: '#f472b6' },
+  { id: 'input', label: 'Input Message', kind: 'message', color: 'var(--ak-sky)' },
+  { id: 'guardIn', label: 'Guardrails', kind: 'guardrail', color: 'var(--ak-blue)' },
+  { id: 'memory', label: 'Agent Memory', kind: 'memory', color: 'var(--ak-blue)' },
+  { id: 'supervisor', label: 'Supervisor Agent', kind: 'supervisor', color: 'var(--ak-primary)' },
+  { id: 'general', label: 'General Agent', kind: 'agent', color: 'var(--ak-blue)' },
+  { id: 'travel', label: 'Travel Expert Agent', kind: 'agent', color: 'var(--ak-blue)' },
+  { id: 'booking', label: 'Booking Agent', kind: 'agent', color: 'var(--ak-blue)' },
+  { id: 'toolDest', label: 'Destination Discovery Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'toolKnowledge', label: 'Localized Knowledge Query Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'toolFlight', label: 'Flight Booking Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'toolHotel', label: 'Hotel Booking Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'toolLang', label: 'Language Detection and Translation Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'guardOut', label: 'Guardrails', kind: 'guardrail', color: 'var(--ak-blue)' },
+  { id: 'output', label: 'Output Message', kind: 'message', color: 'var(--ak-sky)' },
 ];
 
 const CONNECTIONS: Array<{
@@ -121,7 +120,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
       data-flow-node={node.id}
       data-kind={node.kind}
       className={`${styles.flowNode} ${kindClass}`}
-      style={{ '--node-color': node.color ?? BRAND.ice } as React.CSSProperties}
+      style={{ '--node-color': node.color ?? 'var(--ak-blue)' } as React.CSSProperties}
     >
       <span className={styles.flowNodeLabel}>{node.label}</span>
     </div>

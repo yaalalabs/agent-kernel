@@ -773,7 +773,7 @@
 
 /* Markdown: code blocks */
 .messageText :global(pre) {
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(var(--ak-scrim-rgb), 0.45);
   border-radius: 7px;
   padding: 12px;
   overflow-x: auto;

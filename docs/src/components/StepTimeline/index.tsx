@@ -1,4 +1,3 @@
-import { BRAND, brandRgba } from '@site/src/lib/brand';
 import React, { useEffect, useRef, useState } from 'react';
 import styles from './styles.module.css';
 import { useHistory } from '@docusaurus/router';
@@ -36,49 +35,22 @@ const LEVEL_STEPS: Record<string, StepDef[]> = {
   ],
 };
 
+// One theme for every journey: the brand accent. The values are CSS variables, so the
+// timeline follows the colour mode.
 const DEFAULT_THEME = {
-  '--timeline-color': BRAND.ice,
-  '--timeline-color-glow': brandRgba('ice', 0.5),
-  '--timeline-color-glow-strong': brandRgba('ice', 0.8),
-  '--timeline-color-dark': BRAND.dusk,
-  '--timeline-color-border': brandRgba('ice', 0.25),
-  '--timeline-color-bg': brandRgba('ice', 0.08),
-  '--timeline-color-bg-hover': brandRgba('ice', 0.15),
-  '--timeline-color-text-dim': brandRgba('ice', 0.7),
+  '--timeline-color': 'var(--ak-primary)',
+  '--timeline-color-glow': 'rgba(var(--ak-primary-rgb), 0.5)',
+  '--timeline-color-glow-strong': 'rgba(var(--ak-primary-rgb), 0.8)',
+  '--timeline-color-dark': 'var(--ak-primary-dark)',
+  '--timeline-color-border': 'rgba(var(--ak-primary-rgb), 0.25)',
+  '--timeline-color-bg': 'rgba(var(--ak-primary-rgb), 0.08)',
+  '--timeline-color-bg-hover': 'rgba(var(--ak-primary-rgb), 0.15)',
+  '--timeline-color-text-dim': 'var(--ak-primary-text)',
 };
 
-const LEVEL_THEMES: Record<string, Record<string, string>> = {
-  '01': { // Business Leader: Pink/Magenta (#D946EF)
-    '--timeline-color': '#D946EF',
-    '--timeline-color-glow': 'rgba(217, 70, 239, 0.5)',
-    '--timeline-color-glow-strong': 'rgba(217, 70, 239, 0.8)',
-    '--timeline-color-dark': '#9d17ab',
-    '--timeline-color-border': 'rgba(217, 70, 239, 0.25)',
-    '--timeline-color-bg': 'rgba(217, 70, 239, 0.08)',
-    '--timeline-color-bg-hover': 'rgba(217, 70, 239, 0.15)',
-    '--timeline-color-text-dim': 'rgba(217, 70, 239, 0.7)',
-  },
-  '02': { // Developer: Orange (#CC7D21)
-    '--timeline-color': '#CC7D21',
-    '--timeline-color-glow': 'rgba(204, 125, 33, 0.5)',
-    '--timeline-color-glow-strong': 'rgba(204, 125, 33, 0.8)',
-    '--timeline-color-dark': '#8b4d08',
-    '--timeline-color-border': 'rgba(204, 125, 33, 0.25)',
-    '--timeline-color-bg': 'rgba(204, 125, 33, 0.08)',
-    '--timeline-color-bg-hover': 'rgba(204, 125, 33, 0.15)',
-    '--timeline-color-text-dim': 'rgba(204, 125, 33, 0.7)',
-  },
-  '03': { // AI Engineer: Green (#03C540)
-    '--timeline-color': '#03C540',
-    '--timeline-color-glow': 'rgba(3, 197, 64, 0.5)',
-    '--timeline-color-glow-strong': 'rgba(3, 197, 64, 0.8)',
-    '--timeline-color-dark': '#017d27',
-    '--timeline-color-border': 'rgba(3, 197, 64, 0.25)',
-    '--timeline-color-bg': 'rgba(3, 197, 64, 0.08)',
-    '--timeline-color-bg-hover': 'rgba(3, 197, 64, 0.15)',
-    '--timeline-color-text-dim': 'rgba(3, 197, 64, 0.7)',
-  },
-};
+// Per-level overrides. Empty: the three journeys used to carry their own accent
+// (magenta, amber, green) and now share the brand theme.
+const LEVEL_THEMES: Record<string, Record<string, string>> = {};
 
 interface StepTimelineProps {
   levelId: string | null;

@@ -12,7 +12,7 @@
 /* ─── Accent token ───────────────────────────────────────────────────────── */
 
 .archSection {
-  --ak-accent: #26A64D;
+  --ak-accent: var(--ak-primary);
 
   /* Derived tints used throughout — computed from the base accent.          */
   /* color-mix() is supported in all modern browsers (Safari 15.4+).         */
@@ -29,9 +29,9 @@
   /* --ak-card-bg : used by topBox, deployBox (subtle tint)                  */
   /* --ak-chip-bg : used by moduleChip (slightly stronger)                   */
   /* --ak-hub-bg  : used by hubCard (most saturated, matches the image glow) */
-  --ak-card-bg: color-mix(in srgb, var(--ak-accent) 8%, #05090f);
-  --ak-chip-bg: color-mix(in srgb, var(--ak-accent) 10%, #05090f);
-  --ak-hub-bg: color-mix(in srgb, var(--ak-accent) 18%, #05090f);
+  --ak-card-bg: color-mix(in srgb, var(--ak-accent) 8%, var(--ak-bg));
+  --ak-chip-bg: color-mix(in srgb, var(--ak-accent) 10%, var(--ak-bg));
+  --ak-hub-bg: color-mix(in srgb, var(--ak-accent) 18%, var(--ak-bg));
 
   padding: 2rem 0;
   position: relative;

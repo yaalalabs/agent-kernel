@@ -98,299 +98,52 @@
   }
 }
 
-/* ── Hero scene: the kernel in 3D with agents in orbit ───────────────────── */
+/* ── Hero: the mark formed from particles (drawn on a canvas) ────────────── */
 
-.scene {
-  --oak-rx: 0deg;
-  --oak-ry: 0deg;
+.particles {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: min(92%, 620px);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
+  inset: 0;
   pointer-events: none;
 }
 
-.defs {
+.particlesCanvas {
   position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
-.sceneGlow {
+.particlesGlow {
   position: absolute;
-  inset: 6%;
+  top: 50%;
+  left: 50%;
+  width: min(78%, 560px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
   border-radius: 50%;
   background: radial-gradient(
     circle,
-    rgba(var(--ak-primary-rgb), 0.26) 0%,
-    rgba(var(--ak-primary-rgb), 0.09) 36%,
-    rgba(var(--ak-primary-rgb), 0) 66%
+    rgba(var(--ak-primary-rgb), 0.16) 0%,
+    rgba(var(--ak-primary-rgb), 0.05) 40%,
+    rgba(var(--ak-primary-rgb), 0) 68%
   );
 }
 
-.orbits {
+.measure {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
 }
 
-.ring {
-  fill: none;
-  stroke-width: 1.2;
-}
-
-.orbitsBack .ring {
-  stroke: rgba(var(--ak-blue-rgb), 0.16);
-}
-
-.orbitsFront .ring {
-  stroke: rgba(var(--ak-blue-rgb), 0.42);
-}
-
-.satellite {
-  fill: var(--ak-blue);
-}
-
-.satelliteAccent {
-  fill: var(--ak-primary);
-}
-
-.orbitsBack .satellite {
-  opacity: 0.4;
-}
-
-.orbitsFront .satellite {
-  filter: drop-shadow(0 0 6px rgba(var(--ak-blue-rgb), 0.75));
-}
-
-.orbitsFront .satelliteAccent {
-  filter: drop-shadow(0 0 7px rgba(var(--ak-primary-rgb), 0.85));
-}
-
-.speck {
-  fill: var(--ak-blue);
-  opacity: 0.35;
-}
-
-/* The mark itself: a perspective stage, a pointer-driven tilt, an idle sway, two halves. */
-
-.stage {
-  position: absolute;
-  top: 24%;
-  left: 26%;
-  width: 48%;
-  aspect-ratio: 1;
-  perspective: 900px;
-}
-
-.pointerTilt,
-.sway,
-.half {
-  position: absolute;
-  inset: 0;
-  transform-style: preserve-3d;
-}
-
-.pointerTilt {
-  transform: rotateX(var(--oak-rx)) rotateY(var(--oak-ry));
-  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.sway {
-  transform: rotateX(8deg) rotateY(-22deg);
-}
-
-.slice {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.halfLeft {
-  transform-origin: 45.5% 50%;
-}
-
-.halfRight {
-  transform-origin: 54.5% 50%;
-}
-
-.edge {
-  fill: none;
-  stroke: rgba(var(--ak-fg-rgb), 0.2);
-  stroke-width: 0.35;
-  stroke-linejoin: round;
-}
-
-.shine {
-  fill: rgba(var(--ak-fg-rgb), 0.34);
-  transform: translateX(0);
-  opacity: 0;
-}
-
-.shadow {
-  position: absolute;
-  top: 79%;
-  left: 31%;
-  width: 38%;
-  height: 7%;
-  border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0) 70%);
-  filter: blur(6px);
-}
-
-.sceneAnimated .stage {
-  animation: oakSceneFloat 7s ease-in-out infinite;
-}
-
-.sceneAnimated .shadow {
-  animation: oakSceneShadow 7s ease-in-out infinite;
-}
-
-.sceneAnimated .sway {
-  animation: oakSceneSway 12s ease-in-out infinite alternate;
-}
-
-.sceneAnimated .halfLeft {
-  animation: oakFoldLeft 1.5s cubic-bezier(0.2, 0.85, 0.25, 1.04) 0.15s both;
-}
-
-.sceneAnimated .halfRight {
-  animation: oakFoldRight 1.5s cubic-bezier(0.2, 0.85, 0.25, 1.04) 0.15s both;
-}
-
-.sceneAnimated .shine {
-  animation: oakSceneShine 7.5s ease-in-out 2.2s infinite;
-}
-
-.sceneAnimated .sceneGlow {
-  animation: oakMarkBreathe 7s ease-in-out 1.6s infinite;
-}
-
-.sceneAnimated .speck {
-  animation: oakSceneTwinkle 4.5s ease-in-out infinite;
-}
-
-.sceneAnimated .orbits {
-  animation: oakSceneOrbitsIn 1.8s ease-out 0.7s both;
-}
-
-@keyframes oakSceneFloat {
-  0%,
-  100% {
-    transform: translateY(-2.5%);
-  }
-  50% {
-    transform: translateY(2.5%);
-  }
-}
-
-@keyframes oakSceneShadow {
-  0%,
-  100% {
-    transform: scale(0.9);
-    opacity: 0.7;
-  }
-  50% {
-    transform: scale(1.06);
-    opacity: 1;
-  }
-}
-
-@keyframes oakSceneSway {
-  from {
-    transform: rotateX(10deg) rotateY(-28deg);
-  }
-  to {
-    transform: rotateX(4deg) rotateY(16deg);
-  }
-}
-
-/* Transforms only: animating opacity on a preserve-3d element flattens its children. */
-@keyframes oakFoldLeft {
-  from {
-    transform: rotateY(-90deg) translateX(-10%);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes oakFoldRight {
-  from {
-    transform: rotateY(90deg) translateX(10%);
-  }
-  to {
-    transform: none;
-  }
-}
-
-@keyframes oakSceneShine {
-  0% {
-    transform: translateX(0);
-    opacity: 0;
-  }
-  6% {
-    opacity: 1;
-  }
-  24% {
-    transform: translateX(170px);
-    opacity: 0;
-  }
-  100% {
-    transform: translateX(170px);
-    opacity: 0;
-  }
-}
-
-@keyframes oakSceneTwinkle {
-  0%,
-  100% {
-    opacity: 0.15;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
-@keyframes oakSceneOrbitsIn {
-  from {
-    opacity: 0;
-    transform: scale(0.86);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* On narrow screens the hero scene sits behind the headline, so it steps back. */
+/* On narrow screens the hero mark sits behind the headline, so it steps back. */
 @media (max-width: 996px) {
-  .scene {
-    opacity: 0.3;
+  .particles {
+    opacity: 0.35;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animated .outline path,
   .animated .fill,
-  .animated .glow,
-  .sceneAnimated .stage,
-  .sceneAnimated .shadow,
-  .sceneAnimated .sway,
-  .sceneAnimated .halfLeft,
-  .sceneAnimated .halfRight,
-  .sceneAnimated .shine,
-  .sceneAnimated .sceneGlow,
-  .sceneAnimated .speck,
-  .sceneAnimated .orbits {
+  .animated .glow {
     animation: none;
-  }
-
-  .pointerTilt {
-    transition: none;
   }
 }

@@ -636,7 +636,6 @@ export default function AIEngineerPage() {
 
   return (
     <Layout
-      wrapperClassName="ak-dark-surface"
       title="Open Agent Kernel for AI Engineers"
       description="Learn how OAK provides production-ready infrastructure for AI engineers building sophisticated AI agent systems."
     >
@@ -921,7 +920,7 @@ export default function AIEngineerPage() {
               <span>Use The Framework You Prefer</span>
             </h2>
 
-            <FrameworkSelector showTitle={false} showDescription={true} accentColor="#26A64D" />
+            <FrameworkSelector showTitle={false} showDescription={true} />
           </div>
 
           {/* Step 06 — Production-ready compliant agents */}
@@ -967,7 +966,7 @@ export default function AIEngineerPage() {
             <div className={styles.aiBuildArrowTrack}>
               <div ref={arrowRef} className={styles.aiBuildArrow} aria-hidden="true">
                 <svg width="22" height="14" viewBox="0 0 22 14" fill="none">
-                  <path d="M11 0L22 14H0L11 0Z" fill="#22c55e" />
+                  <path d="M11 0L22 14H0L11 0Z" fill="var(--ak-primary)" />
                 </svg>
               </div>
             </div>
@@ -1024,7 +1023,7 @@ export default function AIEngineerPage() {
             </p>
 
             <div className={styles.devArchitectureWrapper}>
-              <AgentKernelArchDiagram accentColor="#03C540" />
+              <AgentKernelArchDiagram />
             </div>
           </div>
 
@@ -1177,10 +1176,6 @@ export default function AIEngineerPage() {
                   <a
                     className={styles.goDeeperCard}
                     href="/features"
-                    style={{
-                      '--card-accent': '#26A64D',
-                      '--card-glow-color': '#037052'
-                    } as React.CSSProperties}
                   >
                     <h3 className={styles.goDeeperCardTitle}>Features</h3>
                     <p className={styles.goDeeperCardBody}>
@@ -1194,10 +1189,6 @@ export default function AIEngineerPage() {
                   <a
                     className={styles.goDeeperCard}
                     href="/use-cases"
-                    style={{
-                      '--card-accent': '#26A64D',
-                      '--card-glow-color': '#037052'
-                    } as React.CSSProperties}
                   >
                     <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
                     <p className={styles.goDeeperCardBody}>

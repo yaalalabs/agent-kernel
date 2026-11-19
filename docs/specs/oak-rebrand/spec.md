@@ -125,12 +125,14 @@ Rules for the two modes:
 3. Orange text uses `--ak-primary-text`; orange fills, strokes and the mark use `--ak-primary`.
 4. `.footer`, `.ak-dark` and `.ak-dark-surface` redeclare the dark values, which pins a subtree to the
    dark mode. `.ak-dark-surface` also paints the background and resets the Infima text colours. The
-   footer, the chat launcher and the three persona pages are pinned.
+   footer and the chat launcher are pinned.
 5. Single-colour logos carry `mono: true` and take `--ak-mono-filter`, so they are white on dark and
    near-black on light. This includes logos whose file is drawn in white.
-6. Canvas and WebGL code reads the tokens at run time through `themeRgba`, `themeInt` and
+6. Translucent black fills use `--ak-scrim-rgb` (`0, 0, 0` in dark, `214, 225, 240` in light), so a panel that
+   darkens a navy surface tints a white one instead.
+7. Canvas and WebGL code reads the tokens at run time through `themeRgba`, `themeInt` and
    `onThemeChange` in `docs/src/lib/brand.ts`.
-7. `docs/docusaurus.config.js` enables the switch (`disableSwitch: false`, `defaultMode: 'dark'`,
+8. `docs/docusaurus.config.js` enables the switch (`disableSwitch: false`, `defaultMode: 'dark'`,
    `respectPrefersColorScheme: false`) and gives the navbar logo a light source and a `srcDark`.
 
 The values in the Derivation column are starting points. The five brand colours are fixed; the derived
@@ -229,14 +231,13 @@ export default function OakMark(props: OakMarkProps): JSX.Element;
 ```
 
 - Renders the two paths of `oak-mark-orange.svg` (viewBox `0 0 86.86 86.85`) inline.
-- The `hero` variant is a 3D scene:
-  - each half of the mark is a stack of 15 SVG slices 2.2 px apart, which reads as an extruded body
-  - on load the halves swing in from edge-on, pivoting on the centre gap
-  - the body sways slowly and leans up to 13 degrees toward the pointer anywhere over the hero section
-  - three tilted orbit rings carry five agent nodes; each ring is drawn twice, clipped to its far half
-    behind the mark and its near half in front, so nodes pass behind and in front of it
-  - a light sweep crosses the face every 7.5 s, and a ground shadow breathes with the float
-  - animations use transforms only: animating opacity on a `preserve-3d` element flattens its children
+- The `hero` variant forms the mark from particles on a 2D canvas:
+  - about 2,700 particles sampled inside the two halves, 1,150 along their outlines and 90 specks of ambient dust; roughly half of that on narrow screens
+  - positions come from a seeded generator, so every visit sees the same arrangement
+  - on load the particles start on a wide ring and spring home; afterwards each wobbles slightly and twinkles
+  - particles within reach of the pointer are pushed aside and spring back; the whole mark eases a few pixels toward the pointer
+  - additive blending in the dark mode, normal blending in the light mode; the ambient colour is read from the theme
+  - the loop pauses when the hero is off screen; reduced-motion users get the settled mark drawn once
 - The `hub` and `cta` variants are the flat mark described below.
 - Layers, back to front: a radial orange glow, the mark filled with the orange gradient, a thin Baby Blue
   Ice outline.
@@ -245,6 +246,14 @@ export default function OakMark(props: OakMarkProps): JSX.Element;
 - Motion: the outline draws in once, then the glow breathes on a slow loop. CSS only, no canvas.
 - `prefers-reduced-motion: reduce`, or `animated={false}`, renders the static mark.
 - No new dependency.
+
+Persona pages (`/developer`, `/ai-engineer`, `/business-leader`): the step timeline has one theme built on
+`--ak-primary`; the architecture diagram's accent defaults to `--ak-primary` and its surfaces mix into
+`--ak-bg`; diagram node colours are `--ak-blue` and `--ak-sky`, with the supervising agent in the accent.
+No page passes its own accent any more.
+
+Docs sidebar (`docs/src/theme/DocSidebar/Desktop/`): the stock component, ejected so that it renders the OAK
+Horizontal lockup at 1.4rem through `ThemedImage`, not a copy of the navbar logo.
 
 Illustrations (`docs/src/components/BrandArt/`): `PersonaArt` draws the three path-card pictures (a rising
 chart, an editor window, a node graph around the mark) and `CertSeal` draws the ISO 27001 seal and the

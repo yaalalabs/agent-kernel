@@ -1,4 +1,3 @@
-import { BRAND } from '@site/src/lib/brand';
 import React, { useCallback, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
@@ -26,11 +25,11 @@ const AK_ICON = (
 );
 
 const FLOW_NODES: FlowNode[] = [
-  { id: 'logic',     label: 'Actual Agent Logic',                kind: 'logic',     color: '#94a3b8' },
-  { id: 'api',       label: 'REST API',                          kind: 'kernel',    color: '#60a5fa',  showIcon: true },
-  { id: 'memory',    label: 'Agent Memory',                      kind: 'memory',    color: '#f472b6',  showIcon: true },
-  { id: 'framework', label: 'Agentic Framework Implementation',  kind: 'framework', color: '#facc15',  showIcon: true },
-  { id: 'testAuto',  label: 'Agent Test Automation',             kind: 'test',      color: '#4ade80',  showIcon: true },
+  { id: 'logic',     label: 'Actual Agent Logic',                kind: 'logic',     color: 'var(--ak-text-muted)' },
+  { id: 'api',       label: 'REST API',                          kind: 'kernel',    color: 'var(--ak-blue)',  showIcon: true },
+  { id: 'memory',    label: 'Agent Memory',                      kind: 'memory',    color: 'var(--ak-sky)',  showIcon: true },
+  { id: 'framework', label: 'Agentic Framework Implementation',  kind: 'framework', color: 'var(--ak-sky)',  showIcon: true },
+  { id: 'testAuto',  label: 'Agent Test Automation',             kind: 'test',      color: 'var(--ak-blue)',  showIcon: true },
 ];
 
 type Point = { x: number; y: number };
@@ -72,7 +71,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
       data-flow-node={node.id}
       data-kind={node.kind}
       className={`${styles.flowNode} ${kindClass} ${node.showIcon ? styles.flowNodeWithIcon : ''}`}
-      style={{ '--node-color': node.color ?? BRAND.ice } as React.CSSProperties}
+      style={{ '--node-color': node.color ?? 'var(--ak-blue)' } as React.CSSProperties}
     >
       {node.showIcon && (
         <span className={styles.akNodeIconWrap} aria-hidden="true">

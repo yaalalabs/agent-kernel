@@ -1,4 +1,3 @@
-import { BRAND } from '@site/src/lib/brand';
 import React, { useCallback, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
@@ -17,15 +16,15 @@ type FlowNode = {
 };
 
 const FLOW_NODES: FlowNode[] = [
-  { id: 'api', label: 'REST API', kind: 'api', color: '#f472b6' },
-  { id: 'input', label: 'Input Message', kind: 'message', color: '#60a5fa' },
-  { id: 'runner', label: 'Agent Logic Runner', subtitle: '(REST Server / Container / Lambda etc)', kind: 'runner', color: '#c084fc' },
-  { id: 'memory', label: 'Agent Memory', kind: 'memory', color: '#f472b6' },
-  { id: 'llm', label: 'LLM', kind: 'external', color: '#facc15' },
-  { id: 'knowledge', label: 'Knowledge Graph', kind: 'external', color: '#facc15' },
-  { id: 'dataSources', label: 'Other Data Sources', kind: 'external', color: '#facc15' },
-  { id: 'otherApis', label: 'Other APIs', kind: 'external', color: '#facc15' },
-  { id: 'output', label: 'Output Message', kind: 'message', color: '#60a5fa' },
+  { id: 'api', label: 'REST API', kind: 'api', color: 'var(--ak-sky)' },
+  { id: 'input', label: 'Input Message', kind: 'message', color: 'var(--ak-blue)' },
+  { id: 'runner', label: 'Agent Logic Runner', subtitle: '(REST Server / Container / Lambda etc)', kind: 'runner', color: 'var(--ak-blue)' },
+  { id: 'memory', label: 'Agent Memory', kind: 'memory', color: 'var(--ak-sky)' },
+  { id: 'llm', label: 'LLM', kind: 'external', color: 'var(--ak-sky)' },
+  { id: 'knowledge', label: 'Knowledge Graph', kind: 'external', color: 'var(--ak-sky)' },
+  { id: 'dataSources', label: 'Other Data Sources', kind: 'external', color: 'var(--ak-sky)' },
+  { id: 'otherApis', label: 'Other APIs', kind: 'external', color: 'var(--ak-sky)' },
+  { id: 'output', label: 'Output Message', kind: 'message', color: 'var(--ak-blue)' },
 ];
 
 const EXTERNAL_IDS = ['llm', 'knowledge', 'dataSources', 'otherApis'];
@@ -98,7 +97,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
       data-flow-node={node.id}
       data-kind={node.kind}
       className={`${styles.flowNode} ${kindClass}`}
-      style={{ '--node-color': node.color ?? BRAND.ice } as React.CSSProperties}
+      style={{ '--node-color': node.color ?? 'var(--ak-blue)' } as React.CSSProperties}
     >
       <span className={styles.flowNodeLabel}>
         {node.label}
