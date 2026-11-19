@@ -59,7 +59,7 @@ variable "endpoints" {
 variable "proxy_routes" {
   description = <<-EOT
     Names of the {proxy+} routes to create under the base path and version, for example ["a2a", "mcp"]. Each name creates
-    /<name> and /<name>/{proxy+}, both answering every method (ANY) and both integrated with the request-handler Lambda, so
+    /<name> and /<name>/{proxy+}, both answering GET, POST and DELETE (one method each, not ANY: the authorizer is handed the method's configured name) and both integrated with the request-handler Lambda, so
     a path of any depth below /<name> reaches it. The existing `endpoints` list allows three path levels and no catch-all,
     which is why these are separate. Empty by default: an existing deployment plans no change.
   EOT

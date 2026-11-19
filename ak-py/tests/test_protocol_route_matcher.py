@@ -69,6 +69,25 @@ class TestPublicA2a:
         assert matcher(_event(method, f"/api/v1/a2a/triage{CARD}")) is None
 
 
+class TestAnAnyMethodHidesTheVerb:
+    """Found on a real API Gateway (#932): the authorizer event of an ``ANY`` method carries ``httpMethod: "ANY"``.
+
+    The gateway hands the authorizer the method's *configured* name, not the request's verb. The matcher cannot tell a public
+    ``GET`` from a ``POST`` by it, so it must not guess: the card and catalog are public only for a real ``GET``, which is why
+    the Terraform module creates one method per verb. MCP is let through for any method, so it is unaffected.
+    """
+
+    @pytest.mark.parametrize("path", ["/api/v1/a2a/catalog", f"/api/v1/a2a/triage{CARD}"])
+    def test_a_public_a2a_route_is_not_let_through_when_the_verb_is_any(self, base_path, path):
+        assert ProtocolRouteMatcher()(_event("ANY", path)) is None
+
+    def test_mcp_is_let_through_whatever_the_verb(self, base_path):
+        assert ProtocolRouteMatcher()(_event("ANY", "/api/v1/mcp/")) == "mcp"
+
+    def test_the_card_is_let_through_for_the_verb_the_module_creates(self, base_path):
+        assert ProtocolRouteMatcher()(_event("GET", f"/api/v1/a2a/triage{CARD}")) == "a2a"
+
+
 class TestEverythingElseStaysBehindTheAuthorizer:
     @pytest.mark.parametrize(
         "method, path",

@@ -91,6 +91,24 @@ review; the rest of this spec is written as proposed here.
     integration seam (Slack, WhatsApp, ...); A2A and MCP are not messaging integrations, and the matcher reads `ProtocolPaths`
     from `deployment/aws/`, which the generic package must not import. It subclasses `WebhookRouteMatcher`, an import in the
     allowed direction (`deployment` may import `integration`).
+14. **An `ANY` method hides the request's verb from the authorizer (real AWS, Iteration 6).** The Iteration 1 spike used `ANY`
+    methods, which was fine for routing, and the first design kept them. On a real API Gateway the authorizer's event for an
+    `ANY` method carries `httpMethod: "ANY"`, not the request's verb (the authorizer log read `ANY /api/v1/mcp/` for a `POST`).
+    `ProtocolRouteMatcher` makes the agent card and the catalog public for `GET` only, so with `ANY` it could not tell them
+    from a `POST` and the authorizer denied the public card (403). `/mcp`, let through for every method, was unaffected.
+    - Decided: the module creates one method per verb (`GET`, `POST`, `DELETE`), the verbs `ProtocolPaths.ROUTES` registers, so
+      the authorizer is handed the real verb. The matcher stays as it is and stays strict: it does not guess a verb from `ANY`
+      (a test pins that). An unlisted verb (`PUT`, `PATCH`) is answered by API Gateway itself with 403 "Missing Authentication
+      Token", instead of reaching the Lambda and failing at the router.
+    - The local rehearsal could not catch this: it fed the authorizer a real `GET`. Only a deployed gateway shows it.
+15. **The request Lambda builds a session store at import (real AWS, Iteration 6).** Registering an agent (`OpenAIModule(...)`)
+    makes the runtime build its session store. In queue mode the Terraform module gives the request handler no session table
+    (`state.tf:602-606`: `var.queue_mode ? null`), because the agent runner owns the sessions. With `session.type: dynamodb`
+    in the shared `config.yaml` the request Lambda failed at cold start (`AKConfig.session.dynamodb.table_name must be set`) and
+    every route that reaches it answered 502.
+    - Decided for #932: no new code. The example sets `AK_SESSION__TYPE=in_memory` on the request handler, which holds no
+      session. The docs say so. A request Lambda that needs no session store at all would be a runtime change, out of scope.
+    - Not caught by the guard: the cold-start failure is the runtime's, not one of the seven checks.
 
 ## Design
 
@@ -251,8 +269,9 @@ New optional inputs, both off by default; with both off the plan is empty for an
 - The resource templates it creates (`/a2a`, `/a2a/{proxy+}`, `/mcp`, `/mcp/{proxy+}`, under the base path) are exactly the keys
   in `ProtocolPaths.ROUTES`, which the application registers (Deviation 10). The two lists must stay in step; a test pins it.
 - `modules/api-gateway`: new variable `proxy_routes` (`list(string)`, default `[]`). For each name: an
-  `aws_api_gateway_resource` `<name>` under the version resource, an `ANY` method on it, a child resource `{proxy+}` with an `ANY`
-  method, and an `AWS_PROXY` integration to the request Lambda for each (as `modules/api-gateway/main.tf:106-117`). Methods use
+  `aws_api_gateway_resource` `<name>` under the version resource, a child resource `{proxy+}`, and on each of the two a
+  method per verb in `GET`, `POST`, `DELETE` (**not `ANY`**, Deviation 14) with an `AWS_PROXY` integration to the request Lambda
+  (as `modules/api-gateway/main.tf:106-117`). The verbs are `ProtocolPaths.ROUTES`'s; a test pins them. Methods use
   the same `authorization` as every route: `CUSTOM` when an authorizer exists. The new resources, methods and integrations are
   added to the deployment `triggers` hash (`main.tf:131-141`) **only when `proxy_routes` is not empty** (`concat(<the existing
   list>, <the proxy ids or []>)`), so the hash of a deployment that sets none is unchanged and its plan stays empty; evaluating

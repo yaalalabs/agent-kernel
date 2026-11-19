@@ -35,6 +35,11 @@ locals {
   # {proxy+} routes (A2A, MCP). Their ids join the deployment hash only when there are any, so a deployment without
   # them keeps the hash it had and plans no change.
   proxy_routes = toset(var.proxy_routes)
+  # The verbs the application registers for every route (ProtocolPaths.ROUTES). One method per verb, not `ANY`: the
+  # authorizer is handed the method's configured name as httpMethod, so an `ANY` method reaches it as "ANY" and it
+  # cannot tell a public GET (the agent card) from a POST. Spiked on a real API Gateway (#932).
+  proxy_methods      = ["GET", "POST", "DELETE"]
+  proxy_method_pairs = { for pair in setproduct(local.proxy_routes, local.proxy_methods) : "${pair[0]}/${pair[1]}" => { route = pair[0], method = pair[1] } }
   proxy_route_triggers = length(local.proxy_routes) == 0 ? [] : [
     values(aws_api_gateway_resource.protocol)[*].id,
     values(aws_api_gateway_resource.protocol_proxy)[*].id,
@@ -128,7 +133,8 @@ resource "aws_api_gateway_integration" "endpoint" {
   uri                     = var.lambda_function_invoke_arn
 }
 
-# {proxy+} routes (proxy_routes): /<name> and /<name>/{proxy+}, every method, straight to the request-handler Lambda.
+# {proxy+} routes (proxy_routes): /<name> and /<name>/{proxy+}, one method per verb in local.proxy_methods, straight to the
+# request-handler Lambda.
 # The router looks a route up by the resource template, so these templates are the keys the application registers
 # (ProtocolPaths.ROUTES). Methods use the same authorization as every other route.
 resource "aws_api_gateway_resource" "protocol" {
@@ -146,27 +152,27 @@ resource "aws_api_gateway_resource" "protocol_proxy" {
 }
 
 resource "aws_api_gateway_method" "protocol" {
-  for_each      = local.proxy_routes
+  for_each      = local.proxy_method_pairs
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
-  resource_id   = aws_api_gateway_resource.protocol[each.key].id
-  http_method   = "ANY"
+  resource_id   = aws_api_gateway_resource.protocol[each.value.route].id
+  http_method   = each.value.method
   authorization = var.create_authorizer ? "CUSTOM" : "NONE"
   authorizer_id = var.create_authorizer ? aws_api_gateway_authorizer.lambda_authorizer[0].id : null
 }
 
 resource "aws_api_gateway_method" "protocol_proxy" {
-  for_each      = local.proxy_routes
+  for_each      = local.proxy_method_pairs
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
-  resource_id   = aws_api_gateway_resource.protocol_proxy[each.key].id
-  http_method   = "ANY"
+  resource_id   = aws_api_gateway_resource.protocol_proxy[each.value.route].id
+  http_method   = each.value.method
   authorization = var.create_authorizer ? "CUSTOM" : "NONE"
   authorizer_id = var.create_authorizer ? aws_api_gateway_authorizer.lambda_authorizer[0].id : null
 }
 
 resource "aws_api_gateway_integration" "protocol" {
-  for_each                = local.proxy_routes
+  for_each                = local.proxy_method_pairs
   rest_api_id             = aws_api_gateway_rest_api.rest_api.id
-  resource_id             = aws_api_gateway_resource.protocol[each.key].id
+  resource_id             = aws_api_gateway_resource.protocol[each.value.route].id
   http_method             = aws_api_gateway_method.protocol[each.key].http_method
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
@@ -174,9 +180,9 @@ resource "aws_api_gateway_integration" "protocol" {
 }
 
 resource "aws_api_gateway_integration" "protocol_proxy" {
-  for_each                = local.proxy_routes
+  for_each                = local.proxy_method_pairs
   rest_api_id             = aws_api_gateway_rest_api.rest_api.id
-  resource_id             = aws_api_gateway_resource.protocol_proxy[each.key].id
+  resource_id             = aws_api_gateway_resource.protocol_proxy[each.value.route].id
   http_method             = aws_api_gateway_method.protocol_proxy[each.key].http_method
   integration_http_method = "POST"
   type                    = "AWS_PROXY"

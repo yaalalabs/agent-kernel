@@ -1,0 +1,8 @@
+.terraform
+requirements.txt
+dist*
+*.tfstate
+*.tfstate.backup
+# Written by deploy/deploy.sh: the local module override (`./deploy.sh local`) and the public URL from the first apply
+zz_local_module_override.tf
+public_url.auto.tfvars

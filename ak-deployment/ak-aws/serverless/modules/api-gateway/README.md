@@ -49,7 +49,7 @@ module "api_gateway" {
 | `lambda_function_invoke_arn` | Request handler invoke ARN |
 | `lambda_function_name` | Request handler Lambda name |
 | `endpoints` | Additional REST endpoints |
-| `proxy_routes` | Names of `{proxy+}` routes to create, e.g. `["a2a", "mcp"]`. Each creates `/<name>` and `/<name>/{proxy+}`, both answering every method (`ANY`) and both integrated with the request-handler Lambda (default `[]`: none) |
+| `proxy_routes` | Names of `{proxy+}` routes to create, e.g. `["a2a", "mcp"]`. Each creates `/<name>` and `/<name>/{proxy+}`, both answering `GET`, `POST` and `DELETE` (one method each, not `ANY`: the authorizer is handed the method's configured name, so an `ANY` method reaches it as `ANY`) and both integrated with the request-handler Lambda (default `[]`: none) |
 | `authorizer` | Optional authorizer configuration |
 | `create_authorizer` | Whether to create the authorizer |
 | `enable_api_gateway_logs` | Create the CloudWatch log group and enable stage access logging (default `false`) |

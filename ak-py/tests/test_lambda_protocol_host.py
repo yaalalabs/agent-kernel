@@ -8,9 +8,11 @@ A2A routes and the real MCP mount, behind the host; only the queue client is fak
 import asyncio
 import json
 import logging
+import re
 import subprocess
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -243,6 +245,18 @@ class TestProtocolPathRoutes:
     def test_every_route_belongs_to_a_hosted_prefix(self):
         """``matches`` reads an app path, so a template's ``{proxy+}`` stands in for any one segment."""
         assert all(ProtocolPaths.matches(path.replace("{proxy+}", "x")) for path, _method in ProtocolPaths.ROUTES)
+
+    def test_the_terraform_module_creates_exactly_the_verbs_the_application_registers(self):
+        """One method per verb (not ``ANY``): the module and ``ROUTES`` must not drift apart, or a route is 403 at the gateway."""
+        main_tf = Path(__file__).resolve().parents[2] / "ak-deployment/ak-aws/serverless/modules/api-gateway/main.tf"
+        if not main_tf.exists():
+            pytest.skip("the Terraform module is not in this checkout")
+        declared = re.search(r"proxy_methods\s*=\s*\[([^\]]*)\]", main_tf.read_text())
+        assert declared, "proxy_methods not found in the api-gateway module"
+        module_verbs = set(re.findall(r'"([A-Z]+)"', declared.group(1)))
+
+        assert module_verbs == {method for _path, method in ProtocolPaths.ROUTES}
+        assert "ANY" not in module_verbs
 
     def test_each_hosted_prefix_has_its_own_route_and_a_proxy_route(self):
         paths = {path for path, _method in ProtocolPaths.ROUTES}

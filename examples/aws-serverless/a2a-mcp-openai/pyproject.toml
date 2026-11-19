@@ -1,0 +1,54 @@
+[project]
+name = "aws-serverless-a2a-mcp-openai"
+version = "0.1.0"
+description = "Demo of A2A and MCP served by Agent Kernel on AWS Lambda: both protocols reach the agents through the same queue pipeline as chat"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+# Per-Lambda dependency sets. deploy.sh installs each package with `uv export --extra <name>`.
+#
+# The request handler serves the A2A and MCP routes, and builds their agent cards and tools from the agents
+# registered in its own process, so it carries the OpenAI Agents SDK as well as the `a2a` and `mcp` extras. It
+# never runs a model: the agent runs on the agent-runner Lambda. The response handler and the authorizer need
+# nothing but `aws` (the static identity provider and ProtocolRouteMatcher import no FastAPI).
+request_handler = [
+    "agentkernel[aws,openai,a2a,mcp]>=0.10.1",
+]
+agent_runner = [
+    "agentkernel[aws,openai]>=0.10.1",
+]
+response_handler = [
+    "agentkernel[aws]>=0.10.1",
+]
+authorizer = [
+    "agentkernel[aws]>=0.10.1",
+]
+
+[dependency-groups]
+dev = [
+    # `a2a` and `mcp` give the test its A2A and MCP clients.
+    "agentkernel[test,a2a,mcp]>=0.10.1",
+    "black==26.10.1",
+    "isort>=5.0.0,<10.0.0",
+    "mypy>=1.0.0,<3.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
