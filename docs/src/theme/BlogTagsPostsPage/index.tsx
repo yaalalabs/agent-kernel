@@ -6,13 +6,12 @@ import {
   ThemeClassNames,
 } from '@docusaurus/theme-common';
 import {useBlogTagsPostsPageTitle} from '@docusaurus/theme-common/internal';
-import Link from '@docusaurus/Link';
-import BlogLayout from '@theme/BlogLayout';
-import BlogListPaginator from '@theme/BlogListPaginator';
+import Layout from '@theme/Layout';
 import SearchMetadata from '@theme/SearchMetadata';
 import Unlisted from '@theme/ContentVisibility/Unlisted';
 import type {Props} from '@theme/BlogTagsPostsPage';
-import BlogPostRow from '@site/src/components/Blog/BlogPostRow';
+import PageHero from '@site/src/components/ui/PageHero';
+import BlogPostCard from '@site/src/components/Blog/BlogPostCard';
 import styles from './styles.module.css';
 
 function BlogTagsPostsPageMetadata({tag}: Props): ReactNode {
@@ -25,34 +24,26 @@ function BlogTagsPostsPageMetadata({tag}: Props): ReactNode {
   );
 }
 
-function BlogTagsPostsPageContent({
-  tag,
-  items,
-  sidebar,
-  listMetadata,
-}: Props): ReactNode {
+/** The posts under one tag, as the same grid of cards the blog index uses. */
+function BlogTagsPostsPageContent({tag, items}: Props): ReactNode {
   const title = useBlogTagsPostsPageTitle(tag);
   return (
-    <BlogLayout sidebar={sidebar}>
-      <div className={styles.container}>
+    <Layout>
+      <PageHero
+        back={{to: '/blog', label: 'All posts'}}
+        label="Tag"
+        title={title}
+        lead={tag.description}
+      />
+      <main className={clsx('ak-container', styles.page)}>
         {tag.unlisted && <Unlisted />}
-        <header className={styles.hero}>
-          <h1 className={styles.heroTitle}>{title}</h1>
-          {tag.description && (
-            <p className={styles.heroSubtitle}>{tag.description}</p>
-          )}
-          <Link to="/blog" className={styles.backLink}>
-            ← All posts
-          </Link>
-        </header>
-        <section>
+        <section className={styles.grid} aria-label="Posts">
           {items.map(({content}) => (
-            <BlogPostRow key={content.metadata.permalink} content={content} />
+            <BlogPostCard key={content.metadata.permalink} content={content} />
           ))}
         </section>
-        <BlogListPaginator metadata={listMetadata} />
-      </div>
-    </BlogLayout>
+      </main>
+    </Layout>
   );
 }
 

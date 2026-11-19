@@ -345,7 +345,7 @@ const config = {
           onUntruncatedBlogPosts: 'warn',
         },
         theme: {
-          customCss: ['./src/css/custom.css', './src/css/blog-medium.css'],
+          customCss: ['./src/css/custom.css', './src/css/blog.css'],
         },
         gtag: {
           trackingID: 'G-TFXXDHX2H5',
@@ -512,7 +512,7 @@ const config = {
             ],
           },
         ],
-        copyright: `© ${new Date().getFullYear()} <a href="https://yaalalabs.com" target="_blank" rel="noopener noreferrer">Yaala Labs</a>. All rights reserved.`,
+        copyright: `© ${new Date().getFullYear()} Open Agent Kernel. All rights reserved.`,
       },
       prism: {
         theme: prismThemes.oneLight,

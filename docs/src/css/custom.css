@@ -1487,8 +1487,7 @@ code {
   padding: 1rem;
 }
 
-/* Blog styling lives in blog-medium.css (Medium-style reading experience,
-   scoped to blog routes via html.blog-wrapper). */
+/* Blog post styling lives in blog.css, scoped to blog routes via html.blog-wrapper. */
 
 /* =============================================================================
    Doc Content
@@ -1555,67 +1554,54 @@ article {
   color: var(--ak-primary-text);
 }
 
-/* Pagination - styled like Read More glass pill buttons */
+/* Previous and next page links, on docs and blog pages: two flat cards */
 .pagination-nav {
-  margin-top: 0.5rem !important;
+  gap: var(--ak-space-16);
+  margin-top: var(--ak-space-32);
 }
 
 .pagination-nav__link {
-  position: relative !important;
-  display: inline-flex !important;
-  flex-direction: column !important;
-  justify-content: center !important;
-  background: rgba(var(--ak-fg-rgb), 0.05) !important;
-  color: rgba(var(--ak-fg-rgb), 0.9) !important;
-  border-radius: 9999px !important;
-  border: 1px solid rgba(var(--ak-fg-rgb), 0.12) !important;
-  box-shadow: inset 0 1px 0 0 rgba(var(--ak-fg-rgb), 0.15), 0 4px 15px rgba(var(--ak-shadow-rgb), 0.2) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  text-decoration: none !important;
-  backdrop-filter: blur(12px) !important;
-  padding: 0.6rem 1.6rem !important;
-  width: fit-content !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-}
-
-.pagination-nav__link--prev {
-  align-items: flex-start !important;
-  justify-self: flex-start !important;
-}
-
-.pagination-nav__link--next {
-  align-items: flex-end !important;
-  text-align: right !important;
-  grid-column: 2 !important;
-  justify-self: flex-end !important;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-4);
+  height: 100%;
+  min-width: 0;
+  padding: var(--ak-space-16) var(--ak-space-24);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  background: none;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
 }
 
 .pagination-nav__link:hover {
-  background: #ffffff !important;
-  border-color: var(--ak-fg) !important;
-  color: #000000 !important;
-  box-shadow: 0 0 20px rgba(var(--ak-fg-rgb), 0.4) !important;
-  text-decoration: none !important;
+  border-color: var(--ak-fg);
+  text-decoration: none;
+}
+
+.pagination-nav__link:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 2px;
+}
+
+.pagination-nav__link--next {
+  grid-column: 2;
+  text-align: right;
 }
 
 .pagination-nav__sublabel {
-  display: none !important;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ak-text-muted);
 }
 
 .pagination-nav__label {
-  color: var(--ak-fg) !important;
-  font-size: 0.95rem !important;
-  font-weight: 600 !important;
-  transition: color 0.3s ease !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  width: 100% !important;
-}
-
-.pagination-nav__link:hover .pagination-nav__label {
-  color: #000000 !important;
+  font-size: var(--ak-type-body);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ak-fg);
 }
 
 /* =============================================================================
@@ -1716,8 +1702,6 @@ article {
   margin-top: 2.5rem !important;
   margin-bottom: 2.5rem !important;
 }
-
-/* Blog back button styling lives in blog-medium.css. */
 
 /* Navbar Version Dropdown Matte Badge Style */
 .navbar-version-dropdown {

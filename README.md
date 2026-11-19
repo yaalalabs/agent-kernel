@@ -6,10 +6,10 @@
   </picture>
 </p>
 
-<h3 align="center">The operating system for scalable and compliant enterprise AI agents</h3>
+<h3 align="center">The operating system for enterprise AI agents</h3>
 
 <p align="center">
-  Open Agent Kernel (OAK) is an open-source runtime for production AI agents. Build agents in the framework you already use, and OAK runs them on AWS, Azure, GCP or Kubernetes, with sessions, guardrails, tracing and messaging channels supplied by the platform.
+  Open Agent Kernel (OAK) is the open-source runtime for scalable, compliant AI agents. Build agents in the framework you already use, and OAK runs them on AWS, Azure, GCP or Kubernetes, with sessions, guardrails, identity, tracing and messaging channels supplied by the platform.
 </p>
 
 <p align="center">
@@ -58,6 +58,8 @@ cd my-agent
 uv add "agentkernel[openai]"
 ```
 
+If you use pip, `pip install "agentkernel[openai]"` installs the same package.
+
 Create `my_agent.py`:
 
 ```python
@@ -104,19 +106,16 @@ curl -X POST http://localhost:8000/api/v1/chat \
 
 ## Capabilities
 
-| Area | What OAK provides | Docs |
+Every agent request passes through six stages, and each one is switched on with a few lines of configuration. The [features page](https://kernel.yaala.ai/features) covers them in depth.
+
+| Stage | What OAK provides | Docs |
 |---|---|---|
-| **Frameworks** | OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework and Claude Agent SDK, including several in one runtime | [Frameworks](https://kernel.yaala.ai/docs/frameworks/overview) |
-| **Interfaces** | Interactive CLI, REST API with SSE streaming, and WebSocket delivery | [REST API](https://kernel.yaala.ai/docs/api/rest-api) |
-| **Open protocols** | MCP and A2A servers, AG-UI event streaming for agent front ends, and A2UI generative UI documents | [MCP](https://kernel.yaala.ai/docs/api/mcp-server), [A2A](https://kernel.yaala.ai/docs/api/a2a-server), [AG-UI](https://kernel.yaala.ai/docs/api/agui-server), [A2UI](https://kernel.yaala.ai/docs/advanced/a2ui) |
-| **Messaging channels** | Slack, WhatsApp, Microsoft Teams, Telegram, Gmail, Messenger and Instagram, plus LiveKit voice for OpenAI Agents SDK and Google ADK agents | [Integrations](https://kernel.yaala.ai/docs/integrations/overview) |
-| **State** | Pluggable session stores, persistent conversation threads, request-scoped and session-scoped caches, and image and file attachments | [Sessions](https://kernel.yaala.ai/docs/core-concepts/session), [Memory backends](https://kernel.yaala.ai/docs/core-concepts/memory-backends) |
-| **Knowledge** | ChromaDB, Neo4j, Starburst Galaxy and Open Knowledge Format bundles behind one `KnowledgeBase` interface | [Knowledge bases](https://kernel.yaala.ai/docs/advanced/knowledge-bases) |
-| **Governance** | Input and output guardrails, pre and post execution hooks, one identity provider for every surface, and secret resolution from a managed store | [Guardrails](https://kernel.yaala.ai/docs/advanced/guardrails), [Hooks](https://kernel.yaala.ai/docs/integrations/hooks), [Identity](https://kernel.yaala.ai/docs/advanced/identity-and-access), [Secrets](https://kernel.yaala.ai/docs/advanced/secrets) |
-| **Observability** | Tracing of agent runs, with LLM and tool calls where the framework supports it, in Langfuse, OpenLLMetry, Pydantic Logfire or AWS CloudWatch | [Traceability](https://kernel.yaala.ai/docs/advanced/traceability) |
-| **Execution** | A queued pipeline for every chat request: in-process by default, and over SQS, Kafka, NATS JetStream, Google Cloud Pub/Sub or Azure Service Bus in distributed deployments | [Queue mode](https://kernel.yaala.ai/docs/advanced/queue-mode-guide) |
-| **Agent control** | Runs that pause for a person's approval or answer, deferred and recurring chats, and sandboxed code execution | [Human in the loop](https://kernel.yaala.ai/docs/advanced/human-in-the-loop), [Scheduling](https://kernel.yaala.ai/docs/advanced/scheduling), [Sandbox](https://kernel.yaala.ai/docs/advanced/sandbox) |
-| **Testing** | A pytest-integrated test framework with score, LLM-judge and fallback comparison modes | [Testing](https://kernel.yaala.ai/docs/testing/overview) |
+| **Build** | Adapters for OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework and Claude Agent SDK, including several in one runtime. Tools written once and bound to any framework, pre and post execution hooks, multi-agent patterns, and image and file input | [Frameworks](https://kernel.yaala.ai/docs/frameworks/overview), [Tools](https://kernel.yaala.ai/docs/core-concepts/tools), [Hooks](https://kernel.yaala.ai/docs/integrations/hooks), [Multi-agent](https://kernel.yaala.ai/docs/advanced/multi-agent), [Multimodal](https://kernel.yaala.ai/docs/advanced/multimodal) |
+| **Connect** | An interactive CLI, a REST API with SSE streaming and WebSocket delivery. MCP and A2A servers, AG-UI event streaming and A2UI generative UI documents. Slack, WhatsApp, Microsoft Teams, Telegram, Gmail, Messenger and Instagram, plus LiveKit voice for OpenAI Agents SDK and Google ADK agents | [REST API](https://kernel.yaala.ai/docs/api/rest-api), [MCP](https://kernel.yaala.ai/docs/api/mcp-server), [A2A](https://kernel.yaala.ai/docs/api/a2a-server), [AG-UI](https://kernel.yaala.ai/docs/api/agui-server), [A2UI](https://kernel.yaala.ai/docs/advanced/a2ui), [Integrations](https://kernel.yaala.ai/docs/integrations/overview) |
+| **Remember** | Pluggable session stores, persistent conversation threads, and request-scoped and session-scoped caches. ChromaDB, Neo4j, Starburst Galaxy and Open Knowledge Format bundles behind one `KnowledgeBase` interface | [Sessions](https://kernel.yaala.ai/docs/core-concepts/session), [Memory backends](https://kernel.yaala.ai/docs/core-concepts/memory-backends), [Threads](https://kernel.yaala.ai/docs/advanced/threads), [Knowledge bases](https://kernel.yaala.ai/docs/advanced/knowledge-bases) |
+| **Guard** | Input and output guardrails, one identity provider for every surface, secret resolution from a managed store, runs that pause for a person's approval or answer, and sandboxed code execution | [Guardrails](https://kernel.yaala.ai/docs/advanced/guardrails), [Identity](https://kernel.yaala.ai/docs/advanced/identity-and-access), [Secrets](https://kernel.yaala.ai/docs/advanced/secrets), [Human in the loop](https://kernel.yaala.ai/docs/advanced/human-in-the-loop), [Sandbox](https://kernel.yaala.ai/docs/advanced/sandbox) |
+| **Scale** | A queued pipeline for every chat request: in-process by default, and over SQS, Kafka, NATS JetStream, Google Cloud Pub/Sub or Azure Service Bus in distributed deployments. Serverless and containerized targets on AWS, Azure, GCP and Kubernetes, and deferred and recurring chats | [Queue mode](https://kernel.yaala.ai/docs/advanced/queue-mode-guide), [Deployment](https://kernel.yaala.ai/docs/deployment/overview), [Scheduling](https://kernel.yaala.ai/docs/advanced/scheduling) |
+| **Observe** | Tracing of agent runs, with LLM and tool calls where the framework supports it, in Langfuse, OpenLLMetry, Pydantic Logfire or AWS CloudWatch. A pytest-integrated test framework with score, LLM-judge and fallback comparison modes | [Traceability](https://kernel.yaala.ai/docs/advanced/traceability), [Testing](https://kernel.yaala.ai/docs/testing/overview) |
 
 <details>
 <summary><strong>Supported backends and providers</strong></summary>
@@ -230,6 +229,16 @@ Six skills cover the path from an empty directory to a deployed agent: `ak-init`
 ## Documentation
 
 Full documentation lives at [kernel.yaala.ai/docs](https://kernel.yaala.ai/docs). Good starting points are [installation](https://kernel.yaala.ai/docs/installation), [core concepts](https://kernel.yaala.ai/docs/core-concepts/overview), [configuration](https://kernel.yaala.ai/docs/core-concepts/configuration), the [framework guides](https://kernel.yaala.ai/docs/frameworks/overview) and the [deployment guides](https://kernel.yaala.ai/docs/deployment/overview).
+
+The site also has a guided tour for each kind of reader:
+
+| If you are | Start with | What it covers |
+|---|---|---|
+| A business leader | [The outcome](https://kernel.yaala.ai/business-leader) | Where agents pay off, what OAK is in plain words, and what adopting it commits you to |
+| A developer | [The code](https://kernel.yaala.ai/developer) | The route from an empty folder to an agent that is deployed and tested |
+| An AI engineer | [The runtime](https://kernel.yaala.ai/ai-engineer) | How OAK compares, where it sits in a request, and the memory, hook and queue machinery |
+
+[Use cases](https://kernel.yaala.ai/use-cases) shows what teams build with OAK, [What's new](https://kernel.yaala.ai/docs/whats-new) lists the latest capabilities, and the [blog](https://kernel.yaala.ai/blog) covers each release in depth.
 
 ## Examples
 

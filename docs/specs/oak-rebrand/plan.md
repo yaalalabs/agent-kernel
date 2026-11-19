@@ -317,3 +317,23 @@ particle hero and the integration ledger are not, the level tiles are to be redo
   6. The home page announcement now leads with identity provider support.
 - **Verify:** the production build passes on an isolated copy; flowcharts, a front-matter diagram and sequence diagrams captured in both modes; Not checked: Safari and Firefox, and class or state diagrams in the light palette.
 - **Hero entrance, revised:** the maintainer found the spiral fly-in too intense and chose a calmer one from four options. The mark now comes into focus over two seconds: the dots start as a haze close to their places and tighten. Hover and scroll behaviour are unchanged.
+
+## Iteration 29: names, README and blog audit
+
+- **Status:** done, except the blog changes, which wait for the maintainer's choice.
+- **Steps:**
+  1. The shared blog author is "OAK" with the mark as its picture, and the footer copyright names Open Agent Kernel.
+  2. The root README follows the site: the same headline, capabilities grouped by the six stages, pip beside uv, and the three guided tours.
+  3. Blog design audit: findings and proposals are in `research/blog-audit.md`. Nothing is implemented.
+
+## Iteration 30: blog redesign
+
+- **Status:** done. It carries out the four proposals in `research/blog-audit.md`.
+- **Steps:**
+  1. Type: the blog uses the site's faces and scale. Charter is gone, headings are weight 600, article text is 19 px and code 15 px (`docs/src/css/blog.css`, which replaces `blog-medium.css`).
+  2. Index: the shared `PageHero`, a topic filter that stays in view, the newest post as a lead card and the rest as a three-column grid of cards with banners (`docs/src/theme/BlogListPage/`, `docs/src/components/Blog/BlogPostCard/`). The tag page uses the same grid.
+  3. Post page: a 720 px reading column on the page container, an "All posts" link and the post's topic above the title, and a table of contents beside the post on wide screens (`docs/src/theme/BlogPostPage/`).
+  4. Tags use the site's tag style. The previous and next links, on docs pages too, are two flat cards in place of the glass pills.
+  5. The shared author's picture is the mark on a disc (`docs/static/img/branding/oak-avatar.svg`): the bare mark touched the edge of its box and a round crop cut its corners.
+- **Verify:** the production build; captures of the index and a post in both modes and at phone width.
+

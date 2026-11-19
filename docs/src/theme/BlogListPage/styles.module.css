@@ -1,43 +1,22 @@
-.container {
-  max-width: 728px;
-  margin: 0 auto;
-  padding: 0 1rem;
+/* Blog index: layout only. The page header, type and spacing come from the design system. */
+
+.page {
+  padding-bottom: var(--ak-space-96);
 }
 
-.hero {
-  padding: 1.5rem 0 0.5rem;
-}
-
-.heroTitle {
-  font-family: 'Archivo', sans-serif;
-  font-size: var(--ak-type-h2);
-  font-weight: 800;
-  letter-spacing: -0.025em;
-  color: var(--ak-text);
-  margin-bottom: 0.5rem;
-}
-
-.heroSubtitle {
-  font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, Georgia,
-    serif;
-  font-size: 1.15rem;
-  line-height: 1.5;
-  color: var(--ak-text-secondary);
-  margin: 0;
-}
-
+/* The topic filter stays under the navbar while the list scrolls */
 .topicBar {
-  display: flex;
-  gap: 0.5rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding: 1.25rem 0 1rem;
-  margin-bottom: 0.5rem;
-  border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   position: sticky;
   top: var(--ifm-navbar-height);
-  background: var(--ak-bg);
   z-index: 10;
+  display: flex;
+  gap: var(--ak-space-8);
+  margin-bottom: var(--ak-space-48);
+  padding-block: var(--ak-space-16);
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--ak-border);
+  background-color: var(--ak-bg);
 }
 
 .topicBar::-webkit-scrollbar {
@@ -45,48 +24,68 @@
 }
 
 .topic {
-  font-family: 'Archivo', sans-serif;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--ak-text-secondary);
-  background: rgba(var(--ak-fg-rgb), 0.07);
-  border: 1px solid transparent;
+  flex: none;
+  height: 2.25rem;
+  padding: 0 var(--ak-space-16);
+  border: 1px solid var(--ak-border);
   border-radius: var(--ak-radius-control);
-  padding: 0.4rem 1rem;
+  background: none;
+  font-family: inherit;
+  font-size: var(--ak-type-small);
+  font-weight: 500;
   white-space: nowrap;
+  color: var(--ak-text-secondary);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
 
 .topic:hover {
-  color: var(--ak-text);
-  background: rgba(var(--ak-fg-rgb), 0.14);
+  border-color: var(--ak-fg);
+  color: var(--ak-fg);
+}
+
+.topic:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 2px;
 }
 
 .topicActive,
 .topicActive:hover {
+  border-color: var(--ak-fg);
+  background-color: var(--ak-fg);
   color: var(--ak-bg);
-  background: var(--ak-text);
 }
 
-.postList {
-  min-height: 12rem;
+.lead {
+  margin-bottom: var(--ak-space-64);
+  padding-bottom: var(--ak-space-64);
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ak-space-64) var(--ak-space-32);
 }
 
 .empty {
-  font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, Georgia,
-    serif;
-  color: var(--ak-text-secondary);
-  padding: 3rem 0;
-  text-align: center;
+  padding-block: var(--ak-space-48);
 }
 
-@media (max-width: 768px) {
-  .heroTitle {
-    font-size: var(--ak-type-h2);
+@media (max-width: 1100px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ak-space-48);
   }
 
-  .heroSubtitle {
-    font-size: var(--ak-type-body);
+  .lead {
+    margin-bottom: var(--ak-space-48);
+    padding-bottom: var(--ak-space-48);
   }
 }
