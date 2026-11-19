@@ -124,6 +124,54 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
   - the ISO 27001 and SOC 2 tiles
 - The particle background keeps its geometry (a sphere) and takes the new palette.
 
+### Design system
+
+Findings, measurements and starting values are in [research/design-audit.md](research/design-audit.md).
+The site is consistent in colour after the rebrand; this section makes it consistent in type, layout and
+surface, in a flat and clean style.
+
+- Type:
+  - one scale of nine roles (display, H1, H2, H3, H4, lead, body, small, label) and two weights (400, 600)
+  - much larger than today: hero headline 88 px, section headings 52 px, body copy 18 px on a 1440 px screen
+  - nothing below 14 px on marketing pages except the 13 px monospace label; docs prose stays at 16 to 17 px
+  - sentence case for every heading; headings are a solid colour
+  - every page has exactly one `h1`, and each heading level has one size
+- Layout:
+  - one container width of 1280 px; prose capped at 720 px; section content left aligned
+  - one spacing scale; section padding of 128, 96 and 64 px on desktop, tablet and mobile
+  - one section-header pattern: numbered monospace label, heading, lead
+- Surfaces are flat:
+  - two surface levels; cards are a solid fill with a 1 px border, or a hairline rule
+  - no gradient fills, glass blur or glows on cards and headings
+  - two corner radii: 8 px for buttons, controls and tags, 16 px for cards and panels
+- Components:
+  - three button kinds: primary (solid orange), secondary (outline), tertiary (text link with an arrow); buttons are rectangular with an 8 px radius, not pills
+  - one primary button per view
+  - tags are outlined monospace labels and do not look like buttons
+  - the navbar is 72 px tall, keeps the three-line lockup, and has one primary button; the version menu shows on docs pages only
+  - one icon family; integration logos are SVG and single colour by default
+  - one label per kind of action ("Quick start", "Learn more")
+- Motion:
+  - content is visible without being scrolled into view
+  - decorative motion is removed: scroll reveals that hide content, pulsing glows, shimmering gradients
+- Vector animation is the site's imagery:
+  - one vocabulary, particles on rails: fine straight and angled lines with dots that travel, queue, split and are filtered
+  - two colours from the theme tokens; the drawings follow the colour mode
+  - one drawing for each of the six stages (Build, Connect, Remember, Guard, Scale, Observe) and one for the architecture
+  - each drawing shows what that part of the runtime does; none is decoration
+  - one animation in view at a time, paused off screen, a static frame for reduced-motion users, no new dependency
+- Home page:
+  - nine sections: hero, trust marks, what OAK does, architecture, works with, deploy anywhere, choose your path, questions, closing section
+  - the hero headline is short enough to set at display size
+  - the feature section becomes a rail of six stages (Build, Connect, Remember, Guard, Scale, Observe); each stage shows one sentence, three points, its vector animation and the code or config that enables it, replacing the six tabs of cards
+  - integrations stay on the home page as a four-column compatibility matrix, replacing the three marquee rows
+  - every FAQ question stays, in two columns of flat rows
+  - a row of trust marks (licence, foundations, compliance) replaces the separate trust section and the footer badges; it carries no figures until real ones exist
+- The reference site named by the maintainer (choreolabs.com) informs principles only: type that carries the
+  page, flat surfaces, hairlines and whitespace. Its palette is close to ours, so composition is what must
+  differ: no wording, section order, imagery or signature component is taken from it. The audit lists, item
+  by item, what stays ours.
+
 ### Contributor guidance
 
 - `AGENTS.md` gains a short naming section stating the rules above, so that contributors and the docs-sync automation write the new name.
@@ -158,4 +206,7 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
   foundations' own artwork and are shown unmodified. Is a monochrome treatment acceptable to them?
 - **Former-name note.** Should the README and the docs intro carry one line saying that Open Agent Kernel
   was previously called Agent Kernel and that the `agentkernel` package and `ak` CLI are unchanged?
+- **Hero headline.** The current headline is eleven words, too long for display size. Candidate: "The operating
+  system for enterprise AI agents", with scale and compliance moved to the lead line. Whose call is the copy?
+- **Trust figures.** No real figures exist yet. The row ships with marks only.
 - **Skill evals.** `ak-init/evals/evals.json` (12 occurrences) and `ak-add-integration/evals/evals.json` (1) keep the old name as test prompts. Leave as is?

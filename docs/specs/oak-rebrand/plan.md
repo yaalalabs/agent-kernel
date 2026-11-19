@@ -97,3 +97,97 @@ the maintainer asks.
   2. Point the three sync skills at that section.
   3. No other dev skill describes behaviour that this change alters; the prose rename in iteration 7 is their only edit. Confirm by re-reading the diff of `.agents/skills/`.
 - **Verify:** Testing step 2 still passes; the `ak-dev-sync-docs-from-branch` checklist finds nothing left to sync.
+
+# Phase 2: design system
+
+Not started. It implements the Design system section of [design.md](design.md). Finding numbers (F1 to F23)
+refer to [research/design-audit.md](research/design-audit.md). The detailed spec for this phase is written
+after the design is approved.
+
+## Iteration 10: Foundations
+
+- **Goal:** the type scale, spacing scale, container, radii and flat surface rules exist as tokens, proven on the home hero and navbar.
+- **Findings:** F1, F17, F18, F3, F9, F19.
+- **Files:** `docs/src/css/custom.css`, `docs/src/pages/index.module.css`
+- **Steps:**
+  1. Add type, space, radius and container tokens; add heading and text utility classes.
+  2. Apply them to the hero and one more section; tune the scale against screenshots.
+  3. Checkpoint with the maintainer before the scale spreads.
+- **Verify:** the measurement script reports no text below 13 px in those sections; screenshots in both modes.
+
+## Iteration 11: Components
+
+- **Goal:** one implementation each of button, section header, card, tag and text link.
+- **Findings:** F2, F4, F9, F8, F22.
+- **Files:** `docs/src/css/custom.css`, a new `docs/src/components/ui/` folder, the stylesheets that define today's variants
+- **Steps:**
+  1. Build the five components from the tokens.
+  2. Replace the existing button, pill and eyebrow variants across pages; unify action labels.
+  3. Move icons to one family; convert the remaining PNG integration logos to SVG where a vector exists.
+- **Verify:** the measurement script reports two card radii and three button styles site-wide.
+
+## Iteration 12: Vector animation set
+
+- **Goal:** the site has its own moving line art, in one vocabulary.
+- **Findings:** F23, F14.
+- **Files:** a new `docs/src/components/VectorMotion/` folder
+- **Steps:**
+  1. Build the three primitives (rail, dot, pulse) with the limits from the audit: tokens for colour, pause off screen, static frame for reduced motion.
+  2. Prototype one stage drawing (Guard) and checkpoint with the maintainer on the motion language before drawing the rest. Stills cannot show motion, so this review happens in the browser.
+  3. Draw the other five stages and the architecture flow.
+- **Verify:** each drawing in both colour modes and with reduced motion on; the measurement script reports one running illustration per view.
+
+## Iteration 13: Home page
+
+- **Goal:** the home page has the nine lighter sections, the capability rail and the compatibility matrix.
+- **Findings:** F5, F20, F11, F21, F7.
+- **Files:** `docs/src/pages/index.tsx`, `docs/src/pages/index.module.css`, `docs/src/components/FeatureExplorer/*`, `docs/src/components/IntegrationsMarquee/*`, `docs/src/components/FAQ/*`
+- **Steps:**
+  1. Hero: short headline at display size, lead, two actions, one-line install command.
+  2. Trust marks row; remove the trust section and the footer badges.
+  3. Rebuild the feature section as the six-stage rail, each stage with its drawing and a code panel.
+  4. Rebuild integrations as the four-column compatibility matrix.
+  5. Enlarge and simplify the architecture diagram and give it the flow animation; set the FAQ in two columns with every question kept; flat closing panel.
+- **Verify:** section count; the measurement script on the page; screenshots at 1440 and 390 px in both modes.
+
+## Iteration 14: Features, use-cases and persona pages
+
+- **Goal:** the other marketing pages use the system.
+- **Findings:** F18, F15, F7, F1.
+- **Files:** `docs/src/pages/features.tsx`, `use-cases.tsx`, `developer.tsx`, `ai-engineer.tsx`, `business-leader.tsx` and their stylesheets
+- **Steps:**
+  1. Give every page one `h1` and the shared heading sizes.
+  2. Apply the container, spacing and components; replace red with neutral on "before" comparisons.
+  3. Shorten the persona journeys and enlarge the step timeline.
+- **Verify:** the measurement script per page; screenshots in both modes.
+
+## Iteration 15: Docs, blog and site chrome
+
+- **Goal:** the docs, blog, navbar and footer match.
+- **Findings:** F10, F6, F12, F13.
+- **Files:** `docs/src/css/custom.css`, `docs/src/css/blog-medium.css`, `docs/src/theme/*`, `docs/docusaurus.config.js`, `docs/static/img/blog/*`, `docs/docs/intro.md`
+- **Steps:**
+  1. Remove the boxed panels around the docs sidebar and table of contents; widen the content column.
+  2. Move the "What's New" list out of the introduction to a changelog page.
+  3. Raise the navbar to 72 px, add the primary action, show the version menu on docs pages only; keep one floating button.
+  4. Regenerate the blog banners from one template in the brand palette.
+- **Verify:** screenshots of a docs page, the blog list and a post in both modes.
+
+## Iteration 16: Motion, accessibility and light mode
+
+- **Goal:** content never waits on an animation, and the light mode is designed, not inverted.
+- **Findings:** F14, F16.
+- **Steps:**
+  1. Replace scroll-triggered reveals with one short fade that never hides content; remove decorative loops, keeping only the vector drawings.
+  2. Check contrast and focus states for every component in both modes.
+  3. In the light mode, replace card borders with one soft shadow.
+- **Verify:** the measurement script reports at most a handful of running animations per page; a keyboard pass.
+
+## Iteration 17: Tests, then docs and skills
+
+- **Goal:** the whole phase passes the checks, and the guidance matches.
+- **Steps:**
+  1. Run the Testing steps of the spec on the full tree, and the production build.
+  2. Update the *Naming and brand* section of `AGENTS.md` and `branding/README.md` with the type scale, spacing and component rules.
+- **Verify:** the build passes; the screenshot set is attached for review.
+
