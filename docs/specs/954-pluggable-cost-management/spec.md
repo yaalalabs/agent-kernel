@@ -82,6 +82,9 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     cannot report either raises (Langfuse, §5.3). Usage views fetch the whole window first, and split it only on
     truncation (§13).
 22. **Classifying an error never builds `CostManager`.** `ErrorUtil` uses `RunMeterFactory.peek()` (§3.4).
+23. **`gateway_user_id` also encodes an id that already starts with `ak~`**, so the inverse is exact: without it a
+    raw subject such as `ak~%41` would read back as `A`. Every gateway, built-in or bring-your-own, uses the base
+    class's transform (§1, rule 5).
 
 ## Design
 
@@ -391,6 +394,9 @@ class LLMGateway(ABC):
   and maps errors: connect or timeout errors, 5xx responses and malformed JSON become `UsageRetrievalError`; 401 and
   403 become `UsageRetrievalError(auth=True)`. Logs name the method and path only, never the query string, headers
   or body (Security).
+  - httpx's own `HTTP Request: <method> <url>` INFO line would carry the query string (user ids). A filter on the
+    `httpx` logger strips the query from that line for URLs under a gateway's `base_url`, and leaves other hosts'
+    lines alone.
 
 `LLMGatewayFactory.create(config: _CostGatewayConfig) -> LLMGateway` follows the thread-store factory
 (`integration/thread/store/base.py:118-177`) and the identity factory (`identity/provider/factory.py:24-72`), which
