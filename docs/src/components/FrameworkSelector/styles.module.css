@@ -135,7 +135,7 @@
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 0.5rem;
   overflow: hidden;
-  background-color: #010002;
+  background-color: var(--ak-bg);
 }
 
 .macTitleBar {
@@ -143,7 +143,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.6rem 0.875rem;
-  background-color: #1c1c1e;
+  background-color: var(--ak-surface-raised);
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   flex-shrink: 0;
 }
@@ -193,7 +193,7 @@
   overflow-x: auto;
   padding: 0.875rem 0;
   -webkit-overflow-scrolling: touch;
-  background-color: #010002;
+  background-color: var(--ak-bg);
 }
 
 /* ── Code table: line numbers + code, zero borders, zero row backgrounds ─── */
@@ -249,7 +249,7 @@
 /* ── Syntax token colours (VS Code Dark+ inspired) ──────────────────────── */
 
 .tok_keyword {
-  color: #569cd6;
+  color: var(--ak-primary);
 }
 
 .tok_builtin {

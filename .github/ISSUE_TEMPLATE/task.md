@@ -1,6 +1,6 @@
 ---
 name: Task
-about: Create a general task or work item for Agent Kernel
+about: Create a general task or work item for Open Agent Kernel
 title: '[TASK] '
 labels: task
 assignees: amithad

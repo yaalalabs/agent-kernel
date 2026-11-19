@@ -10,7 +10,7 @@ For general pre/post hook patterns (guardrails, RAG, disclaimers), see
 ## Features
 
 ### History Trim Hook (Post-hook)
-The history trim hook bounds the OpenAI Agents SDK's own raw conversation history (not the AK
+The history trim hook bounds the OpenAI Agents SDK's own raw conversation history (not the OAK
 `Session` cache) as a session grows: once it exceeds `THRESHOLD` items, it is trimmed back down to
 the most recent `THRESHOLD` items after every turn:
 - Calls `session.get_framework_session()` to reach the framework-native session object directly
@@ -106,7 +106,7 @@ agent running raises `RuntimeError`, since there'd be no framework key to resolv
 
 ## Learn More
 
-- [Agent Kernel Documentation](https://docs.agent-kernel.io)
+- [Open Agent Kernel Documentation](https://docs.agent-kernel.io)
 - [Core Concepts: Session](https://docs.agent-kernel.io/core-concepts/session)
 - [Core Concepts: Hooks](https://docs.agent-kernel.io/core-concepts/hooks)
 - [OpenAI Integration](https://docs.agent-kernel.io/frameworks/openai)

@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-knowledgebase-integration
 description: >
-  Step-by-step guide for adding a new knowledge base backend to Agent Kernel.
+  Step-by-step guide for adding a new knowledge base backend to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new storage system with the
   KnowledgeBase interface and expose it through KnowledgeBuilder tools.
 license: Apache-2.0

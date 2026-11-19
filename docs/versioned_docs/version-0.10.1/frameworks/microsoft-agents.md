@@ -4,13 +4,13 @@ sidebar_position: 8
 
 # Microsoft Agent Framework
 
-Agent Kernel provides a native integration with the [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF).
+Open Agent Kernel (OAK) provides a native integration with the [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) (MAF).
 
-MAF is the unified successor to AutoGen and Semantic Kernel, providing a modern, async-first framework for building agents and multi-agent workflows. Agent Kernel's adapter maps MAF's streaming interface, sessions, tool binding, and framework context round-trips natively into the Agent Kernel execution pipeline.
+MAF is the unified successor to AutoGen and Semantic Kernel, providing a modern, async-first framework for building agents and multi-agent workflows. OAK's adapter maps MAF's streaming interface, sessions, tool binding, and framework context round-trips natively into the OAK execution pipeline.
 
 ## Installation
 
-Install Agent Kernel with the `maf` extra, plus the MAF package for your model provider. The `maf` extra installs only the provider-neutral MAF core (`agent-framework-core`):
+Install OAK with the `maf` extra, plus the MAF package for your model provider. The `maf` extra installs only the provider-neutral MAF core (`agent-framework-core`):
 
 ```bash
 uv add "agentkernel[maf]" agent-framework-openai
@@ -22,7 +22,7 @@ uv add "agentkernel[maf]" agent-framework-openai
 
 When using the MAF adapter, you build your agent using MAF's `Agent` class and pass it directly to `MAFModule`.
 
-Following AK's "wrap, don't abstract" principle, you construct and pass the `chat_client` directly to the agent. Agent Kernel does not intercept or hide the underlying model client configuration.
+Following OAK's "wrap, don't abstract" principle, you construct and pass the `chat_client` directly to the agent. OAK does not intercept or hide the underlying model client configuration.
 
 ```python
 from agent_framework import Agent
@@ -81,7 +81,7 @@ triage_agent = Agent(
 MAFModule([triage_agent, math_agent, general_agent])
 ```
 
-A delegated agent runs inside the triage agent's Agent Kernel run, so a tool on the specialist sees the
+A delegated agent runs inside the triage agent's OAK run, so a tool on the specialist sees the
 **triage** agent and the same session through `ToolContext.get()`.
 
 ## Configuration
@@ -95,7 +95,7 @@ in the environment when your module is imported, not just when a run happens.
 
 ## Model providers
 
-The adapter works with any MAF chat client: it only uses MAF core types, so switching models changes the client you pass to `Agent`, never the Agent Kernel code. The OpenAI provider package (`agent-framework-openai`) covers OpenAI, Azure OpenAI, and any OpenAI-compatible endpoint. It has two clients: `OpenAIChatClient` (OpenAI's Responses API) and `OpenAIChatCompletionClient` (Chat Completions):
+The adapter works with any MAF chat client: it only uses MAF core types, so switching models changes the client you pass to `Agent`, never the OAK code. The OpenAI provider package (`agent-framework-openai`) covers OpenAI, Azure OpenAI, and any OpenAI-compatible endpoint. It has two clients: `OpenAIChatClient` (OpenAI's Responses API) and `OpenAIChatCompletionClient` (Chat Completions):
 
 ```python
 from agent_framework.openai import OpenAIChatClient
@@ -160,7 +160,7 @@ any other framework. Native MAF tools that take a `FunctionInvocationContext` in
 ## Structured Output
 
 Configure structured output with MAF's `response_format` option, either in the agent's `default_options` or per
-agent through [Native run options](#native-run-options). Agent Kernel detects the parsed result and returns an
+agent through [Native run options](#native-run-options). OAK detects the parsed result and returns an
 `AgentReplyAny` whose `content` is the result as a dict; no re-parsing of text needed:
 
 ```python
@@ -194,9 +194,9 @@ Structured output applies to non-streaming runs (`execution.message_type: comple
 
 ## Streaming
 
-Agent Kernel converts text, reasoning, and tool updates from MAF's `AgentResponseUpdate` stream into native Agent Kernel `StreamEvent`s (including `TextDelta`, `ToolCallStart`, and `ToolCallArgs`), allowing real-time rendering in Agent Kernel's CLI, UI, and WebSocket integrations.
+OAK converts text, reasoning, and tool updates from MAF's `AgentResponseUpdate` stream into native OAK `StreamEvent`s (including `TextDelta`, `ToolCallStart`, and `ToolCallArgs`), allowing real-time rendering in OAK's CLI, UI, and WebSocket integrations.
 
-This mapping requires no code changes to your MAF agents. You can consume the stream via Agent Kernel's underlying service layer:
+This mapping requires no code changes to your MAF agents. You can consume the stream via OAK's underlying service layer:
 
 ```python
 import asyncio
@@ -217,11 +217,11 @@ if __name__ == "__main__":
 
 ## Session Management
 
-Agent Kernel manages the conversation state across interactions and persists it to your configured session store (e.g., Redis, DynamoDB, or memory).
+OAK manages the conversation state across interactions and persists it to your configured session store (e.g., Redis, DynamoDB, or memory).
 
 The adapter stores an `AgentSession.to_dict()` snapshot in `MAFSession` and restores it with `AgentSession.from_dict()` before each turn, allowing multi-turn conversations without manual history management.
 
-Like the other adapters, the snapshot is kept per Agent Kernel session under the framework key, so every MAF agent used in one session shares it. That includes the snapshot's `service_session_id`: two agents whose clients keep the conversation on the provider's side would continue one thread id. Use separate sessions for such agents.
+Like the other adapters, the snapshot is kept per OAK session under the framework key, so every MAF agent used in one session shares it. That includes the snapshot's `service_session_id`: two agents whose clients keep the conversation on the provider's side would continue one thread id. Use separate sessions for such agents.
 
 ## Per-run context/state
 
@@ -253,7 +253,7 @@ agent = Agent(client, name="shopping", instructions="...", tools=MAFToolBuilder.
 MAFModule([agent]).pre_hook(agent, [SeedContextPreHook()])
 ```
 
-The adapter injects a copy of the framework context into the native session state under `ak_context` before each run. When the native call completes, including a run that pauses for approval, it merges the tool-modified dictionary back into the AK session, so tool-added keys survive across turns. A run whose native call fails, or a stream interrupted before it drains, leaves the stored context unchanged. The conversation is stored before the context, so a context that cannot be stored (an unpicklable value) loses only the context, never the turn.
+The adapter injects a copy of the framework context into the native session state under `ak_context` before each run. When the native call completes, including a run that pauses for approval, it merges the tool-modified dictionary back into the OAK session, so tool-added keys survive across turns. A run whose native call fails, or a stream interrupted before it drains, leaves the stored context unchanged. The conversation is stored before the context, so a context that cannot be stored (an unpicklable value) loses only the context, never the turn.
 
 The native session state is shared with every MAF context provider configured on the agent, so do not put secrets in the framework context. See `examples/cli/maf_context` for a complete example.
 
@@ -273,7 +273,7 @@ MAF's `Agent.run` takes no `**kwargs`, so a misspelled or unknown key raises `Ty
 |---|---|
 | `messages` | Built from the `AgentRequest` list by the runner. |
 | `stream` | Managed by the runner based on whether `run()` or `stream()` was called. |
-| `session` | Managed by the runner based on the AK session context. |
+| `session` | Managed by the runner based on the OAK session context. |
 
 See [examples/cli/maf-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/maf-run-options) for `options` and `function_invocation_kwargs` with progress reported by MAF's own middleware.
 
@@ -304,11 +304,11 @@ The pause is durable: the record carries MAF's serialized `AgentSession` and the
 decision can arrive later on any replica with a shared session backend. Answer it with a `resume` block;
 `approved` runs the tool, while `denied` and `cancelled` both reject it, and MAF tells the model the call was
 rejected by the user. **`cancelled` is therefore indistinguishable from `denied` on MAF:** MAF writes its own fixed
-rejection text and has no channel for Agent Kernel's "nobody decided" wording or for a decision's `message`.
+rejection text and has no channel for OAK's "nobody decided" wording or for a decision's `message`.
 
 What MAF cannot carry, refused with a message rather than flattened into a generic reply:
 
-- **A partial resume.** Answer every pending approval together; Agent Kernel names the ids you missed.
+- **A partial resume.** Answer every pending approval together; OAK names the ids you missed.
 - **A payload.** A MAF approval is only approved or rejected, with no channel for replacement arguments.
 - **A prompt beside the decisions.** MAF would place it between the tool calls and their results, an order
   model APIs reject. Send it as the next turn.
@@ -349,6 +349,6 @@ for token streaming over Server-Sent Events.
 
 ## Supported scope
 
-This adapter targets native MAF `Agent` instances and maps their execution to Agent Kernel's request/reply, session, framework-context, tool, and streaming interfaces.
+This adapter targets native MAF `Agent` instances and maps their execution to OAK's request/reply, session, framework-context, tool, and streaming interfaces.
 
-Background continuation tokens are not exposed through these interfaces. Native background continuation is separate from Agent Kernel's queue-based asynchronous execution. MAF workflow agents have not yet been validated with this adapter.
+Background continuation tokens are not exposed through these interfaces. Native background continuation is separate from OAK's queue-based asynchronous execution. MAF workflow agents have not yet been validated with this adapter.

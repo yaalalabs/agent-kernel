@@ -251,12 +251,12 @@ export default function SandboxFlowDiagram({
           <div className={`${styles.node} ${styles.brokerNode}`} style={delayStyle(400)}>
             <div className={styles.brokerRow}>
               <img
-                src="/img/branding/agent-kernel-icon-color.svg"
+                src="/img/branding/oak-mark-orange.svg"
                 alt=""
                 className={styles.brokerLogo}
               />
               <div className={styles.brokerText}>
-                <p className={styles.brokerEyebrow}>Agent Kernel</p>
+                <p className={styles.brokerEyebrow}>OAK</p>
                 <p className={styles.brokerTitle}>Execution Broker</p>
               </div>
             </div>

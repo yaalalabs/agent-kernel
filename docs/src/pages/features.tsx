@@ -1,3 +1,5 @@
+import OakMark from '@site/src/components/OakMark';
+import { BRAND, brandRgba } from '@site/src/lib/brand';
 import React, {
   useId,
   useState,
@@ -84,7 +86,7 @@ const FEATURE_PAGE_MAP: {
       anchor: "problem",
       number: "01",
       title: "The Problem",
-      hint: "What Agent Kernel solves",
+      hint: "What Open Agent Kernel solves",
     },
     {
       anchor: "core",
@@ -202,7 +204,7 @@ function WhyAgentKernel() {
       <div className="container">
         <div className={styles.whyHeroBlock}>
           <p ref={labelRef} className={styles.sectionLabel}>
-            Why Agent Kernel
+            Why OAK
           </p>
           <h2 ref={titleRef} className={styles.sectionTitle}>
             Everything You Need to Build, Run and Scale AI Agents
@@ -303,7 +305,7 @@ function FeaturesPageMap({
     delay: 0.41 + i * 0.07,
   }));
 
-  const TEAL = "rgba(0,221,255,1)";
+  const TEAL = brandRgba('ice', 1);
 
   return (
     <div
@@ -322,7 +324,7 @@ function FeaturesPageMap({
             Feature Map
           </div>
           <h2 id="features-page-map-heading" className={styles.sectionTitle}>
-            Everything Agent Kernel Does
+            Everything OAK Does
           </h2>
           <p className={styles.sectionSubtitle}>
             Seven production-ready capabilities. Explore any area below.
@@ -397,16 +399,9 @@ function FeaturesPageMap({
           {/* ── Hub ── */}
           <div
             className={`${styles.pageMapHub} ${visible ? styles.pageMapHubIn : ""}`}
-            style={{ backgroundColor: "#010002" }}
+            style={{ backgroundColor: "var(--ak-bg)" }}
           >
-            <video
-              src="/video/hero.mp4"
-              className={styles.pageMapHubIcon}
-              autoPlay
-              loop
-              muted
-              playsInline
-            />
+            <OakMark variant="hub" className={styles.pageMapHubIcon} />
           </div>
 
           {/* ── Connector: hub → bottom nodes ── */}
@@ -661,7 +656,7 @@ function ProblemTable() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>01: The Problem</p>
-          <h2 className={styles.sectionTitle}>The Problem Agent Kernel Solves</h2>
+          <h2 className={styles.sectionTitle}>The Problem OAK Solves</h2>
           <p className={styles.sectionSubtitle}>
             Building production AI agents today involves solving many hard
             problems that have nothing to do with the actual agent intelligence.
@@ -720,7 +715,7 @@ function ProblemTable() {
                       {activeRow.problem}
                     </h3>
                     <p className={styles.problemComparePanelMeta}>
-                      Without vs. with Agent Kernel
+                      Without vs. with OAK
                     </p>
                   </div>
                 </div>
@@ -729,7 +724,7 @@ function ProblemTable() {
                     className={`${styles.problemCompareSide} ${styles.problemCompareSideNeg}`}
                   >
                     <p className={styles.problemCompareSideLabel}>
-                      Without Agent Kernel
+                      Without OAK
                     </p>
                     <p className={styles.problemCompareSideSub}>
                       What you take on today
@@ -752,7 +747,7 @@ function ProblemTable() {
                     className={`${styles.problemCompareSide} ${styles.problemCompareSidePos}`}
                   >
                     <p className={styles.problemCompareSideLabel}>
-                      With Agent Kernel
+                      With OAK
                     </p>
                     <p className={styles.problemCompareSideSub}>
                       What the platform covers
@@ -1151,8 +1146,8 @@ function SandboxSection() {
           <p className={styles.sectionLabel}>03: Sandboxed Execution</p>
           <h2 className={styles.sectionTitle}>Sandboxed Code Execution</h2>
           <p className={styles.sectionSubtitle}>
-            Agents write code; Agent Kernel gives it a safe place to run.
-            Every execution flows through the Agent Kernel Execution Broker to
+            Agents write code; OAK gives it a safe place to run.
+            Every execution flows through the OAK Execution Broker to
             a pluggable, policy-governed provider: in-process for CLI and REST
             deployments, or over a queue to a sandbox worker fleet that keeps
             running after the agent turn ends. All chosen in configuration.
@@ -1311,10 +1306,10 @@ function FrameworkSupport() {
     description:
       "Run agents from multiple frameworks simultaneously in a single runtime — no glue code required.",
     link: "/docs/frameworks/multi-framework",
-    badge: "Agent Kernel",
+    badge: "OAK",
     logo: (
       <img
-        src="/img/branding/agent-kernel-icon-color.svg"
+        src="/img/branding/oak-mark-orange.svg"
         alt=""
         className={styles.frameworkLogoImg}
         width={100}
@@ -1771,7 +1766,7 @@ const MESSAGING_PLATFORMS = [
   {
     name: "LiveKit",
     icon: <img src="/img/integrations/livekit-mark.svg" alt="" width={28} height={28} />,
-    color: "#00DDFF",
+    color: BRAND.ice,
     // Drop /next after the LiveKit integration is released.
     link: "/docs/next/integrations/livekit",
   },
@@ -1844,7 +1839,7 @@ function MessagingSection() {
           <h2 className={styles.sectionTitle}>Messaging & Voice Integrations</h2>
           <p className={styles.sectionSubtitle}>
             Your agents meet users on the channels they already use. Every
-            integration routes through the same Agent Kernel runtime. Pick a
+            integration routes through the same OAK runtime. Pick a
             channel below for setup steps.
           </p>
         </div>
@@ -1920,7 +1915,7 @@ function ProtocolSupport() {
       icon: <MdExtension />,
       title: "MCP - Model Context Protocol",
       description:
-        "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP tools.",
+        "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. OAK natively supports running an MCP server, including exposing your agents as MCP tools.",
       link: "/docs/api/mcp-server",
       linkLabel: "MCP Server Docs",
     },
@@ -1929,7 +1924,7 @@ function ProtocolSupport() {
       icon: <MdHub />,
       title: "A2A - Agent-to-Agent",
       description:
-        "Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.",
+        "Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. OAK natively supports exposing any agent over the A2A protocol by switching configuration.",
       link: "/docs/api/a2a-server",
       linkLabel: "A2A Server Docs",
     },
@@ -1938,7 +1933,7 @@ function ProtocolSupport() {
       icon: <MdDashboardCustomize />,
       title: "A2UI - Generative UI",
       description:
-        "A2UI is a format for an agent to answer with an interface rather than prose: a JSON document naming components your frontend already implements, which it renders and sends interactions back from. Agent Kernel carries it end to end from two config keys — the reply arrives as an object with its format named, over REST, MCP and AG-UI alike — while the component catalog stays with your application, where it belongs.",
+        "A2UI is a format for an agent to answer with an interface rather than prose: a JSON document naming components your frontend already implements, which it renders and sends interactions back from. OAK carries it end to end from two config keys — the reply arrives as an object with its format named, over REST, MCP and AG-UI alike — while the component catalog stays with your application, where it belongs.",
       link: "/docs/next/advanced/a2ui",
       linkLabel: "A2UI Docs",
     },
@@ -2047,7 +2042,7 @@ function CTASection({
           <p className={indexStyles.ctaSubtitle}>
             Free, open-source, Apache 2.0. No licensing costs, no vendor
             lock-in. Join hundreds of developers building production AI agents
-            with Agent Kernel.
+            with OAK.
           </p>
           <div className={indexStyles.ctaButtons}>
             <Link
@@ -2067,7 +2062,7 @@ function CTASection({
           </div>
 
           <div className={indexStyles.ctaImageWrapper}>
-            <img src="/img/cta-bg.png" alt="Agent Kernel" className={indexStyles.ctaImage} />
+            <OakMark variant="cta" className={indexStyles.ctaImage} />
           </div>
         </div>
       </div>
@@ -2110,7 +2105,7 @@ export default function Features() {
   return (
     <Layout
       title="Features"
-      description="Comprehensive overview of Agent Kernel features: a framework-neutral, multi-cloud AI agent runtime with built-in testing, observability, guardrails, knowledge bases, sandboxed code execution, and messaging integrations."
+      description="Comprehensive overview of OAK features: a framework-neutral, multi-cloud AI agent runtime with built-in testing, observability, guardrails, knowledge bases, sandboxed code execution, and messaging integrations."
     >
       {/* <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto' }}>
         <HeroAnimation

@@ -178,7 +178,7 @@ export default function ArchitectureOverview() {
         </div>
         <h2 className={styles.title}>One runtime between your channels and your agents</h2>
         <p className={styles.subtitle}>
-          Requests arrive from any channel or protocol. Agent Kernel runs your framework-native
+          Requests arrive from any channel or protocol. OAK runs your framework-native
           agents with sessions, guardrails, queues and sandboxes, on whichever cloud you choose.
         </p>
       </div>
@@ -230,12 +230,12 @@ export default function ArchitectureOverview() {
               <div className={styles.coreRing} aria-hidden="true" />
               <div ref={coreRef} className={styles.coreBox}>
                 <img
-                  src="/img/branding/agent-kernel-icon-color.svg"
+                  src="/img/branding/oak-mark-orange.svg"
                   alt=""
                   className={styles.coreLogo}
                 />
               </div>
-              <div className={styles.coreName}>Agent Kernel</div>
+              <div className={styles.coreName}>OAK</div>
               <div className={styles.coreSub}>Runtime</div>
               <div className={styles.pills}>
                 {CORE_PILLS.map((pill, index) => (

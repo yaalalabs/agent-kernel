@@ -188,7 +188,7 @@ export default function FrameworkSelector({
       )}
       {showDescription && (
         <p className={styles.frameworkBody}>
-          Choose a supported framework that fits your team, while Agent Kernel
+          Choose a supported framework that fits your team, while OAK
           gives you a consistent production-ready layer for deployment, APIs,
           sessions, and integrations.
         </p>

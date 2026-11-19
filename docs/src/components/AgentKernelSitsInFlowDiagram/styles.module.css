@@ -121,7 +121,7 @@
 /* ── Flow nodes ─────────────────────────────────────────────────────────────── */
 
 .flowNode {
-  --node-surface: rgba(18, 24, 46, 0.75);
+  --node-surface: rgba(var(--ak-prussian-rgb), 0.75);
   position: relative;
   z-index: 2;
   display: flex;
@@ -142,23 +142,23 @@
 }
 
 .flowNode:hover {
-  border-color: color-mix(in srgb, var(--node-color, #00d5be) 45%, transparent);
+  border-color: color-mix(in srgb, var(--node-color, var(--ak-primary-dark)) 45%, transparent);
   transform: translateY(-3px) scale(1.02);
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.15),
-    0 10px 30px color-mix(in srgb, var(--node-color, #00d5be) 20%, transparent);
+    0 10px 30px color-mix(in srgb, var(--node-color, var(--ak-primary-dark)) 20%, transparent);
 }
 
 .flowNodeLabel {
   font-size: 0.9rem;
   font-weight: 700;
   line-height: 1.3;
-  color: #dfe1f0;
+  color: var(--ak-text);
   padding: 0.85rem 1rem;
 }
 
 .node_logic {
-  --node-surface: rgba(26, 31, 48, 0.8);
+  --node-surface: rgba(var(--ak-prussian-rgb), 0.8);
   min-width: 12.5rem;
   border-width: 1.5px;
   border-style: solid;
@@ -170,10 +170,10 @@
 }
 
 .node_kernel {
-  --node-surface: rgba(18, 32, 46, 0.75);
+  --node-surface: rgba(var(--ak-prussian-rgb), 0.75);
   min-width: 8.25rem;
   border-style: dashed;
-  border-color: rgba(96, 165, 250, 0.55);
+  border-color: rgba(var(--ak-blue-rgb), 0.55);
 }
 
 .node_memory {

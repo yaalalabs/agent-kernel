@@ -1,12 +1,12 @@
-# Agent Kernel running OpenAI Agents SDK based agents in Azure Serverless (Functions)
+# Open Agent Kernel running OpenAI Agents SDK based agents in Azure Serverless (Functions)
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using Azure Functions with Flex Consumption plan.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using Azure Functions with Flex Consumption plan.
 
 ## Deployed Resources
 
 This demo deploys the following Azure resources:
 
-- **Azure Function App (Flex Consumption)** - Serverless compute platform running the Agent Kernel implementation
+- **Azure Function App (Flex Consumption)** - Serverless compute platform running the OAK implementation
 - **Azure Service Plan (FC1 SKU)** - Flex Consumption plan for cost-effective serverless execution
 - **Azure Storage Account** - Required for Function App deployment and runtime
 - **Azure API Management (APIM)** - API Gateway endpoint for the Function App
@@ -226,7 +226,7 @@ terraform destroy
 
 - **Flex Consumption Plan**: Automatically scales based on demand with pay-per-execution pricing
 - **Cold Start**: First requests after idle periods may experience slight delays.
-- **Redis Connection**: Connection pooling is handled automatically by the Agent Kernel
+- **Redis Connection**: Connection pooling is handled automatically by the OAK
 - **Memory Usage**: Monitor function memory consumption through Application Insights
 
 ## Security

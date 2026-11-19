@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-guardrail-provider
 description: >
-  Step-by-step guide for adding a new guardrail provider to Agent Kernel.
+  Step-by-step guide for adding a new guardrail provider to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new content safety or guardrail
   service (beyond OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI). Covers implementing
   input/output guardrails, factory registration, configuration, and testing.
@@ -13,7 +13,7 @@ metadata:
 
 # Adding a New Guardrail Provider
 
-This guide walks through adding a new guardrail provider to Agent Kernel. Use the existing OpenAI (`ak-py/src/agentkernel/guardrail/openai.py`), Bedrock (`ak-py/src/agentkernel/guardrail/bedrock.py`), and Walled AI (`ak-py/src/agentkernel/guardrail/walledai.py`) implementations as reference.
+This guide walks through adding a new guardrail provider to Open Agent Kernel (OAK). Use the existing OpenAI (`ak-py/src/agentkernel/guardrail/openai.py`), Bedrock (`ak-py/src/agentkernel/guardrail/bedrock.py`), and Walled AI (`ak-py/src/agentkernel/guardrail/walledai.py`) implementations as reference.
 
 ## Existing Providers
 
@@ -25,7 +25,7 @@ This guide walks through adding a new guardrail provider to Agent Kernel. Use th
 
 ## Architecture Overview
 
-Agent Kernel's guardrail system uses the hook mechanism:
+OAK's guardrail system uses the hook mechanism:
 
 - **Input guardrails** subclass the no-op `InputGuardrail` class in `guardrail/guardrail.py` (itself a `PreHook`) — they inspect incoming requests and can halt execution by returning an `AgentReply` instead of passing through
 - **Output guardrails** subclass the no-op `OutputGuardrail` class (itself a `PostHook`) — they inspect agent replies and can modify or replace the response

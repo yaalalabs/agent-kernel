@@ -37,13 +37,13 @@ const tracks: Track[] = [
   },
   {
     id: 'with-ak',
-    title: 'Agent Kernel',
+    title: 'Open Agent Kernel',
     timeLabel: 'Days',
     doneLabel: 'Shipped',
     doneIcon: <FaRocket />,
     steps: [
       { label: 'Write Your Logic', sub: 'Focus on what your agent does - not how it runs' },
-      { label: 'Deploy', sub: 'Agent Kernel handles the rest' },
+      { label: 'Deploy', sub: 'OAK handles the rest' },
     ],
   },
 ];
@@ -98,7 +98,7 @@ export default function UseCaseJourneyMap() {
           </div>
           <h2 className={styles.title}>
             Traditional vs.{' '}
-            <span className={styles.gradientText}>Agent Kernel</span>
+            <span className={styles.gradientText}>OAK</span>
           </h2>
         </div>
 

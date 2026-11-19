@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-framework-integration
 description: >
-  Step-by-step guide for adding a new agent framework adapter to Agent Kernel.
+  Step-by-step guide for adding a new agent framework adapter to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new agent framework (beyond OpenAI,
     CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK). Covers creating the adapter module, implementing
   Agent/Runner/Module subclasses, adding optional dependencies, exports, and tests.
@@ -13,7 +13,7 @@ metadata:
 
 # Adding a New Framework Integration
 
-This guide walks through adding support for a new agent framework to Agent Kernel. Use the existing OpenAI adapter (`ak-py/src/agentkernel/framework/openai/`) as the canonical reference implementation.
+This guide walks through adding support for a new agent framework to Open Agent Kernel (OAK). Use the existing OpenAI adapter (`ak-py/src/agentkernel/framework/openai/`) as the canonical reference implementation.
 
 ## Prerequisites
 
@@ -53,7 +53,7 @@ class <Name>Session:
         self._history.clear()
 ```
 
-The session data is stored in the Agent Kernel `Session` via `session.set("<name>", <Name>Session())` and retrieved via `session.get("<name>")`. This key **must** be the same string passed as your Runner's `name` (see Step 3) — hook authors reach it via `Session.get_framework_session()`, which resolves `Agent.current().runner.name` under the hood.
+The session data is stored in the OAK `Session` via `session.set("<name>", <Name>Session())` and retrieved via `session.get("<name>")`. This key **must** be the same string passed as your Runner's `name` (see Step 3) — hook authors reach it via `Session.get_framework_session()`, which resolves `Agent.current().runner.name` under the hood.
 
 ### 3. Implement the Runner
 
@@ -121,7 +121,7 @@ class <Name>Runner(Runner):
 - Return an `AgentReply` (`AgentReplyText` or `AgentReplyImage`)
 - Resolve the run options once per `run()` and once per `stream()` with `options = await agent.resolve_run_options(session, requests)` (#758), after the request-shape early returns and before the framework-context load, then build the native call's keyword arguments with `self._native_kwargs(options, <ak_owned>=...)` (#754), never a fixed keyword set: the resolved per-agent run options (the static declaration with a per-run factory's result merged over it) are copied first and the keys your adapter populates (the session, the framework context, the input) are written last. Pass the same mapping to any helper of yours that reads options; never read `agent.run_options` at a call site. If the framework's options object and yours are one object (LangGraph's `config`) or must be adjusted per mode (ADK's `RunConfig` in stream mode), merge or copy it before passing it as an AK-owned key, and do the same in `stream()`
 
-### 3b. Implement `stream()` with AK Stream Events
+### 3b. Implement `stream()` with OAK Stream Events
 
 `Runner` declares `stream()` as `@abstractmethod`, returning `AsyncGenerator[StreamEvent, None]` —
 **every** adapter must implement it, even if the framework doesn't support token streaming, and it
@@ -131,7 +131,7 @@ must yield `StreamEvent` members (`core/event.py`: `MessageStart`/`TextDelta`/`M
 rejected by `StreamChunk.event` with a `pydantic.ValidationError`; there is no string-normalisation
 fallback in `Runtime.stream()`.
 
-**If the framework's SDK exposes a token-delta stream**, map its native events onto AK events —
+**If the framework's SDK exposes a token-delta stream**, map its native events onto OAK events —
 bracket assistant text with `MessageStart`/`MessageEnd` (deferred until text actually arrives, so a
 tool-only turn doesn't emit an empty message), and map tool-call/tool-result events onto
 `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult` correlated by the framework's own call

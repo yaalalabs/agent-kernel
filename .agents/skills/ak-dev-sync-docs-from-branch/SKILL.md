@@ -1,7 +1,7 @@
 ---
 name: ak-dev-sync-docs-from-branch
 description: >
-  Sync Agent Kernel documentation from branch changes before a feature or bugfix is merged.
+  Sync Open Agent Kernel documentation from branch changes before a feature or bugfix is merged.
   Use this skill when implementation is ready and you need to inspect new commits plus
   uncommitted changes, then update root docs, ak-py docs, deployment READMEs, example
   READMEs, and the docs website so the documentation matches the implemented behavior.
@@ -13,7 +13,7 @@ metadata:
 
 # Sync Documentation From Branch Changes
 
-Use this skill when a feature branch or bugfix branch is functionally ready and you need to align Agent Kernel documentation with what actually changed.
+Use this skill when a feature branch or bugfix branch is functionally ready and you need to align Open Agent Kernel documentation with what actually changed.
 
 This skill is for **documentation maintenance driven by code diff**, not for implementing the feature itself.
 
@@ -221,6 +221,7 @@ When writing or updating docs:
 - align docs examples with live code in `examples/` and `ak-deployment/`
 - if an example changed, update both the example README and any docs-site references to it
 - if setup steps changed, update both quick-start/getting-started material and deeper reference pages where relevant
+- write the product name by the rules in the *Naming and brand* section of `AGENTS.md`: "Open Agent Kernel" in titles and on first mention, "OAK" after that, identifiers and quoted product output unchanged
 
 ## Step 7: Required Files to Consider
 

@@ -1,8 +1,8 @@
 /* ── Brand tokens ── */
 :local {
-  --brand-bg:   #010002;
-  --brand-cyan: #00DDFF;
-  --brand-blue: #00AADE;
+  --brand-bg:   var(--ak-bg);
+  --brand-cyan: var(--ak-blue);
+  --brand-blue: var(--ak-blue);
 }
 
 /* ── Container ── */
@@ -26,7 +26,7 @@
   border-radius: 50%;
   overflow: hidden;
 
-  background: rgba(13, 0, 26, 0.88);
+  background: rgba(var(--ak-bg-rgb), 0.88);
   border: 2px solid rgba(255, 255, 255, 0.35);
   color: var(--brand-bg);
 
@@ -49,7 +49,7 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(0, 221, 255, 0.45) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--ak-blue-rgb), 0.45) 0%, transparent 70%);
   opacity: 0;
   scale: 0;
   pointer-events: none;

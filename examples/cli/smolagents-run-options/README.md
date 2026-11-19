@@ -1,18 +1,18 @@
-# Agent Kernel: per-agent native run options (smolagents)
+# Open Agent Kernel: per-agent native run options (smolagents)
 
 This demo shows how to pass smolagents' own **`agent.run` argument** `max_steps` to an agent through
-Agent Kernel, declared once, at load time, with `Module.run_options`:
+Open Agent Kernel (OAK), declared once, at load time, with `Module.run_options`:
 
 ```python
 SmolagentsModule([weather_agent]).run_options(weather_agent, max_steps=6)
 ```
 
-It also shows a progress hook, but that one needs nothing from Agent Kernel: smolagents takes
+It also shows a progress hook, but that one needs nothing from OAK: smolagents takes
 `step_callbacks` on the agent constructor, which you already own.
 
 ## How it works
 
-1. **Declaration.** The keywords are `agent.run`'s own arguments (`max_steps`, `images`). Agent Kernel
+1. **Declaration.** The keywords are `agent.run`'s own arguments (`max_steps`, `images`). OAK
    merges them into the call and writes the keys it owns (`reset`, `additional_args`) last.
 2. **Reserved keys.** `task`, `reset`, `additional_args`, `stream` and `return_full_result` raise
    `ValueError` at declaration: the first three are populated by the adapter, the last two change the
@@ -34,7 +34,7 @@ Run stats: steps=2, max_steps=6
 
 ## Progress paths
 
-smolagents has no token stream in Agent Kernel (`supports_streaming` is `False`), so the native
+smolagents has no token stream in OAK (`supports_streaming` is `False`), so the native
 `step_callbacks` on the agent constructor is the progress path for this framework.
 
 ## Running

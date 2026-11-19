@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Guidance for AI coding agents (Claude Code, Cursor, Copilot, Codex, Windsurf, etc.) working
-**on** the Agent Kernel codebase itself. If you're building an agent *with* Agent Kernel, see
+**on** the Open Agent Kernel codebase itself. If you're building an agent *with* OAK, see
 the [README](README.md) and [kernel.yaala.ai/docs](https://kernel.yaala.ai/docs) instead — this
 file is for contributors to this repo.
 
@@ -11,10 +11,10 @@ This repo ships two unrelated sets of "skills," named similarly but serving oppo
 
 | Skill set | Location | Audience | Purpose |
 | --- | --- | --- | --- |
-| **Dev skills** | [.agents/skills/ak-dev-*](.agents/skills/) | You, working on this repo | Architecture, testing conventions, code quality, and step-by-step guides for adding a new framework adapter / guardrail / knowledge base / messaging integration / tracing provider / multimodal storage / sandbox provider / queue transport to Agent Kernel core |
-| **Bundled skills** | [ak-py/src/agentkernel/skills/](ak-py/src/agentkernel/skills/) (`ak-init`, `ak-build`, `ak-add-capabilities`, `ak-add-integration`, `ak-cloud-deploy`, `ak-test`) | End users of the `agentkernel` PyPI package | Shipped *inside* the package so a downstream developer's coding assistant can scaffold and extend agents built *with* Agent Kernel |
+| **Dev skills** | [.agents/skills/ak-dev-*](.agents/skills/) | You, working on this repo | Architecture, testing conventions, code quality, and step-by-step guides for adding a new framework adapter / guardrail / knowledge base / messaging integration / tracing provider / multimodal storage / sandbox provider / queue transport to OAK core |
+| **Bundled skills** | [ak-py/src/agentkernel/skills/](ak-py/src/agentkernel/skills/) (`ak-init`, `ak-build`, `ak-add-capabilities`, `ak-add-integration`, `ak-cloud-deploy`, `ak-test`) | End users of the `agentkernel` PyPI package | Shipped *inside* the package so a downstream developer's coding assistant can scaffold and extend agents built *with* OAK |
 
-If a task is about changing Agent Kernel's own source, use the dev skills under `.agents/skills/`.
+If a task is about changing OAK's own source, use the dev skills under `.agents/skills/`.
 Never edit the bundled skills to document a dev-only workflow, and never edit the dev skills to
 change end-user-facing scaffolding behavior — read the description in each `SKILL.md` before
 editing either.
@@ -70,7 +70,7 @@ When adding or touching an adapter:
 - **No feature-forcing.** Don't require a capability the underlying framework/service doesn't
   natively support (e.g. don't invent a fake token stream when the SDK has no streaming API —
   raise `NotImplementedError` until a real mapping exists). CrewAI and smolagents *do* stream in
-  their SDKs; their AK adapters still raise because that wiring is not implemented yet — same
+  their SDKs; their OAK adapters still raise because that wiring is not implemented yet — same
   `NotImplementedError` shape, different reason.
 - **No hidden defaults that change behavior.** Config-driven, explicit choices (`AKConfig`) beat
   adapter-internal heuristics. If an adapter needs a default, make it the same default the native
@@ -146,6 +146,24 @@ code, and can burn a large chunk of context doing it. Scope searches to `ak-py/s
 or a specific `examples/<dir>` subpath rather than `examples/` wholesale, or explicitly exclude
 `.venv` (most search tools respect `.gitignore` by default — confirm yours does before trusting a
 repo-wide search).
+
+## Naming and brand
+
+The project is **Open Agent Kernel**, shortened to **OAK**. It was previously called Agent Kernel.
+When you write or update documentation, READMEs, skills or website copy:
+
+- **Full name first, then OAK.** Use "Open Agent Kernel" in titles, H1s and metadata, and on the
+  first mention on a page (as "Open Agent Kernel (OAK)" where the sentence allows). Use "OAK" after
+  that, in sub-headings and in diagram labels.
+- **Identifiers are not renamed.** The package is still `agentkernel`, the CLI is `ak`, classes keep
+  their `AK` prefix (`AKConfig`) and environment variables keep `AK_`. Repository paths, the
+  `yaalalabs/agent-kernel` URL and `kernel.yaala.ai` are unchanged.
+- **Quote product output exactly.** Strings the code emits still carry the old name, for example the
+  OpenAPI title `Agent Kernel REST API`, trace span names such as `Agent Kernel OpenAI` and the
+  `AgentKernel` service name. Code blocks and quoted output keep them as emitted.
+- **Brand assets.** Logos, the colour palette and usage rules live in
+  [branding/README.md](branding/README.md). The website theme tokens are in
+  `docs/src/css/custom.css`: use the tokens there, not new hex values.
 
 ## Conventions
 

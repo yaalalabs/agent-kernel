@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Walled AI Guardrails
 
-Walled AI guardrails provide safety validation and PII redaction for Agent Kernel interactions. This integration validates user inputs, masks sensitive values before agent execution, and restores placeholders in output responses.
+Walled AI guardrails provide safety validation and PII redaction for Open Agent Kernel interactions. This integration validates user inputs, masks sensitive values before agent execution, and restores placeholders in output responses.
 
 ## What Walled AI Guardrails Provide
 
@@ -15,7 +15,7 @@ Walled AI guardrails provide safety validation and PII redaction for Agent Kerne
 
 ## Prerequisites
 
-Install Agent Kernel with Walled AI extras:
+Install OAK with Walled AI extras:
 
 ```bash
 uv add "agentkernel[walledai]"
@@ -72,7 +72,7 @@ export AK_GUARDRAIL__OUTPUT__PII=true
 5. Store placeholder mapping in session cache
 6. Forward masked text requests to the agent
 
-If safety validation fails, Agent Kernel returns a safe refusal response.
+If safety validation fails, OAK returns a safe refusal response.
 
 ### Output Guardrails
 
@@ -111,7 +111,7 @@ For local inference steps and the latest runnable example code, follow the model
 
 Typical local dependencies include `torch` and `transformers`.
 
-This local flow is optional and separate from the default Agent Kernel Walled AI API integration.
+This local flow is optional and separate from the default OAK Walled AI API integration.
 
 ## Example
 

@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-sandbox-provider
 description: >
-  Step-by-step guide for adding a new sandbox provider to Agent Kernel.
+  Step-by-step guide for adding a new sandbox provider to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new code-execution backend for the sandbox
   capability (beyond local_subprocess, docker, kubernetes, e2b, daytona, and ec2_ssm). Covers implementing
   the Sandbox / SandboxProvider ABCs, declaring capabilities honestly, factory registration,
@@ -14,7 +14,7 @@ metadata:
 
 # Adding a New Sandbox Provider
 
-This guide walks through adding a new sandbox provider to Agent Kernel. Use the shipped
+This guide walks through adding a new sandbox provider to Open Agent Kernel (OAK). Use the shipped
 `local_subprocess` (`ak-py/src/agentkernel/sandbox/providers/local_subprocess.py`) and
 `docker` (`ak-py/src/agentkernel/sandbox/providers/docker.py`) implementations as reference.
 

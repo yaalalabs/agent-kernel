@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-queue-transport
 description: >
-  Step-by-step guide for adding a new queue transport to Agent Kernel's execution pipeline.
+  Step-by-step guide for adding a new queue transport to Open Agent Kernel's execution pipeline.
   Use this skill when you need to integrate a new message broker (beyond in_memory, SQS,
   Kafka, NATS JetStream, Google Cloud Pub/Sub, and Azure Service Bus) behind the QueueTransport/TransportConsumer interface. Covers the
   queue-semantics contract every transport must reproduce, factory registration, configuration
@@ -90,7 +90,7 @@ Rules learned from the shipped transports:
   `NatsTransport.reset`).
 - Provisioning posture: dev may auto-provision broker objects behind an `auto_provision`
   flag, but production fails fast with an `AKConfigError` naming the missing object and the
-  declarative alternative (NACK CRs, Strimzi topics). Agent Kernel never silently creates
+  declarative alternative (NACK CRs, Strimzi topics). Open Agent Kernel (OAK) never silently creates
   production infrastructure.
 
 ## Step 2: Configuration
@@ -156,7 +156,7 @@ Timing traps that only live brokers catch (both found on real servers, invisible
 Add `examples/transport/<name>/`: a two-process app (`IOHandler.run()` / `AgentRunner.run()`
 behind one `app.py`), a `config.yaml` with commented tuning values, a docker compose stack
 with a healthcheck (the CI job relies on `up -d --wait <service>`), a `<name>_tester.py`
-harness (bring the stack up, provision what Agent Kernel deliberately does not, inspect
+harness (bring the stack up, provision what OAK deliberately does not, inspect
 queues), and an `app_test.py` covering rest_sync, a multi-turn session, and the
 retry-to-permanent-failure path. Register it in `.github/test-config.yaml` under the
 containerized e2e tests.

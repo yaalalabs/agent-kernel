@@ -1,3 +1,4 @@
+import { BRAND } from '@site/src/lib/brand';
 import React, { useCallback, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
@@ -17,7 +18,7 @@ type FlowNode = {
 
 const AK_ICON = (
   <img
-    src="/img/branding/agent-kernel-icon-color.svg"
+    src="/img/branding/oak-mark-orange.svg"
     alt=""
     aria-hidden="true"
     className={styles.akNodeIcon}
@@ -71,7 +72,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
       data-flow-node={node.id}
       data-kind={node.kind}
       className={`${styles.flowNode} ${kindClass} ${node.showIcon ? styles.flowNodeWithIcon : ''}`}
-      style={{ '--node-color': node.color ?? '#00d5be' } as React.CSSProperties}
+      style={{ '--node-color': node.color ?? BRAND.ice } as React.CSSProperties}
     >
       {node.showIcon && (
         <span className={styles.akNodeIconWrap} aria-hidden="true">
@@ -233,7 +234,7 @@ export default function AgentKernelSitsInFlowDiagram() {
   return (
     <figure
       className={styles.figure}
-      aria-label="How Agent Kernel sits in: kernel-provided components surround user-defined actual agent logic"
+      aria-label="How Open Agent Kernel sits in: kernel-provided components surround user-defined actual agent logic"
     >
       <div ref={containerRef} className={styles.flowScene}>
         <svg ref={svgRef} className={styles.flowSvg} aria-hidden="true" />

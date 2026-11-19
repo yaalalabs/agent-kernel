@@ -1,12 +1,12 @@
-# Agent Kernel running CrewAI based agents in AWS Serverless (Lambda)
+# Open Agent Kernel running CrewAI based agents in AWS Serverless (Lambda)
 
-This package contains a demo of Agent Kernel running agents built with CrewAI, running them in a serverless configuration using AWS Lambda.
+This package contains a demo of Open Agent Kernel running agents built with CrewAI, running them in a serverless configuration using AWS Lambda.
 
 ## Deployed Resources
 
 This demo deploys the following AWS resources:
 
-- AWS Lambda function running the Agent Kernel implementation.
+- AWS Lambda function running the OAK implementation.
 - API Gateway endpoint for the Lambda function.
 - Redis Cluster: Session storage (shared with openai example)
 - VPC: Private networking for Lambda functions (shared with openai example)

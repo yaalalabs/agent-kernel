@@ -1,4 +1,4 @@
-# Agent Kernel — per-run framework context/state (OpenAI Agents SDK)
+# Open Agent Kernel — per-run framework context/state (OpenAI Agents SDK)
 
 This demo shows how to carry a **framework-agnostic context/state object across turns** using Agent
 Kernel's reserved `framework_context` session key, with an agent built on the OpenAI Agents SDK.
@@ -8,7 +8,7 @@ each is declared in a **different but equally supported style**:
 
 - `add_to_cart(ctx, item)` — appends an item to the cart; declared the **framework-recommended** way,
   decorated with the OpenAI Agents SDK's own `@function_tool` and passed straight into `tools=`
-- `view_cart(ctx)` — returns the cart's current contents; declared the **Agent Kernel** way, left as a
+- `view_cart(ctx)` — returns the cart's current contents; declared the **Open Agent Kernel (OAK)** way, left as a
   plain function and bound with `OpenAIToolBuilder.bind`
 
 The cart survives across turns even though each turn is a separate run — that persistence is the
@@ -30,7 +30,7 @@ feature.
    style: `OpenAIToolBuilder.bind` applies `function_tool` for you, so a bound tool sees the run
    context exactly as a hand-decorated one does.
 
-4. **Write-back.** After a **successful** run, Agent Kernel writes the (mutated) object back to the
+4. **Write-back.** After a **successful** run, OAK writes the (mutated) object back to the
    same session key. On a framework error or a client disconnect mid-stream, the previously stored
    context is left intact (write-back is atomic per turn).
 
@@ -74,7 +74,7 @@ tools=[add_to_cart] + OpenAIToolBuilder.bind([view_cart])
 | | Declared as | Notes |
 |---|---|---|
 | Framework-recommended | `@function_tool` on the function, then `tools=[add_to_cart]` | Use the SDK directly; full access to `function_tool`'s own options (custom name, description override, failure handler) |
-| Agent Kernel | plain function, then `tools=OpenAIToolBuilder.bind([view_cart])` | The builder calls `function_tool` for you; the same function body can be bound to another framework's builder unchanged |
+| OAK | plain function, then `tools=OpenAIToolBuilder.bind([view_cart])` | The builder calls `function_tool` for you; the same function body can be bound to another framework's builder unchanged |
 
 Neither style changes how the per-run context is reached — a `RunContextWrapper` first parameter is
 honoured in both. Reach for the builder when you want the tool to stay portable across frameworks,
@@ -92,7 +92,7 @@ cart = session.get_framework_context()        # read back
 
 A tool that is not written against a specific framework can also reach the stored value through
 `ToolContext.get().session`. Note, however, that on OpenAI a tool's *mutations* only round-trip when
-they are made on `RunContextWrapper.context` (the injected object) — that is the object Agent Kernel
+they are made on `RunContextWrapper.context` (the injected object) — that is the object OAK
 writes back.
 
 ## Constraints

@@ -94,7 +94,7 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
     <section
       ref={sectionRef}
       className={styles.archSection}
-      aria-label="Agent Kernel architecture overview"
+      aria-label="Open Agent Kernel architecture overview"
       style={accentStyle}
     >
       <div className="container">
@@ -167,26 +167,16 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
               <div className={styles.hubLogoGlow} />
               <svg
                 className={styles.hubLogo}
-                viewBox="0 0 581.263 600"
+                viewBox="-45 -45 176.86 176.85"
                 xmlns="http://www.w3.org/2000/svg"
                 role="img"
                 aria-hidden="true"
               >
-                <g>
-                  <g>
-                    <path fill="var(--ak-accent)" d="M238.569,294.85v34.937l1.906,0.938c21.313,10.656,34.532,32.093,34.532,55.905v13.375
-                        l-73.186-36.593c-31.75-15.875-51.812-48.343-51.812-83.843v-129.56l73.186,36.593c31.75,15.875,51.812,48.343,51.812,83.843
-                        v46.312c-6.125-5.469-13-10.187-20.562-13.968L238.569,294.85z" />
-                    <path fill="var(--ak-accent)" d="M431.254,150.008v129.56c0,35.5-20.062,67.968-51.812,83.843l-73.186,36.593v-50.749
-                        c0-23.812,13.218-45.249,34.53-55.905l1.907-0.937v-34.937l-15.875,7.937c-7.562,3.781-14.438,8.5-20.562,13.969v-8.937
-                        c0-35.5,20.062-67.968,51.812-83.843L431.254,150.008z" />
-                    <path fill="var(--ak-accent)" d="M306.26,400.027v44.421l-7.028,3.514c-5.422,2.711-11.805,2.707-17.223-0.011l-6.982-3.503v-44.421
-                        l6.969,3.496c5.426,2.722,11.818,2.722,17.244,0.001l6.971-3.496H306.26z" />
-                  </g>
-                </g>
+                  <path fill="var(--ak-accent)" d="M19.74,39.48v15.79l12.48,5.06c4.39,1.76,7.26,6.01,7.26,10.73v15.79l-27.78-11.11c-7.07-2.83-11.7-9.67-11.7-17.27V0l27.79,11.11c7.06,2.83,11.69,9.67,11.69,17.27v19.07L19.74,39.48Z" />
+                  <path fill="var(--ak-accent)" d="M86.86,0v58.47c0,7.6-4.64,14.44-11.7,17.27l-27.78,11.11v-23.69c0-4.72,2.87-8.97,7.26-10.73l12.48-5.06v-15.79l-19.74,7.97v-11.17c0-7.6,4.63-14.44,11.69-17.27L86.86,0Z" />
               </svg>
             </div>
-            <span className={styles.hubLabel}>Agent Kernel Runtime</span>
+            <span className={styles.hubLabel}>OAK Runtime</span>
           </div>
 
           {/* ── Layer 3: Capability modules grid (standalone, outside hub card) ── */}

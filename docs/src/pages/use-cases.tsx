@@ -1,3 +1,5 @@
+import OakMark from '@site/src/components/OakMark';
+import { BRAND } from '@site/src/lib/brand';
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
@@ -41,8 +43,8 @@ function Hero() {
   return (
     <HeroAnimation
       badge="Use Cases"
-      title="Who Is Agent Kernel Built For?"
-      subtitle="Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code."
+      title="Who Is Open Agent Kernel Built For?"
+      subtitle="Open Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code."
     />
   );
 }
@@ -72,7 +74,7 @@ const segments = [
       'Battle-tested runtime reduces project risk vs. building from scratch',
       'Built-in integrations (Slack, WhatsApp, etc.) enable rapid demos and delivery',
     ],
-    keyMessage: '"Ship AI agent solutions to your clients in weeks, not months. Agent Kernel handles the platform — you focus on the intelligence."',
+    keyMessage: '"Ship AI agent solutions to your clients in weeks, not months. Open Agent Kernel (OAK) handles the platform — you focus on the intelligence."',
     cta: '/docs',
     ctaLabel: 'Get Started →',
   },
@@ -146,14 +148,14 @@ const segments = [
       'No standard way to validate that agent behavior matches domain requirements',
     ],
     valueProps: [
-      'Dramatically reduces the "software engineering surface area" — define agent logic, Agent Kernel handles everything else',
+      'Dramatically reduces the "software engineering surface area" — define agent logic, OAK handles everything else',
       'Simple Python-based agent definition accessible to technical domain experts',
       'Pre-built deployment to AWS, Azure, and GCP — no DevOps expertise required',
       'Built-in messaging integrations mean products can reach end-users through familiar channels immediately',
       'Testing framework lets domain experts validate agent behavior with simple test scenarios',
       'Open-source means no vendor lock-in and no surprise pricing',
     ],
-    keyMessage: '"You bring the expertise. Agent Kernel brings the platform. Build production-grade AI products without a fulltime engineering team."',
+    keyMessage: '"You bring the expertise. OAK brings the platform. Build production-grade AI products without a fulltime engineering team."',
     cta: '/docs',
     ctaLabel: 'Get Started →',
   },
@@ -203,11 +205,11 @@ function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClo
           <div className={styles.diagramArrow}>→</div>
           <div className={`${styles.diagramStep} ${styles.diagramStepCenter}`}>
             <img
-              src="/img/branding/agent-kernel-icon-color.svg"
-              alt="Agent Kernel"
+              src="/img/branding/oak-mark-orange.svg"
+              alt="Open Agent Kernel"
               className={styles.diagramStepIcon}
             />
-            <div className={styles.diagramStepLabel}>Agent Kernel</div>
+            <div className={styles.diagramStepLabel}>OAK</div>
             <div className={styles.diagramStepDesc}>Runtime · Deploy · Integrate</div>
           </div>
           <div className={styles.diagramArrow}>→</div>
@@ -234,7 +236,7 @@ function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClo
             </ul>
           </div>
           <div className={styles.segmentColumn}>
-            <h4 className={styles.segmentColumnTitle}>Agent Kernel Value</h4>
+            <h4 className={styles.segmentColumnTitle}>OAK Value</h4>
             <ul className={styles.valueList}>
               {segment.valueProps.map((v, j) => (
                 <li key={j}>
@@ -268,49 +270,49 @@ function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClo
 const ORBIT_CARDS = [
   {
     icon: <MdSwapHoriz />,
-    color: '#00DDFF',
+    color: BRAND.ice,
     title: 'Framework-Neutral',
     desc: 'The only runtime that lets you bring in and swap between agents written with OpenAI Agents, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK with near-zero code change - and run all of them simultaneously in a single runtime.',
   },
   {
     icon: <MdCloud />,
-    color: '#00DDFF',
+    color: BRAND.ice,
     title: 'Multi-Cloud Native',
     desc: 'Same agent code deploys to AWS, Azure, GCP, or your own Kubernetes cluster out of the box. No other AI agent runtime offers this out of the box.',
   },
   {
     icon: <MdSpeed />,
-    color: '#00DDFF',
+    color: BRAND.ice,
     title: 'Full Lifecycle',
     desc: 'Build → Test → Deploy → Monitor. One tool that takes you from a Python script to a multi-AZ production cluster.',
   },
   {
     icon: <MdCode />,
-    color: '#00DDFF',
+    color: BRAND.ice,
     title: 'Lightweight',
     desc: 'A thin adapter layer, not a heavy abstraction. Bring your existing agent code and wrap it in minutes, not days.',
   },
   {
     icon: <MdSecurity />,
-    color: '#00DDFF',
+    color: BRAND.ice,
     title: 'Production-Ready',
     desc: 'Fault tolerance, guardrails, observability, and session management built in from day one - not bolted on later.',
   },
   {
     icon: <MdMessage />,
-    color: '#00DDFF',
+    color: BRAND.ice,
     title: 'Built-in Messaging',
     desc: 'Slack, WhatsApp, Instagram, Telegram, Messenger, and Gmail integrations, plus realtime voice through LiveKit for OpenAI Agents SDK and Google ADK agents.',
   },
   {
     icon: <FaLock />,
-    color: '#00DDFF',
+    color: BRAND.ice,
     title: 'Open-Source',
     desc: 'No usage fees, no proprietary lock-in. Community-driven with full codebase access - fork it, extend it, contribute back.',
   },
   {
     icon: <MdNetworkCheck />,
-    color: '#00DDFF',
+    color: BRAND.ice,
     title: 'Protocol Support',
     desc: 'MCP and A2A server modes for future-proof agent architectures and full ecosystem compatibility out of the box.',
   },
@@ -332,7 +334,7 @@ const REAL_WORLD_USE_CASES = [
   {
     title: 'Agentic AI Assisted Market Surveillance',
     description:
-      'A scalable surveillance system for monitor real-time order and trade feeds of a carbon credit market. Agent Kernel enables, AI agents to monitor orders and flag potential/suspicious trades which violate regulations.',
+      'A scalable surveillance system for monitor real-time order and trade feeds of a carbon credit market. OAK enables, AI agents to monitor orders and flag potential/suspicious trades which violate regulations.',
     link: '/blog/agent-kernel-live-at-climate-impact-x',
   },
   {
@@ -504,9 +506,9 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
             <span className={styles.badgeStar}>✦</span>
             Trust
           </div>
-          <h2 className={styles.sectionTitle}>Why Teams Choose Agent Kernel</h2>
+          <h2 className={styles.sectionTitle}>Why Teams Choose OAK</h2>
           <p className={styles.sectionSubtitle}>
-            What makes Agent Kernel different from rolling your own or using other platforms.
+            What makes OAK different from rolling your own or using other platforms.
           </p>
         </div>
 
@@ -526,16 +528,7 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
 
           {/* Central hub */}
           <div ref={hubRef} className={styles.orbitHub}>
-            <video
-              src="/video/hero.mp4"
-              aria-label="Agent Kernel"
-              className={styles.orbitHubIcon}
-              autoPlay
-              loop
-              muted
-              playsInline
-              preload="metadata"
-            />
+            <OakMark variant="hub" className={styles.orbitHubIcon} />
           </div>
         </div>
       </div>
@@ -560,7 +553,7 @@ function Community({ sectionRef }: CommunityProps) {
           <p className={indexStyles.ctaSubtitle}>
             Free, open-source, Apache 2.0. No licensing costs, no vendor
             lock-in. Join hundreds of developers building production AI agents
-            with Agent Kernel.
+            with OAK.
           </p>
           <div className={indexStyles.ctaButtons}>
             <Link
@@ -580,7 +573,7 @@ function Community({ sectionRef }: CommunityProps) {
           </div>
 
           <div className={indexStyles.ctaImageWrapper}>
-            <img src="/img/cta-bg.png" alt="Agent Kernel" className={indexStyles.ctaImage} />
+            <OakMark variant="cta" className={indexStyles.ctaImage} />
           </div>
         </div>
       </div>
@@ -605,7 +598,7 @@ export default function UseCases() {
   return (
     <Layout
       title="Use Cases"
-      description="Who is Agent Kernel built for? Explore use cases for software companies, AI startups, domain experts, and product teams building production AI agents.">
+      description="Who is OAK built for? Explore use cases for software companies, AI startups, domain experts, and product teams building production AI agents.">
 
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto', overflow: 'hidden' }}>
         <div className={styles.rightGlowGradientHero} />
@@ -615,7 +608,7 @@ export default function UseCases() {
       <div style={{ height: '100vh' }} />
 
       {/* Content that scroll over the hero section */}
-      <main style={{ position: 'relative', zIndex: 10, backgroundColor: '#010002' }}>
+      <main style={{ position: 'relative', zIndex: 10, backgroundColor: 'var(--ak-bg)' }}>
         <UseCaseJourneyMap />
         <RealWorldUseCases />
         <Differentiators backgroundRef={backgroundRef} />

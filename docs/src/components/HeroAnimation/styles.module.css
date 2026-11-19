@@ -55,20 +55,20 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 1rem;
-  border: 2px solid #2A272E;
+  border: 2px solid var(--ak-border);
   border-radius: 999px;
   font-size: 0.9rem;
   font-weight: 500;
-  color: rgba(147, 210, 255, 0.9);
+  color: rgba(var(--ak-sky-rgb), 0.9);
   letter-spacing: 0.01em;
   margin-bottom: 1.5rem;
-  background: #131017;
+  background: var(--ak-surface-raised);
   position: relative;
 }
 
 .badgeStar {
   font-size: 0.9rem;
-  color: rgba(147, 210, 255, 0.7);
+  color: rgba(var(--ak-sky-rgb), 0.7);
 }
 
 .heroTitle {
@@ -138,10 +138,10 @@
 .btnPrimary:hover {
   background: rgba(255, 255, 255, 0.06) !important;
   color: #ffffff !important;
-  border-color: var(--ak-blue, #00ddff) !important;
+  border-color: var(--ak-primary) !important;
   box-shadow:
-    0 0 16px rgba(0, 221, 255, 0.65),
-    0 0 8px rgba(0, 221, 255, 0.3) !important;
+    0 0 16px rgba(var(--ak-primary-rgb), 0.65),
+    0 0 8px rgba(var(--ak-primary-rgb), 0.3) !important;
   transform: translateY(-2px) !important;
   text-decoration: none !important;
 }

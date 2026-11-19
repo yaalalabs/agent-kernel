@@ -1,6 +1,6 @@
-# Agent Kernel queue mode over Kafka (OpenAI Agents SDK)
+# Open Agent Kernel queue mode over Kafka (OpenAI Agents SDK)
 
-This demo runs Agent Kernel's chat execution pipeline
+This demo runs Open Agent Kernel's chat execution pipeline
 
 ```
 Request Handler → agent-input → Agent Runner → agent-output → Response Handler
@@ -79,7 +79,7 @@ python kafka_tester.py down                # stop everything, remove volumes
 work from the running pipeline or move its offsets.
 
 Four topics are provisioned: `agent-input`, `agent-output`, and a dead-letter topic for each.
-Agent Kernel never creates topics (a production cluster manages them through Strimzi or your
+OAK never creates topics (a production cluster manages them through Strimzi or your
 platform team), and the compose file disables auto-creation so a wrong topic name fails here
 exactly as it would in production. The dead-letter topics matter for the same reason: a
 permanently failed record can only be preserved if its DLQ already exists.
@@ -107,8 +107,8 @@ header, then committed so it stops blocking its partition. It skips itself when 
   `python kafka_tester.py reset` after `up --partitions 1`. Adding partitions later re-maps session
   keys, so size up front (production defaults to 32).
 - **Retry bookkeeping needs a home.** Kafka has no delivery count or deduplication of its own, so
-  Agent Kernel keeps them in whatever the `session` block points at. This example uses Valkey, so
-  they survive a restart. With an in-memory session store it still works, but Agent Kernel warns
+  OAK keeps them in whatever the `session` block points at. This example uses Valkey, so
+  they survive a restart. With an in-memory session store it still works, but OAK warns
   that a message which *crashes* its worker could reset its own delivery count.
 - **No visibility timeout.** An unacknowledged record returns through the in-process retry, or when
   its uncommitted offset is reassigned after a crash or rebalance. Nothing redelivers a record

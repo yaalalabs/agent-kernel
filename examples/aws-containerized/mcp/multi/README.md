@@ -1,13 +1,13 @@
-# Agent Kernel with MCP enabled on ECS
+# Open Agent Kernel with MCP enabled on ECS
 
-This project demonstrates how to deploy an **Agent Kernel** running containerized agents on **AWS ECS** with **MCP (Model Context Protocol)** enabled.
+This project demonstrates how to deploy an **Open Agent Kernel (OAK)** running containerized agents on **AWS ECS** with **MCP (Model Context Protocol)** enabled.
 Agents are exposed as MCP tools and can be accessed via both the **REST API** and the **MCP Client API**.
 
 ---
 
 ## Features
 
-* Containerized Agent Kernel running on AWS ECS
+* Containerized OAK running on AWS ECS
 * MCP server enabled and exposed via `/mcp` endpoint
 * Supports Smolagents and OpenAI Agent SDK agents
 * Agents automatically registered as MCP tools
@@ -121,9 +121,9 @@ This endpoint supports MCP clients such as `fastmcp`.
 
 ---
 
-## Agent Kernel Overview
+## OAK Overview
 
-This package contains a demo of **Agent Kernel** running agents built with:
+This package contains a demo of **OAK** running agents built with:
 
 * Smolagents
 * OpenAI Agent SDK

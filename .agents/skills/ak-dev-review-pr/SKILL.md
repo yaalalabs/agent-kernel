@@ -1,7 +1,7 @@
 ---
 name: ak-dev-review-pr
 description: >
-  Review a GitHub pull request against Agent Kernel's architecture, design
+  Review a GitHub pull request against Open Agent Kernel's architecture, design
   principles, code quality standards, and testing conventions, then post the
   findings back to the PR as review comments. When the PR contains spec
   documents (design.md, spec.md, or plan.md under docs/specs/), they are
@@ -15,15 +15,15 @@ metadata:
   category: developer
 ---
 
-# Review a Pull Request Against Agent Kernel Practices
+# Review a Pull Request Against Open Agent Kernel Practices
 
-Use this skill when asked to review a specific pull request by number or URL. It fetches the PR with the GitHub CLI (`gh`), reviews the delta against Agent Kernel's documented practices, and pushes the verified findings to the PR as a single review with inline comments.
+Use this skill when asked to review a specific pull request by number or URL. It fetches the PR with the GitHub CLI (`gh`), reviews the delta against Open Agent Kernel's documented practices, and pushes the verified findings to the PR as a single review with inline comments.
 
 This skill is for **reviewing someone else's PR**, not for reviewing your own uncommitted working-tree changes.
 
 ## Goal
 
-Produce a thorough, low-noise review grounded in Agent Kernel's own standards — architecture, code quality, and testing skills — and publish it on the PR so the author can act on it, without duplicating feedback that is already on the PR.
+Produce a thorough, low-noise review grounded in OAK's own standards — architecture, code quality, and testing skills — and publish it on the PR so the author can act on it, without duplicating feedback that is already on the PR.
 
 ## Inputs
 
@@ -110,7 +110,7 @@ Then, across whichever documents the PR contains:
 1. **Verify the documents' factual claims against the base branch** — file:line citations, config defaults, "appears in N places" counts, and described behaviors. An unverified claim that turns out false is a finding; a spec whose claims all verify deserves saying so in the summary.
 2. **Review each document itself** and record findings on it like any other file:
    - Completeness at its stage's altitude (see above) — or only the happy path?
-   - Consistency with Agent Kernel: does the design it describes respect the principles in `ak-dev-architecture` (framework-agnostic core, adapter pattern, config via `AKConfig`, pluggable interfaces, coupling direction)?
+   - Consistency with OAK: does the design it describes respect the principles in `ak-dev-architecture` (framework-agnostic core, adapter pattern, config via `AKConfig`, pluggable interfaces, coupling direction)?
    - House patterns: is every external-system touchpoint pluggable (ABC + factory + dotted-path BYO, even with one backend)? Does the design name the existing `AKConfig` models it reuses and justify every new field, and does it let already-configured components enable the feature where that applies instead of adding `enabled`/`type` knobs? Are the components classes with one responsibility each? A design that departs from one of these without saying so is a finding; one that says so with a reason is a `[question]` at most.
    - Internal consistency: no contradictory requirements, undefined terms, or references to components that don't exist.
    - Cross-document consistency: `spec.md` covers every `design.md` requirement; `plan.md` covers every `spec.md` component. (Only check against documents that exist — on the base branch or in this PR.)
@@ -244,7 +244,7 @@ After posting, report back to the requester:
 3. A findings summary grouped by severity, each with `file:line` and a one-line description.
 4. Which findings were skipped as duplicates of existing PR feedback.
 5. A link to the posted review.
-6. If there were **no** findings: still post the summary-only review saying the change looks consistent with Agent Kernel conventions, and say so in the report.
+6. If there were **no** findings: still post the summary-only review saying the change looks consistent with OAK conventions, and say so in the report.
 
 ## Common Pitfalls
 

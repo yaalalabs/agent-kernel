@@ -27,7 +27,7 @@ export const FEATURE_TABS: FeatureTab[] = [
     key: "build",
     label: "Build",
     description:
-      "Write agents in the framework you already know. Agent Kernel wraps them with one API for tools, hooks, sessions and structured output, so the agent logic stays yours.",
+      "Write agents in the framework you already know. OAK wraps them with one API for tools, hooks, sessions and structured output, so the agent logic stays yours.",
     cards: [
       {
         title: "Framework Adapters",

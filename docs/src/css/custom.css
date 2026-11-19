@@ -1,135 +1,164 @@
 /* =============================================================================
-   Agent Kernel Design System — Dark Technical Premium
-   Brand Colors: Cyan (#00DDFF) + Magenta (#F200FF) on Deep Black (#0D001A)
+   Open Agent Kernel Design System: dark theme
+   Brand colours: Tiger Flame Orange (#FF5E32) as the accent on Prussian Blue
+   (#02284F), with Dusk Blue, Pale Sky and Baby Blue Ice as supporting blues.
+   Palette and usage rules: branding/README.md
    Fonts: Archivo (body) + JetBrains Mono (code)
    ============================================================================= */
 
 /* Google Fonts loaded asynchronously in docusaurus.config.js */
 
 :root {
-  /* Brand Palette */
-  --ak-bg: #010002;
-  --ak-surface: #010002;
-  --ak-surface-raised: #081226;
-  --ak-surface-overlay: #081226;
-  --ak-border: #081226;
-  --ak-border-accent: rgba(0, 221, 255, 0.35);
+  /* Brand palette (fixed, from the brand guide) */
+  --ak-orange: #FF5E32;
+  --ak-prussian: #02284F;
+  --ak-dusk: #3F598A;
+  --ak-sky: #ABCEE1;
+  --ak-ice: #B1CDFF;
 
-  /* Accent Colors - Vibrant Particle Theme */
-  --ak-blue: #00DDFF;
-  --ak-blue-light: #40E8FF;
-  --ak-blue-dark: #00AADE;
-  --ak-blue-glow: rgba(0, 221, 255, 0.2);
-  --ak-purple: #F200FF;
-  --ak-purple-light: #FF66FF;
-  --ak-purple-glow: rgba(242, 0, 255, 0.2);
-  --ak-gradient: linear-gradient(135deg, #00DDFF 0%, #F200FF 100%);
-  --ak-gradient-subtle: linear-gradient(135deg, rgba(0, 221, 255, 0.12) 0%, rgba(242, 0, 255, 0.12) 100%);
+  /* Surfaces (derived steps of Prussian Blue) */
+  --ak-bg: #011428;
+  --ak-bg-alt: #011C37;
+  --ak-surface: #011428;
+  --ak-surface-raised: #02284F;
+  --ak-surface-overlay: #0D315A;
+  --ak-border: #173964;
+  --ak-border-accent: rgba(255, 94, 50, 0.35);
+
+  /* Accent: calls to action, links, active states, highlights */
+  --ak-primary: #FF5E32;
+  --ak-primary-light: #FF8260;
+  --ak-primary-dark: #FF4613;
+  --ak-primary-glow: rgba(255, 94, 50, 0.2);
+  --ak-primary-soft: #F58A5E;
+  --ak-on-primary: #011428;
+
+  /* Ambient: borders, glows, diagram strokes, particles */
+  --ak-blue: #B1CDFF;
+  --ak-blue-light: #ABCEE1;
+  --ak-blue-dark: #3F598A;
+  --ak-blue-glow: rgba(177, 205, 255, 0.2);
+
+  /* Channel triplets, for rgba(var(--ak-*-rgb), alpha) */
+  --ak-primary-rgb: 255, 94, 50;
+  --ak-primary-soft-rgb: 245, 138, 94;
+  --ak-blue-rgb: 177, 205, 255;
+  --ak-sky-rgb: 171, 206, 225;
+  --ak-dusk-rgb: 63, 89, 138;
+  --ak-prussian-rgb: 2, 40, 79;
+  --ak-bg-rgb: 1, 20, 40;
+
+  /* Gradients (from the brand guide) */
+  --ak-gradient: linear-gradient(135deg, #FF5E32 0%, #F58A5E 100%);
+  --ak-gradient-subtle: linear-gradient(135deg, rgba(255, 94, 50, 0.12) 0%, rgba(177, 205, 255, 0.12) 100%);
+  --ak-gradient-blue: linear-gradient(225deg, #011C37 0%, #02284F 45%, #3F598A 100%);
+  --ak-gradient-ice: linear-gradient(135deg, #B1CDFF 0%, #3F598A 100%);
+  --ak-gradient-sky: radial-gradient(ellipse at 50% 0%, #ABCEE1 0%, #3F598A 75%);
 
   /* Text */
-  --ak-text: #E8E4F0;
-  --ak-text-secondary: #9A91B8;
-  --ak-text-muted: #6B5F85;
+  --ak-text: #EAF3F8;
+  --ak-text-secondary: #ABCEE1;
+  --ak-text-muted: #798BAD;
 
-  /* Semantic (aligned with secondary palette) */
+  /* Semantic */
   --ak-green: #26A64D;
   --ak-red: #DB4444;
   --ak-warning: #F7A544;
   --ak-aws: #FF9900;
   --ak-azure: #0078D4;
 
-  /* Docusaurus primary (brand cyan) */
-  --ifm-color-primary: #00DDFF;
-  --ifm-color-primary-dark: #00AADE;
-  --ifm-color-primary-darker: #0090C0;
-  --ifm-color-primary-darkest: #007AA3;
-  --ifm-color-primary-light: #40E8FF;
-  --ifm-color-primary-lighter: #80F0FF;
-  --ifm-color-primary-lightest: #C0F8FF;
+  /* Docusaurus primary (brand orange) */
+  --ifm-color-primary: #FF5E32;
+  --ifm-color-primary-dark: #FF4613;
+  --ifm-color-primary-darker: #FF3A04;
+  --ifm-color-primary-darkest: #D52E00;
+  --ifm-color-primary-light: #FF7651;
+  --ifm-color-primary-lighter: #FF8260;
+  --ifm-color-primary-lightest: #FFA68E;
 
   /* Docusaurus layout */
-  --ifm-background-color: #010002;
-  --ifm-background-surface-color: #071026;
-  --ifm-navbar-background-color: #010002;
-  --ifm-footer-background-color: #010002;
+  --ifm-background-color: #011428;
+  --ifm-background-surface-color: #02284F;
+  --ifm-navbar-background-color: #011428;
+  --ifm-footer-background-color: #011428;
 
   --ifm-code-font-size: 94%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 221, 255, 0.15);
+  --docusaurus-highlighted-code-line-bg: rgba(177, 205, 255, 0.15);
 
   /* Typography */
   --ifm-font-family-base: 'Archivo', sans-serif;
   --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   --ifm-heading-font-weight: 700;
-  --ifm-font-color-base: #E8E4F0;
-  --ifm-font-color-secondary: #9A91B8;
+  --ifm-font-color-base: #EAF3F8;
+  --ifm-font-color-secondary: #ABCEE1;
 
   /* Layout */
   --ifm-global-radius: 0.5rem;
-  --ifm-navbar-shadow: 0 1px 0 0 #081226;
-  --ifm-toc-border-color: #081226;
+  --ifm-navbar-shadow: 0 1px 0 0 #173964;
+  --ifm-toc-border-color: #173964;
 }
 
 html,
 html[data-theme='dark'] {
-  background-color: #010002 !important;
+  background-color: var(--ak-bg) !important;
 }
 
 html[data-theme='dark'] body,
 body {
-  background-color: #010002 !important;
+  background-color: var(--ak-bg) !important;
 }
 
-/* Dark mode (same palette — site is dark-first) */
+/* Dark mode (same palette: the site is dark only) */
 [data-theme='dark'] {
-  --ifm-color-primary: #00DDFF;
-  --ifm-color-primary-dark: #00AADE;
-  --ifm-color-primary-darker: #0090C0;
-  --ifm-color-primary-darkest: #007AA3;
-  --ifm-color-primary-light: #40E8FF;
-  --ifm-color-primary-lighter: #80F0FF;
-  --ifm-color-primary-lightest: #C0F8FF;
+  --ifm-color-primary: #FF5E32;
+  --ifm-color-primary-dark: #FF4613;
+  --ifm-color-primary-darker: #FF3A04;
+  --ifm-color-primary-darkest: #D52E00;
+  --ifm-color-primary-light: #FF7651;
+  --ifm-color-primary-lighter: #FF8260;
+  --ifm-color-primary-lightest: #FFA68E;
 
-  --ifm-background-color: #010002;
-  --ifm-background-surface-color: #071026;
-  --ifm-navbar-background-color: #010002;
-  --ifm-footer-background-color: #010002;
+  --ifm-background-color: #011428;
+  --ifm-background-surface-color: #02284F;
+  --ifm-navbar-background-color: #011428;
+  --ifm-footer-background-color: #011428;
 
-  --ifm-font-color-base: #dfe1f0;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 221, 255, 0.15);
+  --ifm-font-color-base: #EAF3F8;
+  --docusaurus-highlighted-code-line-bg: rgba(177, 205, 255, 0.15);
 }
 
 /* Dark theme doc/blog containers */
 [data-theme='dark'] .docMainContainer_TBSr {
-  background-color: #010002;
+  background-color: var(--ak-bg);
 }
 
 [data-theme='dark'] .docsWrapper_hBAB {
-  background-color: #010002;
+  background-color: var(--ak-bg);
 }
 
 [data-theme='dark'] .theme-doc-sidebar-container {
-  background-color: #010002;
+  background-color: var(--ak-bg);
 }
 
 [data-theme='dark'] .docItemContainer_Djhp {
-  background-color: #010002;
-  border-color: #081226;
+  background-color: var(--ak-bg);
+  border-color: var(--ak-border);
 }
 
-/* Light mode fallback — keep it clean */
+/* Light mode fallback (the colour mode switch is disabled) */
 [data-theme='light'] {
-  --ifm-color-primary: #0099BB;
-  --ifm-color-primary-dark: #0085A5;
-  --ifm-color-primary-darker: #007090;
-  --ifm-color-primary-darkest: #005F7A;
-  --ifm-color-primary-light: #00AADE;
-  --ifm-color-primary-lighter: #40C8E8;
-  --ifm-color-primary-lightest: #80E0F0;
+  --ifm-color-primary: #D52E00;
+  --ifm-color-primary-dark: #BF2900;
+  --ifm-color-primary-darker: #B52700;
+  --ifm-color-primary-darkest: #952000;
+  --ifm-color-primary-light: #EB3300;
+  --ifm-color-primary-lighter: #F53500;
+  --ifm-color-primary-lightest: #FF5E32;
 
   --ifm-background-color: #ffffff;
   --ifm-background-surface-color: #f8fafc;
   --ifm-navbar-background-color: #ffffff;
-  --ifm-footer-background-color: #010002;
+  --ifm-footer-background-color: #011428;
 }
 
 /* =============================================================================
@@ -208,7 +237,7 @@ article {
    ============================================================================= */
 
 .navbar {
-  background-color: #010002;
+  background-color: var(--ak-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   height: 60px;
@@ -220,7 +249,7 @@ article {
   .navbar {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background-color: #010002;
+    background-color: var(--ak-bg);
   }
 }
 
@@ -237,7 +266,13 @@ article {
 }
 
 .navbar__logo {
-  height: 3rem;
+  height: 2.75rem;
+}
+
+/* The docs sidebar repeats the navbar logo when the navbar hides on scroll.
+   The three-line Open Agent Kernel lockup needs the same height there to stay legible. */
+.theme-doc-sidebar-container [class*='sidebarLogo'] img {
+  height: 2.75rem;
 }
 
 /* Nav links */
@@ -259,7 +294,7 @@ article {
 .navbar__search-button,
 [class*="searchButton"] {
   background: #ffffff !important;
-  color: #0a0d15 !important;
+  color: var(--ak-bg-alt) !important;
   border-radius: 9999px !important;
   border: none !important;
   font-size: 0.82rem !important;
@@ -328,7 +363,7 @@ article {
    ============================================================================= */
 
 .footer {
-  background-color: #010002;
+  background-color: var(--ak-bg);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding: 3.5rem 0 0;
 }
@@ -431,7 +466,7 @@ article {
 }
 
 .footer__social-link:focus-visible {
-  outline: 2px solid var(--ak-blue, #00d4ff);
+  outline: 2px solid var(--ak-primary);
   outline-offset: 2px;
 }
 
@@ -705,8 +740,8 @@ article {
    ============================================================================= */
 
 .button--primary {
-  background: var(--ak-blue);
-  color: #05060b;
+  background: var(--ak-primary);
+  color: var(--ak-bg);
   font-weight: 600;
   border: none;
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
@@ -714,26 +749,26 @@ article {
 }
 
 .button--primary:hover {
-  background: var(--ak-blue-light);
-  color: #05060b;
+  background: var(--ak-primary-light);
+  color: var(--ak-bg);
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(0, 221, 255, 0.3);
-  box-shadow: 0 4px 20px rgba(0, 221, 255, 0.3);
+  box-shadow: 0 4px 20px rgba(var(--ak-primary-rgb), 0.3);
+  box-shadow: 0 4px 20px rgba(var(--ak-primary-rgb), 0.3);
 }
 
 .button--secondary {
   background: transparent;
   border: 1px solid var(--ak-border-accent);
-  color: var(--ak-blue);
+  color: var(--ak-primary);
   font-weight: 600;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
   letter-spacing: -0.01em;
 }
 
 .button--secondary:hover {
-  background: var(--ak-blue-glow);
-  border-color: var(--ak-blue);
-  color: var(--ak-blue);
+  background: var(--ak-primary-glow);
+  border-color: var(--ak-primary);
+  color: var(--ak-primary);
   transform: translateY(-1px);
 }
 
@@ -743,7 +778,7 @@ article {
 
 .prism-code {
   border-radius: 0.5rem;
-  background: #010002 !important;
+  background: var(--ak-bg) !important;
   border: 1px solid var(--ak-border);
 }
 
@@ -756,8 +791,8 @@ article {
 }
 
 code {
-  background: rgba(0, 221, 255, 0.1);
-  border: 1px solid rgba(0, 221, 255, 0.2);
+  background: rgba(var(--ak-blue-rgb), 0.1);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.2);
   border-radius: 0.25rem;
   color: var(--ak-blue-light);
   font-size: 0.875em;
@@ -766,9 +801,9 @@ code {
 }
 
 [data-theme='light'] code {
-  background: rgba(0, 153, 187, 0.07);
-  border-color: rgba(0, 153, 187, 0.15);
-  color: #0085A5;
+  background: rgba(var(--ak-primary-rgb), 0.07);
+  border-color: rgba(var(--ak-primary-rgb), 0.15);
+  color: var(--ak-primary-dark);
 }
 
 /* =============================================================================
@@ -794,7 +829,7 @@ code {
 
 .menu__link--active,
 .menu__link--active:hover {
-  color: var(--ak-blue) !important;
+  color: var(--ak-primary) !important;
   background: transparent !important;
   font-weight: 600;
   border-left: none !important;
@@ -822,7 +857,7 @@ code {
 
 .table-of-contents__link--active,
 .table-of-contents__link--active:hover {
-  color: var(--ak-blue) !important;
+  color: var(--ak-primary) !important;
   font-weight: 600;
 }
 
@@ -856,7 +891,7 @@ code {
 }
 
 .breadcrumbs__item--active .breadcrumbs__link {
-  color: var(--ak-blue) !important;
+  color: var(--ak-primary) !important;
   opacity: 1 !important;
 }
 
@@ -864,8 +899,8 @@ code {
 .theme-doc-version-badge {
   background: transparent !important;
   background-color: transparent !important;
-  color: var(--ak-blue) !important;
-  border: 1px solid rgba(0, 221, 255, 0.3) !important;
+  color: var(--ak-primary) !important;
+  border: 1px solid rgba(var(--ak-primary-rgb), 0.3) !important;
   font-weight: 600 !important;
 }
 
@@ -925,7 +960,7 @@ code {
 
   /* Style Left Sidebar Section as a separate floating card */
   .theme-doc-sidebar-container {
-    background-color: #020203 !important;
+    background-color: var(--ak-bg) !important;
     border: 1.5px solid rgba(255, 255, 255, 0.15) !important;
     border-radius: 1rem !important;
     padding-left: 0.45rem !important;
@@ -938,14 +973,14 @@ code {
   }
 
   .theme-doc-sidebar-container:hover {
-    border-color: rgba(0, 221, 255, 0.55) !important;
-    box-shadow: 0 8px 32px rgba(0, 221, 255, 0.08), 0 4px 30px rgba(0, 0, 0, 0.8) !important;
+    border-color: rgba(var(--ak-primary-rgb), 0.55) !important;
+    box-shadow: 0 8px 32px rgba(var(--ak-primary-rgb), 0.08), 0 4px 30px rgba(0, 0, 0, 0.8) !important;
   }
 
   /* Style Right Table of Contents Section as a separate card */
   .theme-doc-toc-desktop {
     border-left: none !important;
-    background-color: #020203 !important;
+    background-color: var(--ak-bg) !important;
     border: 1.5px solid rgba(255, 255, 255, 0.15) !important;
     border-radius: 1rem !important;
     padding: 1.5rem !important;
@@ -961,8 +996,8 @@ code {
   }
 
   .theme-doc-toc-desktop:hover {
-    border-color: rgba(0, 221, 255, 0.55) !important;
-    box-shadow: 0 8px 32px rgba(0, 221, 255, 0.08), 0 4px 30px rgba(0, 0, 0, 0.8) !important;
+    border-color: rgba(var(--ak-primary-rgb), 0.55) !important;
+    box-shadow: 0 8px 32px rgba(var(--ak-primary-rgb), 0.08), 0 4px 30px rgba(0, 0, 0, 0.8) !important;
   }
 
   .theme-doc-toc-desktop::-webkit-scrollbar {
@@ -981,7 +1016,7 @@ code {
   }
 
   .theme-doc-toc-desktop::-webkit-scrollbar-thumb:hover {
-    background: var(--ak-blue) !important;
+    background: var(--ak-primary) !important;
   }
 
   .theme-doc-toc-desktop::-webkit-scrollbar-button {
@@ -1018,14 +1053,14 @@ article {
 }
 
 .markdown a {
-  color: var(--ak-blue);
+  color: var(--ak-primary);
   text-decoration: none;
   border-bottom: 1px solid transparent;
   transition: border-color 0.15s ease;
 }
 
 .markdown a:hover {
-  border-bottom-color: var(--ak-blue);
+  border-bottom-color: var(--ak-primary);
 }
 
 /* Admonitions */
@@ -1036,8 +1071,8 @@ article {
 }
 
 .alert--info {
-  border-color: rgba(0, 221, 255, 0.35);
-  background: rgba(0, 221, 255, 0.08);
+  border-color: rgba(var(--ak-blue-rgb), 0.35);
+  background: rgba(var(--ak-blue-rgb), 0.08);
 }
 
 .alert--success {
@@ -1059,7 +1094,7 @@ article {
 
 .table-of-contents__link:hover,
 .table-of-contents__link--active {
-  color: var(--ak-blue);
+  color: var(--ak-primary);
 }
 
 /* Pagination - styled like Read More glass pill buttons */
@@ -1247,9 +1282,9 @@ article {
 }
 
 .navbar-version-dropdown:hover {
-  background: rgba(0, 221, 255, 0.08) !important;
-  border-color: rgba(0, 221, 255, 0.35) !important;
-  color: var(--ak-blue) !important;
+  background: rgba(var(--ak-primary-rgb), 0.08) !important;
+  border-color: rgba(var(--ak-primary-rgb), 0.35) !important;
+  color: var(--ak-primary) !important;
   text-decoration: none !important;
 }
 
@@ -1272,4 +1307,4 @@ article {
 /* Hide default Docusaurus back-to-top button in favor of our custom ScrollToTopButton */
 .theme-back-to-top-button {
   display: none !important;
-}
+}

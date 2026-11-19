@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-tracing-provider
 description: >
-  Step-by-step guide for adding a new observability/tracing provider to Agent Kernel.
+  Step-by-step guide for adding a new observability/tracing provider to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new tracing backend (beyond Langfuse,
   OpenLLMetry/Traceloop, Pydantic Logfire, and AWS CloudWatch). Covers implementing the BaseTrace interface, creating
   framework-specific traced runners, configuration, and testing.
@@ -13,11 +13,11 @@ metadata:
 
 # Adding a New Tracing Provider
 
-This guide walks through adding a new observability/tracing provider to Agent Kernel. Use the Langfuse implementation (`ak-py/src/agentkernel/trace/langfuse/`) as the canonical reference. For a backend reached through plain OpenTelemetry (no vendor SDK), see the CloudWatch provider (`ak-py/src/agentkernel/trace/cloudwatch/`): it installs its own SDK `TracerProvider` and OTLP exporter once (or reuses one already installed, since OpenTelemetry honours only the first), wraps each run through a `span(name, session)` context manager on the provider class that its runners receive, and adds a provider-specific helper module (`sigv4.py`) beside the runners.
+This guide walks through adding a new observability/tracing provider to Open Agent Kernel (OAK). Use the Langfuse implementation (`ak-py/src/agentkernel/trace/langfuse/`) as the canonical reference. For a backend reached through plain OpenTelemetry (no vendor SDK), see the CloudWatch provider (`ak-py/src/agentkernel/trace/cloudwatch/`): it installs its own SDK `TracerProvider` and OTLP exporter once (or reuses one already installed, since OpenTelemetry honours only the first), wraps each run through a `span(name, session)` context manager on the provider class that its runners receive, and adds a provider-specific helper module (`sigv4.py`) beside the runners.
 
 ## Architecture Overview
 
-Agent Kernel's tracing system:
+OAK's tracing system:
 
 1. **`BaseTrace`** (`trace/base.py`) defines the interface — one method per supported framework that returns a traced `Runner` (or `None`)
 2. **`Trace`** (`trace/trace.py`) is a factory that creates the appropriate trace instance based on `AKConfig.trace.type`
@@ -212,7 +212,7 @@ class <Provider>(BaseTrace):
 
 The models live in `trace/fetch.py`: `TraceQuery` (window via `start`/`end` or `last`, `kinds`, `session_id`, `trace_ids`, `name`, `limit`; `window()` returns the UTC bounds and `matches(span)` checks every filter), `FetchedSpan`, `FetchedTrace` (spans grouped by trace, with `root`, `usage`, ...), `SpanKind`, `SpanStatus` (`SpanStatus.of(...)` maps a provider's status code onto `UNSET`/`OK`/`ERROR`), `SpanUsage` (`SpanUsage.of(...)` coerces raw values) and `OTelSpanClassifier` (kind, input/output, usage and session id from OTel attributes). The four built-in fetchers (`langfuse/`, `logfire/`, `openllmetry/`, `cloudwatch/` `fetch.py`) subclass the internal `TraceFetcher` base (also in `trace/fetch.py`, not exported) and follow these rules:
 
-1. **The fetcher never reads `AKConfig`.** It takes explicit constructor parameters (a client, a token, a base URL, an optional `httpx` transport or boto client); the tracer class builds it. A credential AK reads itself (not one the provider SDK reads) is resolved by the tracer with `SecretManager.current().get(KEY, None)` and passed in; the fetcher's constructor raises `AKConfigError` naming the key when it is `None` (see `Logfire.fetch_spans` / `OpenLLMetry.fetch_spans`).
+1. **The fetcher never reads `AKConfig`.** It takes explicit constructor parameters (a client, a token, a base URL, an optional `httpx` transport or boto client); the tracer class builds it. A credential OAK reads itself (not one the provider SDK reads) is resolved by the tracer with `SecretManager.current().get(KEY, None)` and passed in; the fetcher's constructor raises `AKConfigError` naming the key when it is `None` (see `Logfire.fetch_spans` / `OpenLLMetry.fetch_spans`).
 2. **No provider SDK import at module scope** in `fetch.py`: import it under `TYPE_CHECKING` or inside the method that uses it, so the fetcher is testable without the extra. Keep the provider package's `__init__.py` empty for the same reason.
 3. **Classify per span, never per provider.** OTel-shaped results go through `OTelSpanClassifier`; a backend that types spans server side (Langfuse observations) maps its types directly.
 4. **Same result contract:** oldest first (`FetchedSpan.oldest_first`), at most `limit` spans with the most recent kept when more match, unique span ids, the provider record in `raw`, `status` mapped from the provider's own field (never a workaround for its mistakes: `kind` and `status` are trusted as the provider reports them), `provider` set from the fetcher's `provider` class variable (the `trace.type` short name), and `input`/`output` returned as stored (never parsed or rewritten).

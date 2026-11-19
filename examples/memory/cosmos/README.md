@@ -1,16 +1,16 @@
-# Agent Kernel running OpenAI Agents SDK based agents in Azure Serverless (Functions) with Azure Cosmos DB as agent memory
+# Open Agent Kernel running OpenAI Agents SDK based agents in Azure Serverless (Functions) with Azure Cosmos DB as agent memory
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using Azure Functions with Flex Consumption plan and Azure Cosmos DB for agent memory storage.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using Azure Functions with Flex Consumption plan and Azure Cosmos DB for agent memory storage.
 
 ## Overview
 
-This example demonstrates how to use Azure Cosmos DB as the memory backend for Agent Kernel agents. Unlike the Redis-based examples, this implementation uses Cosmos DB's NoSQL capabilities to persist agent conversations and session data, providing a fully managed, globally distributed database solution.
+This example demonstrates how to use Azure Cosmos DB as the memory backend for OAK agents. Unlike the Redis-based examples, this implementation uses Cosmos DB's NoSQL capabilities to persist agent conversations and session data, providing a fully managed, globally distributed database solution.
 
 ## Deployed Resources
 
 This demo deploys the following Azure resources:
 
-- **Azure Function App (Flex Consumption)** - Serverless compute platform running the Agent Kernel implementation
+- **Azure Function App (Flex Consumption)** - Serverless compute platform running the OAK implementation
 - **Azure Service Plan (FC1 SKU)** - Flex Consumption plan for cost-effective serverless execution
 - **Azure Storage Account** - Required for Function App deployment and runtime
 - **Azure API Management (APIM)** - API Gateway endpoint for the Function App
@@ -251,7 +251,7 @@ terraform destroy
 - **Cold Start**: First requests after idle periods may experience slight delays
 - **Cosmos DB Latency**: Single-digit millisecond latency for reads and writes
 - **Request Units (RU)**: Monitor RU consumption to optimize costs
-- **Connection Pooling**: Cosmos DB connections are managed automatically by the Agent Kernel
+- **Connection Pooling**: Cosmos DB connections are managed automatically by the OAK
 - **Memory Usage**: Monitor function memory consumption through Application Insights
 
 ## Cost Optimization

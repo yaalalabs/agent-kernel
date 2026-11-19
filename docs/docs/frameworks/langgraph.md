@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # LangGraph
 
-Integrate LangGraph's graph-based orchestration with Agent Kernel.
+Integrate LangGraph's graph-based orchestration with Open Agent Kernel (OAK).
 
 ## Installation
 
@@ -104,7 +104,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 
 ## Structured Output
 
-Build the agent with LangGraph's `response_format` parameter (e.g., `create_react_agent`). The result then contains a `structured_response` alongside the messages; Agent Kernel detects it and returns an `AgentReplyAny` whose `content` is the result as a dict:
+Build the agent with LangGraph's `response_format` parameter (e.g., `create_react_agent`). The result then contains a `structured_response` alongside the messages; OAK detects it and returns an `AgentReplyAny` whose `content` is the result as a dict:
 
 ```python
 from langgraph.prebuilt import create_react_agent
@@ -189,19 +189,19 @@ its `message`, else the bare status verb. A node written as `choice = interrupt(
 choice itself, so ordinary LangGraph code works unchanged. This adapter carries all three decision
 statuses natively.
 
-Three things to know, all LangGraph's behaviour rather than Agent Kernel's:
+Three things to know, all LangGraph's behaviour rather than OAK's:
 
 - **The interrupting node re-runs from the top** on resume. The first `interrupt()` then returns the
   stored answer instead of pausing again — so any side effect belongs *after* the questions, never
   before them.
-- **Agent Kernel assigns its own checkpointer**, overwriting one you supplied. That has always been
+- **OAK assigns its own checkpointer**, overwriting one you supplied. That has always been
   true; human-in-the-loop makes it load-bearing, because the pause lives in it.
 - **A second pause replaces the first.** LangGraph keeps one thread per session, so an earlier record
   could never be resumed. Only LangGraph's own pauses are replaced: if the same session also holds a
   pause from an agent on another framework, that one is independent and stays answerable.
 
-A prompt sent alongside a decision **is** carried, encoded by Agent Kernel as a write to the
-`messages` channel the adapter already feeds. That mapping is Agent Kernel's, not LangGraph's — the
+A prompt sent alongside a decision **is** carried, encoded by OAK as a write to the
+`messages` channel the adapter already feeds. That mapping is OAK's, not LangGraph's — the
 framework has no "send a prompt with your resume" feature.
 
 See [Human in the Loop](../advanced/human-in-the-loop.md).

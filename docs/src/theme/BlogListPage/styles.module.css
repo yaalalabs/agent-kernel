@@ -65,7 +65,7 @@
 
 .topicActive,
 .topicActive:hover {
-  color: #010002;
+  color: var(--ak-bg);
   background: var(--ak-text);
 }
 

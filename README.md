@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/static/img/branding/agent-kernel-lockup-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/static/img/branding/agent-kernel-lockup-light.svg">
-    <img src="docs/static/img/branding/agent-kernel-lockup-dark.svg" alt="Agent Kernel" width="420" />
+    <source media="(prefers-color-scheme: dark)" srcset="branding/primary/open-agent-kernel-white-orange.svg">
+    <source media="(prefers-color-scheme: light)" srcset="branding/primary/open-agent-kernel-color.svg">
+    <img src="branding/primary/open-agent-kernel-color.svg" alt="Open Agent Kernel" width="320" />
   </picture>
 </p>
 
@@ -30,11 +30,11 @@
 
 ---
 
-## Why Agent Kernel?
+## Why OAK?
 
-Most agent frameworks help you build a *prototype*. **Agent Kernel is the platform layer that gets you to production** — with the governance, portability, and operational maturity that enterprises actually require.
+Most agent frameworks help you build a *prototype*. **Open Agent Kernel (OAK) is the platform layer that gets you to production** — with the governance, portability, and operational maturity that enterprises actually require.
 
-|  | Agent Kernel |
+|  | OAK |
 |---|---|
 | 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework side by side. Swap with 2 import lines. |
 | ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
@@ -46,7 +46,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), **AG-UI** (streamed event protocol for agent-facing frontends), and **A2UI** (generative UI documents, labelled from config) support. |
 | 🆓 **Apache 2.0** | No licensing fees. No vendor lock-in. Production-ready open source. |
 
-> ⭐ **If Agent Kernel is solving real problems for you, please star the repo — it's the single best way to help us grow.**
+> ⭐ **If OAK is solving real problems for you, please star the repo — it's the single best way to help us grow.**
 
 ---
 
@@ -103,15 +103,15 @@ That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container A
   <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <b>Smolagents</b> &nbsp;•&nbsp; <b>Pydantic AI</b> &nbsp;•&nbsp; <b>Microsoft Agent Framework</b> &nbsp;•&nbsp; <b>Claude Agent SDK</b>
 </p>
 
-No rewrites. No re-learning. Bring your agents — Agent Kernel handles the platform layer.
+No rewrites. No re-learning. Bring your agents — OAK handles the platform layer.
 
 ### 🛡️ Compliance & Governance — First-Class, Not an Afterthought
 
-Enterprises can't ship agents they can't audit. Agent Kernel makes compliance the default:
+Enterprises can't ship agents they can't audit. OAK makes compliance the default:
 
 - **Guardrails** — OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, content moderation.
 - **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
-- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits, Microsoft Agent Framework `options`) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
+- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits, Microsoft Agent Framework `options`) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys OAK owns kept safe.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
 - **Observability** — LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with a single config line.
 - **Identity and Access**: One configured identity provider authenticates every surface, with any OIDC issuer (Auth0, Keycloak, Okta), Amazon Cognito, Microsoft Entra ID, Firebase, a static credential map or your own class, and tools, hooks, threads and scheduled tasks see the same principal. Auth0 is an `oidc` configuration, not a provider of its own. [Learn more →](https://kernel.yaala.ai/docs/next/advanced/identity-and-access)
@@ -144,7 +144,7 @@ Let a chat run later, or on a schedule — the platform owns the timers, the per
 
 Let a run stop to ask a person something — approve this tool, answer this question — and resume from their decision minutes or hours later, on any replica.
 
-- **Nothing to enable** — declare a gated tool or an interrupt the way your framework already does; Agent Kernel returns HTTP 202 with `status: "PAUSED"` and the pending interruptions.
+- **Nothing to enable** — declare a gated tool or an interrupt the way your framework already does; OAK returns HTTP 202 with `status: "PAUSED"` and the pending interruptions.
 - **Answer instead of prompting** — send a `resume` block with `approved`, `denied`, or `cancelled` per interruption, plus the human's own words or a structured value.
 - **Five frameworks pause** — OpenAI Agents SDK, LangGraph, Pydantic AI, Google ADK, and Microsoft Agent Framework; the others say they can't rather than pretending.
 - **Every surface** — REST, streaming, WebSocket, and AG-UI's interrupt outcome, plus Approve and Deny buttons in Slack and Telegram; durable across restarts on any shared session backend.
@@ -217,7 +217,7 @@ Flavors are values files over one set of templates: `values-dev.yaml` for a loca
 
 ## 🛠 Agent Skills — Supercharge Your Coding Assistant
 
-Install Agent Kernel skills and Claude, Copilot, Cursor, or Windsurf become experts at building production agents — no hallucinated APIs.
+Install OAK skills and Claude, Copilot, Cursor, or Windsurf become experts at building production agents — no hallucinated APIs.
 
 ```bash
 ak skill install
@@ -258,7 +258,7 @@ Built-in score, llm, and fallback comparison modes, backed by a pluggable evalua
 
 ## 🌐 Affiliations
 
-Agent Kernel is proud to be:
+OAK is proud to be:
 
 - A member of the [Linux Foundation](https://www.linuxfoundation.org)
 - A member of the [Agentic AI Foundation](https://aaif.io)

@@ -21,7 +21,7 @@
   padding: 0 48px;
 
   /* Premium Dark Surface - transparent by default */
-  background-color: rgba(6, 6, 9, 0);
+  background-color: rgba(var(--ak-bg-rgb), 0);
   border-bottom: 1px solid rgba(255, 255, 255, 0);
 
   /* Frosted glass - transparent by default */
@@ -43,7 +43,7 @@
 
 .bar--visible {
   pointer-events: auto;
-  background-color: rgba(6, 6, 9, 0.65);
+  background-color: rgba(var(--ak-bg-rgb), 0.65);
   border-bottom-color: rgba(255, 255, 255, 0.05);
   backdrop-filter: saturate(180%) blur(16px);
   -webkit-backdrop-filter: saturate(180%) blur(16px);
@@ -86,7 +86,7 @@
   min-width: 12px;
   height: 2px;
   margin-top: 11px;
-  background-color: #20232c;
+  background-color: var(--ak-surface-overlay);
   position: relative;
   margin-left: -4px;
   margin-right: -4px;
@@ -178,13 +178,13 @@
 
 .step:hover .pip--upcoming,
 .step:hover .pip--done {
-  background-color: #5a6172;
+  background-color: var(--ak-text-muted);
   transform: scale(1.2);
 }
 
 .step:hover .label--upcoming,
 .step:hover .label--done {
-  color: #a0a8ba;
+  color: var(--ak-text-secondary);
 }
 
 /* ── Label ───────────────────────────────────────────────────────────── */
@@ -204,11 +204,11 @@
 }
 
 .label--upcoming {
-  color: #4a4e5a;
+  color: var(--ak-text-muted);
 }
 
 .label--done {
-  color: #6a7182;
+  color: var(--ak-text-muted);
 }
 
 .label--active {

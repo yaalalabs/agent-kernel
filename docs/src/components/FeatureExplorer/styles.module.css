@@ -52,14 +52,14 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 1rem;
-  border: 2px solid #2a272e;
+  border: 2px solid var(--ak-border);
   border-radius: 999px;
   font-size: 0.9rem;
   font-weight: 500;
-  color: rgba(147, 210, 255, 0.9);
+  color: rgba(var(--ak-sky-rgb), 0.9);
   letter-spacing: 0.01em;
   margin-bottom: 1.25rem;
-  background: #131017;
+  background: var(--ak-surface-raised);
 }
 
 .badgeStar {
@@ -80,7 +80,7 @@
 
 .subtitle {
   font-size: 1.05rem;
-  color: #9a91b8;
+  color: var(--ak-text-secondary);
   line-height: 1.7;
   margin: 1rem auto 0;
   max-width: 720px;
@@ -131,8 +131,8 @@
   right: 0;
   bottom: -1px;
   height: 2px;
-  background: #00ddff;
-  box-shadow: 0 0 12px rgba(0, 221, 255, 0.6);
+  background: var(--ak-primary);
+  box-shadow: 0 0 12px rgba(var(--ak-primary-rgb), 0.6);
   transform: scaleX(0);
   transform-origin: left center;
   transition: transform 0.25s ease;
@@ -184,7 +184,7 @@
   margin: 0;
   font-size: 1rem;
   line-height: 1.7;
-  color: #9a91b8;
+  color: var(--ak-text-secondary);
 }
 
 .grid {
@@ -201,12 +201,12 @@
   padding: 1.3rem 1.35rem 1.25rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
-  background: rgba(10, 10, 16, 0.92);
+  background: rgba(var(--ak-bg-rgb), 0.92);
   transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card:hover {
-  border-color: rgba(147, 210, 255, 0.4);
+  border-color: rgba(var(--ak-sky-rgb), 0.4);
   transform: translateY(-2px);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
 }
@@ -255,14 +255,14 @@
 .cardLink {
   font-size: 0.86rem;
   font-weight: 600;
-  color: #00ddff;
+  color: var(--ak-primary);
   text-decoration: none;
   transition: color 0.2s ease;
 }
 
 .cardLink:hover,
 .cardLink:focus-visible {
-  color: #8fefff;
+  color: var(--ak-blue-light);
   text-decoration: underline;
   text-underline-offset: 3px;
 }

@@ -38,7 +38,7 @@ function pick(...names: string[]): Chip[] {
 }
 
 export const SOURCES_LABEL = "Sources · Channels & clients";
-export const CORE_LABEL = "Agent Kernel · Runtime";
+export const CORE_LABEL = "OAK · Runtime";
 export const DESTINATIONS_LABEL = "Destinations · Agents, data & clouds";
 
 export const SOURCES: ArchCard[] = [

@@ -1,6 +1,6 @@
 # DynamoDB Multimodal Example
 
-This example demonstrates how to use Agent Kernel's `DynamoDBStorageDriver` to store and retrieve multimodal attachments (images, PDFs, etc.) in AWS DynamoDB — preventing session cache bloat.
+This example demonstrates how to use Open Agent Kernel's `DynamoDBStorageDriver` to store and retrieve multimodal attachments (images, PDFs, etc.) in AWS DynamoDB — preventing session cache bloat.
 
 ## Files
 

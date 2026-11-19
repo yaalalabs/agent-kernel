@@ -69,7 +69,7 @@ export default function FeatureExplorer() {
       </div>
 
       <div className={styles.explorer}>
-        <div className={styles.tabs} role="tablist" aria-label="Agent Kernel features">
+        <div className={styles.tabs} role="tablist" aria-label="Open Agent Kernel features">
           {FEATURE_TABS.map((tab, index) => {
             const selected = index === activeIndex;
             return (

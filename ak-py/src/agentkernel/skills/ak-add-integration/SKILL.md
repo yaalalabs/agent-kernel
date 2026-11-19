@@ -1,7 +1,7 @@
 ---
 name: ak-add-integration
 description: >
-  Add a messaging platform integration to an existing Agent Kernel project.
+  Add a messaging platform integration to an existing Open Agent Kernel project.
   This skill guides you through adding Slack, WhatsApp, Messenger, Instagram,
   Telegram, Teams, or Gmail integration by generating configuration, updating dependencies,
   and setting up webhook handlers. Designed for users extending their agents.
@@ -13,7 +13,7 @@ metadata:
 
 # Add a Messaging Integration
 
-Use this skill to add a messaging platform integration to your Agent Kernel project.
+Use this skill to add a messaging platform integration to your Open Agent Kernel project.
 
 ## Instructions for the Agent
 

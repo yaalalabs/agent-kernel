@@ -1,16 +1,16 @@
 # Telegram
 
-Deploy your Agent Kernel agents as Telegram bots that can respond to messages in real-time. This integration connects your AI agents directly to Telegram, enabling natural conversations with users through one of the world's most popular messaging platforms.
+Deploy your Open Agent Kernel agents as Telegram bots that can respond to messages in real-time. This integration connects your AI agents directly to Telegram, enabling natural conversations with users through one of the world's most popular messaging platforms.
 
 ## Overview
 
-The `TelegramInboundAdapter` provides a seamless bridge between your Agent Kernel agents and Telegram. When users message your bot, their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Telegram.
+The `TelegramInboundAdapter` provides a seamless bridge between your OAK agents and Telegram. When users message your bot, their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Telegram.
 
 ### How it works:
 
 1. User sends a message to your Telegram bot
 2. Telegram delivers the message to your webhook endpoint
-3. Agent Kernel verifies and processes the message
+3. OAK verifies and processes the message
 4. Visual feedback is sent (typing indicator, etc.)
 5. Agent generates a response and sends it back to the user
 
@@ -140,13 +140,13 @@ The Telegram integration supports sending images and documents alongside text me
 
 1. User sends an image or document with optional text caption
 2. Telegram webhook delivers the message to your agent
-3. Agent Kernel downloads and processes the file
+3. OAK downloads and processes the file
 4. A brief description of the file is generated via LLM and the file is saved to the **session cache** (not sent raw to the agent)
 5. The description is injected into the user's message text so the agent understands what was attached
 6. When the agent needs to inspect the file in detail, it calls the `analyze_attachments` tool, which retrieves the file from the session cache
 7. Response is sent back through Telegram
 
-> **Note:** The `analyze_attachments` tool is automatically attached to your agent by Agent Kernel when `AK_MULTIMODAL__ENABLED=true`.
+> **Note:** The `analyze_attachments` tool is automatically attached to your agent by OAK when `AK_MULTIMODAL__ENABLED=true`.
 
 ### Example Scenarios
 
@@ -227,7 +227,7 @@ async def _send_message_with_keyboard(self, chat_id: int, text: str):
     await self._send_message(chat_id, text, reply_markup=reply_markup)
 ```
 
-Your `callback_data` is yours: Agent Kernel reads only presses prefixed `akhitl:` (see below) and
+Your `callback_data` is yours: OAK reads only presses prefixed `akhitl:` (see below) and
 hands every other callback query to the normal message path, exactly as before.
 
 ### Markdown Formatting
@@ -267,14 +267,14 @@ and travels the same queue, so the agent cannot tell the two apart. See
 [Human in the Loop](../advanced/human-in-the-loop.md) for the full picture, including the one kind of question that gets no buttons: one asking for a value rather than a verdict.
 
 :::caution Anyone who can see the message can press it
-Agent Kernel ships no approver policy. Group membership is not an approval list — if it matters who
+OAK ships no approver policy. Group membership is not an approval list — if it matters who
 decides, enforce it yourself: the presser's Telegram user id reaches the run as `acting_user_id`,
 and a `PreHook` is where you check it.
 :::
 
 :::note Telegram's 64-byte button budget
 A button carries `akhitl:<verb>:<interruption id>` in `callback_data`, which Telegram caps at **64
-bytes**. The interruption id is the agent framework's own, so Agent Kernel cannot shorten it. A
+bytes**. The interruption id is the agent framework's own, so OAK cannot shorten it. A
 question whose id does not fit renders with no keyboard, says so in its own message, and is logged
 with its byte count. Answer that one over another surface.
 :::
@@ -321,7 +321,7 @@ rejects one press does not deduplicate the authorized press that follows it.
 
 For detailed troubleshooting information:
 
-Agent Kernel auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
+OAK auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
 
 **Using environment variables:**
 ```bash

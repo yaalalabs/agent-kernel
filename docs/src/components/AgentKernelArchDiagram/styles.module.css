@@ -4,7 +4,7 @@
   Accent color is fully driven by --ak-accent. Override it per-page:
     • Green  page: style="--ak-accent: #26A64D"
     • Orange page: style="--ak-accent: #CC7D21"
-    • Cyan   page: style="--ak-accent: #00DDFF"
+    • Orange page: style="--ak-accent: #FF5E32"
 
   The default fallback is #26A64D (green, matching the design image).
 */
@@ -85,13 +85,13 @@
 /* ─── Layer 1: Your Agent Logic ──────────────────────────────────────────── */
 
 .topBox {
-  --logic-accent: #00E5FF;
+  --logic-accent: var(--ak-blue);
   --logic-accent-glow: color-mix(in srgb, var(--logic-accent) 60%, transparent);
   --logic-accent-halo: color-mix(in srgb, var(--logic-accent) 10%, transparent);
   --logic-accent-fill: color-mix(in srgb, var(--logic-accent) 12%, transparent);
   --logic-accent-border: color-mix(in srgb, var(--logic-accent) 30%, transparent);
   --logic-accent-hover-border: color-mix(in srgb, var(--logic-accent) 50%, transparent);
-  --logic-card-bg: color-mix(in srgb, var(--logic-accent) 8%, #05090f);
+  --logic-card-bg: color-mix(in srgb, var(--logic-accent) 8%, var(--ak-bg));
 
   display: flex;
   align-items: center;
@@ -245,7 +245,7 @@
 .hubLabel {
   font-size: 1.05rem;
   font-weight: 700;
-  color: #dfe1f0;
+  color: var(--ak-text);
   letter-spacing: -0.02em;
   text-align: center;
 }
@@ -449,7 +449,7 @@
 }
 
 .deployBox:hover .deployLabel {
-  color: #dfe1f0;
+  color: var(--ak-text);
 }
 
 /* ─── Responsive: tablet (≤ 768px) ──────────────────────────────────────── */

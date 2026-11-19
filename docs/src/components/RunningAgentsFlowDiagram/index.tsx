@@ -1,3 +1,4 @@
+import { BRAND } from '@site/src/lib/brand';
 import React, { useCallback, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
@@ -97,7 +98,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
       data-flow-node={node.id}
       data-kind={node.kind}
       className={`${styles.flowNode} ${kindClass}`}
-      style={{ '--node-color': node.color ?? '#00d5be' } as React.CSSProperties}
+      style={{ '--node-color': node.color ?? BRAND.ice } as React.CSSProperties}
     >
       <span className={styles.flowNodeLabel}>
         {node.label}

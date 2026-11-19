@@ -1,6 +1,6 @@
-# Agent Kernel on Kubernetes: OpenAI agents in queue mode
+# Open Agent Kernel on Kubernetes: OpenAI agents in queue mode
 
-Deploys OpenAI Agents SDK based agents as the Agent Kernel two-process pipeline on a
+Deploys OpenAI Agents SDK based agents as the Open Agent Kernel two-process pipeline on a
 Kubernetes micro-cluster, using [the Helm chart](../../../ak-deployment/ak-k8s/): an
 `io-handler` Deployment (REST, A2A and MCP + Response Handler) and an `agent-runner` Deployment (the
 consumers executing the agents), talking through in-cluster NATS JetStream with Valkey for
@@ -73,7 +73,7 @@ kubectl rollout status deployment/ak-agent-kernel-io deployment/ak-agent-kernel-
 ```
 
 `deploy.sh` installs the published chart (`oci://ghcr.io/yaalalabs/charts/agent-kernel`,
-pinned to the current Agent Kernel release; the release pipeline keeps the pin current) and
+pinned to the current OAK release; the release pipeline keeps the pin current) and
 follows the same contract as `build.sh` and `package.sh`: `local` switches to the chart in
 `../../../ak-deployment/ak-k8s/chart`, which is how CI runs it, so a branch's chart changes
 are what gets tested. Anything after that is passed to `helm upgrade --install`, which the
@@ -203,7 +203,7 @@ Secret from.
 
 ## Secrets
 
-The agent runner reads `OPENAI_API_KEY` through Agent Kernel's secret resolution
+The agent runner reads `OPENAI_API_KEY` through OAK's secret resolution
 (`secret.provider.type: kubernetes` in `config.*.yaml`), not from an environment variable. The
 chart's `secretStore` in `ak-values.yaml` mounts each listed Secret read-only at
 `/var/run/secrets/agentkernel/<secret-name>/`, one file per data key, so the key is the file
@@ -235,7 +235,7 @@ chart's `secretStore` in `ak-values.yaml` mounts each listed Secret read-only at
 
 ## The Kafka variant
 
-Kafka expects its topics to exist before the pipeline starts (Agent Kernel never creates
+Kafka expects its topics to exist before the pipeline starts (OAK never creates
 them), and the transport keeps its retry/dedup bookkeeping in the session store. The chart
 renders the cluster and topics as Strimzi CRs:
 

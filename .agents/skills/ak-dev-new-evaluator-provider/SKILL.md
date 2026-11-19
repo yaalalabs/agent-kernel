@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-evaluator-provider
 description: >
-  Step-by-step guide for adding a new built-in test evaluator provider to Agent Kernel
+  Step-by-step guide for adding a new built-in test evaluator provider to Open Agent Kernel (OAK)
   (beyond DeepEval, Opik and JEV). Use this skill when you need to give the test framework's pluggable
   AKEvaluator interface a new first-party scoring/judge backend addressable by a short
   config name (e.g. "trulens"), not a one-off bring-your-own evaluator. Covers implementing
@@ -15,18 +15,18 @@ metadata:
 
 # Adding a New Test Evaluator Provider
 
-This guide walks through adding a new **built-in** evaluator provider to Agent Kernel's test
+This guide walks through adding a new **built-in** evaluator provider to Open Agent Kernel's test
 framework. Use the existing DeepEval implementation
 (`ak-py/src/agentkernel/test/core/evaluator/deepeval.py`) as reference.
 
 Before starting, check whether you actually need this skill: if the evaluator only needs to exist
-for *your own* project (not addressable by every AK user via a short built-in name), you don't
+for *your own* project (not addressable by every OAK user via a short built-in name), you don't
 need any of the steps below — just subclass `AKEvaluator` anywhere importable and point
 `test-config.yaml`'s `evaluator:` at its dotted path. That's the "bring your own evaluator"
 path described in the user-facing `ak-test` skill and
 [`docs/docs/testing/cli-testing.md`](../../../docs/docs/testing/cli-testing.md#bring-your-own-evaluator);
 `examples/cli/custom-evaluator/` is a complete worked example of it. This skill is only for adding
-a **first-party, in-repo** provider that ships with AK and gets its own short `type` name.
+a **first-party, in-repo** provider that ships with OAK and gets its own short `type` name.
 
 ## Existing Providers
 

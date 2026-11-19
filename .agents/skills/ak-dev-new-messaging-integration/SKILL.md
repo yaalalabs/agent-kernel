@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-messaging-integration
 description: >
-  Step-by-step guide for adding a new messaging platform integration to Agent Kernel.
+  Step-by-step guide for adding a new messaging platform integration to Open Agent Kernel (OAK).
   Use this skill when you need to add support for a new chat platform (beyond Slack,
     WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail). Covers writing the
   inbound/outbound adapter pair, hosting it, webhook verification, attachments, configuration,
@@ -14,7 +14,7 @@ metadata:
 
 # Adding a New Messaging Integration
 
-This guide walks through adding a new messaging platform integration to Agent Kernel. Use the WhatsApp adapter (`ak-py/src/agentkernel/integration/whatsapp/adapter.py`) as the canonical webhook reference, and Gmail (`integration/gmail/adapter.py`) as the polling one.
+This guide walks through adding a new messaging platform integration to Open Agent Kernel (OAK). Use the WhatsApp adapter (`ak-py/src/agentkernel/integration/whatsapp/adapter.py`) as the canonical webhook reference, and Gmail (`integration/gmail/adapter.py`) as the polling one.
 
 ## Architecture Overview
 

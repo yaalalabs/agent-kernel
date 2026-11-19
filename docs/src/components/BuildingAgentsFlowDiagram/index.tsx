@@ -1,3 +1,4 @@
+import { BRAND } from '@site/src/lib/brand';
 import React, { useCallback, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
@@ -18,7 +19,7 @@ const FLOW_NODES: FlowNode[] = [
   { id: 'input', label: 'Input Message', kind: 'message', color: '#f472b6' },
   { id: 'guardIn', label: 'Guardrails', kind: 'guardrail', color: '#c084fc' },
   { id: 'memory', label: 'Agent Memory', kind: 'memory', color: '#4ade80' },
-  { id: 'supervisor', label: 'Supervisor Agent', kind: 'supervisor', color: '#00ddff' },
+  { id: 'supervisor', label: 'Supervisor Agent', kind: 'supervisor', color: BRAND.ice },
   { id: 'general', label: 'General Agent', kind: 'agent', color: '#c084fc' },
   { id: 'travel', label: 'Travel Expert Agent', kind: 'agent', color: '#c084fc' },
   { id: 'booking', label: 'Booking Agent', kind: 'agent', color: '#c084fc' },
@@ -120,7 +121,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
       data-flow-node={node.id}
       data-kind={node.kind}
       className={`${styles.flowNode} ${kindClass}`}
-      style={{ '--node-color': node.color ?? '#00d5be' } as React.CSSProperties}
+      style={{ '--node-color': node.color ?? BRAND.ice } as React.CSSProperties}
     >
       <span className={styles.flowNodeLabel}>{node.label}</span>
     </div>

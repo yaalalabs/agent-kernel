@@ -15,8 +15,8 @@ interface Message {
 }
 
 const QUICK_PROMPTS = [
-  'How do I install Agent Kernel skills into my coding agent?',
-  'How do I deploy Agent Kernel on AWS?',
+  'How do I install OAK skills into my coding agent?',
+  'How do I deploy OAK on AWS?',
   'How do I connect my agent to Slack or WhatsApp?',
   'How do I add guardrails and compliance to my AI agents?',
 ];
@@ -147,7 +147,7 @@ const FloatingChatbot: React.FC = () => {
       {!isMaximized && (
         <div className={styles.chatButtonContainer}>
           {!isOpen && (
-            <span className={styles.chatButtonLabel}>Ask Agent Kernel</span>
+            <span className={styles.chatButtonLabel}>Ask OAK</span>
           )}
           <button
             className={`${styles.chatButton} ${isOpen ? styles.chatButtonOpen : ''}`}
@@ -184,7 +184,7 @@ const FloatingChatbot: React.FC = () => {
                   <span className={styles.orbVignette} />
                 </div>
                 <img
-                  src="/img/branding/agent-kernel-icon-mono-white.svg"
+                  src="/img/branding/oak-mark-white.svg"
                   alt=""
                   className={styles.buttonLogo}
                 />
@@ -201,8 +201,8 @@ const FloatingChatbot: React.FC = () => {
           <div className={styles.chatHeader}>
             <div className={styles.headerLeft}>
               <img
-                src="/img/branding/agent-kernel-icon-horizontal-color-dark-bg.svg"
-                alt="Agent Kernel"
+                src="/img/branding/oak-horizontal-white-orange.svg"
+                alt="Open Agent Kernel"
                 className={styles.headerLogo}
               />
             </div>
@@ -258,17 +258,17 @@ const FloatingChatbot: React.FC = () => {
               <div className={styles.welcomeMessage}>
                 <div className={styles.welcomeEyebrow}>
                   <span className={styles.welcomeEyebrowDot} />
-                  Agent Kernel AI
+                  OAK AI
                 </div>
                 <div className={styles.welcomeIcon}>
                   <img
-                    src="/img/branding/agent-kernel-icon-color.svg"
-                    alt="Agent Kernel"
+                    src="/img/branding/oak-mark-orange.svg"
+                    alt="Open Agent Kernel"
                     className={styles.welcomeLogo}
                   />
                 </div>
                 <h4>How can I help?</h4>
-                <p>Ask me anything about Agent Kernel - setup, agents, integrations, and more.</p>
+                <p>Ask me anything about OAK - setup, agents, integrations, and more.</p>
                 <div className={styles.promptChips}>
                   {QUICK_PROMPTS.map((prompt) => (
                     <button

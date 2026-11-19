@@ -109,15 +109,15 @@ html.blog-post-page article .markdown h3 {
 
 /* Links: quiet, underlined, Medium-style */
 html.blog-wrapper .markdown a {
-  color: var(--ak-blue);
+  color: var(--ak-primary);
   text-decoration: underline;
-  text-decoration-color: rgba(0, 221, 255, 0.35);
+  text-decoration-color: rgba(var(--ak-primary-rgb), 0.35);
   text-underline-offset: 3px;
   border-bottom: none;
 }
 
 html.blog-wrapper .markdown a:hover {
-  color: var(--ak-blue-light);
+  color: var(--ak-primary-light);
   text-decoration-color: currentColor;
   border-bottom: none;
 }
@@ -149,7 +149,7 @@ html.blog-wrapper .markdown img {
 
 /* Mermaid diagrams on a raised surface card */
 html.blog-wrapper .markdown .docusaurus-mermaid-container {
-  background: #020203;
+  background: var(--ak-bg);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
   padding: 1.5rem;
@@ -235,7 +235,7 @@ html.blog-wrapper .blog-back-btn {
   height: 42px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(1, 0, 2, 0.8);
+  background: rgba(var(--ak-bg-rgb), 0.8);
   backdrop-filter: blur(8px);
   color: var(--ak-text-secondary);
   cursor: pointer;
@@ -244,8 +244,8 @@ html.blog-wrapper .blog-back-btn {
 }
 
 html.blog-wrapper .blog-back-btn:hover {
-  border-color: var(--ak-blue);
-  color: var(--ak-blue);
+  border-color: var(--ak-primary);
+  color: var(--ak-primary);
   transform: translateX(-4px);
 }
 

@@ -1,3 +1,4 @@
+import OakMark from '@site/src/components/OakMark';
 import React from "react";
 import Link from "@docusaurus/Link";
 import { FaGithub, FaExternalLinkAlt } from "react-icons/fa";
@@ -16,7 +17,7 @@ export default function CTASection() {
           <p className={styles.ctaSubtitle}>
             Free, open-source, Apache 2.0. No licensing costs, no vendor
             lock-in. Join hundreds of developers building production AI agents
-            with Agent Kernel.
+            with OAK.
           </p>
           <div className={styles.ctaButtons}>
             <Link
@@ -38,11 +39,7 @@ export default function CTASection() {
           </div>
 
           <div className={styles.ctaImageWrapper}>
-            <img
-              src="/img/cta-bg.png"
-              alt="Agent Kernel"
-              className={styles.ctaImage}
-            />
+            <OakMark variant="cta" className={styles.ctaImage} />
           </div>
         </div>
       </div>

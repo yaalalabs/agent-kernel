@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-identity-provider
 description: >
-  Step-by-step guide for adding a new built-in identity provider to Agent Kernel's identity layer
+  Step-by-step guide for adding a new built-in identity provider to Open Agent Kernel's identity layer
   (beyond oidc, cognito, entra, firebase and static). Use this skill when a credential type or
   issuer needs a short `identity.provider.type` name of its own. It starts with the check that
   most issuers (Auth0, Keycloak, Okta, Google) are an `oidc` configuration, not a subclass. Covers

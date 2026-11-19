@@ -69,10 +69,10 @@ export default function FooterLayout({
         <div className="footer__top">
           {/* Left brand column */}
           <div className="footer__brand">
-            <a href="/" className="footer__brand-logo-link" aria-label="Agent Kernel home">
+            <a href="/" className="footer__brand-logo-link" aria-label="Open Agent Kernel home">
               <img
-                src="/img/branding/agent-kernel-icon-horizontal-color-dark-bg.svg"
-                alt="Agent Kernel"
+                src="/img/branding/oak-horizontal-white-orange.svg"
+                alt="Open Agent Kernel"
                 className="footer__brand-logo"
                 width={140}
               />

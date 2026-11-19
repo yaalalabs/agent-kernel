@@ -1,3 +1,4 @@
+import OakMark from '@site/src/components/OakMark';
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import gsap from "gsap";
 import ScrollTrigger from "gsap/dist/ScrollTrigger";
@@ -57,7 +58,7 @@ export default function AIEngineerPage() {
     },
     {
       num: "02",
-      label: "Agent Kernel Core",
+      label: "Open Agent Kernel Core",
       items: [
         "Agent Module",
         "Agent Wrapper",
@@ -204,7 +205,7 @@ export default function AIEngineerPage() {
     cloudShort: "Bedrock / Azure / Google",
     frameworks: "LangGraph · CrewAI · OpenAI Agents etc",
     frameworksShort: "LangGraph · CrewAI · OpenAI",
-    agentKernel: "Agent Kernel",
+    agentKernel: "OAK",
   } as const;
 
   type AkCompareCellStatus = "positive" | "negative" | "partial";
@@ -298,7 +299,7 @@ export default function AIEngineerPage() {
         {
           icon: MdTerminal,
           title: "CLI for Prototyping",
-          body: "Easy interfacing your agents on your laptop via Agent Kernel's command line interface.",
+          body: "Easy interfacing your agents on your laptop via OAK's command line interface.",
         },
         {
           icon: MdBolt,
@@ -399,8 +400,8 @@ export default function AIEngineerPage() {
     },
     {
       id: "kernel" as const,
-      title: "How Agent Kernel Sits In",
-      body: "Agent Kernel handles everything except the actual agent logic (number of agents, their capabilities and their prompts) while providing a deterministic test framework as well.",
+      title: "How Open Agent Kernel Sits In",
+      body: "OAK handles everything except the actual agent logic (number of agents, their capabilities and their prompts) while providing a deterministic test framework as well.",
       Icon: MdAutoAwesome,
       Diagram: AgentKernelSitsInFlowDiagram,
     },
@@ -635,13 +636,13 @@ export default function AIEngineerPage() {
 
   return (
     <Layout
-      title="Agent Kernel for AI Engineers"
-      description="Learn how Agent Kernel provides production-ready infrastructure for AI engineers building sophisticated AI agent systems."
+      title="Open Agent Kernel for AI Engineers"
+      description="Learn how OAK provides production-ready infrastructure for AI engineers building sophisticated AI agent systems."
     >
       {/* <HeroAnimation
         badge="AI Engineers"
         title="Run Advanced Agent Systems on a Unified Runtime"
-        subtitle="Bring your existing agentic code and operate it with production discipline. Agent Kernel unifies execution, memory, hooks, observability, integrations, and multi-cloud deployment so AI engineering teams can ship compliant, scalable systems faster."
+        subtitle="Bring your existing agentic code and operate it with production discipline. Open Agent Kernel unifies execution, memory, hooks, observability, integrations, and multi-cloud deployment so AI engineering teams can ship compliant, scalable systems faster."
       /> */}
       <StepTimeline levelId="03" contentRef={contentRef} />
       <section ref={contentRef} className={styles.aiEngineerSection}>
@@ -657,7 +658,7 @@ export default function AIEngineerPage() {
             </h2>
             <div className={styles.aiDescription}>
               <p className={styles.devIntro}>
-                Agent Kernel is a unified, capable runtime for the AI agents. Its pluggable architecture allows you to attach capabilities to your effortlessly.
+                OAK is a unified, capable runtime for the AI agents. Its pluggable architecture allows you to attach capabilities to your effortlessly.
               </p>
             </div>
           </div>
@@ -713,7 +714,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 02: Stand Out</p>
             <h2 className={styles.aiTitle}>
-              <span>What Makes Agent Kernel Stand Out</span>
+              <span>What Makes OAK Stand Out</span>
             </h2>
 
             <div className={styles.akComparePanel}>
@@ -845,7 +846,7 @@ export default function AIEngineerPage() {
                 Bedrock / Foundry give you <strong>runtime</strong> but take
                 your <strong>freedom</strong>. LangGraph gives you{" "}
                 <strong>freedom</strong> but no <strong>runtime</strong>.
-                Agent Kernel gives you <strong>both</strong>.
+                OAK gives you <strong>both</strong>.
               </p>
             </div>
           </div>
@@ -929,7 +930,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 05: Build Agents</p>
             <h2 className={styles.aiTitle}>
-              <span>How Agent Kernel Helps You Build Production-Ready Compliant AI Agents</span>
+              <span>How OAK Helps You Build Production-Ready Compliant AI Agents</span>
             </h2>
 
             {/* Tab Cards Row */}
@@ -1010,11 +1011,11 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 06: Complete Picture</p>
             <h2 className={styles.aiTitle}>
-              <span>How Agent Kernel Fits In</span>
+              <span>How OAK Fits In</span>
             </h2>
 
             <p className={styles.aiDescription}>
-              You write your AI agent's logic. Agent Kernel handles
+              You write your AI agent's logic. OAK handles
               everything else: the infrastructure, the cloud deployment,
               memory, knowledge bases, hooks, observability & traceability,
               LLM cost tracking, and the integrations so your agent is live and
@@ -1033,7 +1034,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 07: Operating System Depth</p>
             <h2 className={styles.aiTitle}>
-              <span>Why Agent Kernel is a Powerful</span>
+              <span>Why OAK is a Powerful</span>
               {' '}<br />
               <span>Operating System</span>
             </h2>
@@ -1164,7 +1165,7 @@ export default function AIEngineerPage() {
                   Continue Exploring
                 </div>
                 <h2 className={styles.goDeeperTitle}>
-                  Go deeper with Agent Kernel
+                  Go deeper with OAK
                 </h2>
                 <p className={styles.goDeeperSubtitle}>
                   Explore the platform capabilities and real-world workflows behind secure,
@@ -1199,7 +1200,7 @@ export default function AIEngineerPage() {
                   >
                     <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
                     <p className={styles.goDeeperCardBody}>
-                      See how teams use Agent Kernel to build assistants,
+                      See how teams use OAK to build assistants,
                       automate workflows, monitor systems, and ship reliable AI
                       agents faster.
                     </p>
@@ -1239,7 +1240,7 @@ export default function AIEngineerPage() {
             <p className={styles.ctaSubtitle}>
               Free, open-source, Apache 2.0. No licensing costs, no vendor
               lock-in. Join hundreds of developers building production AI agents
-              with Agent Kernel.
+              with OAK.
             </p>
             <div className={styles.ctaButtons}>
               <Link
@@ -1259,11 +1260,7 @@ export default function AIEngineerPage() {
             </div>
 
             <div className={styles.ctaImageWrapper}>
-              <img
-                src="/img/cta-bg.png"
-                alt="Agent Kernel"
-                className={styles.ctaImage}
-              />
+              <OakMark variant="cta" className={styles.ctaImage} />
             </div>
           </div>
         </div>

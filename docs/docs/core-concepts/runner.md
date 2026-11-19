@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Runner
 
-The **Runner** encapsulates framework-specific execution strategies, providing a consistent interface for running agents across different frameworks. You can skip this section if you are not planning to contribute to Agent Kernel.
+The **Runner** encapsulates framework-specific execution strategies, providing a consistent interface for running agents across different frameworks. You can skip this section if you are not planning to contribute to Open Agent Kernel (OAK).
 
 ## Overview
 
@@ -25,16 +25,16 @@ graph TB
     H --> J
     I --> J
 
-    style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## What is a Runner?
 
 A Runner:
 - **Executes** framework-specific agent logic (`run()`)
-- **Streams** AK stream events (text/reasoning deltas, tool calls) for frameworks that support it (`stream()`)
-- **Converts** Agent Kernel request models to framework-native input, and framework output back to `AgentReply` models
-- **Manages** framework session state within the Agent Kernel `Session`
+- **Streams** OAK stream events (text/reasoning deltas, tool calls) for frameworks that support it (`stream()`)
+- **Converts** OAK request models to framework-native input, and framework output back to `AgentReply` models
+- **Manages** framework session state within the OAK `Session`
 - **Creates** the `ToolContext` so tools can access the runtime, agent, session, and requests
 
 ## Runner Interface
@@ -66,7 +66,7 @@ class Runner(ABC):
 
 ## Framework Runners
 
-| Runner | Framework | AK `Runner.stream()` |
+| Runner | Framework | OAK `Runner.stream()` |
 |--------|-----------|----------------------|
 | `OpenAIRunner` | OpenAI Agents SDK | ✅ (`Runner.run_streamed`) |
 | `LangGraphRunner` | LangGraph | ✅ (`astream_events`) |
@@ -295,8 +295,8 @@ Two adapters share an object with the caller rather than a key, and merge deeper
 | Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (`memory_service`, `artifact_service`, `credential_service`, `plugin_close_timeout`) and `run_async` (`run_config`) | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` |
 | Pydantic AI | `agent.run` / `run_stream_events` | `user_prompt`, `message_history`, `deps` | `UsageLimits(request_limit=...)` | `event_stream_handler` (`run()`; dropped with one warning in `stream()`) |
 | Microsoft Agent Framework | `agent.run` (including `stream=True`): model settings are nested in `options` | `messages`, `session`, `stream` | native function-invocation configuration on the client | native middleware on the agent or client |
-| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; `max_rpm` is a forwarded rate limit) | `agents`, `tasks`, `memory` | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` |
-| Smolagents | `agent.run` | `task`, `reset`, `additional_args`, `stream`, `return_full_result` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) |
+| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; `max_rpm` is a forwarded rate limit) | `agents`, `tasks`, `memory` | `max_iter` on the native `Agent` (needs nothing from OAK) | `step_callback` / `task_callback` |
+| Smolagents | `agent.run` | `task`, `reset`, `additional_args`, `stream`, `return_full_result` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from OAK) |
 | Claude Agent SDK | the run's `ClaudeAgentOptions` (any field; others are rejected) | `resume`, `session_id`, `continue_conversation`, `fork_session`, `resume_session_at`, `resume_drops_turn`, `session_store`, `session_store_flush`, `enable_file_checkpointing`, `include_partial_messages`, and the `ak` entry of `mcp_servers` | `max_turns` (and `max_budget_usd`) | native `hooks` |
 
 **Computed per run.** `Module.run_options(agent, [factory], **options)` also takes one optional positional
@@ -305,7 +305,7 @@ resolves the options once per run through `Agent.resolve_run_options(session, re
 static dict, then the factory's result validated against `RESERVED_RUN_OPTIONS` and merged over it at
 the top level (a factory key wins; a dict-valued option it returns replaces the static one wholesale, so
 on LangGraph extend the static `config` from `agent.run_options` rather than returning a bare one),
-then the keys Agent Kernel owns written last as above. An agent without a factory resolves to exactly
+then the keys OAK owns written last as above. An agent without a factory resolves to exactly
 its static dict, so every existing declaration is unchanged.
 
 ```python
@@ -328,9 +328,9 @@ a framework error does: a user-facing error reply in `run`, a propagated excepti
 Nothing is cached, so the failure repeats until the factory is fixed.
 
 **Progress: two paths.** With `execution.message_type: delta`, [`PostHook.on_stream_event`](../integrations/hooks.md#streaming-hooks-on_stream_event)
-sees Agent Kernel's framework-agnostic `StreamEvent`s for whatever the adapter maps. Native hooks
+sees OAK's framework-agnostic `StreamEvent`s for whatever the adapter maps. Native hooks
 through run options work in **any** mode, including `rest_sync`, and expose the framework's full
-lifecycle (LLM start, agent start, handoffs). A native hook's callbacks run inside the Agent Kernel
+lifecycle (LLM start, agent start, handoffs). A native hook's callbacks run inside the OAK
 run, so `Session.current()` and `Agent.current()` resolve in them; a hook instance declared once at
 load time therefore needs no per-request plumbing. It is shared by every concurrent run of that
 agent, so keep per-run state in the session (its volatile cache is cleared after each run), never on
@@ -375,7 +375,7 @@ except Exception as e:
 
 - Runners execute framework-specific agent logic and expose both `run()` and `stream()`
 - Each framework has its own Runner implementation
-- OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK support native token streaming (as AK `StreamEvent`s); the CrewAI and Smolagents adapters do not implement it yet
+- OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK support native token streaming (as OAK `StreamEvent`s); the CrewAI and Smolagents adapters do not implement it yet
 - Runners convert typed requests/replies and manage framework session state
 - Runners inject the reserved `framework_context` into the native call and write the produced state back on success (fidelity varies per framework)
 - Always use async/await, and prefer `Runtime.run()`/`AgentService` over calling runners directly

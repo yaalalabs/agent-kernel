@@ -1,12 +1,12 @@
-# Agent Kernel running OpenAI Agents SDK-based agents in AWS Lambda with Redis as agent memory
+# Open Agent Kernel running OpenAI Agents SDK-based agents in AWS Lambda with Redis as agent memory
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using AWS Lambda using redis as agent memory.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using AWS Lambda using redis as agent memory.
 
 ## Deployed Resources
 
 This demo deploys the following AWS resources:
 
-- AWS Lambda function running the Agent Kernel implementation.
+- AWS Lambda function running the OAK implementation.
 - API Gateway endpoint for the Lambda function.
 - Configuration changes to enable redis as agent memory (Refer to `config.yaml` for details).
 

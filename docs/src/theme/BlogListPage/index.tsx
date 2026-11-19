@@ -83,7 +83,7 @@ function BlogListPageContent(props: Props): ReactNode {
           <h1 className={styles.heroTitle}>Blog</h1>
           <p className={styles.heroSubtitle}>
             Product announcements, engineering deep dives, and stories from
-            the Agent Kernel team.
+            the OAK team.
           </p>
         </header>
         <nav className={styles.topicBar} aria-label="Filter posts by topic">

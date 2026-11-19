@@ -4,7 +4,7 @@
 
 ## Introduction
 
-This Privacy Policy describes how **Yaala Labs** ("we", "us", or "our"), the data controller, handles personal data in connection with the Agent Kernel documentation website at [kernel.yaala.ai](https://kernel.yaala.ai).
+This Privacy Policy describes how **Yaala Labs** ("we", "us", or "our"), the data controller, handles personal data in connection with the Open Agent Kernel documentation website at [kernel.yaala.ai](https://kernel.yaala.ai).
 
 ## Data Controller
 

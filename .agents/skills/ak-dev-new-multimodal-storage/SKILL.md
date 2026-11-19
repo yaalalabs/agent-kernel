@@ -2,7 +2,7 @@
 name: ak-dev-new-multimodal-storage
 description: >
   Step-by-step guide for adding a new multimodal attachment storage backend to
-  Agent Kernel. Use this skill when you need to integrate a new storage service
+  Open Agent Kernel (OAK). Use this skill when you need to integrate a new storage service
   (beyond in-memory, Redis, and DynamoDB) for persisting image and file
   attachments. Covers implementing the AttachmentStore interface, factory
   registration, configuration, and testing.
@@ -14,7 +14,7 @@ metadata:
 
 # Adding a New Multimodal Storage Backend
 
-This guide walks through adding a new attachment storage backend to Agent Kernel's multimodal subsystem. Use the existing Redis (`ak-py/src/agentkernel/core/multimodal/storage/redis.py`) and DynamoDB (`ak-py/src/agentkernel/core/multimodal/storage/dynamodb.py`) implementations as reference.
+This guide walks through adding a new attachment storage backend to Open Agent Kernel's multimodal subsystem. Use the existing Redis (`ak-py/src/agentkernel/core/multimodal/storage/redis.py`) and DynamoDB (`ak-py/src/agentkernel/core/multimodal/storage/dynamodb.py`) implementations as reference.
 
 ## Existing Backends
 

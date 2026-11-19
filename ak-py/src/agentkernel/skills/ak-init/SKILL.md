@@ -1,19 +1,19 @@
 ---
 name: ak-init
 description: >
-  Scaffold a new Agent Kernel project from scratch. This skill guides you through
+  Scaffold a new Open Agent Kernel project from scratch. This skill guides you through
   choosing an agent framework, defining tools, selecting a deployment target, and
   generating a complete project with all necessary files. Designed for users who
-  want to build a new AI agent using the Agent Kernel library.
+  want to build a new AI agent using the OAK library.
 license: Apache-2.0
 metadata:
   author: yaalalabs
   category: user
 ---
 
-# Scaffold an Agent Kernel Project
+# Scaffold an Open Agent Kernel Project
 
-Use this skill to create a new AI agent project powered by Agent Kernel.
+Use this skill to create a new AI agent project powered by Open Agent Kernel (OAK).
 
 ## Instructions for the Agent
 

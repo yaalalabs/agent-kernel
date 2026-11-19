@@ -1,6 +1,6 @@
 # Multimodal Example with Conversation Threads — OpenAI SDK
 
-Demonstrates Agent Kernel's Conversation Thread Support combined with multimodal (image/file) support, using the
+Demonstrates Open Agent Kernel's Conversation Thread Support combined with multimodal (image/file) support, using the
 native OpenAI Agent SDK.
 
 The app mounts `AgentThreadRequestHandler` (see `app.py`), which is what enables threads; the `thread` block

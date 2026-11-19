@@ -1,3 +1,4 @@
+import OakMark from '@site/src/components/OakMark';
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import ScrollTrigger from "gsap/dist/ScrollTrigger";
@@ -247,13 +248,13 @@ export default function BusinessLeaderPage() {
 
   return (
     <Layout
-      title="Agent Kernel for Business Leaders"
-      description="Learn how Agent Kernel helps business leaders implement AI agents that scale across their organization."
+      title="Open Agent Kernel for Business Leaders"
+      description="Learn how Open Agent Kernel helps business leaders implement AI agents that scale across their organization."
     >
       {/* <HeroAnimation
         badge="Business Leaders"
         title="Scale AI Agents Across Your Organization"
-        subtitle="Agent Kernel helps business teams move from AI experimentation to production outcomes. Launch compliant AI agents quickly, connect to real channels, and deploy across AWS, Azure, GCP, or your own infrastructure without rebuilding your platform each time."
+        subtitle="Open Agent Kernel helps business teams move from AI experimentation to production outcomes. Launch compliant AI agents quickly, connect to real channels, and deploy across AWS, Azure, GCP, or your own infrastructure without rebuilding your platform each time."
       /> */}
       <StepTimeline levelId="01" contentRef={contentRef} />
       <section ref={sectionRef} className={styles.blPageSection}>
@@ -378,9 +379,9 @@ export default function BusinessLeaderPage() {
 
             {/* ── STEP 03 ── */}
             <div style={{ marginTop: "2rem" }} data-step="bl-03">
-              <p className={styles.stepLabel}>Step 03: Agent Kernel</p>
+              <p className={styles.stepLabel}>Step 03: OAK</p>
               <h2 className={styles.contentTitle}>
-                <span>Agent Kernel Is The Engine That Powers It At Scale To Run</span>
+                <span>OAK Is The Engine That Powers It At Scale To Run</span>
                 {' '}
                 <span>Compliant AI Agents</span>
               </h2>
@@ -389,7 +390,7 @@ export default function BusinessLeaderPage() {
               <div className={styles.blHighlightCard}>
                 <p className={styles.blHighlightEyebrow}>For Your Business</p>
                 <h3 className={styles.blHighlightTitle}>
-                  Agent Kernel is the Operating System for AI agents.
+                  OAK is the Operating System for AI agents.
                 </h3>
                 <p className={styles.blHighlightBody}>
                   You don't need to understand how an operating system works to
@@ -397,7 +398,7 @@ export default function BusinessLeaderPage() {
                   servers, and cloud systems.
                 </p>
                 <p className={styles.blHighlightBody}>
-                  Agent Kernel does the same thing for AI agents. It's a
+                  OAK does the same thing for AI agents. It's a
                   powerful platform that runs your AI agents in the background,
                   handling all the complex infrastructure so that you focus on
                   building the features that matter to your business.
@@ -445,7 +446,7 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "2rem" }} data-step="bl-04">
               <p className={styles.stepLabel}>Step 04: See it in action</p>
               <h2 className={styles.contentTitle}>
-                <span>See Your Agent Kernel In Action</span>
+                <span>See Your OAK In Action</span>
               </h2>
               <p className={styles.contentDescription}>
                 Curious what your agent can actually do? Here are some real
@@ -459,10 +460,10 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "3rem" }} data-step="bl-05">
               <p className={styles.stepLabel}>Step 05: How it works</p>
               <h2 className={styles.contentTitle}>
-                <span>Agent Kernel Is The Engine That Powers It All</span>
+                <span>OAK Is The Engine That Powers It All</span>
               </h2>
               <p className={styles.contentDescription}>
-                You write your AI agent's logic. Agent Kernel handles everything
+                You write your AI agent's logic. OAK handles everything
                 else: the infrastructure, the cloud deployment, memory, knowledge
                 bases, hooks, observability & traceability, LLM cost tracking, and
                 the integrations so your agent is live and talking to real users
@@ -484,7 +485,7 @@ export default function BusinessLeaderPage() {
                     Continue Exploring
                   </div>
                   <h2 className={styles.goDeeperTitle}>
-                    Go deeper with Agent Kernel
+                    Go deeper with OAK
                   </h2>
                   <p className={styles.goDeeperSubtitle}>
                     Explore the platform capabilities and real-world workflows behind secure,
@@ -519,7 +520,7 @@ export default function BusinessLeaderPage() {
                     >
                       <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
                       <p className={styles.goDeeperCardBody}>
-                        See how teams use Agent Kernel to build assistants,
+                        See how teams use OAK to build assistants,
                         automate workflows, monitor systems, and ship reliable AI
                         agents faster.
                       </p>
@@ -560,7 +561,7 @@ export default function BusinessLeaderPage() {
             <p className={styles.ctaSubtitle}>
               Free, open-source, Apache 2.0. No licensing costs, no vendor
               lock-in. Join hundreds of developers building production AI agents
-              with Agent Kernel.
+              with OAK.
             </p>
             <div className={styles.ctaButtons}>
               <Link
@@ -580,11 +581,7 @@ export default function BusinessLeaderPage() {
             </div>
 
             <div className={styles.ctaImageWrapper}>
-              <img
-                src="/img/cta-bg.png"
-                alt="Agent Kernel"
-                className={styles.ctaImage}
-              />
+              <OakMark variant="cta" className={styles.ctaImage} />
             </div>
           </div>
         </div>

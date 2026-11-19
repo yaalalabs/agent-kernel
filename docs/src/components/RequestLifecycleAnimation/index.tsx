@@ -124,7 +124,7 @@ export default function RequestLifecycleAnimation() {
           <span className={styles.badge}>Request Lifecycle</span>
           <h2 className={styles.title}>Every Request, Fully Orchestrated</h2>
           <p className={styles.subtitle}>
-            Agent Kernel wraps your agent logic in a structured, inspectable execution pipeline —
+            OAK wraps your agent logic in a structured, inspectable execution pipeline —
             from user message to validated response.
           </p>
         </div>
@@ -163,7 +163,7 @@ export default function RequestLifecycleAnimation() {
             <defs>
               <linearGradient id="rlTrackGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stopColor="var(--ak-blue)" />
-                <stop offset="100%" stopColor="var(--ak-purple)" />
+                <stop offset="100%" stopColor="var(--ak-sky)" />
               </linearGradient>
               <filter id="rlGlow" x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur stdDeviation="3" result="blur" />

@@ -1,7 +1,7 @@
 ---
 name: ak-dev-sync-skills-and-docs-from-commit
 description: >
-  Sync Agent Kernel skills and documentation from a specific commit hash.
+  Sync Open Agent Kernel skills and documentation from a specific commit hash.
   Use this skill in automation or maintenance flows to analyze code changes introduced
   by a commit, then update developer skills, user skills, and docs surfaces so the
   repository guidance stays aligned with implementation.
@@ -239,6 +239,7 @@ If example inventory changed, update docs-site overview/index pages that referen
 - Keep examples aligned with live code in `examples/` and `ak-deployment/`.
 - If an example changed, update both its README and docs-site references.
 - If setup steps changed, update both quick-start/getting-started and deeper reference pages where relevant.
+- Write the product name by the rules in the *Naming and brand* section of `AGENTS.md`: "Open Agent Kernel" in titles and on first mention, "OAK" after that, identifiers and quoted product output unchanged.
 
 ## Step 8: Validation Checklist
 

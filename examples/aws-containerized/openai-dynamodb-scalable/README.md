@@ -1,6 +1,6 @@
-# Agent Kernel Scalable OpenAI Agents with AWS ECS Architecture
+# Open Agent Kernel Scalable OpenAI Agents with AWS ECS Architecture
 
-This package demonstrates a scalable Agent Kernel implementation running OpenAI Agents SDK on AWS ECS with queue-based processing.
+This package demonstrates a scalable Open Agent Kernel implementation running OpenAI Agents SDK on AWS ECS with queue-based processing.
 
 ## Architecture Overview
 

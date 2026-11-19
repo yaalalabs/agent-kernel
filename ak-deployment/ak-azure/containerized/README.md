@@ -1,4 +1,4 @@
-# Agent Kernel - Azure Containerized Module
+# Open Agent Kernel - Azure Containerized Module
 
 A comprehensive Terraform module for deploying containerized applications on Azure using Container Apps, with API Management (APIM), and optional Redis or Cosmos DB integration.
 
@@ -270,7 +270,7 @@ module "container_app_cosmosdb" {
 
 With `queue_mode = true` the module adds:
 - A Standard Service Bus namespace (`<prefix>-queues`, local auth off) with session-enabled, duplicate-detecting
-  `input` and `output` queues (lock 1 minute, max delivery count 4: one above Agent Kernel's default
+  `input` and `output` queues (lock 1 minute, max delivery count 4: one above Open Agent Kernel's default
   `max_receive_count` of 3).
 - An agent runner Container App (`<prefix>-runner`, no ingress) running `agent_runner_command`, scaled by a KEDA
   `azure-servicebus` rule on `input` (one replica per 5 waiting messages) that authenticates with the app's

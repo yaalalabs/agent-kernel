@@ -1,4 +1,4 @@
-# Agent Kernel - Azure Common Infrastructure Modules
+# Open Agent Kernel - Azure Common Infrastructure Modules
 
 A collection of reusable Terraform modules for building Azure infrastructure, optimized for serverless and containerized applications.
 
@@ -218,7 +218,7 @@ This project is licensed under the terms specified in the LICENSE file.
 
 ## 🔗 Related Projects
 
-- [Agent Kernel](https://github.com/yaalalabs/agent-kernel) - The main Agent Kernel project
+- [Open Agent Kernel (OAK)](https://github.com/yaalalabs/agent-kernel) - The main OAK project
 
 ## 📞 Support
 

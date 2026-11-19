@@ -1,7 +1,7 @@
 # Sprint rollover: "Start new iteration"
 
 The **Start new iteration** workflow ([`workflows/start-new-iteration.yaml`](workflows/start-new-iteration.yaml))
-does for the [Agent Kernel project board](https://github.com/orgs/yaalalabs/projects/3) what Jira's
+does for the [Open Agent Kernel project board](https://github.com/orgs/yaalalabs/projects/3) what Jira's
 "Complete sprint" does. In one run it:
 
 1. creates the new iteration on the board's **Iteration** field, or uses it if an iteration with that

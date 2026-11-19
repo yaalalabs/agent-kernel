@@ -1,3 +1,4 @@
+import { BRAND, brandRgba } from '@site/src/lib/brand';
 import React, { useEffect, useRef, useState } from 'react';
 import styles from './styles.module.css';
 import { useHistory } from '@docusaurus/router';
@@ -12,7 +13,7 @@ const LEVEL_STEPS: Record<string, StepDef[]> = {
   '01': [
     { num: '01', label: 'Identify the gap',   selector: '[data-step="bl-01"]' },
     { num: '02', label: 'Meet the solution',  selector: '[data-step="bl-02"]' },
-    { num: '03', label: 'Agent Kernel',       selector: '[data-step="bl-03"]' },
+    { num: '03', label: 'OAK',       selector: '[data-step="bl-03"]' },
     { num: '04', label: 'See it in action',   selector: '[data-step="bl-04"]' },
     { num: '05', label: 'How it works',       selector: '[data-step="bl-05"]' },
   ],
@@ -36,14 +37,14 @@ const LEVEL_STEPS: Record<string, StepDef[]> = {
 };
 
 const DEFAULT_THEME = {
-  '--timeline-color': '#00ddff',
-  '--timeline-color-glow': 'rgba(0, 221, 255, 0.5)',
-  '--timeline-color-glow-strong': 'rgba(0, 221, 255, 0.8)',
-  '--timeline-color-dark': '#0088cc',
-  '--timeline-color-border': 'rgba(0, 221, 255, 0.25)',
-  '--timeline-color-bg': 'rgba(0, 221, 255, 0.08)',
-  '--timeline-color-bg-hover': 'rgba(0, 221, 255, 0.15)',
-  '--timeline-color-text-dim': 'rgba(0, 221, 255, 0.7)',
+  '--timeline-color': BRAND.ice,
+  '--timeline-color-glow': brandRgba('ice', 0.5),
+  '--timeline-color-glow-strong': brandRgba('ice', 0.8),
+  '--timeline-color-dark': BRAND.dusk,
+  '--timeline-color-border': brandRgba('ice', 0.25),
+  '--timeline-color-bg': brandRgba('ice', 0.08),
+  '--timeline-color-bg-hover': brandRgba('ice', 0.15),
+  '--timeline-color-text-dim': brandRgba('ice', 0.7),
 };
 
 const LEVEL_THEMES: Record<string, Record<string, string>> = {

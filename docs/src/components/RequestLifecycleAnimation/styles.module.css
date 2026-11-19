@@ -6,7 +6,7 @@
 
 .wrapper {
   padding: 4rem 0;
-  background: linear-gradient(180deg, transparent, rgba(242, 0, 255, 0.025) 50%, transparent);
+  background: linear-gradient(180deg, transparent, rgba(var(--ak-sky-rgb), 0.025) 50%, transparent);
 }
 
 .header {
@@ -21,9 +21,9 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--ak-purple);
-  background: rgba(242, 0, 255, 0.1);
-  border: 1px solid rgba(242, 0, 255, 0.2);
+  color: var(--ak-sky);
+  background: rgba(var(--ak-sky-rgb), 0.1);
+  border: 1px solid rgba(var(--ak-sky-rgb), 0.2);
   border-radius: 999px;
   padding: 0.3rem 0.9rem;
   margin-bottom: 1rem;
@@ -99,18 +99,18 @@
 }
 
 /* Color variants */
-.color_blue .stageIcon  { color: var(--ak-blue); }
-.color_violet .stageIcon { color: var(--ak-purple); }
+.color_blue .stageIcon  { color: var(--ak-primary); }
+.color_violet .stageIcon { color: var(--ak-sky); }
 .color_green .stageIcon  { color: var(--ak-green); }
 
 /* Active stage */
 .stageActive {
-  border-color: var(--ak-blue) !important;
-  box-shadow: 0 0 0 1px var(--ak-blue), 0 4px 20px var(--ak-blue-glow);
+  border-color: var(--ak-primary) !important;
+  box-shadow: 0 0 0 1px var(--ak-primary), 0 4px 20px var(--ak-primary-glow);
 }
 
 .stageActive .stageIcon {
-  color: var(--ak-blue) !important;
+  color: var(--ak-primary) !important;
 }
 
 /* Pulse ring on active node (::after pseudo-element) */
@@ -119,7 +119,7 @@
   position: absolute;
   inset: -4px;
   border-radius: calc(0.75rem + 4px);
-  border: 1.5px solid var(--ak-blue);
+  border: 1.5px solid var(--ak-primary);
   opacity: 0.6;
   animation: stagePulseRing 0.6s cubic-bezier(0, 0, 0.2, 1) forwards;
 }
@@ -201,7 +201,7 @@
     top: 0.75rem;
     bottom: 0.75rem;
     width: 2px;
-    background: linear-gradient(180deg, var(--ak-blue), var(--ak-purple));
+    background: linear-gradient(180deg, var(--ak-primary), var(--ak-primary-soft));
     opacity: 0.25;
     border-radius: 2px;
   }
@@ -236,8 +236,8 @@
   }
 
   .stageActive::before {
-    background: var(--ak-blue) !important;
-    box-shadow: 0 0 6px var(--ak-blue-glow);
+    background: var(--ak-primary) !important;
+    box-shadow: 0 0 6px var(--ak-primary-glow);
   }
 
   /* Replace ring animation with dot — hide the ring on mobile */

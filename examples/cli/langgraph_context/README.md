@@ -1,4 +1,4 @@
-# Agent Kernel — per-run framework context/state (LangGraph)
+# Open Agent Kernel — per-run framework context/state (LangGraph)
 
 This demo shows how to carry a **framework-agnostic context/state object across turns** using Agent
 Kernel's reserved `framework_context` session key, with an agent built on LangGraph.
@@ -11,7 +11,7 @@ survives across turns even though each turn is a separate run — that persisten
 ## Why a custom state schema
 
 LangGraph is the one framework where round-trip fidelity depends on **your graph's state schema**.
-Agent Kernel spreads the `framework_context` dict's top-level keys into the graph input, but only
+Open Agent Kernel spreads the `framework_context` dict's top-level keys into the graph input, but only
 reads back the keys the graph **declares as state channels**:
 
 ```python
@@ -56,7 +56,7 @@ way in but never come back on the way out, so it would not persist. Extending `A
    it reads the cart from the session through `ToolContext`, so it sees the cart as of the start of the
    turn (items added earlier in the same turn show up on the state channel, not here).
 
-4. **Write-back.** After a **successful** run, Agent Kernel reads back the keys the schema declared
+4. **Write-back.** After a **successful** run, OAK reads back the keys the schema declared
    (`cart`) and writes them to the same session key. On a framework error or a client disconnect
    mid-stream, the previously stored context is left intact (write-back is atomic per turn).
 

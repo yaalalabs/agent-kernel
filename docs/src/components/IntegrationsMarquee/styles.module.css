@@ -53,14 +53,14 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 1rem;
-  border: 2px solid #2a272e;
+  border: 2px solid var(--ak-border);
   border-radius: 999px;
   font-size: 0.9rem;
   font-weight: 500;
-  color: rgba(147, 210, 255, 0.9);
+  color: rgba(var(--ak-sky-rgb), 0.9);
   letter-spacing: 0.01em;
   margin-bottom: 1.25rem;
-  background: #131017;
+  background: var(--ak-surface-raised);
 }
 
 .badgeStar {
@@ -81,7 +81,7 @@
 
 .subtitle {
   font-size: 1.05rem;
-  color: #9a91b8;
+  color: var(--ak-text-secondary);
   line-height: 1.7;
   margin: 0.9rem 0 0;
 }
@@ -170,7 +170,7 @@
   min-width: 190px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
-  background: #010002;
+  background: var(--ak-bg);
   text-decoration: none;
   text-align: left;
   white-space: nowrap;
@@ -248,7 +248,7 @@
   font-weight: 500;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #9a91b8;
+  color: var(--ak-text-secondary);
   line-height: 1.2;
 }
 
@@ -257,8 +257,8 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(147, 210, 255, 0.9);
-  border: 1px solid rgba(147, 210, 255, 0.35);
+  color: rgba(var(--ak-sky-rgb), 0.9);
+  border: 1px solid rgba(var(--ak-sky-rgb), 0.35);
   border-radius: 999px;
   padding: 0.05rem 0.4rem;
   line-height: 1.3;

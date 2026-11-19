@@ -1,4 +1,4 @@
-# Agent Kernel - GCP Containerized Module
+# Open Agent Kernel - GCP Containerized Module
 
 A comprehensive Terraform module for deploying containerized applications on GCP using Cloud Run with always-on capability (min_instance_count≥1), API Gateway, and optional state management with Memorystore Redis or Firestore.
 
@@ -405,7 +405,7 @@ gateway_endpoints = [
 |------|-------------|------|---------|:--------:|
 | `create_redis_cluster` | Create Memorystore Redis instance for agent memory. Queue mode always creates it, as its response store | `bool` | `false` | no |
 | `create_firestore_database` | Create Firestore database for agent session storage | `bool` | `false` | no |
-| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database`; it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml`; setting this flag alone leaves threads on the in-memory backend. Note that enabling threads requires an authenticated caller: an `identity` block in `config.yaml` and a bearer token on every chat request. Behind API Gateway the caller's token reaches Cloud Run as `X-Forwarded-Authorization`, which only an identity provider of your own reads (see the Agent Kernel GCP deployment guide). | `bool` | `false` | no |
+| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database`; it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml`; setting this flag alone leaves threads on the in-memory backend. Note that enabling threads requires an authenticated caller: an `identity` block in `config.yaml` and a bearer token on every chat request. Behind API Gateway the caller's token reaches Cloud Run as `X-Forwarded-Authorization`, which only an identity provider of your own reads (see the Open Agent Kernel GCP deployment guide). | `bool` | `false` | no |
 
 **Redis Environment Variables (Auto-injected when enabled)**:
 - `AK_SESSION__REDIS__URL`: Complete Redis connection URL with authentication

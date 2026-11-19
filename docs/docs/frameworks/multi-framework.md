@@ -4,7 +4,7 @@ sidebar_position: 8
 
 # Multi-Framework Runtime
 
-Agent Kernel supports running agents from multiple frameworks within a single runtime environment. This allows you to leverage the unique strengths of different frameworks in one application while maintaining a unified interface for interaction.
+Open Agent Kernel (OAK) supports running agents from multiple frameworks within a single runtime environment. This allows you to leverage the unique strengths of different frameworks in one application while maintaining a unified interface for interaction.
 
 ## Overview
 
@@ -37,8 +37,8 @@ graph TB
     E --> F
     G --> F
     
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style F fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style F fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Basic Example
@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
 ## Installation
 
-To use multiple frameworks, install Agent Kernel with the required framework extensions:
+To use multiple frameworks, install OAK with the required framework extensions:
 
 ```bash
 uv add "agentkernel[cli,crewai,openai]"

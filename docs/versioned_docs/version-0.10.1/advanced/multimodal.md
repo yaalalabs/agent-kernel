@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Multimodal Attachments
 
-Agent Kernel supports **multimodal input processing**: users can send images and files alongside text, and the framework automatically handles description generation, storage, and context injection.
+Open Agent Kernel (OAK) supports **multimodal input processing**: users can send images and files alongside text, and the framework automatically handles description generation, storage, and context injection.
 
 ## Overview
 
@@ -89,9 +89,9 @@ of the source-form work — it no longer *strips* them either: the request trave
 adapter with the URL intact, so an adapter whose provider can fetch it gets the chance to. Previously
 they were consumed and dropped, so the agent saw nothing at all.
 
-Agent Kernel never fetches a remote attachment. The request travels on to the framework adapter, which
+OAK never fetches a remote attachment. The request travels on to the framework adapter, which
 hands the address to the model provider — so whether it resolves is a question for the app's configured
-model, not for Agent Kernel. If that model cannot fetch the address, the app should send the attachment
+model, not for OAK. If that model cannot fetch the address, the app should send the attachment
 as base64 instead — it is stored and described locally, so it does not depend on the provider fetching
 anything.
 
@@ -118,9 +118,9 @@ graph TB
         D[session_cache<br/>Legacy · Causes Bloat]
     end
 
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style B fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
-    style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style B fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
     style D fill:#d9534f,stroke:#fff,stroke-width:2px,color:#fff
 ```
 

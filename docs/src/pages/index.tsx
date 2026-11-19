@@ -1,3 +1,5 @@
+import OakMark from '@site/src/components/OakMark';
+import { BRAND } from '@site/src/lib/brand';
 import React, { useRef, useEffect, useLayoutEffect, useState } from "react";
 import Link from "@docusaurus/Link";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
@@ -122,8 +124,8 @@ function Hero() {
   };
 
   const subtitleLines = [
-    "Agent Kernel is the open source platform for building and deploying enterprise AI agents seamlessly at scale.",
-    "Agent Kernel reduces months of engineering work to minutes.",
+    "Open Agent Kernel (OAK) is the open source platform for building and deploying enterprise AI agents seamlessly at scale.",
+    "OAK reduces months of engineering work to minutes.",
     "Works with any major Agentic technology, runs on any cloud, interfaces with all mainstream communication channels seamlessly out of the box, no framework/platform lock-in, production ready from day one.",
   ];
 
@@ -243,7 +245,7 @@ function Hero() {
           </h1>
 
           <p ref={subtitleRef} className={styles.subtitle}>
-            Agent Kernel is the open source platform for building and deploying
+            OAK is the open source platform for building and deploying
             enterprise AI agents seamlessly at scale.
           </p>
 
@@ -291,7 +293,7 @@ function Hero() {
               </div>
               <p className={styles.heroSkillsText}>
                 Guides your coding assistant follows to scaffold, extend, test and deploy
-                Agent Kernel agents.{" "}
+                OAK agents.{" "}
                 <Link to="/docs/agent-skills" className={styles.heroSkillsLink}>
                   Learn more <span aria-hidden="true">→</span>
                 </Link>
@@ -302,14 +304,7 @@ function Hero() {
 
         {/* ── RIGHT – particle video ───────────── */}
         <div ref={videoRef} className={styles.right}>
-          <video
-            className={styles.heroVideo}
-            src="/video/hero.mp4"
-            autoPlay
-            loop
-            muted
-            playsInline
-          />
+          <OakMark variant="hero" />
         </div>
 
         {/* ── Scroll label ────────────────────── */}
@@ -712,7 +707,7 @@ function Community({ sectionRef }: CommunityProps) {
           <p className={styles.ctaSubtitle}>
             Free, open-source, Apache 2.0. No licensing costs, no vendor
             lock-in. Join hundreds of developers building production AI agents
-            with Agent Kernel.
+            with OAK.
           </p>
           <div className={styles.ctaButtons}>
             <Link
@@ -733,11 +728,7 @@ function Community({ sectionRef }: CommunityProps) {
           </div>
 
           <div className={styles.ctaImageWrapper}>
-            <img
-              src="/img/cta-bg.png"
-              alt="Agent Kernel"
-              className={styles.ctaImage}
-            />
+            <OakMark variant="cta" className={styles.ctaImage} />
           </div>
         </div>
       </div>
@@ -782,7 +773,7 @@ function Levels() {
       image: "/img/developer.png",
       description:
         "You build software but haven't built AI agents yet. You want to ship something robust and real without learning a new stack from scratch.",
-      accent: "#00ddff",
+      accent: BRAND.ice,
       tag: "Some coding",
       expertise: 2,
     },
@@ -994,7 +985,7 @@ function Levels() {
             Built for Every Level of Expertise
           </div>
           <h2 ref={titleRef} className={styles.levelsTitle}>
-            <span>Agent Kernel, Explained</span>
+            <span>OAK, Explained</span>
             {" "}
             <span>For Your Level of Expertise</span>
           </h2>
@@ -1126,7 +1117,7 @@ export default function Home() {
   return (
     <Layout
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
-      description="Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, or the Claude Agent SDK to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, sandboxed code execution, and observability (Langfuse, OpenLLMetry, Pydantic Logfire, AWS CloudWatch)."
+      description="OAK is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, or the Claude Agent SDK to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, sandboxed code execution, and observability (Langfuse, OpenLLMetry, Pydantic Logfire, AWS CloudWatch)."
     >
       {/* <PlantParticlesBackground ref={backgroundRef} /> */}
       <WhatsNewBanner />

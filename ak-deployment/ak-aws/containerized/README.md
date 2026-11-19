@@ -1,6 +1,6 @@
 # AWS Containerized Deployment
 
-Scalable, production-ready deployment of Agent Kernel on AWS using ECS Fargate with optional queue-based processing and auto-scaling.
+Scalable, production-ready deployment of Open Agent Kernel (OAK) on AWS using ECS Fargate with optional queue-based processing and auto-scaling.
 
 ## 📋 Table of Contents
 
@@ -16,7 +16,7 @@ Scalable, production-ready deployment of Agent Kernel on AWS using ECS Fargate w
 
 ## Overview
 
-This deployment uses AWS ECS Fargate to run containerized Agent Kernel applications with:
+This deployment uses AWS ECS Fargate to run containerized OAK applications with:
 
 - ✅ **Automatic scaling** based on queue depth
 - ✅ **Async processing** with SQS queues
@@ -408,7 +408,7 @@ create_dynamodb_schedule_table = true
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `execution_mode` | Execution mode: `rest_sync` (client waits on the same HTTP connection), `rest_async` (client polls a separate GET endpoint; requires `queue_mode = true`), `async` (WebSocket only; `message_type` picks one message per reply or one per chunk), or `realtime` (persistent model sockets behind a stateful edge such as the LiveKit gateway). `stream` was removed and fails at `terraform plan`: use `async` with `message_type = "delta"`. | `string` | `"rest_sync"` | no |
-| `message_type` | Reply delivery: `complete` (whole reply) or `delta` (one message per chunk). `null` leaves Agent Kernel's default (`delta` for `realtime`, `complete` otherwise). Injected as `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and the agent runner whenever non-null, in every mode, so the two containers always agree. For chunked replies use `delta` with `async` (WebSocket chunks): in queue mode `ECSIOHandler` refuses `rest_sync` + `delta` at startup (its REST container has no SSE route), and Agent Kernel rejects `rest_async` + `delta` and `realtime` + `complete` at config load. Terraform validates the value only; Agent Kernel checks the combination at startup. | `string` | `null` | no |
+| `message_type` | Reply delivery: `complete` (whole reply) or `delta` (one message per chunk). `null` leaves OAK's default (`delta` for `realtime`, `complete` otherwise). Injected as `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and the agent runner whenever non-null, in every mode, so the two containers always agree. For chunked replies use `delta` with `async` (WebSocket chunks): in queue mode `ECSIOHandler` refuses `rest_sync` + `delta` at startup (its REST container has no SSE route), and OAK rejects `rest_async` + `delta` and `realtime` + `complete` at config load. Terraform validates the value only; OAK checks the combination at startup. | `string` | `null` | no |
 
 ### Non-Queue Mode (Default)
 

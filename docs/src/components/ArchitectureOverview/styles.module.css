@@ -52,14 +52,14 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 1rem;
-  border: 2px solid #2a272e;
+  border: 2px solid var(--ak-border);
   border-radius: 999px;
   font-size: 0.9rem;
   font-weight: 500;
-  color: rgba(147, 210, 255, 0.9);
+  color: rgba(var(--ak-sky-rgb), 0.9);
   letter-spacing: 0.01em;
   margin-bottom: 1.25rem;
-  background: #131017;
+  background: var(--ak-surface-raised);
 }
 
 .badgeStar {
@@ -80,7 +80,7 @@
 
 .subtitle {
   font-size: 1.05rem;
-  color: #9a91b8;
+  color: var(--ak-text-secondary);
   line-height: 1.7;
   margin: 0.9rem 0 0;
 }
@@ -94,8 +94,8 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px;
   background:
-    radial-gradient(ellipse at 50% 45%, rgba(0, 221, 255, 0.06) 0%, transparent 55%),
-    linear-gradient(180deg, rgba(12, 12, 20, 0.85) 0%, rgba(4, 4, 8, 0.95) 100%);
+    radial-gradient(ellipse at 50% 45%, rgba(var(--ak-blue-rgb), 0.06) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(var(--ak-bg-rgb), 0.85) 0%, rgba(var(--ak-bg-rgb), 0.95) 100%);
   text-align: left;
 }
 
@@ -110,7 +110,7 @@
 
 .connector {
   fill: none;
-  stroke: rgba(147, 210, 255, 0.45);
+  stroke: rgba(var(--ak-sky-rgb), 0.45);
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-dasharray: 2 6;
@@ -127,14 +127,14 @@
 }
 
 .connector-pill {
-  stroke: rgba(147, 210, 255, 0.3);
+  stroke: rgba(var(--ak-sky-rgb), 0.3);
   stroke-dasharray: 2 5;
   animation: none;
 }
 
 .arrowHead {
   fill: none;
-  stroke: rgba(147, 210, 255, 0.7);
+  stroke: rgba(var(--ak-sky-rgb), 0.7);
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -180,7 +180,7 @@
   display: block;
   width: 64px;
   height: 1px;
-  background: rgba(147, 210, 255, 0.5);
+  background: rgba(var(--ak-sky-rgb), 0.5);
 }
 
 .align-start {
@@ -209,7 +209,7 @@
   padding: 1rem 1.15rem 1.1rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
-  background: rgba(10, 10, 16, 0.92);
+  background: rgba(var(--ak-bg-rgb), 0.92);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
@@ -236,14 +236,14 @@
   height: 36px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: #010002;
+  background: var(--ak-bg);
   color: #ffffff;
   transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 
 .chip:hover,
 .chip:focus-visible {
-  border-color: rgba(147, 210, 255, 0.55);
+  border-color: rgba(var(--ak-sky-rgb), 0.55);
   background: rgba(255, 255, 255, 0.05);
   transform: translateY(-2px);
   color: #ffffff;
@@ -289,8 +289,8 @@
   border-radius: 50%;
   background: radial-gradient(
     circle,
-    rgba(0, 221, 255, 0.22) 0%,
-    rgba(130, 80, 255, 0.16) 38%,
+    rgba(var(--ak-blue-rgb), 0.22) 0%,
+    rgba(var(--ak-sky-rgb), 0.16) 38%,
     transparent 68%
   );
   filter: blur(12px);
@@ -304,7 +304,7 @@
   width: 300px;
   height: 300px;
   transform: translate(-50%, -58%);
-  border: 1px dashed rgba(147, 210, 255, 0.35);
+  border: 1px dashed rgba(var(--ak-sky-rgb), 0.35);
   border-radius: 48px;
   pointer-events: none;
 }
@@ -318,18 +318,18 @@
   align-items: center;
   justify-content: center;
   border-radius: 36px;
-  border: 1px solid rgba(147, 210, 255, 0.4);
-  background: linear-gradient(160deg, rgba(22, 26, 44, 0.96) 0%, rgba(8, 8, 14, 0.96) 100%);
+  border: 1px solid rgba(var(--ak-sky-rgb), 0.4);
+  background: linear-gradient(160deg, rgba(var(--ak-prussian-rgb), 0.96) 0%, rgba(var(--ak-bg-rgb), 0.96) 100%);
   box-shadow:
-    0 0 60px rgba(0, 221, 255, 0.16),
-    inset 0 0 40px rgba(0, 221, 255, 0.06);
+    0 0 60px rgba(var(--ak-blue-rgb), 0.16),
+    inset 0 0 40px rgba(var(--ak-blue-rgb), 0.06);
 }
 
 .coreLogo {
   width: 96px;
   height: 96px;
   display: block;
-  filter: drop-shadow(0 0 18px rgba(0, 221, 255, 0.35));
+  filter: drop-shadow(0 0 18px rgba(var(--ak-blue-rgb), 0.35));
 }
 
 .coreName {
@@ -346,7 +346,7 @@
   font-size: 0.8rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #9a91b8;
+  color: var(--ak-text-secondary);
 }
 
 /* Pills sit at the four corners of the core column on desktop. */
@@ -365,7 +365,7 @@
   padding: 0.5rem 0.95rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: #0b0a0f;
+  background: var(--ak-bg-alt);
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
   font-size: 0.85rem;
   font-weight: 500;
@@ -377,7 +377,7 @@
 
 .pill:hover,
 .pill:focus-visible {
-  border-color: rgba(147, 210, 255, 0.55);
+  border-color: rgba(var(--ak-sky-rgb), 0.55);
   color: #ffffff;
   text-decoration: none;
   transform: translateY(-1px);
@@ -388,8 +388,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #00ddff;
-  box-shadow: 0 0 10px rgba(0, 221, 255, 0.8);
+  background: var(--ak-primary);
+  box-shadow: 0 0 10px rgba(var(--ak-primary-rgb), 0.8);
 }
 
 .pill-0 {
@@ -468,7 +468,7 @@
 }
 
 .flowAccent {
-  color: #00ddff;
+  color: var(--ak-primary);
 }
 
 /* ─── Reduced motion ───────────────────────────────────────────────────── */
@@ -506,7 +506,7 @@
     display: block;
     text-align: center;
     font-size: 1.4rem;
-    color: rgba(147, 210, 255, 0.6);
+    color: rgba(var(--ak-sky-rgb), 0.6);
     line-height: 1;
   }
 

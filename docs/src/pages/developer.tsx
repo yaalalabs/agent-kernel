@@ -1,3 +1,4 @@
+import OakMark from '@site/src/components/OakMark';
 import React, { useEffect, useRef } from "react";
 import gsap from "gsap";
 import ScrollTrigger from "gsap/dist/ScrollTrigger";
@@ -35,7 +36,7 @@ const DEV_FEATURE_GROUPS = [
       {
         icon: MdTerminal,
         title: "CLI for Prototyping",
-        body: "Easy interfacing your agents on your laptop via Agent Kernel's command line interface.",
+        body: "Easy interfacing your agents on your laptop via Open Agent Kernel's command line interface.",
       },
       {
         icon: MdBolt,
@@ -348,13 +349,13 @@ export default function DeveloperPage() {
 
   return (
     <Layout
-      title="Agent Kernel for Developers"
-      description="Learn how Agent Kernel helps developers build and deploy AI agents quickly without reinventing the wheel."
+      title="Open Agent Kernel for Developers"
+      description="Learn how OAK helps developers build and deploy AI agents quickly without reinventing the wheel."
     >
       {/* <HeroAnimation
         badge="Developers"
         title="Build AI Agents Without Rebuilding Infrastructure"
-        subtitle="Agent Kernel gives developers a production-ready runtime so you can focus on agent logic. Use your preferred framework, expose agents through API or messaging channels, and deploy to cloud environments fast with enterprise-grade building blocks included."
+        subtitle="Open Agent Kernel gives developers a production-ready runtime so you can focus on agent logic. Use your preferred framework, expose agents through API or messaging channels, and deploy to cloud environments fast with enterprise-grade building blocks included."
       /> */}
       <StepTimeline levelId="02" contentRef={contentRef} />
       <section ref={sectionRef} className={styles.devPageSection}>
@@ -373,7 +374,7 @@ export default function DeveloperPage() {
               </h1>
               <div className={styles.devDescription}>
                 <p className={styles.devIntro}>
-                  Agent Kernel is like the operating system for the AI
+                  OAK is like the operating system for the AI
                   assistants, think Linux for your agents.
                 </p>
                 <div className={styles.devBulletList}>
@@ -434,7 +435,7 @@ export default function DeveloperPage() {
                   },
                   {
                     num: "02",
-                    label: "Agent Kernel Runtime",
+                    label: "OAK Runtime",
                     items: [
                       "Agents",
                       "Agent Runner",
@@ -609,11 +610,11 @@ export default function DeveloperPage() {
             <div className={styles.devArchitectureSection} data-step="dev-05">
               <p className={styles.devStepLabel}>Step 04: How It Works</p>
               <h2 className={styles.devTitle}>
-                <span>How Agent Kernel Fits In</span>
+                <span>How OAK Fits In</span>
               </h2>
 
               <p className={styles.devFrameworkBody}>
-                You write your AI agent's logic. Agent Kernel handles everything
+                You write your AI agent's logic. OAK handles everything
                 else: the infrastructure, the cloud deployment, memory, knowledge
                 bases, hooks, observability & traceability, LLM cost tracking, and
                 the integrations so your agent is live and talking to real users
@@ -635,7 +636,7 @@ export default function DeveloperPage() {
                     Continue Exploring
                   </div>
                   <h2 className={styles.goDeeperTitle}>
-                    Go deeper with Agent Kernel
+                    Go deeper with OAK
                   </h2>
                   <p className={styles.goDeeperSubtitle}>
                     Explore the platform capabilities and real-world workflows behind secure,
@@ -664,7 +665,7 @@ export default function DeveloperPage() {
                     >
                       <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
                       <p className={styles.goDeeperCardBody}>
-                        See how teams use Agent Kernel to build assistants,
+                        See how teams use OAK to build assistants,
                         automate workflows, monitor systems, and ship reliable AI
                         agents faster.
                       </p>
@@ -705,7 +706,7 @@ export default function DeveloperPage() {
             <p className={styles.ctaSubtitle}>
               Free, open-source, Apache 2.0. No licensing costs, no vendor
               lock-in. Join hundreds of developers building production AI agents
-              with Agent Kernel.
+              with OAK.
             </p>
             <div className={styles.ctaButtons}>
               <Link
@@ -725,11 +726,7 @@ export default function DeveloperPage() {
             </div>
 
             <div className={styles.ctaImageWrapper}>
-              <img
-                src="/img/cta-bg.png"
-                alt="Agent Kernel"
-                className={styles.ctaImage}
-              />
+              <OakMark variant="cta" className={styles.ctaImage} />
             </div>
           </div>
         </div>

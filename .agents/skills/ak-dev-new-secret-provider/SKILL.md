@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-secret-provider
 description: >
-  Step-by-step guide for adding a new built-in secret provider to Agent Kernel's secret-resolution
+  Step-by-step guide for adding a new built-in secret provider to Open Agent Kernel's secret-resolution
   capability (beyond env, aws_ssm and kubernetes). Use this skill when you need a new managed secret store
   (e.g. AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, HashiCorp Vault) addressable by a
   short `secret.provider.type` name. Covers the SecretProvider contract, addressing, factory

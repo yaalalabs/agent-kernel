@@ -1,9 +1,9 @@
-# Agent Kernel
+# Open Agent Kernel
 
 [![PyPI version](https://badge.fury.io/py/agentkernel.svg)](https://badge.fury.io/py/agentkernel)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-Agent Kernel is a lightweight **AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. Deploy the same agent code without modification — see the "Multi-Cloud Deployment" section below for supported platforms.
+Open Agent Kernel (OAK) is a lightweight **AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks. Migrate your existing agents to OAK and instantly utilize pre-built execution and testing capabilities. Deploy the same agent code without modification — see the "Multi-Cloud Deployment" section below for supported platforms.
 
 ## Features
 
@@ -86,7 +86,7 @@ uv add "agentkernel[cron]"
 
 ### Basic Concepts
 
-- **Agent**: Framework-specific agent wrapped by an Agent Kernel adapter
+- **Agent**: Framework-specific agent wrapped by an OAK adapter
 - **Runner**: Framework-specific execution strategy
 - **Session**: Shared state across conversation turns
 - **Module**: Container that registers agents with the Runtime
@@ -186,7 +186,7 @@ if __name__ == "__main__":
 
 ## Interactive CLI
 
-Agent Kernel includes an interactive CLI for local development and testing.
+OAK includes an interactive CLI for local development and testing.
 
 **Available Commands:**
 - `!h`, `!help` — Show help
@@ -235,7 +235,7 @@ handler = Lambda.handler
 
 **Note that this is just the simple serverless version. A more advanced serverless deployment mode, which uses queues for scalability, is also available. For queue-backed execution modes and response-store configuration, see the [AWS Serverless Deployment](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/aws-serverless.md) guide.**
 
-The AWS serverless handler accepts both a direct `BaseRunRequest` payload and the normalized `BaseRequest` envelope. If a flat run payload is provided, Agent Kernel generates a `request_id` and normalizes it before processing. The caller is never named in the payload: the API Gateway authorizer (`handler = APIGatewayAuthorizer().handle`, configured by the `identity` block) establishes the principal and the handler puts it on the request; see [Identity and Access](https://kernel.yaala.ai/docs/advanced/identity-and-access).
+The AWS serverless handler accepts both a direct `BaseRunRequest` payload and the normalized `BaseRequest` envelope. If a flat run payload is provided, OAK generates a `request_id` and normalizes it before processing. The caller is never named in the payload: the API Gateway authorizer (`handler = APIGatewayAuthorizer().handle`, configured by the `identity` block) establishes the principal and the handler puts it on the request; see [Identity and Access](https://kernel.yaala.ai/docs/advanced/identity-and-access).
 
 Accepted payloads:
 
@@ -371,7 +371,7 @@ and the end-to-end example at
 
 ## Configuration
 
-Agent Kernel can be configured via environment variables, `.env` files, or YAML/JSON configuration files.
+OAK can be configured via environment variables, `.env` files, or YAML/JSON configuration files.
 
 ### Configuration Precedence
 
@@ -382,7 +382,7 @@ Values are loaded in the following order (highest precedence first):
 
 ### Configuration File
 
-By default, Agent Kernel looks for `./config.yaml` in the current working directory.
+By default, OAK looks for `./config.yaml` in the current working directory.
 
 **Override the config file path:**
 
@@ -401,7 +401,7 @@ Supported formats: `.yaml`, `.yml`, `.json`
 - **Field**: `logging.ak.level`
 - **Type**: string
 - **Default**: `WARNING`
-- **Description**: Agent Kernel logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
+- **Description**: OAK logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
 - **Environment Variable**: `AK_LOGGING__AK__LEVEL`
 
 - **Field**: `logging.system.level`
@@ -1220,7 +1220,7 @@ and Microsoft Agent Framework — not CrewAI or Smolagents). See `examples/api/a
 #### A2UI Configuration
 
 Labels a JSON reply as [A2UI](https://a2ui.org/) so a client receives the document as an object with
-its format named, instead of a JSON string it has to parse a second time. Agent Kernel supplies the
+its format named, instead of a JSON string it has to parse a second time. OAK supplies the
 media type and nothing else — the component catalog belongs in your agent's instructions, because it
 has to match the components your frontend implements. The block does not reach a streamed run
 (`execution.message_type: delta`) or an agent configured with a framework `output_type`; both are told to

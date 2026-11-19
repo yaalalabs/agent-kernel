@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Examples Overview
 
-The Agent Kernel repository includes a comprehensive set of examples demonstrating different **multi-cloud deployment patterns**, frameworks, and integrations for **AWS, Azure, and GCP**. All examples are located in the [examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples) directory and are organized by deployment method and use case.
+The Open Agent Kernel repository includes a comprehensive set of examples demonstrating different **multi-cloud deployment patterns**, frameworks, and integrations for **AWS, Azure, and GCP**. All examples are located in the [examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples) directory and are organized by deployment method and use case.
 
 ## Directory Structure
 
@@ -12,7 +12,7 @@ The examples are organized into the following main categories:
 
 ### 📁 API Examples (`/examples/api`)
 
-Examples demonstrating Agent Kernel's API capabilities and integrations:
+Examples demonstrating OAK's API capabilities and integrations:
 
 - **`a2a/`** - Agent-to-Agent (A2A) compatibility examples
   - `multi/` - Multi-agent runtime with Smolagents and OpenAI agents exposed as A2A compatible
@@ -52,7 +52,7 @@ Command-line interface examples for local development and testing:
 - **`openai_structured/`** - OpenAI Agent SDK agent returning structured (Pydantic) output
 - **`openai-secret/`** - Secrets resolved through `SecretManager` with the default `env` provider: a required model key read at startup and an optional tool key that degrades gracefully (see the [Secret Resolution](../advanced/secrets.md) guide)
 - **`pydanticai/`** - Pydantic AI framework integration examples
-- **`claude/`** - Claude Agent SDK integration example: a triage agent delegating to subagents, with an Agent Kernel tool
+- **`claude/`** - Claude Agent SDK integration example: a triage agent delegating to subagents, with an OAK tool
 - **`smolagents/`** - HuggingFace smolagents `CodeAgent` integration examples
 - **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, `okf/` (Open Knowledge Format markdown bundle), and `multi/`
 
@@ -171,7 +171,7 @@ GCP Cloud Run containerized deployment examples (always-on). Both run in queue m
 
 ## Supported Frameworks
 
-Agent Kernel supports multiple AI agent frameworks:
+OAK supports multiple AI agent frameworks:
 
 | Framework | Description | Examples Available |
 |-----------|-------------|-------------------|
@@ -250,7 +250,7 @@ mcp.expose_agents = True
 ```
 
 ### Multi-Agent Runtimes
-Several examples demonstrate running multiple agent frameworks within a single Agent Kernel runtime, showcasing the platform's flexibility and interoperability.
+Several examples demonstrate running multiple agent frameworks within a single OAK runtime, showcasing the platform's flexibility and interoperability.
 
 ## Prerequisites
 
@@ -265,7 +265,7 @@ Depending on the example you choose, you may need:
 
 ## Use Cases: Skills-Driven End-to-End Agents
 
-The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) directory contains complete agent projects built end-to-end using Agent Kernel skills and a coding assistant. Each use case starts from a `SPEC.md` describing the agent's purpose and requirements, then uses the `ak-init`, `ak-build`, `ak-add-capabilities`, `ak-cloud-deploy`, and `ak-test` skills to generate all project files.
+The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) directory contains complete agent projects built end-to-end using OAK skills and a coding assistant. Each use case starts from a `SPEC.md` describing the agent's purpose and requirements, then uses the `ak-init`, `ak-build`, `ak-add-capabilities`, `ak-cloud-deploy`, and `ak-test` skills to generate all project files.
 
 ### Available Use Cases
 
@@ -274,9 +274,9 @@ The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-ca
 
 ### How to Use the Use Cases
 
-See [`use-cases/README.md`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/README.md) for the full workflow, from installing Agent Kernel skills to asking a coding assistant to generate a complete project from a `SPEC.md`.
+See [`use-cases/README.md`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/README.md) for the full workflow, from installing OAK skills to asking a coding assistant to generate a complete project from a `SPEC.md`.
 
-Unlike the `examples/` directory (which demonstrates specific deployment patterns and integrations), the `use-cases/` directory shows complete domain-specific agents that were built by a coding agent using the Agent Kernel skills pack.
+Unlike the `examples/` directory (which demonstrates specific deployment patterns and integrations), the `use-cases/` directory shows complete domain-specific agents that were built by a coding agent using the OAK skills pack.
 
 ## Next Steps
 
@@ -284,6 +284,6 @@ Unlike the `examples/` directory (which demonstrates specific deployment pattern
 - Start with CLI examples for local development
 - Progress to containerized or serverless deployments for production
 - Explore multi-agent examples for complex orchestration scenarios
-- See [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) for complete agents built with Agent Kernel skills
+- See [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) for complete agents built with OAK skills
 
 For detailed implementation guides, refer to the individual README files in each example directory.
