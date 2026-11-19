@@ -1,7 +1,6 @@
 import SectionHeader from '@site/src/components/ui/SectionHeader';
 import React, { useState } from "react";
 import styles from "./styles.module.css";
-import pageStyles from "../../pages/index.module.css";
 
 interface FAQItem {
   id: string;

@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import styles from './styles.module.css';
-
-gsap.registerPlugin(ScrollTrigger);
 
 type NodeKind = 'api' | 'message' | 'memory' | 'runner' | 'external';
 
@@ -260,35 +256,6 @@ export default function RunningAgentsFlowDiagram() {
     };
   }, [drawLines]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const nodes = container.querySelectorAll(`.${styles.flowNode}`);
-    const tween = gsap.fromTo(
-      nodes,
-      { opacity: 0, y: 16 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.5,
-        stagger: 0.05,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: container,
-          start: 'top 82%',
-          once: true,
-        },
-        onComplete: drawLines,
-        clearProps: 'transform',
-      }
-    );
-
-    return () => {
-      tween.scrollTrigger?.kill();
-      tween.kill();
-    };
-  }, [drawLines]);
 
   const getNode = (id: string) => FLOW_NODES.find((n) => n.id === id)!;
 

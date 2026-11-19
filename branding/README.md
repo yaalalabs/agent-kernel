@@ -109,6 +109,8 @@ is held to `--ak-measure` (720 px).
 | Card | `ak-card` | A hairline border in the dark mode, a soft shadow in the light mode |
 | Tag | `ak-tag` in an `ak-tag-row` | Short labels only |
 | Dark panel | `ak-dark` | Pins a subtree to the dark values in either mode, as the closing panel does |
+| Page header | `PageHero` (`docs/src/components/ui/`) | The header of every page below the home page: label, title, lead, actions and an optional drawing |
+| Entrance | `Reveal` (`docs/src/components/ui/`) | The one entrance effect: content below the fold fades up once. Without script it is simply visible |
 
 **Rules.**
 
@@ -116,11 +118,14 @@ is held to `--ak-measure` (720 px).
 - Section headers are left-aligned and headings are in sentence case.
 - Orange is for the one thing to notice in a view: the primary action, the active item, the accent in a drawing.
 - Every colour comes from a token, so that both colour modes work. Check new work in both.
+- Interface icons are Tabler outline icons (`react-icons/tb`). Brand marks are Simple Icons (`react-icons/si`), and another set only where Simple Icons has no mark (AWS, Microsoft, Azure).
+- A section that links to an `id` on another page registers it with `useBrokenLinks().collectAnchor(id)`, so the build checks the link.
 
 **Moving illustrations.** The site's own illustration style is line art in motion, called particles on
 rails: fine blue rails, dots that travel along them, and one orange element per drawing. The drawings are in
-`docs/src/components/VectorMotion/` (`StageMotion`). A new drawing uses the same two colours and stroke
-width, pauses when it is off screen, and shows a still frame when the visitor asks for reduced motion.
+`docs/src/components/VectorMotion/` (`StageMotion`, one per stage) and `docs/src/components/LevelStack/`
+(the three reading levels as one stack). A new drawing uses the same two colours and stroke width, pauses
+when it is off screen, and shows a still frame when the visitor asks for reduced motion.
 
 ## Source files
 

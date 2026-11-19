@@ -3,7 +3,7 @@ import { FaAws } from "react-icons/fa";
 import { VscAzure } from "react-icons/vsc";
 import { SiGooglecloud } from "react-icons/si";
 import { TbBrowser, TbClockHour4, TbDeviceMobile, TbTerminal2 } from "react-icons/tb";
-import { INTEGRATION_ROWS, type IntegrationItem } from "../IntegrationsMarquee/data";
+import { INTEGRATION_ROWS, type IntegrationItem } from "../HomeSections/integrations.data";
 
 /** One icon in a card's chip row. Vendor chips are picked from the marquee data so every logo lives in one place. */
 export type Chip = Pick<IntegrationItem, "name" | "href" | "logo" | "icon" | "mono">;
@@ -31,7 +31,7 @@ function pick(...names: string[]): Chip[] {
   return names.map((name) => {
     const item = ALL_INTEGRATIONS.find((candidate) => candidate.name === name);
     if (!item) {
-      throw new Error(`ArchitectureOverview: no integration named "${name}" in IntegrationsMarquee data`);
+      throw new Error(`ArchitectureOverview: no integration named "${name}" in the integration data`);
     }
     return item;
   });
@@ -90,7 +90,7 @@ export const CORE_PILLS: CorePill[] = [
   { label: "Queue Pipeline & Scaling", href: "/docs/advanced/queue-mode-guide" },
 ];
 
-/** Mirrors the tabs of the FeatureExplorer section so the two sections tell one story. */
+/** The four capabilities named around the core. */
 export const FLOW_WORDS: FlowWord[] = [
   { word: "Build" },
   { word: "Connect" },

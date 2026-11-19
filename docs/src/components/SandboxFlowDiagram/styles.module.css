@@ -1,30 +1,4 @@
-/* Sandbox execution flow diagram — panel styling aligned with AgentKernelRuntimeFlowDiagram */
-
-@keyframes sbFadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.97);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes sbBrokerGlow {
-
-  0%,
-  100% {
-    border-color: rgba(var(--ak-blue-rgb), 0.45);
-    box-shadow: none;
-  }
-
-  50% {
-    border-color: rgba(var(--ak-blue-rgb), 0.75);
-    box-shadow: none;
-  }
-}
+/* Sandbox execution flow diagram. Every node is visible without script: there is no entrance effect. */
 
 .panel {
   border: 1px solid rgba(var(--ak-fg-rgb), 0.2);
@@ -56,7 +30,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  scrollbar-color: rgba(var(--ak-fg-rgb), 0.25) transparent;
   padding: 2rem 1.5rem 1.75rem;
 }
 
@@ -76,13 +50,7 @@
 /* ── Nodes ─────────────────────────────────────────────────────────────── */
 
 .node {
-  opacity: 0;
   text-align: center;
-}
-
-.panelVisible .node {
-  animation: sbFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
 }
 
 .nodeTitle {
@@ -246,13 +214,6 @@
       rgba(var(--ak-blue-rgb), 0.03) 100%);
 }
 
-.panelVisible .brokerNode {
-  animation:
-    sbFadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both,
-    sbBrokerGlow 3.5s ease-in-out infinite;
-  animation-delay: var(--node-delay, 0ms), 1.2s;
-}
-
 .brokerRow {
   display: flex;
   align-items: center;
@@ -307,12 +268,6 @@
   background: linear-gradient(180deg,
       rgba(var(--ak-blue-rgb), 0.5),
       rgba(var(--ak-blue-rgb), 0.25));
-  opacity: 0;
-}
-
-.panelVisible .stem {
-  animation: sbFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
 }
 
 /* ── Broker flavor lanes (in-process beside queue-decoupled) ──────────── */
@@ -491,12 +446,6 @@
   background: linear-gradient(180deg,
       rgba(var(--ak-blue-rgb), 0.45),
       rgba(var(--ak-blue-rgb), 0.3));
-  opacity: 0;
-}
-
-.panelVisible .laneDrop {
-  animation: sbFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
 }
 
 /* ── Provider fan-out ──────────────────────────────────────────────────── */
@@ -565,11 +514,15 @@
 }
 
 .providerNodeLink:hover {
-  transform: translateY(-2px);
   border-color: rgba(var(--ak-primary-rgb), 0.6);
   background: rgba(var(--ak-primary-rgb), 0.08);
   box-shadow: none;
   text-decoration: none;
+}
+
+.providerNodeLink:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 2px;
 }
 
 .providerIcon {
@@ -627,12 +580,6 @@
   background: linear-gradient(180deg,
       rgba(var(--ak-blue-rgb), 0.4),
       rgba(var(--ak-fg-rgb), 0.2));
-  opacity: 0;
-}
-
-.panelVisible .colStem {
-  animation: sbFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
 }
 
 /* ── Sandbox stacks ────────────────────────────────────────────────────── */
@@ -686,13 +633,7 @@
 .footerCard {
   padding: 1rem 1.125rem 1.125rem;
   border-right: 1px solid rgba(var(--ak-fg-rgb), 0.08);
-  opacity: 0;
   transition: background-color 250ms ease;
-}
-
-.panelVisible .footerCard {
-  animation: sbFadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
 }
 
 .footerCard:hover {
@@ -718,20 +659,7 @@
   color: rgba(var(--ak-fg-rgb), 0.55);
 }
 
-/* ── Motion / responsive ───────────────────────────────────────────────── */
-
-@media (prefers-reduced-motion: reduce) {
-
-  .node,
-  .stem,
-  .colStem,
-  .laneDrop,
-  .footerCard {
-    opacity: 1;
-    transform: none;
-    animation: none !important;
-  }
-}
+/* ── Responsive ────────────────────────────────────────────────────────── */
 
 @media (max-width: 996px) {
   .scrollHint {

@@ -517,7 +517,7 @@ const config = {
       prism: {
         theme: prismThemes.oneLight,
         darkTheme: prismThemes.oneDark,
-        additionalLanguages: ['python', 'bash', 'json', 'yaml'],
+        additionalLanguages: ['python', 'bash', 'json', 'yaml', 'hcl'],
       },
       colorMode: {
         // Dark is the default. Visitors can switch to the light mode from the navbar, and the choice is remembered.

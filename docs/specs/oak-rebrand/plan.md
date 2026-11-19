@@ -199,3 +199,93 @@ after the design is approved.
   2. Update the *Naming and brand* section of `AGENTS.md` and `branding/README.md` with the type scale, spacing and component rules.
 - **Verify:** the build passes; the screenshot set is attached for review.
 
+
+# Phase 3: review round of 2026-11-19
+
+The maintainer reviewed the phase 2 site. The stage drawings are accepted as the motion language. The
+particle hero and the integration ledger are not, the level tiles are to be redone, and the items left
+"not done" in phase 2 are to be finished. Shared pieces for this phase: `PageHero` and `Reveal` in
+`docs/src/components/ui/`.
+
+## Iteration 18: Home hero as a system drawing
+
+- **Status:** rejected. The system drawing (channels, the mark, frameworks, with simulated traffic under a full-width headline) was built and the maintainer found it worse than the particle mark. It was removed, and the particle hero is back as a placeholder. Four hero directions have now been turned down (a fade-in mark, an extruded mark, the particle mark, the system drawing), so the next one is chosen by the maintainer from options before anything is built: a cinematic mark in WebGL like the original video, ambient line art, a product-in-action terminal, or type only.
+- **Goal:** the hero shows the runtime at work, in the accepted motion language, and reads as alive.
+- **Files:** `docs/src/components/VectorMotion/`, `docs/src/pages/index.tsx`, `docs/src/components/OakMark/`
+- **Steps:**
+  1. Draw one scene: channels on the left, the mark as the kernel, agent frameworks on the right, with requests and replies travelling the rails without a fixed loop.
+  2. Replace the particle mark; remove its code.
+- **Verify:** frame sequences in both colour modes, at desktop and phone width, and with reduced motion.
+
+## Iteration 19: Integrations as a scroll-stepped section
+
+- **Status:** done (`docs/src/components/HomeSections/Integrations.tsx`). Six groups named after the stages, 76 integrations, all in the server-rendered page. The section pins at 997 px and wider when the window is at least 700 px tall and motion is allowed; otherwise the groups are stacked. The data file moved to `HomeSections/integrations.data.tsx`, and the marquee component was removed.
+- **Goal:** every integration is still shown, one group at a time, as the visitor scrolls.
+- **Files:** `docs/src/components/HomeSections/`
+- **Steps:**
+  1. Group the integrations by the six stages, so the section continues the story of section 01.
+  2. Pin the section while the scroll steps through the groups; the group list on the left is also a control.
+  3. Fall back to a plain stacked list on small screens, short viewports, reduced motion and without script.
+- **Verify:** captures at each step in both modes; the fallback at phone width; all 76 integrations present in the server-rendered page.
+
+## Iteration 20: Level section
+
+- **Status:** done. The levels are three layers of one isometric stack (`docs/src/components/LevelStack/`): the outcome, the code, the runtime. On the home page the stack sits beside three rows, a row lights its layer and a layer lights its row, and the light walks down the stack until the visitor points at something. Each persona page header shows the stack with its own layer lit.
+- **Goal:** the three reading levels are presented as one idea, with drawings in the motion language.
+- **Files:** `docs/src/components/HomeSections/`, `docs/src/components/VectorMotion/`, `docs/src/pages/index.tsx`
+- **Steps:**
+  1. Draw the same request path at three depths: the overview, the build view, the internals.
+  2. Present the levels as depth rows that link to the persona pages; reuse each drawing in its persona page header.
+- **Verify:** both modes, phone width, keyboard focus on each row.
+
+## Iteration 21: Architecture flow drawing
+
+- **Status:** done in place. The existing diagram keeps its layout; its glow and gradients are gone, its connectors are solid rails, and a dot travels each one (paused off screen, absent for reduced motion). Its links now show a focus ring.
+- **Goal:** the architecture section moves in the same language as the rest of the page.
+- **Files:** `docs/src/components/ArchitectureOverview/`, `docs/src/components/VectorMotion/`
+- **Verify:** both modes; one running illustration per view.
+
+## Iteration 22: Features and use-cases pages
+
+- **Status:** done. Features is a reference with a sticky index of the six stages and 35 capabilities, each linked to its guide (2,142 lines of page code to about 550). Use cases has three real projects, ten scenarios with a guide and an example each, four kinds of team, and a neutral before and after list. The review is in `research/features-use-cases-review.md`. Unsourced figures and two cards that linked nowhere were removed.
+- **Goal:** each page says each thing once, in the shared layout, and helps a reader decide.
+- **Files:** `docs/src/pages/features.tsx`, `docs/src/pages/use-cases.tsx`, their stylesheets, and the components only they use
+- **Steps:**
+  1. Review both pages and record the findings in `research/features-use-cases-review.md`: what each section says, what repeats the home page or the other page, what is kept.
+  2. Restructure on `PageHero`, `SectionHeader`, `ak-container` and the component classes; remove the duplicates and the dead code.
+  3. Replace scroll-triggered reveals with `Reveal`; use the neutral colour for "before" comparisons.
+- **Verify:** both modes at desktop and phone width; the measurement script.
+
+## Iteration 23: Persona pages
+
+- **Status:** done. One skeleton for the three pages: `PageHero`, a sticky step rail, five sections, links to the other levels, the closing panel (`docs/src/components/PersonaKit/`, `docs/src/pages/persona.module.css`). 2,471 lines of page code to about 1,000. The titles, leads and the business page's commitment answers are new copy and need the maintainer's read.
+- **Goal:** the three persona pages are shorter and share the page header and the step pattern.
+- **Files:** `docs/src/pages/developer.tsx`, `ai-engineer.tsx`, `business-leader.tsx`, and the components only they use
+- **Steps:**
+  1. Shorten each journey to the steps a reader needs; enlarge the step timeline.
+  2. Replace scroll-triggered reveals with `Reveal`; use the neutral colour for "before" comparisons.
+- **Verify:** both modes at desktop and phone width; a keyboard pass.
+
+## Iteration 24: One icon family and vector logos
+
+- **Status:** done for icons: only the three brand exceptions (AWS, Microsoft, Azure) come from outside Tabler and Simple Icons. Seven channel logos moved from PNG to vector marks. Eight integration logos stay as PNG because neither set has a mark for them (Google ADK, Bedrock, Daytona, E2B, Langfuse, LiteLLM, OpenLLMetry, TypeSafe).
+- **Goal:** interface icons come from one family, and integration logos are vectors where one exists.
+- **Rule:** interface icons are Tabler outline icons (`react-icons/tb`). Brand marks come from Simple Icons (`react-icons/si`), and from another set only where Simple Icons has no mark (AWS, Microsoft, Azure).
+- **Verify:** no `react-icons/md` or interface icon from `react-icons/fa` is left under `docs/src`.
+
+## Iteration 25: Changelog and blog banners
+
+- **Status:** partly done. The "What's new" list is its own page (`docs/docs/whats-new.md`, mirrored to 0.10.1) and the introduction links to it. The blog banners are not started: seven are bespoke illustrations that carry each post's diagram, so replacing them from one template would lose content, and redrawing them is a design decision for the maintainer.
+- **Steps:**
+  1. Move the "What's New" list from the docs introduction to a changelog page, in the current docs and in `0.10.1`.
+  2. Regenerate the blog banners from one template in the brand palette, and keep the template in the repository.
+- **Verify:** the docs build; the blog index in both modes.
+
+## Iteration 26: Dead code, keyboard pass and checks
+
+- **Status:** done except the browser check. Removed: ten unused components, the 6,100-line `index.module.css`, unused images and the three.js models, and gsap from the last component that used it. A keyboard pass on the home, features, use-cases and developer pages found every control reachable with a visible focus ring. The production build passes on an isolated copy with no broken links or anchors. Not done: Safari and Firefox, the full build with every frozen version, and removing `gsap` and `three` from `package.json` (left until the hero direction is chosen, since a WebGL hero would need `three`).
+- **Steps:**
+  1. Remove unused components, unused local functions and stylesheet rules that no page refers to.
+  2. Keyboard pass on every marketing page.
+  3. Production build; the screenshot set; a check of the drawings in Safari and Firefox.
+- **Verify:** the build passes; a scan reports no unused class in the page stylesheets.

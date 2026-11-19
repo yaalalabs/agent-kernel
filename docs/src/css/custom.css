@@ -519,6 +519,94 @@ body {
   gap: var(--ak-space-8);
 }
 
+/* Page hero: the header of every page below the home page (components/ui/PageHero.tsx) */
+.ak-page-hero {
+  padding-block: var(--ak-space-96) var(--ak-space-64);
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.ak-page-hero__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ak-space-48);
+  align-items: center;
+}
+
+.ak-page-hero--with-art .ak-page-hero__inner {
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+}
+
+.ak-page-hero__copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-24);
+  max-width: 52rem;
+}
+
+.ak-page-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ak-space-16) var(--ak-space-24);
+  margin-top: var(--ak-space-8);
+}
+
+.ak-page-hero__art {
+  min-width: 0;
+}
+
+.ak-page-hero__art > svg {
+  max-height: 26rem;
+}
+
+@media (max-width: 996px) {
+  .ak-page-hero {
+    padding-block: var(--ak-space-64) var(--ak-space-48);
+  }
+
+  .ak-page-hero--with-art .ak-page-hero__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ak-page-hero__art {
+    max-width: 30rem;
+  }
+}
+
+/* Reveal: the one entrance effect (components/ui/Reveal.tsx). The waiting class is only ever
+   set by script, on content below the fold, so nothing is hidden without it. */
+.ak-reveal--waiting {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.ak-reveal--shown {
+  animation: ak-reveal-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) var(--ak-reveal-delay, 0ms) both;
+}
+
+@keyframes ak-reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), print {
+  .ak-reveal--waiting {
+    opacity: 1;
+    transform: none;
+  }
+
+  .ak-reveal--shown {
+    animation: none;
+  }
+}
+
 /* =============================================================================
    Global
    ============================================================================= */

@@ -1,7 +1,7 @@
 import React from "react";
 import { FaAws, FaMicrosoft } from "react-icons/fa";
 import { VscAzure } from "react-icons/vsc";
-import { TbPlugConnected } from "react-icons/tb";
+import { TbBrandSlack, TbBrandTeams, TbPlugConnected } from "react-icons/tb";
 import {
   SiApachekafka,
   SiAuth0,
@@ -12,12 +12,15 @@ import {
   SiFastapi,
   SiFirebase,
   SiGithubcopilot,
+  SiGmail,
   SiGooglecloud,
   SiGooglepubsub,
   SiHelm,
+  SiInstagram,
   SiKeycloak,
   SiKubernetes,
   SiLanggraph,
+  SiMessenger,
   SiModelcontextprotocol,
   SiNatsdotio,
   SiNeo4J,
@@ -26,8 +29,10 @@ import {
   SiOpentelemetry,
   SiPydantic,
   SiRedis,
+  SiTelegram,
   SiTerraform,
   SiTrino,
+  SiWhatsapp,
   SiWindsurf,
 } from "react-icons/si";
 
@@ -54,8 +59,6 @@ export interface IntegrationItem {
 
 export interface IntegrationRow {
   title: string;
-  /** Scroll speed as seconds per tile (lower is faster); the component's default applies when omitted. */
-  secondsPerTile?: number;
   items: IntegrationItem[];
 }
 
@@ -73,7 +76,6 @@ const IDENTITY = "/docs/next/advanced/identity-and-access";
 export const INTEGRATION_ROWS: IntegrationRow[] = [
   {
     title: "Agent frameworks & dev tools",
-    secondsPerTile: 3.0,
     items: [
       { name: "OpenAI Agents SDK", role: "Framework", href: "/docs/frameworks/openai", logo: "/img/integrations/openai.svg", mono: true },
       { name: "LangGraph", role: "Framework", href: "/docs/frameworks/langgraph", icon: <SiLanggraph /> },
@@ -93,15 +95,14 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
   },
   {
     title: "Channels & protocols",
-    secondsPerTile: 4.2,
     items: [
-      { name: "Slack", role: "Channel", href: "/docs/integrations/slack", logo: "/img/integrations/slack-logo.png" },
-      { name: "Microsoft Teams", role: "Channel", href: "/docs/integrations/teams", logo: "/img/integrations/teams-logo.png" },
-      { name: "WhatsApp", role: "Channel", href: "/docs/integrations/whatsapp", logo: "/img/integrations/whatsapp-logo.png" },
-      { name: "Messenger", role: "Channel", href: "/docs/integrations/messenger", logo: "/img/integrations/messenger-logo.png" },
-      { name: "Instagram", role: "Channel", href: "/docs/integrations/instagram", logo: "/img/integrations/instagram-logo.png" },
-      { name: "Telegram", role: "Channel", href: "/docs/integrations/telegram", logo: "/img/integrations/telegram-logo.png" },
-      { name: "Gmail", role: "Channel", href: "/docs/integrations/gmail", logo: "/img/integrations/gmail-logo.png" },
+      { name: "Slack", role: "Channel", href: "/docs/integrations/slack", icon: <TbBrandSlack /> },
+      { name: "Microsoft Teams", role: "Channel", href: "/docs/integrations/teams", icon: <TbBrandTeams /> },
+      { name: "WhatsApp", role: "Channel", href: "/docs/integrations/whatsapp", icon: <SiWhatsapp /> },
+      { name: "Messenger", role: "Channel", href: "/docs/integrations/messenger", icon: <SiMessenger /> },
+      { name: "Instagram", role: "Channel", href: "/docs/integrations/instagram", icon: <SiInstagram /> },
+      { name: "Telegram", role: "Channel", href: "/docs/integrations/telegram", icon: <SiTelegram /> },
+      { name: "Gmail", role: "Channel", href: "/docs/integrations/gmail", icon: <SiGmail /> },
       // Drop /next after the LiveKit integration is released.
       { name: "LiveKit", role: "Voice integration", href: "/docs/next/integrations/livekit", logo: "/img/integrations/livekit-mark.svg", mono: true },
       { name: "MCP", role: "Protocol", href: "/docs/api/mcp-server", icon: <SiModelcontextprotocol /> },
@@ -113,7 +114,6 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
   },
   {
     title: "Memory, knowledge & data",
-    secondsPerTile: 2.4,
     items: [
       { name: "Redis", role: "Memory", href: SESSION, icon: <SiRedis />, title: "Redis: session, thread, attachment, response and schedule stores" },
       { name: "Valkey", role: "Memory", href: SESSION, logo: "/img/integrations/valkey.svg", mono: true, title: "Valkey: session, thread, response and schedule stores" },
@@ -128,7 +128,6 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
   },
   {
     title: "Cloud & infrastructure",
-    secondsPerTile: 3.6,
     items: [
       { name: "AWS Lambda", role: "Serverless", href: "/docs/deployment/aws-serverless", icon: <FaAws /> },
       { name: "Amazon ECS Fargate", role: "Containers", href: "/docs/deployment/aws-containerized", icon: <FaAws /> },
@@ -157,7 +156,6 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
   },
   {
     title: "Observability, safety & testing",
-    secondsPerTile: 2.8,
     items: [
       { name: "Langfuse", role: "Tracing", href: TRACE, logo: "/img/integrations/langfuse.png" },
       { name: "OpenLLMetry", role: "Tracing", href: TRACE, logo: "/img/integrations/traceloop.png" },

@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import styles from './styles.module.css';
-
-gsap.registerPlugin(ScrollTrigger);
 
 type NodeKind = 'message' | 'guardrail' | 'memory' | 'supervisor' | 'agent' | 'tool';
 
@@ -357,13 +353,22 @@ export default function BuildingAgentsFlowDiagram() {
   useEffect(() => {
     fitToWidth();
     const timer = setTimeout(fitToWidth, 150);
-    const ro = new ResizeObserver(fitToWidth);
+    // Fitting changes the height of the observed box. Refit only when its width changes, and in
+    // the next frame, so that the observer never resizes its own target while it is reporting.
+    let frame = 0;
+    let lastWidth = fitWrapRef.current?.clientWidth ?? 0;
+    const ro = new ResizeObserver(() => {
+      const width = fitWrapRef.current?.clientWidth ?? 0;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fitToWidth);
+    });
     if (fitWrapRef.current) ro.observe(fitWrapRef.current);
-    window.addEventListener('resize', fitToWidth);
     return () => {
       clearTimeout(timer);
+      cancelAnimationFrame(frame);
       ro.disconnect();
-      window.removeEventListener('resize', fitToWidth);
     };
   }, [fitToWidth]);
 
@@ -379,35 +384,6 @@ export default function BuildingAgentsFlowDiagram() {
     };
   }, [drawLines]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const nodes = container.querySelectorAll(`.${styles.flowNode}`);
-    const tween = gsap.fromTo(
-      nodes,
-      { opacity: 0, y: 16 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.5,
-        stagger: 0.05,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: container,
-          start: 'top 82%',
-          once: true,
-        },
-        onComplete: drawLines,
-        clearProps: 'transform',
-      }
-    );
-
-    return () => {
-      tween.scrollTrigger?.kill();
-      tween.kill();
-    };
-  }, [drawLines]);
 
   const getNode = (id: string) => FLOW_NODES.find((n) => n.id === id)!;
 

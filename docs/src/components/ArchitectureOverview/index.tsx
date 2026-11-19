@@ -157,6 +157,39 @@ export default function ArchitectureOverview() {
     setConnectors(next);
   }, []);
 
+  // The dots on the rails move only for visitors who have not asked for reduced motion,
+  // and only while the diagram is on screen.
+  const overlayRef = useRef<SVGSVGElement>(null);
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setLive(!reduced.matches);
+    update();
+    reduced.addEventListener("change", update);
+    return () => reduced.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay || !live) return undefined;
+    let onScreen = true;
+    const sync = () => {
+      if (onScreen && !document.hidden) overlay.unpauseAnimations();
+      else overlay.pauseAnimations();
+    };
+    const seen = new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting;
+      sync();
+    });
+    seen.observe(overlay);
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      seen.disconnect();
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, [live]);
+
   useEffect(() => {
     measure();
     const observer = new ResizeObserver(() => measure());
@@ -180,7 +213,7 @@ export default function ArchitectureOverview() {
       </div>
 
       <div ref={diagramRef} className={styles.diagram}>
-        <svg className={styles.connectors} aria-hidden="true">
+        <svg ref={overlayRef} className={styles.connectors} aria-hidden="true">
           <defs>
             <marker id="ak-arch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 1 1 L 9 5 L 1 9" className={styles.arrowHead} />
@@ -191,14 +224,30 @@ export default function ArchitectureOverview() {
             // at the core end and a destination path at the card end (the marker's auto-start-reverse
             // orientation flips it to point into the card).
             const arrow = "url(#ak-arch-arrow)";
+            // A destination path is written from the card to the core, so its dot runs it backwards.
+            const outward = connector.kind === "destination";
             return (
-              <path
-                key={index}
-                d={connector.d}
-                className={clsx(styles.connector, styles[`connector-${connector.kind}`])}
-                markerEnd={connector.kind === "source" ? arrow : undefined}
-                markerStart={connector.kind === "destination" ? arrow : undefined}
-              />
+              <React.Fragment key={index}>
+                <path
+                  d={connector.d}
+                  className={clsx(styles.connector, styles[`connector-${connector.kind}`])}
+                  markerEnd={connector.kind === "source" ? arrow : undefined}
+                  markerStart={outward ? arrow : undefined}
+                />
+                {live && connector.kind !== "pill" && (
+                  <circle className={styles.connectorDot} r={3}>
+                    <animateMotion
+                      path={connector.d}
+                      dur="2.8s"
+                      begin={`${-(index % 5) * 0.55}s`}
+                      repeatCount="indefinite"
+                      calcMode="linear"
+                      keyPoints={outward ? "1;0" : "0;1"}
+                      keyTimes="0;1"
+                    />
+                  </circle>
+                )}
+              </React.Fragment>
             );
           })}
         </svg>
@@ -222,7 +271,6 @@ export default function ArchitectureOverview() {
           <div className={clsx(styles.column, styles.centerColumn)}>
             <ColumnLabel align="center">{CORE_LABEL}</ColumnLabel>
             <div className={styles.core}>
-              <div className={styles.coreGlow} aria-hidden="true" />
               <div className={styles.coreRing} aria-hidden="true" />
               <div ref={coreRef} className={styles.coreBox}>
                 <img

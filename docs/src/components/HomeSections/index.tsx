@@ -4,9 +4,14 @@ import CodeBlock from '@theme/CodeBlock';
 import clsx from 'clsx';
 import SectionHeader from '@site/src/components/ui/SectionHeader';
 import { CertSeal } from '@site/src/components/BrandArt';
-import { INTEGRATION_ROWS, type IntegrationItem } from '@site/src/components/IntegrationsMarquee/data';
 import { StageMotion, type Stage as StageId } from '@site/src/components/VectorMotion';
 import styles from './styles.module.css';
+
+export { Announcement } from './Announcement';
+export { Deployment } from './Deployment';
+export { Hero } from './Hero';
+export { Integrations } from './Integrations';
+export { Levels } from './Levels';
 
 /* ─── Trust marks ─────────────────────────────────────────────────────────
    One quiet row under the hero. It carries no figures: none are published yet.
@@ -260,90 +265,6 @@ export function CapabilityRail(): JSX.Element {
             </div>
           </div>
         </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Works with: a ledger of every integration ───────────────────────────
-   One row per category, every integration listed by name. It reads from the
-   same data as the marquee, so there is one list to maintain, and an item
-   whose role is not mapped below still appears, under "More". */
-
-const ALL_ITEMS: IntegrationItem[] = INTEGRATION_ROWS.flatMap((row) => row.items);
-
-type Category = { title: string; roles: string[] };
-
-const CATEGORIES: Category[] = [
-  { title: 'Frameworks', roles: ['Framework'] },
-  { title: 'Coding assistants', roles: ['Agent skills'] },
-  { title: 'Channels', roles: ['Channel', 'Voice integration'] },
-  { title: 'Protocols and APIs', roles: ['Protocol', 'API', 'LLM gateway'] },
-  { title: 'Clouds', roles: ['Serverless', 'Containers', 'Serverless & containers', 'On-prem', 'Gateway'] },
-  { title: 'Infrastructure', roles: ['Infrastructure as code', 'Chart', 'Autoscaling', 'Scheduler'] },
-  { title: 'Queues', roles: ['Queue'] },
-  { title: 'Memory and knowledge', roles: ['Memory', 'Knowledge store', 'Vector knowledge', 'Graph knowledge', 'SQL knowledge'] },
-  { title: 'Identity and secrets', roles: ['Identity', 'Secrets'] },
-  { title: 'Guardrails and sandboxes', roles: ['Guardrail', 'Sandbox'] },
-  { title: 'Observability and evaluation', roles: ['Tracing', 'Evaluator'] },
-];
-
-const MAPPED_ROLES = new Set(CATEGORIES.flatMap((category) => category.roles));
-
-const LEDGER: Array<{ title: string; items: IntegrationItem[] }> = [
-  ...CATEGORIES.map((category) => ({
-    title: category.title,
-    items: ALL_ITEMS.filter((item) => category.roles.includes(item.role)),
-  })),
-  { title: 'More', items: ALL_ITEMS.filter((item) => !MAPPED_ROLES.has(item.role)) },
-].filter((row) => row.items.length > 0);
-
-function LedgerLogo({ item }: { item: IntegrationItem }): JSX.Element {
-  if (item.icon) {
-    return (
-      <span className={styles.ledgerLogo} aria-hidden="true">
-        {item.icon}
-      </span>
-    );
-  }
-  return (
-    <span className={styles.ledgerLogo} aria-hidden="true">
-      <img src={item.logo} alt="" loading="lazy" className={clsx(item.mono && styles.ledgerMono)} />
-    </span>
-  );
-}
-
-export function CompatibilityMatrix(): JSX.Element {
-  return (
-    <section id="integrations" className="ak-section ak-section--raised">
-      <div className="ak-container">
-        <SectionHeader
-          index="03"
-          label="Works with"
-          title="Plug in what you already run"
-          lead={`${ALL_ITEMS.length} integrations, and every one is an adapter. Swap one without touching the others.`}
-        />
-        <dl className={styles.ledger}>
-          {LEDGER.map((row) => (
-            <div key={row.title} className={styles.ledgerRow}>
-              <dt className={clsx('ak-label', styles.ledgerTitle)}>
-                {row.title}
-                <span className={styles.ledgerCount}>{row.items.length}</span>
-              </dt>
-              <dd className={styles.ledgerItems}>
-                {row.items.map((item) => (
-                  <Link key={`${item.name}-${item.role}`} to={item.href} className={styles.ledgerItem}>
-                    <LedgerLogo item={item} />
-                    <span>{item.name}</span>
-                  </Link>
-                ))}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <Link to="/docs/integrations/overview" className={clsx('ak-link', styles.ledgerAll)}>
-          Read the integration guides
-        </Link>
       </div>
     </section>
   );

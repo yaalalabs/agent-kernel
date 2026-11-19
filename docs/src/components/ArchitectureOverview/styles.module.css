@@ -94,9 +94,7 @@
   padding: 2.5rem 2rem 2rem;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   border-radius: var(--ak-radius-card);
-  background:
-    radial-gradient(ellipse at 50% 45%, rgba(var(--ak-blue-rgb), 0.06) 0%, transparent 55%),
-    linear-gradient(180deg, rgba(var(--ak-bg-rgb), 0.85) 0%, rgba(var(--ak-bg-rgb), 0.95) 100%);
+  background-color: var(--ak-bg);
   text-align: left;
 }
 
@@ -109,43 +107,31 @@
   overflow: visible;
 }
 
+/* Rails and dots, as in the stage drawings: a fine solid line, and a dot that travels it */
 .connector {
   fill: none;
-  stroke: rgba(var(--ak-sky-rgb), 0.45);
-  stroke-width: 1.5;
+  stroke: rgba(var(--ak-blue-rgb), 0.45);
+  stroke-width: 1.25;
   stroke-linecap: round;
-  stroke-dasharray: 2 6;
-  animation: flow 1.8s linear infinite;
-}
-
-.connector-source {
-  animation-direction: normal;
-}
-
-/* Responses travel from the core back out to the destinations, so the dashes run the other way. */
-.connector-destination {
-  animation-direction: reverse;
 }
 
 .connector-pill {
-  stroke: rgba(var(--ak-sky-rgb), 0.3);
+  stroke: rgba(var(--ak-blue-rgb), 0.3);
   stroke-dasharray: 2 5;
-  animation: none;
+}
+
+.connectorDot {
+  fill: var(--ak-blue);
 }
 
 .arrowHead {
   fill: none;
-  stroke: rgba(var(--ak-sky-rgb), 0.7);
-  stroke-width: 1.5;
+  stroke: rgba(var(--ak-blue-rgb), 0.8);
+  stroke-width: 1.25;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-@keyframes flow {
-  to {
-    stroke-dashoffset: -16;
-  }
-}
 
 /* ─── Columns ───────────────────────────────────────────────────────────── */
 .columns {
@@ -242,13 +228,17 @@
   transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 
+.chip:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 2px;
+}
+
 .chip:hover,
 .chip:focus-visible {
   border-color: rgba(var(--ak-sky-rgb), 0.55);
   background: rgba(var(--ak-fg-rgb), 0.05);
   transform: translateY(-2px);
   color: var(--ak-fg);
-  outline: none;
 }
 
 .chip svg {
@@ -280,24 +270,6 @@
   justify-content: center;
 }
 
-.coreGlow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 440px;
-  height: 440px;
-  transform: translate(-50%, -58%);
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(var(--ak-blue-rgb), 0.22) 0%,
-    rgba(var(--ak-sky-rgb), 0.16) 38%,
-    transparent 68%
-  );
-  filter: blur(12px);
-  pointer-events: none;
-}
-
 .coreRing {
   position: absolute;
   top: 50%;
@@ -320,8 +292,7 @@
   justify-content: center;
   border-radius: var(--ak-radius-card);
   border: 1px solid rgba(var(--ak-sky-rgb), 0.4);
-  background: linear-gradient(160deg, rgba(var(--ak-prussian-rgb), 0.96) 0%, rgba(var(--ak-bg-rgb), 0.96) 100%);
-  box-shadow: none;
+  background-color: var(--ak-bg-alt);
 }
 
 .coreLogo {
@@ -374,13 +345,17 @@
   transition: border-color 0.2s ease, transform 0.2s ease;
 }
 
+.pill:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 2px;
+}
+
 .pill:hover,
 .pill:focus-visible {
   border-color: rgba(var(--ak-sky-rgb), 0.55);
   color: var(--ak-fg);
   text-decoration: none;
   transform: translateY(-1px);
-  outline: none;
 }
 
 .pillDot {
@@ -472,9 +447,6 @@
 
 /* ─── Reduced motion ───────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  .connector {
-    animation: none;
-  }
 }
 
 /* ─── Stacked layout (≤ 1100px) ────────────────────────────────────────── */
@@ -512,12 +484,6 @@
   .core {
     min-height: 0;
     padding: 1.5rem 0 0;
-  }
-
-  .coreGlow {
-    width: 320px;
-    height: 320px;
-    transform: translate(-50%, -62%);
   }
 
   .coreRing {

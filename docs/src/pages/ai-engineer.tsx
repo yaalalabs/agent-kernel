@@ -1,1225 +1,456 @@
+import React from 'react';
+import clsx from 'clsx';
+import Link from '@docusaurus/Link';
+import Layout from '@theme/Layout';
+import { TbCheck, TbMinus, TbX } from 'react-icons/tb';
+import PageHero from '@site/src/components/ui/PageHero';
+import LevelStack from '@site/src/components/LevelStack';
 import { ClosingPanel } from '@site/src/components/HomeSections';
-import React, { useEffect, useRef, useState, useCallback } from "react";
-import gsap from "gsap";
-import ScrollTrigger from "gsap/dist/ScrollTrigger";
-import Link from "@docusaurus/Link";
-import Layout from "@theme/Layout";
-import { StepTimeline } from "../components/StepTimeline";
-import { useHistory } from "@docusaurus/router";
-import styles from "./index.module.css";
+import type { Step } from '@site/src/components/StepTimeline';
 import {
-  MdCloud,
-  MdSecurity,
-  MdVisibility,
-  MdCode,
-  MdAutoAwesome,
-  MdTerminal,
-  MdBolt,
-  MdMessage,
-  MdScience,
-  MdLink,
-  MdSmartToy,
-  MdPermMedia,
-  MdLanguage,
-  MdCheck,
-  MdClose,
-  MdForum,
-  MdCached,
-  MdStorage,
-  MdShield,
-  MdStopCircle,
-} from "react-icons/md";
-import BuildingAgentsFlowDiagram from "../components/BuildingAgentsFlowDiagram";
-import RunningAgentsFlowDiagram from "../components/RunningAgentsFlowDiagram";
-import AgentKernelSitsInFlowDiagram from "../components/AgentKernelSitsInFlowDiagram";
-import AgentKernelArchDiagram from "../components/AgentKernelArchDiagram";
-import HeroAnimation from "../components/HeroAnimation";
-import FrameworkSelector from "../components/FrameworkSelector";
-import heroStyles from "../components/HeroAnimation/styles.module.css";
-import { FaGithub } from "react-icons/fa";
+  CodeSample,
+  DocLinks,
+  Journey,
+  OtherLevels,
+  PersonaSection,
+  Tabs,
+  type TabItem,
+} from '@site/src/components/PersonaKit';
+import BuildingAgentsFlowDiagram from '@site/src/components/BuildingAgentsFlowDiagram';
+import RunningAgentsFlowDiagram from '@site/src/components/RunningAgentsFlowDiagram';
+import AgentKernelSitsInFlowDiagram from '@site/src/components/AgentKernelSitsInFlowDiagram';
+import styles from './persona.module.css';
 
-/** Render the AI engineer guide with framework examples and interactive architecture tabs. */
-export default function AIEngineerPage() {
-  const history = useHistory();
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<"building" | "running" | "kernel">("building");
-  const [displayedTab, setDisplayedTab] = useState<"building" | "running" | "kernel">("building");
-  const arrowRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const isAnimating = useRef(false);
+const STEPS: Step[] = [
+  { id: 'compare', label: 'Compare' },
+  { id: 'placement', label: 'Placement' },
+  { id: 'memory', label: 'Memory' },
+  { id: 'hooks', label: 'Hooks' },
+  { id: 'scale', label: 'Scale and evidence' },
+];
 
+/* ─── 01 Compare ──────────────────────────────────────────────────────────── */
 
-  const AI_ENGINEER_ARCH_LAYERS = [
-    {
-      num: "01",
-      label: "Your Agent Logic",
-      items: ["Domain-Specific Agent Code", "Business Rules", "Prompts & Tools"],
-    },
-    {
-      num: "02",
-      label: "Open Agent Kernel Core",
-      items: [
-        "Agent Module",
-        "Agent Wrapper",
-        "Framework-Specific Runner",
-        "Session Manager",
-        "Runtime",
-        "Pre / Post Hooks",
-      ],
-    },
-    {
-      num: "03",
-      label: "Framework Adapters",
-      items: [
-        "LangGraph",
-        "OpenAI Agents",
-        "CrewAI",
-        "Google ADK",
-        "Smolagents",
-        "Pydantic AI",
-        "Claude Agent SDK",
-        "Microsoft Agent Framework",
-        "Bring your own [advanced]",
-      ],
-    },
-    {
-      num: "04",
-      label: "Storage & Memory",
-      items: ["In-Memory", "Redis", "DynamoDB", "CosmosDB", "Firestore"],
-    },
-    {
-      num: "05",
-      label: "Knowledge Bases",
-      items: ["ChromaDB", "Neo4j", "Starburst", "SQLDB", "OKF"],
-    },
-    {
-      num: "06",
-      label: "Observability",
-      items: ["Langfuse", "OpenLLMetry", "Pydantic Logfire", "AWS CloudWatch"],
-    },
-    {
-      num: "07",
-      label: "Execution Surface",
-      items: [
-        "AWS Lambda",
-        "ECS",
-        "Azure Functions",
-        "Container Apps",
-        "GCP Cloud Run",
-        "GCP Cloud Run Functions",
-        "On-Prem Kubernetes (Helm)",
-      ],
-    },
-    {
-      num: "08",
-      label: "Interfacing",
-      items: ["CLI", "MCP", "A2A", "REST API"],
-    },
-    {
-      num: "09",
-      label: "Channels",
-      items: [
-        "Slack",
-        "Teams",
-        "WhatsApp",
-        "Telegram",
-        "Messenger",
-        "Instagram",
-        "Gmail",
-        "LiveKit",
-        "Redis",
-        "DynamoDB",
-      ],
-    },
-  ];
+type Verdict = 'yes' | 'no' | 'partial';
+type Cell = { verdict: Verdict; text?: string };
 
-  const AI_ENGINEER_MEMORY_LAYERS = [
-    {
-      title: "Conversational State (Session)",
-      icon: MdForum,
-      bullets: [
-        "The agent remembers the conversation naturally across turns.",
-        "This is the memory that keeps chat continuity.",
-      ],
-    },
-    {
-      title: "Volatile Cache (Per Request)",
-      icon: MdCached,
-      bullets: [
-        "A scratchpad for one request only.",
-        "Great for RAG snippets, temporary file reads, and intermediate results.",
-        "Auto-clears after every response.",
-      ],
-    },
-    {
-      title: "Non-Volatile Cache (Session)",
-      icon: MdStorage,
-      bullets: [
-        "Session memory for supporting data that should persist.",
-        "Perfect for user preferences, auth context, and running counters.",
-        "Available to tools/hooks without spending LLM tokens.",
-      ],
-    },
-  ] as const;
+const COMPARISON: Array<{ question: string; hint?: string; cloud: Cell; frameworks: Cell; oak: Cell }> = [
+  {
+    question: 'Switch cloud platform later?',
+    cloud: { verdict: 'no', text: 'Rewrite' },
+    frameworks: { verdict: 'yes', text: 'You build it' },
+    oak: { verdict: 'yes', text: 'One config change' },
+  },
+  {
+    question: 'Run agents from several frameworks together?',
+    cloud: { verdict: 'no', text: 'Not possible' },
+    frameworks: { verdict: 'no', text: 'Not possible' },
+    oak: { verdict: 'yes', text: 'In one runtime' },
+  },
+  {
+    question: 'Integrations out of the box?',
+    hint: 'Slack, Teams, REST, A2A, MCP',
+    cloud: { verdict: 'partial', text: 'Partial' },
+    frameworks: { verdict: 'no', text: 'Build your own' },
+    oak: { verdict: 'yes', text: 'Built in' },
+  },
+  {
+    question: 'Sessions, memory and observability?',
+    cloud: { verdict: 'yes', text: 'Proprietary' },
+    frameworks: { verdict: 'no', text: 'Build your own' },
+    oak: { verdict: 'yes', text: 'Built in and pluggable' },
+  },
+  {
+    question: 'Knowledge bases?',
+    cloud: { verdict: 'yes', text: 'Proprietary' },
+    frameworks: { verdict: 'no', text: 'Build your own' },
+    oak: { verdict: 'yes', text: 'Built in and pluggable' },
+  },
+  {
+    question: 'Open source, with no licence fee?',
+    cloud: { verdict: 'no' },
+    frameworks: { verdict: 'yes' },
+    oak: { verdict: 'yes', text: 'Apache 2.0' },
+  },
+  {
+    question: 'Lift and shift an existing agent?',
+    cloud: { verdict: 'no', text: 'Rewrite' },
+    frameworks: { verdict: 'no', text: 'Rewrite' },
+    oak: { verdict: 'yes', text: 'Wrap and ship' },
+  },
+];
 
-  const AI_ENGINEER_HOOK_PIPELINE = [
-    {
-      title: "Pre-Execution Hooks",
-      icon: MdShield,
-      bullets: [
-        "Validate and enrich input before the LLM runs.",
-        "Typical uses: guardrails, redaction, RAG injection, request shaping.",
-      ],
-      highlight: false,
-    },
-    {
-      title: "Agent Execution",
-      icon: MdSmartToy,
-      bullets: ["Your existing framework logic runs as-is."],
-      highlight: false,
-    },
-    {
-      title: "Post-Execution Hooks",
-      icon: MdSecurity,
-      bullets: [
-        "Apply output checks and final formatting before returning to users.",
-        "Typical uses: moderation, compliance notes, analytics, audit logging.",
-      ],
-      highlight: false,
-    },
-    {
-      title: "Early Termination",
-      icon: MdStopCircle,
-      badge: "Early termination",
-      bullets: [
-        "Stop unsafe or invalid requests early and return a controlled response.",
-        "Useful for input guardrails, rate limits, cached shortcuts, and circuit breakers.",
-      ],
-      highlight: false,
-    },
-  ] as const;
+const VERDICT = {
+  yes: { Icon: TbCheck, word: 'Yes', tone: undefined },
+  no: { Icon: TbX, word: 'No', tone: styles.cellNo },
+  partial: { Icon: TbMinus, word: 'Partial', tone: styles.cellPartial },
+} as const;
 
-  const AI_ENGINEER_COMPARE_COLUMNS = {
-    cloud: "Bedrock AgentCore / Azure AI Foundry / Google Vertex AI",
-    cloudShort: "Bedrock / Azure / Google",
-    frameworks: "LangGraph · CrewAI · OpenAI Agents etc",
-    frameworksShort: "LangGraph · CrewAI · OpenAI",
-    agentKernel: "OAK",
-  } as const;
+function CompareCell({ cell }: { cell: Cell }): JSX.Element {
+  const { Icon, word, tone } = VERDICT[cell.verdict];
+  return (
+    <span className={clsx(styles.cell, tone)}>
+      <Icon className={styles.cellIcon} aria-hidden="true" />
+      {cell.text ?? word}
+    </span>
+  );
+}
 
-  type AkCompareCellStatus = "positive" | "negative" | "partial";
+/* ─── 02 Placement ────────────────────────────────────────────────────────── */
 
-  interface AkCompareCell {
-    status: AkCompareCellStatus;
-    text?: string;
-  }
+const PLACEMENT: TabItem[] = [
+  {
+    id: 'building',
+    label: 'What you build',
+    content: (
+      <figure className={styles.figure}>
+        <BuildingAgentsFlowDiagram />
+        <figcaption className={clsx('ak-small', styles.caption)}>
+          A compliant multi-agent system has more parts than agents: guardrails on the way in and out, a supervisor,
+          specialist agents, their tools and shared memory.
+        </figcaption>
+      </figure>
+    ),
+  },
+  {
+    id: 'running',
+    label: 'What running it takes',
+    content: (
+      <figure className={styles.figure}>
+        <RunningAgentsFlowDiagram />
+        <figcaption className={clsx('ak-small', styles.caption)}>
+          In production the agent logic runs behind an API, in a server, a container or a function, and reaches a
+          memory store, the model, knowledge sources and other APIs on every request.
+        </figcaption>
+      </figure>
+    ),
+  },
+  {
+    id: 'kernel',
+    label: 'Where OAK sits',
+    content: (
+      <figure className={styles.figure}>
+        <AgentKernelSitsInFlowDiagram />
+        <figcaption className={clsx('ak-small', styles.caption)}>
+          OAK takes everything except the agent logic: how many agents there are, what they can do and how they are
+          prompted stay yours.
+        </figcaption>
+      </figure>
+    ),
+  },
+];
 
-  const AI_ENGINEER_COMPARISON_ROWS: {
-    feature: string;
-    featureHint?: string;
-    cloud: AkCompareCell;
-    frameworks: AkCompareCell;
-    agentKernel: AkCompareCell;
-  }[] = [
-      {
-        feature: "Switch cloud platform later?",
-        cloud: { status: "negative", text: "Rewrite" },
-        frameworks: { status: "positive", text: "You build it" },
-        agentKernel: { status: "positive", text: "One config change" },
-      },
-      {
-        feature: "Multi-framework agent execution?",
-        cloud: { status: "negative", text: "Not possible" },
-        frameworks: { status: "negative", text: "Not possible" },
-        agentKernel: { status: "positive", text: "Run in one runtime" },
-      },
-      {
-        feature: "Out of Box integrations?",
-        featureHint: "(i.e. Slack / Teams / REST / A2A / MCP)",
-        cloud: { status: "partial", text: "Partial" },
-        frameworks: { status: "negative", text: "DIY" },
-        agentKernel: { status: "positive", text: "Built-in" },
-      },
-      {
-        feature: "Sessions, memory, observability?",
-        cloud: { status: "positive", text: "Proprietary" },
-        frameworks: { status: "negative", text: "DIY" },
-        agentKernel: { status: "positive", text: "Built-in and Pluggable" },
-      },
-      {
-        feature: "Open-source / no licensing?",
-        cloud: { status: "negative" },
-        frameworks: { status: "positive" },
-        agentKernel: { status: "positive", text: "Apache 2.0" },
-      },
-      {
-        feature: "Knowledge bases?",
-        cloud: { status: "positive", text: "Proprietary" },
-        frameworks: { status: "negative", text: "DIY" },
-        agentKernel: { status: "positive", text: "Built-in and Pluggable" },
-      },
-      {
-        feature: "Lift-and-shift an existing agent?",
-        cloud: { status: "negative", text: "Rewrite" },
-        frameworks: { status: "negative", text: "Rewrite" },
-        agentKernel: { status: "positive", text: "Wrap & ship" },
-      },
-    ];
+/* ─── 03 Memory ───────────────────────────────────────────────────────────── */
 
-  function AkCompareCellContent({ cell }: { cell: AkCompareCell }) {
-    if (cell.status === "partial") {
-      return <span className={styles.akComparePartial}>{cell.text}</span>;
-    }
+const MEMORY_LAYERS = [
+  {
+    tag: 'Session',
+    title: 'Conversational state',
+    line: 'The turns of the conversation, kept by the session store. This is what gives a chat its continuity.',
+  },
+  {
+    tag: 'One request',
+    title: 'Volatile cache',
+    line: 'A scratchpad for a single request: retrieved passages, file reads, intermediate results. It clears after every reply.',
+  },
+  {
+    tag: 'Session',
+    title: 'Non-volatile cache',
+    line: 'Supporting data that should outlive a request: user preferences, auth context, counters. Tools and hooks read it without spending model tokens.',
+  },
+];
 
-    const Icon = cell.status === "positive" ? MdCheck : MdClose;
-    const iconClass =
-      cell.status === "positive"
-        ? styles.akCompareIconPos
-        : styles.akCompareIconNeg;
+const MEMORY_CODE = `from agentkernel import PreHook, Session
+from agentkernel.core.memory import KeyValueCache
 
-    const textClass =
-      cell.status === "positive"
-        ? styles.akCompareTextPos
-        : styles.akCompareTextNeg;
+class MyHook(PreHook):
+    async def on_run(self, session: Session, agent, requests):
+        # Get caches from session
+        v_cache: KeyValueCache = session.get_volatile_cache()
+        nv_cache: KeyValueCache = session.get_non_volatile_cache()
 
-    return (
-      <span className={styles.akCompareCellValue}>
-        <Icon className={iconClass} aria-hidden />
-        {cell.text ? <span className={textClass}>{cell.text}</span> : null}
-      </span>
-    );
-  }
+        # Use the caches
+        v_cache.set("temp_data", "value")
+        user_pref = nv_cache.get("user_language")
 
-  const DEV_FEATURE_GROUPS = [
-    {
-      title: "Build & Interface",
-      cols: 4 as const,
-      features: [
-        {
-          icon: MdTerminal,
-          title: "CLI for Prototyping",
-          body: "Easy interfacing your agents on your laptop via OAK's command line interface.",
-        },
-        {
-          icon: MdBolt,
-          title: "REST API Server",
-          body: "FastAPI-based server out of the box. No boilerplate. Just run your agent.",
-        },
-        {
-          icon: MdCode,
-          title: "Native MCP and A2A support",
-          body: "Expose agents as tools (MCP) and enable agent-to-agent collaboration (A2A). Makes integration with external AI systems straightforward.",
-        },
-        {
-          icon: MdAutoAwesome,
-          title: "Multi-Framework Support",
-          body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK side-by-side. Keep one runtime across teams while using the best framework per use case.",
-        },
-      ],
-    },
-    {
-      title: "Runtime & Extensibility",
-      cols: 3 as const,
-      features: [
-        {
-          icon: MdSmartToy,
-          title: "Pluggable Session & Memory",
-          body: "Start local in-memory, scale to Redis, DynamoDB, or Cosmos DB in production. Switch via config, not code rewrites.",
-        },
-        {
-          icon: MdLink,
-          title: "Execution Hooks",
-          body: "Pre/post hooks for RAG injection, input validation, response moderation, analytics.",
-        },
-        {
-          icon: MdPermMedia,
-          title: "Multimodal Support",
-          body: "In-built framework-neutral multimodal support across integration channels. Handle files/images cleanly and keep sessions lightweight. Realtime voice is available through the LiveKit integration for OpenAI Agents SDK and Google ADK agents.",
-        },
-      ],
-    },
-    {
-      title: "Ship & Secure",
-      cols: 3 as const,
-      features: [
-        {
-          icon: MdSecurity,
-          title: "Guardrails and Content Safety",
-          body: "Input and output protection in the same runtime pipeline. Supports policy checks for safety, PII handling, and jailbreak defense.",
-        },
-        {
-          icon: MdCloud,
-          title: "Cloud Deployment",
-          body: "Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run, GCP Cloud Run Functions, plus a Helm chart for on-prem Kubernetes.",
-        },
-        {
-          icon: MdLanguage,
-          title: "Reliability",
-          body: "Built for resilient cloud deployments with health checks and failover patterns.",
-        },
-      ],
-    },
-    {
-      title: "Integrate & Observe",
-      cols: 3 as const,
-      features: [
-        {
-          icon: MdMessage,
-          title: "Messaging Integrations",
-          body: "Slack, WhatsApp, Instagram, Telegram, Gmail, Teams and Messenger integrations, plus realtime voice through LiveKit for OpenAI Agents SDK and Google ADK agents.",
-        },
-        {
-          icon: MdScience,
-          title: "Testing Framework",
-          body: "pytest-integrated test runner. Write deterministic automated test scenarios for your AI agents like any other code.",
-        },
-        {
-          icon: MdVisibility,
-          title: "Observability",
-          body: "Langfuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
-        },
-      ],
-    },
-  ];
+        return requests`;
 
-  const TABS = [
-    {
-      id: "building" as const,
-      title: "Building AI Agents",
-      body: "Designing a compliant multi-agent architecture carries multiple components.",
-      Icon: MdSmartToy,
-      Diagram: BuildingAgentsFlowDiagram,
-    },
-    {
-      id: "running" as const,
-      title: "Running AI Agents",
-      body: "Running a production-grade AI agent requires considering several design aspects and information flows.",
-      Icon: MdBolt,
-      Diagram: RunningAgentsFlowDiagram,
-    },
-    {
-      id: "kernel" as const,
-      title: "How Open Agent Kernel Sits In",
-      body: "OAK handles everything except the actual agent logic (number of agents, their capabilities and their prompts) while providing a deterministic test framework as well.",
-      Icon: MdAutoAwesome,
-      Diagram: AgentKernelSitsInFlowDiagram,
-    },
-  ] as const;
+/* ─── 04 Hooks ────────────────────────────────────────────────────────────── */
 
-  const moveArrowTo = useCallback((tabIndex: number, animate = true) => {
-    const tab = tabRefs.current[tabIndex];
-    const arrow = arrowRef.current;
-    const sectionEl = document.querySelector('[data-step="ai-06"]') as HTMLElement | null;
-    if (!tab || !arrow || !sectionEl) return;
-    const tabRect = tab.getBoundingClientRect();
-    const containerRect = sectionEl.getBoundingClientRect();
-    const targetX = tabRect.left - containerRect.left + tabRect.width / 2 - arrow.offsetWidth / 2;
-    if (animate) {
-      gsap.to(arrow, { x: targetX, duration: 0.45, ease: "power3.out" });
-    } else {
-      gsap.set(arrow, { x: targetX });
-    }
-  }, []);
+const HOOK_STAGES = [
+  {
+    title: 'Before the run',
+    line: 'A pre-hook receives the requests and may change them: redact, validate, add retrieved context or attach files.',
+  },
+  {
+    title: 'After the run',
+    line: 'A post-hook receives the reply, and each one sees what the hook before it returned: moderate, add a disclaimer, log for audit.',
+  },
+  {
+    title: 'Stop early',
+    line: 'A pre-hook that returns a reply ends the run before the model is called. Use it for input guardrails, rate limits and cached answers.',
+  },
+];
 
-  const handleTabChange = useCallback((tabId: "building" | "running" | "kernel", tabIndex: number) => {
-    if (tabId === activeTab || isAnimating.current) return;
-    isAnimating.current = true;
-    setActiveTab(tabId);
-    moveArrowTo(tabIndex, true);
-    const panel = panelRef.current;
-    if (!panel) { setDisplayedTab(tabId); isAnimating.current = false; return; }
-    gsap.to(panel, {
-      opacity: 0, y: 12, duration: 0.2, ease: "power2.in",
-      onComplete: () => {
-        setDisplayedTab(tabId);
-        gsap.fromTo(panel, { opacity: 0, y: -12 }, {
-          opacity: 1, y: 0, duration: 0.35, ease: "power3.out",
-          onComplete: () => { isAnimating.current = false; },
-        });
-      },
-    });
-  }, [activeTab, moveArrowTo]);
+const HOOK_CODE = `from agentkernel.openai import OpenAIModule
+from agents import Agent
 
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => moveArrowTo(0, false));
-    return () => cancelAnimationFrame(raf);
-  }, [moveArrowTo]);
+# Create your agent
+agent = Agent(name="assistant", instructions="...")
 
-  useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
-    if (!contentRef.current) return;
+# Register agent and hooks using method chaining
+OpenAIModule([agent]).pre_hook(agent, [
+    RAGHook(),
+    GuardRailHook(),
+]).post_hook(agent, [
+    ModerationHook(),
+    DisclaimerHook(),
+])`;
 
-    const context = gsap.context(() => {
-      const root = contentRef.current!;
+/* ─── 05 Scale and evidence ───────────────────────────────────────────────── */
 
-      // ─── Utility: fade-up a single element ───────────────────────────────
-      function fadeUp(
-        el: Element,
-        opts: { delay?: number; duration?: number; y?: number; start?: string } = {}
-      ) {
-        const { delay = 0, duration = 0.85, y = 28, start = "top 88%" } = opts;
-        gsap.fromTo(
-          el,
-          { opacity: 0, y },
-          {
-            opacity: 1,
-            y: 0,
-            duration,
-            delay,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: el,
-              start,
-              toggleActions: "play none none reverse",
-            },
-          }
-        );
-      }
+const QUEUE_CHAIN = ['Request handler', 'Input queue', 'Agent runner', 'Output queue', 'Response handler'];
 
-      // ─── Step 01: Analogy ─────────────────────────────────────────────────
-      const step01 = root.querySelector('[data-step="ai-01"]');
-      if (step01) fadeUp(step01, { y: 36, duration: 1 });
+const TRANSPORTS = ['in_memory', 'sqs', 'kafka', 'nats', 'pubsub', 'servicebus'];
 
-      // ─── Step 02: Architecture layers (slide from left, one by one) ───────
-      root
-        .querySelectorAll(`[data-step="ai-02"] .${styles.aiEngineeringLayerGroup}`)
-        .forEach((layer, i) => {
-          gsap.fromTo(
-            layer,
-            { opacity: 0, x: -50 },
-            {
-              opacity: 1,
-              x: 0,
-              duration: 0.9,
-              delay: i * 0.1,
-              ease: "power2.out",
-              scrollTrigger: {
-                trigger: layer,
-                start: "top 88%",
-                toggleActions: "play none none reverse",
-              },
-            }
-          );
-        });
+const TRACE_CODE = `from datetime import timedelta
 
-      // ─── Step 03: Compare section ─────────────────────────────────────────
-      const step03 = root.querySelector('[data-step="ai-03"]');
-      if (step03) fadeUp(step03, { y: 36, duration: 1 });
+from agentkernel.trace import SpanStatus, Trace
 
-      // ─── Step 04: Feature cards (scoped strictly to ai-04) ───────────────
-      root
-        .querySelectorAll(`[data-step="ai-04"] .${styles.aiEngineerFeatureCard}`)
-        .forEach((card, i) => {
-          gsap.fromTo(
-            card,
-            { opacity: 0, y: 20, scale: 0.97 },
-            {
-              opacity: 1,
-              y: 0,
-              scale: 1,
-              duration: 0.75,
-              delay: (i % 4) * 0.07,
-              ease: "power2.out",
-              scrollTrigger: {
-                trigger: card,
-                start: "top 90%",
-                toggleActions: "play none none reverse",
-              },
-            }
-          );
-        });
+for trace in Trace.get().fetch_traces(session_id="session-123", last=timedelta(hours=24)):
+    if trace.root is None:
+        continue  # the root span isn't stored (yet), so there is no request to grade
+    print(trace.trace_id, trace.user_input, trace.output, trace.usage.cost, trace.agent_names)
+    failed = [span.name for span in trace.tool_spans if span.status == SpanStatus.ERROR]`;
 
-      // ─── Step 05: Framework section ──────────────────────────────────────
-      const step05 = root.querySelector('[data-step="ai-05"]');
-      if (step05) fadeUp(step05, { y: 36, duration: 1 });
-
-      root
-        .querySelectorAll(`[data-step="ai-05"] .${styles.devFrameworkButton}`)
-        .forEach((btn, i) => {
-          gsap.fromTo(
-            btn,
-            { opacity: 0, y: 16, scale: 0.95 },
-            {
-              opacity: 1,
-              y: 0,
-              scale: 1,
-              duration: 0.65,
-              delay: i * 0.07,
-              ease: "power2.out",
-              scrollTrigger: {
-                trigger: btn,
-                start: "top 92%",
-                toggleActions: "play none none reverse",
-              },
-            }
-          );
-        });
-
-      root
-        .querySelectorAll(`[data-step="ai-05"] .${styles.devFrameworkCodeBlock}`)
-        .forEach((block, i) => {
-          gsap.fromTo(
-            block,
-            { opacity: 0, x: 28, scale: 0.98 },
-            {
-              opacity: 1,
-              x: 0,
-              scale: 1,
-              duration: 0.9,
-              delay: i * 0.1,
-              ease: "power2.out",
-              scrollTrigger: {
-                trigger: block,
-                start: "top 90%",
-                toggleActions: "play none none reverse",
-              },
-            }
-          );
-        });
-
-      // ─── Step 06: Build subsections ───────────────────────────────────────
-      const step06 = root.querySelector('[data-step="ai-06"]');
-      if (step06) fadeUp(step06, { y: 36, duration: 1 });
-
-      // ─── Step 07: Architecture section ────────────────────────────────────
-      const step07 = root.querySelector('[data-step="ai-07"]');
-      if (step07) fadeUp(step07, { y: 36, duration: 1 });
-
-      // ─── Step 08: Memory + hook cards (scoped strictly to ai-08) ─────────
-      root
-        .querySelectorAll(`[data-step="ai-08"] .${styles.aiEngineerFeatureCard}`)
-        .forEach((card, i) => {
-          gsap.fromTo(
-            card,
-            { opacity: 0, y: 20, scale: 0.97 },
-            {
-              opacity: 1,
-              y: 0,
-              scale: 1,
-              duration: 0.75,
-              delay: (i % 3) * 0.08,
-              ease: "power2.out",
-              scrollTrigger: {
-                trigger: card,
-                start: "top 90%",
-                toggleActions: "play none none reverse",
-              },
-            }
-          );
-        });
-
-      root
-        .querySelectorAll(`[data-step="ai-08"] .${styles.devHookPipelineConnector}`)
-        .forEach((connector, i) => {
-          gsap.fromTo(
-            connector,
-            { opacity: 0, scale: 0.9 },
-            {
-              opacity: 1,
-              scale: 1,
-              duration: 0.5,
-              delay: i * 0.06,
-              ease: "power2.out",
-              scrollTrigger: {
-                trigger: connector,
-                start: "top 92%",
-                toggleActions: "play none none reverse",
-              },
-            }
-          );
-        });
-    }, contentRef);
-
-    return () => context.revert();
-  }, []);
-
+export default function AIEngineerPage(): JSX.Element {
   return (
     <Layout
-      title="Open Agent Kernel for AI Engineers"
-      description="Learn how OAK provides production-ready infrastructure for AI engineers building sophisticated AI agent systems."
+      title="Open Agent Kernel for AI engineers"
+      description="How the Open Agent Kernel runtime compares, where it sits in a request, and the memory, hook and queue machinery you can build on."
     >
-      {/* <HeroAnimation
-        badge="AI Engineers"
-        title="Run Advanced Agent Systems on a Unified Runtime"
-        subtitle="Bring your existing agentic code and operate it with production discipline. Open Agent Kernel unifies execution, memory, hooks, observability, integrations, and multi-cloud deployment so AI engineering teams can ship compliant, scalable systems faster."
-      /> */}
-      <StepTimeline levelId="03" contentRef={contentRef} />
-      <section ref={contentRef} className={styles.aiEngineerSection}>
-        <div className="container">
-          {/* Step 01 — AI Engineer Analogy */}
-          <div
-            className={`${styles.developerAnalogy} ${styles.aiEngineerBlock}`}
-            data-step="ai-01"
-          >
-            <p className={styles.aiStepLabel}>Step 01: Analogy</p>
-            <h1 className={styles.aiTitle}>
-              Guardrails, traceability, memory and other enterprise features for your agent code.
-            </h1>
-            <div className={styles.aiDescription}>
-              <p className={styles.devIntro}>
-                OAK is a unified, capable runtime for the AI agents. Its pluggable architecture allows you to attach capabilities to your effortlessly.
-              </p>
-            </div>
-          </div>
-
-          {/* Architecture flow — 9 stacked layers */}
-          <div
-            className={`${styles.architectureWrapper} ${styles.developerBlock}`}
-            data-step="ai-02"
-          >
-            <div className={styles.architectureStack}>
-              {AI_ENGINEER_ARCH_LAYERS.map((layer, i, arr) => (
-                <div
-                  key={layer.label}
-                  className={styles.aiEngineeringLayerGroup}
-                >
-                  <div className={styles.layerNumberWrapper}>
-                    <div className={styles.layerNumberCircle}>
-                      {layer.num}
-                    </div>
-                    {i < arr.length - 1 && (
-                      <div className={styles.layerConnector} />
-                    )}
-                  </div>
-                  <div className={styles.layerContentWrapper}>
-                    <div className={styles.layerContentBox}>
-                      <h3 className={styles.layerLabel}>{layer.label}</h3>
-                      <p className={styles.layerSub}>
-                        {layer.items.map((item, idx) => (
-                          <React.Fragment key={item}>
-                            {idx > 0 && (
-                              <span
-                                className={styles.layerSubSep}
-                                aria-hidden="true"
-                              >
-                                ●
-                              </span>
-                            )}
-                            {item}
-                          </React.Fragment>
-                        ))}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Step 03 — What Makes Agent Kernel Stand Out */}
-          <div
-            className={`${styles.akStandOutSection} ${styles.developerBlock}`}
-            data-step="ai-03"
-          >
-            <p className={styles.aiStepLabel}>Step 02: Stand Out</p>
-            <h2 className={styles.aiTitle}>
-              <span>What makes OAK stand out</span>
-            </h2>
-
-            <div className={styles.akComparePanel}>
-              <p className={styles.akCompareScrollHint} aria-hidden="true">
-                Scroll horizontally to compare all columns
-              </p>
-
-              <div className={styles.akCompareTableWrap}>
-                <table className={styles.akCompareTable}>
-                  <colgroup>
-                    <col className={styles.akCompareColFeature} />
-                    <col className={styles.akCompareColData} />
-                    <col className={styles.akCompareColData} />
-                    <col className={styles.akCompareColData} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th scope="col" className={styles.akCompareFeatureCol} />
-                      <th
-                        scope="col"
-                        className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol}`}
-                      >
-                        <span className={styles.akCompareHeadLong}>
-                          {AI_ENGINEER_COMPARE_COLUMNS.cloud}
-                        </span>
-                        <span className={styles.akCompareHeadShort}>
-                          {AI_ENGINEER_COMPARE_COLUMNS.cloudShort}
-                        </span>
-                      </th>
-                      <th
-                        scope="col"
-                        className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol}`}
-                      >
-                        <span className={styles.akCompareHeadLong}>
-                          {AI_ENGINEER_COMPARE_COLUMNS.frameworks}
-                        </span>
-                        <span className={styles.akCompareHeadShort}>
-                          {AI_ENGINEER_COMPARE_COLUMNS.frameworksShort}
-                        </span>
-                      </th>
-                      <th
-                        scope="col"
-                        className={`${styles.akCompareHeadCell} ${styles.akCompareDataCol} ${styles.akCompareHeadCellHighlight}`}
-                      >
-                        {AI_ENGINEER_COMPARE_COLUMNS.agentKernel}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {AI_ENGINEER_COMPARISON_ROWS.map((row, i) => (
-                      <tr
-                        key={row.feature}
-                        className={
-                          i % 2 === 1 ? styles.akCompareRowAlt : undefined
-                        }
-                      >
-                        <th scope="row" className={styles.akCompareFeatureCell}>
-                          <span className={styles.akCompareFeatureText}>
-                            {row.feature}
-                          </span>
-                          {row.featureHint ? (
-                            <span className={styles.akCompareFeatureHint}>
-                              {row.featureHint}
-                            </span>
-                          ) : null}
-                        </th>
-                        <td
-                          className={`${styles.akCompareDataCell} ${styles.akCompareDataCol}`}
-                        >
-                          <AkCompareCellContent cell={row.cloud} />
-                        </td>
-                        <td
-                          className={`${styles.akCompareDataCell} ${styles.akCompareDataCol}`}
-                        >
-                          <AkCompareCellContent cell={row.frameworks} />
-                        </td>
-                        <td
-                          className={`${styles.akCompareDataCell} ${styles.akCompareDataCol} ${styles.akCompareDataCellHighlight}`}
-                        >
-                          <AkCompareCellContent cell={row.agentKernel} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className={styles.akCompareMobileList}>
-                {AI_ENGINEER_COMPARISON_ROWS.map((row) => (
-                  <article
-                    key={row.feature}
-                    className={styles.akCompareMobileCard}
-                  >
-                    <h3 className={styles.akCompareMobileFeature}>
-                      {row.feature}
-                      {row.featureHint ? (
-                        <span className={styles.akCompareFeatureHint}>
-                          {row.featureHint}
-                        </span>
-                      ) : null}
-                    </h3>
-                    <div className={styles.akCompareMobileRows}>
-                      <div className={styles.akCompareMobileRow}>
-                        <span className={styles.akCompareMobileLabel}>
-                          {AI_ENGINEER_COMPARE_COLUMNS.cloudShort}
-                        </span>
-                        <AkCompareCellContent cell={row.cloud} />
-                      </div>
-                      <div className={styles.akCompareMobileRow}>
-                        <span className={styles.akCompareMobileLabel}>
-                          {AI_ENGINEER_COMPARE_COLUMNS.frameworksShort}
-                        </span>
-                        <AkCompareCellContent cell={row.frameworks} />
-                      </div>
-                      <div
-                        className={`${styles.akCompareMobileRow} ${styles.akCompareMobileRowHighlight}`}
-                      >
-                        <span className={styles.akCompareMobileLabel}>
-                          {AI_ENGINEER_COMPARE_COLUMNS.agentKernel}
-                        </span>
-                        <AkCompareCellContent cell={row.agentKernel} />
-                      </div>
-                    </div>
-                  </article>
+      <PageHero
+        art={<LevelStack active={2} />}
+        label="Level 03 / AI engineers"
+        title="Inside the runtime that runs your agents"
+        lead="Open Agent Kernel (OAK) sits between your agent code and the infrastructure it runs on. This page covers how it compares with the alternatives, where it sits in a request, and the memory, hook and queue machinery you can build on."
+        actions={
+          <>
+            <Link to="/docs/architecture/overview" className="ak-btn ak-btn--primary">
+              Read the architecture docs
+            </Link>
+            <Link to="/docs/architecture/execution-flow" className="ak-link">
+              Execution flow
+            </Link>
+          </>
+        }
+      />
+      <Journey steps={STEPS}>
+        <PersonaSection
+          id="compare"
+          index="01"
+          label="Compare"
+          title="A runtime, without giving up the choice"
+          lead="Managed platforms give you a runtime and take the choice of cloud and framework. Frameworks leave you the choice and no runtime. OAK is built to give you both."
+        >
+          <div className={styles.tableScroll} role="region" aria-label="Comparison table" tabIndex={0}>
+            <table className={styles.compare}>
+              <caption className={styles.srOnly}>
+                Managed cloud platforms, agent frameworks and OAK, compared on seven questions
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">
+                    <span className={styles.srOnly}>Question</span>
+                  </th>
+                  <th scope="col">
+                    Managed cloud platforms
+                    <span className={styles.compareHint}>Bedrock AgentCore, Azure AI Foundry, Vertex AI</span>
+                  </th>
+                  <th scope="col">
+                    Agent frameworks
+                    <span className={styles.compareHint}>LangGraph, CrewAI, OpenAI Agents and others</span>
+                  </th>
+                  <th scope="col" className={styles.compareOak}>
+                    OAK
+                    <span className={styles.compareHint}>Open Agent Kernel</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {COMPARISON.map((row) => (
+                  <tr key={row.question}>
+                    <th scope="row">
+                      {row.question}
+                      {row.hint && <span className={styles.compareHint}>{row.hint}</span>}
+                    </th>
+                    <td>
+                      <CompareCell cell={row.cloud} />
+                    </td>
+                    <td>
+                      <CompareCell cell={row.frameworks} />
+                    </td>
+                    <td className={styles.compareOak}>
+                      <CompareCell cell={row.oak} />
+                    </td>
+                  </tr>
                 ))}
-              </div>
+              </tbody>
+            </table>
+          </div>
+        </PersonaSection>
 
-              <p className={styles.akCompareFooter}>
-                Bedrock / Foundry give you <strong>runtime</strong> but take
-                your <strong>freedom</strong>. LangGraph gives you{" "}
-                <strong>freedom</strong> but no <strong>runtime</strong>.
-                OAK gives you <strong>both</strong>.
+        <PersonaSection
+          id="placement"
+          index="02"
+          label="Placement"
+          title="Where OAK sits in an agent system"
+          lead="Three views of one system: what you set out to build, what it takes to run it, and the part OAK takes over."
+        >
+          <Tabs name="placement" label="Views of an agent system" items={PLACEMENT} />
+          <div className={styles.blockSmall}>
+            <DocLinks
+              links={[
+                { label: 'Architecture overview', to: '/docs/architecture/overview' },
+                { label: 'Multi-agent systems', to: '/docs/advanced/multi-agent' },
+                { label: 'Running several frameworks', to: '/docs/frameworks/multi-framework' },
+              ]}
+            />
+          </div>
+        </PersonaSection>
+
+        <PersonaSection
+          id="memory"
+          index="03"
+          label="Memory"
+          title="Three layers of memory, one context window"
+          lead="Keep the conversation coherent, enrich a single request, and carry session data forward, without filling the model's context with it."
+        >
+          <div className={styles.split}>
+            <div className={styles.stack}>
+              <ul className={styles.rows}>
+                {MEMORY_LAYERS.map((layer) => (
+                  <li key={layer.title} className={styles.row}>
+                    <p className="ak-label">{layer.tag}</p>
+                    <h3 className="ak-h4">{layer.title}</h3>
+                    <p className="ak-body">{layer.line}</p>
+                  </li>
+                ))}
+              </ul>
+              <DocLinks
+                links={[
+                  { label: 'Memory management', to: '/docs/architecture/memory-management' },
+                  { label: 'Memory backends', to: '/docs/core-concepts/memory-backends' },
+                ]}
+              />
+            </div>
+            <CodeSample title="hooks.py" language="python">
+              {MEMORY_CODE}
+            </CodeSample>
+          </div>
+        </PersonaSection>
+
+        <PersonaSection
+          id="hooks"
+          index="04"
+          label="Hooks"
+          title="Hooks around every run"
+          lead="Control what reaches an agent and what leaves it, without touching the agent's own logic. Hooks work with every framework adapter."
+        >
+          <ol className={styles.chain} aria-label="The path of a request through the hooks">
+            <li>
+              <span className={styles.chainStop}>Request</span>
+            </li>
+            <li>
+              <span className={clsx(styles.chainStop, styles.chainStopAccent)}>Pre-hooks</span>
+            </li>
+            <li>
+              <span className={styles.chainStop}>Agent</span>
+            </li>
+            <li>
+              <span className={clsx(styles.chainStop, styles.chainStopAccent)}>Post-hooks</span>
+            </li>
+            <li>
+              <span className={styles.chainStop}>Reply</span>
+            </li>
+          </ol>
+          <div className={clsx(styles.split, styles.blockSmall)}>
+            <div className={styles.stack}>
+              <ul className={styles.rows}>
+                {HOOK_STAGES.map((stage) => (
+                  <li key={stage.title} className={styles.row}>
+                    <h3 className="ak-h4">{stage.title}</h3>
+                    <p className="ak-body">{stage.line}</p>
+                  </li>
+                ))}
+              </ul>
+              <DocLinks links={[{ label: 'Execution hooks', to: '/docs/integrations/hooks' }]} />
+            </div>
+            <CodeSample title="my_agent.py" language="python">
+              {HOOK_CODE}
+            </CodeSample>
+          </div>
+        </PersonaSection>
+
+        <PersonaSection
+          id="scale"
+          index="05"
+          label="Scale and evidence"
+          title="Scale it, then prove it works"
+          lead="A queue between the caller and the agent sets how the system behaves under load. Traces you can read back tell you how it behaved."
+        >
+          <ol className={styles.chain} aria-label="The queue pipeline">
+            {QUEUE_CHAIN.map((stop) => (
+              <li key={stop}>
+                <span className={clsx(styles.chainStop, stop.includes('queue') && styles.chainStopAccent)}>{stop}</span>
+              </li>
+            ))}
+          </ol>
+          <div className={clsx(styles.split, styles.blockSmall)}>
+            <div className={styles.stack}>
+              <h3 className="ak-h3">Queue mode</h3>
+              <ul className={styles.points}>
+                <li>The request path and the agent runners scale separately</li>
+                <li>Turns of one session stay in order, while sessions run in parallel</li>
+                <li>A message leaves the queue only when it is fully processed, so a crashed worker loses nothing</li>
+                <li>The number of consumers, not the arrival rate, sets how hard the model provider is hit</li>
+              </ul>
+              <ul className={clsx('ak-tag-row', styles.plainList)} aria-label="Queue transports">
+                {TRANSPORTS.map((transport) => (
+                  <li key={transport} className="ak-tag">
+                    {transport}
+                  </li>
+                ))}
+              </ul>
+              <DocLinks
+                links={[
+                  { label: 'Queue mode guide', to: '/docs/advanced/queue-mode-guide' },
+                  { label: 'Fault tolerance', to: '/docs/core-concepts/fault-tolerance' },
+                ]}
+              />
+            </div>
+            <div className={styles.stack}>
+              <h3 className="ak-h3">Traces you can read back</h3>
+              <p className="ak-body">
+                Spans written to Langfuse, OpenLLMetry, Pydantic Logfire or CloudWatch come back through one
+                provider-neutral call, grouped into traces with their input, output, tool calls and usage. An
+                evaluation job can grade real runs.
               </p>
+              <CodeSample title="evaluate.py" language="python">
+                {TRACE_CODE}
+              </CodeSample>
+              <DocLinks
+                links={[
+                  { label: 'Traceability', to: '/docs/advanced/traceability' },
+                  { label: 'Testing overview', to: '/docs/testing/overview' },
+                ]}
+              />
             </div>
           </div>
+        </PersonaSection>
+      </Journey>
 
-          {/* Step 04 — Available Features */}
-          <div className={styles.devFeatureSection} data-step="ai-04">
-            <p className={styles.aiStepLabel}>
-              Step 03: Features
-            </p>
-            <h2 className={styles.aiTitle}>
-              <span>Focus on agent logic.</span>
-              {' '}<br />
-              <span>We handle the rest.</span>
-            </h2>
-
-            <p className={styles.aiDescription}>
-              All Enterprise Features Available Free And Open-Source
-            </p>
-
-            <div className={styles.devFeatureGroups}>
-              {DEV_FEATURE_GROUPS.map((group) => (
-                <div key={group.title} className={styles.devFeatureGroup}>
-                  <h3 className={styles.devFeatureGroupTitle}>
-                    {group.title}
-                  </h3>
-                  <div
-                    className={`${styles.devFeaturesGrid} ${group.cols === 4
-                      ? styles.devFeaturesGrid4
-                      : styles.devFeaturesGrid3
-                      }`}
-                  >
-                    {group.features.map((feature) => {
-                      const IconComponent = feature.icon;
-                      return (
-                        <div
-                          key={feature.title}
-                          className={styles.aiEngineerFeatureCard}
-                        >
-                          <div className={styles.devFeatureCardHeader}>
-                            <div className={styles.devFeatureIconWrap}>
-                              <IconComponent
-                                className={styles.devFeatureIcon}
-                                aria-hidden
-                              />
-                            </div>
-                            <h4 className={styles.devFeatureCardTitle}>
-                              {feature.title}
-                            </h4>
-                          </div>
-                          <p className={styles.devFeatureCardBody}>
-                            {feature.body}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Step 05 — Framework Selection */}
-          <div
-            className={`${styles.devFrameworkSection} ${styles.developerBlock}`}
-            data-step="ai-05"
-          >
-            <p className={styles.aiStepLabel}>
-              Step 04: Frameworks
-            </p>
-            <h2 className={styles.aiTitle}>
-              <span>Use the framework you prefer</span>
-            </h2>
-
-            <FrameworkSelector showTitle={false} showDescription={true} />
-          </div>
-
-          {/* Step 06 — Production-ready compliant agents */}
-          <div
-            className={`${styles.aiEngineerBuildSection} ${styles.developerBlock}`}
-            data-step="ai-06"
-          >
-            <p className={styles.aiStepLabel}>Step 05: Build Agents</p>
-            <h2 className={styles.aiTitle}>
-              <span>How OAK helps you build production-ready, compliant AI agents</span>
-            </h2>
-
-            {/* Tab Cards Row */}
-            <div className={styles.aiBuildTabsRow}>
-              {TABS.map((tab, i) => {
-                const TabIcon = tab.Icon;
-                return (
-                  <React.Fragment key={tab.id}>
-                    {i > 0 && (
-                      <div className={styles.aiBuildTabConnector} aria-hidden="true">
-                        <div className={styles.aiBuildTabConnectorLine} />
-                        <div className={styles.aiBuildTabConnectorDot} />
-                      </div>
-                    )}
-                    <button
-                      ref={(el) => { tabRefs.current[i] = el; }}
-                      className={`${styles.aiBuildTabCard} ${activeTab === tab.id ? styles.aiBuildTabCardActive : ""}`}
-                      onClick={() => handleTabChange(tab.id, i)}
-                      type="button"
-                    >
-                      <span className={styles.aiBuildTabIcon} aria-hidden="true">
-                        <TabIcon style={{ width: 18, height: 18 }} />
-                      </span>
-                      <h3 className={styles.aiBuildTabTitle}>{tab.title}</h3>
-                      <p className={styles.aiBuildTabBody}>{tab.body}</p>
-                    </button>
-                  </React.Fragment>
-                );
-              })}
-            </div>
-
-            {/* Arrow indicator */}
-            <div className={styles.aiBuildArrowTrack}>
-              <div ref={arrowRef} className={styles.aiBuildArrow} aria-hidden="true">
-                <svg width="22" height="14" viewBox="0 0 22 14" fill="none">
-                  <path d="M11 0L22 14H0L11 0Z" fill="var(--ak-primary)" />
-                </svg>
-              </div>
-            </div>
-
-            {/* Expanded Panel */}
-            {(() => {
-              const activeTabData = TABS.find((t) => t.id === displayedTab)!;
-              const { Diagram: ActiveDiagram, Icon: PanelIcon } = activeTabData;
-              return (
-                <div ref={panelRef} className={styles.aiBuildPanel}>
-                  <div className={styles.aiBuildPanelHeader}>
-                    <span className={styles.aiBuildTabIcon} aria-hidden="true">
-                      <PanelIcon style={{ width: 18, height: 18 }} />
-                    </span>
-                    <h3 className={styles.aiBuildPanelTitle}>{activeTabData.title}</h3>
-                  </div>
-                  <div className={styles.aiBuildPanelDiagramWrap}>
-                    <ActiveDiagram />
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Dots Indicator */}
-            <div className={styles.aiBuildDotsIndicator}>
-              {TABS.map((tab, idx) => (
-                <button
-                  key={tab.id}
-                  onClick={() => handleTabChange(tab.id, idx)}
-                  className={`${styles.aiBuildDot} ${activeTab === tab.id ? styles.aiBuildDotActive : ""}`}
-                  aria-label={`Go to diagram ${tab.title}`}
-                  type="button"
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Step 07 — How Agent Kernel Fits In */}
-          <div
-            className={`${styles.devArchitectureSection} ${styles.developerBlock}`}
-            data-step="ai-07"
-          >
-            <p className={styles.aiStepLabel}>Step 06: Complete Picture</p>
-            <h2 className={styles.aiTitle}>
-              <span>How OAK fits in</span>
-            </h2>
-
-            <p className={styles.aiDescription}>
-              You write your AI agent's logic. OAK handles
-              everything else: the infrastructure, the cloud deployment,
-              memory, knowledge bases, hooks, observability & traceability,
-              LLM cost tracking, and the integrations so your agent is live and
-              talking to real users in days.
-            </p>
-
-            <div className={styles.devArchitectureWrapper}>
-              <AgentKernelArchDiagram />
-            </div>
-          </div>
-
-          {/* Step 08 — Why Agent Kernel is a Powerful Operating System */}
-          <div
-            className={`${styles.devFeatureSection} ${styles.developerBlock}`}
-            data-step="ai-08"
-          >
-            <p className={styles.aiStepLabel}>Step 07: Operating System Depth</p>
-            <h2 className={styles.aiTitle}>
-              <span>Why OAK is a powerful</span>
-              {' '}<br />
-              <span>Operating System</span>
-            </h2>
-
-            <div className={styles.devFeatureGroups}>
-              <div className={styles.devFeatureGroup}>
-                <h3 className={styles.devFeatureGroupTitle}>
-                  Three-Layer Memory
-                </h3>
-                <p className={styles.devFeatureGroupHeadline}>
-                  Three Memory Layers, Zero Context Chaos
-                </p>
-                <p className={styles.devFeatureGroupIntro}>
-                  Keep conversations coherent, enrich each request, and
-                  carry useful session data forward without bloating the
-                  model context window.
-                </p>
-
-                <div
-                  className={`${styles.devFeaturesGrid} ${styles.devFeaturesGrid3}`}
-                >
-                  {AI_ENGINEER_MEMORY_LAYERS.map((layer) => {
-                    const IconComponent = layer.icon;
-                    return (
-                      <div
-                        key={layer.title}
-                        className={styles.aiEngineerFeatureCard}
-                      >
-                        <div className={styles.devFeatureCardHeader}>
-                          <div className={styles.devFeatureIconWrap}>
-                            <IconComponent
-                              className={styles.devFeatureIcon}
-                              aria-hidden
-                            />
-                          </div>
-                          <h4 className={styles.devFeatureCardTitle}>
-                            {layer.title}
-                          </h4>
-                        </div>
-                        <ul className={styles.devFeatureCardBodyList}>
-                          {layer.bullets.map((bullet) => (
-                            <li key={bullet}>{bullet}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className={styles.devFeatureGroup}>
-                <h3 className={styles.devFeatureGroupTitle}>
-                  Execution Hook Pipeline
-                </h3>
-                <p className={styles.devFeatureGroupHeadline}>
-                  Control Every Request Without Rewriting Agent Logic
-                </p>
-                <p className={styles.devFeatureGroupIntro}>
-                  Use hooks before and after agent execution to enforce
-                  safety, enrich inputs, and polish outputs.
-                </p>
-
-                <p
-                  className={styles.devHookPipelineScrollHint}
-                  aria-hidden="true"
-                >
-                  Scroll horizontally to see the full pipeline
-                </p>
-
-                <div className={styles.devHookPipelineScroll}>
-                  <div className={styles.devHookPipeline}>
-                    {AI_ENGINEER_HOOK_PIPELINE.map((step, index, arr) => {
-                      const IconComponent = step.icon;
-                      return (
-                        <React.Fragment key={step.title}>
-                          <div
-                            className={`${styles.aiEngineerFeatureCard} ${step.highlight
-                              ? styles.devFeatureCardHighlight
-                              : ""
-                              }`}
-                          >
-                            <div className={styles.devFeatureCardHeader}>
-                              <div className={styles.devFeatureIconWrap}>
-                                <IconComponent
-                                  className={styles.devFeatureIcon}
-                                  aria-hidden
-                                />
-                              </div>
-                              <h4 className={styles.devFeatureCardTitle}>
-                                {step.title}
-                              </h4>
-                            </div>
-                            <ul className={styles.devFeatureCardBodyList}>
-                              {step.bullets.map((bullet) => (
-                                <li key={bullet}>{bullet}</li>
-                              ))}
-                            </ul>
-                          </div>
-                          {index < arr.length - 1 ? (
-                            <div
-                              className={styles.devHookPipelineConnector}
-                              aria-hidden="true"
-                            >
-                              <span className={styles.devHookPipelineArrowH}>
-                                →
-                              </span>
-                              <span className={styles.devHookPipelineArrowV}>
-                                ↓
-                              </span>
-                            </div>
-                          ) : null}
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <section className={styles.goDeeperSection}>
-            <div className={styles.topGlow} />
-
-            <div className="container">
-              <div className={styles.goDeeperInner}>
-                <div className={styles.Badge}>
-                  <span className={styles.badgeStar}>✦</span>
-                  Continue Exploring
-                </div>
-                <h2 className={styles.goDeeperTitle}>
-                  Go deeper with OAK
-                </h2>
-                <p className={styles.goDeeperSubtitle}>
-                  Explore the platform capabilities and real-world workflows behind secure,
-                  production-ready AI agents.
-                </p>
-
-                <div className={styles.goDeeperGrid}>
-                  <a
-                    className={styles.goDeeperCard}
-                    href="/features"
-                  >
-                    <h3 className={styles.goDeeperCardTitle}>Features</h3>
-                    <p className={styles.goDeeperCardBody}>
-                      Explore the core runtime, memory, guardrails, testing,
-                      integrations, and deployment capabilities that make Agent
-                      Kernel production-ready.
-                    </p>
-                    <span className={styles.goDeeperCardCta}>Read More</span>
-                  </a>
-
-                  <a
-                    className={styles.goDeeperCard}
-                    href="/use-cases"
-                  >
-                    <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
-                    <p className={styles.goDeeperCardBody}>
-                      See how teams use OAK to build assistants,
-                      automate workflows, monitor systems, and ship reliable AI
-                      agents faster.
-                    </p>
-                    <span className={styles.goDeeperCardCta}>Read More</span>
-                  </a>
-                </div>
-
-                <div style={{ marginTop: '4rem', display: 'flex', justifyContent: 'center' }}>
-                  <button
-                    type="button"
-                    className={`button button--primary button--md ${styles.terraformLink}`}
-                    onClick={() => {
-                      history.push('/');
-                      setTimeout(() => {
-                        document.getElementById('levels')?.scrollIntoView({ behavior: 'smooth' });
-                      }, 100);
-                    }}
-                  >
-                    Back to Path Selection
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </section>
-
+      <OtherLevels current="ai-engineer" />
       <ClosingPanel />
     </Layout>
   );

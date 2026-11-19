@@ -164,9 +164,11 @@ surface, in a flat and clean style.
   - nine sections: hero, trust marks, what OAK does, architecture, works with, deploy anywhere, choose your path, questions, closing section
   - the hero headline is short enough to set at display size
   - the feature section becomes a rail of six stages (Build, Connect, Remember, Guard, Scale, Observe); each stage shows one sentence, three points, its vector animation and the code or config that enables it, replacing the six tabs of cards
-  - integrations stay on the home page as a ledger, replacing the three marquee rows
-    - one row per category, and every integration listed by name: none is hidden behind a count or a link
-    - the ledger and the marquee read one data file, so there is one list to maintain
+  - integrations stay on the home page as a scroll-stepped section, replacing the three marquee rows
+    - grouped by the six stages, and every integration listed by name: none is hidden behind a count or a link
+    - on a large screen the section stays in view while the scroll steps through the groups; elsewhere the groups are stacked
+    - one data file holds the list
+  - the three reading levels are one drawing, a stack of three layers, beside three rows that link to the persona pages
   - every FAQ question stays, in two columns of flat rows
   - a row of trust marks (licence, foundations, compliance) replaces the separate trust section and the footer badges; it carries no figures until real ones exist
 - The reference site named by the maintainer (choreolabs.com) informs principles only: type that carries the
@@ -202,8 +204,10 @@ surface, in a flat and clean style.
 
 - **Issue number.** Should an issue be opened so this folder can be renamed to `docs/specs/<number>-oak-rebrand/`?
 - **Release announcement.** `.github/workflows/publish.yaml:207` posts "Agent Kernel v${VERSION}". It is a workflow file, so it is left unchanged. Change it with this work, or with the code rename?
-- **Blog.** Post bodies and banners keep the old name and mark inside the new theme. Is regenerating the banners a follow-up?
-- **Dead media.** `docs/static/models/leaf.glb` and `brain.glb` (3.1 MB together) are referenced nowhere. Delete them here?
+- **Blog.** Post bodies keep the old name inside the new theme.
+- **Dead media.** Resolved on 2026-11-19: the three models under `docs/static/models/` were deleted with the other dead code.
+- **Hero visual.** Four versions have been turned down: a fade-in mark, an extruded mark, the particle mark and a system drawing. The particle mark is a placeholder. Which direction next: a cinematic mark in WebGL like the original video (it needs glow, so the hero would stay dark in both modes), ambient line art, a product-in-action terminal, or type only? Nothing is built until one is chosen.
+- **Blog banners.** Seven banners are bespoke illustrations that carry each post's diagram. Redraw each in the brand palette, replace them with one template and lose the diagrams, or leave them as history?
 - **Membership badges.** The Linux Foundation and Agentic AI Foundation badges in the footer are the
   foundations' own artwork and are shown unmodified. Is a monochrome treatment acceptable to them?
 - **Former-name note.** Should the README and the docs intro carry one line saying that Open Agent Kernel

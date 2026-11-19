@@ -15,7 +15,7 @@
   min-height: 14rem;
   min-width: min(100%, 72rem);
   padding: 3rem 2.75rem;
-  border: 1px solid rgba(var(--ak-fg-rgb), 0.08);
+  border: 1px solid var(--ak-border);
   border-radius: var(--ak-radius-card);
   background: transparent;
   overflow-x: auto;
@@ -75,25 +75,8 @@
   padding: 1rem 0.65rem 0.85rem;
   border: 1px solid color-mix(in srgb, var(--node-color) 30%, transparent);
   border-radius: var(--ak-radius-card);
-  /* Radial gradient: accent glow from top-center, fading to dark base */
-  background:
-    radial-gradient(
-      ellipse 80% 55% at 50% 0%,
-      color-mix(in srgb, var(--node-color) var(--node-glow-opacity-pct, 22%), transparent),
-      transparent 70%
-    ),
-    var(--node-surface);
-  box-shadow: none;
-  transition:
-    border-color 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.flowNode:hover {
-  border-color: color-mix(in srgb, var(--node-color) 55%, transparent);
-  transform: translateY(-2px);
-  box-shadow: none;
+  /* A flat surface: the node colour shows in the border and the icon only */
+  background: var(--node-surface);
 }
 
 /* ── Icon circle ── */

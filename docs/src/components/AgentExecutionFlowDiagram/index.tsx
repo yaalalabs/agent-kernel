@@ -1,20 +1,16 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import {
-  MdAssignment,
-  MdBolt,
-  MdFeedback,
-  MdGpsFixed,
-  MdHelpOutline,
-  MdRefresh,
-  MdTrendingUp,
-  MdVisibility,
-} from 'react-icons/md';
+  TbBolt,
+  TbClipboardList,
+  TbEye,
+  TbHelpCircle,
+  TbMessageDots,
+  TbRefresh,
+  TbTarget,
+  TbTrendingUp,
+} from 'react-icons/tb';
 import type { IconType } from 'react-icons';
 import styles from './styles.module.css';
-
-gsap.registerPlugin(ScrollTrigger);
 
 type StepId =
   | 'goal'
@@ -39,56 +35,56 @@ const FLOW_STEPS: FlowStep[] = [
     id: 'goal',
     label: 'Goal',
     desc: 'Define objectives',
-    Icon: MdGpsFixed,
+    Icon: TbTarget,
     variant: styles.node_goal,
   },
   {
     id: 'plan',
     label: 'Plan',
     desc: 'Create strategy',
-    Icon: MdAssignment,
+    Icon: TbClipboardList,
     variant: styles.node_plan,
   },
   {
     id: 'question',
     label: 'Question/Verify',
     desc: 'Validate approach',
-    Icon: MdHelpOutline,
+    Icon: TbHelpCircle,
     variant: styles.node_question,
   },
   {
     id: 'act',
     label: 'Act',
     desc: 'Execute actions',
-    Icon: MdBolt,
+    Icon: TbBolt,
     variant: styles.node_act,
   },
   {
     id: 'feedback',
     label: 'Get Feedback',
     desc: 'User input & results',
-    Icon: MdFeedback,
+    Icon: TbMessageDots,
     variant: styles.node_feedback,
   },
   {
     id: 'observe',
     label: 'Observe',
     desc: 'Monitor outcomes',
-    Icon: MdVisibility,
+    Icon: TbEye,
     variant: styles.node_observe,
   },
   {
     id: 'improve',
     label: 'Improve',
     desc: 'Optimize & learn',
-    Icon: MdTrendingUp,
+    Icon: TbTrendingUp,
     variant: styles.node_improve,
   },
   {
     id: 'repeat',
     label: 'Repeat',
     desc: 'Continuous cycle',
-    Icon: MdRefresh,
+    Icon: TbRefresh,
     variant: styles.node_repeat,
   },
 ];
@@ -262,35 +258,6 @@ export default function AgentExecutionFlowDiagram() {
     };
   }, [drawLines]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const nodes = container.querySelectorAll(`.${styles.flowNode}`);
-    const tween = gsap.fromTo(
-      nodes,
-      { opacity: 0, y: 16 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.55,
-        stagger: 0.07,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: container,
-          start: 'top 85%',
-          once: true,
-        },
-        onComplete: drawLines,
-        clearProps: 'transform',
-      }
-    );
-
-    return () => {
-      tween.scrollTrigger?.kill();
-      tween.kill();
-    };
-  }, [drawLines]);
 
   const linearBeforeBranch = FLOW_STEPS.filter((s) =>
     ['goal', 'plan', 'question', 'act'].includes(s.id)

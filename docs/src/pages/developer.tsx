@@ -1,697 +1,321 @@
+import React from 'react';
+import Link from '@docusaurus/Link';
+import Layout from '@theme/Layout';
+import PageHero from '@site/src/components/ui/PageHero';
+import LevelStack from '@site/src/components/LevelStack';
 import { ClosingPanel } from '@site/src/components/HomeSections';
-import React, { useEffect, useRef } from "react";
-import gsap from "gsap";
-import ScrollTrigger from "gsap/dist/ScrollTrigger";
-import Link from "@docusaurus/Link";
-import Layout from "@theme/Layout";
-import { useHistory } from "@docusaurus/router";
-import {
-  MdTerminal,
-  MdBolt,
-  MdCode,
-  MdAutoAwesome,
-  MdSmartToy,
-  MdLink,
-  MdPermMedia,
-  MdSecurity,
-  MdCloud,
-  MdLanguage,
-  MdMessage,
-  MdScience,
-  MdVisibility,
-} from "react-icons/md";
-import styles from "./index.module.css";
-import AgentKernelArchDiagram from "../components/AgentKernelArchDiagram";
-import { StepTimeline } from "../components/StepTimeline";
-import HeroAnimation from "../components/HeroAnimation";
-import FrameworkSelector from "../components/FrameworkSelector";
-import heroStyles from "../components/HeroAnimation/styles.module.css";
-import { FaGithub } from "react-icons/fa";
+import type { Step } from '@site/src/components/StepTimeline';
+import { CodeSample, DocLinks, Journey, OtherLevels, PersonaSection } from '@site/src/components/PersonaKit';
+import FrameworkSelector from '@site/src/components/FrameworkSelector';
+import styles from './persona.module.css';
 
-const DEV_FEATURE_GROUPS = [
+const STEPS: Step[] = [
+  { id: 'write', label: 'Write' },
+  { id: 'run', label: 'Run' },
+  { id: 'configure', label: 'Configure' },
+  { id: 'deploy', label: 'Deploy' },
+  { id: 'test', label: 'Test' },
+];
+
+/* The snippets on this page are taken from the documentation (quick start, local deployment,
+   configuration, deployment and testing guides). Keep them in step with it. */
+
+const CLI_SESSION = `$ uv run python my_agent.py
+AgentKernel CLI (type !help for commands or !quit to exit):
+(kernel) >> Selected agent: assistant
+(assistant) >> !list
+Available agents:
+  assistant
+
+(assistant) >> What is 2 + 2?
+(assistant) >> 2 + 2 = 4.`;
+
+const REST_ENTRY = `from agentkernel.api import RESTAPI
+
+# ... your agent and its module line, unchanged ...
+
+if __name__ == "__main__":
+    RESTAPI.run()`;
+
+const REST_CALL = `uv add "agentkernel[api]"
+uv run python my_agent.py
+
+curl -X POST http://localhost:8000/api/v1/chat \\
+  -H "Content-Type: application/json" \\
+  -d '{"agent": "assistant", "prompt": "Hello!", "session_id": "test-123"}'`;
+
+const CONFIG = `session:
+  type: redis
+  redis:
+    url: redis://localhost:6379
+    ttl: 604800  # 7 days in seconds
+
+slack:
+  agent: assistant
+  bot_token_key: SLACK_BOT_TOKEN
+  signing_secret_key: SLACK_SIGNING_SECRET
+
+guardrail:
+  input:
+    enabled: true
+    type: bedrock
+    id: your-guardrail-id
+    version: "1"
+
+trace:
+  enabled: true
+  type: langfuse`;
+
+const CAPABILITIES = [
   {
-    title: "Build & Interface",
-    cols: 4 as const,
-    features: [
-      {
-        icon: MdTerminal,
-        title: "CLI for Prototyping",
-        body: "Easy interfacing your agents on your laptop via Open Agent Kernel's command line interface.",
-      },
-      {
-        icon: MdBolt,
-        title: "REST API Server",
-        body: "FastAPI-based server out of the box. No boilerplate. Just run your agent.",
-      },
-      {
-        icon: MdCode,
-        title: "Native MCP and A2A support",
-        body: "Expose agents as tools (MCP) and enable agent-to-agent collaboration (A2A). Makes integration with external AI systems straightforward.",
-      },
-      {
-        icon: MdAutoAwesome,
-        title: "Multi-Framework Support",
-        body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK side-by-side. Keep one runtime across teams while using the best framework per use case.",
-      },
-    ],
+    title: 'Memory',
+    line: 'Sessions start in memory and move to Redis, Valkey, DynamoDB, Cosmos DB or Firestore when you change session.type.',
+    link: { label: 'Choose a memory backend', to: '/docs/core-concepts/memory-backends' },
   },
   {
-    title: "Runtime & Extensibility",
-    cols: 3 as const,
-    features: [
-      {
-        icon: MdSmartToy,
-        title: "Pluggable Session & Memory",
-        body: "Start local in-memory, scale to Redis, DynamoDB, or Cosmos DB in production. Switch via config, not code rewrites.",
-      },
-      {
-        icon: MdLink,
-        title: "Execution Hooks",
-        body: "Pre/post hooks for RAG injection, input validation, response moderation, analytics.",
-      },
-      {
-        icon: MdPermMedia,
-        title: "Multimodal Support",
-        body: "In-built framework-neutral multimodal support across integration channels. Handle files/images cleanly and keep sessions lightweight. Realtime voice is available through the LiveKit integration for OpenAI Agents SDK and Google ADK agents.",
-      },
-    ],
+    title: 'Channels',
+    line: 'The slack block names the agent that answers and where its credentials are read from. Each channel also needs a short adapter in your entry point, shown in its guide.',
+    link: { label: 'Integration guides', to: '/docs/integrations/overview' },
   },
   {
-    title: "Ship & Secure",
-    cols: 3 as const,
-    features: [
-      {
-        icon: MdSecurity,
-        title: "Guardrails and Content Safety",
-        body: "Input and output protection in the same runtime pipeline. Supports policy checks for safety, PII handling, and jailbreak defense.",
-      },
-      {
-        icon: MdCloud,
-        title: "Cloud Deployment",
-        body: "Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run, GCP Cloud Run Functions, plus a Helm chart for on-prem Kubernetes.",
-      },
-      {
-        icon: MdLanguage,
-        title: "Reliability",
-        body: "Built for resilient cloud deployments with health checks and failover patterns.",
-      },
-    ],
+    title: 'Guardrails',
+    line: 'Input and output checks run in the same pipeline as the agent, with OpenAI, Amazon Bedrock or Walled AI as the provider.',
+    link: { label: 'Guardrails', to: '/docs/advanced/guardrails' },
   },
   {
-    title: "Integrate & Observe",
-    cols: 3 as const,
-    features: [
-      {
-        icon: MdMessage,
-        title: "Messaging Integrations",
-        body: "Slack, WhatsApp, Instagram, Telegram, Gmail, Teams and Messenger integrations, plus realtime voice through LiveKit for OpenAI Agents SDK and Google ADK agents.",
-      },
-      {
-        icon: MdScience,
-        title: "Testing Framework",
-        body: "pytest-integrated test runner. Write deterministic automated test scenarios for your AI agents like any other code.",
-      },
-      {
-        icon: MdVisibility,
-        title: "Observability",
-        body: "Langfuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
-      },
-    ],
+    title: 'Tracing',
+    line: 'One block sends every run to Langfuse, OpenLLMetry, Pydantic Logfire or CloudWatch, with no instrumentation in your code.',
+    link: { label: 'Traceability', to: '/docs/advanced/traceability' },
   },
 ];
 
-export default function DeveloperPage() {
-  const history = useHistory();
-  const contentRef = useRef<HTMLDivElement>(null);
-  const sectionRef = useRef<HTMLElement>(null);
+const TERRAFORM = `module "serverless_agents" {
+    source    = "yaalalabs/ak-serverless/aws"
+    providers = { aws = aws, docker = docker }
 
-  useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
+    prefix               = "ak-dev-quickstart"
+    region               = var.region
+    product_display_name = "AK Quick Start"
 
-    if (!sectionRef.current || !contentRef.current) {
-      return;
+    request_handler = {
+        function_name = "ak-quickstart"
+        handler_path  = "lambda.handler"
+        package_path  = "../dist"
+        package_type  = "Image"
+        memory_size   = 256
+        timeout       = 45
     }
+}`;
 
-    const context = gsap.context(() => {
-      // Animate developer analogy section
-      const devAnalogy = contentRef.current?.querySelector(
-        `.${styles.developerAnalogy}`,
-      );
-      if (devAnalogy) {
-        gsap.fromTo(
-          devAnalogy,
-          { opacity: 0, y: 35 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 1.1,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: devAnalogy,
-              start: "top 75%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      }
+const HELM = `helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --untar
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel \\
+  -f agent-kernel/values-dev.yaml \\
+  --set ioHandler.image.repository=<io image> \\
+  --set agentRunner.image.repository=<runner image> \\
+  --set image.tag=<tag>
 
-      // Animate Architecture Wrapper
-      const archWrappers =
-        contentRef.current?.querySelectorAll(
-          `.${styles.devArchitectureWrapper}`,
-        ) || [];
-      archWrappers.forEach((wrapper) => {
-        gsap.fromTo(
-          wrapper,
-          { opacity: 0, y: 40, scale: 0.95 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 1.1,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: wrapper,
-              start: "top 80%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+kubectl port-forward service/ak-agent-kernel-io 8000:80`;
 
-      // Animate architecture layers - Slide from left
-      const layers =
-        contentRef.current?.querySelectorAll(
-          `.${styles.developerArchitectureLayerGroup}`,
-        ) || [];
-      layers.forEach((layer, index) => {
-        gsap.fromTo(
-          layer,
-          { opacity: 0, x: -50 },
-          {
-            opacity: 1,
-            x: 0,
-            duration: 0.9,
-            delay: index * 0.12,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: layer,
-              start: "top 85%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+const TEST = `import pytest
+import pytest_asyncio
+from agentkernel.test import Test
 
-      // Animate feature cards
-      const devFeatureCard =
-        contentRef.current?.querySelectorAll(`.${styles.devFeatureCard}`) || [];
-      devFeatureCard.forEach((card, idx) => {
-        gsap.fromTo(
-          card,
-          { opacity: 0, y: 25, scale: 0.96 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.95,
-            ease: "power2.out",
-            delay: (idx % 3) * 0.1,
-            scrollTrigger: {
-              trigger: card,
-              start: "top 88%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-      // Animate framework section
-      const devFrameworkSection = contentRef.current?.querySelector(
-        `.${styles.devFrameworkSection}`,
-      );
-      if (devFrameworkSection) {
-        gsap.fromTo(
-          devFrameworkSection,
-          { opacity: 0, y: 40 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 1.1,
-            ease: "power2.out",
-            scrollTrigger: {
-              trigger: devFrameworkSection,
-              start: "top 60%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      }
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def test_client():
+    test = Test("my_agent.py")
+    await test.start()
+    try:
+        yield test
+    finally:
+        await test.stop()
 
-      // Animate framework buttons
-      const frameworkButtons =
-        contentRef.current?.querySelectorAll(`.${styles.devFrameworkButton}`) ||
-        [];
-      frameworkButtons.forEach((btn, idx) => {
-        gsap.fromTo(
-          btn,
-          { opacity: 0, y: 15, scale: 0.95 },
-          {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.7,
-            ease: "power2.out",
-            delay: idx * 0.08,
-            scrollTrigger: {
-              trigger: btn,
-              start: "top 85%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+@pytest.mark.order(1)
+async def test_first_question(test_client):
+    await test_client.send("Who won the 1996 cricket world cup?")
+    await test_client.expect(["Sri Lanka won the 1996 cricket world cup."])
 
-      // Animate code blocks
-      const codeBlocks =
-        contentRef.current?.querySelectorAll(
-          `.${styles.devFrameworkCodeBlock}`,
-        ) || [];
-      codeBlocks.forEach((block, idx) => {
-        gsap.fromTo(
-          block,
-          { opacity: 0, x: 30, scale: 0.98 },
-          {
-            opacity: 1,
-            x: 0,
-            scale: 1,
-            duration: 0.95,
-            ease: "power2.out",
-            delay: idx * 0.12,
-            scrollTrigger: {
-              trigger: block,
-              start: "top 83%",
-              toggleActions: "play none none reverse",
-            },
-          },
-        );
-      });
+@pytest.mark.order(2)
+async def test_follow_up_question(test_client):
+    await test_client.send("Which country hosted the tournament?")
+    await test_client.expect(["Co-hosted by India, Pakistan and Sri Lanka."])`;
 
-      // Add professional hover animations to cards
-      const allAnimatedCards =
-        contentRef.current?.querySelectorAll(
-          `.${styles.devFeatureCard}`,
-        ) || [];
-      allAnimatedCards.forEach((card: any) => {
-        card.addEventListener("mouseenter", () => {
-          gsap.to(card, {
-            y: -6,
-            scale: 1.02,
-            boxShadow: "0 16px 32px rgba(0,0,0,0.12)",
-            duration: 0.25,
-            ease: "power2.out",
-          });
-        });
-        card.addEventListener("mouseleave", () => {
-          gsap.to(card, {
-            y: 0,
-            scale: 1,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            duration: 0.25,
-            ease: "power2.out",
-          });
-        });
-      });
-
-      // Add hover animations to framework buttons
-      frameworkButtons.forEach((btn: any) => {
-        btn.addEventListener("mouseenter", () => {
-          gsap.to(btn, {
-            scale: 1.05,
-            duration: 0.15,
-            ease: "power2.out",
-          });
-        });
-        btn.addEventListener("mouseleave", () => {
-          gsap.to(btn, {
-            scale: 1,
-            duration: 0.15,
-            ease: "power2.out",
-          });
-        });
-      });
-    }, sectionRef);
-
-    return () => {
-      context.revert();
-    };
-  }, []);
-
+export default function DeveloperPage(): JSX.Element {
   return (
     <Layout
-      title="Open Agent Kernel for Developers"
-      description="Learn how OAK helps developers build and deploy AI agents quickly without reinventing the wheel."
+      title="Open Agent Kernel for developers"
+      description="The route from an empty folder to a deployed, tested AI agent with Open Agent Kernel: write, run, configure, deploy and test."
     >
-      {/* <HeroAnimation
-        badge="Developers"
-        title="Build AI Agents Without Rebuilding Infrastructure"
-        subtitle="Open Agent Kernel gives developers a production-ready runtime so you can focus on agent logic. Use your preferred framework, expose agents through API or messaging channels, and deploy to cloud environments fast with enterprise-grade building blocks included."
-      /> */}
-      <StepTimeline levelId="02" contentRef={contentRef} />
-      <section ref={sectionRef} className={styles.devPageSection}>
-        <div className="container">
-          <div ref={contentRef} className={styles.developerContent}>
-            {/* Step 01 — Developer Analogy */}
-            <div
-              className={`${styles.developerAnalogy} ${styles.developerBlock}`}
-              data-step="dev-01"
-            >
-              <p className={styles.devStepLabel}>Step 01: Analogy</p>
-              <h1 className={styles.devTitle}>
-                <span>Building blocks and deployment infrastructure</span>
-                {' '}
-                <span>for your AI Agent.</span>
-              </h1>
-              <div className={styles.devDescription}>
-                <p className={styles.devIntro}>
-                  OAK is like the operating system for the AI
-                  assistants, think Linux for your agents.
-                </p>
-                <div className={styles.devBulletList}>
-                  <div className={styles.devBulletItem}>
-                    <span className={styles.devBullet} />
-                    <span className={styles.devBulletText}>
-                      Install it on your laptop, server, or cloud and run AI
-                      agents hassle-free.
-                    </span>
-                  </div>
-                  <div className={styles.devBulletItem}>
-                    <span className={styles.devBullet} />
-                    <span className={styles.devBulletText}>
-                      No need to build infrastructure, APIs, or messaging and
-                      other integrations.
-                    </span>
-                  </div>
-                  <div className={styles.devBulletItem}>
-                    <span className={styles.devBullet} />
-                    <span className={styles.devBulletText}>
-                      Everything works out of the box.
-                    </span>
-                  </div>
-                  <div className={styles.devBulletItem}>
-                    <span className={styles.devBullet} />
-                    <span className={styles.devBulletText}>
-                      Scales from single execution to thousands of agent
-                      invocations in parallel.
-                    </span>
-                  </div>
-                  <div className={styles.devBulletItem}>
-                    <span className={styles.devBullet} />
-                    <span className={styles.devBulletText}>
-                      Interacts with the real world automatically.
-                    </span>
-                  </div>
-                  <div className={styles.devBulletItem}>
-                    <span className={styles.devBullet} />
-                    <span className={styles.devBulletText}>
-                      Just define what your agent should do.
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+      <PageHero
+        art={<LevelStack active={1} />}
+        label="Level 02 / Developers"
+        title="Build your first agent, then ship it"
+        lead="Open Agent Kernel (OAK) wraps the agent framework you already use and gives it an API, memory, channels and a way to production. This page walks the route from an empty folder to an agent that is deployed and tested."
+        actions={
+          <>
+            <Link to="/docs/quick-start" className="ak-btn ak-btn--primary">
+              Open the quick start
+            </Link>
+            <Link to="https://github.com/yaalalabs/agent-kernel" className="ak-link">
+              View on GitHub
+            </Link>
+          </>
+        }
+      />
+      <Journey steps={STEPS}>
+        <PersonaSection
+          id="write"
+          index="01"
+          label="Write"
+          title="Write the agent in the framework you know"
+          lead="OAK does not replace your framework. You define the agent the usual way, then hand it to a module."
+        >
+          <FrameworkSelector />
+        </PersonaSection>
 
-            {/* Architecture flow — 8 stacked layers */}
-            <div
-              className={`${styles.architectureWrapper} ${styles.developerBlock}`}
-              data-step="dev-02"
-            >
-              <div className={styles.architectureStack}>
-                {[
-                  {
-                    num: "01",
-                    label: "Your Agent Logic",
-                    items: ["Instructions", "Tools", "Framework SDK"],
-                  },
-                  {
-                    num: "02",
-                    label: "OAK Runtime",
-                    items: [
-                      "Agents",
-                      "Agent Runner",
-                      "Session Management",
-                      "Hooks",
-                    ],
-                  },
-                  {
-                    num: "03",
-                    label: "Storage & Memory",
-                    items: [
-                      "In-Memory",
-                      "Redis",
-                      "DynamoDB",
-                      "CosmosDB",
-                      "Firestore",
-                    ],
-                  },
-                  {
-                    num: "04",
-                    label: "Knowledge Bases",
-                    items: ["ChromaDB", "Neo4j", "Starburst", "SQLDB", "OKF"],
-                  },
-                  {
-                    num: "05",
-                    label: "Observability",
-                    items: ["Langfuse", "OpenLLMetry", "Pydantic Logfire", "AWS CloudWatch"],
-                  },
-                  {
-                    num: "06",
-                    label: "Cloud Infrastructure",
-                    items: [
-                      "AWS Lambda",
-                      "ECS",
-                      "Azure Functions",
-                      "Container Apps",
-                      "GCP Cloud Run",
-                      "GCP Cloud Run Functions",
-                      "On-Prem Kubernetes (Helm)",
-                    ],
-                  },
-                  {
-                    num: "07",
-                    label: "Interfacing",
-                    items: ["CLI", "MCP", "A2A", "REST API"],
-                  },
-                  {
-                    num: "08",
-                    label: "Channels",
-                    items: [
-                      "Slack",
-                      "Teams",
-                      "WhatsApp",
-                      "Telegram",
-                      "Messenger",
-                      "Instagram",
-                      "Gmail",
-                    ],
-                  },
-                ].map((layer, i, arr) => (
-                  <div
-                    key={layer.label}
-                    className={styles.developerArchitectureLayerGroup}
-                  >
-                    {/* Step number */}
-                    <div className={styles.layerNumberWrapper}>
-                      <div className={styles.layerNumberCircle}>
-                        {layer.num}
-                      </div>
-                      {i < arr.length - 1 && (
-                        <div className={styles.layerConnector} />
-                      )}
-                    </div>
-                    {/* Content */}
-                    <div className={styles.layerContentWrapper}>
-                      <div className={styles.layerContentBox}>
-                        <h3 className={styles.layerLabel}>{layer.label}</h3>
-                        <p className={styles.layerSub}>
-                          {layer.items.map((item, idx) => (
-                            <React.Fragment key={item}>
-                              {idx > 0 && (
-                                <span
-                                  className={styles.layerSubSep}
-                                  aria-hidden="true"
-                                >
-                                  ●
-                                </span>
-                              )}
-                              {item}
-                            </React.Fragment>
-                          ))}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Step 02 — Available Features */}
-            <div className={styles.devFeatureSection} data-step="dev-03">
-              <p className={styles.devStepLabel}>
-                Step 02: Features
+        <PersonaSection
+          id="run"
+          index="02"
+          label="Run"
+          title="Run it on your laptop, then call it over HTTP"
+          lead="The same file runs as an interactive session or as an API server. Only the last line changes."
+        >
+          <div className={styles.grid2}>
+            <div className={styles.stack}>
+              <h3 className="ak-h3">In the terminal</h3>
+              <p className="ak-body">
+                The CLI opens a session with your agent. <code>!list</code> shows the registered agents,{' '}
+                <code>!select</code> switches between them and <code>!quit</code> leaves.
               </p>
-              <h2 className={styles.devTitle}>
-                <span>
-                  All enterprise features available,
-                </span><br />
-                <span>
-                  free and open source
-                </span>
-              </h2>
-
-              <div className={styles.devFeatureGroups}>
-                {DEV_FEATURE_GROUPS.map((group) => (
-                  <div key={group.title} className={styles.devFeatureGroup}>
-                    <h3 className={styles.devFeatureGroupTitle}>
-                      {group.title}
-                    </h3>
-                    <div
-                      className={`${styles.devFeaturesGrid} ${group.cols === 4
-                        ? styles.devFeaturesGrid4
-                        : styles.devFeaturesGrid3
-                        }`}
-                    >
-                      {group.features.map((feature) => {
-                        const IconComponent = feature.icon;
-                        return (
-                          <div
-                            key={feature.title}
-                            className={styles.devFeatureCard}
-                          >
-                            <div className={styles.devFeatureCardHeader}>
-                              <div className={styles.devFeatureIconWrap}>
-                                <IconComponent
-                                  className={styles.devFeatureIcon}
-                                  aria-hidden
-                                />
-                              </div>
-                              <h4 className={styles.devFeatureCardTitle}>
-                                {feature.title}
-                              </h4>
-                            </div>
-                            <p className={styles.devFeatureCardBody}>
-                              {feature.body}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <CodeSample title="Terminal" language="text">
+                {CLI_SESSION}
+              </CodeSample>
             </div>
-
-            {/* Step 03 — Framework Selection */}
-            <div
-              className={`${styles.devFrameworkSection} ${styles.developerBlock}`}
-              data-step="dev-04"
-            >
-              <p className={styles.devStepLabel}>Step 03: Framework</p>
-              <h2 className={styles.devTitle}>
-                <span>
-                  Use the framework you prefer
-                </span>
-              </h2>
-
-              <FrameworkSelector showTitle={false} showDescription={true} />
-            </div>
-
-            {/* Step 04 — How Agent Kernel Fits In */}
-            <div className={styles.devArchitectureSection} data-step="dev-05">
-              <p className={styles.devStepLabel}>Step 04: How It Works</p>
-              <h2 className={styles.devTitle}>
-                <span>How OAK fits in</span>
-              </h2>
-
-              <p className={styles.devFrameworkBody}>
-                You write your AI agent's logic. OAK handles everything
-                else: the infrastructure, the cloud deployment, memory, knowledge
-                bases, hooks, observability & traceability, LLM cost tracking, and
-                the integrations so your agent is live and talking to real users
-                in days.
+            <div className={styles.stack}>
+              <h3 className="ak-h3">As a REST API</h3>
+              <p className="ak-body">
+                Swap <code>CLI.main()</code> for <code>RESTAPI.run()</code> and the agent answers on{' '}
+                <code>/api/v1/chat</code>, with sessions kept between calls.
               </p>
-
-              <div className={styles.devArchitectureWrapper}>
-                <AgentKernelArchDiagram />
-              </div>
+              <CodeSample title="my_agent.py" language="python">
+                {REST_ENTRY}
+              </CodeSample>
+              <CodeSample title="Terminal" language="bash">
+                {REST_CALL}
+              </CodeSample>
             </div>
-
-            <section className={styles.goDeeperSection}>
-              <div className={styles.topGlow} />
-
-              <div className="container">
-                <div className={styles.goDeeperInner}>
-                  <div className={styles.Badge}>
-                    <span className={styles.badgeStar}>✦</span>
-                    Continue Exploring
-                  </div>
-                  <h2 className={styles.goDeeperTitle}>
-                    Go deeper with OAK
-                  </h2>
-                  <p className={styles.goDeeperSubtitle}>
-                    Explore the platform capabilities and real-world workflows behind secure,
-                    production-ready AI agents.
-                  </p>
-
-                  <div className={styles.goDeeperGrid}>
-                    <a
-                      className={styles.goDeeperCard}
-                      href="/features"
-                    >
-                      <h3 className={styles.goDeeperCardTitle}>Features</h3>
-                      <p className={styles.goDeeperCardBody}>
-                        Explore the core runtime, memory, guardrails, testing,
-                        integrations, and deployment capabilities that make Agent
-                        Kernel production-ready.
-                      </p>
-                      <span className={styles.goDeeperCardCta}>Read More</span>
-                    </a>
-
-                    <a
-                      className={styles.goDeeperCard}
-                      href="/use-cases"
-                    >
-                      <h3 className={styles.goDeeperCardTitle}>Use Cases</h3>
-                      <p className={styles.goDeeperCardBody}>
-                        See how teams use OAK to build assistants,
-                        automate workflows, monitor systems, and ship reliable AI
-                        agents faster.
-                      </p>
-                      <span className={styles.goDeeperCardCta}>Read More</span>
-                    </a>
-                  </div>
-
-                  <div style={{ marginTop: '4rem', display: 'flex', justifyContent: 'center' }}>
-                    <button
-                      type="button"
-                      className={`button button--primary button--md ${styles.terraformLink}`}
-                      onClick={() => {
-                        history.push('/');
-                        setTimeout(() => {
-                          document.getElementById('levels')?.scrollIntoView({ behavior: 'smooth' });
-                        }, 100);
-                      }}
-                    >
-                      Back to Path Selection
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </section>
           </div>
-        </div>
-      </section>
+          <div className={styles.blockSmall}>
+            <DocLinks
+              links={[
+                { label: 'Local deployment', to: '/docs/deployment/local' },
+                { label: 'REST API reference', to: '/docs/api/rest-api' },
+                { label: 'MCP and A2A servers', to: '/docs/api/mcp-server' },
+              ]}
+            />
+          </div>
+        </PersonaSection>
 
+        <PersonaSection
+          id="configure"
+          index="03"
+          label="Configure"
+          title="Switch capabilities on in config.yaml"
+          lead="What you would otherwise build around an agent is a block of configuration. Every setting also has an environment variable, such as AK_SESSION__TYPE."
+        >
+          <div className={styles.split}>
+            <ul className={styles.rows}>
+              {CAPABILITIES.map((capability) => (
+                <li key={capability.title} className={styles.row}>
+                  <h3 className="ak-h4">{capability.title}</h3>
+                  <p className="ak-body">{capability.line}</p>
+                  <Link to={capability.link.to} className="ak-link">
+                    {capability.link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <div className={styles.stack}>
+              <CodeSample title="config.yaml" language="yaml">
+                {CONFIG}
+              </CodeSample>
+              <Link to="/docs/core-concepts/configuration" className="ak-link">
+                Configuration reference
+              </Link>
+            </div>
+          </div>
+        </PersonaSection>
+
+        <PersonaSection
+          id="deploy"
+          index="04"
+          label="Deploy"
+          title="Deploy with Terraform or Helm"
+          lead="The agent code stays the same on every target. Terraform modules cover AWS, Azure and Google Cloud, and a Helm chart covers your own Kubernetes cluster."
+        >
+          <div className={styles.grid2}>
+            <div className={styles.stack}>
+              <h3 className="ak-h3">On your cloud</h3>
+              <p className="ak-body">
+                For AWS Lambda, end the file with <code>handler = Lambda.handler</code> in place of the CLI, point the
+                module at your package, then run <code>terraform init</code> and <code>terraform apply</code>.
+              </p>
+              <CodeSample title="deploy/main.tf" language="hcl">
+                {TERRAFORM}
+              </CodeSample>
+            </div>
+            <div className={styles.stack}>
+              <h3 className="ak-h3">On your own cluster</h3>
+              <p className="ak-body">
+                The chart runs the IO handler and the agent runner as separate deployments, so that each scales on
+                its own.
+              </p>
+              <CodeSample title="Terminal" language="bash">
+                {HELM}
+              </CodeSample>
+            </div>
+          </div>
+          <div className={styles.blockSmall}>
+            <DocLinks
+              links={[
+                { label: 'All deployment targets', to: '/docs/deployment/overview' },
+                { label: 'AWS serverless', to: '/docs/deployment/aws-serverless' },
+                { label: 'Kubernetes with Helm', to: '/docs/deployment/onprem-kubernetes' },
+              ]}
+            />
+          </div>
+        </PersonaSection>
+
+        <PersonaSection
+          id="test"
+          index="05"
+          label="Test"
+          title="Test it like any other code"
+          lead="The test framework starts your agent, sends it messages and checks the replies, inside pytest."
+        >
+          <div className={styles.split}>
+            <div className={styles.stack}>
+              <ul className={styles.points}>
+                <li>A session-scoped fixture keeps one conversation across ordered tests, so follow-up questions work</li>
+                <li>Replies are compared by string score, by an LLM judge, or by score first and the judge as a fallback</li>
+                <li>The same suite runs in CI against the CLI, the REST API or a container</li>
+              </ul>
+              <DocLinks
+                links={[
+                  { label: 'Testing overview', to: '/docs/testing/overview' },
+                  { label: 'Automated testing', to: '/docs/testing/automated-testing' },
+                ]}
+              />
+            </div>
+            <CodeSample title="test_my_agent.py" language="python">
+              {TEST}
+            </CodeSample>
+          </div>
+        </PersonaSection>
+      </Journey>
+
+      <OtherLevels current="developer" />
       <ClosingPanel />
     </Layout>
   );

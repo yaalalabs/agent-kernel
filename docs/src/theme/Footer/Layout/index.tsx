@@ -1,8 +1,8 @@
 import React, {type ReactNode} from 'react';
 import clsx from 'clsx';
 import type {Props} from '@theme/Footer/Layout';
-import {FaDiscord, FaEnvelope} from 'react-icons/fa6';
-import {SiTerraform} from 'react-icons/si';
+import {SiDiscord, SiTerraform} from 'react-icons/si';
+import {TbMail} from 'react-icons/tb';
 import { useLocation } from '@docusaurus/router';
 import CTASection from '../../../components/CTASection';
 
@@ -41,12 +41,12 @@ const SOCIAL_LINKS: SocialLink[] = [
   {
     href: 'https://discord.gg/snrPzb46uu',
     label: 'Discord Community',
-    icon: <FaDiscord aria-hidden="true" />,
+    icon: <SiDiscord aria-hidden="true" />,
   },
   {
     href: 'mailto:kernel@yaala.ai',
     label: 'Email',
-    icon: <FaEnvelope aria-hidden="true" />,
+    icon: <TbMail aria-hidden="true" />,
   },
 ];
 

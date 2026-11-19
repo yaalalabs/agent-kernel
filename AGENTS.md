@@ -175,8 +175,10 @@ When you write or update documentation, READMEs, skills or website copy:
   `SectionHeader` component, not from page-local copies. Sizes come from the `--ak-type-*` and
   `--ak-space-*` tokens, corners from the two radii (`--ak-radius-control`, `--ak-radius-card`). No
   gradients, glows, blur or drop shadows on surfaces, no text under 15 px except the 13 px monospace
-  label, and headings in sentence case. Moving illustrations use the line-art vocabulary in
-  `docs/src/components/VectorMotion/`. The full rules are in
+  label, and headings in sentence case. Pages below the home page start with `PageHero` and end with
+  `ClosingPanel`; the only entrance effect is `Reveal`. Interface icons are Tabler outline icons
+  (`react-icons/tb`) and brand marks are Simple Icons (`react-icons/si`). Moving illustrations use the
+  line-art vocabulary in `docs/src/components/VectorMotion/`. The full rules are in
   [branding/README.md](branding/README.md#website-design-system).
 
 ## Conventions
