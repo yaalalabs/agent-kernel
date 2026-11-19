@@ -669,9 +669,11 @@ class AgentRegistry(ABC):
    `ValueError` for an unloaded agent, for a field `AgentDescriptor` does not declare, for `id`
    (the registry key, and the name every other layer addresses the agent by), for a value the
    model refuses (the merged descriptor is validated, not `model_copy`-ed, because a shared
-   registry hands it to other processes), for the fields the runner and the registry report
-   (`Module._REPORTED_DESCRIPTOR_FIELDS`: `runner`, `supports_streaming`, `updated_at`; a
-   descriptor claiming its runner streams would open an AG-UI stream that can only fail) and for
+   registry hands it to other processes), for the fields the adapter, the runner and the registry
+   report (`Module._REPORTED_DESCRIPTOR_FIELDS`: `tools`, `runner`, `supports_streaming`,
+   `updated_at`; a descriptor claiming its runner streams would open an AG-UI stream that can
+   only fail, and a declared tool list would name tools the agent cannot call to whoever writes a
+   policy from it; `name` and `skills` stay declarable) and for
    an agent the current runtime does not host; nothing is stored on any of them. It then replaces
    the agent's descriptor and registers the agent again (`Runtime.register`), which is how the
    registry, already holding the descriptor from `load`, receives the described one. When that
@@ -699,6 +701,11 @@ class AgentRegistry(ABC):
    id differs only in case: an environment variable arrives lowercased
    (`AK_REGISTRY__AGENTS__Billing__SURFACES` is the key `billing`), and a restriction that reads
    as set must not be dropped for that.
+
+   The merge is per top-level field, with one exception: `identity` is overlaid field by field
+   (`{**descriptor.identity, **entry.identity}`). It is the one nested object the overlay
+   carries, and replaced as a unit an entry naming only `subject` would drop the `client_id` and
+   `client_secret_key` the code declared, against the rule that a field left out keeps its value.
 
 The registry's descriptor is the one record of an agent. The catalog, AG-UI's `/agents`, the A2A
 card and MCP's agent tools (section 8.6) are built from `registry.descriptors()`, never from the
@@ -1739,7 +1746,7 @@ for the two caches and the framework context; public exports other than those na
 | Removed config lists present | `_A2AConfig`/`_MCPConfig`/`_AGUIConfig` validators | `AKConfigError` naming `registry.agents.<id>.surfaces` |
 | Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; `deregister` raises and keeps the agent hosted, so a retry removes the record; at mount, `A2A._build`, `MCP._build` and the `agui.default_agent` check raise and the process does not start (cards and tools built from an unread registry would stay empty until a restart), while `IOHandler._warn_if_no_agents` only logs that it could not check; per request, the catalog route, `ensure_agent_available` for an agent hosted elsewhere and AG-UI's resolution raise, which the surface answers 500 |
 | `ttl` set on a registry store block, or a key the `registry` block does not take | the config model | `AKConfigError` naming `registry.<store>.ttl`; a validation error at load |
-| `Module.describe` naming `runner`, `supports_streaming` or `updated_at` | `Module.describe` | `ValueError`; nothing stored |
+| `Module.describe` naming `tools`, `runner`, `supports_streaming` or `updated_at` | `Module.describe` | `ValueError`; nothing stored |
 | `Module.describe` whose registration the registry refuses | `Module.describe` | the registry's error; the agent keeps the descriptor it had |
 | Adapter class still defining `get_a2a_card` | `Agent._build_descriptor` | one warning per class; the method is never called |
 

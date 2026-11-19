@@ -113,9 +113,14 @@ providers (`static`, `oidc` for Auth0, Keycloak, Okta or any OpenID Connect issu
 `firebase`) are described in [Identity and access](../advanced/identity-and-access.md).
 
 With an `identity` block, every agent card also tells a client how to authenticate. It declares one
-security scheme and requires it, on the card and on each skill: HTTP bearer for the `static` provider and
-for a provider of your own, OpenID Connect with the issuer's discovery URL for the `oidc` family. Without
-an `identity` block a card declares no security.
+security scheme and names it as the card's security requirement, on the card and on each skill: HTTP
+bearer for the `static` provider and for a provider of your own, OpenID Connect with the issuer's
+discovery URL for the `oidc` family. Without an `identity` block a card declares no security.
+
+The card states how a client is expected to call; the server does not turn an uncredentialed call away
+yet. As above, a `message:send` without a credential still runs as the anonymous principal, so a client
+that follows the card always authenticates while one that ignores it is served anonymously. Refusing
+such a call is what authorization adds.
 
 ## Agent Capabilities
 

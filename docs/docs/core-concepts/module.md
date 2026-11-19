@@ -194,9 +194,10 @@ OpenAIModule([triage, math]).describe(
 | `identity` | How the agent identifies itself when it acts as a principal |
 
 Repeated calls merge, the later call winning per field. A field the descriptor does not have, a value it
-does not accept, or the agent's `id` raises `ValueError` at declaration. So do `runner`, `supports_streaming`
-and `updated_at`, which the agent's runner and the registry report: a surface decides from them whether the
-agent can be served. Configuration sets `description`, `version`, `owner`, `tags`, `visibility`, `surfaces`
+does not accept, or the agent's `id` raises `ValueError` at declaration. So do `tools`, `runner`,
+`supports_streaming` and `updated_at`, which the agent's adapter, its runner and the registry report: a
+surface decides from them whether the agent can be served, and the tool list is what an authorization
+policy names tools by. Configuration sets `description`, `version`, `owner`, `tags`, `visibility`, `surfaces`
 and `identity` per agent id under `registry.agents.<id>`, which wins over what the code declares (`skills` is
 declared in code only); see [Configuration → Agent Registry](./configuration.md#agent-registry).
 

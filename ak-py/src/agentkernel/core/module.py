@@ -18,10 +18,11 @@ class Module(ABC):
     framework, allowing the agents to be registered and managed in a framework-agnostic manner.
     """
 
-    _REPORTED_DESCRIPTOR_FIELDS: ClassVar[frozenset[str]] = frozenset({"runner", "supports_streaming", "updated_at"})
+    _REPORTED_DESCRIPTOR_FIELDS: ClassVar[frozenset[str]] = frozenset({"tools", "runner", "supports_streaming", "updated_at"})
     """
-    The `AgentDescriptor` fields that state a fact about the agent's runner or its registry record, which
-    `describe` therefore refuses: they are reported, not declared.
+    The `AgentDescriptor` fields that state a fact about the agent: the tools its adapter reads from the native
+    agent, its runner and whether that runner streams, and when the registry stored the record. `describe`
+    refuses them: they are reported, not declared.
     """
 
     def __init__(self):
@@ -149,9 +150,10 @@ class Module(ABC):
         `post_hook` / `run_options`.
 
         The `id` is the key the agent is registered under and cannot be described. Neither can what the agent's
-        runner and the registry report (`runner`, `supports_streaming`, `updated_at`): a surface decides from
-        them whether the agent can be served, so a descriptor claiming a runner streams when it does not would
-        open a stream that can only fail.
+        adapter, its runner and the registry report (`tools`, `runner`, `supports_streaming`, `updated_at`): a
+        surface decides from them whether the agent can be served and an authorization policy names tools by
+        them, so a descriptor claiming a runner streams when it does not would open a stream that can only fail,
+        and a declared tool list would name tools the agent cannot call. `name` and `skills` stay declarable.
         :param agent: The native framework agent the metadata is for.
         :param fields: The `AgentDescriptor` fields to set.
         :return: This module, for chaining.
@@ -168,8 +170,8 @@ class Module(ABC):
         reported = sorted(set(fields) & self._REPORTED_DESCRIPTOR_FIELDS)
         if reported:
             raise ValueError(
-                f"Descriptor field(s) {', '.join(reported)} of agent '{wrapped.name}' are what its runner and the registry "
-                "report and cannot be described"
+                f"Descriptor field(s) {', '.join(reported)} of agent '{wrapped.name}' are what its adapter, its runner and "
+                "the registry report and cannot be described"
             )
         # Validated as a whole, not copied with the update applied: the descriptor is read by other processes
         # once a shared registry stores it, so a value its model refuses must fail here.

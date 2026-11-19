@@ -681,8 +681,10 @@ export AK_REGISTRY__AGENTS__BILLING__SURFACES='["rest"]'  # a per-agent field; t
   the set `<prefix>index:all`, on DynamoDB the item whose `agent_id` is the id.
 - **Per-agent fields.** `registry.agents.<id>` sets `description`, `version`, `owner`, `tags`, `visibility`,
   `surfaces` and `identity` for one agent, over what the code declares. The same fields can be declared in code with
-  `Module.describe(agent, description=..., surfaces=[...])`; where both set a field, the configuration wins. An
-  unknown key under an agent is a startup error, so a misspelt `surfaces` cannot silently leave an agent exposed.
+  `Module.describe(agent, description=..., surfaces=[...])`; where both set a field, the configuration wins, and
+  a field left out here keeps what the code declared (inside `identity` too: naming only its `subject` keeps a
+  `client_id` the code set). An unknown key under an agent is a startup error, so a misspelt `surfaces` cannot
+  silently leave an agent exposed.
   Each process applies its own `registry.agents` block to what it reads from the registry, so a restriction set in
   the configuration of the process that serves a surface holds there for agents another process hosts. Where
   processes are configured differently, each serves an agent as its own configuration describes it. Set through

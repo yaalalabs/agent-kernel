@@ -667,8 +667,10 @@ the spec section it changes.
     hosted agent, so nothing is recorded for an agent only the registry knows; the queue-mode
     thread precheck and AG-UI's resolution run off the event loop, and AG-UI reads the
     descriptor once, from the hosted agent when there is one.
-  - `Module.describe` refuses `runner`, `supports_streaming` and `updated_at`, and restores the
-    agent's descriptor when the registry refuses the registration.
+  - `Module.describe` refuses `tools`, `runner`, `supports_streaming` and `updated_at`, and
+    restores the agent's descriptor when the registry refuses the registration. The overlay
+    merges `identity` field by field, so an entry naming only its `subject` keeps the client
+    credential the code declared.
   - An A2A card and its skills carry a neutral sentence when no description is declared, since
     the SDK drops an empty required field from the served JSON.
   - `_RegistryConfig` refuses unknown keys; the catalog decides a malformed cursor before it
@@ -685,6 +687,14 @@ the spec section it changes.
     schedules), not in the shared service the A2A and MCP runs also go through, and it touches
     the same call sites as iterations 18 and 19. To be decided before iteration 18; the docs
     say what `rest` governs today.
+  - Whether the direct `AGUIRequestHandler` should list and resolve only the agents its process
+    hosts. Over a shared registry its `/agents` lists agents another process hosts, and a run
+    for one of them is the "could not be selected" 500 (spec 8.5 specifies each half). The
+    queue-mode handler keeps the full list, since it enqueues for them.
+  - Whether an A2A card should keep naming the provider's scheme as its one security
+    requirement while a call without a credential still runs anonymous, or carry an empty
+    alternative until authorization refuses such a call. The A2A page now says what the server
+    does.
   - Whether an adapter should seed `descriptor.description` from a native description field
     that is separate from the instructions (Pydantic AI and MAF `description=`,
     `ClaudeAgentSpec.description`). The design only rules out the instructions.
@@ -796,8 +806,10 @@ objects in `tests/test_tool_<adapter>.py`:
   inner name, not the name the model calls. The wrong name is worse than a missing one.
 - LangGraph: tools in a compiled subgraph mounted as a node are not reported
   (`get_subgraphs(recurse=True)`).
-- Google ADK: a `Workflow` nested in a `Workflow` is not walked, and a callable instance with no
-  `name` or `__name__` is not reported under the name ADK's `FunctionTool` gives it.
+- Google ADK: a `Workflow` nested in a `Workflow` is not walked, and a callable with no
+  function name of its own is not reported under the name ADK's `FunctionTool` gives it: a
+  callable instance (`Refund()` is served as `Refund`) and a `functools.partial` (served as
+  `partial`) are both dropped.
 - smolagents: managed agents the model can call are not reported, and the built-in
   `final_answer` is, so a deny-by-default policy would block every answer.
 - OpenAI and MAF: tools of an MCP server, and of a handoff target, are not reported.

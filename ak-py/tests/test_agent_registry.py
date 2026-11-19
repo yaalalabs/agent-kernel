@@ -677,6 +677,27 @@ class TestRegistryOverlay:
 
         assert agent.runner.principals[0].actor.subject == "svc-billing"
 
+    def test_an_overlaid_identity_keeps_the_fields_the_code_declared_and_the_overlay_leaves_out(self, monkeypatch):
+        # A field left out of the overlay keeps the value the code gave it. That holds inside `identity` too:
+        # naming the subject in configuration must not drop the client credential the code declared.
+        runtime = self._runtime(monkeypatch, billing={"identity": {"subject": "svc-billing"}})
+
+        with runtime:
+            native = NativeAgent("billing")
+            StubModule([native]).describe(
+                native, identity={"subject": "billing", "client_id": "billing-client", "client_secret_key": "BILLING_SECRET"}
+            )
+
+        expected = AgentIdentitySpec(subject="svc-billing", client_id="billing-client", client_secret_key="BILLING_SECRET")
+        assert runtime.registry.descriptor("billing").identity == expected
+        assert runtime.agents()["billing"].descriptor.identity == expected
+
+    def test_an_identity_read_from_another_process_is_overlaid_field_by_field_too(self, monkeypatch):
+        stored = _descriptor("billing", identity={"subject": "billing", "client_id": "billing-client"})
+        registry = self._serving_registry(monkeypatch, [stored], billing={"identity": {"subject": "svc-billing"}})
+
+        assert registry.descriptor("billing").identity == AgentIdentitySpec(subject="svc-billing", client_id="billing-client")
+
     def test_a_refused_registration_leaves_the_agents_descriptor_as_it_was(self, monkeypatch):
         runtime = self._runtime(monkeypatch, billing={"version": "2.0.0"})
         runtime.register(StubAgent("billing"))
@@ -997,9 +1018,13 @@ class TestModuleDescribe:
         assert other.agents() == {}
         assert runtime.registry.descriptor("billing").owner is None
 
-    @pytest.mark.parametrize("field, value", [("runner", "openai"), ("supports_streaming", True), ("updated_at", "2026-01-01T00:00:00+00:00")])
-    def test_what_the_runner_and_the_registry_report_cannot_be_described(self, runtime, field, value):
-        # A descriptor that says its runner streams while the runner does not opens an AG-UI stream that can only fail.
+    @pytest.mark.parametrize(
+        "field, value",
+        [("tools", ["read_only_lookup"]), ("runner", "openai"), ("supports_streaming", True), ("updated_at", "2026-01-01T00:00:00+00:00")],
+    )
+    def test_what_the_adapter_the_runner_and_the_registry_report_cannot_be_described(self, runtime, field, value):
+        # A descriptor that says its runner streams while the runner does not opens an AG-UI stream that can only fail,
+        # and a tool list that is not the agent's names tools it cannot call to whoever writes a policy from it.
         with runtime:
             native = NativeAgent("billing")
             module = StubModule([native])
@@ -1009,6 +1034,17 @@ class TestModuleDescribe:
                 module.describe(native, owner="alice", **{field: value})
 
         assert runtime.registry.descriptor("billing") == before
+
+    def test_the_name_and_the_skills_stay_declarable(self, runtime):
+        with runtime:
+            native = NativeAgent("billing")
+            module = StubModule([native])
+
+            module.describe(native, name="Billing desk", skills=[{"id": "refunds", "name": "Refunds", "description": "Refunds an invoice"}])
+
+        descriptor = runtime.registry.descriptor("billing")
+        assert (descriptor.id, descriptor.name, descriptor.tools) == ("billing", "Billing desk", ["search"])
+        assert [skill.id for skill in descriptor.skills] == ["refunds"]
 
     def test_a_registration_the_registry_refuses_leaves_the_agent_as_it_was_described(self):
         class _FailingStore(InMemoryAgentRegistry):

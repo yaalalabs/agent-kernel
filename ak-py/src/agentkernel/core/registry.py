@@ -238,6 +238,10 @@ class _OverlaidAgentRegistry(AgentRegistry):
     An overlay key matches the agent with that id, or, when no key matches exactly, the one whose id differs
     only in case: an environment variable (`AK_REGISTRY__AGENTS__<ID>__SURFACES`) arrives lowercased, and a
     restriction that reads as set must not be dropped for that.
+
+    A field the overlay leaves out keeps the descriptor's value, and that holds inside `identity` as well:
+    its fields are overlaid one by one, so configuration that names only the agent's subject keeps the
+    client credential the code declared.
     """
 
     def __init__(self, backend: AgentRegistry, overlay: dict[str, dict[str, Any]]):
@@ -267,8 +271,12 @@ class _OverlaidAgentRegistry(AgentRegistry):
         fields = self._fields_for(descriptor.id)
         if not fields:
             return descriptor
+        merged = {**descriptor.model_dump(), **fields}
+        if "identity" in fields:
+            # The one nested object: set as a unit, an entry naming only the subject would drop the rest.
+            merged["identity"] = {**descriptor.identity.model_dump(), **fields["identity"]}
         # Validated as a whole: the fields come from configuration and reach other processes through the store.
-        return AgentDescriptor.model_validate({**descriptor.model_dump(), **fields})
+        return AgentDescriptor.model_validate(merged)
 
     def register(self, descriptor: AgentDescriptor, agent: Agent) -> None:
         overlaid = self._overlaid(descriptor)
