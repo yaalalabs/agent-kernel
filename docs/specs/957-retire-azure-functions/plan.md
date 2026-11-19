@@ -30,13 +30,7 @@ One PR. Each iteration leaves the branch working. Section names refer to [spec.m
 - **Steps:** follow spec: Terraform, except the registry-mirror steps (those are in Iteration 6).
 - **Verify:** `grep -rn "ak-azure/serverless\|ak-serverless/azurerm" ak-deployment scripts .github` is empty.
 
-## Iteration 4: Tests
-
-- **Goal:** the whole change is checked end to end.
-- **Steps:** run every check in spec: Testing (unit suite, lint, both leftover greps, config validation).
-- **Verify:** all pass. Trigger a manual weekly integration run for the two Azure Container Apps examples.
-
-## Iteration 5: Sync docs and skills
+## Iteration 4: Sync docs and skills
 
 - **Goal:** no doc, website page or skill points users at Functions.
 - **Files:** everything under spec: Docs and spec: Skills.
@@ -47,7 +41,13 @@ One PR. Each iteration leaves the branch working. Section names refer to [spec.m
      (`ak-dev-architecture`, `ak-dev-testing-conventions`).
   4. Run the `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows to catch anything
      missed.
-- **Verify:** `cd docs && npm run build` passes; both leftover greps from spec: Testing are empty.
+- **Verify:** `cd docs && npm run build` passes.
+
+## Iteration 5: Tests
+
+- **Goal:** the whole change is checked end to end.
+- **Steps:** run every check in spec: Testing (unit suite, lint, both leftover greps, config validation).
+- **Verify:** all pass. Trigger a manual weekly integration run for the two Azure Container Apps examples.
 
 ## Iteration 6: After merge
 
