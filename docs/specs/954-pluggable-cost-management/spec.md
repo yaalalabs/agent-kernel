@@ -82,6 +82,33 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     cannot report either raises (Langfuse, §5.3). Usage views fetch the whole window first, and split it only on
     truncation (§13).
 22. **Classifying an error never builds `CostManager`.** `ErrorUtil` uses `RunMeterFactory.peek()` (§3.4).
+23. **`gateway_user_id` also encodes an id that already starts with `ak~`**, so the inverse is exact: without it a
+    raw subject such as `ak~%41` would read back as `A`. Every gateway, built-in or bring-your-own, uses the base
+    class's transform (§1, rule 5).
+24. **LiteLLM: agent tags use rule 5, and refusals are read from either body shape.** §5.1 first replaced `,` in an
+    agent name with `_`, which left CR/LF in the header and could not be reversed; the tag now carries
+    `gateway_user_id(agent_id)`. `is_budget_refusal` first checked only `body["error"]["type"]`, which misses OpenAI SDK
+    errors, whose `body` is the inner object (§5.1). `LLMGateway.capabilities` is a plain class attribute, not a
+    `ClassVar`, so LiteLLM can set it per instance (§4).
+25. **LiteLLM `customer_management` budget sync is deferred; `end_user` sync details.** The 1.111 customer API
+    (templates per organization id, LiteLLM-assigned template ids, an implicit default, 409 on create) does not
+    match §5.1's first sketch and cannot be verified against a stable release, so that mode no longer declares
+    `native_user_budget` (§5.1). In `end_user` mode the `budget_id` hash normalizes the amount, and
+    `UsageRetrievalError` gains `detail` (the response text, never in the message or logs) so the adapter can tell
+    "already exists" from other 400s.
+26. **Agentgateway reads.** SQLite `started_at` text has a variable fraction (sqlx AutoSi), so SQLite reads bound by
+    whole seconds and filter exactly in Python, and SQLite `total_spend` sums `fetch_usage` rows; Postgres keeps the
+    SQL aggregate with `cost::numeric` in both reads, so totals equal row sums exactly. Every read keeps only model
+    calls (`gen_ai_provider_name IS NOT NULL`), and `unpriced` is `cost IS NULL`, matching `SpendTotal.from_rows`. The
+    probe requires migrations 1 and 2. All four header ids go through `gateway_user_id`. A `sqlite:` / `sqlite://`
+    URL prefix is accepted. `cost-agentgateway` repeats the `cost` requirements (§5.2, Config changes).
+27. **Langfuse reads follow the vendor, not the first sketch.** The route takes a `filter` JSON array
+    (`fromStartTime`/`toStartTime`, not `fromTimestamp`), returns observations newest first, compares times at
+    millisecond precision, and may return an empty page with a cursor. Reads filter `type = GENERATION`, widen bounds
+    to milliseconds and filter exactly, and sort on the client. The metrics API has no cached-input measure, so
+    `total_spend` sums observation rows. Header values go through `gateway_user_id` (a `langfuse-metadata` value that
+    still holds a colon is quoted under `ak~`, so it reverses exactly), and only the 1 KiB per-value
+    limit is checked, since four values cannot reach 8 KiB (§5.3).
 
 ## Design
 
@@ -354,7 +381,7 @@ The check runs inside `async with session` and after `_publish` / `agent._activa
 ```python
 class LLMGateway(ABC):
     name: ClassVar[str]
-    capabilities: ClassVar[GatewayCapabilities]
+    capabilities: GatewayCapabilities   # class default; LiteLLM sets it per instance from its mode (§5.1)
 
     def __init__(self, config: _CostGatewayConfig, secrets: SecretManager): ...   # explicit; no AKConfig reads
 
@@ -391,6 +418,9 @@ class LLMGateway(ABC):
   and maps errors: connect or timeout errors, 5xx responses and malformed JSON become `UsageRetrievalError`; 401 and
   403 become `UsageRetrievalError(auth=True)`. Logs name the method and path only, never the query string, headers
   or body (Security).
+  - httpx's own `HTTP Request: <method> <url>` INFO line would carry the query string (user ids). A filter on the
+    `httpx` logger strips the query from that line for URLs under a gateway's `base_url`, and leaves other hosts'
+    lines alone.
 
 `LLMGatewayFactory.create(config: _CostGatewayConfig) -> LLMGateway` follows the thread-store factory
 (`integration/thread/store/base.py:118-177`) and the identity factory (`identity/provider/factory.py:24-72`), which
@@ -427,7 +457,8 @@ Checked against the proxy source at LiteLLM 1.95.1.
   - Without LiteLLM Enterprise it is capped at 5 organizations, 5 teams per organization and 5 members per team.
     Per-user budgets for more users need Enterprise. Documented.
   - There are no per-member spend rows. `fetch_usage_since` is not declared and nothing replaces it, so only native
-    budgets work in this mode. Documented.
+    budgets could work in this mode, and their sync is deferred (deviation 25). Until the follow-up this mode only
+    attributes calls; `CostManager`'s capability check refuses a `budgets` block with it. Documented.
 
 **Capabilities**
 
@@ -440,7 +471,7 @@ Checked against the proxy source at LiteLLM 1.95.1.
 | `agent_aggregation` | yes (client-side, from `request_tags`) | no |
 | `session_filter` | no (client-side only) | no |
 | `custom_metadata` | yes | yes |
-| `native_user_budget` | yes | yes |
+| `native_user_budget` | yes | no (sync deferred, deviation 25) |
 | `request_level_budget_check` | yes | yes |
 | `streaming_usage` | yes (with `always_include_stream_usage`) | yes |
 | `filters` | `{USER, TIME_RANGE, MODEL}` | `{}` |
@@ -456,7 +487,7 @@ mode as its own subclass.
   - `x-litellm-customer-id: <gateway_user_id>`. It is the first of `STANDARD_CUSTOMER_ID_HEADERS`
     (`litellm/constants.py:1330-1333`), which the proxy reads for the end user with no configuration
     (`proxy/auth/auth_utils.py:1169`).
-  - `x-litellm-tags: ak-agent:<agent_id>`. The proxy splits this header on `,` (`proxy/litellm_pre_call_utils.py:1227-1229`), so a comma in an agent name is replaced by `_` (the name is not otherwise escaped).
+  - `x-litellm-tags: ak-agent:<gateway_user_id(agent_id)>`. The proxy splits this header on `,` (`proxy/litellm_pre_call_utils.py:1227-1229`); rule 5's transform never leaves a `,` (or CR/LF) in the value, and row mapping reverses it exactly (deviation 24).
   - `x-litellm-spend-logs-metadata`: `json.dumps({"ak_session_id": ..., "ak_request_id": ..., "ak_agent_id": ...})`. The proxy parses it with `safe_json_loads` (`:721-723`).
 - `customer_management`:
   - `x-litellm-customer-org-alias: <customer_org_alias>`
@@ -469,11 +500,16 @@ mode as its own subclass.
 - Request: `GET /spend/logs/v2` with `end_user=<user_id>`, `start_date`, `end_date`, optional `model`,
   `page_size=1000`, `sort_by=startTime` and `sort_order=asc` (parameters at `spend_management_endpoints.py:1734-1806`).
 - Authentication is `admin_key`, falling back to `api_key`.
-- Pages are read until `page × page_size ≥ total`. A `total` of 10 000 or more is a `UsageTruncatedError`.
+- Pages are read until `page × page_size ≥ total`. A `total` of 10 000 or more, or `total_is_capped` (1.105+), is a
+  `UsageTruncatedError`.
+- Rows are kept only when `start ≤ timestamp < end`, on the client: the request bounds are whole seconds (below), and
+  a `UsageWindow` end is the next period's start.
 - The view sub-windows long ranges (§13).
-- `start_date` and `end_date` are `YYYY-MM-DD HH:MM:SS` strings, read as UTC. The v2 route also accepts `YYYY-MM-DD`,
-  and both bounds are inclusive (`startTime` `gte` / `lte`; `spend_management_endpoints.py:1866-1890`). The
-  resolution is one second.
+- `start_date` and `end_date` are `YYYY-MM-DD HH:MM:SS` strings, read as UTC (the v2 route also accepts `YYYY-MM-DD`).
+  The proxy parses each into a whole-second instant and compares the rows' full timestamps against it (`startTime`
+  `gte` / `lte`, `spend_management_endpoints.py:2683-2691` at 1.105.7). So `start_date` is `start` floored to the
+  second, and `end_date` is `end` floored to the second **plus one second**: a floored end would silently drop rows
+  later in that second (12:00:00.400 for an end of 12:00:00.700). The client-side bound trims the extra rows.
 - Row mapping:
   - `request_id` → `row_id`
   - `startTime` → `timestamp`
@@ -491,8 +527,8 @@ mode as its own subclass.
 
 **`fetch_usage_since`** (`end_user`) reads one page (`page=1`, `page_size=1000`) of the same request, with:
 
-- `start_date = floor_to_second(cursor.timestamp)` and `end_date = floor_to_second(until)`
-- a client-side filter, because the route works to the second and is inclusive. It keeps only rows where
+- `start_date = floor_to_second(cursor.timestamp)` and `end_date = floor_to_second(until) + 1s`
+- a client-side filter, because those whole-second bounds are wider than the cursor and `until`. It keeps only rows where
   `row.timestamp > cursor.timestamp`, or where `row.timestamp == cursor.timestamp` and `row_id` is not in
   `cursor.ids_at_timestamp`. In both cases it also requires `row.timestamp <= until`.
   - Without the first condition, rows from earlier in the cursor's second would be counted twice.
@@ -514,7 +550,12 @@ when native sync applies).
    - `max_budget=float(amount)`
    - `budget_duration={daily: "1d", weekly: "7d", monthly: "1mo"}[period]` (deviation 8)
    - The upsert is `POST /budget/new` (`budget_management_endpoints.py:29`), and on a 400 "already exists"
-     `POST /budget/update` (`:122`). The **unverified** error text is pinned by the live test.
+     `POST /budget/update` (`:122`). At 1.105.7 the texts are `Budget with id '…' already exists.` and
+     `Customer already exists, …`; the 400's body reaches the adapter as `UsageRetrievalError.detail`. Any other
+     non-auth 4xx is a rejected shape and raises `AKConfigError` naming the path and status only; the response text
+     stays on the chained `UsageRetrievalError`, out of the message and the logs (Security).
+   - The amount in the `budget_id` hash is normalized (`format(amount.normalize(), "f")`), so `10` and `10.00`
+     share a row (deviation 25).
    - It is called once per process, at startup, with the default budget and every `users` budget. That is one or
      two calls per distinct budget, and a deployment usually has only a few.
 2. `sync_budgets(budgets)` upserts each user's customer row, for budgets whose rows already exist.
@@ -523,10 +564,12 @@ when native sync applies).
    - So each user costs one or two admin calls.
    - A `None` value upserts the customer with no `budget_id`. Startup uses this for `ak-system` (§8.3).
 
-`customer_management` upserts members instead: `POST /management/v1/customer_members/upsert` with the org alias,
-the member id `gateway_user_id(user_id)` (rule 5) and a budget. The default budget goes to `/management/v1/customer_organizations/{org_id}/default_budgets`. These
-routes exist only from 1.111 (**unverified** against source; they are not in the locked 1.95.1). They are pinned by a
-recorded-response test.
+`customer_management` budget sync is **deferred** (deviation 25). LiteLLM's documented 1.111 API differs from the
+first sketch: budgets are named templates inside an organization (`/management/v1/customer_organizations/{org_id}/default_budgets`,
+addressed by the organization's id, not its alias), a member selects one by LiteLLM's own `budget_id` through
+`/management/v1/customer_members/upsert`, the first template silently becomes the organization's default (so a member
+with no budget, such as `ak-system`, would inherit it), and an existing record answers 409. 1.111 is prerelease only and
+the installed proxy has no source for these routes, so the shapes cannot be verified yet.
 
 **`probe`**
 
@@ -537,14 +580,14 @@ recorded-response test.
 
 **`is_budget_refusal`**
 
-- The error is first unwrapped to a body:
-  - `getattr(error, "body", None)` when it is a dict (OpenAI SDK errors)
-  - otherwise `error.response.json()` when `error.response` is an `httpx.Response`
-  - otherwise `None`
-- A match is `body["error"]["type"] == "budget_exceeded"` or `body["litellm_error_type"] == "budget_exceeded"`.
+- The candidate bodies are `error.body` and `error.response.json()` (when `error.response` is an `httpx.Response`),
+  each kept only when it is a dict.
+- A match is `type` or `litellm_error_type` equal to `"budget_exceeded"` on a candidate or on its `"error"` sub-dict.
+  The OpenAI SDK stores the inner `"error"` object as `body` (`openai/_client.py:687`, `body.get("error", body)`),
+  while a raw response holds the whole envelope (deviation 24).
   At 1.95.1 the proxy raises `ProxyException(type=ProxyErrorTypes.budget_exceeded, code=429)`
   (`proxy/auth/auth_exception_handler.py:142-147`; the enum value is at `proxy/_types.py:3854`).
-- With no body, it matches when `str(error)` contains `ExceededBudget:` (the proxy's message prefix,
+- With no dict candidate, it matches when `str(error)` contains `ExceededBudget:` (the proxy's message prefix,
   `proxy/auth/auth_checks.py:1121`) **and** `budget_exceeded`.
 - The status code is never read.
 
@@ -557,7 +600,8 @@ recorded-response test.
 - `native_user_budget` and `request_level_budget_check`: no.
 - `filters`: all six. `row_cap`: `None` (SQL returns everything asked for).
 
-**Headers**: `x-ak-user-id`, `x-ak-agent-id`, `x-ak-session-id`, `x-ak-request-id`, omitted when `None`.
+**Headers**: `x-ak-user-id`, `x-ak-agent-id`, `x-ak-session-id`, `x-ak-request-id`, each through `gateway_user_id`
+(rule 5) and omitted when `None`.
 
 **Operator config, documented** (moved from design.md). The gateway records attribution only when its config maps the
 headers:
@@ -591,8 +635,9 @@ config:
 **`probe`**
 
 - Runs `SELECT version FROM _agentgateway_request_log_migrations`.
-- Accepted versions are `{1, 2, 3}` on Postgres and `{1, 2}` on SQLite. Anything else raises `AKConfigError` naming the
-  versions found.
+- Accepted when `{1, 2} ⊆ found ⊆ allowed`, with `allowed` `{1, 2, 3}` on Postgres and `{1, 2}` on SQLite (migration 2
+  adds `cache_read_input_tokens`, which the reads select). Anything else raises `AKConfigError` naming the versions
+  found.
 - An unreachable database is an availability error (§11.5).
 
 **`total_spend`**
@@ -602,15 +647,20 @@ SELECT gen_ai_provider_name AS provider,
        COALESCE(gen_ai_response_model, gen_ai_request_model) AS model,
        COUNT(*) AS requests,
        SUM(input_tokens), SUM(output_tokens), SUM(cache_read_input_tokens),
-       SUM(cost),
-       SUM(CASE WHEN cost IS NULL AND input_tokens IS NOT NULL THEN 1 ELSE 0 END) AS unpriced
+       SUM(cost::numeric),
+       SUM(CASE WHEN cost IS NULL THEN 1 ELSE 0 END) AS unpriced
 FROM request_logs
-WHERE agentgateway_user = :user AND started_at >= :start AND started_at < :end
+WHERE gen_ai_provider_name IS NOT NULL AND agentgateway_user = :user AND started_at >= :start AND started_at < :end
 GROUP BY 1, 2
 ```
 
-On SQLite, `:start` and `:end` are `datetime.isoformat()` strings in UTC. That matches the stored form
-(`2026-11-17T07:54:37.326796+00:00`, research), so the comparison is lexicographic and correct.
+This aggregate is the Postgres path, and `fetch_usage` reads `cost::numeric` too, so both agree exactly. On SQLite,
+`total_spend` is `SpendTotal.from_rows(fetch_usage(window))`: sqlx stores `started_at` with chrono's
+`SecondsFormat::AutoSi` (`sqlx-sqlite/src/types/chrono.rs:69`), a 0/3/6/9-digit fraction, which compares correctly as
+text only against a whole second (`…37.500+00:00` sorts before `…37.500000+00:00`), and costs are floats. SQLite
+reads therefore bound `started_at` by whole seconds (`floor(start)`, `ceil(end)`) and filter exactly in Python
+(deviation 26). Every read keeps only model calls (`gen_ai_provider_name IS NOT NULL`, the predicate agentgateway's
+own migration 2 uses), because the request log also holds MCP and plain HTTP traffic.
 
 **`fetch_usage`**
 
@@ -645,10 +695,13 @@ depends on (moved from design.md).
 **Headers**
 
 - `langfuse-user-id`, `langfuse-session-id` and `langfuse-tags: ak-agent:<agent_id>`.
-- `langfuse-metadata: request_id:<id>,agent_id:<id>`: comma-separated `key:value` pairs, not JSON. Commas and colons
-  in values are replaced by `_`.
-- Before returning, it checks every value ≤ 1024 bytes and the total ≤ 8192 bytes. Over either limit raises
-  `ValueError("langfuse header limits exceeded: ...")`, rather than send attribution Langfuse would drop.
+- `langfuse-metadata: request_id:<id>,agent_id:<id>`: comma-separated `key:value` pairs, not JSON. A value is the
+  `gateway_user_id` form, which holds no comma; one that still holds a colon (Slack and Telegram request ids do) is
+  encoded as `ak~` + the percent-quoted id, so `raw_user_id` reverses both and rows map back to the exact id.
+- Every value goes through `gateway_user_id`. Before returning, it checks every value ≤ 1024 bytes; over the limit
+  raises `ValueError("langfuse header limits exceeded: [<header>]")` (names, never values), rather than send
+  attribution Langfuse would drop. Langfuse's 8 KiB total cannot be reached by four 1 KiB values, so it is not
+  checked (deviation 27).
 
 **`model_base_url(model)`**
 
@@ -657,23 +710,27 @@ depends on (moved from design.md).
 - `GatewayLiteLLM` sends to that base with `custom_llm_provider` set to match. Langfuse does not translate between
   formats.
 
-**Usage reads** use HTTP Basic with `admin_key` formatted `<public_key>:<secret_key>`.
+**Usage reads** use HTTP Basic with `admin_key` formatted `<public_key>:<secret_key>` (resolved per call; a missing
+key or one without `:` is an `AKConfigError`). Shapes are taken from the vendor SDK (`langfuse.api.observations`,
+4.15.1) and the server query (`packages/shared/src/server/repositories/events.ts`), deviation 27:
 
-- `fetch_usage`: `GET /api/public/v2/observations`, filtered by `userId` and `sessionId` with `fromTimestamp` and
-  `toTimestamp`, and followed by cursor.
-- `total_spend`: `GET /api/public/v2/metrics` on the observations view, filtered on `userId = <user>`. It never uses
-  top-N user grouping.
-  - Dimensions: `providedModelName`, and the provider where the view exposes it (otherwise `ModelSpend.provider` is
-    `None`, and static pricing matches the bare model name, §10).
-  - Measures: `sum(totalCost)`, `sum(inputTokens)`, `sum(outputTokens)`, the cached-input token sum and `count`.
-  - A second query on the same dimensions counts the observations with no cost. That count is `unpriced_requests`,
-    so the unpriced warning (§11.2) works on Langfuse.
-  - With only per-model sums, `bill_total` must equal the sum of `bill` over the same rows. So when the metrics
-    response has no cached-token measure, the adapter raises `UsageRetrievalError` rather than report the cached
-    tokens as 0. Reporting 0 would charge cached tokens at the full input rate under static pricing.
-- The request and response field names, including the cached-input measure and the no-cost filter, are
-  **unverified**. They are pinned by the compatibility suite (`test_cost_langfuse_compat.py`), as design.md
-  requires.
+- `fetch_usage`: `GET /api/public/v2/observations` with `fields=core,basic,usage,model,metadata,trace_context`,
+  `limit=1000` and a `filter` JSON array (it takes precedence over the plain query filters): `type = GENERATION`,
+  `startTime >= floor_ms(start)`, `startTime < ceil_ms(end)`, and `userId` / `sessionId` / `providedModelName` when
+  set. The server compares JS `Date`s (milliseconds), so the bounds are widened to whole milliseconds and rows are
+  kept on the client only when `start ≤ startTime < end`.
+  - Pages follow `meta.cursor` until it is absent; an empty page that carries a cursor is not the end.
+  - Observations come newest first (`start_time DESC`); the adapter sorts oldest first.
+  - Mapping: `id` → `row_id`, `startTime` → `timestamp`, `userId` / `sessionId` (inverse of rule 5), agent from the
+    `ak-agent:` tag, request id from `metadata.request_id`, `providedModelName` → `model`, `provider` is `None` (the
+    observation has no provider; static pricing matches the bare model name, §10), `usageDetails.input` / `output`,
+    `totalCost` → `provider_cost` (`None` is unpriced). Cached input tokens are the first of
+    `usageDetails.input_cached_tokens`, `cache_read_input_tokens` or `input_cache_read` (**unverified**: the key
+    depends on the ingestion path; pinned by the compatibility suite until a live check).
+- `total_spend` is `SpendTotal.from_rows(fetch_usage(window))`. The v2 metrics observations view has no
+  cached-input measure, so a metrics aggregate could not satisfy deviation 21; the metrics API is not used.
+- `fetch_usage_since` reads the range from the cursor's millisecond to `until` in full (the order is newest first),
+  sorts it, and returns the oldest 1000 rows. The gateway declares `windowed_spend`, so the ledger never calls it.
 
 `probe` does nothing. Documented: `api_key` must be a service-account key, or `langfuse-user-id` is ignored.
 
@@ -1509,7 +1566,7 @@ loudly, rather than enabling the feature silently.
 | Extra | Contents | Reason |
 |---|---|---|
 | `cost` (new) | `httpx>=0.27.0,<0.29.0`, `litellm>=1.100.3,<2.0.0` | gateway HTTP and the client. Both ranges match the existing extras (`httpx` as in `auth`; `litellm` as in `thread` and `multimodal`). The `litellm` range overlaps the `langgraph`/`adk` cap (`<1.106`), so `cost` co-installs with them |
-| `cost-agentgateway` (new) | `agentkernel[cost]`, `psycopg[binary]>=3.2,<4` | Postgres request-log database. `psycopg` is not locked today, so the version is fixed when the lock is regenerated |
+| `cost-agentgateway` (new) | the `cost` requirements repeated, plus `psycopg[binary]>=3.2,<4` (locked 3.3.9) | Postgres request-log database. No extra here refers to `agentkernel[...]`, so it lists `cost`'s requirements itself (deviation 26) |
 | `langgraph` | add `langchain-litellm` | `GatewayChatLiteLLM` (§7.6) |
 
 ### Deployment: AWS Terraform (`ak-deployment/ak-aws/`)
@@ -1628,7 +1685,8 @@ carries the gateway name, the path and the status.
 - **Per run, first run of a native-default user in a process**: one or two admin calls (§11.4).
 - **Startup**: about `D + 2` admin round trips held synchronously (`D` distinct budgets). Per-user rows are written on
   the background thread (§11.4, §15).
-- **Per run, fallback on a `windowed_spend` gateway**: one aggregate read (SQL `SUM`, or one metrics query).
+- **Per run, fallback on a `windowed_spend` gateway**: one aggregate read on Agentgateway Postgres (SQL `SUM`); on
+  Agentgateway SQLite and Langfuse, a read of the user's rows for the period (deviations 26, 27).
 - **Per run, fallback on a ledger gateway**: as listed in §12.3.
 - The budget read is bounded at 10 s (§11.3).
 - `GatewayHTTP` holds one `httpx.AsyncClient` per gateway, created lazily on the loop that first uses it. A call
@@ -1662,9 +1720,9 @@ tests/test_shared_drivers.py`. The full suite is `uv run pytest`.
 |---|---|
 | `test_cost_models.py` | `BudgetPeriod.start_of` / `end_of` at edges (23:59:59 → 00:00, Sunday → Monday, Dec → Jan); `SpendTotal.from_rows` / `merge`; Decimal parsing from floats; `UsageReport` JSON Decimals as strings |
 | `test_cost_config.py` | YAML and `AK_COST__*` parsing; every validator; `ak-system` and empty `users` keys refused; ledger `ttl` default 0; absent block → `AKConfig.cost is None` |
-| `test_cost_gateway_litellm.py` | `LLMGatewayContract` for both `api` modes over `httpx.MockTransport`; header formats (comma in agent name; CR/LF and non-ASCII ids in `x-litellm-customer-member-id` and the member upsert go through `gateway_user_id`); `start_date` / `end_date` sent as `YYYY-MM-DD HH:MM:SS` floored to the second, with client-side bounds; `/spend/logs/v2` paging, `total ≥ 10000` → truncated; row mapping with missing tokens and cost; `sync_budget_definitions` route sequence (`/budget/new` → exists → `/budget/update`, once per distinct budget); `sync_budgets` route sequence (`/customer/new` → exists → `/customer/update`, no budget call), `7d` for weekly; `ak-system` upserted without a budget; `customer_management` refused below 1.111 via `/health/readiness`; `is_budget_refusal` on body, on `response.json()`, on message, never on a bare 429 |
+| `test_cost_gateway_litellm.py` | `LLMGatewayContract` for both `api` modes over `httpx.MockTransport`; header formats (comma and CR/LF in agent names, and CR/LF and non-ASCII user ids in `x-litellm-customer-id`, go through `gateway_user_id`); `start_date` floored and `end_date` floored plus one second (`YYYY-MM-DD HH:MM:SS`), against a fake that compares full timestamps as the proxy does, with client-side bounds (a row later in the end's second is read); `/spend/logs/v2` paging, `total ≥ 10000` → truncated; row mapping with missing tokens and cost; `sync_budget_definitions` route sequence (`/budget/new` → exists → `/budget/update`, once per distinct budget); `sync_budgets` route sequence (`/customer/new` → exists → `/customer/update`, no budget call), `7d` for weekly; `ak-system` upserted without a budget; a non-USD budget refused before any write; a rejected shape's response text kept out of the `AKConfigError`; `customer_management` declares no budget sync (deviation 25) and is refused below 1.111 via `/health/readiness`; `is_budget_refusal` on body, on `response.json()`, on message, never on a bare 429 |
 | `test_cost_gateway_agentgateway.py` | SQLite fixture built from the 1.7.x migrations with rows shaped like the observed v1.7.0 row (session and request id in `attributes_json`, and a row without them); `total_spend` SQL grouping and unpriced count; migration version 3 on SQLite refused; read-only open; Postgres URL without the extra → `ImportError` naming `cost-agentgateway` |
-| `test_cost_langfuse_compat.py` | header names; 1 KiB / 8 KiB limits raise; `langfuse-metadata` format; base URL per provider; v2 observations and metrics request/response shapes (recorded fixtures), including the cached-input measure and the no-cost count; a metrics response without the cached measure → `UsageRetrievalError` |
+| `test_cost_langfuse_compat.py` | `LLMGatewayContract`; header names; 1 KiB limit raises without echoing values; `langfuse-metadata` format; base URL per provider; v2 observations request (parameter names checked against the SDK's request code) and responses validated by the SDK's own `ObservationsV2Response`; newest-first pages sorted; empty page with a cursor; millisecond bounds; `type = GENERATION`; cached-input keys; no-cost count |
 | `test_cost_client.py` | headers per call from context; caller headers merged, AK keys win; `include_usage` on streams; `api_base` / `api_key` set; two concurrent runs (`asyncio.gather`) see their own headers; warning once outside a run; `litellm.headers` never assigned |
 | `test_cost_bindings.py` | one class per framework: built only with a `cost` block, importable from `agentkernel.<fw>`, headers reach the native call from context — including inside `asyncio.to_thread` (CrewAI, smolagents) — and MAF text, tools, streaming through a fake client; `CostRunOptions.wrap` deep-merge per runner, user keys kept, user factory awaited, unsupported runner `TypeError` |
 | `test_cost_claude_env.py` | `env` merge (user keys kept, AK keys win); `ANTHROPIC_CUSTOM_HEADERS` value; missing key → `AKConfigError` |

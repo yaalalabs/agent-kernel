@@ -29,6 +29,9 @@ _LAZY_EXPORTS = {
     "UsageReport": ".model",
     "UsageResult": ".model",
     "UsageWindow": ".model",
+    # gateway
+    "LLMGateway": ".gateway.base",
+    "LLMGatewayFactory": ".gateway.factory",
     # errors
     "CostError": ".errors",
     "LedgerBehindError": ".errors",
@@ -51,6 +54,8 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
         UsageRetrievalError,
         UsageTruncatedError,
     )
+    from .gateway.base import LLMGateway
+    from .gateway.factory import LLMGatewayFactory
     from .model import (
         ANONYMOUS_USER_ID,
         SYSTEM_USER_ID,

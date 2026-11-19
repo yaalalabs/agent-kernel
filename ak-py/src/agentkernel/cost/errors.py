@@ -35,12 +35,15 @@ class UsageRetrievalError(CostError):
         path: str | None = None,
         status: int | None = None,
         auth: bool = False,
+        detail: str | None = None,
     ) -> None:
         super().__init__(message)
         self.gateway = gateway
         self.path = path
         self.status = status
         self.auth = auth
+        # The response text, for a caller that must tell rejections apart; never part of the message or the logs.
+        self.detail = detail
 
 
 class UsageTruncatedError(CostError):
