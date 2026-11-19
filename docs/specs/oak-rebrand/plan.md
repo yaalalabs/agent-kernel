@@ -338,4 +338,16 @@ particle hero and the integration ledger are not, the level tiles are to be redo
 - **Verify:** the production build; captures of the index and a post in both modes and at phone width.
 - **Post authors:** the 14 posts credited to the shared "OAK" author now name their writers, taken from the commit history: twelve to Amitha Dissanayake and two to John Praveen (the Walled AI post by its history, the knowledge bases post on the maintainer's word). John Praveen's GitHub account has only the generated placeholder picture, so he keeps the OAK avatar.
 - **Hero dots:** settled with the maintainer over three trials. The body has about a quarter of the dots it started with (lattice step `UNITS / 64`), and each dot is about 40 per cent larger than the first version. The original small size was tried at this density and rejected as too faint.
+- **Hero ripple:** at the maintainer's request the ripple trails the cursor by a moment, and fades slowly once the pointer leaves the mark.
+
+## Iteration 31: merge develop before the pull request
+
+- **Status:** done. The maintainer committed the merge.
+- **Why:** develop gained two changes while this branch was open: the agent registry (#983) and the first part of the Azure Functions retirement (#984). Eight files conflicted.
+- **Steps:**
+  1. Text conflicts in skills and docs pages: develop's content, in the new name. Six places where develop's new prose said "Agent Kernel" now say OAK.
+  2. `docs/src/pages/features.tsx` and `FeatureExplorer/data.tsx`: this branch's restructure is kept, and develop's edits are carried into it: an "Agent registry and catalog" entry under Connect, and the MCP and A2A summaries.
+  3. `docs/docs/intro.md`: the short tip is kept and names the registry; the registry entry heads `docs/docs/whats-new.md`. The 0.10.1 copy is not changed, since the registry is not in that release.
+  4. Azure Functions: the two examples develop deleted stay deleted. The home page deployment card, the integration list, the FAQ, the features page and the root README no longer offer Functions. The docs pages under `docs/docs` still mention it: that sweep is iteration 4 of `docs/specs/957-retire-azure-functions/plan.md`, not this change.
+- **Verify:** the rename tool reports nothing left to change in the files develop touched; the production build passes.
 

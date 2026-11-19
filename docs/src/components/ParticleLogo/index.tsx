@@ -10,7 +10,7 @@ import styles from './styles.module.css';
  *   to their places, then fade in and tighten. Nothing flies across the hero.
  * - At rest the surface breathes: a slow wave lifts rows of dots, and the mark turns a little.
  * - Under the pointer, rings travel out across the surface, the dots swirl, and the mark
- *   leans towards the pointer.
+ *   leans towards the pointer. The ripple trails the cursor by a moment and lingers after it.
  * - As the page scrolls, the dots let go and drift up and out. Scrolling back gathers them.
  *
  * Every dot is moved in the vertex shader from a handful of numbers, so the page thread only
@@ -334,6 +334,9 @@ function start(stage: HTMLElement, canvas: HTMLCanvasElement, anchor: HTMLElemen
   let tiltX = 0;
   let tiltY = 0;
   let scatter = 0;
+  // Where the ripple is. It trails the pointer, so the rings arrive a moment after the cursor.
+  let rippleX = 0;
+  let rippleY = 0;
 
   const draw = (now: number) => {
     const step = last === null ? 0 : Math.min((now - last) / 1000, 0.05);
@@ -341,7 +344,20 @@ function start(stage: HTMLElement, canvas: HTMLCanvasElement, anchor: HTMLElemen
     clock += step;
     // Everything eases towards its goal, so nothing snaps.
     const ease = 1 - Math.exp(-step * 6);
-    hover += ((pointer.over ? 1 : 0) - hover) * ease;
+    // A ripple that has died away starts again under the cursor, and does not glide in from afar.
+    if (pointer.over && hover < 0.02) {
+      rippleX = pointer.x;
+      rippleY = pointer.y;
+    }
+    // The ripple comes up quickly and fades slowly, so it lingers after the pointer has left.
+    hover += ((pointer.over ? 1 : 0) - hover) * (pointer.over ? ease : 1 - Math.exp(-step * 2.2));
+    // It follows only while the pointer is over the mark: once the pointer leaves, the ripple
+    // stays where it was and fades there.
+    if (pointer.over) {
+      const follow = 1 - Math.exp(-step * 3.2);
+      rippleX += (pointer.x - rippleX) * follow;
+      rippleY += (pointer.y - rippleY) * follow;
+    }
     tiltX += ((pointer.over ? pointer.tiltX * 0.5 : 0) - tiltX) * ease * 0.6;
     tiltY += ((pointer.over ? pointer.tiltY * 0.4 : 0) - tiltY) * ease * 0.6;
     const bounds = stage.getBoundingClientRect();
@@ -352,7 +368,7 @@ function start(stage: HTMLElement, canvas: HTMLCanvasElement, anchor: HTMLElemen
     gl.uniform1f(at.build, Math.min(clock / BUILD_SECONDS, 1));
     gl.uniform1f(at.scatter, scatter);
     gl.uniform1f(at.hover, hover);
-    gl.uniform2f(at.pointer, pointer.x, pointer.y);
+    gl.uniform2f(at.pointer, rippleX, rippleY);
     gl.uniform2f(at.tilt, Math.sin(clock * 0.35) * 0.16 + tiltX, Math.cos(clock * 0.27) * 0.07 - tiltY);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.POINTS, 0, field.count);
