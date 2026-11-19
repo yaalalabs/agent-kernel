@@ -1560,6 +1560,74 @@ class _AGUIConfig(BaseModel):
     client_context: _AGUIClientContextConfig = Field(default_factory=_AGUIClientContextConfig)
 
 
+class _CostGatewayDatabaseConfig(BaseModel):
+    """Agentgateway request-log database the usage reads come from."""
+
+    url: str = Field(
+        default="", description="Agentgateway request-log database URL (postgres:// or a SQLite path); empty -> SecretManager under url_key"
+    )
+    url_key: str = Field(default="AGW_DB_URL", description="Secret key holding the database URL when url is empty")
+
+
+class _CostLiteLLMConfig(BaseModel):
+    """LiteLLM-specific gateway settings."""
+
+    api: Literal["end_user", "customer_management"] = Field(
+        default="end_user",
+        description="LiteLLM per-user API: end_user (open source, all releases) or customer_management (LiteLLM 1.111+)",
+    )
+    customer_org_alias: str = Field(default="", description="customer_management only: the organization every member belongs to")
+
+
+class _CostGatewayConfig(BaseModel):
+    """The LLM gateway that model calls go through, and that usage and budgets are read from."""
+
+    # A bring-your-own gateway (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(description="litellm | agentgateway | langfuse, or a dotted path to an LLMGateway subclass")
+    base_url: str = Field(description="Model endpoint the gateway client sends calls to")
+    api_key: str = Field(default="", description="Key for model calls; empty -> SecretManager under api_key_key")
+    api_key_key: str = Field(default="COST_GATEWAY_API_KEY", description="Secret key holding api_key when it is empty")
+    admin_key: str = Field(
+        default="",
+        description="Key for usage reads and budget sync where the gateway separates them; empty -> SecretManager under admin_key_key, then api_key",
+    )
+    admin_key_key: str = Field(default="COST_GATEWAY_ADMIN_KEY", description="Secret key holding admin_key when it is empty")
+    database: _CostGatewayDatabaseConfig | None = Field(default=None, description="Request-log database; required by agentgateway")
+    litellm: _CostLiteLLMConfig = Field(default_factory=_CostLiteLLMConfig, description="Settings of the litellm gateway")
+
+    @model_validator(mode="after")
+    def _check_gateway_settings(self) -> "_CostGatewayConfig":
+        """Fail at load time when the named gateway cannot be built from the block."""
+        if self.type.lower() == "agentgateway" and self.database is None:
+            raise AKConfigError("cost.gateway.type agentgateway requires the cost.gateway.database block")
+        if self.litellm.api == "customer_management" and not self.litellm.customer_org_alias.strip():
+            raise AKConfigError("cost.gateway.litellm.api customer_management requires cost.gateway.litellm.customer_org_alias")
+        return self
+
+
+class _CostConfig(BaseModel):
+    """Cost management: the LLM gateway, attribution, usage and budgets."""
+
+    gateway: _CostGatewayConfig = Field(description="The LLM gateway model calls go through")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_gateway(cls, data: Any) -> Any:
+        """Any AK_COST__* variable creates the block, so a block without a gateway type and base URL fails loudly here.
+
+        Runs before field validation so the error is an AKConfigError, not a pydantic missing-field error.
+        """
+        # A gateway passed as a model instance was validated when it was built.
+        if isinstance(data, dict) and not isinstance(data.get("gateway"), BaseModel):
+            gateway = data.get("gateway") or {}
+            missing = [key for key in ("type", "base_url") if not str(gateway.get(key) or "").strip()]
+            if missing:
+                raise AKConfigError(f"cost requires {' and '.join(f'cost.gateway.{key}' for key in missing)}")
+        return data
+
+
 class AKConfig(YamlBaseSettingsModified):
     """Root configuration, loaded from config.yaml and `AK_`-prefixed environment variables."""
 
@@ -1606,6 +1674,10 @@ class AKConfig(YamlBaseSettingsModified):
     identity: _IdentityConfig | None = Field(
         default=None,
         description="Identity capability configurations (the provider that authenticates callers, the role mapper). Absent = every request is the anonymous principal.",
+    )
+    cost: _CostConfig | None = Field(
+        default=None,
+        description="Cost management: an LLM gateway, attribution, usage and budgets. Absent = disabled",
     )
     a2ui: _A2UIConfig = Field(description="A2UI labelling capability configurations", default_factory=_A2UIConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
