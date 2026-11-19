@@ -107,12 +107,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
 ```
 
@@ -215,7 +215,7 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_input.json
 ```
 
@@ -228,12 +228,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_input.json  # PII + Moderation + Jailbreak
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_output.json  # PII + NSFW
 ```
 
@@ -246,12 +246,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o
+    model: gpt-6-luna
     config_path: guardrails_input_strict.json  # All checks, low thresholds
   output:
     enabled: true
     type: openai
-    model: gpt-4o
+    model: gpt-6-luna
     config_path: guardrails_output_strict.json  # All checks, low thresholds
 ```
 
@@ -269,7 +269,7 @@ guardrail:
 
 1. **Use pre-flight checks first** - Faster and cheaper
 2. **Optimize confidence thresholds** - Balance safety vs. false positives
-3. **Choose cost-effective models** - `gpt-4o-mini` for most cases
+3. **Choose cost-effective models** - `gpt-6-luna` for most cases
 4. **Separate input/output configs** - Apply different rules
 
 ### Scaling Considerations

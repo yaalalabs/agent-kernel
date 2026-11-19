@@ -109,7 +109,7 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: guardrails_input.json
   output:
     enabled: true
@@ -955,8 +955,8 @@ dependencies = [
 multimodal:
   enabled: true
   max_attachments: 20
-  description_model: "gpt-4o"          # Model for generating brief descriptions
-  analysis_model: "gpt-4o"             # Model for detailed analysis via tool
+  description_model: "gpt-6-luna"      # Model for generating brief descriptions
+  analysis_model: "gpt-6-luna"         # Model for detailed analysis via tool
 ```
 
 3. No further code changes needed. When enabled:
@@ -981,8 +981,8 @@ multimodal:
   enabled: true
   storage_type: redis
   max_attachments: 20
-  description_model: "gpt-4o"
-  analysis_model: "gpt-4o"
+  description_model: "gpt-6-luna"
+  analysis_model: "gpt-6-luna"
   redis:
     url: "redis://localhost:6379"
     prefix: "ak:attachments:"
@@ -1004,8 +1004,8 @@ multimodal:
   enabled: true
   storage_type: dynamodb
   max_attachments: 20
-  description_model: "gpt-4o"
-  analysis_model: "gpt-4o"
+  description_model: "gpt-6-luna"
+  analysis_model: "gpt-6-luna"
   dynamodb:
     table_name: "ak-attachments"
     ttl: 604800
@@ -1118,7 +1118,7 @@ dependencies = [
 thread:
   type: in_memory
   naming:
-    model: "gpt-4o-mini"   # LiteLLM model used to name threads
+    model: "gpt-6-luna"    # LiteLLM model used to name threads
     max_length: 80
 ```
 
@@ -1469,6 +1469,14 @@ curl -X POST http://localhost:8000/api/v1/chat -H "Content-Type: application/jso
   "resume": {"decisions": [{"id": "call_abc123", "status": "approved"}]}
 }'
 ```
+
+**If the agent is behind a Slack or Telegram integration, the pause is answered by pressing a
+button** — no extra code and no config: a press becomes the same decision the `curl` above sends.
+Slack's Deny opens a short form for the reason. Say two things when you set that up: Slack needs
+**Interactivity & Shortcuts** turned on with the same Request URL as its event subscription, or the
+buttons do nothing; and anyone who can see the message can press, since Agent Kernel ships no
+approver policy (the presser's id reaches the run as `acting_user_id`, for a `PreHook` to check).
+Every other platform gets the pause as readable text.
 
 A decision takes `status` (`approved` | `denied` | `cancelled` — "nobody decided", which never reaches
 the model as a refusal), an optional `message` for the human's own words, and an optional `payload`
