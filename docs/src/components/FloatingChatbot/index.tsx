@@ -74,7 +74,7 @@ const FloatingChatbot: React.FC = () => {
 
     try {
       const response = await fetch(
-        'https://iozqs05h57.execute-api.us-east-2.amazonaws.com/agents/api/v1/chat',
+        'https://a9z9ku1db1.execute-api.us-east-2.amazonaws.com/agents/api/v1/chat',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

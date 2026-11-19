@@ -8,6 +8,7 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+☁️ **Queue mode on GCP** - Cloud Run deployments now run the queue pipeline by default: an edge service and a push-driven agent-runner service connected by Google Cloud Pub/Sub, both scaling to zero, with Memorystore for replies. [Learn more →](./deployment/gcp-serverless.md#queue-mode)
 🪪 **Identity and Access** - One configured identity provider (Auth0, Keycloak or Okta over OIDC, Amazon Cognito, Microsoft Entra ID, Firebase, a static map, or your own) authenticates every surface, and tools, hooks, threads and scheduled tasks see the same `Principal`. [Learn more →](./advanced/identity-and-access.md)
 
 🧠 **Claude Agent SDK** - Run agents built on Anthropic's Claude Code harness (built-in file, shell and web tools, subagents, hooks) in Agent Kernel, with conversations that continue on any replica. [Learn more →](./frameworks/claude-agent-sdk.md)
@@ -18,7 +19,7 @@ slug: /
 
 🔀 **Realtime multi-agent handoffs** - A voice call moves between agents with the OpenAI Agents SDK's handoffs or Google ADK's transfers, and in LiveKit every agent appears as its own participant, with only the active one unmuted. [Learn more →](./integrations/livekit.md#multi-agent-handoffs)
 
-🙋 **Human in the Loop** - Let a run pause for a person's approval or answer, and resume from their decision minutes or hours later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming and AG-UI. [Learn more →](./advanced/human-in-the-loop.md)
+🙋 **Human in the Loop** - Let a run pause for a person's approval or answer, and resume from their decision minutes or hours later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming, AG-UI, and from a Slack or Telegram message with buttons on it. [Learn more →](./advanced/human-in-the-loop.md)
 
 🎙️ **LiveKit Voice Integration** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms through the realtime execution pipeline. [Learn more →](./integrations/livekit.md)
 

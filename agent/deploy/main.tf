@@ -44,6 +44,7 @@ module "containered_agents" {
   rest_service = {
     package_path   = "../dist"
     container_port = 8000
+    memory = 1024 # 1 GB so the fixed RAG-index footprint (~243 MB) stays well under the 75% memory autoscaling target; at 512 MB it pinned the service at 2 tasks
     # Environment variables passed to container
     environment_variables = {
       OPENAI_API_KEY      = var.openai_api_key,

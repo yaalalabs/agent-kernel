@@ -313,6 +313,7 @@ class TestAgentThreadRequestHandler:
             "interruptions": [
                 {"id": "i1", "kind": "input_required", "tool_name": None, "arguments": None, "message": None, "payload": {"question": "which card?"}}
             ],
+            "answer_together": False,
         }
 
     @pytest.mark.asyncio

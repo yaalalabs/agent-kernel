@@ -27,6 +27,7 @@ gcloud services enable servicemanagement.googleapis.com
 gcloud services enable vpcaccess.googleapis.com
 gcloud services enable redis.googleapis.com
 gcloud services enable firestore.googleapis.com
+gcloud services enable pubsub.googleapis.com            # queue_mode
 
 # Make sure Docker is running
 docker info

@@ -8,14 +8,15 @@ description: >
   queue-based scalable processing, an API Gateway authorizer driven by the identity provider, EventBridge Scheduler for scheduled tasks, and SSM
   Parameter Store secret resolution (`ssm_enabled`).
   GCP supports Cloud Run serverless (scale-to-zero)
-  and containerized (always-on) with Redis or Firestore session backends. Kubernetes runs
+  and containerized (always-on) with Redis or Firestore session backends, in queue mode by default
+  (an edge service and a push-driven agent-runner service over Pub/Sub). Kubernetes runs
   the queue pipeline over NATS JetStream, Kafka, or SQS with KEDA autoscaling, an
   optional WebSocket gateway tier, and Kubernetes Secrets mounted for secret resolution
   (`secretStore`).
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.10.0"
+  version: "0.10.1"
   category: user
 ---
 
@@ -62,7 +63,7 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.10.0`) unless user requests another.
+Use current module version (`0.10.1`) unless user requests another.
 
 Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
 Agent Kernel repository and is published as an OCI artifact
@@ -72,13 +73,13 @@ published chart, as in the Kubernetes section below, not a repository checkout.
 All modules are provider-agnostic: they declare `required_providers` but do not configure them internally. Configure each provider (`aws`/`docker`, `azurerm`, or `google`/`google-beta`/`docker`) in the root module and pass it explicitly via the module's `providers = { ... }` argument, as shown in the examples below. Azure's containerized module builds and pushes its image via a nested submodule with its own internal `docker` provider, so no `docker` provider needs to be configured or passed by the caller there.
 
 AWS-only features in this skill:
-- `execution_mode` / `message_type` (Terraform inputs; `execution.message_type` itself is plain Agent Kernel config)
-- `queue_mode`
-- `authorizer`
+- `authorizer` (the AWS Lambda authorizer; GCP's modules take a JWT `authorizer` object instead)
+
+`queue_mode`, `execution_mode` and `message_type` exist on AWS and GCP. On GCP `queue_mode` defaults to `true`, and `execution_mode` accepts only `rest_sync` and `rest_async`. `queue_mode` also exists on Azure Container Apps, over Service Bus: see Azure Containerized below. `execution.message_type` itself is plain Agent Kernel config.
 
 Azure examples use the provider module's standard top-level inputs (`function_name`, `package_path`, `container_port`, `publisher_email`) rather than AWS serverless execution modes.
 
-GCP modules use Cloud Run for both serverless (scale-to-zero, `min_instance_count=0`) and containerized (always-on, `min_instance_count≥1`) modes. Both use `agentkernel.gcp.CloudRun` as the entry point.
+GCP modules use Cloud Run for both serverless (scale-to-zero, `min_instance_count=0`) and containerized (always-on, `min_instance_count≥1`) modes. Both use `agentkernel.gcp.CloudRun` as the entry point. Both default to queue mode, which also needs `agentkernel.gcp.CloudRunAgentRunner` as the agent runner's entry point (see [GCP Queue Mode](#gcp-queue-mode-pubsub)); `queue_mode = false` deploys the single service.
 
 ### Step 4: Align App Dependencies and Session Config
 
@@ -91,7 +92,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.10.0"
+  "agentkernel[openai,api,redis]>=0.10.1"
 ]
 ```
 
@@ -118,7 +119,7 @@ OSS engine. Agent Kernel treats it as a first-class session and response store b
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.10.0"
+  "agentkernel[openai,api,aws,valkey]>=0.10.1"
 ]
 ```
 
@@ -146,7 +147,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.10.0"
+  "agentkernel[openai,api,aws]>=0.10.1"
 ]
 ```
 
@@ -167,7 +168,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.10.0"
+  "agentkernel[openai,api,azure]>=0.10.1"
 ]
 ```
 
@@ -189,7 +190,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.10.0"
+  "agentkernel[openai,api,gcp]>=0.10.1"
 ]
 ```
 
@@ -438,7 +439,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.0"
+  version = "0.10.1"
 
   prefix               = var.prefix
   product_display_name = "AK Serverless"
@@ -489,7 +490,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.0"
+  version = "0.10.1"
 
   prefix             = var.prefix
   region             = var.region
@@ -624,7 +625,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.10.0"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.10.1"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -637,7 +638,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.0"
+  version = "0.10.1"
 
   prefix               = var.prefix
   region               = var.region
@@ -780,7 +781,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis]>=0.10.0"   # add the auth extra for oidc, cognito, entra or firebase
+  "agentkernel[openai,api,aws,redis]>=0.10.1"   # add the auth extra for oidc, cognito, entra or firebase
 ]
 ```
 
@@ -793,7 +794,7 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.0"
+  version = "0.10.1"
 
   prefix               = var.prefix
   region               = var.region
@@ -849,7 +850,7 @@ execution:
   message_type: delta
 ```
 
-`POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Under any other pair, including `async`, the direct REST handler returns JSON. With the queue pipeline (`IOHandler`), SSE works on the `in_memory` transport, and on a broker (SQS, Kafka, NATS) with a `redis` or `valkey` response store, the shared stores that can stream chunks; with `dynamodb` (or any store that cannot stream chunks) on a broker, `IOHandler` fails at startup. Not available on AWS Lambda (refused at REST router init), ECS queue mode (refused at `ECSIOHandler` startup) or Azure Functions — use `async` + `delta` over WebSocket on AWS.
+`POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Under any other pair, including `async`, the direct REST handler returns JSON. With the queue pipeline (`IOHandler`), SSE works on the `in_memory` transport, and on a broker (SQS, Kafka, NATS, Service Bus) with a `redis` or `valkey` response store, the shared stores that can stream chunks; with `dynamodb` (or any store that cannot stream chunks) on a broker, `IOHandler` fails at startup. Not available on AWS Lambda (refused at REST router init), ECS queue mode (refused at `ECSIOHandler` startup) or Azure Functions — use `async` + `delta` over WebSocket on AWS.
 
 ### E) API Gateway Authorizer (AWS)
 
@@ -987,7 +988,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.0"
+  version = "0.10.1"
 
   prefix               = var.prefix
   region               = var.region
@@ -1066,7 +1067,7 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.0"
+  version = "0.10.1"
 
   prefix        = var.prefix
   region        = var.region
@@ -1126,7 +1127,7 @@ module "containerized_agents" {
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.10.0"
+  "agentkernel[openai,api,aws]>=0.10.1"
 ]
 ```
 
@@ -1187,7 +1188,7 @@ registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunne
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.0"
+  version = "0.10.1"
 
   providers = { aws = aws, docker = docker }
 
@@ -1250,7 +1251,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.10.0"
+  version = "0.10.1"
 
   prefix               = var.prefix
   region               = var.region
@@ -1292,7 +1293,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.10.0"
+  version = "0.10.1"
 
   prefix               = var.prefix
   region               = var.region
@@ -1310,6 +1311,30 @@ module "containerized_agents" {
   }
 }
 ```
+
+### Queue Mode (Service Bus)
+
+`queue_mode = true` (requires `create_redis_cluster = true`) splits the deployment: the existing Container App
+becomes the edge (`IOHandler.run()`, the image's default command), and an ingress-less agent runner app runs
+`agent_runner_command` (default `["python", "app_agent_runner.py"]`, i.e. `AgentRunner.run()`) in the same
+image, scaled by KEDA on the Service Bus input queue. The module creates the `<prefix>-queues` namespace, the
+session-enabled `input`/`output` queues and the managed-identity roles, and injects the queue URLs and the
+Redis URL. `config.yaml` declares only the types:
+
+```yaml
+execution:
+  mode: rest_sync          # or rest_async
+  queues:
+    type: servicebus
+  response_store:
+    type: redis
+session:
+  type: redis
+```
+
+Extras: `agentkernel[openai,api,azure,redis]`. Not supported on Azure queue mode: WebSocket (`async`) and
+scheduling. `max_receive_count` is pinned by the module (env beats `config.yaml`). Full example:
+`examples/azure-containerized/openai-queue-mode`.
 
 ## GCP Serverless (Cloud Run — scale-to-zero)
 
@@ -1334,7 +1359,7 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.10.0"
+  version = "0.10.1"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1363,7 +1388,7 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.10.0"
+  version = "0.10.1"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1388,8 +1413,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.10.0"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.10.0"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.10.1"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.10.1"  # for Redis sessions
 ]
 ```
 
@@ -1414,7 +1439,7 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.10.0"
+  version = "0.10.1"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1436,6 +1461,62 @@ module "containerized_agent" {
 ```
 
 **Key difference from GCP Serverless:** `min_instance_count = 1` keeps at least one instance running at all times, eliminating cold starts.
+
+## GCP Queue Mode (Pub/Sub)
+
+The default for both GCP modules (`queue_mode = true`). One image runs as two Cloud Run services connected by
+Pub/Sub, with Memorystore (created automatically) handing replies back:
+
+- the **edge** (the image's `CMD`, `CloudRun.run()`): chat API, publishes requests, returns replies;
+- the **agent runner** (`agent_runner.command`, `CloudRunAgentRunner.run()`): a private service Pub/Sub pushes each
+  request to. It scales on those pushes, down to zero.
+
+```python
+from agentkernel.gcp import CloudRun, CloudRunAgentRunner
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])
+
+def main() -> None:
+    CloudRun.run()
+
+def runner() -> None:
+    CloudRunAgentRunner.run()
+```
+
+`config.yaml` declares the transport and stores (Terraform injects only coordinates):
+
+```yaml
+execution:
+  queues:
+    type: pubsub
+  response_store:
+    type: redis
+session:
+  type: redis
+```
+
+```hcl
+module "agents" {
+  source  = "yaalalabs/ak-serverless/google" # or ak-containerized
+  # ... project_id, region, prefix, package_path, providers
+  execution_mode   = "rest_sync"             # or rest_async
+  timeout          = 120                     # cover cold starts of both services
+  backend_deadline = 110
+  agent_runner = {
+    command            = ["python", "-c", "from app import runner; runner()"] # required with the edge's image
+    min_instance_count = 0
+    max_instance_count = 10
+    concurrency        = 5
+  }
+}
+```
+
+- Extras: `agentkernel[openai,api,redis,pubsub]`.
+- Enable `pubsub.googleapis.com`.
+- `async` (WebSocket) and `realtime` are refused at plan and at startup: Cloud Run instances are not individually addressable.
+- Pub/Sub waits at most 600 seconds for a push answer: an agent run that takes longer is redelivered and runs a second time. The runner's own timeout is 60 minutes.
+- Working example: `examples/gcp-serverless/openai-queue-mode`.
 
 ## On-Prem / Kubernetes (Helm Chart)
 
@@ -1500,8 +1581,8 @@ also cross-installs Linux wheels so builds work from macOS).
 **Install:**
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.0 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.0 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag> \

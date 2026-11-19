@@ -36,6 +36,30 @@ resource "aws_iam_role_policy_attachment" "authorizer_lambda_vpc_execution_role_
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
+# Secret resolution: the identity provider's credentials resolve through `secret.provider.type: aws_ssm`
+resource "aws_iam_policy" "ssm_secret_policy" {
+  count = var.ssm_enabled ? 1 : 0
+  name  = "${var.prefix}-${var.authorizer_info.function_name}-ssm-secret"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadAKSecrets"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = "arn:aws:ssm:${var.region}:${var.account_id}:parameter/ak/${var.prefix}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ssm_secret_attachment" {
+  count      = var.ssm_enabled ? 1 : 0
+  role       = aws_iam_role.authorizer_lambda_role.name
+  policy_arn = aws_iam_policy.ssm_secret_policy[0].arn
+}
+
 resource "aws_security_group" "authorizer_lambda" {
   count = length(var.security_group_ids) == 0 && length(var.subnet_ids) > 0 ? 1 : 0
   name        = "${var.prefix}-authorizer-lambda-sg"
@@ -127,7 +151,10 @@ module "authorizer_lambda_deployment" {
     version_id = var.is_production ? null : data.aws_s3_object.authorizer_source_code[0].version_id
   } : {}
 
-  environment_variables = var.authorizer_info.environment_variables
+  environment_variables = merge(
+    var.authorizer_info.environment_variables,
+    var.ssm_enabled ? { AK_SECRET__PREFIX = var.prefix } : {}
+  )
 
   timeout     = var.authorizer_info.timeout
   memory_size = var.authorizer_info.memory_size

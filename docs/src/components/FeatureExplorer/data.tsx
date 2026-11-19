@@ -256,8 +256,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Queue Pipeline",
         description:
-          "Request handler, input queue, agent runner, output queue, response handler. In-memory locally; SQS, Kafka or NATS JetStream in production, with per-session FIFO, retries and dedup.",
-        tags: ["SQS", "Kafka", "NATS", "FIFO"],
+          "Request handler, input queue, agent runner, output queue, response handler. In-memory locally; SQS, Kafka, NATS JetStream, Google Cloud Pub/Sub or Azure Service Bus in production, with per-session FIFO, retries and dedup.",
+        tags: ["SQS", "Kafka", "NATS", "Pub/Sub", "Service Bus", "FIFO"],
         docs: "/docs/advanced/queue-mode-guide",
         example: "transport/kafka",
       },
@@ -280,8 +280,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Human in the Loop",
         description:
-          "Pause a run for a person's approval or answer and resume from their decision later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming and AG-UI.",
-        tags: ["Approvals", "Pause & resume", "AG-UI"],
+          "Pause a run for a person's approval or answer and resume from their decision later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming, AG-UI and Slack or Telegram buttons.",
+        tags: ["Approvals", "Pause & resume", "AG-UI", "Slack & Telegram"],
         docs: "/docs/advanced/human-in-the-loop",
         example: "api/hitl",
       },

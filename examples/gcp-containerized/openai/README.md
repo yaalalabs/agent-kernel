@@ -6,7 +6,9 @@ This package contains a demo of Agent Kernel running agents built with OpenAI Ag
 
 This demo deploys the following GCP resources:
 
-- **Cloud Run Service** - Fully managed container platform with always-on capability (min_instance_count defaults to 1)
+- **Cloud Run Service (edge)** - Fully managed container platform with always-on capability (min_instance_count defaults to 1)
+- **Agent Runner (Cloud Run)** - A second, private service from the same image. Pub/Sub pushes each request to it; it runs the agents and publishes the reply
+- **Pub/Sub** - Request and reply topics, plus dead-letter topics for messages that keep failing
 - **API Gateway** - OpenAPI-based routing with versioned endpoints for the Cloud Run service
 - **Artifact Registry** - Private container registry for storing the Docker image
 - **Memorystore Redis** - In-memory data store for agent memory and session storage
@@ -28,12 +30,35 @@ The application also exposes custom endpoints demonstrating two different approa
 - `GET /version` - Returns application version information (added via APIRouter)
 - `GET /whoami` - Returns application identity (added via custom handler class)
 
+## Queue Mode
+
+This example runs in queue mode, the Terraform module's default. One image runs as two Cloud Run
+services, connected by Pub/Sub:
+
+```
+client → API Gateway → edge (Cloud Run) ──publish──▶ agent-input ──push──▶ agent runner (Cloud Run, private)
+                           ▲                                                      │
+                           └──── pull ◀── agent-output ◀────── publish ───────────┘
+                     replies are handed back through Memorystore (Redis)
+```
+
+- **Edge** (`main()` in `app.py`, `CloudRun.run()`): serves the API, publishes each chat request, and
+  answers with the reply once it arrives.
+- **Agent runner** (`runner()` in `app.py`, `CloudRunAgentRunner.run()`): Pub/Sub pushes each request to
+  it; it runs the agents and publishes the reply. Terraform starts it with `agent_runner.command` in
+  `deploy/main.tf`.
+- `config.yaml` declares the Pub/Sub transport and the Redis reply store. Terraform injects the topic
+  names and the Redis URL.
+- Pub/Sub waits at most 600 seconds for the runner to answer. A longer agent run is delivered again and
+  runs a second time.
+
 ## Prerequisites
 
 - GCP CLI (gcloud) configured with appropriate credentials and project access
 - Terraform (`1.9.5` or higher) installed
 - Docker installed (for local image building)
 - An existing GCP project with appropriate permissions
+- The Pub/Sub API (`pubsub.googleapis.com`) enabled in that project
 - OpenAI API key with sufficient credits
 
 ## Configuration
@@ -181,7 +206,7 @@ The Cloud Run service is configured with:
 - **Scaling**: `min_instance_count = 1` for always-on behavior (no cold starts)
 - **CPU**: 1 vCPU (configurable)
 - **Memory**: 512Mi (configurable)
-- **Timeout**: 30 seconds (configurable)
+- **Timeout**: 120 seconds, with a 110 second API Gateway deadline (configurable)
 - **Port**: 8000
 
 **Key Difference from Serverless**: This module defaults to `min_instance_count = 1` (always-on, no cold starts), while the serverless module defaults to `min_instance_count = 0` (scale-to-zero). Both use Cloud Run, but with different scaling configurations.
@@ -203,18 +228,20 @@ RESTAPI.add(router)
 
 ### Option 2: Using Custom Handler Class
 ```python
-class CustomHandler(AgentRESTRequestHandler):
+class CustomHandler(RESTRequestHandler):
     def get_router(self) -> APIRouter:
-        parent_router = super().get_router()
+        router = APIRouter()
 
-        @parent_router.get("/whoami")
+        @router.get("/whoami")
         def whoami() -> dict[str, str]:
             return {"whoami": "I am a custom application built with Agent Kernel!"}
 
-        return parent_router
+        return router
 
-RESTAPI.run([CustomHandler()])
+CloudRun.run(handlers=[CustomHandler()])
 ```
+
+The handler is served beside the chat route, so it must not serve the chat route itself.
 
 Both approaches are valid and can be used depending on your preference and use case.
 

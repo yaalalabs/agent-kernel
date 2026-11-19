@@ -12,6 +12,7 @@ This module provides a complete containerized deployment solution on Azure:
 - 💾 **State Management**: Optional Azure Managed Redis or Cosmos DB Table API for session/state persistence
 - 📊 **Application Insights**: Container logs, metrics, and distributed tracing
 - 🏗️ **Automated Build**: Docker image building and ACR management with private endpoints
+- 📨 **Queue Mode (optional)**: Azure Service Bus input/output queues with a KEDA-scaled agent runner app
 
 Perfect for microservices, web applications, APIs requiring persistent connections, and applications needing API management capabilities.
 
@@ -260,6 +261,33 @@ module "container_app_cosmosdb" {
 - `AK_SESSION__COSMOSDB__TABLE_ENDPOINT`: Table API endpoint URL
 - `AK_SESSION__COSMOSDB__CONNECTION_STRING`: Connection string (stored as secret)
 
+### Queue Mode Configuration
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| `queue_mode` | Split into an edge app and a KEDA-scaled agent runner app over Azure Service Bus (requires `create_redis_cluster = true`) | `bool` | `false` | no |
+| `agent_runner_command` | Command the agent runner app starts in the shared image | `list(string)` | `["python", "app_agent_runner.py"]` | no |
+
+With `queue_mode = true` the module adds:
+- A Standard Service Bus namespace (`<prefix>-queues`, local auth off) with session-enabled, duplicate-detecting
+  `input` and `output` queues (lock 1 minute, max delivery count 4: one above Agent Kernel's default
+  `max_receive_count` of 3).
+- An agent runner Container App (`<prefix>-runner`, no ingress) running `agent_runner_command`, scaled by a KEDA
+  `azure-servicebus` rule on `input` (one replica per 5 waiting messages) that authenticates with the app's
+  system identity.
+- Managed identity roles at queue scope: edge sends to `input` and receives from `output`; runner owns `input`
+  (the KEDA scaler needs manage rights to read the queue length) and sends to `output`.
+
+Your `config.yaml` declares `execution.queues.type: servicebus` and `execution.response_store.type: redis`;
+the module injects only coordinates, into both apps:
+- `AK_EXECUTION__QUEUES__INPUT__URL` / `AK_EXECUTION__QUEUES__OUTPUT__URL`
+- `AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT` / `AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT` (`3`). Environment variables override `config.yaml`, so
+  a `max_receive_count` set there is ignored: it is pinned to stay one below the queues' max delivery count.
+- `AK_EXECUTION__RESPONSE_STORE__REDIS__URL` and `AK_SESSION__REDIS__URL`, both from the `redis-url` secret
+
+The image's default command is the edge (`IOHandler.run()`); the runner overrides it with `agent_runner_command`
+(`AgentRunner.run()`). WebSocket is not supported in Azure queue mode.
+
 ## 📤 Outputs
 
 | Name | Description | Example |
@@ -275,6 +303,11 @@ module "container_app_cosmosdb" {
 | `redis_url` | Redis connection URL (if enabled, sensitive) | `rediss://:password@hostname:10000` |
 | `cosmosdb_table_name` | Cosmos DB table name (if enabled) | `myapp-prod-api-session_store` |
 | `cosmosdb_endpoint` | Cosmos DB endpoint (if enabled, sensitive) | `https://myapp-prod-api-cosmos.table.cosmos.azure.com` |
+| `servicebus_namespace` | Service Bus namespace FQDN (queue mode only) | `myapp-prod-api-queues.servicebus.windows.net` |
+| `servicebus_namespace_id` | Service Bus namespace resource ID (queue mode only) | `/subscriptions/.../namespaces/myapp-prod-api-queues` |
+| `servicebus_input_queue` | Service Bus input queue name (queue mode only) | `input` |
+| `servicebus_output_queue` | Service Bus output queue name (queue mode only) | `output` |
+| `agent_runner_name` | Agent runner Container App name (queue mode only) | `myapp-prod-api-runner` |
 
 ## ✨ Features
 

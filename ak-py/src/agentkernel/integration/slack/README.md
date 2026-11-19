@@ -33,6 +33,8 @@ export SLACK_BOT_TOKEN=< >
 The SlackInboundAdapter listens on /slack/events, hence you need to setup the webhook URL as **https://<your-domain-or-ip>:<port>/slack/events**
 During URL registration, Slack sends a challenge to the URL before enabling. The SlackInboundAdapter handles this, hence you don't need any separate code to activate.
 
+If you want a paused run to be approved from Slack, also turn on **Interactivity & Shortcuts** and set its Request URL to the same /slack/events URL. Button presses are delivered there, not over Event Subscriptions, so without it the Approve and Deny buttons render and the press goes nowhere. No extra scope is needed.
+
 You can use https://pinggy.io/ or similar for local testing (e.g. ssh -p 443 -R0:localhost:8000 a.pinggy.io). [How to use pinggy to test Slack](https://pinggy.io/blog/how_to_get_slack_webhook/)
 
 A detailed example is provided in the examples section.

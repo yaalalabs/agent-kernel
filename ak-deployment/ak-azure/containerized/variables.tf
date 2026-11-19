@@ -226,3 +226,21 @@ variable "is_production" {
   description = "Whether this is a production environment"
   default     = false
 }
+
+# Queue Mode Configuration
+variable "queue_mode" {
+  type        = bool
+  description = "Enable Service Bus queue mode. Creates a Service Bus namespace with input/output queues and an agent runner Container App scaled by KEDA; the existing Container App becomes the edge. Requires create_redis_cluster (the response store)."
+  default     = false
+
+  validation {
+    condition     = !var.queue_mode || var.create_redis_cluster
+    error_message = "queue_mode needs create_redis_cluster = true: the edge and the agent runner share replies through the Redis response store."
+  }
+}
+
+variable "agent_runner_command" {
+  type        = list(string)
+  description = "Command the agent runner Container App starts in the shared image (queue_mode only)"
+  default     = ["python", "app_agent_runner.py"]
+}
