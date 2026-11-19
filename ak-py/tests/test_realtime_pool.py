@@ -266,7 +266,7 @@ class TestRealtimePrincipal:
         """Every audio chunk is an input, so an unchanged principal is not republished per chunk."""
         conn = _connection(loop=asyncio.get_running_loop())
         published = []
-        monkeypatch.setattr(conn.runtime, "_publish", lambda agent, session, principal: published.append(principal))
+        monkeypatch.setattr(conn.runtime, "_publish", lambda agent, session, principal, request_id: published.append(principal))
         other = Principal(subject="guest", provider="realtime:livekit", namespace="lk-key")
 
         for principal in (HUMAN, HUMAN, other, other, None):
@@ -274,6 +274,15 @@ class TestRealtimePrincipal:
         await asyncio.sleep(0)
 
         assert published == [HUMAN, other, None]
+
+    @pytest.mark.asyncio
+    async def test_the_inputs_request_id_is_published_with_the_principal(self):
+        conn = _connection(loop=asyncio.get_running_loop())
+        conn.update_delivery_context("rt-1", None, None, {})
+        conn.publish_principal(HUMAN)
+        await asyncio.sleep(0)
+
+        assert conn.session.get_request_id() == "rt-1"
 
     @pytest.mark.asyncio
     async def test_closing_unpublishes_the_identity(self):

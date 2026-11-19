@@ -278,25 +278,27 @@ class AgentHandler:
         """
         return iterate_async_sync(agen)
 
-    def run_sync(self, requests: list[Any], principal: Principal | None = None) -> Any:
+    def run_sync(self, requests: list[Any], principal: Principal | None = None, request_id: str | None = None) -> Any:
         """Run agent requests synchronously.
 
         :param requests: List of AgentRequest objects to process
         :param principal: The principal the surface authenticated, published for the run (see Runtime.run)
+        :param request_id: The run's correlation id, published for the run; None mints one (see Runtime.run)
         :return: Agent execution result
         """
-        return AgentHandler._run_async_sync(self.service.run_multi(requests=requests, principal=principal))
+        return AgentHandler._run_async_sync(self.service.run_multi(requests=requests, principal=principal, request_id=request_id))
 
-    async def run_async(self, requests: list[Any], principal: Principal | None = None) -> Any:
+    async def run_async(self, requests: list[Any], principal: Principal | None = None, request_id: str | None = None) -> Any:
         """Run agent requests asynchronously.
 
         :param requests: List of AgentRequest objects to process
         :param principal: The principal the surface authenticated, published for the run (see Runtime.run)
+        :param request_id: The run's correlation id, published for the run; None mints one (see Runtime.run)
         :return: Agent execution result
         """
-        return await self.service.run_multi(requests=requests, principal=principal)
+        return await self.service.run_multi(requests=requests, principal=principal, request_id=request_id)
 
-    def run_stream_sync(self, requests: list[Any], principal: Principal | None = None) -> Iterator[Any]:
+    def run_stream_sync(self, requests: list[Any], principal: Principal | None = None, request_id: str | None = None) -> Iterator[Any]:
         """Run agent streaming requests synchronously.
 
         Manages event loop lifecycle internally and hands over each chunk as the run produces
@@ -304,18 +306,22 @@ class AgentHandler:
 
         :param requests: List of AgentRequest objects to process
         :param principal: The principal the surface authenticated, published for the run (see Runtime.stream)
+        :param request_id: The run's correlation id, published for the run; None mints one (see Runtime.run)
         :return: Iterator of StreamChunk objects
         """
-        return AgentHandler._iterate_async_sync(self.service.stream_multi(requests=requests, principal=principal))
+        return AgentHandler._iterate_async_sync(self.service.stream_multi(requests=requests, principal=principal, request_id=request_id))
 
-    async def run_stream_async(self, requests: list[Any], principal: Principal | None = None) -> AsyncGenerator[Any, None]:
+    async def run_stream_async(
+        self, requests: list[Any], principal: Principal | None = None, request_id: str | None = None
+    ) -> AsyncGenerator[Any, None]:
         """Run agent streaming requests asynchronously.
 
         :param requests: List of AgentRequest objects to process
         :param principal: The principal the surface authenticated, published for the run (see Runtime.stream)
+        :param request_id: The run's correlation id, published for the run; None mints one (see Runtime.run)
         :return: AsyncGenerator yielding StreamChunk objects
         """
-        async for chunk in self.service.stream_multi(requests=requests, principal=principal):
+        async for chunk in self.service.stream_multi(requests=requests, principal=principal, request_id=request_id):
             yield chunk
 
     def get_response_session_id(self, session_id: str | None) -> str | None:
@@ -469,7 +475,7 @@ class ChatService:
         self._record_trigger(req)
         requests = await self._prepare_async(req, requests)
         handler = self.prepare_agent_handler(req.session_id, req.agent)
-        result = await handler.run_async(requests, principal=req.principal)
+        result = await handler.run_async(requests, principal=req.principal, request_id=req.request_id)
         return result, handler.get_response_session_id(req.session_id)
 
     def execute_sync(self, req: BaseRunRequest, requests: list[AgentRequest] | None = None) -> tuple[AgentReply, str | None]:
@@ -487,7 +493,7 @@ class ChatService:
         self._record_trigger(req)
         requests = self._prepare_sync(req, requests)
         handler = self.prepare_agent_handler(req.session_id, req.agent)
-        result = handler.run_sync(requests, principal=req.principal)
+        result = handler.run_sync(requests, principal=req.principal, request_id=req.request_id)
         return result, handler.get_response_session_id(req.session_id)
 
     async def execute_stream(self, req: BaseChatRequest, requests: list[AgentRequest] | None = None) -> AsyncGenerator[StreamChunk, None]:
@@ -512,7 +518,7 @@ class ChatService:
 
         async def _stream() -> AsyncGenerator[StreamChunk, None]:
             try:
-                async for chunk in handler.run_stream_async(requests, principal=req.principal):
+                async for chunk in handler.run_stream_async(requests, principal=req.principal, request_id=req.request_id):
                     yield chunk
             except Exception as e:
                 yield StreamChunk(error=str(e), done=True)
@@ -540,7 +546,7 @@ class ChatService:
         handler = self.prepare_agent_handler(req.session_id, req.agent)
 
         def _stream() -> Generator[StreamChunk, None, None]:
-            with contextlib.closing(handler.run_stream_sync(requests, principal=req.principal)) as chunks:
+            with contextlib.closing(handler.run_stream_sync(requests, principal=req.principal, request_id=req.request_id)) as chunks:
                 try:
                     for chunk in chunks:
                         yield chunk

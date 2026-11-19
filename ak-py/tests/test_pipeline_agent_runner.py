@@ -55,6 +55,7 @@ class TestAgentRunner:
 
         AgentRunner(transport=transport, chat_service=chat_service).process(_input_msg())
 
+        assert chat_service.process_chat_request.call_args.kwargs["req"].request_id == "r1"  # the queue's id is the run's id
         [out] = _fetch_output(transport)
         assert json.loads(out.body) == {"result": "ok:hi", "session_id": "s1"}
         assert out.attributes["request_id"] == "r1"
@@ -177,6 +178,7 @@ class TestStreamAgentRunner:
 
         StreamAgentRunner(transport=transport, chat_service=chat_service).process(_input_msg())
 
+        assert chat_service.process_stream_chat_sync.call_args.kwargs["req"].request_id == "r1"  # the queue's id is the run's id
         # Chunks of one session share a group: fetch them one ack at a time (FIFO per group).
         consumer = transport.create_consumer(QueueName.OUTPUT)
         [first] = consumer.fetch(10, 0.5)

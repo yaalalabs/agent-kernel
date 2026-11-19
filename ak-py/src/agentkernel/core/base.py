@@ -30,6 +30,7 @@ _log = logging.getLogger("ak.core.runner")
 # Session accessors below are the only spellings, and the ``ak.`` prefix makes the keys read-only
 # for application code (see KeyValueCache).
 PRINCIPAL_CACHE_KEY = "ak.principal"
+REQUEST_ID_CACHE_KEY = "ak.request_id"
 TOOL_FILTER_CACHE_KEY = "ak.tool_filter"
 
 
@@ -243,6 +244,14 @@ class Session:
         """
         return cast(Principal | None, self.get_volatile_cache().get(PRINCIPAL_CACHE_KEY))
 
+    def get_request_id(self) -> str | None:
+        """
+        Returns the correlation id of the current run, published by Runtime for the run's duration:
+        the id the request carried, or one minted when it carried none.
+        :return: The run's request id, or None outside a run.
+        """
+        return cast(str | None, self.get_volatile_cache().get(REQUEST_ID_CACHE_KEY))
+
     def get_tool_filter(self) -> ToolFilter | None:
         """
         Returns the tool decision the access gate published for the current run.
@@ -266,15 +275,17 @@ class Session:
             _log.warning(f"Session '{self._id}': the stored owner is unreadable and is ignored. Error: {exc}")
             return None
 
-    def _publish_run(self, principal: Principal, tool_filter: ToolFilter | None) -> None:
+    def _publish_run(self, principal: Principal, tool_filter: ToolFilter | None, request_id: str) -> None:
         """
         Publishes the identity of the run that is starting. Called by Runtime, and by the realtime
         connection pool for the tool calls it owns; nothing else writes these keys.
         :param principal: The principal the run acts as.
         :param tool_filter: The gate's tool decision, or None when the run is not gated.
+        :param request_id: The run's correlation id.
         """
         cache = self.get_volatile_cache()
         cache._set_reserved(PRINCIPAL_CACHE_KEY, principal)
+        cache._set_reserved(REQUEST_ID_CACHE_KEY, request_id)
         if tool_filter is None:
             cache._delete_reserved(TOOL_FILTER_CACHE_KEY)
         else:
@@ -286,6 +297,7 @@ class Session:
         """
         cache = self.get_volatile_cache()
         cache._delete_reserved(PRINCIPAL_CACHE_KEY)
+        cache._delete_reserved(REQUEST_ID_CACHE_KEY)
         cache._delete_reserved(TOOL_FILTER_CACHE_KEY)
 
     def _record_owner(self, owner: SessionOwner) -> None:

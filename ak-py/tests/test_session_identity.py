@@ -109,22 +109,24 @@ class TestSessionPublication:
         session = Session("s1")
         principal = _principal()
         tool_filter = ToolFilter(level=AccessLevel.WRITE, allowed=["search"])
-        session._publish_run(principal, tool_filter)
+        session._publish_run(principal, tool_filter, "req-1")
         assert session.get_principal() == principal
         assert session.get_tool_filter() == tool_filter
+        assert session.get_request_id() == "req-1"
         session._unpublish_run()
         assert session.get_principal() is None
         assert session.get_tool_filter() is None
+        assert session.get_request_id() is None
 
     def test_publishing_without_a_filter_clears_a_stale_one(self):
         session = Session("s1")
-        session._publish_run(_principal(), ToolFilter(level=AccessLevel.READ, allowed=[]))
-        session._publish_run(_principal(), None)
+        session._publish_run(_principal(), ToolFilter(level=AccessLevel.READ, allowed=[]), "req-1")
+        session._publish_run(_principal(), None, "req-1")
         assert session.get_tool_filter() is None
 
     def test_the_principal_lives_in_the_volatile_cache_only(self):
         session = Session("s1")
-        session._publish_run(_principal(), None)
+        session._publish_run(_principal(), None, "req-1")
         assert session.get_volatile_cache().get("ak.principal") == _principal()
         assert session.get_non_volatile_cache().get("ak.principal") is None
         assert "ak.principal" not in dict(session.get_all(volatile=False))
@@ -133,7 +135,7 @@ class TestSessionPublication:
         """A tool that resets the conversation mid-run must not strip the run of its identity: the
         publication is run state, cleared by Runtime's finally, not conversation state."""
         session = Session("s1")
-        session._publish_run(_principal(), ToolFilter(level=AccessLevel.WRITE, allowed=["search"]))
+        session._publish_run(_principal(), ToolFilter(level=AccessLevel.WRITE, allowed=["search"]), "req-1")
         session.get_volatile_cache().set("app-key", 1)
         session.set("openai", {"messages": []})
 
@@ -146,13 +148,16 @@ class TestSessionPublication:
 
     def test_an_application_cannot_forge_or_remove_the_principal(self):
         session = Session("s1")
-        session._publish_run(_principal(), None)
+        session._publish_run(_principal(), None, "req-1")
         with pytest.raises(ValueError, match="reserved for Agent Kernel"):
             session.get_volatile_cache().set("ak.principal", _principal(subject="mallory"))
         with pytest.raises(ValueError, match="reserved for Agent Kernel"):
             session.get_volatile_cache().delete("ak.principal")
+        with pytest.raises(ValueError, match="reserved for Agent Kernel"):
+            session.get_volatile_cache().set("ak.request_id", "forged")
         session.get_volatile_cache().clear()
         assert session.get_principal() == _principal()
+        assert session.get_request_id() == "req-1"
 
 
 class TestSessionOwner:
@@ -202,12 +207,12 @@ class TestToolContextIdentity:
         assert context.access_level is None
 
     def test_reads_the_published_run(self, session, context):
-        session._publish_run(_principal(), ToolFilter(level=AccessLevel.WRITE, allowed=[]))
+        session._publish_run(_principal(), ToolFilter(level=AccessLevel.WRITE, allowed=[]), "req-1")
         assert context.principal == _principal()
         assert context.access_level is AccessLevel.WRITE
 
     def test_access_level_is_none_without_a_filter(self, session, context):
-        session._publish_run(_principal(), None)
+        session._publish_run(_principal(), None, "req-1")
         assert context.principal == _principal()
         assert context.access_level is None
 
@@ -218,7 +223,7 @@ class TestPausedRunIdentity:
 
     def test_a_pause_records_who_paused(self):
         session = Session("s1")
-        session._publish_run(_principal(), None)
+        session._publish_run(_principal(), None, "req-1")
         record = self._pause(session)
         assert (record.subject, record.provider, record.namespace) == ("alice", "oidc", "https://issuer.example")
         stored = PausedRunState.get(session, record.id)
@@ -226,7 +231,7 @@ class TestPausedRunIdentity:
 
     def test_an_anonymous_run_records_no_subject(self):
         session = Session("s1")
-        session._publish_run(Principal.anonymous(), None)
+        session._publish_run(Principal.anonymous(), None, "req-1")
         record = self._pause(session)
         assert (record.subject, record.provider, record.namespace) == (None, None, None)
 

@@ -573,7 +573,7 @@ async def test_principal_resolver_tolerates_no_agent():
 def _run_session(principal: Principal) -> Session:
     """A session mid-run, carrying the principal Runtime publishes for the run's duration."""
     session = Session("s1")
-    session._publish_run(principal, None)
+    session._publish_run(principal, None, "req-1")
     return session
 
 
@@ -661,7 +661,7 @@ async def test_an_agent_mode_profile_runs_an_authenticated_caller_as_the_agent(m
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
     mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
-    session._publish_run(ALICE, None)
+    session._publish_run(ALICE, None, "req-1")
     async with session:
         await mgr.execute(code="print(1)")
 
@@ -677,7 +677,7 @@ async def test_a_user_mode_profile_runs_an_authenticated_caller_as_the_user(monk
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
     mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
-    session._publish_run(ALICE, None)
+    session._publish_run(ALICE, None, "req-1")
     async with session:
         await mgr.execute(code="print(1)")
 

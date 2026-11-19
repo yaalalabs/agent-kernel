@@ -90,7 +90,10 @@ class RealtimeConnection:
             return
         self.principal = principal
         self._principal_published = True
-        self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal)
+        # shortcut: the request id is republished only with a changed principal, so later inputs on the same
+        # connection keep the earlier id; republish per input if realtime usage needs per-input attribution.
+        request_id = self.request_id or uuid.uuid4().hex
+        self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal, request_id)
 
     def update_delivery_context(self, request_id: str | None, user_id: str | None, integration: str | None, reply_context: dict) -> None:
         """Called before pushing audio to ensure callbacks route output to the right place."""

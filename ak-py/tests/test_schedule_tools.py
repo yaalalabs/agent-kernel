@@ -114,7 +114,7 @@ def disabled(monkeypatch):
 def acting_session():
     """A current session carrying a principal, the way Runtime publishes it during a run."""
     session = Session("s1")
-    session._publish_run(Principal(subject="u1", provider="static", namespace="static"), None)
+    session._publish_run(Principal(subject="u1", provider="static", namespace="static"), None, "req-1")
     token = Session.current_session.set(session)
     yield session
     Session.current_session.reset(token)
@@ -322,7 +322,7 @@ class TestActingUser:
     async def test_the_stored_owner_is_the_user_without_the_acting_agent(self, manager, acting_session):
         """Runtime publishes the principal with the agent as actor; the task keeps the user alone."""
         acting = _principal("u1").with_actor(Principal(kind="agent", subject="planner", provider="agentkernel")).with_credential_ref("cred-1")
-        acting_session._publish_run(acting, None)
+        acting_session._publish_run(acting, None, "req-1")
 
         result = json.loads(await create_schedule("send the weekly report", cron="0 9 * * 1"))
 
