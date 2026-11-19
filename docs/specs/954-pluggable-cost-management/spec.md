@@ -102,6 +102,12 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     calls (`gen_ai_provider_name IS NOT NULL`), and `unpriced` is `cost IS NULL`, matching `SpendTotal.from_rows`. The
     probe requires migrations 1 and 2. All four header ids go through `gateway_user_id`. A `sqlite:` / `sqlite://`
     URL prefix is accepted. `cost-agentgateway` repeats the `cost` requirements (§5.2, Config changes).
+27. **Langfuse reads follow the vendor, not the first sketch.** The route takes a `filter` JSON array
+    (`fromStartTime`/`toStartTime`, not `fromTimestamp`), returns observations newest first, compares times at
+    millisecond precision, and may return an empty page with a cursor. Reads filter `type = GENERATION`, widen bounds
+    to milliseconds and filter exactly, and sort on the client. The metrics API has no cached-input measure, so
+    `total_spend` sums observation rows. Header values go through `gateway_user_id`, and only the 1 KiB per-value
+    limit is checked, since four values cannot reach 8 KiB (§5.3).
 
 ## Design
 
@@ -687,8 +693,10 @@ depends on (moved from design.md).
 - `langfuse-user-id`, `langfuse-session-id` and `langfuse-tags: ak-agent:<agent_id>`.
 - `langfuse-metadata: request_id:<id>,agent_id:<id>`: comma-separated `key:value` pairs, not JSON. Commas and colons
   in values are replaced by `_`.
-- Before returning, it checks every value ≤ 1024 bytes and the total ≤ 8192 bytes. Over either limit raises
-  `ValueError("langfuse header limits exceeded: ...")`, rather than send attribution Langfuse would drop.
+- Every value goes through `gateway_user_id`. Before returning, it checks every value ≤ 1024 bytes; over the limit
+  raises `ValueError("langfuse header limits exceeded: [<header>]")` (names, never values), rather than send
+  attribution Langfuse would drop. Langfuse's 8 KiB total cannot be reached by four 1 KiB values, so it is not
+  checked (deviation 27).
 
 **`model_base_url(model)`**
 
@@ -697,23 +705,27 @@ depends on (moved from design.md).
 - `GatewayLiteLLM` sends to that base with `custom_llm_provider` set to match. Langfuse does not translate between
   formats.
 
-**Usage reads** use HTTP Basic with `admin_key` formatted `<public_key>:<secret_key>`.
+**Usage reads** use HTTP Basic with `admin_key` formatted `<public_key>:<secret_key>` (resolved per call; a missing
+key or one without `:` is an `AKConfigError`). Shapes are taken from the vendor SDK (`langfuse.api.observations`,
+4.15.1) and the server query (`packages/shared/src/server/repositories/events.ts`), deviation 27:
 
-- `fetch_usage`: `GET /api/public/v2/observations`, filtered by `userId` and `sessionId` with `fromTimestamp` and
-  `toTimestamp`, and followed by cursor.
-- `total_spend`: `GET /api/public/v2/metrics` on the observations view, filtered on `userId = <user>`. It never uses
-  top-N user grouping.
-  - Dimensions: `providedModelName`, and the provider where the view exposes it (otherwise `ModelSpend.provider` is
-    `None`, and static pricing matches the bare model name, §10).
-  - Measures: `sum(totalCost)`, `sum(inputTokens)`, `sum(outputTokens)`, the cached-input token sum and `count`.
-  - A second query on the same dimensions counts the observations with no cost. That count is `unpriced_requests`,
-    so the unpriced warning (§11.2) works on Langfuse.
-  - With only per-model sums, `bill_total` must equal the sum of `bill` over the same rows. So when the metrics
-    response has no cached-token measure, the adapter raises `UsageRetrievalError` rather than report the cached
-    tokens as 0. Reporting 0 would charge cached tokens at the full input rate under static pricing.
-- The request and response field names, including the cached-input measure and the no-cost filter, are
-  **unverified**. They are pinned by the compatibility suite (`test_cost_langfuse_compat.py`), as design.md
-  requires.
+- `fetch_usage`: `GET /api/public/v2/observations` with `fields=core,basic,usage,model,metadata,trace_context`,
+  `limit=1000` and a `filter` JSON array (it takes precedence over the plain query filters): `type = GENERATION`,
+  `startTime >= floor_ms(start)`, `startTime < ceil_ms(end)`, and `userId` / `sessionId` / `providedModelName` when
+  set. The server compares JS `Date`s (milliseconds), so the bounds are widened to whole milliseconds and rows are
+  kept on the client only when `start ≤ startTime < end`.
+  - Pages follow `meta.cursor` until it is absent; an empty page that carries a cursor is not the end.
+  - Observations come newest first (`start_time DESC`); the adapter sorts oldest first.
+  - Mapping: `id` → `row_id`, `startTime` → `timestamp`, `userId` / `sessionId` (inverse of rule 5), agent from the
+    `ak-agent:` tag, request id from `metadata.request_id`, `providedModelName` → `model`, `provider` is `None` (the
+    observation has no provider; static pricing matches the bare model name, §10), `usageDetails.input` / `output`,
+    `totalCost` → `provider_cost` (`None` is unpriced). Cached input tokens are the first of
+    `usageDetails.input_cached_tokens`, `cache_read_input_tokens` or `input_cache_read` (**unverified**: the key
+    depends on the ingestion path; pinned by the compatibility suite until a live check).
+- `total_spend` is `SpendTotal.from_rows(fetch_usage(window))`. The v2 metrics observations view has no
+  cached-input measure, so a metrics aggregate could not satisfy deviation 21; the metrics API is not used.
+- `fetch_usage_since` reads the range from the cursor's millisecond to `until` in full (the order is newest first),
+  sorts it, and returns the oldest 1000 rows. The gateway declares `windowed_spend`, so the ledger never calls it.
 
 `probe` does nothing. Documented: `api_key` must be a service-account key, or `langfuse-user-id` is ignored.
 
@@ -1668,7 +1680,8 @@ carries the gateway name, the path and the status.
 - **Per run, first run of a native-default user in a process**: one or two admin calls (§11.4).
 - **Startup**: about `D + 2` admin round trips held synchronously (`D` distinct budgets). Per-user rows are written on
   the background thread (§11.4, §15).
-- **Per run, fallback on a `windowed_spend` gateway**: one aggregate read (SQL `SUM`, or one metrics query).
+- **Per run, fallback on a `windowed_spend` gateway**: one aggregate read on Agentgateway Postgres (SQL `SUM`); on
+  Agentgateway SQLite and Langfuse, a read of the user's rows for the period (deviations 26, 27).
 - **Per run, fallback on a ledger gateway**: as listed in §12.3.
 - The budget read is bounded at 10 s (§11.3).
 - `GatewayHTTP` holds one `httpx.AsyncClient` per gateway, created lazily on the loop that first uses it. A call
@@ -1704,7 +1717,7 @@ tests/test_shared_drivers.py`. The full suite is `uv run pytest`.
 | `test_cost_config.py` | YAML and `AK_COST__*` parsing; every validator; `ak-system` and empty `users` keys refused; ledger `ttl` default 0; absent block → `AKConfig.cost is None` |
 | `test_cost_gateway_litellm.py` | `LLMGatewayContract` for both `api` modes over `httpx.MockTransport`; header formats (comma in agent name; CR/LF and non-ASCII ids in `x-litellm-customer-member-id` and the member upsert go through `gateway_user_id`); `start_date` / `end_date` sent as `YYYY-MM-DD HH:MM:SS` floored to the second, with client-side bounds; `/spend/logs/v2` paging, `total ≥ 10000` → truncated; row mapping with missing tokens and cost; `sync_budget_definitions` route sequence (`/budget/new` → exists → `/budget/update`, once per distinct budget); `sync_budgets` route sequence (`/customer/new` → exists → `/customer/update`, no budget call), `7d` for weekly; `ak-system` upserted without a budget; `customer_management` refused below 1.111 via `/health/readiness`; `is_budget_refusal` on body, on `response.json()`, on message, never on a bare 429 |
 | `test_cost_gateway_agentgateway.py` | SQLite fixture built from the 1.7.x migrations with rows shaped like the observed v1.7.0 row (session and request id in `attributes_json`, and a row without them); `total_spend` SQL grouping and unpriced count; migration version 3 on SQLite refused; read-only open; Postgres URL without the extra → `ImportError` naming `cost-agentgateway` |
-| `test_cost_langfuse_compat.py` | header names; 1 KiB / 8 KiB limits raise; `langfuse-metadata` format; base URL per provider; v2 observations and metrics request/response shapes (recorded fixtures), including the cached-input measure and the no-cost count; a metrics response without the cached measure → `UsageRetrievalError` |
+| `test_cost_langfuse_compat.py` | `LLMGatewayContract`; header names; 1 KiB limit raises without echoing values; `langfuse-metadata` format; base URL per provider; v2 observations request (parameter names checked against the SDK's request code) and responses validated by the SDK's own `ObservationsV2Response`; newest-first pages sorted; empty page with a cursor; millisecond bounds; `type = GENERATION`; cached-input keys; no-cost count |
 | `test_cost_client.py` | headers per call from context; caller headers merged, AK keys win; `include_usage` on streams; `api_base` / `api_key` set; two concurrent runs (`asyncio.gather`) see their own headers; warning once outside a run; `litellm.headers` never assigned |
 | `test_cost_bindings.py` | one class per framework: built only with a `cost` block, importable from `agentkernel.<fw>`, headers reach the native call from context — including inside `asyncio.to_thread` (CrewAI, smolagents) — and MAF text, tools, streaming through a fake client; `CostRunOptions.wrap` deep-merge per runner, user keys kept, user factory awaited, unsupported runner `TypeError` |
 | `test_cost_claude_env.py` | `env` merge (user keys kept, AK keys win); `ANTHROPIC_CUSTOM_HEADERS` value; missing key → `AKConfigError` |
