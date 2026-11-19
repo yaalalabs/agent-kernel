@@ -1115,29 +1115,39 @@ Configure the REST API server (if using the API module).
 Every agent has a **descriptor** (its id, name, version, description, tags, tools and the surfaces it is served
 on). The agent registry keeps the descriptors, and the catalog route (`GET /api/v1/agents`), A2A cards, MCP agent
 tools and the AG-UI listing are built from them. The `registry` block is optional: without it, descriptors live in
-the process that loads the agents and every agent is on every surface.
+the process that loads the agents. An agent is on every surface unless its descriptor names the surfaces it is
+served on, in code (`Module.describe`) or in this block.
 
 - **Type**
   - **Field**: `registry.type`
   - **Options**: `in_memory`, `redis`, `valkey`, `dynamodb`, or a dotted path to an `AgentRegistry` subclass
   - **Default**: `in_memory`
   - **Description**: Where descriptors are kept. A store-backed type shares them between processes, so a process
-    that only accepts requests can list and serve agents another process hosts. A store type needs its block
+    that only accepts requests can list agents another process hosts and serve them over the queue. It shares what
+    is known about an agent, not the agent: a handler that runs agents in its own process still needs the agent
+    loaded there, and every agent runner on a queue has to host the agents served from it. A store type needs its
+    block
   - **Environment Variable**: `AK_REGISTRY__TYPE`
 
 - **Store blocks**
-  - **Field**: `registry.redis` / `registry.valkey` (`url`, `prefix`, `ttl`), `registry.dynamodb` (`table_name`, `ttl`)
-  - **Default**: prefix `ak:registry:`, table `ak-agent-registry` (partition key `agent_id`, no sort key), `ttl` `0`
-    (descriptors do not expire)
+  - **Field**: `registry.redis` / `registry.valkey` (`url`, `prefix`), `registry.dynamodb` (`table_name`)
+  - **Default**: prefix `ak:registry:`, table `ak-agent-registry` (partition key `agent_id`, no sort key)
+  - **Description**: Descriptors do not expire, and a `ttl` set here is refused at startup: a descriptor is written
+    when its agent loads and never again while the process runs, so an expiry would remove running agents from
+    every listing. After a deployment that renames or removes an agent, delete its record from the store (the key
+    `<prefix>agent:<id>` and the member `<id>` of the set `<prefix>index:all`, or the DynamoDB item)
   - **Environment Variable**: `AK_REGISTRY__REDIS__URL`, `AK_REGISTRY__DYNAMODB__TABLE_NAME`, and so on
 
 - **Per-agent fields**
   - **Field**: `registry.agents.<agent id>` with `description`, `version`, `owner`, `tags`, `visibility`,
     `surfaces`, `identity`
   - **Description**: Catalog fields set for one agent, over what the code declares with
-    `Module.describe(agent, ...)`. `surfaces` lists where the agent is served (`rest`, `a2a`, `mcp`, `agui`); unset
-    means every surface. `description` is the text an A2A card and an MCP tool publish; an agent's instructions
-    are never published. An unknown key under an agent is a startup error
+    `Module.describe(agent, ...)`. `surfaces` lists where the agent is served (`rest`, `a2a`, `mcp`, `agui`); an
+    agent that declares none is on every surface, and `[]` puts it on none. `description` is the text an A2A card
+    and an MCP tool publish; an agent's instructions are never published. `visibility` is recorded and not
+    enforced yet. An unknown key under an agent, or under `registry`, is a startup error. Each process applies its
+    own block to the agents it reads from the registry, so a restriction set where a surface is served holds for
+    agents another process hosts
 
 ```python
 # In code, where the agent is loaded

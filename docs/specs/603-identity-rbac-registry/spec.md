@@ -13,7 +13,7 @@ Evidence is cited against `feature/603-identity-rbac-registry` at `d9d0d18bc` (a
 over the develop merge `287ec7485`; every `.py` cited is identical in both). The change ships as a
 breaking change with no compatibility window (design section 10).
 
-Nine places where detailing refined the design are listed in [Design refinements](#design-refinements)
+Twelve places where detailing refined the design are listed in [Design refinements](#design-refinements)
 at the end; each is a mechanism change inside a settled decision, not a new decision, and each is
 reflected in `design.md`.
 
@@ -577,6 +577,7 @@ class AgentRegistry(ABC):
         # concrete: AgentDescriptorPage.of(self.descriptors(), cursor, limit, tags), the one
         # paging rule: filtered by tags (every tag present), sorted by id, paged with
         # core/util/pagination.py decode_cursor / clamp_limit / paginate / encode_cursor
+    def is_empty(self) -> bool     # concrete: not self.descriptors(); a store answers it without a listing
     def clear(self) -> None
 ```
 
@@ -591,35 +592,57 @@ class AgentRegistry(ABC):
   write of a copy stamped with `updated_at`, then the local entry, so an unreachable store leaves
   the agent unregistered), `deregister`, `get` and `agents`; a backend implements `_put`,
   `_remove`, `descriptor` and `descriptors`, and takes its connection settings as constructor
-  arguments (`RedisAgentRegistry(url, prefix, ttl)`, `DynamoDBAgentRegistry(table_name, ttl)`).
+  arguments (`RedisAgentRegistry(url, prefix)`, `DynamoDBAgentRegistry(table_name)`).
+  `deregister` removes the store record before the local entry, so a delete the store refused
+  can be retried: dropped locally first, `Runtime.deregister` would find no hosted agent on the
+  retry, skip the delete, and leave other processes advertising an agent that is gone.
   The duplicate rule is one helper on the ABC, `AgentRegistry._ensure_free(held, id, agent)`,
   which the in-memory registry uses too: only an agent this process hosts under the id is a
-  duplicate, so two processes hosting the same agent both register and write the same record.
-  The store holds one record per id, and a `deregister` by either process removes it until the
-  other registers again. Redis-like layout `{prefix}agent:{id}` plus `{prefix}index:all` set,
-  re-`sadd`ed on every write and `srem`ed on `deregister` (the
-  `schedule/store/redis_like.py:103-118` shape);
+  duplicate, so two processes hosting the same agent both register and write the same record
+  (design refinement 10). The store holds one record per id, and a `deregister` by either
+  process removes it until the other registers again. Redis-like layout `{prefix}agent:{id}`
+  plus `{prefix}index:all` set (the `schedule/store/redis_like.py:103-118` shape); the document
+  and its index membership are written in one MULTI/EXEC transaction and removed in another
+  (`driver.client.pipeline()`, the `rpush_with_expiry` shape), so an interrupted write leaves
+  no document a peer resolves and never lists, and a registration by another process lands
+  wholly before or wholly after a removal. `is_empty` reads the index set alone.
   DynamoDB one item per agent, partition key `agent_id`, no sort key, denormalized `updated_at`,
-  listing by scan (`schedule/store/dynamodb.py:1-18`). `ttl` default 0: records never expire; a
-  crashed process leaving a record is the documented boundary.
+  listing by scan (`schedule/store/dynamodb.py:1-18`) with `ConsistentRead`, since cards and
+  tools are built from one listing at mount and an agent an eventually consistent scan missed
+  would stay unserved until a restart; `is_empty` is `scan(Limit=1)`.
+  Records never expire, and the registry takes no TTL (design refinement 11): nothing registers
+  a hosted agent again while its process runs, so an expiry would drop running agents from the
+  catalog, A2A, MCP and AG-UI. The store blocks reuse the connection models, which carry a
+  `ttl`; a non-zero value there is an `AKConfigError` at load (section 9). Nothing deregisters
+  on a normal exit either (`Module.unload` is the one caller), so the record of an agent a
+  later deployment renamed or removed, like the one a crashed process left, stays until it is
+  deleted from the store by its id. That is the documented boundary.
 - `AgentRegistryFactory.build() -> AgentRegistry` (`core/registry.py`), one registry per call, so
   each `Runtime` has its own: `in_memory` when the `registry` block is absent or
   `registry.type == "in_memory"`; `redis`, `valkey`, `dynamodb`
   under `require_extra` with lazy imports from `identity/registry/`; dotted path (built with no
   arguments); else `AKConfigError`. A store type whose connection block is absent is an
   `AKConfigError` naming `registry.<type>`, the schedule store's rule. The config overlay
-  `registry.agents.<id>` is applied inside `register` (section 6, descriptor sources), so every
-  backend sees the final descriptor: when any entry sets a field, `build()` returns the backend
-  wrapped in `_OverlaidAgentRegistry` (`core/registry.py`), whose `register` applies the entry
-  and delegates and whose other methods are the backend's own, so a bring-your-own registry gets
-  the overlay without implementing it. With no field set anywhere the backend itself is returned.
+  `registry.agents.<id>` is applied inside `register` and again on every read (section 6,
+  descriptor sources): when any entry sets a field, `build()` returns the backend wrapped in
+  `_OverlaidAgentRegistry` (`core/registry.py`), whose `register`, `descriptor` and
+  `descriptors` apply the entry (`list` pages over the overlaid descriptors, so a tag the
+  overlay sets filters) and whose other methods are the backend's own, so a bring-your-own
+  registry gets the overlay without implementing it. With no field set anywhere the backend
+  itself is returned. A registry handed to `Runtime(sessions, registry=...)` is used as given,
+  without the overlay.
 - `AgentRegistryContract` (`identity/registry/testing.py`): duplicate id, upsert on re-register,
   `descriptors()` after `deregister`, `list` paging and tag filtering, a descriptor written by one
   instance read by another over the same fake driver. A subclass overrides the `registry`
   fixture, and a registry over a shared store also the `peer` fixture (a second registry over the
-  same store); the three shared-store cases (read by another instance, two instances hosting one
-  id, a deregistration seen by the other) are skipped without one. Descriptors are compared with
-  `updated_at` left out, since a store stamps it.
+  same store); the shared-store cases (read by another instance, two instances hosting one id, a
+  deregistration seen by the other, `clear` leaving the agents only the other instance hosts, a
+  record removed by one host returning when the other registers again) are skipped without one.
+  The suite also round-trips a whole descriptor (`surfaces=[]`, an `identity`, a skill), because
+  a backend that drops an empty list turns "on no surface" into "on every surface", and pins
+  `is_empty`. A duplicate is asserted on the exception type alone, not its message. Descriptors
+  are compared with `updated_at` left out, since a store stamps it, and the expectation is taken
+  before the registry sees the descriptor.
 
 **Descriptor sources, later wins per field:**
 
@@ -630,7 +653,14 @@ class AgentRegistry(ABC):
    tool (`id = name = tool name`, `description = self._tool_descriptions().get(name, "")`),
    `runner = runner.name`, `supports_streaming = runner.supports_streaming`, `description = ""`.
    `Agent.get_tool_names() -> list[str]` is a new method each adapter implements (section 9 lists
-   the source per adapter); the base implementation returns `[]`.
+   the source per adapter); the base implementation returns `[]`. It reports the tools
+   **declared** on the native agent when it is loaded, under the names the model calls them by,
+   with no I/O: tools that only exist at run time (a remote MCP server's, a toolset resolved per
+   run, a handoff target's, those of a sub-workflow or sub-graph the adapter does not walk) are
+   not reported, and each adapter's docstring names what it leaves out (phase E, which gates on
+   these names, revisits the per-adapter gaps listed in the plan).
+   `_build_descriptor` also warns, once per class, about an adapter that still defines the
+   removed `get_a2a_card`: it loads, and its hand-built card is otherwise silently replaced.
    `Agent._tool_descriptions() -> dict[str, str]` (tool name to the native tool's description;
    base `{}`) is implemented beside it from the same native tools. It is the path a skill's
    description takes now that no adapter builds a card (A2A card, below).
@@ -639,10 +669,14 @@ class AgentRegistry(ABC):
    `ValueError` for an unloaded agent, for a field `AgentDescriptor` does not declare, for `id`
    (the registry key, and the name every other layer addresses the agent by), for a value the
    model refuses (the merged descriptor is validated, not `model_copy`-ed, because a shared
-   registry hands it to other processes) and for an agent the current runtime does not host;
-   nothing is stored on any of them. It then replaces the agent's descriptor and registers the
-   agent again (`Runtime.register`), which is how the registry, already holding the descriptor
-   from `load`, receives the described one.
+   registry hands it to other processes), for the fields the runner and the registry report
+   (`Module._REPORTED_DESCRIPTOR_FIELDS`: `runner`, `supports_streaming`, `updated_at`; a
+   descriptor claiming its runner streams would open an AG-UI stream that can only fail) and for
+   an agent the current runtime does not host; nothing is stored on any of them. It then replaces
+   the agent's descriptor and registers the agent again (`Runtime.register`), which is how the
+   registry, already holding the descriptor from `load`, receives the described one. When that
+   registration raises (a store that cannot be reached), the agent gets back the descriptor it
+   had, so it never acts as described (an `identity`, say) while every reader sees the old record.
 3. The `registry.agents.<id>` overlay, applied by `AgentRegistryFactory`'s returned registry in
    `register` (`_OverlaidAgentRegistry`, constructed with each entry's set fields: a field left
    out or null in the block is not an override), which also sets the resulting descriptor on the
@@ -652,6 +686,20 @@ class AgentRegistry(ABC):
    `updated_at` aside): Runtime's actor subject (section 3) sees an overlaid `identity`, and
    nothing reads a descriptor the overlay has not reached.
 
+   The overlay is applied again on every read (`descriptor`, `descriptors`, and so `list`), which
+   changes nothing for an agent registered here and is what makes the configuration of a process
+   that only serves agents count (design refinement 12). The removed `a2a.agents`, `mcp.agents`
+   and `agui.agents` lists were read by the process that mounts the surface; a process over a
+   shared store never registers the agents it lists, so applied at `register` alone its own
+   `registry.agents.<id>.surfaces` would restrict nothing and say so nowhere. Each process
+   therefore serves an agent as its own configuration describes it, and two processes configured
+   differently publish different views of one record.
+
+   An overlay key matches the agent with that id, else, when no key matches exactly, the one whose
+   id differs only in case: an environment variable arrives lowercased
+   (`AK_REGISTRY__AGENTS__Billing__SURFACES` is the key `billing`), and a restriction that reads
+   as set must not be dropped for that.
+
 The registry's descriptor is the one record of an agent. The catalog, AG-UI's `/agents`, the A2A
 card and MCP's agent tools (section 8.6) are built from `registry.descriptors()`, never from the
 adapter, the native agent or `get_description()`.
@@ -660,18 +708,31 @@ adapter, the native agent or `get_description()`.
 
 ```python
 @staticmethod
-def ensure_agent_available(name: Optional[str], principal: Optional[Principal] = None) -> None
+def ensure_agent_available(name: Optional[str], principal: Optional[Principal] = None, *, hosted: bool = False) -> None
 ```
 
 `registry = Runtime.current().registry`; a named agent must have `registry.descriptor(name)`, and
-an unnamed request needs at least one descriptor. The agents the process hosts answer first
-(`registry.get(name)`, `registry.agents()`), so the store is read only for an agent that is not
-hosted here and a hosted agent costs no round trip per request.
+an unnamed request needs the registry not to be empty (`registry.is_empty()`, never a listing).
+The agents the process hosts answer first (`registry.get(name)`, `registry.agents()`), so the
+store is read only for an agent that is not hosted here and a hosted agent costs no round trip
+per request. (`principal` arrives with the gate in phase D; phase C ships `name` and `hosted`.)
+
+`hosted=True` is what a surface that runs the agent in its own process passes: only the agents
+hosted here count and the store is never read. The direct thread handler uses it
+(`AgentThreadRequestHandler._check_agent_available`): an agent a shared registry knows from
+another process would otherwise pass, have its user message recorded, and then fail to be
+selected, where before the registry the request failed before any thread write. The queue-mode
+handlers and the schedule manager keep the registry-wide form, since another process runs the
+agent. For an agent hosted elsewhere the check is a blocking store read, so an `async` caller
+over a shared registry runs it off the event loop (`ThreadRequestHandler._record_user_message`
+through `asyncio.to_thread`; AG-UI's resolution likewise, section 8.5).
 
 The two failures are different errors (settled 2026-11-18, design refinement 9):
 
 - A request naming an agent the registry does not know raises `LookupError(f"Agent '{name}' not
-  found")`, which every surface answers with 404. It is the error, the text and the status of an
+  found")`, which every HTTP route answers with 404 (MCP and the schedule tools keep their own
+  error forms, below, the same for an unknown agent as for a hidden one). It is the error, the
+  text and the status of an
   agent the caller may not see (section 7), so a hidden agent cannot be told apart from one that
   does not exist. Left as the 400 it was beside the hidden agent's 404, the status alone would
   have answered whether a name exists. AG-UI already answered 404 with this text.
@@ -703,12 +764,21 @@ the stored list filtered by `check_tool` through the authorizer (the io-handler 
 `skills` are narrowed with it: a skill whose `id` is one of the descriptor's tool names stays only
 when that tool does, and a skill that names no tool (declared through `Module.describe`) stays;
 otherwise a denied tool's name would still be listed, since the skills default to one per tool.
-With no gate the full descriptor list is returned. The narrowing (surface, and later the caller)
+With no gate nothing is filtered by caller; the narrowing to the `rest` surface still applies.
+The narrowing (surface, and later the caller)
 happens before the page is cut, by handing the narrowed list to `AgentDescriptorPage.of(
 descriptors, cursor, limit, tags)`, so a page is never short because of an agent it may not show;
 `tags` is a repeated query parameter and keeps the agents carrying every one. `limit` is clamped
-by `clamp_limit(limit, DEFAULT_PAGE_SIZE)`; a malformed cursor is 400. The queue-mode
-`RequestHandler` mounts the same `list_agents` (`pipeline/request_handler.py:342, 375`).
+by `clamp_limit(limit, DEFAULT_PAGE_SIZE)`; a malformed cursor is 400, decided before the
+registry is read, so the caller's mistake is not answered with the store's failure. The
+queue-mode `RequestHandler` mounts the same `list_agents` (`pipeline/request_handler.py:342,
+375`). The cursor is the shared offset cursor, so a listing is cut from the registry as it is
+when each request arrives: an agent added or removed between two requests can repeat or skip an
+entry on the next page.
+
+`rest` in `surfaces` governs this listing. A chat request that names an agent kept off `rest`
+is still served: the three removed lists had no REST counterpart, and nothing in the design
+makes `surfaces` an access check on the chat route (open question recorded in the plan).
 
 An entry is `AgentDescriptor.catalog_entry()`, the descriptor without its `identity`, and the
 response is `AgentDescriptorPage.catalog()` (added 2026-11-18, before phase C merged). `identity`
@@ -721,7 +791,9 @@ listed to every caller, whatever its `visibility`.
 
 **A2A card** (`core/builder.py:40-74`): `A2ACardBuilder.build(descriptor: AgentDescriptor) ->
 AgentCard` replaces `build(name, description, skills)`: `name = descriptor.name`, `description =
-descriptor.description`, `version = descriptor.version` (not `library_version`, line 69),
+descriptor.description` (or the neutral `UNDESCRIBED_AGENT_TEXT`, "The '<id>' agent.", when it is
+empty; a skill with no description gets `UNDESCRIBED_SKILL_TEXT` the same way), `version =
+descriptor.version` (not `library_version`, line 69),
 `supported_interfaces` as today with the URL built from `descriptor.id` (the route segment, and
 the name the A2UI labelling check takes), `skills` from `descriptor.skills` (tags defaulted to
 `[descriptor.id]`, the agent-name default of lines 90-101), and when
@@ -741,25 +813,40 @@ Cards are built by the A2A surface from the registry, not by the adapters (desig
   over a store-backed registry builds cards for agents it does not host, which is what lets the
   io process stop loading every agent's code to serve them (`examples/k8s/openai-queue-mode/
   app_io_handler.py:5-8`). `IOHandler._warn_if_no_agents` (`pipeline/io_handler.py:264-284`)
-  accordingly asks the registry for descriptors, where it asked the runtime for hosted agents,
+  accordingly asks the registry (`is_empty()`), where it asked the runtime for hosted agents,
   and warns only when the registry knows none; its advice names both fixes, loading the agent
-  modules here or sharing the registry the agent runner registers into.
+  modules here or sharing the registry the agent runner registers into. It is a diagnostic and
+  never ends the process: when the registry's store cannot be read it says so and returns, and
+  the mount that follows raises the store's own error (Error handling, below).
 - `Agent.get_a2a_card` is removed: the abstract method on `Agent` (`core/base.py`) and its eight
   implementations, whose one caller was `A2A._build` (line 155). ADK agents get a card the same
   way as the rest, with no adapter code, so the `TODO` (`framework/adk/adk.py:1197-1202`) and the
   "has no A2A card" branch (`api/a2a/a2a.py:156-158`) go. An adapter outside this repository that
-  still defines the method keeps an unused one.
+  still defines the method keeps an unused one, and `Agent._build_descriptor` logs one warning
+  per such class saying nothing calls it and where the card comes from now.
 - The description is the declared catalog text and nothing else. Six adapters put the agent's
   instructions or backstory on the card (`openai.py:905`, `crewai.py:523`, `maf.py:798`,
-  `smolagents.py:319`, `claude.py:1062`, `pydanticai.py:886`); that source is gone, so a card's
-  description is empty until `Module.describe` or the overlay sets one. A2A 1.0 requires the
-  field, so `_build` logs one warning per agent it serves with an empty description, naming
-  `Module.describe` and `registry.agents.<id>.description`.
+  `smolagents.py:319`, `claude.py:1062`, `pydanticai.py:886`); that source is gone, so the
+  descriptor's description is empty until `Module.describe` or the overlay sets one. A2A 1.0
+  requires the field on a card and on each skill, and the pinned SDK leaves an empty string out
+  of the served JSON altogether (protobuf drops default-valued fields), so the builder puts a
+  neutral sentence naming the agent, or the skill, on the card in its place, as MCP does for an
+  agent tool (section 8.6); the catalog entry keeps the empty description, which is the truth.
+  `_build` logs one warning per agent it serves that way, naming `Module.describe` and
+  `registry.agents.<id>.description`. A card with no skill at all (an agent that reports no
+  tool) still serializes without `skills`, as it did before this change.
 - Cards are still built once, when the A2A routes are mounted, because the SDK binds the card
   into `DefaultRequestHandler` and `create_agent_card_routes` (`api/a2a/handler.py:64-78`). An
-  agent whose descriptor reaches a shared registry after a process mounted its routes is served
-  by that process only after it restarts. Stored descriptors do not expire, so this concerns a
-  first deployment and a newly added agent; it is a documented boundary, not solved here.
+  agent whose descriptor is not in the registry when a process mounts its routes is served by
+  that process only after it restarts, whatever the reason it was missing: a first deployment
+  whose IO process started before the runner had registered, a newly added agent, or a record
+  that was deregistered and registered again. Stored descriptors do not expire, so nothing else
+  removes one; it is a documented boundary, not solved here. The same holds for the agents'
+  placement: a request is taken by whichever runner reads it from the input queue, with no
+  routing by agent, so every runner on a queue has to host every agent the registry lists for
+  the IO process, and on the single-process `in_memory` transport an agent the registry only
+  knows from another process is listed and cannot be run. Both are documented deployment rules
+  (queue mode guide), as they were when the IO process had to load the agents itself.
 - When the registry knows agents and none is exposed on `a2a`, `_build` logs one warning naming
   `registry.agents.<id>.surfaces` and `a2a.enabled` (added 2026-11-18): the surface is otherwise
   mounted empty and silent, an empty catalog with every agent route a 404. A registry that knows
@@ -1061,11 +1148,17 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   the descriptor's `supports_streaming`; ids only, in id order. Without a gate the source is
   `registry.descriptors()`, so agents another process hosts are listed.
 - `_resolve_agent` (103-127): 404 for unknown or hidden, 403 for a visible agent the principal
-  holds no level on (`PermissionError` from `ensure_agent_available`), 400 for a non-streaming
+  holds no level on (`PermissionError` from the gate, phase D), 400 for a non-streaming
   runner, unchanged order. It returns the agent's `AgentDescriptor`, not the `Agent`: everything
   it checks (existence, surfaces, `supports_streaming`, the `runner` name its 400 cites) is on
   the descriptor, so the queue-mode handler resolves and enqueues, by `descriptor.id`, an agent
-  its process does not host. The direct handler still runs agents in process: for an agent the
+  its process does not host. The descriptor is read once: the hosted agent's own
+  (`registry.get(name).descriptor`, the record it registered, overlay included) and otherwise
+  `registry.descriptor(name)`, which is a blocking store read on a shared registry, so
+  `_resolve_run_inputs` runs the resolution through `asyncio.to_thread`. It does not call
+  `ensure_agent_available`, whose existence check the one read subsumes; the gate, when it
+  lands, is asked here with `AccessGate.authorize_agent` rather than through a second registry
+  read. The direct handler still runs agents in process: for an agent the
   registry knows and this process does not host, `AgentService.select` finds nothing and the
   existing "could not be selected" 500 answers, with a log line naming both remedies.
 - `_resolve_run_inputs` (178-201) returns the `Principal`; `_events` passes
@@ -1442,15 +1535,17 @@ class _AuthorizationConfig(BaseModel):
     type: str = Field(default="static", description="static | casbin | openfga | cedar | authzen | dotted path to an Authorizer")
     grants: list[_GrantConfig] = []; tools: list[_ToolPolicyConfig] = []
 
-class _RegistryRedisConfig(_RedisConfig): prefix: str = "ak:registry:"; ttl: int = 0
-class _RegistryValkeyConfig(_ValkeyConfig): prefix: str = "ak:registry:"; ttl: int = 0
-class _RegistryDynamoDBConfig(_DynamoDBConfig): table_name: str = "ak-agent-registry"; ttl: int = 0
+class _RegistryStoreConfig(BaseModel):        # mixin: STORE names the block; a field validator on `ttl`
+    STORE: ClassVar[str]                      # raises AKConfigError for any value but 0
+class _RegistryRedisConfig(_RegistryStoreConfig, _RedisConfig): prefix: str = "ak:registry:"; ttl: int = 0
+class _RegistryValkeyConfig(_RegistryStoreConfig, _ValkeyConfig): prefix: str = "ak:registry:"; ttl: int = 0
+class _RegistryDynamoDBConfig(_RegistryStoreConfig, _DynamoDBConfig): table_name: str = "ak-agent-registry"; ttl: int = 0
 class _RegistryAgentOverlayConfig(BaseModel):
     version: Optional[str] = None; description: Optional[str] = None; owner: Optional[str] = None
     tags: Optional[list[str]] = None; visibility: Optional[Literal["private", "internal", "public"]] = None
     surfaces: Optional[list[Literal["rest", "a2a", "mcp", "agui"]]] = None
     identity: Optional[AgentIdentitySpec] = None
-class _RegistryConfig(BaseModel):
+class _RegistryConfig(BaseModel):                       # extra="forbid"
     type: str = "in_memory"; redis: Optional[_RegistryRedisConfig] = None
     valkey: Optional[_RegistryValkeyConfig] = None; dynamodb: Optional[_RegistryDynamoDBConfig] = None
     agents: dict[str, _RegistryAgentOverlayConfig] = Field(default_factory=dict)
@@ -1476,7 +1571,15 @@ class AKConfig(...):
 - `_RegistryAgentOverlayConfig` refuses unknown keys (`extra="forbid"`), unlike the other
   blocks: a misspelt `surfaces` or `visibility` silently ignored would leave an agent more
   exposed than the configuration reads. Its `surfaces` and `visibility` take the descriptor's own
-  literals, so a value outside them fails at load.
+  literals, so a value outside them fails at load. `_RegistryConfig` refuses unknown keys for the
+  same reason one level up: `agent:` written for `agents:` would drop every restriction beneath
+  it. A bring-your-own registry is built with no arguments, so nothing reads a key of its own
+  here.
+- The registry's store blocks refuse a `ttl` (`_RegistryStoreConfig`, `AKConfigError` naming
+  `registry.<store>.ttl`). They reuse the connection models, which carry the field, and the
+  registry cannot honour it: nothing registers a hosted agent again, so an expiry would remove
+  running agents from every listing (section 6; design refinement 11). The field stays, at 0,
+  because a defaults-only subclass cannot drop it.
 - Every new field carries a `description`; defaults keep every existing YAML and `AK_*` variable
   valid except the three removed lists, which fail with the message above by design.
 - Field readers: see design section 9's table; this spec adds `identity.provider.cognito|entra|
@@ -1566,10 +1669,13 @@ Each is intentional; the justification is design section 10 unless stated.
     config overlay and a process over a store-backed registry serves A2A for agents it does not
     host. An agent that registers after a process mounted its routes is served there once that
     process restarts (section 6, A2A card).
-31. An A2A card's description is the declared `descriptor.description`, empty until
-    `Module.describe` or `registry.agents.<id>.description` sets one, where the OpenAI, CrewAI,
+31. An A2A card's description is the declared `descriptor.description`, where the OpenAI, CrewAI,
     MAF, smolagents, Pydantic AI and Claude cards carried the agent's instructions or backstory.
-    An agent served over A2A with no description logs a warning at mount.
+    Until `Module.describe` or `registry.agents.<id>.description` sets one the card carries a
+    neutral sentence naming the agent ("The '<id>' agent."), since A2A requires the field and an
+    empty one is dropped from the served JSON, and the agent logs a warning at mount. A skill
+    with no description gets a sentence of the same kind. A card's `version` is the descriptor's
+    (`0.0.0` until declared), where it was the Agent Kernel library version.
 32. In the catalog and on A2A cards, a skill backed by a tool the caller's level does not allow
     is left out with the tool; the A2A catalog and card responses carry `Vary: Authorization`
     (sections 6 and 8.7).
@@ -1583,6 +1689,17 @@ Each is intentional; the justification is design section 10 unless stated.
     a hidden agent gets, so the two cannot be told apart (AG-UI already answered so). The
     schedule tools return that text in their `error`. A request naming no agent while none
     exists stays 400 (section 6, Availability).
+35. `Agent.get_description()` is no longer abstract and nothing in Agent Kernel reads it: the
+    base returns `""`, the eight adapters keep their implementations, and a bring-your-own
+    adapter need not write one. An adapter class that still defines `get_a2a_card` logs one
+    warning when its first descriptor is built.
+36. A direct thread chat (`AgentThreadRequestHandler`) naming an agent the registry knows only
+    from another process is 400 `No agent available` before any thread write, as it was before
+    the registry existed, where the registry-wide check alone let the user message be recorded
+    ahead of a run that could not select the agent (section 6, Availability).
+37. Connecting to Redis or Valkey logs the scheme, host, port and path of the connection URL at
+    DEBUG, never its user, password or query, where it logged the URL whole
+    (`core/util/driver/redis_like.py`; every store on the shared driver, not the registry alone).
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (one optional
 `last_error` on schedule occurrences and `principal` on tasks aside); the queue envelope
@@ -1615,12 +1732,16 @@ for the two caches and the framework context; public exports other than those na
 | Duplicate agent id | `AgentRegistry.register` | `AgentRegistrationError` |
 | `registry.type` unknown, or a store type without its block | `AgentRegistryFactory.build` | `AKConfigError` at the first `Runtime` |
 | Unknown key or out-of-range value under `registry.agents.<id>` | the config model | a validation error at load |
-| Agent served over A2A with no description | `A2A._build` | one warning per agent at mount; the card is served with an empty description |
+| Agent served over A2A with no description | `A2A._build` | one warning per agent at mount; the card carries the neutral `UNDESCRIBED_AGENT_TEXT` |
 | Agent exposed as an MCP tool with no description | `MCP._build` | one warning per agent at build; the tool carries the neutral `UNDESCRIBED_TOOL_TEXT` |
 | A2A, or MCP agent tools, enabled while no known agent is exposed on the surface | `A2A._build`, `MCP._build` | one warning at build naming `registry.agents.<id>.surfaces`; the surface serves nothing |
 | Policy naming an unknown tool on a hosted agent; LangGraph/smolagents ungated tools | `AccessGate.validate_configuration` | `AKConfigError` at `Module.load` / `get_router()` |
 | Removed config lists present | `_A2AConfig`/`_MCPConfig`/`_AGUIConfig` validators | `AKConfigError` naming `registry.agents.<id>.surfaces` |
-| Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; catalog routes 500 |
+| Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; `deregister` raises and keeps the agent hosted, so a retry removes the record; at mount, `A2A._build`, `MCP._build` and the `agui.default_agent` check raise and the process does not start (cards and tools built from an unread registry would stay empty until a restart), while `IOHandler._warn_if_no_agents` only logs that it could not check; per request, the catalog route, `ensure_agent_available` for an agent hosted elsewhere and AG-UI's resolution raise, which the surface answers 500 |
+| `ttl` set on a registry store block, or a key the `registry` block does not take | the config model | `AKConfigError` naming `registry.<store>.ttl`; a validation error at load |
+| `Module.describe` naming `runner`, `supports_streaming` or `updated_at` | `Module.describe` | `ValueError`; nothing stored |
+| `Module.describe` whose registration the registry refuses | `Module.describe` | the registry's error; the agent keeps the descriptor it had |
+| Adapter class still defining `get_a2a_card` | `Agent._build_descriptor` | one warning per class; the method is never called |
 
 Concurrency: `IdentityProviderFactory.get()`, `AuthorizerFactory.get()` and `AccessGate.get()`
 are built once behind an `RLock` (the `ScheduleManager.get()` shape,
@@ -1629,7 +1750,13 @@ returns a registry of its own each time (section 6); `JWKSCache` guards its refr
 `threading.Lock` because ECS consumer threads share one provider; the redis-like and DynamoDB
 stores inherit the
 drivers' per-instance connect lock; `InMemoryCredentialStore` and `InMemoryAgentRegistry` use
-plain dicts under the GIL with no check-then-act across awaits. Per-operation cost on hot paths:
+plain dicts under the GIL with no check-then-act across awaits. The redis-like registry writes
+and removes a descriptor and its index membership in one MULTI/EXEC, so two processes
+registering and deregistering one id never leave the two keys disagreeing. Per-operation cost on
+hot paths: for an agent the process hosts, no registry read at all (`ensure_agent_available` and
+AG-UI's resolution answer from the hosted agent); for one hosted elsewhere, one store read per
+request (`descriptor(id)`, or `is_empty()` for a request naming no agent), off the event loop on
+the `async` paths, plus one `AgentDescriptor` validation when the overlay names the agent;
 one `authorize_agent` at the surface and one at the choke point per request (accepted, design
 section 6), one `filter_tools` per run, one cache read per tool call in the adapter gates, one
 store `put` and one `delete` per authenticated request when `identity.credentials` is configured.
@@ -1661,6 +1788,16 @@ New files under `ak-py/tests/`:
   `_tool_descriptions`; the config overlay, on the registry's descriptor and on
   `agent.descriptor` (the run's actor subject follows an overlaid `identity`); descriptors
   readable from a second registry instance over the same fake store (the io-handler case).
+  From the phase C review: the overlay applied on read for an agent the process does not host
+  (a registry over a store another process wrote, `_SharedStoreRegistry`, built through the
+  factory), a listing filtering on an overlaid tag, a key in another case matching and an exact
+  key winning; the store rules (the document and its index membership in one transaction, on
+  write and on removal, with the fake client's pipeline applying its commands together or not
+  at all; no expiry; a store delete that fails keeps the agent hosted and a retry removes the
+  record; DynamoDB scans consistent, with the fake paging on an exclusive start key; `is_empty`
+  reading one item or the index alone); `Module.describe` refusing the reported fields and
+  leaving the descriptor as it was when the registry refuses the registration; one warning per
+  class that still defines `get_a2a_card`.
 - `test_authorizer_static.py`: `AuthorizerContract` subclassed; grant normalization errors; the
   empty-grants warning; tier defaults from system tools.
 - `test_access_gate.py`: visibility rules, 403 versus 404, `tool_filter` composition, `tag:`
@@ -1690,8 +1827,10 @@ New files under `ak-py/tests/`:
   files already do); `ungated_tool_names` for LangGraph (unmarked `StructuredTool` in a
   `ToolNode`) and smolagents (a tool added after wrap).
 - `test_agent_registry.py` also holds `TestAvailability`: a named agent known only through the
-  registry is available, an unknown one is not, an unnamed request needs some descriptor, and a
-  hosted agent is answered without a store read.
+  registry is available, an unknown one is not, an unnamed request needs some descriptor (asked
+  through `is_empty`, never a listing), a hosted agent is answered without a store read, and the
+  `hosted=True` form refuses an agent the registry only knows. `test_thread_integration` pins
+  the direct handler using it: an agent another process hosts is a 400 with no thread written.
 - With the unknown-agent `LookupError` (iteration 19), the cases that pin the unknown named agent
   as a `ValueError` or a 400 follow it: `TestAvailability`'s unknown case,
   `tests/test_chat_service_core.py:108-111, 282-287, 400-447`, `tests/test_schedule_manager.py:260`,
@@ -1702,7 +1841,16 @@ New files under `ak-py/tests/`:
 - `test_api_catalog.py` also pins that an entry never carries the agent's `identity`, and
   `test_agent_registry` that the stored descriptor keeps it. `test_api_a2a_surface` and
   `test_api_mcp` cover the empty-surface warning: once when agents are known and none is exposed,
-  not when one is exposed, and not when the registry knows no agent.
+  not when one is exposed, and not when the registry knows no agent. `test_api_catalog` also
+  covers the page-size bounds at the route (50 by default, 200 at most), the same catalog through
+  the queue pipeline's `RequestHandler`, and a malformed cursor answered 400 while the registry's
+  store is unreachable. `test_api_a2a_surface` requires the `description` key in the served card
+  and catalog of an undescribed agent. `test_agui_handler` and `test_agui_queue_handler` pin the
+  resolution: a hosted agent without a store read, an agent hosted elsewhere with one read off
+  the event loop, and the queued request naming the agent by its id. `test_pipeline_io_handler`
+  pins that the no-agents check asks `is_empty` and survives a registry it cannot read.
+  `test_config` covers the refused `ttl` and the unknown `registry` key, from YAML-shaped input
+  and from the environment; `test_shared_drivers` the connection log without credentials.
 - `test_api_catalog.py`: `GET /api/v1/agents` descriptors, filtering by caller, `tools`
   narrowing and the `skills` narrowed with it (a tool-backed skill goes with its tool, a declared
   skill that names no tool stays), cursor and limit, 400 on a bad cursor, `surfaces` narrowing
@@ -2019,5 +2167,30 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    `KeyError`, so the status told the two apart. One error now covers all three:
    `LookupError(f"Agent '{name}' not found")`, from `ensure_agent_available` for an unknown name
    and from `AccessGate.authorize_agent` for an absent or invisible one, mapped to 404 with that
-   body on every surface. A request naming no agent stays a 400. It lands in iteration 19 with
-   the mapping (section 6, Availability; section 7).
+   body on the HTTP routes (REST chat, the pipeline chat route, threads, schedules, AG-UI). The
+   two surfaces that answer in another form keep it, the same for unknown as for hidden: MCP's
+   `ToolError("Agent not available")` and the schedule tools' `{"error": ...}`. A request naming
+   no agent stays a 400. It lands in iteration 19 with the mapping (section 6, Availability;
+   section 7).
+10. **A duplicate id is refused per process, not across the store** (recorded 2026-11-19, from
+   the phase C review). Design section 4 has `register` raise `AgentRegistrationError` on a
+   duplicate `id`. Replicas of one agent register the same id by design, and a store cannot
+   tell a replica from a different agent another process put under that id, so only an agent
+   this process already hosts under the id is a duplicate (`AgentRegistry._ensure_free`).
+   Across processes the later registration replaces the record, and either process's
+   `deregister` removes it. Stamping the record with an owner to tell the two apart was
+   considered and left out: nothing would act on the difference except to refuse a rolling
+   deployment's second replica (section 6).
+11. **The registry takes no TTL** (decided 2026-11-19, from the phase C review). Design section
+   4 gives the store records a `ttl` defaulting to 0. With any other value a record expired
+   while its agent ran, because nothing registers a hosted agent again, and the agent left the
+   catalog, A2A, MCP and AG-UI; a liveness refresh is what a TTL would need, and none ships.
+   The backends therefore take no `ttl` and a value under a store block is refused at load.
+   Retiring an agent from a shared registry is deleting its record (section 6; section 9).
+12. **The config overlay is applied on read as well as at registration** (decided 2026-11-19,
+   from the phase C review). Applied at `register` alone, `registry.agents.<id>` took effect
+   only in the process that hosts the agent, so a `surfaces` restriction in the configuration
+   of a process that serves agents hosted elsewhere was ignored without a word, where the lists
+   it replaces were read by exactly that process. The overlaid registry applies its entries to
+   every descriptor it returns, and matches a key that differs from an id only in case, which
+   is how an environment variable spells it (section 6, descriptor sources).

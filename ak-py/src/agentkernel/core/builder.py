@@ -41,6 +41,15 @@ class A2ACardBuilder(Builder):
     """
     The name a card gives the one security scheme it declares
     """
+    UNDESCRIBED_AGENT_TEXT = "The '{agent}' agent."
+    """
+    What a card says of an agent with no declared description. A2A requires the field, and an empty one is
+    left out of the served JSON altogether; the agent's instructions are never the fallback
+    """
+    UNDESCRIBED_SKILL_TEXT = "The '{skill}' skill of the '{agent}' agent."
+    """
+    What a card says of a skill with no description, for the same reason
+    """
 
     @classmethod
     def build(cls, descriptor: AgentDescriptor) -> Any:
@@ -48,7 +57,8 @@ class A2ACardBuilder(Builder):
         Build and return the A2A AgentCard of an agent from its descriptor.
 
         The name, description, version and skills are the descriptor's; the interface URL and the A2UI
-        check use its id, the name the agent is addressed by. Modes list only what is actually exchanged:
+        check use its id, the name the agent is addressed by. An agent or a skill with no description
+        carries a neutral sentence naming it, on the card only. Modes list only what is actually exchanged:
         text in, text out, plus the A2UI media type and extension for an agent whose JSON replies the A2UI
         capability labels. With an identity provider configured the card declares the provider's security
         scheme and requires it, on the card and on every skill.
@@ -71,7 +81,7 @@ class A2ACardBuilder(Builder):
             AgentSkill(
                 id=skill.id,
                 name=skill.name,
-                description=skill.description,
+                description=skill.description or cls.UNDESCRIBED_SKILL_TEXT.format(skill=skill.name, agent=descriptor.id),
                 # A2A requires at least one tag; a skill declared without any is tagged with the agent id.
                 tags=skill.tags or [descriptor.id],
                 security_requirements=requirements,
@@ -80,7 +90,7 @@ class A2ACardBuilder(Builder):
         ]
         return AgentCard(
             name=descriptor.name,
-            description=descriptor.description,
+            description=descriptor.description or cls.UNDESCRIBED_AGENT_TEXT.format(agent=descriptor.id),
             supported_interfaces=[
                 AgentInterface(
                     url=f"{AKConfig.get().a2a.url}/{descriptor.id}", protocol_binding=cls.PROTOCOL_BINDING, protocol_version=cls.PROTOCOL_VERSION

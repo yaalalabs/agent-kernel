@@ -762,6 +762,37 @@ class TestRegistryConfig:
         assert (_RegistryValkeyConfig().prefix, _RegistryValkeyConfig().ttl) == ("ak:registry:", 0)
         assert (_RegistryDynamoDBConfig().table_name, _RegistryDynamoDBConfig().ttl) == ("ak-agent-registry", 0)
 
+    @pytest.mark.parametrize(
+        "block, model", [("redis", _RegistryRedisConfig), ("valkey", _RegistryValkeyConfig), ("dynamodb", _RegistryDynamoDBConfig)]
+    )
+    def test_a_store_block_refuses_a_ttl(self, block, model):
+        # Nothing registers a hosted agent again while its process runs, so an expiry would remove running agents
+        # from every listing. Refused at load rather than accepted and left to do that.
+        with pytest.raises(AKConfigError, match=f"registry.{block}.ttl is not supported"):
+            model.model_validate({"ttl": 3600})
+
+        assert model.model_validate({"ttl": 0}).ttl == 0
+
+    def test_a_ttl_set_through_the_environment_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_REGISTRY__TYPE", "redis")
+        monkeypatch.setenv("AK_REGISTRY__REDIS__TTL", "600")
+
+        with pytest.raises(AKConfigError, match="registry.redis.ttl is not supported"):
+            AKConfig.get()
+
+    def test_a_key_the_registry_block_does_not_take_is_rejected(self):
+        # `agent:` for `agents:` would otherwise drop every per-agent restriction beneath it without a word.
+        with pytest.raises(ValueError, match="agent"):
+            _RegistryConfig.model_validate({"agent": {"billing": {"surfaces": []}}})
+
+    def test_a_misspelt_registry_key_in_the_environment_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_REGISTRY__AGENT__BILLING__SURFACES", "[]")
+
+        with pytest.raises(ValueError, match="registry"):
+            AKConfig.get()
+
     def test_an_overlay_entry_sets_nothing_by_default(self):
         assert _RegistryAgentOverlayConfig().model_dump(exclude_none=True) == {}
 

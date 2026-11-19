@@ -1553,24 +1553,47 @@ class _IdentityConfig(BaseModel):
     )
 
 
-class _RegistryRedisConfig(_RedisConfig):
-    # Unlike sessions, descriptors carry no default expiry: one that expired would drop a running
-    # agent from the catalog, and nothing registers it again until its process restarts.
-    ttl: int = Field(default=0, description="Agent descriptor TTL in seconds (0 disables: descriptors do not expire)")
+class _RegistryStoreConfig(BaseModel):
+    """What the registry's store blocks share: a descriptor does not expire.
+
+    The connection models these blocks reuse carry a ``ttl``. The registry cannot honour one: nothing
+    registers a hosted agent again while its process runs, so an expiry would drop running agents from the
+    catalog, A2A, MCP and AG-UI. A value is refused at load rather than accepted and left to do that.
+    """
+
+    STORE: ClassVar[str]
+
+    @field_validator("ttl", check_fields=False)
+    @classmethod
+    def _reject_ttl(cls, value: int) -> int:
+        """Fail a configured TTL with why the registry takes none, instead of expiring the agents it lists."""
+        if value:
+            raise AKConfigError(
+                f"registry.{cls.STORE}.ttl is not supported: agent descriptors do not expire, since nothing registers "
+                "a running agent again. Remove the setting; an agent that was retired is deleted from the store by its id"
+            )
+        return value
+
+
+class _RegistryRedisConfig(_RegistryStoreConfig, _RedisConfig):
+    STORE: ClassVar[str] = "redis"
+    ttl: int = Field(default=0, description="Not supported for the agent registry: descriptors do not expire. Must stay 0")
     prefix: str = Field(default="ak:registry:", description="Key prefix for Redis agent registry storage")
 
 
-class _RegistryValkeyConfig(_ValkeyConfig):
-    ttl: int = Field(default=0, description="Agent descriptor TTL in seconds (0 disables: descriptors do not expire)")
+class _RegistryValkeyConfig(_RegistryStoreConfig, _ValkeyConfig):
+    STORE: ClassVar[str] = "valkey"
+    ttl: int = Field(default=0, description="Not supported for the agent registry: descriptors do not expire. Must stay 0")
     prefix: str = Field(default="ak:registry:", description="Key prefix for Valkey agent registry storage")
 
 
-class _RegistryDynamoDBConfig(_DynamoDBConfig):
+class _RegistryDynamoDBConfig(_RegistryStoreConfig, _DynamoDBConfig):
+    STORE: ClassVar[str] = "dynamodb"
     table_name: str = Field(
         default="ak-agent-registry",
         description="DynamoDB table name for the agent registry. Table should have a partition key named 'agent_id' (S) and no sort key",
     )
-    ttl: int = Field(default=0, description="DynamoDB item TTL in seconds (0 disables: descriptors do not expire)")
+    ttl: int = Field(default=0, description="Not supported for the agent registry: descriptors do not expire. Must stay 0")
 
 
 class _RegistryAgentOverlayConfig(BaseModel):
@@ -1589,7 +1612,11 @@ class _RegistryAgentOverlayConfig(BaseModel):
     tags: list[str] | None = Field(default=None, description="Free-form labels; a grant's 'tag:<name>' selects the agents carrying one")
     visibility: Literal["private", "internal", "public"] | None = Field(default=None, description="Who may see the agent in the catalog")
     surfaces: list[AgentSurface] | None = Field(
-        default=None, description="The protocol surfaces the agent is served on (rest, a2a, mcp, agui); omitted = every surface"
+        default=None,
+        description=(
+            "The protocol surfaces the agent is served on (rest, a2a, mcp, agui); [] is no surface. Omitted keeps what the "
+            "agent's code declared with Module.describe, which is every surface when it declared none"
+        ),
     )
     identity: AgentIdentitySpec | None = Field(default=None, description="How the agent identifies itself when it acts as a principal")
 
@@ -1599,7 +1626,13 @@ class _RegistryConfig(BaseModel):
 
     Absent, or with the default type, descriptors live in the memory of the process that hosts the
     agents. A store-backed type shares them, so a process lists agents another process hosts.
+
+    Unknown keys are refused, as they are under an agent: ``agent:`` written for ``agents:`` would
+    otherwise drop every restriction beneath it without a word. A bring-your-own registry is built with
+    no arguments, so nothing else reads a key of its own here.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     type: str = Field(
         default="in_memory",

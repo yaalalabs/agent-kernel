@@ -413,7 +413,10 @@ and `research/design-options.md` section 4).
 ### 4. Agent entity and registry (`identity/registry/`)
 
 - `AgentRegistry` ABC: `register(descriptor, agent)` (raises `AgentRegistrationError` on a
-  duplicate `id`, replacing the bare `Exception` at `core/runtime.py:213`), `deregister(id)`,
+  duplicate `id`, replacing the bare `Exception` at `core/runtime.py:213`; a duplicate is a
+  different agent this process already hosts under the id, since replicas of one agent register
+  the same id and a shared store cannot tell them from a different agent, so across processes
+  the later registration replaces the record: spec refinement 10), `deregister(id)`,
   `get(id) -> Agent | None` (process-local object), `descriptor(id) -> AgentDescriptor | None`,
   `agents() -> dict[str, Agent]` (the current `Runtime.agents()` contract), `list(cursor, limit,
   tags=None) -> AgentDescriptorPage` using `core/util/pagination.py`.
@@ -429,19 +432,28 @@ and `research/design-options.md` section 4).
   Redis-like layout `{prefix}agent:{id}` document plus `{prefix}index:all` set over
   `_RedisLikeDriver`; DynamoDB one item per agent, partition key `agent_id`, over `DynamoDBDriver`
   (the schedule store shapes, `schedule/store/redis_like.py:3-6`, `schedule/store/dynamodb.py:3-18`).
-  `register` upserts the record with `updated_at`; `deregister` deletes it; records do not expire
-  (`ttl` default 0), and a crashed process leaving a record behind is a documented boundary.
+  `register` upserts the record with `updated_at`; `deregister` deletes it; records do not
+  expire and the registry takes no `ttl` at all (a value under a store block is refused at load,
+  since nothing registers a running agent again and an expiry would withdraw it: spec refinement
+  11). A record left behind by a crashed process, or by a deployment that renamed or removed an
+  agent, is a documented boundary: it is deleted from the store by its id.
 - `Runtime.register` / `deregister` / `agents()` delegate to the configured registry; `Runtime`
   gains a `registry` property. The registry is per `Runtime` instance as today
   (`tests/test_module.py:164-179`).
 - Descriptor sources, later wins per field: adapter defaults from the native agent, then
   `Module.describe(agent, **fields) -> Self` (fluent, beside `pre_hook` and `run_options`, same
-  `_wrapped` resolution, `ValueError` for an unloaded agent and for unknown fields), then the
-  `registry.agents.<id>` config overlay. `description` is never defaulted from `get_description()`.
+  `_wrapped` resolution, `ValueError` for an unloaded agent, for unknown fields and for the
+  fields the runner and the registry report), then the `registry.agents.<id>` config overlay,
+  which each process applies both to the agents it registers and to the descriptors it reads,
+  so a restriction in the configuration of a process that serves a surface holds for agents
+  another process hosts (spec refinement 12). `description` is never defaulted from
+  `get_description()`, which nothing reads any more.
 - Availability now means "a descriptor exists in the registry": `AgentService.ensure_agent_available`
   (`core/service.py:49-70`) consults `registry.descriptor(name)`, so on a store-backed registry the
   io-handler process can list and precheck agents it does not host; `select` still needs the local
-  `Agent` and raises `ValueError` when the process does not host it.
+  `Agent`: for an agent the process does not host it selects nothing, and the run that follows
+  raises. A surface that runs the agent in its own process asks for a hosted agent instead, so
+  nothing is committed for a request it cannot run.
 - Catalog: `GET /api/v1/agents` returns `{"agents": [<descriptor>...]}` filtered by the caller
   (section 6), paginated with the shared cursor helpers; the `tools` field of each entry lists only
   the tools at or below the caller's level, and the `skills` backed by those tools are narrowed
@@ -802,6 +814,20 @@ registry:
   keeps its meaning. `agui.default_agent` validation becomes "exposed on `agui`".
 - `Runtime.register` raises `AgentRegistrationError` (an `Exception` subclass) instead of a bare
   `Exception`; `Runtime.agents()` keeps returning the live dict.
+- Removed from the adapter contract: `Agent.get_a2a_card`, on the base class and the eight
+  adapters. An adapter reports its tools through `get_tool_names()` and `_tool_descriptions()`
+  instead, and one that still defines the old method is told once that nothing calls it.
+  `Agent.get_description()` stays, concrete and unread (spec refinement 8).
+- What a surface publishes about an agent is the declared catalog text: an A2A card's
+  description and an agent's MCP tool description no longer carry the agent's instructions or
+  backstory, and each carries a neutral sentence naming the agent until a description is
+  declared. A card's `version` is the descriptor's, not the library's (spec refinement 8).
+- `GET /api/v1/agents` returns `{"agents": [<descriptor>...], "next_cursor": ...}`, the agents on
+  the `rest` surface in id order and without their `identity`, where it returned a list of
+  names. AG-UI's `/agents` lists ids in id order too.
+- A request naming an agent the registry does not know is answered 404 `Agent '<name>' not found`
+  on the HTTP routes, where it was 400 `No agent available`, the answer a hidden agent gets
+  (spec refinement 9).
 - `api.enabled_routes.agents` (`core/config.py:111-112`) stays declared and unread; not in scope.
 - `a2ui.agents` (`core/config.py:1093`) scopes the A2UI labelling post-hook, not access, and stays
   with the capability scopes of Q8.

@@ -159,8 +159,12 @@ keeps for it.
   empty until declared.
 - `tools` and `skills` come from the agent's framework: the tools it can call, and one skill per tool.
 - `surfaces` is `null` for an agent served on every surface. An agent whose `surfaces` leaves out `rest` is not
-  listed here.
+  listed here; a chat request that names it is still served.
+- `visibility` is the declared value and is not enforced yet: until authorization ships, every agent on the `rest`
+  surface is listed to every caller, and this route answers a caller with no credential.
 - With a shared registry the listing includes agents another process hosts.
+- A page is cut from the listing as it is when the request arrives. When an agent is added or removed between two
+  requests, the next page can repeat an agent or skip one; read the pages again for a listing that must be complete.
 - A malformed `cursor` is a 400.
 
 Earlier versions returned a plain list of names (`{"agents": ["assistant", "math"]}`); read `id` from each

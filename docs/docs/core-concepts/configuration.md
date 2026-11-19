@@ -244,28 +244,26 @@ identity:
                 # since a user sets many of their own claims (a display name, a username, an email)
 
 # Agent registry (optional - without this block agent descriptors live in the memory of the process that
-# loads the agents, and every agent is on every surface. See "Agent Registry" below)
+# loads the agents, and an agent is on every surface unless its code narrows them with Module.describe.
+# See "Agent Registry" below)
 registry:
   type: in_memory  # in_memory | redis | valkey | dynamodb, or a dotted path to an AgentRegistry subclass
-  redis:  # required when type is redis
+  redis:  # required when type is redis; descriptors do not expire, so a ttl here is refused at startup
     url: redis://localhost:6379
     prefix: "ak:registry:"
-    ttl: 0  # seconds; 0 keeps descriptors until they are deregistered
   valkey:  # required when type is valkey
     url: valkey://localhost:6379
     prefix: "ak:registry:"
-    ttl: 0
   dynamodb:  # required when type is dynamodb; partition key agent_id (S), no sort key
     table_name: ak-agent-registry
-    ttl: 0
   agents:  # catalog fields set per agent id, over what the agent's code declares
     support-triage:
       description: Triage support tickets  # catalog text: the A2A card and the MCP tool carry it
-      version: 1.2.0
+      version: "1.2.0"  # quoted: YAML reads 1.2 or 2 as a number, which is refused
       owner: cx-platform
       tags: [support]
-      visibility: internal  # private | internal | public
-      surfaces: [rest, agui]  # rest | a2a | mcp | agui; omitted = every surface
+      visibility: internal  # private | internal | public; recorded, not enforced yet (see below)
+      surfaces: [rest, agui]  # rest | a2a | mcp | agui; [] = none; omitted = what the code declared (every surface by default)
 
 # Messaging platform integrations
 slack:
@@ -666,22 +664,76 @@ MCP agent tools and the AG-UI listing are all built from them.
 export AK_REGISTRY__TYPE=redis  # Options: 'in_memory', 'redis', 'valkey', 'dynamodb', or a dotted path to an AgentRegistry subclass (default: 'in_memory')
 export AK_REGISTRY__REDIS__URL=redis://localhost:6379  # redis only (the valkey block takes the same keys)
 export AK_REGISTRY__REDIS__PREFIX=ak:registry:  # default: 'ak:registry:'
-export AK_REGISTRY__REDIS__TTL=0  # seconds; 0 keeps descriptors until they are deregistered (default: 0)
 export AK_REGISTRY__DYNAMODB__TABLE_NAME=ak-agent-registry  # dynamodb only; partition key agent_id (S), no sort key
+export AK_REGISTRY__AGENTS__BILLING__SURFACES='["rest"]'  # a per-agent field; the id arrives lowercased (see below)
 ```
 
 - **Backend.** Without a `registry` block, or with `type: in_memory`, descriptors live in the process that loads the
   agents. A store-backed type (`redis`, `valkey`, `dynamodb`) shares them, so a process that only accepts requests
-  (the IO process of a split deployment) can list and serve agents that run in another process. A store type needs
-  its connection block; the same extras as the session store apply (`agentkernel[redis]`, `[valkey]`, `[aws]`).
+  (the IO process of a split deployment) can list agents that run in another process and serve them over the queue.
+  It shares what is known about an agent, not the agent: a handler that runs agents in its own process still needs
+  the agent loaded there. A store type needs its connection block; the same extras as the session store apply
+  (`agentkernel[redis]`, `[valkey]`, `[aws]`). A key the `registry` block does not take is a startup error.
+- **Descriptors do not expire.** A descriptor is written when its agent is loaded and never again while the process
+  runs, so a `ttl` would remove running agents from every listing; one set under a store block is refused at
+  startup. Nothing removes a descriptor when a process exits either. After a deployment that renames or removes an
+  agent, delete its record from the store: on Redis or Valkey the key `<prefix>agent:<id>` and the member `<id>` of
+  the set `<prefix>index:all`, on DynamoDB the item whose `agent_id` is the id.
 - **Per-agent fields.** `registry.agents.<id>` sets `description`, `version`, `owner`, `tags`, `visibility`,
   `surfaces` and `identity` for one agent, over what the code declares. The same fields can be declared in code with
   `Module.describe(agent, description=..., surfaces=[...])`; where both set a field, the configuration wins. An
   unknown key under an agent is a startup error, so a misspelt `surfaces` cannot silently leave an agent exposed.
-- **Surfaces.** `surfaces` lists where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Left unset, the agent is on
-  every surface; `[]` puts it on none. This replaces the `a2a.agents`, `mcp.agents` and `agui.agents` lists.
+  Each process applies its own `registry.agents` block to what it reads from the registry, so a restriction set in
+  the configuration of the process that serves a surface holds there for agents another process hosts. Where
+  processes are configured differently, each serves an agent as its own configuration describes it. Set through
+  the environment, an id arrives lowercased (`AK_REGISTRY__AGENTS__Billing__SURFACES` reads as `billing`), so an
+  entry also applies to the agent whose id differs from its key only in case, unless another entry names that agent
+  exactly. A registry passed to `Runtime(sessions, registry=...)` in code is used as given, without these fields.
+- **Surfaces.** `surfaces` lists where the agent is served: `rest`, `a2a`, `mcp`, `agui`. An agent that declares
+  none, in code or here, is on every surface; `[]` puts it on none. `a2a`, `mcp` and `agui` decide whether the
+  agent can be reached on that protocol at all. `rest` decides whether the agent is listed in the catalog
+  (`GET /api/v1/agents`); a chat request that names the agent is still served. This replaces the `a2a.agents`,
+  `mcp.agents` and `agui.agents` lists. Those lists named the agents a surface served, where `surfaces` is set per
+  agent, so removing a list is not enough to keep what it did: give every agent the list left out a `surfaces`
+  value without that surface.
+- **Visibility.** `visibility` (`private`, `internal`, `public`) is recorded on the descriptor and published in the
+  catalog. It is not enforced yet: until authorization ships, every agent listed on a surface is listed to every
+  caller, and the catalog route answers a caller with no credential. `surfaces` is what keeps an agent off a
+  listing today.
 - **Description.** The description is catalog text you write for people and other agents. It is what an A2A card
   and an MCP tool publish; an agent's instructions are never published.
+
+#### Bring your own registry
+
+`registry.type` also takes a dotted path to a subclass of `AgentRegistry` (`from agentkernel import AgentRegistry`),
+which is built with no arguments, so it reads its own settings. A registry keeps two things under an agent id: the
+agent object, which exists only in the process that loaded it, and its descriptor, which other processes may read.
+
+| Method | Answers for |
+|---|---|
+| `register(descriptor, agent)`, `deregister(id)` | this process; `register` raises `AgentRegistrationError` when this process already hosts a different agent under the id, and replaces the descriptor when it is the same agent |
+| `get(id)`, `agents()` | the agents this process hosts |
+| `descriptor(id)`, `descriptors()` | every agent the registry knows, whichever process hosts it |
+| `is_empty()`, `list(...)`, `clear()` | provided by the base class; override `is_empty` when the store can answer it without reading every record |
+
+A registry over a store other processes share can subclass `StoreBackedAgentRegistry`
+(`agentkernel.identity.registry.base`), which keeps the hosted agents and leaves four store operations to implement:
+`_put`, `_remove`, `descriptor` and `descriptors`. Run the conformance suite against it:
+
+```python
+import pytest
+from agentkernel.identity.registry.testing import AgentRegistryContract
+
+
+class TestMyRegistry(AgentRegistryContract):
+    @pytest.fixture
+    def registry(self):
+        return MyRegistry()
+
+    @pytest.fixture
+    def peer(self):  # a second instance over the same store; omit for a registry that shares nothing
+        return MyRegistry()
+```
 
 ### Test Configuration {#test-configuration-env-vars}
 

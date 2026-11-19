@@ -895,6 +895,9 @@ class OpenAIAgent(BaseAgent):
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the native agent's tools, hosted tools included.
+
+        Not reported: the tools of the agent's `mcp_servers`, which are listed only when a run connects, and the
+        tools of an agent it hands off to, which that agent's own descriptor reports.
         """
         return [tool.name for tool in self.agent.tools]
 

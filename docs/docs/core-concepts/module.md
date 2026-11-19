@@ -188,14 +188,17 @@ OpenAIModule([triage, math]).describe(
 | `description` | Catalog text for people and other agents. An A2A card and an MCP tool publish it; the agent's instructions are never published, so it is empty until you declare it |
 | `version` | The agent's version (default `0.0.0`) |
 | `owner`, `tags` | Free-form metadata; the catalog route filters by tag |
-| `visibility` | `private` (default), `internal` or `public` |
-| `surfaces` | Where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Unset means every surface |
+| `visibility` | `private` (default), `internal` or `public`. Recorded and published in the catalog, not enforced yet: until authorization ships every listed agent is listed to every caller, and `surfaces` is what keeps an agent off a listing |
+| `surfaces` | Where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Unset means every surface, `[]` none |
 | `skills` | The skills an A2A card lists; by default one per tool |
+| `identity` | How the agent identifies itself when it acts as a principal |
 
 Repeated calls merge, the later call winning per field. A field the descriptor does not have, a value it
-does not accept, or the agent's `id` raises `ValueError` at declaration. The same fields can be set per agent
-id in configuration under `registry.agents.<id>`, which wins over what the code declares; see
-[Configuration → Agent Registry](./configuration.md#agent-registry).
+does not accept, or the agent's `id` raises `ValueError` at declaration. So do `runner`, `supports_streaming`
+and `updated_at`, which the agent's runner and the registry report: a surface decides from them whether the
+agent can be served. Configuration sets `description`, `version`, `owner`, `tags`, `visibility`, `surfaces`
+and `identity` per agent id under `registry.agents.<id>`, which wins over what the code declares (`skills` is
+declared in code only); see [Configuration → Agent Registry](./configuration.md#agent-registry).
 
 ## Best Practices
 

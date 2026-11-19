@@ -784,6 +784,9 @@ class MAFAgent(BaseAgent):
 
     def get_tool_names(self) -> list[str]:
         """
+        Not reported: tools passed per run through the `options` run option, and a hosted tool given as a dict,
+        which has no name to report.
+
         :return: The names of the tools in the native agent's default options.
         """
         return list(self._named_tools())

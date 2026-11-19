@@ -863,6 +863,9 @@ class PydanticAIAgent(BaseAgent):
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the native agent's function tools.
+
+        Not reported: the tools of a toolset that lists them only inside a run (an MCP server). A tool behind a
+        prefixing or renaming wrapper toolset is reported under its own name, not the one the wrapper exposes.
         """
         return list(self._function_tools())
 

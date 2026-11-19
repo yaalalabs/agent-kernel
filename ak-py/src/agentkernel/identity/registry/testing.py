@@ -3,7 +3,7 @@
 import pytest
 
 from ...core.base import Agent, Runner
-from ...core.model import AgentDescriptor, AgentReplyText
+from ...core.model import AgentDescriptor, AgentIdentitySpec, AgentReplyText, AgentSkillDescriptor
 from ...core.registry import AgentRegistrationError, AgentRegistry
 from ...core.util.pagination import DEFAULT_PAGE_SIZE
 
@@ -83,13 +83,49 @@ class AgentRegistryContract:
     def test_contract_a_registered_agent_and_its_descriptor_are_readable_by_id(self, registry):
         agent = ContractAgent("billing")
         descriptor = self.descriptor("billing", description="Answers invoice questions", tags=["finance"])
+        expected = self.stored(descriptor)  # taken first: a registry that changed the descriptor it was handed would otherwise pass
 
         registry.register(descriptor, agent)
 
         assert registry.get("billing") is agent
         assert registry.agents() == {"billing": agent}
-        assert self.stored(registry.descriptor("billing")) == self.stored(descriptor)
-        assert [self.stored(found) for found in registry.descriptors()] == [self.stored(descriptor)]
+        assert self.stored(registry.descriptor("billing")) == expected
+        assert [self.stored(found) for found in registry.descriptors()] == [expected]
+
+    def test_contract_every_field_of_a_descriptor_survives_the_registry(self, registry):
+        """`surfaces=[]` (on no surface) must not come back as None (on every surface): it is the exposure boundary."""
+        descriptor = self.descriptor(
+            "billing",
+            version="1.2.0",
+            description="Answers invoice questions",
+            owner="finance-platform",
+            tags=["finance"],
+            visibility="internal",
+            surfaces=[],
+            skills=[AgentSkillDescriptor(id="refund", name="refund", description="Refunds an invoice")],
+            tools=["refund"],
+            runner="contract",
+            supports_streaming=False,
+            identity=AgentIdentitySpec(subject="svc-billing"),
+        )
+        expected = self.stored(descriptor)
+
+        registry.register(descriptor, ContractAgent("billing"))
+
+        read = registry.descriptor("billing")
+        assert self.stored(read) == expected
+        assert read.surfaces == [] and read.exposed_on("rest") is False
+        assert read.identity == AgentIdentitySpec(subject="svc-billing")
+        assert [self.stored(found) for found in registry.descriptors()] == [expected]
+
+    def test_contract_a_registry_is_empty_until_an_agent_registers_and_again_once_it_is_removed(self, registry):
+        assert registry.is_empty() is True
+
+        registry.register(self.descriptor("billing"), ContractAgent("billing"))
+        assert registry.is_empty() is False
+
+        registry.deregister("billing")
+        assert registry.is_empty() is True
 
     def test_contract_an_unknown_id_reads_as_none(self, registry):
         assert registry.get("ghost") is None
@@ -99,7 +135,7 @@ class AgentRegistryContract:
         first = ContractAgent("billing")
         registry.register(self.descriptor("billing", version="1.0.0"), first)
 
-        with pytest.raises(AgentRegistrationError, match="'billing'"):
+        with pytest.raises(AgentRegistrationError):
             registry.register(self.descriptor("billing", version="2.0.0"), ContractAgent("billing"))
 
         assert registry.get("billing") is first
@@ -232,3 +268,32 @@ class AgentRegistryContract:
 
         assert peer.descriptor("billing") is None
         assert peer.descriptors() == []
+        assert peer.is_empty() is True
+
+    def test_contract_clear_leaves_the_agents_only_another_instance_hosts(self, registry, peer):
+        """`clear` removes what this process hosts, not the store: flushing it would withdraw every other process's agents."""
+        peer = self._shared(peer)
+        registry.register(self.descriptor("billing"), ContractAgent("billing"))
+        peer.register(self.descriptor("support"), ContractAgent("support"))
+
+        registry.clear()
+
+        assert registry.agents() == {}
+        assert self.ids(registry.descriptors()) == ["support"]
+        assert peer.descriptor("support") is not None
+        assert peer.get("support") is not None
+
+    def test_contract_a_record_removed_by_one_host_returns_when_the_other_registers_again(self, registry, peer):
+        """One record per id: either host's deregistration removes it, and the host still running restores it by registering."""
+        peer = self._shared(peer)
+        ours, theirs = ContractAgent("billing"), ContractAgent("billing")
+        registry.register(self.descriptor("billing"), ours)
+        peer.register(self.descriptor("billing"), theirs)
+
+        registry.deregister("billing")
+
+        assert peer.descriptor("billing") is None  # the record is gone for everyone
+        assert peer.get("billing") is theirs  # while the other process still hosts its agent
+        peer.register(self.descriptor("billing"), theirs)
+        assert self.ids(registry.descriptors()) == ["billing"]
+        assert registry.get("billing") is None

@@ -409,6 +409,20 @@ class TestAgentTools:
         assert "registry.agents.<id>.surfaces" in warning and "mcp.expose_agents" in warning
 
     @pytest.mark.asyncio
+    async def test_no_empty_surface_warning_when_an_agent_is_exposed(self, descriptor_only_registry, caplog):
+        registry = descriptor_only_registry(
+            [
+                AgentDescriptor(id="triage", name="triage", description="Routes", surfaces=["mcp"]),
+                AgentDescriptor(id="math", name="math", description="Adds", surfaces=[]),
+            ]
+        )
+
+        with caplog.at_level("WARNING", logger="ak.mcp"):
+            assert [name for name, _ in await self._listed(Runtime(InMemorySessionStore(), registry=registry))] == ["triage"]
+
+        assert [record.getMessage() for record in caplog.records if record.name == "ak.mcp"] == []
+
+    @pytest.mark.asyncio
     async def test_no_empty_surface_warning_when_the_registry_knows_no_agent(self, descriptor_only_registry, caplog):
         with caplog.at_level("WARNING", logger="ak.mcp"):
             assert await self._listed(Runtime(InMemorySessionStore(), registry=descriptor_only_registry([]))) == []

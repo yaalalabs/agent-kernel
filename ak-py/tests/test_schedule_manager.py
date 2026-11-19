@@ -78,9 +78,6 @@ class DummyAgent(Agent):
     def get_description(self) -> str:
         return "Test agent"
 
-    def get_a2a_card(self):
-        return None
-
     def override_system_prompt(self, prompt):
         pass
 

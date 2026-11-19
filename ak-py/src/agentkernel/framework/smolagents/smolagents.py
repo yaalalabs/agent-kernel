@@ -306,6 +306,8 @@ class SmolagentsAgent(BaseAgent):
     def get_tool_names(self) -> list[str]:
         """
         Returns the names the native agent holds its tools under, the framework's own `final_answer` included.
+
+        Not reported: the agent's managed agents, which the model can call like tools.
         """
         return list(self._named_tools())
 

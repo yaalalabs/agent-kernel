@@ -134,6 +134,37 @@ class TestInMemoryAgentRegistry(AgentRegistryContract):
         assert descriptor.updated_at is None
 
 
+class _FakeRedisLikePipeline:
+    """A MULTI/EXEC block of the fake client: commands are queued and applied together, or not at all."""
+
+    def __init__(self, client: "_FakeRedisLikeClient"):
+        self._client = client
+        self._commands: list[tuple[str, tuple]] = []
+
+    def set(self, key: str, value) -> "_FakeRedisLikePipeline":
+        self._commands.append(("set", (key, value)))
+        return self
+
+    def sadd(self, key: str, member: str) -> "_FakeRedisLikePipeline":
+        self._commands.append(("sadd", (key, member)))
+        return self
+
+    def delete(self, *keys: str) -> "_FakeRedisLikePipeline":
+        self._commands.append(("delete", keys))
+        return self
+
+    def srem(self, key: str, member: str) -> "_FakeRedisLikePipeline":
+        self._commands.append(("srem", (key, member)))
+        return self
+
+    def execute(self) -> None:
+        if self._client.unreachable:
+            raise ConnectionError("the store is unreachable")
+        self._client.transactions.append([name for name, _ in self._commands])
+        for name, arguments in self._commands:
+            getattr(self._client, name)(*arguments)
+
+
 class _FakeRedisLikeClient:
     """Minimal in-memory stand-in for the redis/valkey client the shared driver drives.
 
@@ -145,20 +176,24 @@ class _FakeRedisLikeClient:
         self.values: dict[str, bytes] = {}
         self.sets: dict[str, set[str]] = {}
         self.expirations: dict[str, int] = {}
+        self.transactions: list[list[str]] = []
+        self.reads: list[str] = []
         self.unreachable = False
 
     def ping(self) -> bool:
         return True
 
+    def pipeline(self) -> _FakeRedisLikePipeline:
+        return _FakeRedisLikePipeline(self)
+
     def set(self, key: str, value, ex: int | None = None, nx: bool = False) -> bool:
-        if self.unreachable:
-            raise ConnectionError("the store is unreachable")
         self.values[key] = value.encode() if isinstance(value, str) else value
         if ex is not None:
             self.expirations[key] = ex
         return True
 
     def get(self, key: str):
+        self.reads.append(key)
         return self.values.get(key)
 
     def delete(self, *keys: str) -> None:
@@ -170,7 +205,10 @@ class _FakeRedisLikeClient:
         self.sets.setdefault(key, set()).add(member)
 
     def srem(self, key: str, member: str) -> None:
-        self.sets.get(key, set()).discard(member)
+        members = self.sets.get(key, set())
+        members.discard(member)
+        if not members:
+            self.sets.pop(key, None)  # as Redis does: a set that lost its last member is gone
 
     def smembers(self, key: str) -> set:
         return {member.encode() for member in self.sets.get(key, set())}
@@ -191,8 +229,8 @@ class TestRedisAgentRegistry(AgentRegistryContract):
 
     @pytest.fixture
     def make_registry(self, client):
-        def _make(ttl: int = 0) -> RedisAgentRegistry:
-            registry = RedisAgentRegistry(url="redis://unused:6379", prefix=PREFIX, ttl=ttl)
+        def _make() -> RedisAgentRegistry:
+            registry = RedisAgentRegistry(url="redis://unused:6379", prefix=PREFIX)
             # An established client, so the driver never connects; its ping health-check passes.
             registry._driver._client = client
             return registry
@@ -239,22 +277,40 @@ class TestRedisAgentRegistry(AgentRegistryContract):
         registry.deregister("billing")
 
         assert client.values == {}
-        assert client.sets == {"ak:registry:index:all": set()}
+        assert client.sets == {}
 
-    def test_nothing_expires_by_default(self, registry, client):
+    def test_nothing_ever_expires(self, registry, client):
+        # Nothing registers a hosted agent again while its process runs, so a record that expired would drop
+        # a running agent from every listing. The registry takes no TTL at all.
         registry.register(_descriptor("billing"), StubAgent("billing"))
 
         assert client.expirations == {}
+        assert registry._driver.ttl == 0
 
-    def test_a_configured_ttl_covers_the_document_and_the_index(self, make_registry, client):
-        make_registry(ttl=60).register(_descriptor("billing"), StubAgent("billing"))
+    def test_the_document_and_its_index_membership_are_written_in_one_transaction(self, registry, client):
+        # Two separate commands could leave a descriptor a peer resolves by id and never lists.
+        registry.register(_descriptor("billing"), StubAgent("billing"))
 
-        assert client.expirations == {"ak:registry:agent:billing": 60, "ak:registry:index:all": 60}
+        assert client.transactions == [["set", "sadd"]]
 
-    def test_an_index_member_whose_document_expired_is_not_listed(self, registry, client):
+    def test_the_document_and_its_index_membership_are_removed_in_one_transaction(self, registry, client):
+        registry.register(_descriptor("billing"), StubAgent("billing"))
+
+        registry.deregister("billing")
+
+        assert client.transactions[-1] == ["delete", "srem"]
+
+    def test_a_listing_checks_for_any_agent_without_reading_a_document(self, registry, client):
+        registry.register(_descriptor("billing"), StubAgent("billing"))
+        client.reads.clear()
+
+        assert registry.is_empty() is False
+        assert client.reads == []
+
+    def test_an_index_member_without_a_document_is_not_listed(self, registry, client):
         registry.register(_descriptor("billing"), StubAgent("billing"))
         registry.register(_descriptor("support"), StubAgent("support"))
-        del client.values["ak:registry:agent:billing"]  # its TTL elapsed ahead of the index set
+        del client.values["ak:registry:agent:billing"]  # removed by hand, without its index membership
 
         assert registry.descriptor("billing") is None
         assert [descriptor.id for descriptor in registry.descriptors()] == ["support"]
@@ -267,6 +323,22 @@ class TestRedisAgentRegistry(AgentRegistryContract):
 
         assert registry.get("billing") is None
         assert registry.agents() == {}
+        assert (client.values, client.sets) == ({}, {})
+
+    def test_an_agent_stays_hosted_when_its_record_cannot_be_removed_so_a_retry_removes_it(self, registry, peer, client):
+        # Dropped locally first, a retry would find nothing to deregister and peers would keep advertising it.
+        agent = StubAgent("billing")
+        registry.register(_descriptor("billing"), agent)
+        client.unreachable = True
+
+        with pytest.raises(ConnectionError):
+            registry.deregister("billing")
+
+        assert registry.get("billing") is agent
+        client.unreachable = False
+        registry.deregister("billing")
+        assert registry.get("billing") is None
+        assert peer.descriptor("billing") is None
 
 
 class TestValkeyAgentRegistry:
@@ -285,7 +357,11 @@ class TestValkeyAgentRegistry:
 
 
 class _FakeDynamoDBTable:
-    """Stand-in for the boto3 Table, covering the paginated scan a listing follows."""
+    """Stand-in for the boto3 Table, covering the paginated scan a listing follows.
+
+    A page ends with the primary key of its last item, and the next scan starts after that key, as
+    DynamoDB pages; `Limit` caps the items a scan returns.
+    """
 
     def __init__(self, items: dict):
         self._items = items
@@ -294,13 +370,13 @@ class _FakeDynamoDBTable:
 
     def scan(self, **kwargs) -> dict:
         self.scan_calls.append(kwargs)
-        items = list(self._items.values())
-        start = items.index(kwargs["ExclusiveStartKey"]) if "ExclusiveStartKey" in kwargs else 0
-        if self.page_size is None:
-            return {"Items": items[start:]}
-        response = {"Items": items[start : start + self.page_size]}
-        if start + self.page_size < len(items):
-            response["LastEvaluatedKey"] = items[start + self.page_size]
+        ids = sorted(self._items)
+        start = ids.index(kwargs["ExclusiveStartKey"]["agent_id"]) + 1 if "ExclusiveStartKey" in kwargs else 0
+        sizes = [size for size in (self.page_size, kwargs.get("Limit")) if size is not None]
+        end = start + min(sizes) if sizes else len(ids)
+        response = {"Items": [self._items[id] for id in ids[start:end]]}
+        if end < len(ids):
+            response["LastEvaluatedKey"] = {"agent_id": ids[end - 1]}
         return response
 
 
@@ -321,6 +397,8 @@ class _FakeDynamoDBDriver:
         return self.items.get(pk_value)
 
     def delete(self, pk_value: str, sk_value=None) -> None:
+        if self.unreachable:
+            raise ConnectionError("the store is unreachable")
         self.items.pop(pk_value, None)
 
 
@@ -357,9 +435,10 @@ class TestDynamoDBAgentRegistry(AgentRegistryContract):
         assert item["updated_at"] == stored["updated_at"] is not None
 
     def test_the_driver_is_built_for_the_configured_table_keyed_by_agent_id(self):
-        driver = DynamoDBAgentRegistry(table_name="agents", ttl=120)._driver
+        driver = DynamoDBAgentRegistry(table_name="agents")._driver
 
-        assert (driver._table_name, driver._partition_key, driver._sort_key, driver._ttl) == ("agents", "agent_id", None, 120)
+        # No TTL: a record that expired would drop a running agent from every listing.
+        assert (driver._table_name, driver._partition_key, driver._sort_key, driver._ttl) == ("agents", "agent_id", None, 0)
 
     def test_a_listing_follows_the_scan_past_its_first_page(self, registry, driver):
         driver.table.page_size = 2
@@ -367,7 +446,27 @@ class TestDynamoDBAgentRegistry(AgentRegistryContract):
             registry.register(_descriptor(id), StubAgent(id))
 
         assert sorted(descriptor.id for descriptor in registry.descriptors()) == ["a", "b", "c", "d", "e"]
-        assert len(driver.table.scan_calls) == 3
+        assert [call.get("ExclusiveStartKey") for call in driver.table.scan_calls] == [None, {"agent_id": "b"}, {"agent_id": "d"}]
+
+    def test_a_listing_reads_the_table_consistently(self, registry, driver):
+        # A2A cards and MCP tools are built from one listing at mount: an eventually consistent scan could miss
+        # an agent that registered a moment before, and it would stay unserved until the process restarts.
+        driver.table.page_size = 1
+        for id in ("a", "b"):
+            registry.register(_descriptor(id), StubAgent(id))
+
+        registry.descriptors()
+
+        assert [call["ConsistentRead"] for call in driver.table.scan_calls] == [True, True]
+
+    def test_checking_for_any_agent_reads_one_item_not_the_table(self, registry, driver):
+        assert registry.is_empty() is True
+        for id in ("a", "b", "c"):
+            registry.register(_descriptor(id), StubAgent(id))
+        driver.table.scan_calls.clear()
+
+        assert registry.is_empty() is False
+        assert driver.table.scan_calls == [{"Limit": 1, "ConsistentRead": True}]
 
     def test_an_agent_is_not_hosted_when_its_descriptor_cannot_be_stored(self, registry, driver):
         driver.unreachable = True
@@ -378,9 +477,33 @@ class TestDynamoDBAgentRegistry(AgentRegistryContract):
         assert registry.get("billing") is None
         assert registry.agents() == {}
 
+    def test_an_agent_stays_hosted_when_its_record_cannot_be_removed_so_a_retry_removes_it(self, registry, peer, driver):
+        agent = StubAgent("billing")
+        registry.register(_descriptor("billing"), agent)
+        driver.unreachable = True
+
+        with pytest.raises(ConnectionError):
+            registry.deregister("billing")
+
+        assert registry.get("billing") is agent
+        driver.unreachable = False
+        registry.deregister("billing")
+        assert registry.get("billing") is None
+        assert peer.descriptor("billing") is None
+
 
 class _CustomAgentRegistry(InMemoryAgentRegistry):
     """Bring-your-own registry used to pin dotted-path resolution."""
+
+
+class _SharedStoreRegistry(InMemoryAgentRegistry):
+    """A registry over a store another process already wrote into: it knows `RECORDS` and hosts none of them."""
+
+    RECORDS: list[AgentDescriptor] = []
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._descriptors = {descriptor.id: descriptor for descriptor in self.RECORDS}
 
 
 def _configure_registry(monkeypatch, **fields) -> None:
@@ -423,7 +546,7 @@ class TestAgentRegistryFactory:
         assert isinstance(AgentRegistryFactory.build(), InMemoryAgentRegistry)
 
     def test_the_redis_type_builds_a_redis_registry_from_its_block(self, monkeypatch):
-        _configure_registry(monkeypatch, type="redis", redis={"url": "redis://cache:6379", "prefix": "ak:reg:", "ttl": 30})
+        _configure_registry(monkeypatch, type="redis", redis={"url": "redis://cache:6379", "prefix": "ak:reg:"})
 
         registry = AgentRegistryFactory.build()
 
@@ -431,7 +554,7 @@ class TestAgentRegistryFactory:
         assert (registry._driver._url, registry._driver.key("agent:billing"), registry._driver.ttl) == (
             "redis://cache:6379",
             "ak:reg:agent:billing",
-            30,
+            0,
         )
 
     def test_the_valkey_type_builds_a_valkey_registry_from_its_block(self, monkeypatch):
@@ -447,12 +570,12 @@ class TestAgentRegistryFactory:
         )
 
     def test_the_dynamodb_type_builds_a_dynamodb_registry_from_its_block(self, monkeypatch):
-        _configure_registry(monkeypatch, type="dynamodb", dynamodb={"table_name": "agents", "ttl": 120})
+        _configure_registry(monkeypatch, type="dynamodb", dynamodb={"table_name": "agents"})
 
         registry = AgentRegistryFactory.build()
 
         assert isinstance(registry, DynamoDBAgentRegistry)
-        assert (registry._driver._table_name, registry._driver._ttl) == ("agents", 120)
+        assert (registry._driver._table_name, registry._driver._ttl) == ("agents", 0)
 
     @pytest.mark.parametrize("backend", ["redis", "valkey", "dynamodb"])
     def test_a_store_type_without_its_block_is_a_config_error_naming_it(self, monkeypatch, backend):
@@ -588,6 +711,65 @@ class TestRegistryOverlay:
 
         assert runtime.agents() == {} and runtime.registry.descriptors() == []
 
+    def _serving_registry(self, monkeypatch, records: list[AgentDescriptor], **agents) -> AgentRegistry:
+        """The registry of a process that serves agents another process registered, with its own overlay."""
+        monkeypatch.setattr(_SharedStoreRegistry, "RECORDS", records)
+        _configure_registry(monkeypatch, type=f"{_SharedStoreRegistry.__module__}._SharedStoreRegistry", agents=agents)
+        return AgentRegistryFactory.build()
+
+    def test_a_process_reads_an_agent_it_does_not_host_through_its_own_overlay(self, monkeypatch):
+        # The removed a2a.agents / mcp.agents / agui.agents lists were read by the process that mounts the surface.
+        # Their replacement has to hold there too, or a restriction set in that process's configuration is not one.
+        registry = self._serving_registry(monkeypatch, [_descriptor("billing"), _descriptor("support")], billing={"surfaces": ["rest"]})
+
+        read = registry.descriptor("billing")
+
+        assert registry.get("billing") is None  # hosted elsewhere: nothing registered here
+        assert read.surfaces == ["rest"]
+        assert (read.exposed_on("rest"), read.exposed_on("a2a"), read.exposed_on("mcp")) == (True, False, False)
+        assert {descriptor.id: descriptor.surfaces for descriptor in registry.descriptors()} == {"billing": ["rest"], "support": None}
+
+    def test_the_overlay_on_read_keeps_what_the_record_carries_for_the_fields_it_does_not_name(self, monkeypatch):
+        stored = _descriptor("billing", description="Answers invoice questions", tools=["refund"], surfaces=["rest", "a2a"])
+        registry = self._serving_registry(monkeypatch, [stored], billing={"surfaces": ["rest"], "version": "2.0.0"})
+
+        read = registry.descriptor("billing")
+
+        assert (read.description, read.tools) == ("Answers invoice questions", ["refund"])
+        assert (read.surfaces, read.version) == (["rest"], "2.0.0")
+
+    def test_a_listing_filters_on_the_tags_the_overlay_sets(self, monkeypatch):
+        registry = self._serving_registry(monkeypatch, [_descriptor("billing"), _descriptor("support")], billing={"tags": ["finance"]})
+
+        assert _ids(registry.list(tags=["finance"])) == ["billing"]
+
+    def test_an_unknown_id_still_reads_as_none_under_an_overlay_that_names_it(self, monkeypatch):
+        registry = self._serving_registry(monkeypatch, [], billing={"surfaces": ["rest"]})
+
+        assert registry.descriptor("billing") is None
+        assert registry.descriptors() == []
+        assert registry.is_empty() is True
+
+    def test_an_overlay_keyed_in_another_case_applies(self, monkeypatch):
+        # An environment variable lowercases the id (AK_REGISTRY__AGENTS__Billing__SURFACES arrives as `billing`).
+        # Matched exactly only, the restriction would be dropped without a word.
+        runtime = self._runtime(monkeypatch, billing={"surfaces": ["rest"]})
+        agent = StubAgent("Billing")
+
+        runtime.register(agent)
+
+        assert agent.descriptor.surfaces == ["rest"]
+        assert runtime.registry.descriptor("Billing").surfaces == ["rest"]
+
+    def test_an_exact_overlay_key_wins_over_one_in_another_case(self, monkeypatch):
+        runtime = self._runtime(monkeypatch, billing={"version": "1.0.0"}, Billing={"version": "2.0.0"})
+
+        runtime.register(StubAgent("Billing"))
+        runtime.register(StubAgent("billing"))
+
+        assert runtime.registry.descriptor("Billing").version == "2.0.0"
+        assert runtime.registry.descriptor("billing").version == "1.0.0"
+
 
 class TestPackageExports:
     def test_the_registry_contract_and_its_error_are_importable_from_the_package(self):
@@ -643,6 +825,27 @@ class TestAgentDescriptor:
 
         assert agent.get_tool_names() == []
         assert agent.ungated_tool_names() == []
+
+    def test_an_adapter_that_still_builds_its_own_card_is_told_once_that_nothing_calls_it(self, caplog):
+        class _LegacyAgent(StubAgent):
+            """An adapter from before the registry: it builds its own A2A card."""
+
+            def get_a2a_card(self):
+                return "a hand-built card"
+
+        with caplog.at_level("WARNING", logger="ak.core.agent"):
+            _LegacyAgent("billing").descriptor
+            _LegacyAgent("support").descriptor
+
+        warnings = [record.getMessage() for record in caplog.records]
+        assert len(warnings) == 1  # per class, not per agent
+        assert "_LegacyAgent" in warnings[0] and "get_a2a_card" in warnings[0] and "Module.describe" in warnings[0]
+
+    def test_an_adapter_without_the_removed_method_is_not_warned_about(self, caplog):
+        with caplog.at_level("WARNING", logger="ak.core.agent"):
+            StubAgent("billing").descriptor
+
+        assert [record.getMessage() for record in caplog.records] == []
 
 
 class TestRuntimeDelegation:
@@ -794,6 +997,45 @@ class TestModuleDescribe:
         assert other.agents() == {}
         assert runtime.registry.descriptor("billing").owner is None
 
+    @pytest.mark.parametrize("field, value", [("runner", "openai"), ("supports_streaming", True), ("updated_at", "2026-01-01T00:00:00+00:00")])
+    def test_what_the_runner_and_the_registry_report_cannot_be_described(self, runtime, field, value):
+        # A descriptor that says its runner streams while the runner does not opens an AG-UI stream that can only fail.
+        with runtime:
+            native = NativeAgent("billing")
+            module = StubModule([native])
+            before = runtime.registry.descriptor("billing")
+
+            with pytest.raises(ValueError, match=field):
+                module.describe(native, owner="alice", **{field: value})
+
+        assert runtime.registry.descriptor("billing") == before
+
+    def test_a_registration_the_registry_refuses_leaves_the_agent_as_it_was_described(self):
+        class _FailingStore(InMemoryAgentRegistry):
+            """Accepts the first registration and then loses its store."""
+
+            unreachable = False
+
+            def register(self, descriptor, agent):
+                if self.unreachable:
+                    raise ConnectionError("the store is unreachable")
+                super().register(descriptor, agent)
+
+        registry = _FailingStore()
+        runtime = Runtime(InMemorySessionStore(), registry=registry)
+        with runtime:
+            native = NativeAgent("billing")
+            module = StubModule([native])
+            module.describe(native, identity={"subject": "svc-old"})
+            registry.unreachable = True
+
+            with pytest.raises(ConnectionError):
+                module.describe(native, identity={"subject": "svc-new"})
+
+        # The agent would otherwise act as `svc-new` while every other process still reads `svc-old`.
+        assert module.get_agent("billing").descriptor.identity.subject == "svc-old"
+        assert registry.descriptor("billing").identity.subject == "svc-old"
+
     @pytest.mark.asyncio
     async def test_a_described_identity_subject_is_the_actor_of_the_agents_runs(self, runtime):
         with runtime:
@@ -846,3 +1088,40 @@ class TestAvailability:
         with runtime:
             AgentService.ensure_agent_available("billing")
             AgentService.ensure_agent_available(None)
+
+    def test_an_unnamed_request_asks_whether_any_agent_is_known_without_listing_them(self, descriptor_only_registry):
+        class _Unlistable(descriptor_only_registry):
+            """Fails on a listing: every request with no agent named would otherwise read the whole store."""
+
+            def descriptors(self):
+                raise AssertionError("every descriptor was read to learn whether one exists")
+
+            def is_empty(self):
+                return False
+
+        with Runtime(InMemorySessionStore(), registry=_Unlistable([])):
+            AgentService.ensure_agent_available(None)
+
+    def test_a_process_that_runs_the_agent_itself_needs_it_hosted(self, descriptor_only_registry):
+        # Direct execution: an agent another process hosts cannot be selected here, so the request must fail before
+        # anything is written for it (a thread message, a session).
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([_descriptor("billing")])):
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService.ensure_agent_available("billing", hosted=True)
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService.ensure_agent_available(None, hosted=True)
+
+    def test_a_hosted_agent_satisfies_the_hosted_check_without_reading_the_store(self):
+        class _HostedOnly(InMemoryAgentRegistry):
+            def descriptor(self, id):
+                raise AssertionError("the registry's store was read for an agent this process hosts")
+
+            def is_empty(self):
+                raise AssertionError("the registry's store was read while this process hosts an agent")
+
+        runtime = Runtime(InMemorySessionStore(), registry=_HostedOnly())
+        runtime.register(StubAgent("billing"))
+
+        with runtime:
+            AgentService.ensure_agent_available("billing", hosted=True)
+            AgentService.ensure_agent_available(None, hosted=True)

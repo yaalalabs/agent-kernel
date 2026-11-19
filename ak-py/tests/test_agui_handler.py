@@ -32,6 +32,7 @@ from agentkernel.core.config import _AGUIConfig, _GuardrailConfig, _RegistryConf
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallStart
 from agentkernel.core.hooks import PreHook
 from agentkernel.core.model import AgentDescriptor, AgentReplyText, Principal
+from agentkernel.core.registry import InMemoryAgentRegistry
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
@@ -117,9 +118,6 @@ class ScriptedAgent(Agent):
 
     def __init__(self, name="assistant", script=None, streaming=True, runner_name="scripted"):
         super().__init__(name, ScriptedRunner(script if script is not None else [], runner_name, streaming))
-
-    def get_a2a_card(self):
-        return None
 
     def get_description(self):
         return f"{self.name} description"
@@ -349,6 +347,18 @@ class TestAgentResolution:
             unknown = client.post("/agui/nobody", headers=AUTH, json=body())
             assert hidden.status_code == unknown.status_code == 404
             assert hidden.json()["detail"].replace("hidden", "X") == unknown.json()["detail"].replace("nobody", "X")
+
+    def test_a_hosted_agent_is_resolved_from_its_own_descriptor_without_reading_the_registry_store(self, monkeypatch):
+        """Over a shared registry a store read per run would be a network round trip for an agent this process holds."""
+
+        class _NoStoreReads(InMemoryAgentRegistry):
+            def descriptor(self, id):
+                raise AssertionError("the registry's store was read for an agent this process hosts")
+
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)], registry=_NoStoreReads()) as (client, _):
+            response = client.post("/agui/assistant", headers=AUTH, json=body())
+            assert response.status_code == 200
+            assert types_of(response)[-1] == "RUN_FINISHED"
 
     def test_an_agent_known_to_the_registry_and_not_hosted_here_cannot_be_run_in_process(self, monkeypatch, descriptor_only_registry):
         """It resolves (the queue-mode handler enqueues it), but this handler runs agents itself."""

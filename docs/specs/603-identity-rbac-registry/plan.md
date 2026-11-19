@@ -654,6 +654,45 @@ the spec section it changes.
   `docs/docs/intro.md` and the Features list in `ak-py/README.md` each carry an Agent Registry
   entry. The `WhatsNewBanner` in `index.tsx`, the persona pages and the root `README.md` were
   left as they were.
+- **Review follow-ups (PR #983, 2026-11-19).** Fixed from the review, each with a test:
+  - The overlay is applied on read as well as at registration, and matches an id in another
+    case (design refinement 12; `core/registry.py`).
+  - The registry takes no TTL: the backends lost the parameter and a `ttl` under a store block
+    is refused at load (design refinement 11; `core/config.py`, `identity/registry/`).
+  - Store correctness: the redis-like document and index membership change in one transaction;
+    `deregister` removes the store record before the local entry; DynamoDB listings scan with
+    `ConsistentRead`; `AgentRegistry.is_empty()` answers an unnamed request and the startup
+    check without a listing.
+  - `ensure_agent_available(name, *, hosted=False)`: the direct thread handler asks for a
+    hosted agent, so nothing is recorded for an agent only the registry knows; the queue-mode
+    thread precheck and AG-UI's resolution run off the event loop, and AG-UI reads the
+    descriptor once, from the hosted agent when there is one.
+  - `Module.describe` refuses `runner`, `supports_streaming` and `updated_at`, and restores the
+    agent's descriptor when the registry refuses the registration.
+  - An A2A card and its skills carry a neutral sentence when no description is declared, since
+    the SDK drops an empty required field from the served JSON.
+  - `_RegistryConfig` refuses unknown keys; the catalog decides a malformed cursor before it
+    reads the registry; `IOHandler._warn_if_no_agents` cannot end the process.
+  - `Agent.get_description()` is concrete and unread; an adapter that still defines
+    `get_a2a_card` is warned once; the 22 test doubles that carried the dead method lost it.
+  - The shared Redis-like driver no longer logs connection credentials at DEBUG (outside this
+    change's diff, found by the review).
+  - The duplicate-id rule is recorded as design refinement 10; `design.md` sections 4 and 10
+    are in step with refinements 8 to 12.
+- **Left open by the review.**
+  - `surfaces` without `rest` keeps an agent out of the catalog and does not refuse a chat
+    request that names it. Refusing it belongs at the REST edges (chat, pipeline chat, threads,
+    schedules), not in the shared service the A2A and MCP runs also go through, and it touches
+    the same call sites as iterations 18 and 19. To be decided before iteration 18; the docs
+    say what `rest` governs today.
+  - Whether an adapter should seed `descriptor.description` from a native description field
+    that is separate from the instructions (Pydantic AI and MAF `description=`,
+    `ClaudeAgentSpec.description`). The design only rules out the instructions.
+  - A runnable example of the shared registry (an IO process that does not import the agents):
+    `examples/k8s/openai-queue-mode` still loads them in both processes. It needs the kind
+    smoke to change with it, so it is left for iteration 29's examples pass.
+  - Tool-reporting gaps per adapter, which matter once phase E gates on `descriptor.tools`:
+    see Phase E.
 
 ## Phase D: Authorization (iterations 17 to 20)
 
@@ -747,6 +786,21 @@ the spec section it changes.
 Each adapter gate is one file plus one `tests/test_tool_gates_<adapter>.py`, grouped by
 mechanism. Every suite asserts the native call keyword-for-keyword unchanged with no
 `authorization` block.
+
+A policy names tools by `descriptor.tools`, which an adapter fills with the tools declared on
+its native agent (spec 6, descriptor sources). The phase C review found these gaps, to close or
+to document as ungated in the iteration that gates the adapter, each with a case on real SDK
+objects in `tests/test_tool_<adapter>.py`:
+
+- Pydantic AI: a tool behind `toolset.prefixed(...)` or a `RenamedToolset` is reported under its
+  inner name, not the name the model calls. The wrong name is worse than a missing one.
+- LangGraph: tools in a compiled subgraph mounted as a node are not reported
+  (`get_subgraphs(recurse=True)`).
+- Google ADK: a `Workflow` nested in a `Workflow` is not walked, and a callable instance with no
+  `name` or `__name__` is not reported under the name ADK's `FunctionTool` gives it.
+- smolagents: managed agents the model can call are not reported, and the built-in
+  `final_answer` is, so a deny-by-default policy would block every answer.
+- OpenAI and MAF: tools of an MCP server, and of a handoff target, are not reported.
 
 ### Iteration 21: `ToolGate`, OpenAI, Pydantic AI, MAF and Claude
 
@@ -875,11 +929,12 @@ user-skill updates), and those for phase C with phase C (see "Phase C as shipped
      these pages (caller filtering, the 403 and 404), and what phases D to F add to the landing
      and feature pages (the registry card, the store tiles and the What's New entry landed with
      phase C).
-- **Verify:** `grep -rn "AuthValidator\|Authoriser\|acting_user_id\|mcp.agents\|a2a.agents\|
-  agui.agents\|userId\|get_a2a_card" docs/docs ak-py/README.md README.md ak-deployment` returns
-  only the frozen `docs/versioned_docs/` snapshots, the Gmail API's `userId="me"`, and the
-  sentences that say the three lists and `get_a2a_card` were removed; the docs site builds
-  (`NODE_ENV=production`, 6 GB heap).
+- **Verify:** `grep -rnF -e AuthValidator -e Authoriser -e acting_user_id -e mcp.agents
+  -e a2a.agents -e agui.agents -e userId -e get_a2a_card docs/docs ak-py/README.md README.md
+  ak-deployment` (fixed strings, one `-e` per term, so no term is lost to a line break in the
+  pattern and a dot matches only a dot) returns only the Gmail API's `userId="me"` and the
+  sentences that say the three lists and `get_a2a_card` were removed; `docs/versioned_docs/`
+  is frozen and is not searched. The docs site builds (`NODE_ENV=production`, 6 GB heap).
 
 ### Iteration 28: Skills
 

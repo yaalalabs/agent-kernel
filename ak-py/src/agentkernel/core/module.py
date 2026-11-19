@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
 from pydantic import ValidationError
 
@@ -16,6 +16,12 @@ class Module(ABC):
     An agent module is a Python module containing a set of agents built using a supported agent
     framework. Agent Kernel provides an implementation of the Module class for each supported agent
     framework, allowing the agents to be registered and managed in a framework-agnostic manner.
+    """
+
+    _REPORTED_DESCRIPTOR_FIELDS: ClassVar[frozenset[str]] = frozenset({"runner", "supports_streaming", "updated_at"})
+    """
+    The `AgentDescriptor` fields that state a fact about the agent's runner or its registry record, which
+    `describe` therefore refuses: they are reported, not declared.
     """
 
     def __init__(self):
@@ -142,13 +148,16 @@ class Module(ABC):
         calls merge, the later call winning per field (a list is replaced, not extended). Chained like `pre_hook` /
         `post_hook` / `run_options`.
 
-        The `id` is the key the agent is registered under and cannot be described.
+        The `id` is the key the agent is registered under and cannot be described. Neither can what the agent's
+        runner and the registry report (`runner`, `supports_streaming`, `updated_at`): a surface decides from
+        them whether the agent can be served, so a descriptor claiming a runner streams when it does not would
+        open a stream that can only fail.
         :param agent: The native framework agent the metadata is for.
         :param fields: The `AgentDescriptor` fields to set.
         :return: This module, for chaining.
         :raises ValueError: If the agent is not loaded in this module or not registered in the current runtime, a
-            field is not one `AgentDescriptor` declares, `id` is named, or a value is not valid for its field;
-            nothing is stored.
+            field is not one `AgentDescriptor` declares, `id` or a reported field is named, or a value is not
+            valid for its field; nothing is stored.
         """
         wrapped = self._wrapped(agent)
         unknown = sorted(set(fields) - set(AgentDescriptor.model_fields))
@@ -156,6 +165,12 @@ class Module(ABC):
             raise ValueError(f"Unknown descriptor field(s) for agent '{wrapped.name}': {', '.join(unknown)}")
         if "id" in fields:
             raise ValueError(f"The descriptor id of agent '{wrapped.name}' is the key it is registered under and cannot be described")
+        reported = sorted(set(fields) & self._REPORTED_DESCRIPTOR_FIELDS)
+        if reported:
+            raise ValueError(
+                f"Descriptor field(s) {', '.join(reported)} of agent '{wrapped.name}' are what its runner and the registry "
+                "report and cannot be described"
+            )
         # Validated as a whole, not copied with the update applied: the descriptor is read by other processes
         # once a shared registry stores it, so a value its model refuses must fail here.
         try:
@@ -166,8 +181,15 @@ class Module(ABC):
         runtime = Runtime.current()
         if runtime.registry.get(described.id) is not wrapped:
             raise ValueError(f"Agent '{wrapped.name}' is not registered in the current runtime")
+        declared = wrapped.descriptor
         wrapped._set_descriptor(described)
-        runtime.register(wrapped)
+        try:
+            runtime.register(wrapped)
+        except Exception:
+            # The registry kept its record, so the agent keeps the descriptor that record was written from:
+            # it would otherwise act as described here (its identity, say) while every reader sees the old one.
+            wrapped._set_descriptor(declared)
+            raise
         return self
 
     def _wrapped(self, agent: Any) -> Agent:

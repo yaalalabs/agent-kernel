@@ -10,6 +10,7 @@ has to be taken after the inbound state is applied, not before.
 import base64
 import json
 import threading
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -27,6 +28,8 @@ from agentkernel.core.model import (
     ReplyMessageType,
     StreamChunk,
 )
+from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.identity import IdentityProvider, IdentityProviderFactory
 from agentkernel.integration.agui.queue_handler import AGUIPipelineRequestHandler
@@ -70,6 +73,24 @@ class _StubRequest:
     """Only `headers` is read once `_resolve_run_inputs` is stubbed out."""
 
     headers: dict = {}
+
+
+class _AuthenticatedRunRequest(_StubRequest):
+    """A request the identity dependency already authenticated, carrying a minimal RunAgentInput body."""
+
+    def __init__(self):
+        self.state = SimpleNamespace(principal=PRINCIPAL)
+
+    async def json(self) -> dict:
+        return {
+            "threadId": "t-1",
+            "runId": "r-1",
+            "state": None,
+            "messages": [{"id": "m1", "role": "user", "content": "hello"}],
+            "tools": [],
+            "context": [],
+            "forwardedProps": None,
+        }
 
 
 PRINCIPAL = Principal(subject="u1", provider="test", namespace="test")
@@ -478,6 +499,26 @@ class TestTheEdgeNeverBlocksTheEventLoop:
         assert threads, "close_stream was never called"
         assert threads[0] is not threading.current_thread(), "close_stream ran on the event loop"
 
+    @pytest.mark.asyncio
+    async def test_the_agent_is_read_from_the_registry_once_and_off_the_event_loop(self, descriptor_only_registry):
+        """The edge hosts no agent, so resolving one reads the shared registry's store on every run."""
+        reads = []
+
+        class _SharedRegistry(descriptor_only_registry):
+            def descriptor(self, id):
+                reads.append(threading.current_thread())
+                return super().descriptor(id)
+
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        registry = _SharedRegistry([AgentDescriptor(id="planner", name="Planner", runner="openai", supports_streaming=True)])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            _, agent, _, _ = await handler._resolve_run_inputs("planner", _AuthenticatedRunRequest())
+
+        assert agent.id == "planner"
+        assert len(reads) == 1, "existence and exposure were checked with separate store reads"
+        assert reads[0] is not threading.current_thread(), "the registry's store was read on the event loop"
+
 
 class TestTheAttachmentsAreOffloadedBeforeTheEnqueue:
     """Bytes must not ride the queue: a broker caps a message far below `api.max_file_size`.
@@ -561,6 +602,16 @@ class TestAPauseIsTheRunsTerminalOutcome:
 
         [request] = handler._producer.requests
         assert request.principal == PRINCIPAL
+
+    @pytest.mark.asyncio
+    async def test_the_queued_request_names_the_agent_by_its_id(self, monkeypatch):
+        """The runner selects by id: the display name (`Planner`) would enqueue a run no runner can select."""
+        handler = _edge_handler(monkeypatch)
+
+        await handler._run("planner", _StubRequest())
+
+        [request] = handler._producer.requests
+        assert request.agent == "planner"
 
     @pytest.mark.asyncio
     async def test_a_run_that_did_not_pause_still_finishes_without_an_outcome(self, monkeypatch):

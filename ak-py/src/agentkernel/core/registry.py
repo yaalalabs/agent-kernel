@@ -76,7 +76,12 @@ class AgentRegistry(ABC):
     A registry maps an agent id to the agent hosted by this process and to its descriptor. A
     backend may know descriptors of agents this process does not host (a store shared between
     processes), so the two sides are read separately: `get` and `agents` answer for this process,
-    `descriptor`, `descriptors` and `list` for every agent the registry knows.
+    `descriptor`, `descriptors`, `list` and `is_empty` for every agent the registry knows.
+
+    An id identifies one agent across every process that shares the registry. Two replicas hosting the same
+    agent register the same id, so a backend refuses a second agent under an id only inside one process
+    (`_ensure_free`); it cannot tell a replica from a different agent that another process registered under
+    the same id, and the later registration replaces the record.
     """
 
     @abstractmethod
@@ -135,6 +140,16 @@ class AgentRegistry(ABC):
         :return: The descriptors.
         """
         raise NotImplementedError
+
+    def is_empty(self) -> bool:
+        """
+        Whether the registry knows no agent at all, hosted here or elsewhere.
+
+        Answers what a request naming no agent needs to know without reading every descriptor. A backend over
+        a store overrides it with a read that stops at the first record.
+        :return: True when no descriptor is known.
+        """
+        return not self.descriptors()
 
     def clear(self) -> None:
         """
@@ -208,12 +223,21 @@ class InMemoryAgentRegistry(AgentRegistry):
 
 class _OverlaidAgentRegistry(AgentRegistry):
     """
-    Applies the `registry.agents.<id>` overlay to each agent as it registers, over any backend.
+    Applies the `registry.agents.<id>` overlay over any backend: to each agent as it registers, and to each
+    descriptor as it is read.
 
     The overlay is the last descriptor source: its fields replace the ones the adapter built and
-    `Module.describe` declared. The resulting descriptor is the one the backend stores and the one the
-    agent carries from then on, so the process that hosts an agent holds a single record of it. Every
-    other operation is the backend's own.
+    `Module.describe` declared. At registration the resulting descriptor is the one the backend stores and
+    the one the agent carries from then on, so the process that hosts an agent holds a single record of it.
+
+    On a read the overlay is applied again, which changes nothing for an agent registered here and is what
+    makes the configuration of a process that only serves agents count: a process over a shared store never
+    registers the agents it lists, so its own `registry.agents.<id>.surfaces` would otherwise restrict
+    nothing. Each process therefore serves an agent as its own configuration describes it.
+
+    An overlay key matches the agent with that id, or, when no key matches exactly, the one whose id differs
+    only in case: an environment variable (`AK_REGISTRY__AGENTS__<ID>__SURFACES`) arrives lowercased, and a
+    restriction that reads as set must not be dropped for that.
     """
 
     def __init__(self, backend: AgentRegistry, overlay: dict[str, dict[str, Any]]):
@@ -224,17 +248,34 @@ class _OverlaidAgentRegistry(AgentRegistry):
         """
         self._backend = backend
         self._overlay = overlay
+        self._overlay_by_folded_id = {id.casefold(): fields for id, fields in overlay.items()}
+
+    def _fields_for(self, id: str) -> dict[str, Any] | None:
+        """
+        Returns the overlay of one agent: the entry keyed by its id, else the one keyed by it in another case.
+        :param id: The agent id.
+        :return: The fields to set, or None when the overlay does not name the agent.
+        """
+        return self._overlay.get(id) or self._overlay_by_folded_id.get(id.casefold())
+
+    def _overlaid(self, descriptor: AgentDescriptor) -> AgentDescriptor:
+        """
+        Returns a descriptor with the overlay's fields set over its own.
+        :param descriptor: The descriptor as declared or as stored.
+        :return: The overlaid descriptor, or the one given when the overlay does not name the agent.
+        """
+        fields = self._fields_for(descriptor.id)
+        if not fields:
+            return descriptor
+        # Validated as a whole: the fields come from configuration and reach other processes through the store.
+        return AgentDescriptor.model_validate({**descriptor.model_dump(), **fields})
 
     def register(self, descriptor: AgentDescriptor, agent: Agent) -> None:
-        fields = self._overlay.get(descriptor.id)
-        if not fields:
-            self._backend.register(descriptor, agent)
-            return
-        # Validated as a whole: the fields come from configuration and reach other processes through the store.
-        overlaid = AgentDescriptor.model_validate({**descriptor.model_dump(), **fields})
+        overlaid = self._overlaid(descriptor)
         self._backend.register(overlaid, agent)
-        # Only once it is registered: a refused registration leaves the agent as it was declared.
-        agent._set_descriptor(overlaid)
+        if overlaid is not descriptor:
+            # Only once it is registered: a refused registration leaves the agent as it was declared.
+            agent._set_descriptor(overlaid)
 
     def deregister(self, id: str) -> None:
         self._backend.deregister(id)
@@ -243,19 +284,20 @@ class _OverlaidAgentRegistry(AgentRegistry):
         return self._backend.get(id)
 
     def descriptor(self, id: str) -> AgentDescriptor | None:
-        return self._backend.descriptor(id)
+        found = self._backend.descriptor(id)
+        return None if found is None else self._overlaid(found)
 
     def agents(self) -> dict[str, Agent]:
         return self._backend.agents()
 
     def descriptors(self) -> list[AgentDescriptor]:
-        return self._backend.descriptors()
+        return [self._overlaid(descriptor) for descriptor in self._backend.descriptors()]
+
+    def is_empty(self) -> bool:
+        return self._backend.is_empty()
 
     def clear(self) -> None:
         self._backend.clear()
-
-    def list(self, cursor: str | None = None, limit: int | None = None, tags: list[str] | None = None) -> AgentDescriptorPage:
-        return self._backend.list(cursor=cursor, limit=limit, tags=tags)
 
 
 _BUILTIN_REGISTRIES = ["in_memory", "redis", "valkey", "dynamodb"]
@@ -275,7 +317,8 @@ class AgentRegistryFactory:
         ``registry.type`` is a built-in short name (in_memory, redis, valkey, dynamodb) or a dotted path to a
         user-supplied ``AgentRegistry`` subclass (bring-your-own), built with no arguments. With no ``registry``
         block the registry is in-memory. When ``registry.agents`` sets any field, the registry applies that
-        overlay as agents register.
+        overlay as agents register and as descriptors are read. A registry handed to ``Runtime`` directly is
+        used as given, without the overlay.
         :return: The registry.
         :raises AKConfigError: If the type is unknown, or a store type has no connection block.
         :raises ImportError: If a store type's client library is not installed, naming the extra that ships it.
@@ -303,19 +346,19 @@ class AgentRegistryFactory:
             with require_extra("redis", "registry.type: redis"):
                 from ..identity.registry.redis import RedisAgentRegistry
 
-            return RedisAgentRegistry(url=settings.url, prefix=settings.prefix, ttl=settings.ttl)
+            return RedisAgentRegistry(url=settings.url, prefix=settings.prefix)
         if key == "valkey":
             settings = AgentRegistryFactory._settings(config, "valkey")
             with require_extra("valkey", "registry.type: valkey"):
                 from ..identity.registry.valkey import ValkeyAgentRegistry
 
-            return ValkeyAgentRegistry(url=settings.url, prefix=settings.prefix, ttl=settings.ttl)
+            return ValkeyAgentRegistry(url=settings.url, prefix=settings.prefix)
         if key == "dynamodb":
             settings = AgentRegistryFactory._settings(config, "dynamodb")
             with require_extra("aws", "registry.type: dynamodb"):
                 from ..identity.registry.dynamodb import DynamoDBAgentRegistry
 
-            return DynamoDBAgentRegistry(table_name=settings.table_name, ttl=settings.ttl)
+            return DynamoDBAgentRegistry(table_name=settings.table_name)
         if "." not in config.type:
             raise AKConfigError(
                 f"unknown registry type '{config.type}'; expected one of {_BUILTIN_REGISTRIES} or a dotted path to an AgentRegistry subclass"

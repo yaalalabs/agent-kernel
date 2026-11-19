@@ -1,5 +1,6 @@
 """AG-UI surface: discovery, run routes, and the run lifecycle."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -13,7 +14,6 @@ from ...core.config import AKConfig
 from ...core.event import RunPaused
 from ...core.model import AgentDescriptor, Principal
 from ...core.runtime import Runtime
-from ...core.service import AgentService
 from .mapping import AGUIMapper
 from .run_input import AGUIRunInput
 from .state import AGUIState
@@ -102,17 +102,19 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         runner streams), so the agent need not be hosted by this process: the queue-mode handler
         enqueues the run for the process that hosts it.
 
+        The descriptor is read once. An agent this process hosts answers with the descriptor it carries,
+        which is the one it registered, so the registry's store is read only for an agent hosted
+        elsewhere; that read blocks, which is why the caller runs this off the event loop.
+
         :param agent_name: Agent id taken from the route path.
-        :return: The agent's descriptor, as the registry holds it.
+        :return: The agent's descriptor: the hosted agent's own, else the registry's record.
         :raises HTTPException: 404 when the agent is unknown *or* not exposed — deliberately
                                indistinguishable, so the surface never confirms that a hidden name
                                exists. 400 when the agent's runner cannot stream.
         """
-        try:
-            AgentService.ensure_agent_available(agent_name)
-        except ValueError:
-            raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
-        descriptor = Runtime.current().registry.descriptor(agent_name)
+        registry = Runtime.current().registry
+        hosted = registry.get(agent_name)
+        descriptor = hosted.descriptor if hosted is not None else registry.descriptor(agent_name)
         if descriptor is None or not descriptor.exposed_on("agui"):
             raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
         if not descriptor.supports_streaming:
@@ -190,7 +192,8 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             unusable body, 404/400 from agent resolution.
         """
         principal = self._resolve_user(request)
-        agent = self._resolve_agent(agent_name)
+        # Off the event loop: over a shared registry, resolving an agent hosted elsewhere reads the store.
+        agent = await asyncio.to_thread(self._resolve_agent, agent_name)
 
         try:
             body = await request.json()

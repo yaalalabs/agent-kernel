@@ -85,9 +85,6 @@ class PausingAgent(Agent):
     def __init__(self, name="refunds", runner=None):
         super().__init__(name, runner or PausingRunner())
 
-    def get_a2a_card(self):
-        return None
-
     def get_description(self):
         return "pauses"
 

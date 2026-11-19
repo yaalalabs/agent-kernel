@@ -12,6 +12,7 @@ from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, ChatRunRequest, P
 from ..core.registry import AgentDescriptorPage
 from ..core.runtime import Runtime
 from ..core.util.factory import AKConfigError
+from ..core.util.pagination import decode_cursor
 from ..identity.provider.factory import IdentityProviderFactory
 from ..identity.provider.request import BEARER_CHALLENGE
 
@@ -115,11 +116,13 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         :return: `{"agents": [<catalog entry>, ...], "next_cursor": <cursor or null>}`.
         :raises HTTPException: 400 for a malformed cursor.
         """
-        exposed = [descriptor for descriptor in Runtime.current().registry.descriptors() if descriptor.exposed_on("rest")]
         try:
-            return AgentDescriptorPage.of(exposed, cursor=cursor, limit=limit, tags=tags).catalog()
+            # Before the registry is read: a malformed cursor is the caller's 400 whatever the store answers.
+            decode_cursor(cursor)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        exposed = [descriptor for descriptor in Runtime.current().registry.descriptors() if descriptor.exposed_on("rest")]
+        return AgentDescriptorPage.of(exposed, cursor=cursor, limit=limit, tags=tags).catalog()
 
     async def run(self, body: ChatRunRequest, request: Request):
         # The surface decides who is calling: a principal the client put in the body is overwritten

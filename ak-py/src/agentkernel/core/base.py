@@ -25,6 +25,7 @@ if TYPE_CHECKING:  # pragma: no cover: typing only; avoids a base <-> realtime i
     from .realtime import RealtimeRunner
 
 _log = logging.getLogger("ak.core.runner")
+_agent_log = logging.getLogger("ak.core.agent")
 
 # Volatile-cache keys under which Runtime publishes the run's identity. Private to this module: the
 # Session accessors below are the only spellings, and the ``ak.`` prefix makes the keys read-only
@@ -593,6 +594,9 @@ class Agent(ABC):
     so a bring-your-own Agent reserves nothing.
     """
 
+    _warned_card_builders: ClassVar[set[type]] = set()
+    """The adapter classes already told that their `get_a2a_card` is no longer called, so each is told once."""
+
     @classmethod
     def current(cls) -> "Agent | None":
         """
@@ -713,6 +717,7 @@ class Agent(ABC):
         catalog text.
         :return: The agent's own descriptor, before `Module.describe` is applied.
         """
+        self._warn_if_it_builds_its_own_card()
         tools = list(dict.fromkeys(self.get_tool_names()))
         descriptions = self._tool_descriptions()
         return AgentDescriptor(
@@ -724,9 +729,34 @@ class Agent(ABC):
             supports_streaming=self.runner.supports_streaming,
         )
 
+    def _warn_if_it_builds_its_own_card(self) -> None:
+        """
+        Warns, once per class, about an adapter that still defines the removed `get_a2a_card`.
+
+        The method was the adapter contract's way to publish an A2A card. Cards are built from the descriptor
+        now, so an adapter written against the old contract still loads while its hand-built card is silently
+        replaced by one built from whatever its descriptor carries.
+        """
+        adapter = type(self)
+        if adapter in Agent._warned_card_builders or not callable(getattr(adapter, "get_a2a_card", None)):
+            return
+        Agent._warned_card_builders.add(adapter)
+        _agent_log.warning(
+            f"{adapter.__name__}.get_a2a_card is no longer called: an agent's A2A card is built from its descriptor. "
+            "Report the agent's tools through get_tool_names() and _tool_descriptions(), declare its catalog text with "
+            "Module.describe or registry.agents.<id>, and remove the method."
+        )
+
     def get_tool_names(self) -> list[str]:
         """
-        Returns the names of the tools the agent can call, as an authorization policy names them.
+        Returns the names of the tools declared on the native agent, as an authorization policy names them.
+
+        Declared, not discovered: an adapter reads the tools its native agent object holds when the agent is
+        loaded, under the names the model calls them by, and performs no I/O to find more. What only exists at
+        run time is therefore not reported: the tools of a remote MCP server or of a toolset resolved per run,
+        the tools of an agent this one hands off to, and tools nested in a sub-workflow or sub-graph the
+        adapter does not walk. Each adapter's own docstring names what it leaves out.
+
         The base implementation reports none; each framework adapter reports its native agent's tools.
         :return: The tool names.
         """
@@ -803,12 +833,17 @@ class Agent(ABC):
             # Restore the previous agent, even on error, so nested activations don't clobber it.
             Agent.current_agent.reset(token)
 
-    @abstractmethod
     def get_description(self) -> str:
         """
-        Returns the description of the agent.
+        Returns the native agent's own description or instructions.
+
+        Agent Kernel does not read it: what a surface publishes about an agent is the catalog text declared on
+        its descriptor (`Module.describe`, `registry.agents.<id>.description`), never this, which for most
+        frameworks is the system prompt. Every built-in adapter implements it for the applications that call
+        it; a new adapter may leave the default.
+        :return: The description, empty unless the adapter provides one.
         """
-        pass
+        return ""
 
     @abstractmethod
     def override_system_prompt(self, prompt: str) -> None:

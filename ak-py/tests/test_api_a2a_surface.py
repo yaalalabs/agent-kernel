@@ -105,6 +105,20 @@ class TestCard:
 
         assert (skill.id, skill.name, skill.description) == ("file", "File a claim", "Files one claim")
 
+    def test_an_undescribed_agent_and_skill_carry_a_neutral_sentence_that_names_them(self):
+        # A2A requires both descriptions, and the SDK drops an empty string from the served JSON altogether.
+        card = _card(description="", skills=[AgentSkillDescriptor(id="file", name="File a claim")])
+
+        assert card.description == f"The '{AGENT}' agent."
+        assert card.skills[0].description == f"The 'File a claim' skill of the '{AGENT}' agent."
+
+    def test_the_neutral_sentence_is_the_cards_only_and_the_descriptor_stays_empty(self):
+        descriptor = _descriptor(description="", skills=[AgentSkillDescriptor(id="file", name="file")])
+
+        A2ACardBuilder.build(descriptor)
+
+        assert (descriptor.description, descriptor.skills[0].description) == ("", "")
+
     def test_an_untagged_skill_is_tagged_with_the_agent_id(self):
         untagged = AgentSkillDescriptor(id="file", name="file", description="File a claim")
         tagged = AgentSkillDescriptor(id="list", name="list", description="List claims", tags=["read"])
@@ -246,10 +260,12 @@ class TestRoutes:
     async def test_an_agent_with_no_description_is_served_and_warned_about_once(self, caplog):
         with caplog.at_level("WARNING", logger="ak.a2a"):
             card = await self._get(f"/a2a/{UNDESCRIBED}/.well-known/agent-card.json")
-            await self._get("/a2a/catalog")
+            catalog = await self._get("/a2a/catalog")
 
         assert card.status_code == 200
-        assert card.json().get("description", "") == ""
+        # The key itself is what A2A requires: an empty description is dropped from the served JSON.
+        assert card.json()["description"] == f"The '{UNDESCRIBED}' agent."
+        assert [entry["description"] for entry in catalog.json()["cards"]] == ["Files expense claims", f"The '{UNDESCRIBED}' agent."]
         [warning] = [record.getMessage() for record in caplog.records if record.name == "ak.a2a"]
         assert f"'{UNDESCRIBED}'" in warning and "Module.describe" in warning
 

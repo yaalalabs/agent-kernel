@@ -69,6 +69,12 @@ The `mcp.agents` list (and `AK_MCP__AGENTS`) no longer exists; a configuration t
 application at startup with a message pointing at `registry.agents.<id>.surfaces`. If agent tools are enabled and
 no agent is exposed on `mcp`, a warning at startup says so.
 
+The list named the agents that became tools, and every other agent was left out. `surfaces` works the other way
+round: an agent with none set is exposed. To keep what a list did, give **every agent the list left out** a
+`surfaces` value without `mcp` before you remove the list. In a split deployment the process that serves MCP
+applies its own `registry.agents` block, so set `surfaces` in that process's configuration (or in one file both
+processes read).
+
 An agent tool call always goes through the [queue pipeline](../advanced/queue-mode-guide.md), like a
 REST chat request: it is put on the input queue, the agent runner executes it, and the reply is read
 back from the response store. The tool's `session_id` argument is the Agent Kernel session.
@@ -84,8 +90,10 @@ back from the response store. The tool's `session_id` argument is the Agent Kern
   tools are built from the [agent registry](../core-concepts/configuration.md#agent-registry), so the IO process has
   to know the agents. Either import the same agent modules in the IO process as in the runner, or share the registry
   (`registry.type: redis`, `valkey` or `dynamodb`) so the IO process reads the descriptors the runner registered. Tools
-  are registered once, when the IO process starts: start the runner first, and restart the IO process after adding
-  an agent. An IO process whose registry knows no agent logs a warning and lists no agent tools. The
+  are registered once, when the IO process starts: start the runner first and let it finish loading its agents, and
+  restart the IO process after adding an agent or when it started before the runner had registered. An IO process
+  whose registry knows no agent logs a warning and lists no agent tools. A call goes to whichever agent runner takes
+  it from the input queue, so every runner on that queue has to host every agent exposed here. The
   response store must be shared (`redis`, `valkey` or `dynamodb`) in every execution mode. With more
   than one IO replica behind a load balancer, set `mcp.stateless_http: true`, since a stateful MCP
   session is pinned to one replica.

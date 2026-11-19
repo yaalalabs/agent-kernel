@@ -155,8 +155,8 @@ class A2A:
                 continue
             if not descriptor.description:
                 cls._log.warning(
-                    f"Agent '{descriptor.id}' is served over A2A with an empty description, which A2A requires; declare one with "
-                    f"Module.describe(agent, description=...) or registry.agents.{descriptor.id}.description"
+                    f"Agent '{descriptor.id}' has no description, so its A2A card says only that it is the '{descriptor.id}' agent; "
+                    f"declare one with Module.describe(agent, description=...) or registry.agents.{descriptor.id}.description"
                 )
             cls._cards[descriptor.id] = A2ACardBuilder.build(descriptor)
         if descriptors and not cls._cards:

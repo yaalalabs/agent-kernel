@@ -55,6 +55,14 @@ the application at startup with a message pointing at `registry.agents.<id>.surf
 and no agent is exposed on it, a warning at startup says so; the catalog is then empty and every agent
 route answers 404.
 
+The list named the agents A2A served, and every other agent was left out. `surfaces` works the other way
+round: an agent with none set is served. To keep what a list did, give **every agent the list left out** a
+`surfaces` value without `a2a` before you remove the list. Adding `a2a` to the agents it named is not
+enough, since the others are then served too.
+
+In a split deployment the process that mounts the A2A routes applies its own `registry.agents` block to the
+agents it serves, so set `surfaces` in that process's configuration (or in one file both processes read).
+
 ## Starting A2A Server
 
 ```python
@@ -82,8 +90,12 @@ separate process only in split deployments.
   cards are built from the [agent registry](../core-concepts/configuration.md#agent-registry), so the IO process has
   to know the agents. Either import the same agent modules in the IO process as in the runner, or share the registry
   (`registry.type: redis`, `valkey` or `dynamodb`) so the IO process reads the descriptors the runner registered. Cards
-  are built once, when the IO process starts: start the runner first, and restart the IO process after adding an agent.
-  An IO process whose registry knows no agent logs a warning and serves an empty catalog.
+  are built once, when the IO process starts: start the runner first and let it finish loading its agents, and restart
+  the IO process after adding an agent or when it started before the runner had registered. An IO process whose
+  registry knows no agent logs a warning and serves an empty catalog.
+  A message goes to whichever agent runner takes it from the input queue, so every runner on that queue has to host
+  every agent served here: a card for an agent only some of them load answers with an error whenever another takes
+  the message.
   The response store must be shared (`redis`, `valkey` or `dynamodb`) in every execution mode.
 - **Latency**: the reply is picked up by polling the response store, so it takes at least one
   `execution.response_store.delay` (1 s without a `response_store` block), and the wait gives up
@@ -111,8 +123,9 @@ Each exposed agent automatically publishes an A2A **agent card**. Agent Kernel b
 agent's **descriptor**, the record the agent registry keeps for it, so every framework gets a card the same way.
 
 - **Name, description and version** are the descriptor's. The description is the catalog text you declare,
-  never the agent's instructions, so it is empty until you set one (a warning at startup names each agent
-  served without it, and A2A requires the field). Declare it where the agent is loaded, or per agent id in
+  never the agent's instructions. A2A requires the field, so until you declare one the card says only
+  `The '<id>' agent.`, and a warning at startup names each agent served that way. A skill with no description
+  gets a sentence of the same kind. Declare the description where the agent is loaded, or per agent id in
   configuration:
 
   ```python
@@ -124,7 +137,7 @@ agent's **descriptor**, the record the agent registry keeps for it, so every fra
     agents:
       triage:
         description: Routes a question to the right specialist
-        version: 1.2.0
+        version: "1.2.0"   # quoted: YAML reads 1.2 or 2 as a number, which is refused
   ```
 
 - **Skills:** one per tool the agent has, with the tool's own description. Pass `skills=[...]` to

@@ -1197,6 +1197,9 @@ class GoogleADKAgent(AKBaseAgent):
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the tools of every `LlmAgent` reachable from the root, the root's first, each once.
+
+        Not reported: a toolset's tools (an MCP toolset lists them only inside a run), the agents of a `Workflow`
+        nested in another, and a callable object that has neither a `name` nor a function name.
         """
         return list(self._named_tools())
 

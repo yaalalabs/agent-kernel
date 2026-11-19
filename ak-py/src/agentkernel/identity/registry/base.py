@@ -17,7 +17,13 @@ class StoreBackedAgentRegistry(AgentRegistry):
     every agent any process registered. The store holds one record per agent id: two processes hosting the same
     agent write the same record, and a deregistration by either removes it until the other registers again.
 
-    A backend implements the four store operations: `_put`, `_remove`, `descriptor` and `descriptors`.
+    Records do not expire. Nothing registers a hosted agent again while its process runs, so a record with a
+    lifetime would drop a running agent from every listing; and nothing deregisters on a normal exit either
+    (`Module.unload` is the one caller), so the record of an agent a later deployment renamed or removed stays
+    until it is deleted from the store by its id.
+
+    A backend implements the four store operations, `_put`, `_remove`, `descriptor` and `descriptors`, and
+    overrides `is_empty` when its store can answer it without reading every record.
     """
 
     def __init__(self) -> None:
@@ -33,8 +39,10 @@ class StoreBackedAgentRegistry(AgentRegistry):
         self._agents[descriptor.id] = agent
 
     def deregister(self, id: str) -> None:
-        self._agents.pop(id, None)
+        # Removed from the store before it is dropped here: were the store unreachable, a retry would otherwise
+        # find no hosted agent, skip the delete, and leave other processes advertising an agent that is gone.
         self._remove(id)
+        self._agents.pop(id, None)
 
     def get(self, id: str) -> Agent | None:
         return self._agents.get(id)

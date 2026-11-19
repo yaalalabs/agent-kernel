@@ -125,7 +125,9 @@ registry:
 ```
 
 The `agui.agents` list (and `AK_AGUI__AGENTS`) no longer exists; a configuration that still sets it
-stops the application at startup with a message pointing at `registry.agents.<id>.surfaces`.
+stops the application at startup with a message pointing at `registry.agents.<id>.surfaces`. The list
+named the agents AG-UI served and left every other agent out, where an agent with no `surfaces` is
+served: to keep what a list did, give every agent it left out a `surfaces` value without `agui`.
 
 ## Configuration
 

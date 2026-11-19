@@ -1055,6 +1055,9 @@ class ClaudeAgent(BaseAgent):
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the declared in-process tools, as declared (the SDK serves each as `mcp__ak__<name>`).
+
+        Not reported: Claude Code's built-in tools (file, shell, web), the tools of external MCP servers named in
+        the options, and the tools of subagents.
         """
         return [tool.name for tool in self.agent.tools]
 

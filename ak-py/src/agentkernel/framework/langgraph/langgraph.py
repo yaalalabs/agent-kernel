@@ -395,6 +395,8 @@ class LangGraphAgent(BaseAgent):
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the tools the compiled graph's tool nodes hold.
+
+        Not reported: tools of a compiled subgraph mounted as a node, and tools a node calls without a `ToolNode`.
         """
         return list(self._graph_tools())
 

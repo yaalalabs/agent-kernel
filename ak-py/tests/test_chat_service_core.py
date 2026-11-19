@@ -321,9 +321,6 @@ class _ActingUserAgent(Agent):
     def get_description(self) -> str:
         return "Acting-user propagation test agent"
 
-    def get_a2a_card(self):
-        return None
-
     def override_system_prompt(self, prompt):
         pass
 
@@ -492,9 +489,6 @@ class _IncrementalAgent(Agent):
 
     def get_description(self) -> str:
         return "Incremental sync streaming test agent"
-
-    def get_a2a_card(self):
-        return None
 
     def override_system_prompt(self, prompt):
         pass

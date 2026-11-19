@@ -235,6 +235,36 @@ class TestNoAgentsWarning:
 
         assert [record.getMessage() for record in caplog.records] == []
 
+    def test_a_registry_that_cannot_be_read_does_not_stop_the_check(self, monkeypatch, caplog):
+        """This is a diagnostic. With the store down, mounting the surface raises the store's own error next; the
+        check must not be the thing that ends the process, with a traceback that reads as if a warning failed."""
+        from agentkernel.core.runtime import Runtime
+
+        def _unreachable():
+            raise ConnectionError("the registry store is unreachable")
+
+        monkeypatch.setattr(Runtime.current().registry, "is_empty", _unreachable)
+
+        with caplog.at_level("WARNING"):
+            IOHandler._warn_if_no_agents(_cfg(a2a=True, mcp=True, expose_agents=True))
+
+        [message] = [record.getMessage() for record in caplog.records]
+        assert "could not read the agent registry" in message and "the registry store is unreachable" in message
+
+    def test_the_check_asks_whether_any_agent_is_known_without_listing_them(self, monkeypatch, caplog):
+        from agentkernel.core.runtime import Runtime
+
+        def _listed():
+            raise AssertionError("every descriptor was read to learn whether one exists")
+
+        monkeypatch.setattr(Runtime.current().registry, "descriptors", _listed)
+        monkeypatch.setattr(Runtime.current().registry, "is_empty", lambda: False)
+
+        with caplog.at_level("WARNING"):
+            IOHandler._warn_if_no_agents(_cfg(a2a=True, mcp=True, expose_agents=True))
+
+        assert [record.getMessage() for record in caplog.records] == []
+
     def test_run_warns_and_carries_on(self, monkeypatch, registry, caplog):
         registry([])
         started = {}

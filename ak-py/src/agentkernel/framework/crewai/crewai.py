@@ -513,6 +513,8 @@ class CrewAIAgent(BaseAgent):
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the native agent's tools.
+
+        Not reported: the delegation tools CrewAI adds for an agent that allows delegation when a crew runs.
         """
         return [tool.name for tool in self.agent.tools or []]
 

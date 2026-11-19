@@ -5,9 +5,10 @@ Layout (keys under the configured prefix):
   - All index:   {prefix}index:all    -> set of agent ids
 
 A descriptor is one document, so every write is a full SET of that document, and the index set
-exists only to list the descriptors without scanning the keyspace. TTL defaults to 0 for the
-registry: nothing registers an agent again until its process restarts, so a descriptor that expired
-would drop a running agent from every listing. When one is configured it is refreshed on every write.
+exists only to list the descriptors without scanning the keyspace. The two keys change together,
+in one MULTI/EXEC transaction per write and per removal, so no interruption and no interleaving
+with another process leaves a document that is not listed or a listing entry without its document.
+Nothing expires: the registry takes no TTL (see `StoreBackedAgentRegistry`).
 """
 
 import logging
@@ -30,7 +31,7 @@ class _RedisLikeAgentRegistry(StoreBackedAgentRegistry):
     def __init__(self, driver: _RedisLikeDriver, log: logging.Logger):
         """
         Initializes the registry over a driver.
-        :param driver: The connection driver, built with the registry's prefix and TTL.
+        :param driver: The connection driver, built with the registry's prefix and no TTL.
         :param log: The backend's logger.
         """
         super().__init__()
@@ -53,29 +54,39 @@ class _RedisLikeAgentRegistry(StoreBackedAgentRegistry):
         found: list[AgentDescriptor] = []
         for id in self._driver.smembers(self._index_key()):
             descriptor = self.descriptor(id)
-            # A member without a document is a descriptor whose TTL elapsed ahead of the index set.
+            # A member without a document: the document was deleted from the store on its own.
             if descriptor is not None:
                 found.append(descriptor)
         return found
 
-    def _put(self, descriptor: AgentDescriptor) -> None:
-        """Write a descriptor document and (re)register it in the index set.
+    def is_empty(self) -> bool:
+        """Whether no agent is listed, read from the index set alone, without fetching a document."""
+        return not self._driver.smembers(self._index_key())
 
-        The membership is re-added on every write, not just on the first: under a configured TTL the
-        index set can expire while a descriptor is still live, and a descriptor missing from the
-        index would vanish from every listing.
+    def _put(self, descriptor: AgentDescriptor) -> None:
+        """Write a descriptor document and its index membership, together.
+
+        One transaction, the driver's `rpush_with_expiry` shape: issued as two commands, a failure between
+        them would leave a document other processes resolve by id and never list.
 
         :param descriptor: The full descriptor to write.
         """
         self._log.debug(f"Storing the descriptor of agent '{descriptor.id}'")
-        agent_key = self._agent_key(descriptor.id)
-        index_key = self._index_key()
-        self._driver.set(agent_key, descriptor.model_dump_json())
-        self._driver.sadd(index_key, descriptor.id)
-        if self._driver.ttl > 0:
-            self._driver.expire(index_key)
+        transaction = self._driver.client.pipeline()
+        transaction.set(self._agent_key(descriptor.id), descriptor.model_dump_json())
+        transaction.sadd(self._index_key(), descriptor.id)
+        transaction.execute()
 
     def _remove(self, id: str) -> None:
+        """Delete a descriptor document and its index membership, together.
+
+        One transaction, so a registration by another process lands wholly before or wholly after it: issued
+        as two commands, a registration between them would lose its index membership and keep its document.
+
+        :param id: The agent id.
+        """
         self._log.debug(f"Removing the descriptor of agent '{id}'")
-        self._driver.delete(self._agent_key(id))
-        self._driver.srem(self._index_key(), id)
+        transaction = self._driver.client.pipeline()
+        transaction.delete(self._agent_key(id))
+        transaction.srem(self._index_key(), id)
+        transaction.execute()

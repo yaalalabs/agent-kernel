@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from typing import Any
+from urllib.parse import urlsplit
 
 from .base import BaseDriver
 
@@ -92,12 +93,30 @@ class _RedisLikeDriver(BaseDriver):
         """Connects using the configured URL, with retries on the backend's error class."""
 
         def connect():
-            self._log.debug("Connecting to %s using URL %s", self._backend_name, self._url)
+            self._log.debug("Connecting to %s at %s", self._backend_name, self._location(self._url))
             client = self._from_url(self._url, decode_responses=self._decode_responses, socket_connect_timeout=5)
             client.ping()
             return client
 
         self._client = self._connect_with_retries(connect, self._error_class)
+
+    @staticmethod
+    def _location(url: str) -> str:
+        """
+        Returns where a connection URL points, for a log line: the URL without its user, password and query.
+
+        A URL may carry the password (``redis://user:password@host``, or ``?password=`` on a socket URL), and
+        the client is handed the URL as configured, so only what is logged leaves them out.
+
+        :param url: The connection URL as configured.
+        :return: The scheme, host, port and path; the input itself when it does not parse as a URL.
+        """
+        try:
+            parts = urlsplit(url)
+            host = parts.netloc.rpartition("@")[2]
+        except ValueError:
+            return url
+        return f"{parts.scheme}://{host}{parts.path}" if parts.scheme else url
 
     def key(self, suffix: str) -> str:
         """

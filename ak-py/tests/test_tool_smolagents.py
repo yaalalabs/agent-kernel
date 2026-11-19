@@ -185,3 +185,5 @@ class TestSmolagentsAgentToolReporting:
         skills = self._agent(SmolagentsToolBuilder.bind([get_weather])).descriptor.skills
 
         assert skills[0] == AgentSkillDescriptor(id="get_weather", name="get_weather", description="Returns the weather for a given city.")
+        # One skill per reported tool, each once: the framework's own final_answer is a tool the agent calls too.
+        assert [skill.id for skill in skills] == ["get_weather", "final_answer"]

@@ -17,6 +17,8 @@ from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentDescriptor, AgentReplyText
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.core.util.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from agentkernel.pipeline.request_handler import RequestHandler
 
 AGENTS = AgentRESTRequestHandler.AGENTS_PATH
 
@@ -64,12 +66,15 @@ def _descriptor(id: str, **fields) -> AgentDescriptor:
     return AgentDescriptor(id=id, name=id, **fields)
 
 
-def _get(runtime: Runtime, **params):
-    """One request to the catalog route of an app serving the given runtime."""
+def _get(runtime: Runtime, handler=AgentRESTRequestHandler, **params):
+    """One request to the catalog route of an app serving the given runtime.
+
+    `handler` is the handler class whose router carries the route: the direct one, or the queue pipeline's.
+    """
     app = FastAPI()
     with runtime:
-        app.include_router(AgentRESTRequestHandler().get_router())
-        return TestClient(app).get(AGENTS, params=params)
+        app.include_router(handler().get_router())
+        return TestClient(app, raise_server_exceptions=False).get(AGENTS, params=params)
 
 
 def _ids(response) -> list[str]:
@@ -151,6 +156,45 @@ class TestCatalog:
 
         assert response.status_code == 400
         assert "cursor" in response.json()["detail"]
+
+    def test_a_malformed_cursor_is_refused_before_the_registry_is_read(self, descriptor_only_registry):
+        """The caller's mistake is a 400 whatever the store's state: read first, a store outage would answer it 500."""
+
+        class _Unreachable(descriptor_only_registry):
+            def descriptors(self):
+                raise ConnectionError("the registry store is unreachable")
+
+        runtime = Runtime(InMemorySessionStore(), registry=_Unreachable([]))
+
+        assert _get(runtime, cursor="not-a-cursor").status_code == 400
+        assert _get(runtime).status_code == 500  # a well-formed request does reach the store
+
+    def test_a_page_holds_fifty_agents_by_default_and_two_hundred_at_most(self, descriptor_only_registry):
+        registry = descriptor_only_registry([_descriptor(f"agent-{n:03d}") for n in range(MAX_PAGE_SIZE + 1)])
+        runtime = Runtime(InMemorySessionStore(), registry=registry)
+
+        assert (DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE) == (50, 200)  # the bounds the REST API page documents
+        assert len(_ids(_get(runtime))) == 50
+        assert len(_ids(_get(runtime, limit=120))) == 120
+        capped = _get(runtime, limit=5000)
+        assert len(_ids(capped)) == 200
+        assert capped.json()["next_cursor"] is not None  # the 201st agent is on the next page
+
+    def test_the_queue_pipelines_request_handler_serves_the_same_catalog(self, descriptor_only_registry):
+        """The IO process of a split deployment serves the catalog through this handler, for agents it does not host."""
+        identity = {"subject": "svc-billing"}
+        registry = descriptor_only_registry(
+            [_descriptor("support"), _descriptor("billing", tags=["finance"], identity=identity), _descriptor("internal", surfaces=["mcp"])]
+        )
+        runtime = Runtime(InMemorySessionStore(), registry=registry)
+
+        listing = _get(runtime, handler=RequestHandler)
+
+        assert listing.status_code == 200
+        assert _ids(listing) == ["billing", "support"]  # id order, the agent off the rest surface left out
+        assert all("identity" not in entry for entry in listing.json()["agents"])
+        assert _ids(_get(runtime, handler=RequestHandler, tags="finance")) == ["billing"]
+        assert _get(runtime, handler=RequestHandler, cursor="not-a-cursor").status_code == 400
 
     def test_an_empty_registry_is_an_empty_listing(self):
         response = _get(Runtime(InMemorySessionStore()))

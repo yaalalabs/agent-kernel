@@ -47,7 +47,7 @@ class AgentService:
         self._session = None
 
     @staticmethod
-    def ensure_agent_available(name: str | None) -> None:
+    def ensure_agent_available(name: str | None, *, hosted: bool = False) -> None:
         """
         Checks that a request naming ``name`` could be served, without selecting anything.
 
@@ -59,20 +59,30 @@ class AgentService:
         write, a scheduled task — call this first, so a request that could never be answered
         fails while the caller is still listening instead of at run time.
 
+        A surface that runs the agent in its own process passes ``hosted=True``: an agent the
+        registry knows from another process cannot be selected there, so only the agents hosted
+        here count and the store is never read. Without it a request for such an agent would pass
+        this check, commit its state, and then fail to run.
+
+        For an agent that is not hosted here this reads the registry's store (one read for a named
+        agent, the registry's emptiness check for an unnamed request), so an ``async`` caller over
+        a shared registry runs it off the event loop.
+
         Static because it only interrogates the agent registry: it holds no agent and no session,
         so the callers that are not mid-conversation (the thread and schedule surfaces) reach it as
         ``AgentService.ensure_agent_available(...)`` rather than building a throwaway instance. It
         is kept here, next to select(), because it is select()'s rule.
 
         :param name: Name of the requested agent, or None for the default agent.
+        :param hosted: Whether the agent must be hosted by this process, not merely known to the registry.
         :raises ValueError: If no matching agent is available.
         """
         registry = Runtime.current().registry
         # The agents this process hosts answer first: the store is read only for what is not hosted here.
         if name:
-            available = registry.get(name) is not None or registry.descriptor(name) is not None
+            available = registry.get(name) is not None or (not hosted and registry.descriptor(name) is not None)
         else:
-            available = bool(registry.agents()) or bool(registry.descriptors())
+            available = bool(registry.agents()) or (not hosted and not registry.is_empty())
         if not available:
             raise ValueError("No agent available")
 

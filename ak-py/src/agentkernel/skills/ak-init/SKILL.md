@@ -291,7 +291,7 @@ from pydantic_ai import Agent
 <agent_name> = Agent(
     model="openai:gpt-4o-mini",
     name="<name>",                # required — AK registers agents by name eagerly
-    description="<short description>",  # set it — AK reports this as the agent description / A2A summary
+    description="<short description>",  # the framework's own field; AK publishes what Module.describe declares instead
     instructions="<instructions>",
     tools=PydanticAIToolBuilder.bind([]),
 )
@@ -314,7 +314,7 @@ from agentkernel.maf import MAFModule, MAFToolBuilder
 <agent_name> = Agent(
     OpenAIChatClient(model="gpt-4.1-mini"),
     name="<name>",                # required — AK registers agents by name immediately
-    description="<short description>",  # set it — AK reports this as the agent description / A2A summary
+    description="<short description>",  # the framework's own field; AK publishes what Module.describe declares instead
     instructions="<instructions>",
     tools=MAFToolBuilder.bind([]),
 )
