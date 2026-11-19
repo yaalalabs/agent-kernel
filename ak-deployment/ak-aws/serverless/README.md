@@ -467,6 +467,8 @@ module "serverless_api_auth" {
 | `ws_chat_route` | WebSocket default chat route name. Only used in `async` mode. | `string` | `"chat"` | no |
 | `ws_routes` | List of custom WebSocket routes beyond the default chat route. Only allowed in `async` mode. | `list(object)` | `[]` | no |
 | `gateway_endpoints` | List of REST API endpoints to expose. Not allowed in WebSocket modes. If empty, a default POST /api/{api_version}/{agent_endpoint} is created. | `list(object)` | `[]` | no |
+| `enable_a2a_server` | Serve A2A from the request-handler Lambda: adds the `/a2a` and `/a2a/{proxy+}` routes (every method) under the base path. The application builds a `LambdaProtocolHost` (`from agentkernel.aws import LambdaProtocolHost, ProtocolPaths`) and registers `ProtocolPaths.ROUTES`. Needs `queue_mode = true`, a shared response store and a REST execution mode (`rest_sync` or `rest_async`); not allowed in `async`. The routes use the same authorization as every other route; with an authorizer, the agent cards and the catalog are let through by `ProtocolRouteMatcher` and every other A2A route needs a token. The request-handler Lambda now loads the agents, so give it more than the 128 MB default. An existing deployment plans no change while this is `false`. | `bool` | `false` | no |
+| `enable_mcp_server` | Serve MCP (agents as tools) from the request-handler Lambda: adds the `/mcp` and `/mcp/{proxy+}` routes (every method) under the base path. Same requirements as `enable_a2a_server`, plus `mcp.stateless_http: true` in `config.yaml`. With an authorizer, `/mcp` must be let through by `ProtocolRouteMatcher`: MCP authenticates itself, and its login metadata needs a custom domain at the root of the host on an OpenID identity provider (a default `execute-api` URL cannot serve it). | `bool` | `false` | no |
 | `create_redis_cluster` | Create a Redis cluster for Agent session memory | `bool` | `false` | no |
 | `create_valkey_cluster` | Create a Valkey (ElastiCache) cluster for Agent session memory | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
@@ -788,6 +790,7 @@ https://{api-id}.execute-api.{region}.amazonaws.com/{stage}/api/{version}/{endpo
 - REST API Gateway with Lambda proxy integration
 - Stage name: `agents` (production-ready)
 - `gateway_endpoints` path values are validated and the module creates up to three resource levels per endpoint
+- `enable_a2a_server` / `enable_mcp_server` add `{proxy+}` routes for A2A and MCP (`/a2a`, `/a2a/{proxy+}`, `/mcp`, `/mcp/{proxy+}`), which `gateway_endpoints` cannot express: it allows three path levels and no catch-all
 - CORS support configurable
 - Custom domain support compatible
 - **Custom Authorizer**: Lambda-based request authorization with configurable TTL

@@ -114,6 +114,21 @@ def test_touching_the_protocol_paths_through_aws_loads_no_fastapi_and_not_the_ho
     assert "starlette" not in loaded
 
 
+def test_touching_the_protocol_route_matcher_through_aws_loads_no_fastapi_and_not_the_host():
+    """The authorizer Lambda builds the matcher: it carries no FastAPI, and must not pull the host in."""
+    loaded = _isolated_import(
+        "agentkernel.aws",
+        drop_prefixes=("fastapi", "starlette", "slack_bolt"),
+        touch=(("agentkernel.aws", "ProtocolRouteMatcher"),),
+    )
+
+    assert "agentkernel.deployment.aws.serverless.core.protocol_paths" in loaded
+    assert "agentkernel.deployment.aws.serverless.core.protocol_host" not in loaded
+    assert "fastapi" not in loaded
+    assert "starlette" not in loaded
+    assert "slack_bolt" not in loaded
+
+
 def test_the_protocol_paths_export_is_the_class_the_router_tests_and_the_host_read():
     from agentkernel.aws import ProtocolPaths
     from agentkernel.deployment.aws.serverless.core.protocol_paths import ProtocolPaths as Defined

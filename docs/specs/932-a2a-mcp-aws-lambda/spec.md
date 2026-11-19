@@ -203,8 +203,10 @@ and the matcher.
 
 `ProtocolRouteMatcher(WebhookRouteMatcher)` (`deployment/aws/serverless/core/protocol_paths.py`, beside `ProtocolPaths`;
 Deviation 13) is the authorizer bypass
-(Deviation 1): it reuses the parent's base-path derivation and `_normalize`, and overrides `__call__`. With the base path removed,
-it returns:
+(Deviation 1): it reuses the parent's base-path derivation and overrides `__call__`. It does not normalize the request path, as
+the parent does not: `/a2a/catalog/` is not the catalog and is not let through. A path with a `..` segment is never let
+through, and the inherited `for_integrations` raises `TypeError` (the matcher is built with `ProtocolRouteMatcher()`). With the
+base path removed, it returns:
 
 - `"mcp"` for `/mcp` or anything under `/mcp/`, any method (FastMCP authenticates MCP itself);
 - `"a2a"` for `GET /a2a/catalog` and `GET /a2a/<agent>/.well-known/agent-card.json` only (public by design);
@@ -251,14 +253,19 @@ New optional inputs, both off by default; with both off the plan is empty for an
 - `modules/api-gateway`: new variable `proxy_routes` (`list(string)`, default `[]`). For each name: an
   `aws_api_gateway_resource` `<name>` under the version resource, an `ANY` method on it, a child resource `{proxy+}` with an `ANY`
   method, and an `AWS_PROXY` integration to the request Lambda for each (as `modules/api-gateway/main.tf:106-117`). Methods use
-  the same `authorization` as every route: `CUSTOM` when an authorizer exists. Both new resources, methods and integrations are
-  added to the deployment `triggers` hash (`main.tf:131-141`). The existing three-level `endpoints` code is not touched.
+  the same `authorization` as every route: `CUSTOM` when an authorizer exists. The new resources, methods and integrations are
+  added to the deployment `triggers` hash (`main.tf:131-141`) **only when `proxy_routes` is not empty** (`concat(<the existing
+  list>, <the proxy ids or []>)`), so the hash of a deployment that sets none is unchanged and its plan stays empty; evaluating
+  the old and new forms gives the same SHA-1 **(verified, Iteration 5)**. The existing three-level `endpoints` code is not
+  touched. A name that is also a first path segment in `gateway_endpoints` would create the same resource twice.
 - Request-Lambda memory is not changed: the default stays 128 MB (`variables.tf:355`, module default `modules/request-handler/variables.tf:89`)
   so existing plans are empty. With the in-memory registry the request Lambda imports the agents (Deviation 12), so the example
   sets a higher value and the docs say 128 MB is too small in that case.
-- The request handler role already has `dynamodb:DeleteItem` and queue send rights in queue mode
-  (`modules/request-handler/main.tf:41-47`); `RestHandler.request` reads with delete-on-read (`pipeline/request_handler.py:157`).
-  **(unverified)** Confirm in plan Iteration 5 that the statement covers the response-store table.
+- The request handler role already has what the protocol host needs in queue mode. **(verified, Iteration 5)** The response-store
+  statement (`modules/request-handler/main.tf:124-149`, passed from `state.tf:574`) grants `dynamodb:GetItem` and
+  `dynamodb:DeleteItem`, among others, on the response-store table and its indexes, which covers `RestHandler.request`'s
+  delete-on-read (`pipeline/request_handler.py:157`); the SQS statement (`main.tf:192`) grants `sqs:SendMessage` on the input queue.
+  No IAM change is needed.
 - **(spiked S1)** `{proxy+}` plus a separate `/mcp` method serves `/mcp`, `/mcp/` and `/a2a/<agent>/tasks/<id>:cancel`. Run on a
   real REST API (stage `agents`, `authorization = NONE`): `/mcp` and `/mcp/` both reach the `/mcp` method (`event.path` keeps the
   trailing slash, `pathParameters` null); every `/a2a/...` path reaches `{proxy+}` with the rest of the path in
