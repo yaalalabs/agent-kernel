@@ -1,3 +1,4 @@
+from agentkernel.core.meter import NoOpRunMeter, RunMeterFactory
 from agentkernel.core.util.error_util import user_facing_error_message
 
 
@@ -63,3 +64,27 @@ def test_user_facing_error_message_fallback_cleanup():
 def test_user_facing_error_message_ultimate_fallback():
     error = SilentError()
     assert user_facing_error_message(error) == "An unexpected error occurred: SilentError"
+
+
+class BudgetRefusal(Exception):
+    def __init__(self):
+        super().__init__("budget exceeded")
+        self.status_code = 429
+
+
+class RefusalMeter(NoOpRunMeter):
+    def is_budget_refusal(self, error):
+        return isinstance(error, BudgetRefusal)
+
+
+def test_a_refusal_the_meter_recognises_is_a_budget_error(monkeypatch):
+    monkeypatch.setattr(RunMeterFactory, "_instance", RefusalMeter())
+    # BUDGET wins over the 429 rule
+    assert user_facing_error_message(BudgetRefusal()) == "Error: The usage budget for this request has been reached."
+    assert user_facing_error_message(ErrorWithStatusCode(429)) == "Error: Too many requests. Please try again later."
+
+
+def test_classifying_never_builds_the_meter(monkeypatch):
+    monkeypatch.setattr(RunMeterFactory, "_instance", None)
+    assert user_facing_error_message(BudgetRefusal()) == "Error: Too many requests. Please try again later."
+    assert RunMeterFactory._instance is None
