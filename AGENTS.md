@@ -164,6 +164,11 @@ When you write or update documentation, READMEs, skills or website copy:
 - **Brand assets.** Logos, the colour palette and usage rules live in
   [branding/README.md](branding/README.md). The website theme tokens are in
   `docs/src/css/custom.css`: use the tokens there, not new hex values.
+- **Two colour modes.** The site has a dark mode (default) and a light mode that share one set of token
+  names. Never write a literal white, navy or grey in a stylesheet: use `--ak-fg`, `--ak-text*`,
+  `--ak-bg*` and `--ak-surface*`, which flip with the mode. Use `--ak-primary-text` for orange text
+  and `--ak-primary` for orange fills. Canvas and WebGL code reads colours through
+  `docs/src/lib/brand.ts`. Check new UI in both modes.
 
 ## Conventions
 

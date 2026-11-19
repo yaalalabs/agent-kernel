@@ -192,7 +192,7 @@ export default function AgentExecutionFlowDiagram() {
     svg.innerHTML = `
       <defs>
         <marker id="aeFlowArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(255,255,255,0.65)" />
+          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(var(--ak-fg-rgb), 0.65)" />
         </marker>
       </defs>`;
 
@@ -215,7 +215,7 @@ export default function AgentExecutionFlowDiagram() {
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', d);
       path.setAttribute('fill', 'none');
-      path.setAttribute('stroke', 'rgba(255, 255, 255, 0.65)');
+      path.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.65)');
       path.setAttribute('stroke-width', '2');
       path.setAttribute('marker-end', 'url(#aeFlowArrow)');
       svg.appendChild(path);
@@ -228,7 +228,7 @@ export default function AgentExecutionFlowDiagram() {
       line.setAttribute('x2', String(x2));
       line.setAttribute('y2', String(y2));
       line.setAttribute('fill', 'none');
-      line.setAttribute('stroke', 'rgba(255, 255, 255, 0.65)');
+      line.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.65)');
       line.setAttribute('stroke-width', '2');
       line.setAttribute('marker-end', 'url(#aeFlowArrow)');
       svg.appendChild(line);

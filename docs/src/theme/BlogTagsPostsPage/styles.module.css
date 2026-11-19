@@ -6,7 +6,7 @@
 
 .hero {
   padding: 1.5rem 0 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
 }
 
 .heroTitle {

@@ -1,5 +1,5 @@
+import { CertSeal, PersonaArt, type PersonaKind } from '@site/src/components/BrandArt';
 import OakMark from '@site/src/components/OakMark';
-import { BRAND } from '@site/src/lib/brand';
 import React, { useRef, useEffect, useLayoutEffect, useState } from "react";
 import Link from "@docusaurus/Link";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
@@ -672,13 +672,17 @@ function TrustSection() {
 
       <div ref={rowRef} className={styles.trustCertRow}>
         <div className={styles.trustCertTile} tabIndex={0}>
-          <img src="/img/iso.png" alt="ISO 27001 Certified" className={styles.trustCertLogo} />
+          <CertSeal shape="seal" className={styles.trustCertLogo} />
+          <p className={styles.trustCertName}>ISO 27001</p>
+          <p className={styles.trustCertMeta}>Certified</p>
           <p className={styles.trustCertDesc}>
             Information Security Management System certified to the international standard.
           </p>
         </div>
         <div className={styles.trustCertTile} tabIndex={0}>
-          <img src="/img/soc.png" alt="SOC 2 Type 2 Audited" className={styles.trustCertLogo} />
+          <CertSeal shape="shield" className={styles.trustCertLogo} />
+          <p className={styles.trustCertName}>SOC 2 Type 2</p>
+          <p className={styles.trustCertMeta}>Audited</p>
           <p className={styles.trustCertDesc}>
             Security, availability, and confidentiality independently audited against the AICPA SOC 2 framework.
           </p>
@@ -741,7 +745,7 @@ function Community({ sectionRef }: CommunityProps) {
 interface Level {
   id: string;
   title: string;
-  image: string;
+  art: PersonaKind;
   description: string;
   accent: string;
   tag: string;
@@ -760,30 +764,30 @@ function Levels() {
     {
       id: "01",
       title: "Business Leader",
-      image: "/img/business_leader.png",
+      art: "business",
       description:
         "You run or work in a business/enterprise and want to incorporate AI agents that actually work into your business workflows without needing to handle the complexities of the tech.",
-      accent: "#ffb547",
+      accent: "var(--ak-primary)",
       tag: "No code required",
       expertise: 1,
     },
     {
       id: "02",
       title: "Developer",
-      image: "/img/developer.png",
+      art: "developer",
       description:
         "You build software but haven't built AI agents yet. You want to ship something robust and real without learning a new stack from scratch.",
-      accent: BRAND.ice,
+      accent: "var(--ak-primary)",
       tag: "Some coding",
       expertise: 2,
     },
     {
       id: "03",
       title: "AI Engineer",
-      image: "/img/ai.png",
+      art: "engineer",
       description:
         "You already work with LLMs and agentic frameworks. You need a production-grade AI agent execution framework that doesn't get in your way.",
-      accent: "#a78bfa",
+      accent: "var(--ak-primary)",
       tag: "Deep tech",
       expertise: 3,
     },
@@ -1022,11 +1026,7 @@ function Levels() {
                 </div>
 
                 <div className={styles.pathCardImageArea}>
-                  <img
-                    src={level.image}
-                    alt={level.title}
-                    className={styles.pathCardImage}
-                  />
+                  <PersonaArt kind={level.art} className={styles.pathCardImage} />
                 </div>
 
                 <span className={styles.pathCardTag}>{level.tag}</span>

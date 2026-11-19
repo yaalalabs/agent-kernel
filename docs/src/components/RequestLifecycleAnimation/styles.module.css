@@ -99,7 +99,7 @@
 }
 
 /* Color variants */
-.color_blue .stageIcon  { color: var(--ak-primary); }
+.color_blue .stageIcon  { color: var(--ak-primary-text); }
 .color_violet .stageIcon { color: var(--ak-sky); }
 .color_green .stageIcon  { color: var(--ak-green); }
 
@@ -110,7 +110,7 @@
 }
 
 .stageActive .stageIcon {
-  color: var(--ak-primary) !important;
+  color: var(--ak-primary-text) !important;
 }
 
 /* Pulse ring on active node (::after pseudo-element) */

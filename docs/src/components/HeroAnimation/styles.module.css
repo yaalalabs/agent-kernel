@@ -76,7 +76,7 @@
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1.1;
-  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  background: linear-gradient(to bottom, var(--ak-fg) 0%, #898989 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -86,7 +86,7 @@
 
 .heroSubtitle {
   font-size: clamp(0.875rem, 2vw, 1.125rem);
-  color: #ffffff;
+  color: var(--ak-fg);
   line-height: 1.75;
   max-width: 40rem;
   margin: 0 auto 2.25rem;
@@ -116,11 +116,11 @@
   align-items: center !important;
   justify-content: center !important;
   padding: 0.65rem 1.8rem !important;
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: rgba(var(--ak-fg-rgb), 0.06) !important;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  color: #ffffff !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: var(--ak-fg) !important;
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.12) !important;
   border-radius: 9999px !important;
   font-weight: 600 !important;
   font-size: 0.92rem !important;
@@ -136,8 +136,8 @@
 }
 
 .btnPrimary:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: #ffffff !important;
+  background: rgba(var(--ak-fg-rgb), 0.06) !important;
+  color: var(--ak-fg) !important;
   border-color: var(--ak-primary) !important;
   box-shadow:
     0 0 16px rgba(var(--ak-primary-rgb), 0.65),
@@ -150,7 +150,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #cbd5e1 !important;
+  color: var(--ak-text-secondary) !important;
   font-size: 0.92rem !important;
   font-weight: 600;
   text-decoration: none !important;
@@ -161,7 +161,7 @@
 }
 
 .btnSecondary:hover {
-  color: #ffffff !important;
+  color: var(--ak-fg) !important;
   text-decoration: none !important;
   transform: translateY(-1px);
 }

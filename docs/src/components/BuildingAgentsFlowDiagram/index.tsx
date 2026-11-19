@@ -149,7 +149,7 @@ export default function BuildingAgentsFlowDiagram() {
     svg.innerHTML = `
       <defs>
         <marker id="baArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(255,255,255,0.65)" />
+          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(var(--ak-fg-rgb), 0.65)" />
         </marker>
       </defs>`;
 
@@ -208,7 +208,7 @@ export default function BuildingAgentsFlowDiagram() {
       base.setAttribute('y1', String(y1));
       base.setAttribute('x2', String(ex));
       base.setAttribute('y2', String(ey));
-      base.setAttribute('stroke', 'rgba(255,255,255,0.2)');
+      base.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.2)');
       base.setAttribute('stroke-width', '2');
       base.setAttribute('fill', 'none');
       svg.appendChild(base);
@@ -218,7 +218,7 @@ export default function BuildingAgentsFlowDiagram() {
       pulse.setAttribute('y1', String(y1));
       pulse.setAttribute('x2', String(ex));
       pulse.setAttribute('y2', String(ey));
-      pulse.setAttribute('stroke', 'rgba(255,255,255,0.7)');
+      pulse.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.7)');
       pulse.setAttribute('stroke-width', '2');
       pulse.setAttribute('fill', 'none');
       pulse.setAttribute('class', styles.pulseFlow);
@@ -249,7 +249,7 @@ export default function BuildingAgentsFlowDiagram() {
       const topY = toolBounds[0].b.cy;
       const botY = toolBounds[toolBounds.length - 1].b.cy;
 
-      const STROKE = 'rgba(255,255,255,0.22)';
+      const STROKE = 'rgba(var(--ak-fg-rgb), 0.22)';
       const DASH = '5 5';
       const W = '1.5';
 
@@ -322,7 +322,7 @@ export default function BuildingAgentsFlowDiagram() {
       const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       p.setAttribute('d', `M ${start.x} ${start.y} L ${end.x} ${end.y}`);
       p.setAttribute('fill', 'none');
-      p.setAttribute('stroke', 'rgba(255,255,255,0.22)');
+      p.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.22)');
       p.setAttribute('stroke-width', '1.5');
       p.setAttribute('stroke-dasharray', '5 5');
       p.setAttribute('class', styles.dashedFlow);

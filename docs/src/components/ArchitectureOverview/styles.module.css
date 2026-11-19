@@ -17,9 +17,9 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.15) 20%,
-    rgba(255, 255, 255, 0.4) 50%,
-    rgba(255, 255, 255, 0.15) 80%,
+    rgba(var(--ak-fg-rgb), 0.15) 20%,
+    rgba(var(--ak-fg-rgb), 0.4) 50%,
+    rgba(var(--ak-fg-rgb), 0.15) 80%,
     transparent 100%
   );
 }
@@ -34,8 +34,8 @@
   height: 150px;
   background: radial-gradient(
     ellipse at top center,
-    rgba(255, 255, 255, 0.07) 0%,
-    rgba(255, 255, 255, 0.03) 40%,
+    rgba(var(--ak-fg-rgb), 0.07) 0%,
+    rgba(var(--ak-fg-rgb), 0.03) 40%,
     transparent 70%
   );
   pointer-events: none;
@@ -69,7 +69,7 @@
 .title {
   font-size: 2.4rem;
   font-weight: 600;
-  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  background: linear-gradient(to bottom, var(--ak-fg) 0%, #898989 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -91,7 +91,7 @@
   max-width: 1280px;
   margin: 0 auto;
   padding: 2.5rem 2rem 2rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   border-radius: 24px;
   background:
     radial-gradient(ellipse at 50% 45%, rgba(var(--ak-blue-rgb), 0.06) 0%, transparent 55%),
@@ -173,7 +173,7 @@
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--ak-fg-rgb), 0.5);
 }
 
 .columnRule {
@@ -207,16 +207,16 @@
 .card {
   position: relative;
   padding: 1rem 1.15rem 1.1rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
   border-radius: 16px;
   background: rgba(var(--ak-bg-rgb), 0.92);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 10px 30px rgba(var(--ak-shadow-rgb), 0.35);
 }
 
 .cardTitle {
   font-size: 0.98rem;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--ak-fg);
   letter-spacing: -0.01em;
 }
 
@@ -235,18 +235,18 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
   background: var(--ak-bg);
-  color: #ffffff;
+  color: var(--ak-fg);
   transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
 }
 
 .chip:hover,
 .chip:focus-visible {
   border-color: rgba(var(--ak-sky-rgb), 0.55);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--ak-fg-rgb), 0.05);
   transform: translateY(-2px);
-  color: #ffffff;
+  color: var(--ak-fg);
   outline: none;
 }
 
@@ -265,7 +265,7 @@
 }
 
 .mono {
-  filter: brightness(0) invert(1);
+  filter: var(--ak-mono-filter);
 }
 
 /* ─── Core ──────────────────────────────────────────────────────────────── */
@@ -337,7 +337,7 @@
   margin-top: 1rem;
   font-size: 1.2rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--ak-fg);
   letter-spacing: -0.01em;
 }
 
@@ -364,12 +364,12 @@
   gap: 0.55rem;
   padding: 0.5rem 0.95rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.14);
   background: var(--ak-bg-alt);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 26px rgba(var(--ak-shadow-rgb), 0.4);
   font-size: 0.85rem;
   font-weight: 500;
-  color: #ffffff;
+  color: var(--ak-fg);
   white-space: nowrap;
   text-decoration: none;
   transition: border-color 0.2s ease, transform 0.2s ease;
@@ -378,7 +378,7 @@
 .pill:hover,
 .pill:focus-visible {
   border-color: rgba(var(--ak-sky-rgb), 0.55);
-  color: #ffffff;
+  color: var(--ak-fg);
   text-decoration: none;
   transform: translateY(-1px);
   outline: none;
@@ -430,14 +430,14 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--ak-fg-rgb), 0.5);
 }
 
 .flowLine {
   position: relative;
   display: block;
   height: 1px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08));
+  background: linear-gradient(90deg, rgba(var(--ak-fg-rgb), 0.3), rgba(var(--ak-fg-rgb), 0.08));
 }
 
 .flowLine::after {
@@ -446,7 +446,7 @@
   right: -1px;
   top: -4px;
   border: 4.5px solid transparent;
-  border-left-color: rgba(255, 255, 255, 0.4);
+  border-left-color: rgba(var(--ak-fg-rgb), 0.4);
   border-right: 0;
 }
 
@@ -460,15 +460,15 @@
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #ffffff;
+  color: var(--ak-fg);
 }
 
 .flowSeparator {
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(var(--ak-fg-rgb), 0.35);
 }
 
 .flowAccent {
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
 }
 
 /* ─── Reduced motion ───────────────────────────────────────────────────── */

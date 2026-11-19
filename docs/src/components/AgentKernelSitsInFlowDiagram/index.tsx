@@ -103,10 +103,10 @@ export default function AgentKernelSitsInFlowDiagram() {
     svg.innerHTML = `
       <defs>
         <marker id="akSitArrowEnd" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(255,255,255,0.65)" />
+          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(var(--ak-fg-rgb), 0.65)" />
         </marker>
         <marker id="akSitArrowStart" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto">
-          <path d="M8,0 L0,4 L8,8 Z" fill="rgba(255,255,255,0.65)" />
+          <path d="M8,0 L0,4 L8,8 Z" fill="rgba(var(--ak-fg-rgb), 0.65)" />
         </marker>
       </defs>`;
 
@@ -133,7 +133,7 @@ export default function AgentKernelSitsInFlowDiagram() {
       const basePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       basePath.setAttribute('d', pointsToPath(points));
       basePath.setAttribute('fill', 'none');
-      basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
+      basePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.2)');
       basePath.setAttribute('stroke-width', '2');
       basePath.setAttribute('marker-start', 'url(#akSitArrowStart)');
       basePath.setAttribute('marker-end', 'url(#akSitArrowEnd)');
@@ -142,7 +142,7 @@ export default function AgentKernelSitsInFlowDiagram() {
       const pulsePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       pulsePath.setAttribute('d', pointsToPath(points));
       pulsePath.setAttribute('fill', 'none');
-      pulsePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.7)');
+      pulsePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.7)');
       pulsePath.setAttribute('stroke-width', '2');
       pulsePath.setAttribute('class', styles.pulseFlow);
       svg.appendChild(pulsePath);

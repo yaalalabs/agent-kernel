@@ -248,6 +248,7 @@ export default function BusinessLeaderPage() {
 
   return (
     <Layout
+      wrapperClassName="ak-dark-surface"
       title="Open Agent Kernel for Business Leaders"
       description="Learn how Open Agent Kernel helps business leaders implement AI agents that scale across their organization."
     >

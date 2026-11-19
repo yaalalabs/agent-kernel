@@ -16,7 +16,7 @@
   -webkit-backdrop-filter: blur(16px);
   border: none;
   border-radius: 10px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 40px rgba(var(--ak-shadow-rgb), 0.5);
   font-size: 0.875rem;
   color: var(--ak-text-secondary);
   animation: slideUp 0.3s ease;
@@ -40,7 +40,7 @@
 }
 
 .text a {
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
   text-decoration: none;
 }
 
@@ -95,6 +95,6 @@
 
 .accept {
   background: rgba(var(--ak-primary-rgb), 0.15);
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
   border: 1px solid rgba(var(--ak-primary-rgb), 0.3);
 }

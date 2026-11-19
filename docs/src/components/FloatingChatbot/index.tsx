@@ -168,7 +168,7 @@ const FloatingChatbot: React.FC = () => {
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             ) : (
-              <span className={styles.chatButtonInner}>
+              <span className={`${styles.chatButtonInner} ak-dark`}>
                 <span className={styles.pulseRing} aria-hidden="true" />
                 <span className={styles.pulseRingDelayed} aria-hidden="true" />
                 <div className={styles.orb} aria-hidden="true">

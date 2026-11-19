@@ -349,6 +349,7 @@ export default function DeveloperPage() {
 
   return (
     <Layout
+      wrapperClassName="ak-dark-surface"
       title="Open Agent Kernel for Developers"
       description="Learn how OAK helps developers build and deploy AI agents quickly without reinventing the wheel."
     >

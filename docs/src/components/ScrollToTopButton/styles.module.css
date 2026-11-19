@@ -27,7 +27,7 @@
   overflow: hidden;
 
   background: rgba(var(--ak-bg-rgb), 0.88);
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  border: 2px solid rgba(var(--ak-fg-rgb), 0.35);
   color: var(--brand-bg);
 
   display: inline-flex;

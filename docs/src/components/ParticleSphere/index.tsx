@@ -1,6 +1,6 @@
 'use client';
 
-import { brandInt } from '@site/src/lib/brand';
+import { onThemeChange, themeInt } from '@site/src/lib/brand';
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 
@@ -137,7 +137,8 @@ const ParticleSphere = () => {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(brandInt('bg'), 1);
+    renderer.setClearColor(themeInt('bg'), 1);
+    const stopThemeWatch = onThemeChange(() => renderer.setClearColor(themeInt('bg'), 1));
     container.appendChild(renderer.domElement);
 
     const particles = new THREE.Points();
@@ -242,6 +243,7 @@ const ParticleSphere = () => {
       cancelled = true;
       window.removeEventListener('resize', handleResize);
       if (animationId !== null) cancelAnimationFrame(animationId);
+      stopThemeWatch();
       renderer.dispose();
       geometry.dispose();
       material.dispose();

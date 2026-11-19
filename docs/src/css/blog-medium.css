@@ -65,7 +65,7 @@ html.blog-post-page article header [class*='readingTime'] {
 
 html.blog-post-page article header {
   padding-bottom: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   margin-bottom: 2rem;
 }
 
@@ -109,7 +109,7 @@ html.blog-post-page article .markdown h3 {
 
 /* Links: quiet, underlined, Medium-style */
 html.blog-wrapper .markdown a {
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
   text-decoration: underline;
   text-decoration-color: rgba(var(--ak-primary-rgb), 0.35);
   text-underline-offset: 3px;
@@ -150,7 +150,7 @@ html.blog-wrapper .markdown img {
 /* Mermaid diagrams on a raised surface card */
 html.blog-wrapper .markdown .docusaurus-mermaid-container {
   background: var(--ak-bg);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.15);
   border-radius: 8px;
   padding: 1.5rem;
   margin: 2rem 0;
@@ -190,7 +190,7 @@ html.blog-wrapper .theme-blog-post-tags b {
 
 html.blog-wrapper .theme-blog-post-tags a {
   display: inline-block;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(var(--ak-fg-rgb), 0.07);
   border: none;
   color: var(--ak-text) !important;
   border-radius: 100px;
@@ -201,7 +201,7 @@ html.blog-wrapper .theme-blog-post-tags a {
 }
 
 html.blog-wrapper .theme-blog-post-tags a:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(var(--ak-fg-rgb), 0.14);
   color: var(--ak-text) !important;
   text-decoration: none;
 }
@@ -234,7 +234,7 @@ html.blog-wrapper .blog-back-btn {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.15);
   background: rgba(var(--ak-bg-rgb), 0.8);
   backdrop-filter: blur(8px);
   color: var(--ak-text-secondary);
@@ -245,7 +245,7 @@ html.blog-wrapper .blog-back-btn {
 
 html.blog-wrapper .blog-back-btn:hover {
   border-color: var(--ak-primary);
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
   transform: translateX(-4px);
 }
 

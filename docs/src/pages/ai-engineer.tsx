@@ -636,6 +636,7 @@ export default function AIEngineerPage() {
 
   return (
     <Layout
+      wrapperClassName="ak-dark-surface"
       title="Open Agent Kernel for AI Engineers"
       description="Learn how OAK provides production-ready infrastructure for AI engineers building sophisticated AI agent systems."
     >

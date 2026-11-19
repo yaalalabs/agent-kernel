@@ -71,10 +71,9 @@ export default function FooterLayout({
           <div className="footer__brand">
             <a href="/" className="footer__brand-logo-link" aria-label="Open Agent Kernel home">
               <img
-                src="/img/branding/oak-horizontal-white-orange.svg"
+                src="/img/branding/open-agent-kernel-white-orange.svg"
                 alt="Open Agent Kernel"
                 className="footer__brand-logo"
-                width={140}
               />
             </a>
             <p className="footer__brand-tagline">

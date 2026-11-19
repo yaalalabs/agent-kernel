@@ -18,20 +18,20 @@
   100% {
     border-color: rgba(255, 181, 71, 0.45);
     box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+      inset 0 0 0 1px rgba(var(--ak-fg-rgb), 0.06),
       0 8px 28px rgba(255, 181, 71, 0.14);
   }
 
   50% {
     border-color: rgba(255, 181, 71, 0.75);
     box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+      inset 0 0 0 1px rgba(var(--ak-fg-rgb), 0.12),
       0 10px 40px rgba(255, 181, 71, 0.32);
   }
 }
 
 .panel {
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.2);
   border-radius: 0.75rem;
   background: rgba(var(--ak-bg-rgb), 0.52);
   backdrop-filter: blur(8px);
@@ -41,7 +41,7 @@
 }
 
 .panel:hover {
-  border-color: rgba(255, 255, 255, 0.35);
+  border-color: rgba(var(--ak-fg-rgb), 0.35);
 }
 
 .scrollHint {
@@ -52,8 +52,8 @@
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(var(--ak-fg-rgb), 0.45);
+  border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.1);
 }
 
 .wrap {
@@ -93,7 +93,7 @@
   margin: 0;
   font-size: 0.95rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--ak-fg);
   line-height: 1.25;
 }
 
@@ -101,7 +101,7 @@
   margin: 0.3rem 0 0;
   font-size: 0.72rem;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--ak-fg-rgb), 0.55);
 }
 
 /* ── Stacked cards (one card in front, ghost copies behind) ────────────── */
@@ -117,7 +117,7 @@
   position: absolute;
   inset: 0;
   border-radius: 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.18);
   background: rgba(var(--ak-bg-rgb), 0.9);
   z-index: -1;
 }
@@ -128,7 +128,7 @@
 
 .stack::after {
   transform: translate(12px, 12px);
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(var(--ak-fg-rgb), 0.1);
 }
 
 /* front card paints above the ghosts, so their borders never cut content */
@@ -151,7 +151,7 @@
   max-width: 26rem;
   padding: 0.9rem 1.5rem 1rem;
   gap: 0.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.3);
 }
 
 .agentChip {
@@ -292,7 +292,7 @@
   margin: 0;
   font-size: 1.25rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--ak-fg);
   letter-spacing: -0.01em;
   line-height: 1.2;
 }
@@ -393,7 +393,7 @@
 .laneInProcess {
   max-width: 17rem;
   border: 1px solid rgba(var(--ak-blue-rgb), 0.28);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--ak-fg-rgb), 0.04);
 }
 
 .laneQueue {
@@ -408,7 +408,7 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--ak-fg-rgb), 0.5);
   line-height: 1.4;
 }
 
@@ -434,7 +434,7 @@
   font-size: 0.68rem;
   font-weight: 600;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--ak-fg-rgb), 0.85);
   border: 1px solid rgba(var(--ak-blue-rgb), 0.35);
   border-radius: 4px;
   padding: 0.15rem 0.5rem;
@@ -448,7 +448,7 @@
 }
 
 .chainReturn .chainBox {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--ak-fg-rgb), 0.6);
   border-style: dashed;
   border-color: rgba(var(--ak-blue-rgb), 0.25);
 }
@@ -556,7 +556,7 @@
   padding: 0.75rem 0.6rem;
   border-radius: 0.6rem;
   border: 1px solid rgba(var(--ak-blue-rgb), 0.28);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--ak-fg-rgb), 0.04);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -581,7 +581,7 @@
   align-items: center;
   justify-content: center;
   font-size: 1.3rem;
-  color: #ffffff;
+  color: var(--ak-fg);
   margin-bottom: 0.1rem;
 }
 
@@ -608,7 +608,7 @@
   margin: 0;
   font-size: 0.68rem;
   line-height: 1.35;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--ak-fg-rgb), 0.5);
 }
 
 .providerChip {
@@ -630,7 +630,7 @@
   flex-shrink: 0;
   background: linear-gradient(180deg,
       rgba(var(--ak-blue-rgb), 0.4),
-      rgba(255, 255, 255, 0.2));
+      rgba(var(--ak-fg-rgb), 0.2));
   opacity: 0;
 }
 
@@ -655,7 +655,7 @@
   width: 100%;
   padding: 0.6rem 0.5rem 0.65rem;
   border-radius: 0.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.25);
   gap: 0.35rem;
 }
 
@@ -663,7 +663,7 @@
   margin: 0;
   font-size: 0.78rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--ak-fg-rgb), 0.9);
   line-height: 1.3;
 }
 
@@ -672,8 +672,8 @@
   font-size: 0.62rem;
   font-weight: 600;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(var(--ak-fg-rgb), 0.6);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.25);
   border-radius: 4px;
   padding: 0.1rem 0.45rem;
   line-height: 1.5;
@@ -684,12 +684,12 @@
 .footer {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(var(--ak-fg-rgb), 0.1);
 }
 
 .footerCard {
   padding: 1rem 1.125rem 1.125rem;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   opacity: 0;
   transition: background-color 250ms ease;
 }
@@ -700,7 +700,7 @@
 }
 
 .footerCard:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--ak-fg-rgb), 0.03);
 }
 
 .footerCard:last-child {
@@ -711,7 +711,7 @@
   margin: 0 0 0.35rem;
   font-size: 0.875rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--ak-fg);
   line-height: 1.3;
 }
 
@@ -719,7 +719,7 @@
   margin: 0;
   font-size: 0.75rem;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--ak-fg-rgb), 0.55);
 }
 
 /* ── Motion / responsive ───────────────────────────────────────────────── */
@@ -752,7 +752,7 @@
 
   .footerCard:nth-child(1),
   .footerCard:nth-child(2) {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   }
 }
 
@@ -767,7 +767,7 @@
 
   .footerCard {
     border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   }
 
   .footerCard:last-child {

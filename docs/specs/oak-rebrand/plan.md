@@ -72,6 +72,16 @@ the maintainer asks.
   2. Hand-check the README header, the skill `description` lines and the flagged lines.
 - **Verify:** Testing step 2 for these areas.
 
+## Iteration 7b: Home page review, hero scene and light mode
+
+- **Goal:** the home page has no off-palette artwork, the hero is the 3D scene, and the site has a light mode.
+- **Files:** `docs/src/components/OakMark/*`, `docs/src/components/BrandArt/*`, `docs/src/lib/brand.ts`, `docs/src/css/custom.css`, the site stylesheets, `docs/src/pages/index.tsx`, `docs/src/theme/Footer/Layout/index.tsx`, `docs/docusaurus.config.js`
+- **Steps:**
+  1. Replace the path-card images and the compliance badges with `BrandArt`; restyle the footer brand column and the chat launcher.
+  2. Rebuild the hero as the 3D scene (spec 4).
+  3. Add the light token set, convert white, grey and shadow literals to tokens, enable the switch, pin the footer, launcher and persona pages (spec 2, rules for the two modes).
+- **Verify:** Testing steps 3, 6 and 7 in both modes.
+
 ## Iteration 8: Tests
 
 - **Goal:** the whole change passes the spec's checks.

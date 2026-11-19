@@ -16,10 +16,10 @@
   align-items: center;
   gap: 0.35rem;
   padding: 0.3rem 0.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.18);
   border-radius: 0.5rem;
   background: rgba(var(--ak-bg-rgb), 0.75);
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--ak-fg-rgb), 0.85);
   font-size: 0.75rem;
   font-family: inherit;
   cursor: pointer;
@@ -36,7 +36,7 @@
 
 .expandButton:hover {
   background: rgba(var(--ak-prussian-rgb), 0.9);
-  color: #fff;
+  color: var(--ak-fg);
 }
 
 /* Touch devices have no hover: keep the button visible. */
@@ -71,7 +71,7 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.15);
   border-radius: 0.625rem;
   background: rgba(var(--ak-bg-rgb), 0.9);
 }
@@ -86,7 +86,7 @@
   border: none;
   border-radius: 0.4rem;
   background: transparent;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--ak-fg-rgb), 0.85);
   font-size: 1rem;
   font-family: inherit;
   line-height: 1;
@@ -95,8 +95,8 @@
 }
 
 .toolbarButton:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: rgba(var(--ak-fg-rgb), 0.12);
+  color: var(--ak-fg);
 }
 
 .resetButton {
@@ -106,7 +106,7 @@
 .zoomLevel {
   min-width: 3.25rem;
   text-align: center;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(var(--ak-fg-rgb), 0.7);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
   user-select: none;
@@ -155,7 +155,7 @@
   padding: 0.3rem 0.75rem;
   border-radius: 999px;
   background: rgba(var(--ak-bg-rgb), 0.85);
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--ak-fg-rgb), 0.55);
   font-size: 0.75rem;
   pointer-events: none;
   user-select: none;

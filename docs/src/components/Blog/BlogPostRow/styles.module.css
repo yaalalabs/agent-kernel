@@ -7,7 +7,7 @@
   border: none;
   border-radius: 0;
   background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
 }
 
 .row:last-of-type {
@@ -66,7 +66,7 @@
 }
 
 .titleLink:hover .title {
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
 }
 
 .excerpt {
@@ -98,7 +98,7 @@
 
 .topicChip {
   white-space: nowrap;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(var(--ak-fg-rgb), 0.07);
   color: var(--ak-text);
   border-radius: 100px;
   padding: 0.22rem 0.75rem;
@@ -109,7 +109,7 @@
 }
 
 .topicChip:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(var(--ak-fg-rgb), 0.14);
   color: var(--ak-text);
   text-decoration: none;
 }

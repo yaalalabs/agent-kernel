@@ -17,9 +17,9 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.15) 20%,
-    rgba(255, 255, 255, 0.4) 50%,
-    rgba(255, 255, 255, 0.15) 80%,
+    rgba(var(--ak-fg-rgb), 0.15) 20%,
+    rgba(var(--ak-fg-rgb), 0.4) 50%,
+    rgba(var(--ak-fg-rgb), 0.15) 80%,
     transparent 100%
   );
 }
@@ -34,8 +34,8 @@
   height: 150px;
   background: radial-gradient(
     ellipse at top center,
-    rgba(255, 255, 255, 0.07) 0%,
-    rgba(255, 255, 255, 0.03) 40%,
+    rgba(var(--ak-fg-rgb), 0.07) 0%,
+    rgba(var(--ak-fg-rgb), 0.03) 40%,
     transparent 70%
   );
   pointer-events: none;
@@ -69,7 +69,7 @@
 .title {
   font-size: 2.6rem;
   font-weight: 600;
-  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  background: linear-gradient(to bottom, var(--ak-fg) 0%, #898989 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -99,7 +99,7 @@
   justify-content: space-between;
   align-items: stretch;
   gap: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.1);
   margin-bottom: 3rem;
 }
 
@@ -113,14 +113,14 @@
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--ak-fg-rgb), 0.55);
   cursor: pointer;
   transition: color 0.2s ease;
 }
 
 .tab:hover,
 .tab:focus-visible {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--ak-fg-rgb), 0.9);
   outline: none;
 }
 
@@ -139,7 +139,7 @@
 }
 
 .tabActive {
-  color: #ffffff;
+  color: var(--ak-fg);
 }
 
 .tabActive::after {
@@ -177,7 +177,7 @@
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #ffffff;
+  color: var(--ak-fg);
 }
 
 .introBody {
@@ -199,7 +199,7 @@
   flex-direction: column;
   gap: 0.7rem;
   padding: 1.3rem 1.35rem 1.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.1);
   border-radius: 16px;
   background: rgba(var(--ak-bg-rgb), 0.92);
   transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
@@ -208,14 +208,14 @@
 .card:hover {
   border-color: rgba(var(--ak-sky-rgb), 0.4);
   transform: translateY(-2px);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 14px 40px rgba(var(--ak-shadow-rgb), 0.4);
 }
 
 .cardTitle {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--ak-fg);
   letter-spacing: -0.01em;
 }
 
@@ -223,7 +223,7 @@
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.68);
+  color: rgba(var(--ak-fg-rgb), 0.68);
   flex: 1;
 }
 
@@ -237,11 +237,11 @@
   display: inline-block;
   padding: 0.2rem 0.55rem;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--ak-fg-rgb), 0.06);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   font-family: "JetBrains Mono", var(--ifm-font-family-monospace);
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(var(--ak-fg-rgb), 0.72);
   white-space: nowrap;
 }
 
@@ -255,7 +255,7 @@
 .cardLink {
   font-size: 0.86rem;
   font-weight: 600;
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
   text-decoration: none;
   transition: color 0.2s ease;
 }

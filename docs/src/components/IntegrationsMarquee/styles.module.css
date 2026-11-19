@@ -17,9 +17,9 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.15) 20%,
-    rgba(255, 255, 255, 0.4) 50%,
-    rgba(255, 255, 255, 0.15) 80%,
+    rgba(var(--ak-fg-rgb), 0.15) 20%,
+    rgba(var(--ak-fg-rgb), 0.4) 50%,
+    rgba(var(--ak-fg-rgb), 0.15) 80%,
     transparent 100%
   );
 }
@@ -34,8 +34,8 @@
   height: 150px;
   background: radial-gradient(
     ellipse at top center,
-    rgba(255, 255, 255, 0.07) 0%,
-    rgba(255, 255, 255, 0.03) 40%,
+    rgba(var(--ak-fg-rgb), 0.07) 0%,
+    rgba(var(--ak-fg-rgb), 0.03) 40%,
     transparent 70%
   );
   pointer-events: none;
@@ -70,7 +70,7 @@
 .title {
   font-size: 2.4rem;
   font-weight: 600;
-  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  background: linear-gradient(to bottom, var(--ak-fg) 0%, #898989 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -104,7 +104,7 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(var(--ak-fg-rgb), 0.45);
 }
 
 .viewport {
@@ -168,7 +168,7 @@
   gap: 0.75rem;
   padding: 0.7rem 1.1rem 0.7rem 0.85rem;
   min-width: 190px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
   border-radius: 12px;
   background: var(--ak-bg);
   text-decoration: none;
@@ -179,8 +179,8 @@
 
 .tile:hover,
 .tile:focus-visible {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(var(--ak-fg-rgb), 0.28);
+  background: rgba(var(--ak-fg-rgb), 0.06);
   transform: translateY(-2px);
   text-decoration: none;
   outline: none;
@@ -214,15 +214,15 @@
   max-height: 24px;
 }
 
-/* Marks drawn in black on transparent are inverted so they read on the dark page. */
+/* Single-colour marks follow the colour mode: white on the dark page, near-black on the light one. */
 .mono {
-  filter: brightness(0) invert(1);
+  filter: var(--ak-mono-filter);
 }
 
 .logoWrap svg {
   width: 26px;
   height: 26px;
-  color: #ffffff;
+  color: var(--ak-fg);
 }
 
 .text {
@@ -238,7 +238,7 @@
   gap: 0.4rem;
   font-size: 0.92rem;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--ak-fg);
   letter-spacing: -0.01em;
   line-height: 1.2;
 }

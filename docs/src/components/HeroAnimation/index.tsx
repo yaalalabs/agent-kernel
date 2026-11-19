@@ -1,4 +1,4 @@
-import { BRAND, brandRgba } from '@site/src/lib/brand';
+import { themeRgba } from '@site/src/lib/brand';
 import { useEffect, useRef } from "react";
 import Link from "@docusaurus/Link";
 import gsap from "gsap";
@@ -95,16 +95,16 @@ export default function HeroAnimation({
         const H = canvas.height;
 
         ctx.clearRect(0, 0, W, H);
-        ctx.fillStyle = BRAND.bg;
+        ctx.fillStyle = themeRgba('bg', 1);
         ctx.fillRect(0, 0, W, H);
 
         const sx = m.x * W;
         const sy = m.y * H;
         const spotR = Math.max(W, H) * 0.5;
         const spot = ctx.createRadialGradient(sx, sy, 0, sx, sy, spotR);
-        spot.addColorStop(0, brandRgba('ice', 0.10));
-        spot.addColorStop(0.5, brandRgba('ice', 0.05));
-        spot.addColorStop(1, brandRgba('ice', 0));
+        spot.addColorStop(0, themeRgba('blue', 0.10));
+        spot.addColorStop(0.5, themeRgba('blue', 0.05));
+        spot.addColorStop(1, themeRgba('blue', 0));
 
         ctx.globalCompositeOperation = "screen";
         ctx.fillStyle = spot;

@@ -51,7 +51,7 @@
   border-radius: 1.5rem;
   border: 2px solid var(--ak-accent-border);
   box-shadow:
-    0 12px 40px rgba(0, 0, 0, 0.6),
+    0 12px 40px rgba(var(--ak-shadow-rgb), 0.6),
     0 0 32px color-mix(in srgb, var(--ak-accent) 6%, transparent);
 }
 
@@ -134,7 +134,7 @@
 .topBoxLabel {
   font-size: 1rem;
   font-weight: 700;
-  color: color-mix(in srgb, var(--logic-accent) 85%, #ffffff);
+  color: color-mix(in srgb, var(--logic-accent) 85%, var(--ak-fg));
   letter-spacing: -0.01em;
 }
 
@@ -149,9 +149,9 @@
 .topBoxChip {
   font-size: 0.8rem;
   font-weight: 500;
-  color: color-mix(in srgb, var(--logic-accent) 75%, #ffffff);
+  color: color-mix(in srgb, var(--logic-accent) 75%, var(--ak-fg));
   background: color-mix(in srgb, var(--logic-accent) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--logic-accent) 45%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--logic-accent) 45%, var(--ak-fg));
   border-radius: 0.4rem;
   padding: 0.2rem 0.6rem;
   white-space: nowrap;
@@ -371,7 +371,7 @@
 }
 
 .moduleChip:hover .moduleLabel {
-  color: color-mix(in srgb, var(--ak-accent) 85%, #fff);
+  color: color-mix(in srgb, var(--ak-accent) 85%, var(--ak-fg));
 }
 
 /* ─── Layer 4: Deploy row ────────────────────────────────────────────────── */
@@ -443,7 +443,7 @@
 .deployLabel {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--ak-text-muted);
   text-align: center;
   transition: color 0.2s ease;
 }

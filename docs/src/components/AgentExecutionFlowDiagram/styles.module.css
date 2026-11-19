@@ -15,7 +15,7 @@
   min-height: 14rem;
   min-width: min(100%, 72rem);
   padding: 3rem 2.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   border-radius: 0.75rem;
   background: transparent;
   overflow-x: auto;

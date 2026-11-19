@@ -127,7 +127,7 @@ export default function RunningAgentsFlowDiagram() {
     svg.innerHTML = `
       <defs>
         <marker id="raArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(255,255,255,0.65)" />
+          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(var(--ak-fg-rgb), 0.65)" />
         </marker>
       </defs>`;
 
@@ -161,12 +161,12 @@ export default function RunningAgentsFlowDiagram() {
       basePath.setAttribute('d', pointsToPath(trimmed));
       basePath.setAttribute('fill', 'none');
       if (dashed) {
-        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.15)');
+        basePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.15)');
         basePath.setAttribute('stroke-width', '1.5');
         basePath.setAttribute('stroke-dasharray', '5 5');
         basePath.setAttribute('class', styles.dashedFlow);
       } else {
-        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
+        basePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.2)');
         basePath.setAttribute('stroke-width', '2');
       }
       svg.appendChild(basePath);
@@ -175,7 +175,7 @@ export default function RunningAgentsFlowDiagram() {
         const pulsePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         pulsePath.setAttribute('d', pointsToPath(trimmed));
         pulsePath.setAttribute('fill', 'none');
-        pulsePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.7)');
+        pulsePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.7)');
         pulsePath.setAttribute('stroke-width', '2');
         pulsePath.setAttribute('class', styles.pulseFlow);
         pulsePath.setAttribute('marker-end', 'url(#raArrow)');

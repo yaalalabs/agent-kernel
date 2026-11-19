@@ -12,7 +12,7 @@
 .frameworkTitle {
   font-size: 1.875rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--ak-fg);
   text-transform: uppercase;
   margin: 0 0 1.5rem;
   letter-spacing: -0.01em;
@@ -22,7 +22,7 @@
 
 .frameworkBody {
   font-size: 1rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(var(--ak-fg-rgb), 0.8);
   line-height: 1.6;
   margin: 0 auto 2rem;
   text-align: center;
@@ -43,12 +43,12 @@
 .frameworkButton {
   padding: 0.625rem 1.25rem;
   background-color: #333133;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.18);
   border-radius: 999px;
   font-size: 0.9375rem;
   font-weight: 600;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(var(--ak-fg-rgb), 0.7);
   transition: all 200ms ease;
   white-space: nowrap;
 }
@@ -56,13 +56,13 @@
 .frameworkButton:hover {
   background-color: var(--accent-10);
   border-color: var(--accent-40);
-  color: #ffffff;
+  color: var(--ak-fg);
 }
 
 .frameworkButtonActive {
   background-color: var(--accent-15);
   border-color: var(--accent-60);
-  color: #ffffff;
+  color: var(--ak-fg);
 }
 
 /* ── Two-column grid ─────────────────────────────────────────────────────── */
@@ -86,8 +86,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background-color: rgba(var(--ak-fg-rgb), 0.03);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.1);
   border-radius: 0.75rem;
   padding: 1.125rem;
   gap: 0.875rem;
@@ -102,16 +102,16 @@
 .codeCardLabel {
   font-size: 0.9375rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--ak-fg-rgb), 0.85);
   letter-spacing: 0.01em;
 }
 
 .copyBtn {
   padding: 0.375rem 0.875rem;
-  background-color: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background-color: rgba(var(--ak-fg-rgb), 0.06);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.15);
   border-radius: 0.375rem;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(var(--ak-fg-rgb), 0.65);
   font-size: 0.6875rem;
   font-weight: 700;
   cursor: pointer;
@@ -124,7 +124,7 @@
 .copyBtn:hover {
   background-color: var(--accent-10);
   border-color: var(--accent-40);
-  color: #ffffff;
+  color: var(--ak-fg);
 }
 
 /* ── macOS window chrome ─────────────────────────────────────────────────── */
@@ -132,7 +132,7 @@
 .macWindow {
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.07);
   border-radius: 0.5rem;
   overflow: hidden;
   background-color: var(--ak-bg);
@@ -144,7 +144,7 @@
   justify-content: space-between;
   padding: 0.6rem 0.875rem;
   background-color: var(--ak-surface-raised);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.07);
   flex-shrink: 0;
 }
 
@@ -179,7 +179,7 @@
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  color: rgba(255, 255, 255, 0.25);
+  color: rgba(var(--ak-fg-rgb), 0.25);
 }
 
 .toolbarIcons svg {
@@ -228,7 +228,7 @@
   user-select: none;
   text-align: right;
   padding: 0 1rem 0 1.25rem;
-  color: rgba(255, 255, 255, 0.22);
+  color: rgba(var(--ak-fg-rgb), 0.22);
   font-size: 0.75rem;
   min-width: 2.5rem;
   white-space: nowrap;
@@ -239,7 +239,7 @@
 .lineContent {
   padding: 0 1.25rem;
   white-space: pre;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(var(--ak-fg-rgb), 0.82);
   word-break: normal;
   text-align: left;
   border: none !important;
@@ -249,7 +249,7 @@
 /* ── Syntax token colours (VS Code Dark+ inspired) ──────────────────────── */
 
 .tok_keyword {
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
 }
 
 .tok_builtin {
@@ -261,20 +261,20 @@
 }
 
 .tok_comment {
-  color: #6a9955;
+  color: var(--ak-text-muted);
   font-style: italic;
 }
 
 .tok_number {
-  color: #b5cea8;
+  color: var(--ak-text-secondary);
 }
 
 .tok_operator {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--ak-fg-rgb), 0.5);
 }
 
 .tok_plain {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--ak-fg-rgb), 0.85);
 }
 
 /* ── Doc link ─────────────────────────────────────────────────────────────── */
@@ -285,10 +285,10 @@
   gap: 0.4rem;
   align-self: flex-start;
   padding: 0.5rem 1.125rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background-color: rgba(var(--ak-fg-rgb), 0.05);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.18);
   border-radius: 999px;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(var(--ak-fg-rgb), 0.7);
   font-size: 0.875rem;
   font-weight: 600;
   text-decoration: none;
@@ -299,7 +299,7 @@
 .docLink:hover {
   background-color: var(--accent-10);
   border-color: var(--accent-40);
-  color: #ffffff;
+  color: var(--ak-fg);
   text-decoration: none;
 }
 

@@ -54,6 +54,7 @@ orange), the tagline and `pip install agentkernel` on the blue gradient. Its HTM
 ### 2. Theme tokens
 
 All tokens live in `docs/src/css/custom.css`. Derived steps are computed from the five brand colours.
+The table gives the dark-mode values; the light-mode values follow it.
 
 | Token | Old | New | Derivation |
 |---|---|---|---|
@@ -97,6 +98,40 @@ Infima variables follow the same values: `--ifm-color-primary` `#FF5E32` with `d
 `#02284F`; `--ifm-font-color-base` `#EAF3F8`; `--ifm-font-color-secondary` `#ABCEE1`; navbar shadow and
 table-of-contents border `#173964`; `--docusaurus-highlighted-code-line-bg` `rgba(177, 205, 255, 0.15)`.
 The unused light-mode fallback block takes `#D52E00` as its primary so it stays readable on white.
+
+Light mode redefines the themeable tokens under `[data-theme='light']`:
+
+| Token | Light value |
+|---|---|
+| `--ak-bg`, `--ak-surface` | `#FFFFFF` |
+| `--ak-bg-alt` | `#F5F8FC` |
+| `--ak-surface-raised` | `#F1F5FA` |
+| `--ak-surface-overlay` | `#E7EEF7` |
+| `--ak-border` | `#D3DEEC` |
+| `--ak-fg`, `--ak-fg-rgb` | `#02284F`, `2, 40, 79` (white and `255, 255, 255` in dark) |
+| `--ak-text`, `--ak-text-secondary`, `--ak-text-muted` | `#02284F`, `#3F598A`, `#5D7199` |
+| `--ak-primary-text` | `#D23F17` (`#FF5E32` in dark) |
+| `--ak-blue`, `--ak-blue-light`, `--ak-blue-dark`, `--ak-sky` | `#3F598A`, `#5E7AAE`, `#02284F`, `#5E7AAE` |
+| `--ak-bg-rgb`, `--ak-prussian-rgb` | `255, 255, 255`, `241, 245, 250` |
+| `--ak-shadow-rgb` | `2, 40, 79` (`0, 0, 0` in dark) |
+| `--ak-mono-filter` | `brightness(0) invert(0.14)` (`brightness(0) invert(1)` in dark) |
+
+Rules for the two modes:
+
+1. Accent fills (`--ak-primary*`, `--ak-gradient`) and the five brand colours are the same in both modes.
+2. Stylesheets hold no literal white, grey text or black shadow. White became `--ak-fg` or
+   `rgba(var(--ak-fg-rgb), a)`, grey text became a text token, and shadows use `--ak-shadow-rgb`. White
+   is kept only as a solid background plate and as text on a coloured fill.
+3. Orange text uses `--ak-primary-text`; orange fills, strokes and the mark use `--ak-primary`.
+4. `.footer`, `.ak-dark` and `.ak-dark-surface` redeclare the dark values, which pins a subtree to the
+   dark mode. `.ak-dark-surface` also paints the background and resets the Infima text colours. The
+   footer, the chat launcher and the three persona pages are pinned.
+5. Single-colour logos carry `mono: true` and take `--ak-mono-filter`, so they are white on dark and
+   near-black on light. This includes logos whose file is drawn in white.
+6. Canvas and WebGL code reads the tokens at run time through `themeRgba`, `themeInt` and
+   `onThemeChange` in `docs/src/lib/brand.ts`.
+7. `docs/docusaurus.config.js` enables the switch (`disableSwitch: false`, `defaultMode: 'dark'`,
+   `respectPrefersColorScheme: false`) and gives the navbar logo a light source and a `srcDark`.
 
 The values in the Derivation column are starting points. The five brand colours are fixed; the derived
 steps may be tuned at the visual checkpoint (plan, iteration 2).
@@ -194,6 +229,15 @@ export default function OakMark(props: OakMarkProps): JSX.Element;
 ```
 
 - Renders the two paths of `oak-mark-orange.svg` (viewBox `0 0 86.86 86.85`) inline.
+- The `hero` variant is a 3D scene:
+  - each half of the mark is a stack of 15 SVG slices 2.2 px apart, which reads as an extruded body
+  - on load the halves swing in from edge-on, pivoting on the centre gap
+  - the body sways slowly and leans up to 13 degrees toward the pointer anywhere over the hero section
+  - three tilted orbit rings carry five agent nodes; each ring is drawn twice, clipped to its far half
+    behind the mark and its near half in front, so nodes pass behind and in front of it
+  - a light sweep crosses the face every 7.5 s, and a ground shadow breathes with the float
+  - animations use transforms only: animating opacity on a `preserve-3d` element flattens its children
+- The `hub` and `cta` variants are the flat mark described below.
 - Layers, back to front: a radial orange glow, the mark filled with the orange gradient, a thin Baby Blue
   Ice outline.
 - Sizes: `hero` is centred in the hero's right column at up to 400 px; `hub` takes its size from the call
@@ -201,6 +245,11 @@ export default function OakMark(props: OakMarkProps): JSX.Element;
 - Motion: the outline draws in once, then the glow breathes on a slow loop. CSS only, no canvas.
 - `prefers-reduced-motion: reduce`, or `animated={false}`, renders the static mark.
 - No new dependency.
+
+Illustrations (`docs/src/components/BrandArt/`): `PersonaArt` draws the three path-card pictures (a rising
+chart, an editor window, a node graph around the mark) and `CertSeal` draws the ISO 27001 seal and the
+SOC 2 shield. Both use theme tokens only. They replace `business_leader.png`, `developer.png`, `ai.png`,
+`iso.png` and `soc.png`, which are deleted. The path cards share one accent, `--ak-primary`.
 
 Particle background (`docs/src/components/PlantParticlesBackground/index.tsx`): `models/index.glb` is three
 icosphere meshes, not the old mark, so the geometry stays. `PALETTE` (`:29-33`) becomes Baby Blue Ice,
@@ -372,7 +421,8 @@ No Python file changes, so the `ak-py` test suite is not part of this change. St
 5. **Snapshot parity.** `diff -rq docs/docs docs/versioned_docs/version-0.10.1` prints nothing.
 6. **Build.** `cd docs && NODE_ENV=production NODE_OPTIONS=--max-old-space-size=6144 npm run build` passes.
 7. **Visual review.** Screenshots at 1440 x 900 of `/`, `/features`, `/use-cases`, `/docs`,
-   `/docs/quick-start` and `/blog`, and of `/` at 390 px wide, are compared with the brand guide. Checks:
+   `/docs/quick-start` and `/blog`, and of `/` at 390 px wide, in both colour modes, are compared with the
+   brand guide. Checks:
    the logo is the right lockup, orange appears only in accent roles, no cyan or magenta remains, text
    contrast holds on both surface levels, and the reduced-motion hero is static.
 8. **Punctuation.** No added line contains a dash character that its removed counterpart did not.

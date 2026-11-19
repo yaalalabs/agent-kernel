@@ -438,7 +438,8 @@ const config = {
         title: '',
         logo: {
           alt: 'Open Agent Kernel logo',
-          src: 'img/branding/open-agent-kernel-white-orange.svg',
+          src: 'img/branding/open-agent-kernel-color.svg',
+          srcDark: 'img/branding/open-agent-kernel-white-orange.svg',
         },
         items: [
           { to: '/features', label: 'Features', position: 'left' },
@@ -513,8 +514,9 @@ const config = {
         additionalLanguages: ['python', 'bash', 'json', 'yaml'],
       },
       colorMode: {
+        // Dark is the default. Visitors can switch to the light mode from the navbar, and the choice is remembered.
         defaultMode: 'dark',
-        disableSwitch: true,
+        disableSwitch: false,
         respectPrefersColorScheme: false,
       },
       mermaid: {

@@ -47,7 +47,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
   margin: 0 0 0.75rem;
 }
 
@@ -55,7 +55,7 @@
   font-size: clamp(2rem, 4vw, 2.8rem);
   font-weight: 600;
   letter-spacing: -0.03em;
-  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  background: linear-gradient(to bottom, var(--ak-fg) 0%, #898989 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -119,7 +119,7 @@
 }
 
 .colTime_traditional { color: #eb5757; }
-.colTime_with-ak     { color: var(--ak-primary); }
+.colTime_with-ak     { color: var(--ak-primary-text); }
 
 /* ─── Timeline ───────────────────────────────────────────────────────────── */
 
@@ -286,7 +286,7 @@
 }
 
 .done_with-ak {
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
   background: rgba(var(--ak-primary-rgb), 0.1);
   border: 1px solid rgba(var(--ak-primary-rgb), 0.25);
 }
@@ -325,7 +325,7 @@
 .savingsValue {
   font-size: 1.6rem;
   font-weight: 800;
-  color: var(--ak-primary);
+  color: var(--ak-primary-text);
   margin: 0;
   letter-spacing: -0.03em;
 }

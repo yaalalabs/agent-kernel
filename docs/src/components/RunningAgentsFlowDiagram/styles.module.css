@@ -22,7 +22,7 @@
   align-items: center;
   min-height: 24rem;
   padding: 2rem 1.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
   border-radius: 0.5rem;
   background: transparent;
   overflow-x: auto;
@@ -64,7 +64,7 @@
   font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(var(--ak-fg-rgb), 0.42);
 }
 
 .inputNotes li::before {
@@ -117,13 +117,13 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
   border-radius: 1rem;
   background: var(--node-surface);
   backdrop-filter: blur(8px);
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.08),
-    0 4px 20px rgba(0, 0, 0, 0.25);
+    inset 0 1px 1px rgba(var(--ak-fg-rgb), 0.08),
+    0 4px 20px rgba(var(--ak-shadow-rgb), 0.25);
   transition:
     border-color 0.3s ease,
     transform 0.3s ease,
@@ -134,7 +134,7 @@
   border-color: color-mix(in srgb, var(--node-color, var(--ak-primary-dark)) 45%, transparent);
   transform: translateY(-3px) scale(1.02);
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.15),
+    inset 0 1px 1px rgba(var(--ak-fg-rgb), 0.15),
     0 10px 30px color-mix(in srgb, var(--node-color, var(--ak-primary-dark)) 20%, transparent);
 }
 

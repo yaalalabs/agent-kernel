@@ -1,6 +1,6 @@
 'use client';
 
-import { BRAND, brandInt, brandUnit } from '@site/src/lib/brand';
+import { brandUnit, onThemeChange, themeInt } from '@site/src/lib/brand';
 import { useEffect, useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import * as THREE from 'three';
@@ -284,7 +284,8 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
       const renderer  = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(pixelRatio);
-      renderer.setClearColor(brandInt('bg'), 1);
+      renderer.setClearColor(themeInt('bg'), 1);
+      const stopThemeWatch = onThemeChange(() => renderer.setClearColor(themeInt('bg'), 1));
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       container.appendChild(renderer.domElement);
 
@@ -328,7 +329,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
       // ── Overlay ───────────────────────────────────────────────────────────────
       const overlay = document.createElement('div');
       overlay.style.cssText = `position:absolute;inset:0;pointer-events:none;
-        background:linear-gradient(180deg,rgba(1,20,40,0.08) 0%,rgba(1,20,40,${PARTICLE_OVERLAY_OPACITY}) 100%);
+        background:linear-gradient(180deg,rgba(var(--ak-bg-rgb),0.08) 0%,rgba(var(--ak-bg-rgb),${PARTICLE_OVERLAY_OPACITY}) 100%);
         mix-blend-mode:multiply;`;
       container.appendChild(overlay);
 
@@ -799,6 +800,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
         window.removeEventListener('resize', handleResize);
         document.removeEventListener('visibilitychange', handleVisibility);
         if (animationId !== null) cancelAnimationFrame(animationId);
+        stopThemeWatch();
         renderer.dispose();
         geometry.dispose();
         coreMaterial.dispose();
@@ -819,7 +821,7 @@ const PlantParticlesBackground = forwardRef<PlantParticlesBackgroundHandle, Plan
           height: '100vh',
           zIndex: -1,
           pointerEvents: 'none',
-          background: BRAND.bg,
+          background: 'var(--ak-bg)',
         }}
       />
     );

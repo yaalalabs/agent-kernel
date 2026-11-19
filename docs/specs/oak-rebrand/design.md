@@ -80,12 +80,15 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
 
 ### Colour theme
 
-- The site stays dark only.
+- The site has two colour modes. Dark is the default; a navbar switch selects the light mode and the choice is remembered.
+  - both modes use the same token names, so a component never branches on the mode
+  - the footer stays navy in both modes
+  - the three persona pages stay dark in both modes (see Open questions)
 - Role mapping:
-  - page background: a darker step of Prussian Blue
-  - cards and raised surfaces: Prussian Blue
+  - dark mode: page background a darker step of Prussian Blue, cards and raised surfaces Prussian Blue
+  - light mode: page background white, raised surfaces cool tints toward Pale Sky, text Prussian Blue
   - accent: Tiger Flame Orange
-  - ambient: Baby Blue Ice and Pale Sky
+  - ambient: Baby Blue Ice and Pale Sky in the dark mode, Dusk Blue in the light mode
   - borders and muted text: Dusk Blue tints
 - Orange is the accent, not the wallpaper.
   - accent uses: calls to action, links, active and selected states, focus rings, gradient headline words, the mark, the OAK node in diagrams
@@ -97,7 +100,8 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
   - `--ak-purple*` is removed
 - No file under `docs/src` keeps a hard-coded cyan, magenta or near-black from the old palette.
 - Contrast:
-  - body text and links meet WCAG AA (4.5:1) on both the page background and Prussian Blue surfaces
+  - body text and links meet WCAG AA (4.5:1) on the page background and raised surfaces of both modes
+  - orange used as text on white is darkened to `#D23F17` (4.6:1); orange fills keep `#FF5E32`
   - labels on orange fills use the dark navy (6.10:1), never white (3.04:1)
 - Status colours (success, error, warning) and vendor colours (AWS, Azure, Google, integration logos) do not change.
 - Typography does not change (Archivo, JetBrains Mono).
@@ -109,8 +113,13 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
 
 - `hero.mp4` and `cta-bg.png` are removed from the site and the repository.
 - One code-drawn component, built from the mark's SVG paths, replaces them at all 10 call sites.
-  - honours `prefers-reduced-motion` by rendering a static mark
+  - the home hero is a 3D scene: the mark's halves fold together, the extruded body tilts toward the pointer, and agent nodes orbit behind and in front of it
+  - diagram hubs and calls to action use the flat mark with a glow
+  - honours `prefers-reduced-motion` by rendering a static scene
   - adds no dependency
+- Raster images in the old colour scheme are replaced by illustrations drawn in the palette:
+  - the three path cards on the home page (business leader, developer, AI engineer)
+  - the ISO 27001 and SOC 2 tiles
 - The particle background keeps its geometry (a sphere) and takes the new palette.
 
 ### Contributor guidance
@@ -133,7 +142,7 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
 - `pyproject.toml` descriptions, `Chart.yaml` and Terraform descriptions, example code and example config files.
 - The 20 doc versions older than `0.10.1`, blog post bodies, blog banner images, existing folders under `docs/specs`.
 - `NOTICE` and `LICENSE`.
-- A light theme or a colour mode switch.
+- Light-mode restyling of the three persona pages.
 - New typography.
 - Surfaces outside the repository: the GitHub repository description and social preview, the PyPI page (it updates at the next release), the GHCR chart page.
 - New Python components. This change adds no `AKConfig` field, ABC, factory or class, so the house patterns for new features do not apply.
@@ -144,9 +153,11 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
 - **Release announcement.** `.github/workflows/publish.yaml:207` posts "Agent Kernel v${VERSION}". It is a workflow file, so it is left unchanged. Change it with this work, or with the code rename?
 - **Blog.** Post bodies and banners keep the old name and mark inside the new theme. Is regenerating the banners a follow-up?
 - **Dead media.** `docs/static/models/leaf.glb` and `brain.glb` (3.1 MB together) are referenced nowhere. Delete them here?
-- **Persona accents.** The persona pages keep their own accent colours (amber for developers, green for AI
-  engineers, magenta for business leaders), and diagrams keep their categorical node colours. Amber sits
-  close to the brand orange. Keep the persona colours, or move the three personas onto brand colours?
+- **Persona pages.** The persona pages keep their own accent colours (amber for developers, green for AI
+  engineers, magenta for business leaders) and are pinned to the dark mode, because their backgrounds were
+  designed dark. Move the three personas onto brand colours and give them a light version?
+- **Membership badges.** The Linux Foundation and Agentic AI Foundation badges in the footer are the
+  foundations' own artwork and are shown unmodified. Is a monochrome treatment acceptable to them?
 - **Former-name note.** Should the README and the docs intro carry one line saying that Open Agent Kernel
   was previously called Agent Kernel and that the `agentkernel` package and `ak` CLI are unchanged?
 - **Skill evals.** `ak-init/evals/evals.json` (12 occurrences) and `ak-add-integration/evals/evals.json` (1) keep the old name as test prompts. Leave as is?
