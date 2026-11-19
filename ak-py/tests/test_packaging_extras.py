@@ -47,3 +47,9 @@ def test_the_a2a_extra_ships_the_server_it_is_served_by():
 def test_the_pubsub_extra_ships_the_pubsub_client():
     """#886: the pubsub transport imports google-cloud-pubsub, and nothing else installs it."""
     assert "google-cloud-pubsub" in _requirement_names("pubsub")
+
+
+def test_the_cost_agentgateway_extra_ships_psycopg_and_the_cost_dependencies():
+    """It is installed on its own, so it repeats the cost extra's requirements (no extra refers to another)."""
+    assert {"psycopg", "httpx", "litellm"} <= _requirement_names("cost-agentgateway")
+    assert _requirement_names("cost") <= _requirement_names("cost-agentgateway")
