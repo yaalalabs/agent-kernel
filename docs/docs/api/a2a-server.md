@@ -85,6 +85,7 @@ separate process only in split deployments.
 | `RESTAPI.run()` with no `execution.queues` block (the laptop default) | ✅ one process, in-memory queue |
 | `IOHandler.run(handlers=[...])`, any transport | ✅ through the queue |
 | `CloudRun.run()` on GCP, any transport | ✅ through the queue (it starts `IOHandler`) |
+| `LambdaProtocolHost` in the AWS Lambda request handler (REST modes, `sqs` transport) | ✅ through the queue, see [On AWS Lambda](#on-aws-lambda) |
 | `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
 
 - **Split deployments** (SQS, Kafka, NATS, Pub/Sub or Service Bus, with the agent runner in its own process): agent
@@ -102,6 +103,20 @@ separate process only in split deployments.
   `execution.response_store.delay` (1 s without a `response_store` block), and the wait gives up
   after `retry_count` reads (about 59 s without a block).
 - **Execution mode**: A2A ignores `execution.mode` and always waits for one whole reply.
+
+### On AWS Lambda
+
+The request-handler Lambda serves A2A through `LambdaProtocolHost`, in `rest_sync` or `rest_async` with
+`queue_mode = true`. The host runs the same A2A routes the pipeline's `IOHandler` serves and hands each call to the
+unchanged queue workers. Set up the host, the Terraform flags (`enable_a2a_server`) and the authorizer bypass as in
+[A2A and MCP on Lambda](../deployment/aws-serverless.md#a2a-and-mcp-on-lambda). On Lambda:
+
+- **29 seconds.** API Gateway stops waiting at 29 s, so the whole call (queue time plus the agent run) has to fit. The host
+  refuses to start when `(retry_count - 1) x delay` is above 29 s.
+- **No task store.** `message:send` returns a plain message, so `tasks/{id}` across Lambda instances is not available.
+- **No streaming.** `message:stream` is not supported on Lambda.
+- **Public URL.** `a2a.url` has to be the API's public URL, stage and base path included: it is what the agent card advertises.
+- **WebSocket `async` mode** is not supported; it is tracked in #985.
 
 ### Authentication
 
