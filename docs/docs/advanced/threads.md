@@ -18,7 +18,7 @@ sequenceDiagram
     participant ThreadStore as Thread Store
     participant Agent
 
-    Client->>TH: POST /api/v1/chat (prompt, session_id; bearer credential)
+    Client->>TH: POST /api/v1/chat (prompt, session_id, bearer credential)
     TH->>ThreadStore: get_or_create_thread + append user message
     TH->>CS: execute(request, prebuilt requests)
     CS->>Agent: run

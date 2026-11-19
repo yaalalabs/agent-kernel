@@ -13,10 +13,10 @@ export function Announcement(): JSX.Element {
       <div className={clsx('ak-container', styles.inner)}>
         <span className={clsx('ak-tag', styles.tag)}>New</span>
         <p className={styles.text}>
-          <strong>Fetch spans back for evaluation.</strong> Read agent, LLM and tool spans back from Langfuse, Logfire,
-          OpenLLMetry or CloudWatch with one filter, to grade production traffic.
+          <strong>Identity provider support.</strong> Auth0, Keycloak, Okta, Cognito, Entra ID or Firebase now
+          authenticates every surface.
         </p>
-        <Link to="/docs/advanced/traceability#fetching-spans-back" className={clsx('ak-link', styles.link)}>
+        <Link to="/docs/advanced/identity-and-access" className={clsx('ak-link', styles.link)}>
           Read more
         </Link>
       </div>

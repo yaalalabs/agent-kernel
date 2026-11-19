@@ -303,4 +303,17 @@ particle hero and the integration ledger are not, the level tiles are to be redo
   6. The hero is a particle mark on the GPU (`docs/src/components/ParticleLogo/`), following the maintainer's brief and the reference they named: it builds from particles on load, ripples, swirls and leans under the pointer, and scatters as the page scrolls. This supersedes iteration 18. `gsap` and `three` are removed from `package.json`.
   7. Blog banners: the eight existing ones are recoloured and carry the new mark (text baked into them keeps the old name), and the ten posts without one have a banner from a template kept in `branding/blog-banner/`. The blog index thumbnail takes the banners' shape.
 - **Verify:** the production build passes on an isolated copy; captures of each change in both colour modes. Not checked: Safari and Firefox, and the particle hero on a low-power device.
-- **Open:** whether other parts of the home page should use particle drawings; the maintainer asked to be consulted first.
+- **Open:** resolved in iteration 28: the maintainer chose the closing panel and the integrations section.
+
+## Iteration 28: particle fields and light diagrams
+
+- **Status:** done.
+- **Steps:**
+  1. Closing panel: a slow sheet of dots behind the copy, with the accent on its crests (`docs/src/components/DotField/Wave.tsx`). It appears wherever the closing panel does.
+  2. Integrations section: a dot cloud behind the stage list was built and then removed. The maintainer found it oddly placed: a shape floating under the list, cut by the bottom of the window. Its replacement, chosen by the maintainer from three options, is a floor of dots along the bottom edge of the pinned section (`DotField/Floor.tsx`). It differs from the closing panel's wave on purpose: centred and calm, one colour at rest, with the accent only as a ripple that crosses it when the stage changes, in the direction of travel.
+  3. The wave uses a small WebGL runner (`DotField/engine.ts`), which starts a scene when it first nears the screen, pauses it off screen, and draws a single still frame for reduced motion.
+  4. Docs diagrams follow the colour mode. The maintainer asked for a real light version, not a dark plate: on the light page each Mermaid diagram is sent a light palette as an init directive (`docs/src/theme/Mermaid/index.tsx`), and the plate is white. Nodes a diagram colours itself set both fill and text colour in all 1,866 cases across every doc version, so they read on either background.
+  5. A sequence diagram in `docs/docs/advanced/threads.md` had a semicolon in a message, which ends a statement and broke the diagram. Fixed in the current docs and the 0.10.1 copy.
+  6. The home page announcement now leads with identity provider support.
+- **Verify:** the production build passes on an isolated copy; flowcharts, a front-matter diagram and sequence diagrams captured in both modes; Not checked: Safari and Firefox, and class or state diagrams in the light palette.
+- **Hero entrance, revised:** the maintainer found the spiral fly-in too intense and chose a calmer one from four options. The mark now comes into focus over two seconds: the dots start as a haze close to their places and tighten. Hover and scroll behaviour are unchanged.

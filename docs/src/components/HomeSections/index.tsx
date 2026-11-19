@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import SectionHeader from '@site/src/components/ui/SectionHeader';
 import { CertSeal } from '@site/src/components/BrandArt';
 import { StageMotion, type Stage as StageId } from '@site/src/components/VectorMotion';
+import Wave from '@site/src/components/DotField/Wave';
 import styles from './styles.module.css';
 
 export { Announcement } from './Announcement';
@@ -278,6 +279,7 @@ export function ClosingPanel(): JSX.Element {
     <section className="ak-section">
       <div className="ak-container">
         <div className={clsx('ak-dark', styles.closing)}>
+          <Wave className={styles.closingWave} />
           <div className={styles.closingCopy}>
             <h2 className="ak-h2">Ship your first agent today</h2>
             <p className="ak-lead">

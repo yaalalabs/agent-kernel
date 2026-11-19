@@ -157,7 +157,19 @@
   height: calc(100vh - var(--ifm-navbar-height));
 }
 
+/* The dot floor lies along the bottom edge of the pinned frame, behind both columns */
+.pinned .floor {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  height: 34%;
+}
+
 .pinned .layout {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: var(--ak-space-64);

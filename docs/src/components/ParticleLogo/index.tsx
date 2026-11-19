@@ -6,7 +6,8 @@ import styles from './styles.module.css';
 /**
  * The home page hero: the Open Agent Kernel mark as a field of fine dots, drawn on the GPU.
  *
- * - On load the dots fly in on a spiral and settle into the mark, the lower rows first.
+ * - On load the mark comes into focus over two seconds: the dots start as a loose haze close
+ *   to their places, then fade in and tighten. Nothing flies across the hero.
  * - At rest the surface breathes: a slow wave lifts rows of dots, and the mark turns a little.
  * - Under the pointer, rings travel out across the surface, the dots swirl, and the mark
  *   leans towards the pointer.
@@ -25,7 +26,7 @@ const MARK_RIGHT =
   'M86.86,0v58.47c0,7.6-4.64,14.44-11.7,17.27l-27.78,11.11v-23.69c0-4.72,2.87-8.97,7.26-10.73l12.48-5.06v-15.79l-19.74,7.97v-11.17c0-7.6,4.63-14.44,11.69-17.27L86.86,0Z';
 const UNITS = 86.86;
 
-const BUILD_SECONDS = 2.6;
+const BUILD_SECONDS = 2;
 
 /* ---- The dots ------------------------------------------------------------- */
 
@@ -149,15 +150,12 @@ void main() {
   p.xy += outward * ring * 0.016 + vec2(-outward.y, outward.x) * near * 0.04 * sin(t * 2.2 + aSeed.x * 6.283);
   p.z += ring * 0.07 + near * 0.05;
 
-  // Build: fly in on a spiral, the lower rows first.
-  float delay = (0.5 - aTarget.y) * 0.35 + aSeed.x * 0.3;
-  float built = clamp(uBuild * 1.65 - delay, 0.0, 1.0);
+  // Build: the mark comes into focus. Each dot starts as part of a loose haze close to its
+  // place, then fades in and tightens, at its own moment. Nothing travels across the hero.
+  float delay = aSeed.x * 0.35;
+  float built = clamp(uBuild * 1.35 - delay, 0.0, 1.0);
   float settle = 1.0 - pow(1.0 - built, 3.0);
-  float far = 1.0 - settle;
-  vec2 from = normalize(aSeed.yz - 0.5 + 0.0001) * (0.9 + aSeed.w * 1.2);
-  p = mix(vec3(from, (aSeed.x - 0.5) * 1.4), p, settle);
-  float turn = far * far * (2.4 + aSeed.w * 2.2);
-  p.xy = mat2(cos(turn), -sin(turn), sin(turn), cos(turn)) * p.xy;
+  p += vec3(aSeed.yz - 0.5, aSeed.w - 0.5) * vec3(0.22, 0.22, 0.5) * (1.0 - settle);
 
   // Scroll: the dots let go, and drift up and out.
   float gone = smoothstep(aSeed.z * 0.55, 1.0, uScatter);
@@ -189,7 +187,7 @@ void main() {
   gl_PointSize = max(size * uInk * uDpr * clamp(uSize / 440.0, 0.65, 1.25), 1.0);
 
   float alpha = mix(mix(0.95, 1.0, edge), mix(0.5, 0.42, dust), max(dust, back));
-  vAlpha = alpha * smoothstep(0.0, 0.3, built) * (1.0 - gone * 0.9);
+  vAlpha = alpha * smoothstep(0.0, 0.6, built) * (1.0 - gone * 0.9);
   vTone = clamp(max(wave, 0.0) * 0.55 + max(ring, 0.0) * 1.6 + sweep * 0.8 + near * 0.5, 0.0, 1.0);
   vSpeck = max(dust, step(0.96, aSeed.y) * (1.0 - edge) * (1.0 - back));
 }
@@ -388,7 +386,8 @@ function start(stage: HTMLElement, canvas: HTMLCanvasElement, anchor: HTMLElemen
     window.removeEventListener('pointermove', onMove);
     document.documentElement.removeEventListener('pointerleave', onLeave);
     document.removeEventListener('visibilitychange', sync);
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    // The context is left to the browser to collect: losing it here would leave the canvas dead
+    // if this effect runs again on the same element, as it does on a hot reload.
   };
 }
 

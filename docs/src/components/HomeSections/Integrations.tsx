@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from '@docusaurus/Link';
 import clsx from 'clsx';
 import SectionHeader from '@site/src/components/ui/SectionHeader';
+import Floor from '@site/src/components/DotField/Floor';
 import { INTEGRATION_ROWS, type IntegrationItem } from './integrations.data';
 import styles from './integrations.module.css';
 
@@ -199,6 +200,8 @@ export function Integrations(): JSX.Element {
       style={{ '--steps': PANELS.length } as React.CSSProperties}
     >
       <div ref={frame} className={styles.frame}>
+        {/* A floor of dots along the bottom edge; a ripple crosses it when the stage changes */}
+        {pinned && <Floor stage={active} className={styles.floor} />}
         <div className={clsx('ak-container', styles.layout)}>
           <div className={styles.aside}>
             <SectionHeader

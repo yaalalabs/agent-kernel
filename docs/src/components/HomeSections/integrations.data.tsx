@@ -70,8 +70,7 @@ const TRACE = "/docs/advanced/traceability";
 const TESTING = "/docs/testing/automated-testing";
 const SKILLS = "/docs/agent-skills";
 const K8S = "/docs/deployment/onprem-kubernetes";
-// The identity page is only in the unreleased docs until the next release; drop `next` once it ships.
-const IDENTITY = "/docs/next/advanced/identity-and-access";
+const IDENTITY = "/docs/advanced/identity-and-access";
 
 export const INTEGRATION_ROWS: IntegrationRow[] = [
   {

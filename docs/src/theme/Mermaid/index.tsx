@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
+import { useColorMode } from '@docusaurus/theme-common';
 import mermaid from 'mermaid';
 import elkLayouts from '@mermaid-js/layout-elk';
 import MermaidOriginal from '@theme-original/Mermaid';
@@ -43,6 +44,72 @@ if (ExecutionEnvironment.canUseDOM) {
 
 type Props = WrapperProps<typeof MermaidType>;
 
+/**
+ * The palette for diagrams on the light page. docusaurus.config.js holds the dark one, and the
+ * theme can pass only one set of variables to mermaid, so the light set travels with each
+ * diagram as an init directive (see `forColorMode`).
+ *
+ * Nodes that a diagram colours itself (`style X fill:..., color:...`) always set both the fill
+ * and the text colour, so they read on either background. These variables cover everything
+ * else: plain nodes, edges and their labels, groups, and the parts of sequence diagrams.
+ */
+const LIGHT_VARIABLES = {
+  darkMode: false,
+  background: '#FFFFFF',
+  textColor: '#02284F',
+  // nodes
+  primaryColor: '#EEF3FB',
+  primaryTextColor: '#02284F',
+  primaryBorderColor: '#3F598A',
+  mainBkg: '#EEF3FB',
+  nodeBorder: '#3F598A',
+  // edges + labels
+  lineColor: '#3F598A',
+  edgeLabelBackground: '#FFFFFF',
+  // subgraphs / clusters
+  clusterBkg: '#F6F8FC',
+  clusterBorder: '#B9C8E0',
+  titleColor: '#02284F',
+  // secondary/tertiary (misc fills)
+  secondaryColor: '#E1EAF7',
+  secondaryTextColor: '#02284F',
+  secondaryBorderColor: '#3F598A',
+  tertiaryColor: '#F6F8FC',
+  tertiaryTextColor: '#02284F',
+  tertiaryBorderColor: '#B9C8E0',
+  // sequence diagrams
+  actorBkg: '#EEF3FB',
+  actorBorder: '#3F598A',
+  actorTextColor: '#02284F',
+  actorLineColor: '#8FA1C2',
+  signalColor: '#3F598A',
+  signalTextColor: '#02284F',
+  labelBoxBkgColor: '#E1EAF7',
+  labelBoxBorderColor: '#3F598A',
+  labelTextColor: '#02284F',
+  loopTextColor: '#3F598A',
+  noteBkgColor: '#FFF0EA',
+  noteBorderColor: '#F2A98F',
+  noteTextColor: '#02284F',
+  activationBkgColor: '#E1EAF7',
+  activationBorderColor: '#3F598A',
+  sequenceNumberColor: '#FFFFFF',
+};
+
+const LIGHT_DIRECTIVE = `%%{init: ${JSON.stringify({ theme: 'base', themeVariables: LIGHT_VARIABLES })}}%%`;
+
+/**
+ * The diagram source for a colour mode. On the dark page it is unchanged. On the light page it
+ * gains the light palette as an init directive, placed after any front matter, which has to
+ * stay first.
+ */
+function forColorMode(source: string, colorMode: string): string {
+  if (colorMode !== 'light') return source;
+  const frontMatter = /^\s*---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/.exec(source);
+  if (!frontMatter) return `${LIGHT_DIRECTIVE}\n${source}`;
+  return `${frontMatter[0]}${LIGHT_DIRECTIVE}\n${source.slice(frontMatter[0].length)}`;
+}
+
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 8;
 const ZOOM_STEP = 1.2;
@@ -76,6 +143,7 @@ function MermaidLightbox({
   onClose,
   ...props
 }: Props & { onClose: () => void }): ReactElement {
+  const { colorMode } = useColorMode();
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -281,7 +349,7 @@ function MermaidLightbox({
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           }}
         >
-          <MermaidOriginal {...props} />
+          <MermaidOriginal {...props} value={forColorMode(props.value, colorMode)} />
         </div>
       </div>
       <div className={styles.hint}>Scroll to zoom, drag to pan</div>
@@ -291,6 +359,7 @@ function MermaidLightbox({
 }
 
 export default function MermaidWrapper(props: Props): ReactElement {
+  const { colorMode } = useColorMode();
   const [isOpen, setIsOpen] = useState(false);
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
@@ -298,7 +367,7 @@ export default function MermaidWrapper(props: Props): ReactElement {
   return (
     <>
       <div className={styles.wrapper}>
-        <MermaidOriginal {...props} />
+        <MermaidOriginal {...props} value={forColorMode(props.value, colorMode)} />
         <button
           type="button"
           className={styles.expandButton}

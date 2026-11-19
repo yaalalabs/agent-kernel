@@ -1376,11 +1376,14 @@ code {
    Mermaid Diagrams
    ============================================================================= */
 
+/* Diagrams follow the colour mode: a white plate with the light palette on the light page
+   (src/theme/Mermaid sends that palette with each diagram), the dark plate and the palette
+   in docusaurus.config.js on the dark one. */
 .docusaurus-mermaid-container {
-  border-radius: 0.625rem;
+  border-radius: var(--ak-radius-card);
   border: 1px solid var(--ak-border);
-  padding: 1rem;
-  background: var(--ak-surface);
+  padding: 1.25rem 1rem;
+  background-color: var(--ak-bg);
   overflow: hidden;
   margin: 1.25rem 0;
 }

@@ -238,27 +238,43 @@
 /* ── Closing panel ── */
 
 .closing {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--ak-space-48);
+  min-height: 21rem;
   padding: var(--ak-space-64);
+  overflow: hidden;
   border: 1px solid var(--ak-border);
   border-radius: var(--ak-radius-card);
   background-color: var(--ak-surface-raised);
 }
 
+/* A slow sheet of dots behind the copy (components/DotField/Wave) */
+.closingWave {
+  position: absolute;
+  inset: 0;
+}
+
 .closingCopy {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--ak-space-24);
 }
 
 .closingActions {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: var(--ak-space-16);
+}
+
+/* The outlined button sits over the dots, so it takes the panel's fill */
+.closingActions :global(.ak-btn--secondary) {
+  background-color: var(--ak-surface-raised);
 }
 
 @media (max-width: 1100px) {

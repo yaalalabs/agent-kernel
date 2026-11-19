@@ -526,7 +526,8 @@ const config = {
         respectPrefersColorScheme: false,
       },
       mermaid: {
-        // The site is dark-only; both entries point at the customized base theme.
+        // Both entries use the customised base theme. The variables below are the dark palette;
+        // on the light page src/theme/Mermaid sends the light palette with each diagram.
         theme: { light: 'base', dark: 'base' },
         options: {
           fontFamily: 'Archivo, sans-serif',
