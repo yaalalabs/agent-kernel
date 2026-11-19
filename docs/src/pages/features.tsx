@@ -156,13 +156,28 @@ const STAGES: StageGroup[] = [
         guide: { label: 'REST API', to: '/docs/api/rest-api' },
       },
       {
+        title: 'Agent registry and catalog',
+        summary:
+          'Every agent carries one descriptor, declared in code or in configuration. The agent catalog, A2A cards, MCP tools and the AG-UI listing are all built from it.',
+        points: [
+          'Name, version, description, owner, tags, skills and tools',
+          'A catalog at GET /api/v1/agents, with a tag filter and pagination',
+          'Each agent chooses the surfaces it is served on',
+          'In-memory, Redis, Valkey or DynamoDB backend',
+        ],
+        // The agent registry is only in the unreleased docs until the next release: drop `next` once it ships.
+        guide: { label: 'Agent registry', to: '/docs/next/core-concepts/configuration#agent-registry' },
+      },
+      {
         title: 'MCP server',
-        summary: 'Expose agents as Model Context Protocol tools, so any MCP client can call them.',
+        summary:
+          'Expose agents as Model Context Protocol tools, each described by the text you declare for its agent, so any MCP client can call them.',
         guide: { label: 'MCP server', to: '/docs/api/mcp-server' },
       },
       {
         title: 'A2A server',
-        summary: 'Serve agents over the Agent-to-Agent protocol, so other agents can delegate work to them.',
+        summary:
+          'Serve agents over the Agent-to-Agent protocol, with a card for each agent built from its registry descriptor, so other agents can delegate work to them.',
         guide: { label: 'A2A server', to: '/docs/api/a2a-server' },
       },
       {
@@ -287,7 +302,6 @@ const STAGES: StageGroup[] = [
           { label: 'Local', to: '/docs/deployment/local' },
           { label: 'AWS Lambda', to: '/docs/deployment/aws-serverless' },
           { label: 'Amazon ECS Fargate', to: '/docs/deployment/aws-containerized' },
-          { label: 'Azure Functions', to: '/docs/deployment/azure-serverless' },
           { label: 'Azure Container Apps', to: '/docs/deployment/azure-containerized' },
           { label: 'Cloud Run, serverless', to: '/docs/deployment/gcp-serverless' },
           { label: 'Cloud Run, containers', to: '/docs/deployment/gcp-containerized' },

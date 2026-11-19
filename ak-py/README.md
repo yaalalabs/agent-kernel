@@ -21,6 +21,7 @@ Open Agent Kernel (OAK) is a lightweight **AI agent runtime** and adapter layer 
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
 - **AG-UI Server**: Built-in [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) handler for driving any streaming-capable agent from an AG-UI frontend, with opt-in shared state and client-context tools
+- **Agent Registry**: One descriptor per agent (name, version, description, owner, tags, skills, tools and the surfaces it is served on), declared with `Module.describe` or `registry.agents.<id>`; the agent catalog (`GET /api/v1/agents`), A2A cards, MCP agent tools and the AG-UI listing are built from it, with pluggable backends (`in_memory`, `redis`, `valkey`, `dynamodb`)
 - **A2UI**: Label a JSON reply as [A2UI](https://a2ui.org/) from two config keys, so a client receives a generative-UI document as an object with its format named rather than a string to parse twice
 - **REST API**: Built-in REST API server for agent interaction
 - **Test Automation**: Built-in test suite for testing agents
@@ -1109,6 +1110,63 @@ Configure the REST API server (if using the API module).
   - **Description**: Enable agent interaction routes
   - **Environment Variable**: `AK_API__ENABLED_ROUTES__AGENTS`
 
+#### Agent Registry Configuration
+
+Every agent has a **descriptor** (its id, name, version, description, tags, tools and the surfaces it is served
+on). The agent registry keeps the descriptors, and the catalog route (`GET /api/v1/agents`), A2A cards, MCP agent
+tools and the AG-UI listing are built from them. The `registry` block is optional: without it, descriptors live in
+the process that loads the agents. An agent is on every surface unless its descriptor names the surfaces it is
+served on, in code (`Module.describe`) or in this block.
+
+- **Type**
+  - **Field**: `registry.type`
+  - **Options**: `in_memory`, `redis`, `valkey`, `dynamodb`, or a dotted path to an `AgentRegistry` subclass
+  - **Default**: `in_memory`
+  - **Description**: Where descriptors are kept. A store-backed type shares them between processes, so a process
+    that only accepts requests can list agents another process hosts and serve them over the queue. It shares what
+    is known about an agent, not the agent: a handler that runs agents in its own process still needs the agent
+    loaded there, and every agent runner on a queue has to host the agents served from it. A store type needs its
+    block
+  - **Environment Variable**: `AK_REGISTRY__TYPE`
+
+- **Store blocks**
+  - **Field**: `registry.redis` / `registry.valkey` (`url`, `prefix`), `registry.dynamodb` (`table_name`)
+  - **Default**: prefix `ak:registry:`, table `ak-agent-registry` (partition key `agent_id`, no sort key)
+  - **Description**: Descriptors do not expire, and a `ttl` set here is refused at startup: a descriptor is written
+    when its agent loads and never again while the process runs, so an expiry would remove running agents from
+    every listing. After a deployment that renames or removes an agent, delete its record from the store (the key
+    `<prefix>agent:<id>` and the member `<id>` of the set `<prefix>index:all`, or the DynamoDB item)
+  - **Environment Variable**: `AK_REGISTRY__REDIS__URL`, `AK_REGISTRY__DYNAMODB__TABLE_NAME`, and so on
+
+- **Per-agent fields**
+  - **Field**: `registry.agents.<agent id>` with `description`, `version`, `owner`, `tags`, `visibility`,
+    `surfaces`, `identity`
+  - **Description**: Catalog fields set for one agent, over what the code declares with
+    `Module.describe(agent, ...)`. `surfaces` lists where the agent is served (`rest`, `a2a`, `mcp`, `agui`); an
+    agent that declares none is on every surface, and `[]` puts it on none. `description` is the text an A2A card
+    and an MCP tool publish; an agent's instructions are never published, and when none is declared the
+    description the agent's framework keeps for it (OpenAI `handoff_description`, the `description` of ADK,
+    Pydantic AI, MAF, Claude and smolagents agents) is used. `visibility` is recorded and not
+    enforced yet. An unknown key under an agent, or under `registry`, is a startup error. Each process applies its
+    own block to the agents it reads from the registry, so a restriction set where a surface is served holds for
+    agents another process hosts
+
+```python
+# In code, where the agent is loaded
+OpenAIModule([triage, math]).describe(triage, description="Routes a question to the right specialist").describe(
+    math, description="Solves math problems", surfaces=["rest"]
+)
+```
+
+```yaml
+# Or per agent id in config.yaml; where both set a field, the configuration wins
+registry:
+  agents:
+    math:
+      description: Solves math problems
+      surfaces: [rest]
+```
+
 #### A2A (Agent-to-Agent) Configuration
 
 - **Enabled**
@@ -1116,11 +1174,10 @@ Configure the REST API server (if using the API module).
   - **Default**: `false`
   - **Environment Variable**: `AK_A2A__ENABLED`
 
-- **Agents**
-  - **Field**: `a2a.agents`
-  - **Default**: `["*"]`
-  - **Description**: List of agent names to enable A2A (use `["*"]` for all)
-  - **Environment Variable**: `AK_A2A__AGENTS` (comma-separated)
+- **Agents served**: every agent, unless its descriptor's `surfaces` leaves `a2a` out (see
+  [Agent Registry Configuration](#agent-registry-configuration)). The `a2a.agents` list and `AK_A2A__AGENTS`
+  were removed; a configuration that still sets them stops the application at startup. Each agent's card is
+  built from its descriptor: declare its `description` and `version` there.
 
 - **URL**
   - **Field**: `a2a.url`
@@ -1146,11 +1203,10 @@ Configure the REST API server (if using the API module).
   - **Description**: Expose agents as MCP tools
   - **Environment Variable**: `AK_MCP__EXPOSE_AGENTS`
 
-- **Agents**
-  - **Field**: `mcp.agents`
-  - **Default**: `["*"]`
-  - **Description**: List of agent names to expose as MCP tools
-  - **Environment Variable**: `AK_MCP__AGENTS` (comma-separated)
+- **Agents exposed**: every agent, unless its descriptor's `surfaces` leaves `mcp` out (see
+  [Agent Registry Configuration](#agent-registry-configuration)). The `mcp.agents` list and `AK_MCP__AGENTS`
+  were removed; a configuration that still sets them stops the application at startup. Each tool is described
+  by the agent's declared `description`, never by its instructions.
 
 - **URL**
   - **Field**: `mcp.url`
@@ -1181,11 +1237,9 @@ with a 401, since AG-UI runs agents on a caller's behalf and has no anonymous mo
 `supports_streaming = True` are reachable (currently OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI
 and Microsoft Agent Framework — not CrewAI or Smolagents). See `examples/api/agui`.
 
-- **Agents**
-  - **Field**: `agui.agents`
-  - **Default**: unset (every streaming-capable agent is reachable)
-  - **Description**: Agent names reachable over AG-UI
-  - **Environment Variable**: `AK_AGUI__AGENTS` (comma-separated)
+- **Agents reachable**: every streaming-capable agent, unless its descriptor's `surfaces` leaves `agui` out (see
+  [Agent Registry Configuration](#agent-registry-configuration)). The `agui.agents` list and `AK_AGUI__AGENTS`
+  were removed; a configuration that still sets them stops the application at startup.
 
 - **Prefix**
   - **Field**: `agui.prefix`
@@ -1196,7 +1250,7 @@ and Microsoft Agent Framework — not CrewAI or Smolagents). See `examples/api/a
 - **Default Agent**
   - **Field**: `agui.default_agent`
   - **Default**: unset
-  - **Description**: Agent served on the bare prefix route (`POST {prefix}`, in addition to `POST {prefix}/{agent_name}`); must be one of `agui.agents` when that list is set
+  - **Description**: Agent served on the bare prefix route (`POST {prefix}`, in addition to `POST {prefix}/{agent_name}`); it must be loaded and exposed on `agui` when the handler is built
   - **Environment Variable**: `AK_AGUI__DEFAULT_AGENT`
 
 - **State Tools**
@@ -1914,13 +1968,16 @@ api:
     agents: true
 a2a:
   enabled: true
-  agents: ["*"]
   url: http://localhost:8000/a2a
   task_store_type: in_memory
 mcp:
   enabled: false
   expose_agents: false
-  agents: ["*"]
+registry:
+  agents:
+    math:
+      description: Solves math problems
+      surfaces: [rest, a2a]   # omitted = every surface
 trace:
   enabled: true
   type: langfuse
@@ -1985,14 +2042,12 @@ gmail:
   },
   "a2a": {
     "enabled": true,
-    "agents": ["*"],
     "url": "http://localhost:8000/a2a",
     "task_store_type": "in_memory"
   },
   "mcp": {
     "enabled": false,
-    "expose_agents": false,
-    "agents": ["*"]
+    "expose_agents": false
   },
   "trace": {
     "enabled": true,

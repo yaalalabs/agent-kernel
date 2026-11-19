@@ -217,7 +217,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Azure login
-        if: matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        if: matrix.type == 'azure-containerized'
         uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -225,7 +225,7 @@ jobs:
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-containerized'
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
@@ -240,7 +240,7 @@ jobs:
             --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
 
       - name: Inject dependencies (Azure)
-        if: matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        if: matrix.type == 'azure-containerized'
         run: python3 scripts/deploy/inject_dependencies.py
 
       - name: Run Test - ${{ matrix.path }}
@@ -285,7 +285,7 @@ jobs:
               --private-subnet-ids '${{ steps.base-infra.outputs.private_subnet_ids }}' \
               --action destroy
 
-          elif [[ "${{ matrix.type }}" == "azure-serverless" || "${{ matrix.type }}" == "azure-containerized" ]]; then
+          elif [[ "${{ matrix.type }}" == "azure-containerized" ]]; then
             python .github/scripts/run_single_test.py \
               --type ${{ matrix.type }} \
               --path ${{ matrix.path }} \

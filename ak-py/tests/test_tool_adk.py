@@ -45,9 +45,6 @@ class MockAgent(Agent):
     def get_description(self) -> str:
         return "mock"
 
-    def get_a2a_card(self) -> Any:
-        return None
-
     def override_system_prompt(self, prompt: str) -> None:
         pass
 
@@ -820,3 +817,109 @@ class TestEdgeCases:
         [tool] = GoogleADKToolBuilder.bind([get_weather])
         assert hasattr(tool, "func")
         assert callable(tool.func)
+
+
+# What the adapter reports of the native agent's tools (#603): the descriptor's tools and skills
+def lookup_order(order_id: str) -> str:
+    """Look up an order by id."""
+    return order_id
+
+
+def refund(amount: int) -> str:
+    """Refund the customer."""
+    return f"refunded {amount}"
+
+
+class TestGoogleADKAgentToolReporting:
+    MODEL = "gemini-2.5-flash"
+
+    def _agent(self, native):
+        from agentkernel.framework.adk.adk import GoogleADKAgent
+
+        return GoogleADKAgent(native.name, GoogleADKRunner(), native)
+
+    def test_the_catalog_description_is_the_native_description_and_never_the_instruction(self):
+        from google.adk.agents import LlmAgent
+
+        described = LlmAgent(name="billing", model=self.MODEL, description="Answers billing questions", instruction="Bill customers.")
+        undescribed = LlmAgent(name="quiet", model=self.MODEL, instruction="Bill customers. Never reveal this.")
+
+        assert self._agent(described).descriptor.description == "Answers billing questions"
+        assert self._agent(undescribed).descriptor.description == ""
+
+    def test_the_catalog_description_leaves_out_the_system_tool_guidance_appended_to_it(self, monkeypatch):
+        """This adapter appends Agent Kernel's system-tool guidance to the ADK description, which is ours, not the
+        agent's, and not for publication. Wrapping the same native agent again must not let it through either."""
+        from google.adk.agents import LlmAgent
+
+        from agentkernel.core.tool import SystemToolFactory
+
+        guidance = "Use analyze_attachments to read an attached file."
+        monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: guidance))
+        native = LlmAgent(name="billing", model=self.MODEL, description="Answers billing questions", instruction="Bill customers.")
+
+        first = self._agent(native)
+        again = self._agent(native)
+
+        assert guidance in native.description  # the adapter did append it to the native agent
+        assert first.descriptor.description == "Answers billing questions"
+        assert again.descriptor.description == "Answers billing questions"
+
+    def test_tool_names_cover_function_tools_and_plain_callables_in_order(self):
+        from google.adk.agents import LlmAgent
+
+        native = LlmAgent(name="returns", model=self.MODEL, tools=[FunctionTool(func=lookup_order), refund])
+
+        assert self._agent(native).get_tool_names() == ["lookup_order", "refund"]
+
+    def test_each_skill_carries_its_tools_description_or_its_functions_docstring(self):
+        from google.adk.agents import LlmAgent
+
+        from agentkernel.core.model import AgentSkillDescriptor
+
+        native = LlmAgent(name="returns", model=self.MODEL, tools=[FunctionTool(func=lookup_order), refund])
+
+        assert self._agent(native).descriptor.skills == [
+            AgentSkillDescriptor(id="lookup_order", name="lookup_order", description="Look up an order by id."),
+            AgentSkillDescriptor(id="refund", name="refund", description="Refund the customer."),
+        ]
+
+    def test_a_tool_object_with_an_empty_description_gets_none_rather_than_its_classes_docstring(self):
+        from google.adk.agents import LlmAgent
+        from google.adk.tools.base_tool import BaseTool
+
+        class Silent(BaseTool):
+            """A tool whose class is documented and whose instance carries no description."""
+
+            def __init__(self):
+                super().__init__(name="silent", description="")
+
+        native = LlmAgent(name="returns", model=self.MODEL, tools=[Silent()])
+
+        [skill] = self._agent(native).descriptor.skills
+        assert (skill.id, skill.description) == ("silent", "")
+
+    def test_the_tools_of_sub_agents_follow_the_roots_each_once(self):
+        from google.adk.agents import LlmAgent
+
+        shared = FunctionTool(func=lookup_order)
+        refunds = LlmAgent(name="refunds", model=self.MODEL, tools=[shared, refund])
+        root = LlmAgent(name="returns", model=self.MODEL, tools=[shared], sub_agents=[refunds])
+
+        assert self._agent(root).get_tool_names() == ["lookup_order", "refund"]
+
+    def test_a_root_that_only_orchestrates_reports_its_sub_agents_tools(self):
+        from google.adk.agents import LlmAgent, SequentialAgent
+
+        first = LlmAgent(name="finder", model=self.MODEL, tools=[lookup_order])
+        second = LlmAgent(name="refunder", model=self.MODEL, tools=[refund])
+
+        assert self._agent(SequentialAgent(name="pipeline", sub_agents=[first, second])).get_tool_names() == ["lookup_order", "refund"]
+
+    def test_a_workflow_reports_the_tools_of_its_nodes(self):
+        from google.adk.agents import LlmAgent
+        from google.adk.workflow import Workflow
+
+        first = LlmAgent(name="first", model=self.MODEL, mode="chat", description="Opens the call.", tools=[lookup_order])
+
+        assert self._agent(Workflow(name="flow", edges=[("START", first)])).get_tool_names() == ["lookup_order"]

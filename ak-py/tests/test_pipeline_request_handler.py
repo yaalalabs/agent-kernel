@@ -49,9 +49,6 @@ class DummyAgent(Agent):
     def get_description(self) -> str:
         return "Pipeline e2e test agent"
 
-    def get_a2a_card(self):
-        return None
-
     def override_system_prompt(self, prompt):
         pass
 
@@ -179,7 +176,7 @@ class TestRestSyncParity:
     def test_agents_route_lists_registered_agents(self, monkeypatch, dummy_agent):
         _configure(monkeypatch, mode="rest_sync")
         response = _client().get(RequestHandler.AGENTS_PATH)
-        assert AGENT_NAME in response.json()["agents"]
+        assert AGENT_NAME in [entry["id"] for entry in response.json()["agents"]]
 
 
 class TestRestAsync:

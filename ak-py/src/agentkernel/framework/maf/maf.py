@@ -14,7 +14,6 @@ from agent_framework import tool as maf_tool
 
 from ...core import Agent as BaseAgent
 from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -789,19 +788,35 @@ class MAFAgent(BaseAgent):
                     wrapped.name,
                 )
 
-    def get_a2a_card(self) -> Any:
+    def _native_description(self) -> str:
         """
-        :return: The A2A AgentCard for the agent, with one skill per attached tool.
+        :return: The native agent's `description`, which the framework keeps apart from its instructions. Unlike
+            `get_description()`, it never falls back to them.
         """
-        from a2a.types import AgentSkill
+        return self.agent.description or ""
 
-        skills = []
+    def get_tool_names(self) -> list[str]:
+        """
+        Not reported: tools passed per run through the `options` run option, and a hosted tool given as a dict,
+        which has no name to report.
+
+        :return: The names of the tools in the native agent's default options.
+        """
+        return list(self._named_tools())
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        :return: The description of each default tool by name.
+        """
+        return {name: getattr(tool, "description", None) or "" for name, tool in self._named_tools().items()}
+
+    def _named_tools(self) -> dict[str, Any]:
+        """
+        :return: The native agent's default tools by name: a tool object's `name`, a plain callable's function name.
+            A tool that has neither (a hosted tool given as a dict) cannot be named and is left out.
+        """
         tools = self.agent.default_options.get("tools", []) or []
-        for t in tools:
-            name = getattr(t, "name", "tool")
-            desc = getattr(t, "description", "")
-            skills.append(AgentSkill(id=name, name=name, description=desc, tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.get_description(), skills=skills)
+        return {name: tool for tool in tools if (name := self._native_tool_name(tool))}
 
 
 class MAFModule(Module):

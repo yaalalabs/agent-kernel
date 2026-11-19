@@ -69,9 +69,8 @@ for the full table of what each setting may be.
 
 ```yaml
 agui:
-  agents: ["planner"]       # omitted = every streaming-capable agent is reachable
   prefix: "/agui"           # route prefix
-  default_agent: "planner"  # also serves POST /agui, must be one of `agents` when both are set
+  default_agent: "planner"  # also serves POST /agui; the agent must be loaded and exposed on agui
 
   state:
     enabled: true            # attaches get_agui_state / update_agui_state
@@ -82,6 +81,19 @@ agui:
     agents: ["planner"]      # omitted = every agent gets the tools
 ```
 
+- **Which agents are reachable** is part of each agent's descriptor, not of this block. Every
+  streaming-capable agent is reachable unless its `surfaces` leaves `agui` out; set that with
+  `registry.agents.<id>.surfaces` or `Module.describe(agent, surfaces=[...])`. The `agui.agents` list no
+  longer exists, and a configuration that still sets it stops the application at startup with a message
+  pointing at the new setting. `GET {prefix}/agents` lists agent ids in id order.
+- **Which agents a handler serves** depends on where it runs them. `AGUIRequestHandler` runs agents in its own
+  process, so it lists and serves only the agents loaded there: one that a shared
+  [agent registry](../core-concepts/configuration.md#agent-registry) knows from another process is a 404, as any
+  name it does not serve. `AGUIPipelineRequestHandler` puts the run on the queue, so it lists and serves every
+  agent the registry knows, including those another process hosts.
+- **`default_agent`** must name an agent the handler serves and that is exposed on `agui` when the handler is
+  built: loaded in this process for `AGUIRequestHandler`, loaded or known through a shared registry for
+  `AGUIPipelineRequestHandler`. Otherwise construction fails, rather than leaving a route that always answers 404.
 - **`state`** opts agents into shared JSON state: the frontend sends `state` on a run, the model
   amends it with `update_agui_state`, and the surface streams a `StateSnapshot` back only when the
   state actually changed.

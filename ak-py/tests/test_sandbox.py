@@ -110,9 +110,6 @@ class _SandboxAgent(Agent):
     def runner(self):
         return self._runner
 
-    def get_a2a_card(self):
-        return None
-
     def get_description(self):
         return "sandbox test agent"
 

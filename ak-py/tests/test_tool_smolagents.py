@@ -160,3 +160,43 @@ class TestEdgeCases:
         tools_a = SmolagentsToolBuilder.bind([get_weather])
         tools_b = SmolagentsToolBuilder.bind([get_weather])
         assert tools_a[0] is not tools_b[0]
+
+
+# What the adapter reports of the native agent's tools (#603): the descriptor's tools and skills
+class TestSmolagentsAgentToolReporting:
+
+    def _agent(self, tools):
+        from unittest.mock import MagicMock
+
+        from smolagents import ToolCallingAgent
+
+        from agentkernel.framework.smolagents.smolagents import SmolagentsAgent, SmolagentsRunner
+
+        return SmolagentsAgent("smol", SmolagentsRunner(), ToolCallingAgent(tools=tools, model=MagicMock(), name="smol"))
+
+    def test_the_catalog_description_is_the_native_description_and_never_the_system_prompt(self):
+        from unittest.mock import MagicMock
+
+        from smolagents import ToolCallingAgent
+
+        from agentkernel.framework.smolagents.smolagents import SmolagentsAgent, SmolagentsRunner
+
+        described = ToolCallingAgent(tools=[], model=MagicMock(), name="smol", description="Looks things up on the web")
+
+        assert SmolagentsAgent("smol", SmolagentsRunner(), described).descriptor.description == "Looks things up on the web"
+        # get_description() answers with the system prompt for this agent; the descriptor must not.
+        assert self._agent([]).descriptor.description == ""
+
+    def test_tool_names_are_the_native_agents_tools_and_the_frameworks_own_final_answer(self):
+        agent = self._agent(SmolagentsToolBuilder.bind([get_weather, add]))
+
+        assert agent.get_tool_names() == ["get_weather", "add", "final_answer"]
+
+    def test_each_skill_carries_its_tools_description(self):
+        from agentkernel.core.model import AgentSkillDescriptor
+
+        skills = self._agent(SmolagentsToolBuilder.bind([get_weather])).descriptor.skills
+
+        assert skills[0] == AgentSkillDescriptor(id="get_weather", name="get_weather", description="Returns the weather for a given city.")
+        # One skill per reported tool, each once: the framework's own final_answer is a tool the agent calls too.
+        assert [skill.id for skill in skills] == ["get_weather", "final_answer"]

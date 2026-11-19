@@ -33,9 +33,6 @@ class MockAgent(Agent):
     def get_description(self) -> str:
         return "Mock Agent"
 
-    def get_a2a_card(self) -> Any:
-        return None
-
     def override_system_prompt(self, prompt: str) -> None:
         pass
 

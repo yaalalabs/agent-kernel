@@ -114,9 +114,9 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
   {
     title: "Memory, knowledge & data",
     items: [
-      { name: "Redis", role: "Memory", href: SESSION, icon: <SiRedis />, title: "Redis: session, thread, attachment, response and schedule stores" },
-      { name: "Valkey", role: "Memory", href: SESSION, logo: "/img/integrations/valkey.svg", mono: true, title: "Valkey: session, thread, response and schedule stores" },
-      { name: "Amazon DynamoDB", role: "Memory", href: SESSION, icon: <FaAws />, title: "Amazon DynamoDB: session, thread, attachment, response and schedule stores" },
+      { name: "Redis", role: "Memory", href: SESSION, icon: <SiRedis />, title: "Redis: session, thread, attachment, response, schedule and agent registry stores" },
+      { name: "Valkey", role: "Memory", href: SESSION, logo: "/img/integrations/valkey.svg", mono: true, title: "Valkey: session, thread, response, schedule and agent registry stores" },
+      { name: "Amazon DynamoDB", role: "Memory", href: SESSION, icon: <FaAws />, title: "Amazon DynamoDB: session, thread, attachment, response, schedule and agent registry stores" },
       { name: "Azure Cosmos DB", role: "Memory", href: SESSION, icon: <VscAzure />, title: "Azure Cosmos DB: session and thread stores" },
       { name: "Google Firestore", role: "Memory", href: SESSION, icon: <SiFirebase />, title: "Google Firestore: session and thread stores" },
       { name: "Amazon S3", role: "Knowledge store", href: KB, icon: <FaAws /> },

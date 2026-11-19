@@ -182,6 +182,10 @@ the waiting caller reads it. Two consequences:
   executes them; the io handler builds the A2A cards and the MCP agent tools from them.
   An io handler without them logs a warning at startup and serves an empty A2A catalog and no
   MCP agent tools.
+- What each agent publishes comes from the `registry` block of the baked-in config. Every agent
+  declares its description there (the A2A card and the MCP tool carry it; an agent's instructions
+  are never published), and `math` and `history` are kept off A2A and MCP with
+  `surfaces: [rest]`, so only `triage` is served on those two.
 - A reply is picked up by polling the response store, so it takes at least about one
   `execution.response_store.delay` (1 s here), however fast the agent is.
 

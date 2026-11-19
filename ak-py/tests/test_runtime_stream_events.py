@@ -69,9 +69,6 @@ class ScriptedAgent(Agent):
     def __init__(self, script, name="agent"):
         super().__init__(name, ScriptedRunner(script))
 
-    def get_a2a_card(self):
-        return None
-
     def get_description(self):
         return "scripted agent"
 

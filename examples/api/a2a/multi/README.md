@@ -13,6 +13,11 @@ at least about one second, since the reply is picked up by polling the store
 (`execution.response_store.delay`). See the
 [A2A server docs](https://kernel.yaala.ai/docs/api/a2a-server) for the entry points that support A2A.
 
+Each agent's A2A card carries the description `server.py` declares for it with `Module.describe(agent,
+description=...)`; an agent's instructions are never published. Without a declaration the card would carry the
+description the agent's framework keeps for it, where it has one. `GET /api/v1/agents` lists the same agents
+with their descriptors (description, version, tools and the surfaces they are served on).
+
 Install dependencies using:
 
     ./build.sh

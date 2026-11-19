@@ -21,7 +21,6 @@ from ...core import Module
 from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -901,16 +900,27 @@ class OpenAIAgent(BaseAgent):
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, OpenAIToolBuilder.bind([tool]))
 
-    def get_a2a_card(self):
+    def _native_description(self) -> str:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the agent's `handoff_description`: the SDK's own description of what the agent does and when to
+        call on it, kept apart from its instructions.
         """
-        from a2a.types import AgentSkill
+        return self.agent.handoff_description or ""
 
-        skills = []
-        for tool in self.agent.tools:
-            skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.agent.instructions, skills=skills)
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names of the native agent's tools, hosted tools included.
+
+        Not reported: the tools of the agent's `mcp_servers`, which are listed only when a run connects, and the
+        tools of an agent it hands off to, which that agent's own descriptor reports.
+        """
+        return [tool.name for tool in self.agent.tools]
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each native tool by name. A hosted tool carries none.
+        """
+        return {tool.name: getattr(tool, "description", None) or "" for tool in self.agent.tools}
 
 
 class OpenAIModule(Module):

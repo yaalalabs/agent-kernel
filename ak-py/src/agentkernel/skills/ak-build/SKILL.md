@@ -294,7 +294,7 @@ support_agent = ClaudeAgentSpec(
 
 > **Gotcha (Claude Agent SDK):** Match the existing agents' `tools=[]` / `setting_sources=[]` / `permission_mode` / `verbatim_prompts=True` lockdown; the SDK's defaults give the model Bash and file tools on the host. Tools bound with `ClaudeToolBuilder.bind([...])` are approved automatically; bind sensitive tools with `needs_approval=True` instead, so each call pauses for a human decision.
 
-> **Gotcha (Pydantic AI):** Always pass `name=` (OAK registers by name eagerly; Pydantic AI otherwise infers it lazily at first run) **and** `description=` (Pydantic AI's description is optional but is what OAK reports as the agent description / A2A summary). The provider key for the model string (e.g. `OPENAI_API_KEY`) must be set at import time — Pydantic AI resolves the provider at construction.
+> **Gotcha (Pydantic AI):** Always pass `name=` (OAK registers by name eagerly; Pydantic AI otherwise infers it lazily at first run) **and** `description=`: it is the default for what an A2A card, an MCP agent tool and the agent catalog say about the agent (the instructions are never published), replaced by a description declared with `Module.describe(agent, description=...)` or `registry.agents.<id>.description`. The provider key for the model string (e.g. `OPENAI_API_KEY`) must be set at import time: Pydantic AI resolves the provider at construction.
 
 **Microsoft Agent Framework:**
 ```python

@@ -267,21 +267,29 @@ class <Name>Agent(Agent):
         self._native_agent = native_agent
 
     def get_description(self) -> str:
-        # Return the agent's description from the native framework object
+        # Optional: the native agent's own description or instructions, for applications that call it.
+        # Agent Kernel does not read it (the base returns ""); what a surface publishes is the descriptor.
         return self._native_agent.instructions  # framework-specific
 
-    def get_a2a_card(self):
-        from agentkernel.core.builder import A2ACardBuilder
-        return A2ACardBuilder.build(
-            name=self.name,
-            description=self.get_description(),
-            skills=[...]  # extract from agent tools
-        )
+    def _native_description(self) -> str:
+        # Only if the framework keeps a description apart from the instructions (text written to tell other
+        # agents and people what the agent does). It seeds the descriptor's description, which is published.
+        return self._native_agent.description or ""
+
+    def get_tool_names(self) -> list[str]:
+        """The tools declared on the native agent, by the name the model calls them. Not reported: <what
+        this adapter leaves out, e.g. tools of a remote MCP server, of a handoff target, of a sub-graph>."""
+        return [tool.name for tool in self._native_agent.tools]
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        # Tool name -> the native tool's description; the descriptor's skills carry it
+        return {tool.name: tool.description or "" for tool in self._native_agent.tools}
 ```
 
 **Key requirements:**
-- `get_description()` must return a meaningful description from the native framework agent
-- `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder` (a2a-sdk 1.x protobuf types, #762). Pass a `str` description (anything else is emptied with a warning); `AgentSkill(..., tags=[])` is fine, the builder tags an untagged skill with the agent name. Returning `None` means the agent is not served over A2A (logged)
+- `get_description()` is optional since #603: nothing in Agent Kernel reads it, and the base returns `""`. Implement it when the native agent has a description worth handing to application code; never rely on it reaching a card, a tool or the catalog
+- `_native_description()` seeds the descriptor's `description`, which the agent catalog, an A2A card and an MCP tool publish (#603). Implement it **only** when the framework has a field that is a description by its own definition, separate from the instructions (OpenAI `handoff_description`, ADK and Pydantic AI `description`), and return that field as it is. Never fall back to the instructions, a system prompt, a goal or a backstory: leave the base's `""` and the application declares the text with `Module.describe`. If your adapter appends Agent Kernel's system-tool guidance to that same native field, strip it here (the ADK adapter does)
+- `get_tool_names()` and `_tool_descriptions()` report the native agent's tools (#603). The base class builds the agent's descriptor from them, once, on first read, so read the native agent in these methods rather than caching anything in `__init__` (system tools are attached after the base constructor returns). The contract is **statically declared tools only**: report what the native agent object holds when it is loaded, under the name the application declared each tool by, and do no I/O to find more. A prefix or rename the application puts on a toolset is part of that name; a prefix your adapter adds itself to serve a tool is not (the Claude adapter serves `lookup` as `mcp__ak__lookup` and reports `lookup`, mapping between the two where it gates the call). Tools that only exist at run time (a remote MCP server's, a toolset resolved per run, a handoff target's) are not reported; say in the method's docstring what your adapter leaves out, since an authorization policy can only name a tool the descriptor lists. Do not build an A2A card: `get_a2a_card()` was removed, and the A2A surface builds every card from the registry's descriptor (`A2ACardBuilder.build(descriptor)`); MCP agent tools and the catalog route read the same record. Add the descriptor cases to `tests/test_tool_<name>.py` (tool names in order, one skill per tool with its description)
 - Store the native agent in `self._native_agent` for access in the Runner
 - Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
 
@@ -409,6 +417,8 @@ Create tests in `ak-py/tests/`:
 
 Follow the existing test patterns (e.g. `test_openai_runner.py`, `test_smolagents_runner.py`, `test_pydanticai_runner.py`, `test_tool_adk.py`) — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
 
+`tests/test_tool_<name>.py` also carries the tool-reporting cases (#603), on real SDK objects: `get_tool_names()` in declaration order, `_tool_descriptions()` for a described and an undescribed tool, the descriptor that results (one skill per tool carrying its description), and the description case: the native description field seeds `descriptor.description`, and an agent with instructions and no description gets an empty one.
+
 ### 13. Add Examples
 
 Create at minimum:
@@ -442,6 +452,8 @@ Create at minimum:
 - [ ] Updates to `trace/base.py` and `trace/trace.py` (if adding tracing)
 - [ ] `<Name>Agent.RESERVED_RUN_OPTIONS` declared; `run()` and `stream()` each resolve once with `await agent.resolve_run_options(session, requests)` after the early returns and pass the mapping to `_native_kwargs` and your helpers (#754, #758)
 - [ ] `_native_agent_name` overridden if the registered name is not `agent.name`
+- [ ] `<Name>Agent.get_tool_names()` and `_tool_descriptions()` report the tools declared on the native agent (#603), their docstring says what is left out, no `get_a2a_card()` is defined, and `tests/test_tool_<name>.py` covers the names, the descriptions and the resulting descriptor skills
+- [ ] `<Name>Agent._native_description()` returns the framework's own description field if it has one apart from the instructions, and is left at the default otherwise; `tests/test_tool_<name>.py` asserts both that the field seeds `descriptor.description` and that instructions alone seed nothing
 - [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an AK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module; a factory-merged mapping (a mock whose `resolve_run_options` returns it) wins over the static key at the native call, and `resolve_run_options` is awaited exactly once per `run` and per `stream` (#758)
 - [ ] CLI example in `examples/cli/<name>/`
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`

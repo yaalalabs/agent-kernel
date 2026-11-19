@@ -172,9 +172,21 @@ store it, whatever `execution.mode` is, because these callers wait for one whole
   that starts no agent runner (`RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on a broker,
   `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler`) raises `AKConfigError` at startup.
 - **Broker transports**: the response store must be shared (`redis`, `valkey` or `dynamodb`) in
-  every execution mode, not only the REST ones. Load the same agent modules in the IO process as
-  in the agent runner, since cards and agent tools are built from the IO process's registry; an
-  IO process without them logs a warning and serves empty catalogs.
+  every execution mode, not only the REST ones. Cards and agent tools are built from the
+  [agent registry](../core-concepts/configuration.md#agent-registry), so the IO process has to know
+  the agents: either load the same agent modules in the IO process as in the agent runner, or share
+  the registry (`registry.type: redis`, `valkey` or `dynamodb`), in which case the IO process reads
+  the descriptors the runner registered and need not load the agents at all. Cards and tools are
+  built when the IO process starts, so start the runner first and let it finish loading its agents
+  (their descriptors are then in the shared registry), and restart the IO process after adding an
+  agent or when it started before the runner had registered. An IO process whose registry knows no
+  agent logs a warning and serves empty catalogs.
+- **One set of agents per queue**: a request is taken by whichever agent runner reads it from the
+  input queue, and nothing routes it by agent. Every runner on a queue must therefore host every
+  agent the IO process serves from the registry; a runner that takes a request for an agent it did
+  not load answers it with an error. A shared registry shares what is known about the agents, not
+  the queue: on the single-process `in_memory` transport, an agent the registry only knows from
+  another process is listed and cannot be run.
 - **Wait budget**: the same `execution.response_store.retry_count × delay` as `rest_sync` (60 × 1 s
   without a block). Replies arrive on the next poll, so expect at least one `delay` of latency.
 - **Rolling upgrades** in a WebSocket mode: upgrade the agent runners first. A runner from before

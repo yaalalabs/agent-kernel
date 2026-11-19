@@ -14,6 +14,10 @@ take at least about one second, since the reply is picked up by polling the stor
 server process. See the [MCP server docs](https://kernel.yaala.ai/docs/api/mcp-server) for the entry
 points that support agent tools.
 
+Each agent's MCP tool carries the description `server.py` declares for it with `Module.describe(agent,
+description=...)`, which is the text a client model chooses the tool by; an agent's instructions are never
+published. `GET /api/v1/agents` lists the same agents with their descriptors.
+
 Install dependencies using:
 
     ./build.sh

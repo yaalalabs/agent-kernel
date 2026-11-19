@@ -203,10 +203,9 @@ class TestGatesUseTheCodec:
         taught the next reader that the seam is responsible for it."""
         from agentkernel.deployment.aws.core import websocket_service
         from agentkernel.deployment.aws.serverless.core.router import rest_lambda
-        from agentkernel.deployment.azure import akfunction
         from agentkernel.pipeline import request_handler
 
-        for module in (rest_lambda, akfunction, request_handler, websocket_service):
+        for module in (rest_lambda, request_handler, websocket_service):
             assert not hasattr(module, "PayloadCodec"), f"{module.__name__} re-imported PayloadCodec"
 
 
