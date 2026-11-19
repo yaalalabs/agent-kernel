@@ -95,7 +95,8 @@ def _observation(gateway: LangfuseGateway, usage: ModelUsage, **overrides) -> di
         "usageDetails": {key: value for key, value in usage_details.items() if value is not None},
         "totalCost": None if usage.provider_cost is None else float(usage.provider_cost),
         "tags": [f"ak-agent:{gateway.gateway_user_id(usage.agent_id)}"] if usage.agent_id else [],
-        "metadata": {"request_id": gateway.gateway_user_id(usage.request_id)} if usage.request_id else {},
+        # As the gateway writes it into langfuse-metadata, which Langfuse records as observation metadata.
+        "metadata": {"request_id": gateway._metadata_value(gateway.gateway_user_id(usage.request_id))} if usage.request_id else {},
     }
     return observation | overrides
 
@@ -185,7 +186,7 @@ class TestHeaders:
             "langfuse-user-id": "alice",
             "langfuse-session-id": "s-1",
             "langfuse-tags": "ak-agent:support",
-            "langfuse-metadata": "request_id:req_1,agent_id:support",
+            "langfuse-metadata": "request_id:ak~req%3A1,agent_id:support",  # a colon would split the pair
         }
 
     def test_awkward_ids_are_encoded_and_none_omitted(self):
@@ -269,7 +270,16 @@ class TestReads:
     @pytest.mark.asyncio
     async def test_the_full_mapping(self):
         gateway = _gateway(_FakeObservations())
-        expected = _usage("r1", _T0, user_id="ü,user", agent_id="billing,refunds", session_id="s\n1", request_id="req-1", cached_input_tokens=4)
+        # A Slack-style request id: its colons must survive the key:value metadata header.
+        expected = _usage(
+            "r1",
+            _T0,
+            user_id="ü,user",
+            agent_id="billing,refunds",
+            session_id="s\n1",
+            request_id="slack:T123:C456:1700000000.123",
+            cached_input_tokens=4,
+        )
         _seed(gateway, expected)
 
         (row,) = (await gateway.fetch_usage(UsageQuery(user_id="ü,user", start=_T0, end=_T0 + timedelta(seconds=1)))).rows

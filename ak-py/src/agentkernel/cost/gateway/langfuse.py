@@ -9,6 +9,7 @@ import base64
 import json
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 import httpx
 
@@ -85,14 +86,24 @@ class LangfuseGateway(LLMGateway):
             headers["langfuse-session-id"] = ids["session_id"]
         if "agent_id" in ids:
             headers["langfuse-tags"] = f"{_AGENT_TAG}{ids['agent_id']}"
-        # Comma-separated key:value pairs; gateway_user_id leaves no comma, and a colon would split the pair.
-        metadata = [f"{key}:{ids[key].replace(':', '_')}" for key in ("request_id", "agent_id") if key in ids]
+        # Comma-separated key:value pairs: a value must hold neither "," (gateway_user_id encodes it) nor ":". A colon
+        # (Slack and Telegram request ids carry one) is encoded the same reversible way, so rows map back exactly.
+        metadata = [f"{key}:{self._metadata_value(ids[key])}" for key in ("request_id", "agent_id") if key in ids]
         if metadata:
             headers["langfuse-metadata"] = ",".join(metadata)
         over = [name for name, value in headers.items() if len(value.encode()) > _VALUE_LIMIT]
         if over:
             raise ValueError(f"langfuse header limits exceeded: {over} (1 KiB per value)")
         return headers
+
+    @staticmethod
+    def _metadata_value(encoded: str) -> str:
+        """A ``gateway_user_id`` value made colon-free, still reversed by ``raw_user_id``.
+
+        A colon survives ``gateway_user_id`` only when it returned the id unchanged (its encoded form quotes ``:``), so
+        quoting the value here is quoting the raw id under the same ``ak~`` prefix.
+        """
+        return encoded if ":" not in encoded else "ak~" + quote(encoded, safe="")
 
     def is_budget_refusal(self, error: BaseException) -> bool:
         return False  # Langfuse enforces no budgets
@@ -123,8 +134,8 @@ class LangfuseGateway(LLMGateway):
         """Every generation with ``start ≤ startTime < end`` widened to whole milliseconds, oldest first."""
         conditions: list[dict[str, Any]] = [
             {"type": "string", "column": "type", "operator": "=", "value": "GENERATION"},
-            {"type": "datetime", "column": "startTime", "operator": ">=", "value": _millis(start)},
-            {"type": "datetime", "column": "startTime", "operator": "<", "value": _millis(_ceil_ms(end))},
+            {"type": "datetime", "column": "startTime", "operator": ">=", "value": self._millis(start)},
+            {"type": "datetime", "column": "startTime", "operator": "<", "value": self._millis(self._ceil_ms(end))},
         ]
         for column, value in (
             ("userId", user_id and self.gateway_user_id(user_id)),
@@ -184,13 +195,13 @@ class LangfuseGateway(LLMGateway):
                 f"gateway 'langfuse' returned an observation that does not map: {type(exc).__name__}", gateway=self.name, path=_OBSERVATIONS
             ) from None
 
+    @staticmethod
+    def _ceil_ms(value: datetime) -> datetime:
+        """The next whole millisecond at or after ``value``: the server compares JS Dates, which hold milliseconds."""
+        floored = value.replace(microsecond=value.microsecond // 1000 * 1000)
+        return floored if floored == value else floored + _MILLISECOND
 
-def _ceil_ms(value: datetime) -> datetime:
-    """The next whole millisecond at or after ``value``: the server compares JS Dates, which hold milliseconds."""
-    floored = value.replace(microsecond=value.microsecond // 1000 * 1000)
-    return floored if floored == value else floored + _MILLISECOND
-
-
-def _millis(value: datetime) -> str:
-    """ISO 8601 in UTC, floored to the millisecond."""
-    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    @staticmethod
+    def _millis(value: datetime) -> str:
+        """ISO 8601 in UTC, floored to the millisecond."""
+        return value.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")

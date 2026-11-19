@@ -260,8 +260,8 @@ class AgentgatewayGateway(LLMGateway):
             self._db = RequestLogDatabase(url)
         return self._db
 
-    @staticmethod
-    def _time_bounds(db: RequestLogDatabase, start: datetime, end: datetime, *, end_inclusive: bool) -> tuple[list[str], dict[str, Any]]:
+    @classmethod
+    def _time_bounds(cls, db: RequestLogDatabase, start: datetime, end: datetime, *, end_inclusive: bool) -> tuple[list[str], dict[str, Any]]:
         """``started_at`` bounds. Postgres compares exactly. SQLite stores text with a 0, 3, 6 or 9 digit fraction
         (sqlx's AutoSi), which only compares correctly against a whole second, so its bounds widen to whole seconds
         and the caller filters exactly."""
@@ -270,8 +270,8 @@ class AgentgatewayGateway(LLMGateway):
                 "start": start,
                 "end": end,
             }
-        upper = _floor(end) + timedelta(seconds=1) if end_inclusive or end.microsecond else end
-        return ["started_at >= :start", "started_at < :end"], {"start": _sqlite_text(_floor(start)), "end": _sqlite_text(upper)}
+        upper = cls._floor(end) + timedelta(seconds=1) if end_inclusive or end.microsecond else end
+        return ["started_at >= :start", "started_at < :end"], {"start": cls._sqlite_text(cls._floor(start)), "end": cls._sqlite_text(upper)}
 
     @staticmethod
     def _select(db: RequestLogDatabase, where: Iterable[str]) -> str:
@@ -311,11 +311,11 @@ class AgentgatewayGateway(LLMGateway):
             row_id=raw["id"],
         )
 
+    @staticmethod
+    def _floor(value: datetime) -> datetime:
+        return value.astimezone(timezone.utc).replace(microsecond=0)
 
-def _floor(value: datetime) -> datetime:
-    return value.astimezone(timezone.utc).replace(microsecond=0)
-
-
-def _sqlite_text(value: datetime) -> str:
-    """A whole second in the form sqlx stores, which compares correctly against any stored fraction."""
-    return value.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    @staticmethod
+    def _sqlite_text(value: datetime) -> str:
+        """A whole second in the form sqlx stores, which compares correctly against any stored fraction."""
+        return value.strftime("%Y-%m-%dT%H:%M:%S+00:00")

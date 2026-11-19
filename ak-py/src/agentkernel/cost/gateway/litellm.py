@@ -5,7 +5,7 @@ import json
 import logging
 import re
 from collections.abc import Iterable, Mapping
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -168,9 +168,10 @@ class LiteLLMGateway(LLMGateway):
         """Upsert one budget row per distinct limit: ``/budget/new``, then ``/budget/update`` if it exists."""
         self._require("native_user_budget")
         distinct = {self.budget_id(limit): limit for limit in limits}
+        foreign = sorted({limit.currency for limit in distinct.values()} - self.capabilities.currencies)
+        if foreign:  # checked before any write, so a refused set leaves the gateway untouched
+            raise AKConfigError(f"LiteLLM budgets are in USD; a {', '.join(foreign)} budget cannot be enforced by the gateway")
         for budget_id, limit in distinct.items():
-            if limit.currency not in self.capabilities.currencies:
-                raise AKConfigError(f"LiteLLM budgets are in USD; a {limit.currency} budget cannot be enforced by the gateway")
             payload = {"budget_id": budget_id, "max_budget": float(limit.amount), "budget_duration": _DURATIONS[limit.period]}
             await self._upsert("/budget/new", "/budget/update", payload)
 
@@ -209,7 +210,8 @@ class LiteLLMGateway(LLMGateway):
     def _raise_if_rejected(error: UsageRetrievalError) -> None:
         """A non-auth 4xx means the proxy refused the request's shape: a configuration error, not an outage."""
         if error.status is not None and 400 <= error.status < 500 and not error.auth:
-            raise AKConfigError(f"LiteLLM rejected POST {error.path} ({error.status}): {error.detail}") from error
+            # detail (the response text) stays on the cause, out of the message and the logs.
+            raise AKConfigError(f"LiteLLM rejected POST {error.path} ({error.status}); the request's shape was refused") from error
 
     @staticmethod
     def _bearer(key: str | None) -> dict[str, str] | None:
@@ -217,8 +219,10 @@ class LiteLLMGateway(LLMGateway):
 
     async def _spend_logs(self, user_id: str | None, start: datetime, end: datetime, model: str | None, page: int) -> dict:
         params: dict[str, Any] = {
-            "start_date": _second(start),
-            "end_date": _second(end),
+            # The proxy parses both dates as whole-second instants and compares full timestamps against them
+            # (gte / lte), so the end goes up to the next second; the caller bounds rows exactly.
+            "start_date": self._date_param(start),
+            "end_date": self._date_param(end + timedelta(seconds=1)),
             "page": page,
             "page_size": _PAGE_SIZE,
             "sort_by": "startTime",
@@ -236,10 +240,10 @@ class LiteLLMGateway(LLMGateway):
     def _row(self, raw: dict) -> ModelUsage:
         """Map one spend-log row; a row that does not fit fails the whole read rather than being dropped."""
         try:
-            metadata = _json_value(raw.get("metadata")) or {}
-            logged = _json_value(metadata.get("spend_logs_metadata")) or {}
+            metadata = self._json_value(raw.get("metadata")) or {}
+            logged = self._json_value(metadata.get("spend_logs_metadata")) or {}
             usage = metadata.get("usage_object") or {}
-            tags = _json_value(raw.get("request_tags")) or []
+            tags = self._json_value(raw.get("request_tags")) or []
             agent = next((tag[len(_AGENT_TAG) :] for tag in tags if isinstance(tag, str) and tag.startswith(_AGENT_TAG)), None)
             timestamp = datetime.fromisoformat(raw["startTime"])
             return ModelUsage(
@@ -263,12 +267,12 @@ class LiteLLMGateway(LLMGateway):
                 f"gateway 'litellm' returned a spend-log row that does not map: {type(exc).__name__}", gateway=self.name, path=_SPEND_LOGS
             ) from None
 
+    @staticmethod
+    def _date_param(value: datetime) -> str:
+        """The route's date format; strftime drops the microseconds, flooring to the second."""
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
-def _second(value: datetime) -> str:
-    """The route's date format; strftime drops the microseconds, flooring to the second."""
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _json_value(value: Any) -> Any:
-    """A JSON column as a value: older proxies return metadata and tags as JSON strings."""
-    return json.loads(value) if isinstance(value, str) else value
+    @staticmethod
+    def _json_value(value: Any) -> Any:
+        """A JSON column as a value: older proxies return metadata and tags as JSON strings."""
+        return json.loads(value) if isinstance(value, str) else value

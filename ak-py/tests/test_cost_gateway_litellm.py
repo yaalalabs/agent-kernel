@@ -193,10 +193,6 @@ class TestFactory:
 _T0 = datetime(2026, 1, 5, 12, 0, 0, tzinfo=timezone.utc)
 
 
-def _second(value: datetime) -> str:
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-
 class _FakeSpendLogs:
     """/spend/logs/v2 as the 1.105 proxy serves it: second-granular inclusive bounds, startTime ascending, the count cap."""
 
@@ -231,7 +227,8 @@ class _FakeSpendLogs:
         rows = [
             row
             for row in self.rows
-            if params["start_date"] <= _second(datetime.fromisoformat(row["startTime"])) <= params["end_date"]
+            # As the 1.105.7 proxy does: both dates parsed as whole-second UTC instants, compared to full timestamps.
+            if self._instant(params["start_date"]) <= datetime.fromisoformat(row["startTime"]) <= self._instant(params["end_date"])
             and ("end_user" not in params or row["end_user"] == params["end_user"])
             and ("model" not in params or row["model"] == params["model"])
         ]
@@ -249,6 +246,10 @@ class _FakeSpendLogs:
                 "total_is_capped": len(rows) > 10_000,
             },
         )
+
+    @staticmethod
+    def _instant(value: str) -> datetime:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
     def _admin(self, path: str, body: dict) -> httpx.Response:
         """The budget and customer routes, with the 1.105 proxy's "already exists" replies."""
@@ -339,6 +340,21 @@ class TestLiteLLMEndUserContract(LLMGatewayContract):
 
 class TestFetchUsage:
     @pytest.mark.asyncio
+    async def test_rows_later_in_the_end_second_are_read(self):
+        """The proxy drops rows after the end_date instant; sending the floored end lost 12:00:00.400 for 12:00:00.700."""
+        backend = _FakeSpendLogs()
+        gateway = _reading_gateway(backend)
+        backend.rows = [_log(gateway, "r1", _T0 + timedelta(milliseconds=400)), _log(gateway, "late", _T0 + timedelta(milliseconds=800))]
+        end = _T0 + timedelta(milliseconds=700)
+
+        result = await gateway.fetch_usage(_query(start=_T0 - timedelta(seconds=1), end=end))
+        rows, cursor, caught_up = await gateway.fetch_usage_since("alice", None, end)
+
+        assert [row.row_id for row in result.rows] == ["r1"]
+        assert [row.row_id for row in rows] == ["r1"] and caught_up is True
+        assert cursor.timestamp == _T0 + timedelta(milliseconds=400)
+
+    @pytest.mark.asyncio
     async def test_request_shape(self):
         backend = _FakeSpendLogs()
         gateway = _reading_gateway(backend, admin_key="sk-admin")
@@ -348,7 +364,7 @@ class TestFetchUsage:
         request = backend.requests[0]
         assert dict(request.url.params) == {
             "start_date": "2026-01-05 12:00:00",
-            "end_date": "2026-01-05 12:00:05",
+            "end_date": "2026-01-05 12:00:06",  # the next second: the proxy compares full timestamps to it
             "page": "1",
             "page_size": "1000",
             "sort_by": "startTime",
@@ -567,12 +583,12 @@ class TestSyncBudgetDefinitions:
         assert backend.posts[-1][1]["budget_duration"] == "1d"
 
     @pytest.mark.asyncio
-    async def test_a_non_usd_budget_is_refused(self):
+    async def test_a_non_usd_budget_is_refused_before_any_write(self):
         backend = _FakeSpendLogs()
 
-        with pytest.raises(AKConfigError, match="USD"):
-            await _admin_gateway(backend).sync_budget_definitions([BudgetLimit(amount=Decimal("10"), currency="EUR")])
-        assert backend.posts == []
+        with pytest.raises(AKConfigError, match="EUR"):
+            await _admin_gateway(backend).sync_budget_definitions([_MONTHLY_10, BudgetLimit(amount=Decimal("10"), currency="EUR")])
+        assert backend.posts == []  # the USD budget listed first was not sent either
 
 
 class TestSyncBudgets:
@@ -644,6 +660,8 @@ class TestBudgetSyncErrors:
 
         if raised is UsageRetrievalError:
             assert caught.value.auth is (response.status_code == 401)
+        else:  # the proxy's response text stays out of a message that startup logs
+            assert response.text not in str(caught.value) and "invalid" not in str(caught.value) and "non-negative" not in str(caught.value)
         assert [path for path, _ in backend.posts] == []  # forced responses never reach the tables
 
     @pytest.mark.asyncio
