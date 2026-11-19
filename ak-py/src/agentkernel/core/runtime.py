@@ -16,6 +16,7 @@ from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .event import MessageEnd, ReasoningEnd, RunPaused, StepEnd, StreamEvent, TextDelta, ToolCallEnd
 from .hooks import StreamHalt
+from .meter import RunMeterFactory
 from .model import (
     AgentPausedReplyAny,
     AgentReply,
@@ -437,6 +438,13 @@ class Runtime:
                 self._publish(agent, session, principal, request_id)
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
+                    decision = await RunMeterFactory.get().check(session, agent)
+                    if decision.kind == "deny":
+                        if arrived_with_resume:
+                            self._warn_resume_halted(agent, session)
+                        return AgentReplyText(response=decision.message or "")
+                    if decision.kind == "warn":
+                        self._log.warning(f"Session '{session.id}', agent '{agent.name}': {decision.message}")
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                         self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
@@ -500,6 +508,14 @@ class Runtime:
                 self._publish(agent, session, principal, request_id)
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
+                    decision = await RunMeterFactory.get().check(session, agent)
+                    if decision.kind == "deny":
+                        if arrived_with_resume:
+                            self._warn_resume_halted(agent, session)
+                        yield StreamChunk(error=decision.message or "", done=True)
+                        return
+                    if decision.kind == "warn":
+                        self._log.warning(f"Session '{session.id}', agent '{agent.name}': {decision.message}")
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                         self._log.debug(f"PreHook halted streaming for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")

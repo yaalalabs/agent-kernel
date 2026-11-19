@@ -13,6 +13,7 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from ..core.config import _COST_SYSTEM_USER_ID, _CostBudgetLimit, _CostBudgetPeriod
+from ..core.meter import BudgetDecision  # re-export: lives in core because RunMeter.check returns it
 from ..core.model import ANONYMOUS_PROVIDER
 from .errors import UsageRetrievalError
 
