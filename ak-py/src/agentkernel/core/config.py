@@ -1,4 +1,7 @@
 import importlib.metadata
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from enum import StrEnum
 from threading import RLock
 from typing import Any, ClassVar, Literal, Optional
 
@@ -1560,6 +1563,231 @@ class _AGUIConfig(BaseModel):
     client_context: _AGUIClientContextConfig = Field(default_factory=_AGUIClientContextConfig)
 
 
+class _CostGatewayDatabaseConfig(BaseModel):
+    """Agentgateway request-log database the usage reads come from."""
+
+    url: str = Field(
+        default="", description="Agentgateway request-log database URL (postgres:// or a SQLite path); empty -> SecretManager under url_key"
+    )
+    url_key: str = Field(default="AGW_DB_URL", description="Secret key holding the database URL when url is empty")
+
+
+class _CostLiteLLMConfig(BaseModel):
+    """LiteLLM-specific gateway settings."""
+
+    api: Literal["end_user", "customer_management"] = Field(
+        default="end_user",
+        description="LiteLLM per-user API: end_user (open source, all releases) or customer_management (LiteLLM 1.111+)",
+    )
+    customer_org_alias: str = Field(default="", description="customer_management only: the organization every member belongs to")
+
+
+class _CostGatewayConfig(BaseModel):
+    """The LLM gateway that model calls go through, and that usage and budgets are read from."""
+
+    # A bring-your-own gateway (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(description="litellm | agentgateway | langfuse, or a dotted path to an LLMGateway subclass")
+    base_url: str = Field(description="Model endpoint the gateway client sends calls to")
+    api_key: str = Field(default="", description="Key for model calls; empty -> SecretManager under api_key_key")
+    api_key_key: str = Field(default="COST_GATEWAY_API_KEY", description="Secret key holding api_key when it is empty")
+    admin_key: str = Field(
+        default="",
+        description="Key for usage reads and budget sync where the gateway separates them; empty -> SecretManager under admin_key_key, then api_key",
+    )
+    admin_key_key: str = Field(default="COST_GATEWAY_ADMIN_KEY", description="Secret key holding admin_key when it is empty")
+    database: _CostGatewayDatabaseConfig | None = Field(default=None, description="Request-log database; required by agentgateway")
+    litellm: _CostLiteLLMConfig = Field(default_factory=_CostLiteLLMConfig, description="Settings of the litellm gateway")
+
+    @model_validator(mode="after")
+    def _check_gateway_settings(self) -> "_CostGatewayConfig":
+        """Fail at load time when the named gateway cannot be built from the block."""
+        if self.type.lower() == "agentgateway" and self.database is None:
+            raise AKConfigError("cost.gateway.type agentgateway requires the cost.gateway.database block")
+        if self.litellm.api == "customer_management" and not self.litellm.customer_org_alias.strip():
+            raise AKConfigError("cost.gateway.litellm.api customer_management requires cost.gateway.litellm.customer_org_alias")
+        return self
+
+
+# Reserved user id for runs with no principal; cost/model.py aliases it as SYSTEM_USER_ID (config may not import cost/).
+_COST_SYSTEM_USER_ID = "ak-system"
+
+
+class _CostBudgetPeriod(StrEnum):
+    """Budget window. Defined here, not in cost/model.py, because config may not import cost/; cost/model.py aliases it."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+    def start_of(self, now: datetime) -> datetime:
+        """Start of the period containing ``now``, in UTC: 00:00; Monday 00:00; the 1st 00:00."""
+        if now.tzinfo is None:
+            raise ValueError("BudgetPeriod needs a timezone-aware datetime")
+        day = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        if self is _CostBudgetPeriod.DAILY:
+            return day
+        if self is _CostBudgetPeriod.WEEKLY:
+            return day - timedelta(days=day.weekday())
+        return day.replace(day=1)
+
+    def end_of(self, now: datetime) -> datetime:
+        """End of the period containing ``now``: the next period's start."""
+        start = self.start_of(now)
+        if self is _CostBudgetPeriod.DAILY:
+            return start + timedelta(days=1)
+        if self is _CostBudgetPeriod.WEEKLY:
+            return start + timedelta(days=7)
+        return start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+
+
+class _CostBudgetLimit(BaseModel):
+    """A spend limit for one period. Aliased as BudgetLimit in cost/model.py."""
+
+    amount: Decimal = Field(gt=0, description="Spend limit per period, in currency")
+    currency: str = Field(default="USD", description="Currency of amount; must be one the gateway reports")
+    period: _CostBudgetPeriod = Field(default=_CostBudgetPeriod.MONTHLY, description="Budget window: daily, weekly or monthly (UTC)")
+    action: Literal["block", "warn"] = Field(default="block", description="What reaching the limit does: block the run, or warn and continue")
+    message: str | None = Field(default=None, description="Message shown when the limit is reached")
+
+
+class _CostAttributionConfig(BaseModel):
+    """Which Attributor maps a run to the user it is billed to."""
+
+    # A dotted-path class reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(default="default", description="default, or a dotted path to an Attributor subclass")
+
+
+class _CostViewConfig(_CostAttributionConfig):
+    """Which UsageView serves usage reads."""
+
+    type: str = Field(default="default", description="default, or a dotted path to a UsageView subclass")
+
+
+class _CostBudgetPolicyConfig(_CostAttributionConfig):
+    """Which BudgetPolicy decides the limit that applies to a user."""
+
+    type: str = Field(default="static", description="static, or a dotted path to a BudgetPolicy subclass")
+
+
+class _CostStaticModelRate(BaseModel):
+    """Per-model rates of the static pricing source, in USD per 1M tokens."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    input: Decimal = Field(ge=0, description="USD per 1M input tokens")
+    output: Decimal = Field(ge=0, description="USD per 1M output tokens")
+    cached_input: Decimal | None = Field(default=None, ge=0, description="USD per 1M cached input tokens; omitted = the input rate")
+
+
+class _CostStaticPricingConfig(BaseModel):
+    """Settings of the static pricing source."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    markup: Decimal = Field(default=Decimal(1), gt=0, description="Multiplier applied to the rated cost")
+    models: dict[str, _CostStaticModelRate] = Field(default_factory=dict, description="Rates by model name")
+
+
+class _CostPricingConfig(BaseModel):
+    """Which PricingSource turns usage into cost."""
+
+    # Extras are a bring-your-own pricing source's settings (``model_extra``).
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(default="passthrough", description="passthrough | static, or a dotted path to a PricingSource")
+    static: _CostStaticPricingConfig | None = Field(default=None, description="Settings of the static pricing source")
+
+
+# Ledger ttl 0 = expiry derived from the budget periods; a value above 0 overrides it.
+class _CostLedgerRedisConfig(_RedisConfig):
+    prefix: str = Field(default="ak:cost:ledger:", description="Key prefix for Redis spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger entry TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerValkeyConfig(_ValkeyConfig):
+    prefix: str = Field(default="ak:cost:ledger:", description="Key prefix for Valkey spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger entry TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerDynamoDBConfig(_DynamoDBConfig):
+    table_name: str = Field(default="ak-cost-ledger", description="DynamoDB table name for spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger item TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerCosmosDBConfig(_CosmosDBConfig):
+    table_name: str = Field(default="akcostledger", description="Cosmos DB table name for spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger entry TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerFirestoreConfig(_FirestoreConfig):
+    collection_name: str = Field(default="ak_cost_ledger", description="Firestore collection name for spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger document TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerConfig(BaseModel):
+    """Spend ledger backing fallback budgets on gateways that cannot enforce them natively."""
+
+    type: str = Field(
+        default="in_memory",
+        description="in_memory | redis | valkey | dynamodb | cosmosdb | firestore, or a dotted path to a SpendLedger",
+    )
+    redis: _CostLedgerRedisConfig | None = None
+    valkey: _CostLedgerValkeyConfig | None = None
+    dynamodb: _CostLedgerDynamoDBConfig | None = None
+    cosmosdb: _CostLedgerCosmosDBConfig | None = None
+    firestore: _CostLedgerFirestoreConfig | None = None
+
+
+class _CostBudgetsConfig(BaseModel):
+    """Per-user spend budgets."""
+
+    on_error: Literal["block", "allow"] = Field(default="block", description="What a failed budget check does")
+    default: _CostBudgetLimit | None = Field(default=None, description="Budget of every user without an entry in users; omitted = no budget")
+    users: dict[str, _CostBudgetLimit] = Field(default_factory=dict, description="Budgets by user id")
+    ledger: _CostLedgerConfig | None = Field(default=None, description="Spend ledger for fallback budgets")
+    policy: _CostBudgetPolicyConfig = Field(default_factory=_CostBudgetPolicyConfig, description="Policy that picks a user's budget")
+
+    @field_validator("users")
+    @classmethod
+    def _check_user_ids(cls, users: dict[str, _CostBudgetLimit]) -> dict[str, _CostBudgetLimit]:
+        """Refuse empty user ids and the reserved system id."""
+        for key in users:
+            if not key.strip():
+                raise AKConfigError(f"cost.budgets.users key {key!r} is empty")
+            if key.strip() == _COST_SYSTEM_USER_ID:
+                raise AKConfigError(f"cost.budgets.users key {key!r} is reserved")
+        return users
+
+
+class _CostConfig(BaseModel):
+    """Cost management: the LLM gateway, attribution, usage and budgets."""
+
+    gateway: _CostGatewayConfig = Field(description="The LLM gateway model calls go through")
+    attribution: _CostAttributionConfig = Field(default_factory=_CostAttributionConfig, description="Attributor that bills a run to a user")
+    view: _CostViewConfig = Field(default_factory=_CostViewConfig, description="UsageView that serves usage reads")
+    pricing: _CostPricingConfig = Field(default_factory=_CostPricingConfig, description="Pricing source that turns usage into cost")
+    budgets: _CostBudgetsConfig | None = Field(default=None, description="Per-user spend budgets; omitted = no budgets")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_gateway(cls, data: Any) -> Any:
+        """Any AK_COST__* variable creates the block, so a block without a gateway type and base URL fails loudly here.
+
+        Runs before field validation so the error is an AKConfigError, not a pydantic missing-field error.
+        """
+        # A gateway passed as a model instance was validated when it was built.
+        if isinstance(data, dict) and not isinstance(data.get("gateway"), BaseModel):
+            gateway = data.get("gateway") or {}
+            missing = [key for key in ("type", "base_url") if not str(gateway.get(key) or "").strip()]
+            if missing:
+                raise AKConfigError(f"cost requires {' and '.join(f'cost.gateway.{key}' for key in missing)}")
+        return data
+
+
 class AKConfig(YamlBaseSettingsModified):
     """Root configuration, loaded from config.yaml and `AK_`-prefixed environment variables."""
 
@@ -1606,6 +1834,10 @@ class AKConfig(YamlBaseSettingsModified):
     identity: _IdentityConfig | None = Field(
         default=None,
         description="Identity capability configurations (the provider that authenticates callers, the role mapper). Absent = every request is the anonymous principal.",
+    )
+    cost: _CostConfig | None = Field(
+        default=None,
+        description="Cost management: an LLM gateway, attribution, usage and budgets. Absent = disabled",
     )
     a2ui: _A2UIConfig = Field(description="A2UI labelling capability configurations", default_factory=_A2UIConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)

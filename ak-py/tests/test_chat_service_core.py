@@ -39,11 +39,11 @@ def _stream_handler(chunks):
     handler = MagicMock()
     handler.get_response_session_id.side_effect = lambda sid: sid
 
-    async def _achunks(requests, principal=None):
+    async def _achunks(requests, principal=None, request_id=None):
         for chunk in chunks:
             yield chunk
 
-    def _chunks(requests, principal=None):
+    def _chunks(requests, principal=None, request_id=None):
         # A generator, not a list: run_stream_sync hands back an iterator now (#741), and the
         # wrapper closes it, so a double that returns a list no longer matches the interface.
         yield from chunks
@@ -180,7 +180,7 @@ class TestExecuteStream:
 
     @pytest.mark.asyncio
     async def test_in_stream_exception_becomes_error_chunk(self):
-        async def _failing(requests, principal=None):
+        async def _failing(requests, principal=None, request_id=None):
             yield StreamChunk(delta="par")
             raise RuntimeError("stream blew up")
 
@@ -206,7 +206,7 @@ class TestExecuteStreamSync:
         assert collected == chunks
 
     def test_in_stream_exception_becomes_error_chunk(self):
-        def _failing(requests, principal=None):
+        def _failing(requests, principal=None, request_id=None):
             yield StreamChunk(delta="par")
             raise RuntimeError("stream blew up")
 

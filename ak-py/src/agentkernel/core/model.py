@@ -683,6 +683,8 @@ class BaseChatRequest(BaseModel):
     thread_name: str | None = None
     schedule: ScheduleSpec | None = None
     resume: ResumeSpec | None = None
+    request_id: str | None = None
+    """Correlation id of the run, published as Session.get_request_id(); minted when absent."""
 
     @model_validator(mode="after")
     def _require_a_prompt_or_a_resume(self) -> "BaseChatRequest":
@@ -784,11 +786,15 @@ class BaseRequest(BaseModel):
             is established by the surface from the credential, never taken from the client.
         :raises TypeError: If the payload is of another type.
         """
+        # The body carries the envelope's id onward, so the run is published under the same id.
         if isinstance(payload, cls):
+            if payload.body is not None and payload.body.request_id is None:
+                payload.body.request_id = payload.request_id
             return payload
 
         if isinstance(payload, BaseRunRequest):
-            return cls(request_id=str(uuid.uuid4()), body=payload)
+            payload.request_id = payload.request_id or str(uuid.uuid4())
+            return cls(request_id=payload.request_id, body=payload)
 
         if isinstance(payload, dict):
             if "user_id" in payload:
@@ -810,6 +816,7 @@ class BaseRequest(BaseModel):
 
             if not isinstance(body, BaseRunRequest):
                 body = ChatRunRequest.model_validate(body)
+            body.request_id = request_id
 
             return cls(request_id=request_id, route=route, body=body)
 

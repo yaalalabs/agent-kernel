@@ -159,7 +159,7 @@ class AgentService:
 
         return result
 
-    async def run_multi(self, requests: list[AgentRequest], principal: Principal | None = None) -> AgentReply:
+    async def run_multi(self, requests: list[AgentRequest], principal: Principal | None = None, request_id: str | None = None) -> AgentReply:
         """
         Async method to run the agent.
 
@@ -168,22 +168,26 @@ class AgentService:
                         AgentRequestAny is handled only by pre-hooks, not by the agent itself
         :param principal: The principal the surface authenticated, published for the run (see Runtime.run);
                         None runs anonymously.
+        :param request_id: The run's correlation id (see Runtime.run); None mints one.
         """
         if not self._agent:
             raise ValueError("No agent selected. Please select an agent before running.")
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
 
-        result = await self._runtime.run(self._agent, self._session, requests, principal=principal)
+        result = await self._runtime.run(self._agent, self._session, requests, principal=principal, request_id=request_id)
         return result
 
-    async def stream_multi(self, requests: list[AgentRequest], principal: Principal | None = None) -> AsyncGenerator[StreamChunk, None]:
+    async def stream_multi(
+        self, requests: list[AgentRequest], principal: Principal | None = None, request_id: str | None = None
+    ) -> AsyncGenerator[StreamChunk, None]:
         """
         Async generator that streams the agent response token by token.
 
         :param requests: List of requests to send to the agent.
         :param principal: The principal the surface authenticated, published for the run (see Runtime.stream);
                         None runs anonymously.
+        :param request_id: The run's correlation id (see Runtime.run); None mints one.
         :return: An async generator yielding StreamChunk objects.
         """
         if not self._agent:
@@ -191,7 +195,9 @@ class AgentService:
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
 
-        async for chunk in self._runtime.stream(self._agent, self._session, requests, principal=principal):  # using async due to aync iterator
+        async for chunk in self._runtime.stream(
+            self._agent, self._session, requests, principal=principal, request_id=request_id
+        ):  # using async due to aync iterator
             yield chunk
 
     def get_response_session_id(self, session_id: str | None = None) -> str | None:

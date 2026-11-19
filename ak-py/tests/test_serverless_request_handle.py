@@ -28,7 +28,7 @@ def test_base_request_from_flat_payload_excludes_envelope_fields_from_body():
     assert request.body.prompt == "hello"
     assert request.body.session_id == "session-1"
     assert request.body.agent == "openai"
-    assert "request_id" not in request.body.model_dump()
+    assert request.body.request_id == "request-1"  # the body carries the envelope's id to the run
     assert "route" not in request.body.model_dump()
 
 

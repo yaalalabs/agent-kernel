@@ -71,6 +71,7 @@ class AgentRunner:
         """Run one unmarked request and forward the reply to the output queue with its status."""
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
+        body.request_id = request_id  # the queue's id is the run's id
 
         self._log.info(f"[AGENT START] request_id={request_id}, session_id={body.session_id}, agent={body.agent}")
 
@@ -123,7 +124,7 @@ class AgentRunner:
 
         chunk_count = 0
         terminal: dict | None = None
-        for chunk in handler.run_stream_sync(body.requests or [], principal=body.principal):
+        for chunk in handler.run_stream_sync(body.requests or [], principal=body.principal, request_id=request_id):
             payload = json.loads(chunk.model_dump_json())
             if payload.get("done"):
                 terminal = payload  # withheld until after the snapshot; see the ordering note above
@@ -364,6 +365,7 @@ class StreamAgentRunner(AgentRunner):
         body = BaseRunRequest.model_validate(json.loads(message.body))
 
         request_id = self._resolve_request_metadata(message, body)
+        body.request_id = request_id  # the queue's id is the run's id
         if not message.attributes.get(ATTR_USER_ID) and AKConfig.get().execution.is_websocket and QueueTransportFactory.resolve_type() != "in_memory":
             raise ValueError("user_id is required in queue message attributes for async + delta over a broker transport")
 

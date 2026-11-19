@@ -58,12 +58,18 @@ def _runner(transport, status_code=200):
     return AgentRunner(transport=transport, chat_service=chat_service)
 
 
+def _run_request_id(runner):
+    return runner._chat_service.process_chat_request.call_args.kwargs["req"].request_id
+
+
 class TestAgentRunnerBodyFallback:
     def test_body_request_id_is_resolved_and_forwarded_to_the_output(self):
         transport = InMemoryTransport()
 
-        _runner(transport).process(_trigger_message(request_id="sched-run-1", principal=PRINCIPAL))
+        runner = _runner(transport)
+        runner.process(_trigger_message(request_id="sched-run-1", principal=PRINCIPAL))
 
+        assert _run_request_id(runner) == "sched-run-1"
         [out] = _fetch_output(transport)
         assert out.attributes["request_id"] == "sched-run-1"
         assert out.attributes["user_id"] == "u1"
@@ -82,8 +88,10 @@ class TestAgentRunnerBodyFallback:
         transport = InMemoryTransport()
         message = _trigger_message(attributes={"request_id": "from-attribute"}, request_id="from-body")
 
-        _runner(transport).process(message)
+        runner = _runner(transport)
+        runner.process(message)
 
+        assert _run_request_id(runner) == "from-attribute"  # the run takes the id the output is keyed by
         [out] = _fetch_output(transport)
         assert out.attributes["request_id"] == "from-attribute"
 
@@ -112,6 +120,7 @@ class TestStreamAgentRunnerBodyFallback:
 
         StreamAgentRunner(transport=transport, chat_service=chat_service).process(_trigger_message(request_id="sched-run-1", principal=PRINCIPAL))
 
+        assert chat_service.process_stream_chat_sync.call_args.kwargs["req"].request_id == "sched-run-1"
         [out] = _fetch_output(transport)
         assert out.attributes["request_id"] == "sched-run-1"
         assert out.attributes["user_id"] == "u1"

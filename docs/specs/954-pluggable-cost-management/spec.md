@@ -1508,7 +1508,7 @@ loudly, rather than enabling the feature silently.
 
 | Extra | Contents | Reason |
 |---|---|---|
-| `cost` (new) | `httpx>=0.27.0,<0.29.0`, `litellm>=1.95.0,<1.96` | gateway HTTP and the client. Both ranges match the existing extras (`pyproject.toml:26`, `:56`, `:134`), so `cost` co-installs with `langgraph` and `adk` |
+| `cost` (new) | `httpx>=0.27.0,<0.29.0`, `litellm>=1.100.3,<2.0.0` | gateway HTTP and the client. Both ranges match the existing extras (`httpx` as in `auth`; `litellm` as in `thread` and `multimodal`). The `litellm` range overlaps the `langgraph`/`adk` cap (`<1.106`), so `cost` co-installs with them |
 | `cost-agentgateway` (new) | `agentkernel[cost]`, `psycopg[binary]>=3.2,<4` | Postgres request-log database. `psycopg` is not locked today, so the version is fixed when the lock is regenerated |
 | `langgraph` | add `langchain-litellm` | `GatewayChatLiteLLM` (§7.6) |
 

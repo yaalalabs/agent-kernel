@@ -5,6 +5,7 @@ import logging
 from collections.abc import AsyncGenerator
 from threading import RLock
 from types import ModuleType
+from uuid import uuid4
 
 from singleton_type import Singleton
 
@@ -15,6 +16,7 @@ from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .event import MessageEnd, ReasoningEnd, RunPaused, StepEnd, StreamEvent, TextDelta, ToolCallEnd
 from .hooks import StreamHalt
+from .meter import RunMeterFactory
 from .model import (
     AgentPausedReplyAny,
     AgentReply,
@@ -339,7 +341,7 @@ class Runtime:
             raise ValueError(f"Runner '{agent.runner.name}' for agent '{agent.name}' does not support resuming a paused run.")
         return record
 
-    def _publish(self, agent: Agent, session: Session, principal: Principal | None) -> Principal:
+    def _publish(self, agent: Agent, session: Session, principal: Principal | None, request_id: str) -> Principal:
         """
         Resolves the run's principal, publishes it and records the session's owner.
 
@@ -350,12 +352,13 @@ class Runtime:
         :param agent: The agent about to run, attached to the principal as its actor.
         :param session: The session the run uses.
         :param principal: The principal the surface authenticated, or None for an anonymous run.
+        :param request_id: The run's correlation id, published beside the principal.
         :return: The published principal.
         """
         # The agent subject becomes the descriptor's identity subject once the registry lands.
         actor = Principal(kind="agent", subject=agent.name, provider=AGENT_PRINCIPAL_PROVIDER)
         principal = (principal or Principal.anonymous()).with_actor(actor)
-        session._publish_run(principal, None)
+        session._publish_run(principal, None, request_id)
         if not principal.is_anonymous:
             # A shared-channel principal is recorded too: its owner binds the session to the
             # platform scope (the gate admits any principal from the same provider and namespace),
@@ -407,7 +410,9 @@ class Runtime:
             f"but never delivered. The paused run is untouched and can be answered again."
         )
 
-    async def run(self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None) -> AgentReply:
+    async def run(
+        self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None, request_id: str | None = None
+    ) -> AgentReply:
         """
         Runs the specified agent with the multi-modal requests.
 
@@ -422,14 +427,24 @@ class Runtime:
         :param principal: The principal the surface authenticated, or None for an anonymous run. Published through
                         Session.get_principal() for the duration of the run, with the agent as its actor, and recorded
                         as the session's owner the first time an authenticated principal runs here.
+        :param request_id: The run's correlation id, published through Session.get_request_id() for the duration
+                        of the run; None mints one.
         :return: The result of the agent's execution.
         :raises PermissionError: If a resume answers a run paused by another principal.
         """
+        request_id = request_id or uuid4().hex
         async with session:
             try:
-                self._publish(agent, session, principal)
+                self._publish(agent, session, principal, request_id)
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
+                    decision = await RunMeterFactory.get().check(session, agent)
+                    if decision.kind == "deny":
+                        if arrived_with_resume:
+                            self._warn_resume_halted(agent, session)
+                        return AgentReplyText(response=decision.message or "")
+                    if decision.kind == "warn":
+                        self._log.warning(f"Session '{session.id}', agent '{agent.name}': {decision.message}")
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                         self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
@@ -464,7 +479,7 @@ class Runtime:
                 session.get_volatile_cache()._clear_all()
 
     async def stream(
-        self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None
+        self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None, request_id: str | None = None
     ) -> AsyncGenerator[StreamChunk, None]:
         """
         Streams the specified agent response as StreamChunks carrying typed stream events.
@@ -483,14 +498,24 @@ class Runtime:
         :param session: The session to use for the agent.
         :param requests: The multi-modal inputs provided to the agent.
         :param principal: The principal the surface authenticated, or None for an anonymous run (see run()).
+        :param request_id: The run's correlation id, or None to mint one (see run()).
         :return: An async generator of StreamChunk objects.
         :raises PermissionError: If a resume answers a run paused by another principal.
         """
+        request_id = request_id or uuid4().hex
         async with session:
             try:
-                self._publish(agent, session, principal)
+                self._publish(agent, session, principal, request_id)
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
+                    decision = await RunMeterFactory.get().check(session, agent)
+                    if decision.kind == "deny":
+                        if arrived_with_resume:
+                            self._warn_resume_halted(agent, session)
+                        yield StreamChunk(error=decision.message or "", done=True)
+                        return
+                    if decision.kind == "warn":
+                        self._log.warning(f"Session '{session.id}', agent '{agent.name}': {decision.message}")
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                         self._log.debug(f"PreHook halted streaming for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")

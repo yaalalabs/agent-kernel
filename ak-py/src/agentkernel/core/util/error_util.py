@@ -4,6 +4,7 @@ class ErrorCategory:
     CONNECTION = "connection"
     AUTH = "auth"
     NOT_FOUND = "not_found"
+    BUDGET = "budget"
     UNKNOWN = "unknown"
 
 
@@ -22,6 +23,14 @@ class ErrorUtil:
     @staticmethod
     def _classify(error: Exception, status_code: int | None) -> str:
         """Categorizes the error based on code, name, or message content."""
+        # Imported here so core/util keeps no module-scope dependency on core/meter.
+        from ..meter import RunMeterFactory
+
+        # peek(), not get(): classifying an error must never build the meter, which could raise and hide this error.
+        # Checked first, since a gateway budget refusal usually arrives as a 429.
+        if RunMeterFactory.peek().is_budget_refusal(error):
+            return ErrorCategory.BUDGET
+
         error_name = error.__class__.__name__.lower()
         message = str(error).lower()
 
@@ -50,6 +59,9 @@ class ErrorUtil:
         """Returns a clean string for the UI based on the error category."""
         status_code = ErrorUtil._get_status_code(error)
         category = ErrorUtil._classify(error, status_code)
+
+        if category == ErrorCategory.BUDGET:
+            return "Error: The usage budget for this request has been reached."
 
         if category == ErrorCategory.RATE_LIMIT:
             return "Error: Too many requests. Please try again later."
