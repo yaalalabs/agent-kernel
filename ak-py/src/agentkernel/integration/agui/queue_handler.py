@@ -50,6 +50,11 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
     """
 
     requires_pipeline = True
+    serves_hosted_agents_only = False
+    """
+    The edge enqueues a run for the process that hosts the agent, so it lists and resolves every agent the
+    registry knows, hosted here or not.
+    """
 
     def __init__(self):
         """

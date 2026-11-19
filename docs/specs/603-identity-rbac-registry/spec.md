@@ -810,6 +810,12 @@ providers, or `SecurityScheme(open_id_connect_security_scheme=OpenIdConnectSecur
 open_id_connect_url=<discovery url>))` for the OIDC family; `security_requirements =
 [SecurityRequirement(schemes={"ak": StringList(list=[])})]`, mirrored onto every skill
 (`a2a/types/a2a_pb2.pyi:188-277, 305-376` in a2a-sdk 1.2.3). Without identity, neither field is set.
+The requirement stays the single one, with no empty alternative (decided 2026-11-19, from the
+phase C review), although a call without a credential still runs as the anonymous principal
+until an `authorization` block gives that principal no level: a card tells a client how it is
+expected to call, and one that follows it always authenticates, where an empty alternative
+would advertise credentials as optional to a deployment that configured an identity provider.
+The A2A page states what the server does today.
 
 Cards are built by the A2A surface from the registry, not by the adapters (design refinement 8):
 
@@ -1149,11 +1155,21 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   anonymously" check with the same guarantee. `_is_exposed` (60-68) reads
   `descriptor.exposed_on("agui")` through the registry; the `agui.default_agent` validation
   (53-58) becomes "exposed on agui".
-  The default agent must be known to the registry when the handler is built, so the agents are
-  loaded (or a shared registry holds them) before it is constructed.
+  The default agent must be served by the handler when it is built, so the agents are loaded
+  (or, for the queue-mode handler, a shared registry holds them) before it is constructed.
+- Which agents a handler serves is one class attribute, `serves_hosted_agents_only` (decided
+  2026-11-19, from the phase C review). The direct `AGUIRequestHandler` runs agents in its own
+  process and sets it: it lists, resolves and accepts as `default_agent` only the agents that
+  process hosts, reading each descriptor from the hosted agent. `AGUIPipelineRequestHandler`
+  enqueues the run for the process that hosts the agent and clears it: everything the registry
+  knows is served. Before this the direct handler listed and resolved agents another process
+  hosts and then answered every run for one with a "could not be selected" 500; an agent it
+  cannot run is now a 404, the answer for any name it does not serve. `_descriptor(name)` and
+  `_descriptors()` are the two reads both handlers share.
 - `/agents` (140-152): `AccessGate.visible_agents(principal)` narrowed by `exposed_on("agui")` and
   the descriptor's `supports_streaming`; ids only, in id order. Without a gate the source is
-  `registry.descriptors()`, so agents another process hosts are listed.
+  `_descriptors()`: the hosted agents for the direct handler, `registry.descriptors()` for the
+  queue-mode one, so there agents another process hosts are listed.
 - `_resolve_agent` (103-127): 404 for unknown or hidden, 403 for a visible agent the principal
   holds no level on (`PermissionError` from the gate, phase D), 400 for a non-streaming
   runner, unchanged order. It returns the agent's `AgentDescriptor`, not the `Agent`: everything
@@ -1165,9 +1181,9 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `_resolve_run_inputs` runs the resolution through `asyncio.to_thread`. It does not call
   `ensure_agent_available`, whose existence check the one read subsumes; the gate, when it
   lands, is asked here with `AccessGate.authorize_agent` rather than through a second registry
-  read. The direct handler still runs agents in process: for an agent the
-  registry knows and this process does not host, `AgentService.select` finds nothing and the
-  existing "could not be selected" 500 answers, with a log line naming both remedies.
+  read. The direct handler never reads the store here: an agent it does not host is not
+  served (above), so its `_descriptor` returns `None` and the route answers 404. The "could not
+  be selected" 500 stays as the guard for a resolved agent whose session cannot be created.
 - `_resolve_run_inputs` (178-201) returns the `Principal`; `_events` passes
   `principal=principal` at line 280; `AGUIPipelineRequestHandler._run` (`queue_handler.py:112-151`)
   enqueues `AGUIRunRequest(..., principal=principal, ...)` instead of `user_id=user_id` (143).
@@ -1616,8 +1632,8 @@ Each is intentional; the justification is design section 10 unless stated.
 5. `GET /api/v1/agents` returns descriptors filtered by the caller and paginated, not a list of
    names: `{"agents": [<descriptor>...], "next_cursor": ...}`, narrowed to the agents exposed on
    `rest`, in id order, each descriptor without its `identity`. AG-UI's `/agents` lists ids in
-   id order too, where it followed the registration order, and lists agents another process
-   hosts.
+   id order too, where it followed the registration order; the queue-mode handler also lists
+   agents another process hosts, while the direct handler lists the ones its process hosts.
 6. MCP `tools/list` and `/a2a/catalog` return only the agents the caller may see; a hidden
    agent's A2A card is 404; calling a hidden MCP tool is refused by FastMCP.
 7. With an `authorization` block, an agent run is refused before pre-hooks (403), a hidden agent

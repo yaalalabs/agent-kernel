@@ -14,7 +14,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Session
 from agentkernel.core.config import AKConfig
@@ -461,6 +462,55 @@ async def _drain_events(response):
     return events
 
 
+class TestTheEdgeServesAgentsItDoesNotHost:
+    """The edge enqueues a run for the process that hosts the agent, so what it lists and resolves is everything
+    the registry knows, where the direct handler lists and resolves only its own agents."""
+
+    @pytest.fixture
+    def registry(self, descriptor_only_registry):
+        return descriptor_only_registry(
+            [
+                AgentDescriptor(id="remote", name="remote", runner="openai", supports_streaming=True),
+                AgentDescriptor(id="remote-batch", name="remote-batch", runner="crewai", supports_streaming=False),
+                AgentDescriptor(id="remote-hidden", name="remote-hidden", runner="openai", supports_streaming=True, surfaces=["rest"]),
+            ]
+        )
+
+    def test_discovery_lists_the_streaming_agents_another_process_hosts(self, registry):
+        async def _authenticated(request: Request) -> None:
+            request.state.principal = PRINCIPAL
+
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        app = FastAPI()
+        app.include_router(handler.get_router(), dependencies=[Depends(_authenticated)])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            listing = TestClient(app).get("/agui/agents")
+
+        assert listing.json() == {"agents": ["remote"]}
+
+    @pytest.mark.asyncio
+    async def test_a_non_streaming_agent_known_only_through_the_registry_is_400_naming_its_framework(self, registry):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as refused:
+                await handler._resolve_run_inputs("remote-batch", _AuthenticatedRunRequest())
+
+        assert refused.value.status_code == 400
+        assert "crewai" in refused.value.detail
+
+    @pytest.mark.asyncio
+    async def test_an_agent_kept_off_agui_is_404_whichever_process_hosts_it(self, registry):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as refused:
+                await handler._resolve_run_inputs("remote-hidden", _AuthenticatedRunRequest())
+
+        assert refused.value.status_code == 404
+
+
 class TestTheEdgeNeverBlocksTheEventLoop:
     """The edge holds the caller's SSE socket, so a blocking call there stalls every request.
 
@@ -644,6 +694,16 @@ class TestPreconditions:
             patch.object(IdentityProviderFactory, "get", classmethod(lambda cls: _Provider())),
         ):
             return AGUIPipelineRequestHandler()
+
+    def test_a_default_agent_another_process_hosts_is_accepted(self, monkeypatch, descriptor_only_registry):
+        """Unlike the direct handler, which serves only what it hosts: the edge enqueues the run for the runner."""
+        monkeypatch.setattr(AKConfig.get().agui, "default_agent", "planner")
+        registry = descriptor_only_registry([AgentDescriptor(id="planner", name="Planner", runner="openai", supports_streaming=True)])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            handler = self._construct(InMemoryResponseStore(), "in_memory")
+
+        assert isinstance(handler, AGUIPipelineRequestHandler)
 
     def test_a_store_that_cannot_stream_chunks_is_refused(self):
         store = DynamoDBResponseStore.__new__(DynamoDBResponseStore)

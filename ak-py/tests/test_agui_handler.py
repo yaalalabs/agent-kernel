@@ -169,6 +169,19 @@ def _install_cfg(monkeypatch, agui_cfg, registry_cfg=None):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
 
+class _SharedRegistry(InMemoryAgentRegistry):
+    """A registry over a shared store: it hosts what registers here and also knows `remote`, a streaming agent
+    another process registered."""
+
+    REMOTE = AgentDescriptor(id="remote", name="remote", runner="openai", supports_streaming=True)
+
+    def descriptor(self, id):
+        return super().descriptor(id) or (self.REMOTE if id == self.REMOTE.id else None)
+
+    def descriptors(self):
+        return [*super().descriptors(), self.REMOTE]
+
+
 @contextmanager
 def serving(monkeypatch, agents, agui_cfg=None, store=None, registry_cfg=None, registry=None):
     """Mount the AG-UI router over a runtime holding the given agents, behind the identity dependency.
@@ -254,16 +267,11 @@ class TestDiscovery:
         with serving(monkeypatch, [ScriptedAgent("support"), ScriptedAgent("billing")]) as (client, _):
             assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["billing", "support"]}
 
-    def test_lists_an_agent_the_process_does_not_host(self, monkeypatch, descriptor_only_registry):
-        """From the registry's descriptors, which carry whether the agent's runner streams."""
-        known = descriptor_only_registry(
-            [
-                AgentDescriptor(id="remote", name="remote", runner="openai", supports_streaming=True),
-                AgentDescriptor(id="remote-batch", name="remote-batch", runner="crewai", supports_streaming=False),
-            ]
-        )
-        with serving(monkeypatch, [], registry=known) as (client, _):
-            assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["remote"]}
+    def test_lists_only_the_agents_this_process_hosts(self, monkeypatch):
+        """This handler runs agents itself. One a shared registry knows from another process cannot be run here,
+        so listing it would advertise an agent every run of which fails; the queue-mode handler lists those."""
+        with serving(monkeypatch, [ScriptedAgent("local")], registry=_SharedRegistry()) as (client, _):
+            assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["local"]}
 
     def test_discovery_publishes_names_only(self, monkeypatch):
         """Not agent.get_description(): several adapters return the agent's instructions from it, so
@@ -332,6 +340,14 @@ class TestConstructorGuards:
             with pytest.raises(ValueError, match="agui.default_agent is 'nobody'"):
                 AGUIRequestHandler()
 
+    def test_a_default_agent_another_process_hosts_is_a_startup_error(self, monkeypatch):
+        """The bare route would exist and answer 404 on every call: this handler serves only what it hosts."""
+        _install_cfg(monkeypatch, _AGUIConfig(default_agent="remote"))
+        _with_provider(monkeypatch, _TestProvider())
+        with Runtime(InMemorySessionStore(), registry=_SharedRegistry()):
+            with pytest.raises(ValueError, match="agui.default_agent is 'remote'.*AGUIPipelineRequestHandler"):
+                AGUIRequestHandler()
+
 
 class TestAgentResolution:
 
@@ -360,20 +376,14 @@ class TestAgentResolution:
             assert response.status_code == 200
             assert types_of(response)[-1] == "RUN_FINISHED"
 
-    def test_an_agent_known_to_the_registry_and_not_hosted_here_cannot_be_run_in_process(self, monkeypatch, descriptor_only_registry):
-        """It resolves (the queue-mode handler enqueues it), but this handler runs agents itself."""
-        known = descriptor_only_registry([AgentDescriptor(id="remote", name="remote", runner="openai", supports_streaming=True)])
-        with serving(monkeypatch, [], registry=known) as (client, _):
-            response = client.post("/agui/remote", headers=AUTH, json=body())
-            assert response.status_code == 500
-            assert "'remote'" in response.json()["detail"]
-
-    def test_a_non_streaming_agent_known_only_through_the_registry_is_400_naming_its_framework(self, monkeypatch, descriptor_only_registry):
-        known = descriptor_only_registry([AgentDescriptor(id="crew", name="crew", runner="crewai", supports_streaming=False)])
-        with serving(monkeypatch, [], registry=known) as (client, _):
-            response = client.post("/agui/crew", headers=AUTH, json=body())
-            assert response.status_code == 400
-            assert "crewai" in response.json()["detail"]
+    def test_an_agent_another_process_hosts_is_404_like_one_that_does_not_exist(self, monkeypatch):
+        """Not the 500 a run that cannot select its agent ends in: this handler does not serve the agent at all,
+        and says so the way it does for any name it does not serve."""
+        with serving(monkeypatch, [ScriptedAgent("local")], registry=_SharedRegistry()) as (client, _):
+            remote = client.post("/agui/remote", headers=AUTH, json=body())
+            unknown = client.post("/agui/nobody", headers=AUTH, json=body())
+            assert remote.status_code == unknown.status_code == 404
+            assert remote.json()["detail"].replace("remote", "X") == unknown.json()["detail"].replace("nobody", "X")
 
     def test_a_non_streaming_agent_is_400_naming_its_framework(self, monkeypatch):
         """A live path from day one for any app with a CrewAI or smolagents agent, so the message

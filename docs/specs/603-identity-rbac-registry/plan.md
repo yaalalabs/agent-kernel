@@ -681,20 +681,20 @@ the spec section it changes.
     change's diff, found by the review).
   - The duplicate-id rule is recorded as design refinement 10; `design.md` sections 4 and 10
     are in step with refinements 8 to 12.
+- **Decided from the second review pass (2026-11-19).**
+  - The direct `AGUIRequestHandler` lists, resolves and accepts as `default_agent` only the
+    agents its process hosts (`serves_hosted_agents_only`); the queue-mode handler serves
+    everything the registry knows. An agent the direct handler cannot run is a 404, where it
+    was listed and then answered with a "could not be selected" 500 (spec 8.5).
+  - An A2A card keeps naming the provider's scheme as its one security requirement, with no
+    empty alternative, although an uncredentialed call still runs anonymous until
+    authorization refuses it (spec 6, A2A card). The A2A page says what the server does.
 - **Left open by the review.**
   - `surfaces` without `rest` keeps an agent out of the catalog and does not refuse a chat
     request that names it. Refusing it belongs at the REST edges (chat, pipeline chat, threads,
     schedules), not in the shared service the A2A and MCP runs also go through, and it touches
     the same call sites as iterations 18 and 19. To be decided before iteration 18; the docs
     say what `rest` governs today.
-  - Whether the direct `AGUIRequestHandler` should list and resolve only the agents its process
-    hosts. Over a shared registry its `/agents` lists agents another process hosts, and a run
-    for one of them is the "could not be selected" 500 (spec 8.5 specifies each half). The
-    queue-mode handler keeps the full list, since it enqueues for them.
-  - Whether an A2A card should keep naming the provider's scheme as its one security
-    requirement while a call without a credential still runs anonymous, or carry an empty
-    alternative until authorization refuses such a call. The A2A page now says what the server
-    does.
   - Whether an adapter should seed `descriptor.description` from a native description field
     that is separate from the instructions (Pydantic AI and MAF `description=`,
     `ClaudeAgentSpec.description`). The design only rules out the instructions.

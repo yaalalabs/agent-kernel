@@ -109,7 +109,10 @@ credential, or with one the provider refuses, is a 401. See
 [Identity and access](../advanced/identity-and-access.md).
 
 An agent that is not exposed on AG-UI is treated exactly as an unknown agent, a 404, so the
-surface never confirms that a name exists but is hidden.
+surface never confirms that a name exists but is hidden. So is an agent the handler does not serve:
+`AGUIRequestHandler` runs agents in its own process and lists and serves only the ones loaded there,
+while `AGUIPipelineRequestHandler` puts the run on the queue and also serves agents that a shared
+[agent registry](../core-concepts/configuration.md#agent-registry) knows from another process.
 
 ### Choosing which agents are reachable
 

@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, ClassVar
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -22,10 +22,17 @@ from .state import AGUIState
 class AGUIRequestHandler(AuthorisedRESTRequestHandler):
     """AG-UI routes: GET /agents, POST /{agent_name}, and POST / when `agui.default_agent` is set."""
 
+    serves_hosted_agents_only: ClassVar[bool] = True
+    """
+    Whether the handler serves only the agents its own process hosts. This one runs agents in process, so an
+    agent a shared registry knows from another process is not listed, not resolved and not accepted as the
+    default: every run for it would fail. The queue-mode handler, which enqueues the run, sets it to False.
+    """
+
     def __init__(self):
         """
         :raises ValueError: If the `agui` extra is missing, or `agui.default_agent` names an agent that is not
-            exposed on AG-UI: one the agent registry does not know yet, or whose surfaces leave AG-UI out.
+            exposed on AG-UI: one this handler does not serve, or whose surfaces leave AG-UI out.
         :raises AKConfigError: If no identity provider is configured (the ``AuthorisedRESTRequestHandler``
             rule). The AG-UI routes run agents on a caller's behalf, so they are never served
             anonymously; with nobody able to authenticate, mounting them is a configuration error
@@ -45,21 +52,49 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         config = AKConfig.get().agui
         if config.default_agent is not None and not self._is_exposed(config.default_agent):
+            unserved = (
+                "this process does not host an agent with that id (this handler runs agents in process; "
+                "AGUIPipelineRequestHandler serves the ones another process hosts)"
+                if self.serves_hosted_agents_only
+                else "the agent registry knows no agent with that id yet"
+            )
             raise ValueError(
-                f"agui.default_agent is '{config.default_agent}', which is not exposed on AG-UI: either the agent registry "
-                f"knows no agent with that id yet, or registry.agents.{config.default_agent}.surfaces leaves out agui. Load "
-                f"the agent before building this handler and expose it on agui, or remove the default_agent setting."
+                f"agui.default_agent is '{config.default_agent}', which is not exposed on AG-UI: either "
+                f"registry.agents.{config.default_agent}.surfaces leaves out agui, or {unserved}. Load the agent before "
+                f"building this handler and expose it on agui, or remove the default_agent setting."
             )
 
-    @staticmethod
-    def _is_exposed(agent_name: str) -> bool:
-        """Whether an agent is served over AG-UI.
+    def _descriptor(self, agent_name: str) -> AgentDescriptor | None:
+        """The descriptor of an agent this handler serves, read once.
+
+        An agent this process hosts answers with the descriptor it carries, which is the one it registered,
+        so the registry's store is read only for an agent hosted elsewhere, and only by a handler that serves
+        those.
+
+        :param agent_name: Agent id.
+        :return: The descriptor, or None when this handler does not serve an agent with that id.
+        """
+        registry = Runtime.current().registry
+        hosted = registry.get(agent_name)
+        if hosted is not None:
+            return hosted.descriptor
+        return None if self.serves_hosted_agents_only else registry.descriptor(agent_name)
+
+    def _descriptors(self) -> list[AgentDescriptor]:
+        """The descriptors of every agent this handler serves: the hosted agents', or all the registry knows."""
+        registry = Runtime.current().registry
+        if self.serves_hosted_agents_only:
+            return [agent.descriptor for agent in registry.agents().values()]
+        return registry.descriptors()
+
+    def _is_exposed(self, agent_name: str) -> bool:
+        """Whether an agent is served over AG-UI by this handler.
 
         :param agent_name: Agent id to test.
-        :return: True when the agent registry knows the agent and its descriptor's surfaces include AG-UI
+        :return: True when this handler serves the agent and its descriptor's surfaces include AG-UI
             (they do when the descriptor names none).
         """
-        descriptor = Runtime.current().registry.descriptor(agent_name)
+        descriptor = self._descriptor(agent_name)
         return descriptor is not None and descriptor.exposed_on("agui")
 
     def _warn_if_unreadable(self, agent: AgentDescriptor, run_input: Any) -> None:
@@ -99,22 +134,20 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         """Resolve a path agent name to the descriptor of a streaming-capable agent exposed on AG-UI.
 
         Everything checked here is on the descriptor (that the agent exists, its surfaces, whether its
-        runner streams), so the agent need not be hosted by this process: the queue-mode handler
-        enqueues the run for the process that hosts it.
+        runner streams), so the queue-mode handler resolves an agent its process does not host and
+        enqueues the run for the process that does. This handler runs agents itself and resolves only
+        the ones it hosts (`serves_hosted_agents_only`).
 
-        The descriptor is read once. An agent this process hosts answers with the descriptor it carries,
-        which is the one it registered, so the registry's store is read only for an agent hosted
-        elsewhere; that read blocks, which is why the caller runs this off the event loop.
+        The descriptor is read once (`_descriptor`). For an agent hosted elsewhere that is a store read,
+        which blocks, which is why the caller runs this off the event loop.
 
         :param agent_name: Agent id taken from the route path.
         :return: The agent's descriptor: the hosted agent's own, else the registry's record.
-        :raises HTTPException: 404 when the agent is unknown *or* not exposed — deliberately
-                               indistinguishable, so the surface never confirms that a hidden name
-                               exists. 400 when the agent's runner cannot stream.
+        :raises HTTPException: 404 when the agent is unknown, not served by this handler *or* not
+                               exposed: deliberately indistinguishable, so the surface never confirms
+                               that a hidden name exists. 400 when the agent's runner cannot stream.
         """
-        registry = Runtime.current().registry
-        hosted = registry.get(agent_name)
-        descriptor = hosted.descriptor if hosted is not None else registry.descriptor(agent_name)
+        descriptor = self._descriptor(agent_name)
         if descriptor is None or not descriptor.exposed_on("agui"):
             raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
         if not descriptor.supports_streaming:
@@ -149,9 +182,9 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             :return: {"agents": [name, ...]}.
             """
             self._resolve_user(request)
-            # From the registry's descriptors, which carry whether the runner streams, so agents hosted by
-            # another process are listed too; in id order, the same from every process.
-            descriptors = sorted(Runtime.current().registry.descriptors(), key=lambda descriptor: descriptor.id)
+            # From the descriptors, which carry whether the runner streams: the hosted agents' for this handler,
+            # everything the registry knows for the queue-mode one. In id order, the same from every process.
+            descriptors = sorted(self._descriptors(), key=lambda descriptor: descriptor.id)
             return {"agents": [descriptor.id for descriptor in descriptors if descriptor.supports_streaming and descriptor.exposed_on("agui")]}
 
         @router.post("/{agent_name}")
@@ -227,11 +260,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name)
         session = handler.service.session if handler.service is not None else None
         if session is None:
-            self._log.error(
-                f"Agent '{agent_name}' is known to the agent registry but AgentService could not select it, so no session "
-                f"was created: this process does not host the agent. This handler runs agents in process; load the "
-                f"agent's module here, or serve AG-UI through AGUIPipelineRequestHandler, which enqueues the run."
-            )
+            self._log.error(f"Agent '{agent_name}' was resolved but AgentService could not select it, so no session was created.")
             raise HTTPException(status_code=500, detail=f"Agent '{agent_name}' could not be selected for this run")
         AGUIRunInput.set_agui_session_keys(session, run_input)
         self._warn_if_unreadable(agent, run_input)

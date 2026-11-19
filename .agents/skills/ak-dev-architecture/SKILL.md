@@ -467,11 +467,14 @@ already receive survives to a frontend instead of being discarded at the text-on
   no anonymous mode, so a request nothing authenticated is a 401) or without the `ag_ui.core` import (raises `ValueError` naming the `agui` extra).
   Routes: `GET {agui.prefix}/agents` (names only — never `get_description()`, which would leak a
   system prompt), `POST {agui.prefix}/{agent_name}`, and `POST {agui.prefix}` when
-  `agui.default_agent` is set. `_resolve_agent` returns the agent's `AgentDescriptor`, read once: the
-  hosted agent's own, else the registry's record (a store read, which is why `_resolve_run_inputs`
-  runs it through `asyncio.to_thread`). It 404s indistinguishably for unknown-vs-unexposed agent
-  names and 400s when the descriptor's `supports_streaming` is `False`, so the queue-mode handler
-  resolves an agent its process does not host. `_run` does everything that can
+  `agui.default_agent` is set. `serves_hosted_agents_only` (a class attribute, `True` here) says the
+  handler lists, resolves and accepts as default only the agents its own process hosts, since it
+  runs them in process; the queue-mode handler clears it and serves everything the registry knows.
+  `_resolve_agent` returns the agent's `AgentDescriptor`, read once through `_descriptor`: the
+  hosted agent's own, else (queue-mode only) the registry's record, a store read, which is why
+  `_resolve_run_inputs` runs it through `asyncio.to_thread`. It 404s indistinguishably for an
+  unknown, unserved or unexposed agent name and 400s when the descriptor's `supports_streaming` is
+  `False`. `_run` does everything that can
   still become an HTTP status (auth, agent resolution, body parse, `AGUIRunInput.to_requests`) before
   the session is written, then hands off to `_events`, an `AsyncGenerator` that always yields
   `RunStartedEvent` first and **one of three terminal shapes** last — every failure
