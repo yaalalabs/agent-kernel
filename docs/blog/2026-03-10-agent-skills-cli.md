@@ -1,7 +1,7 @@
 ---
 slug: /agent-skills-cli
 title: "Agent Skills: Agent Kernel Builds Enterprise Agents for You"
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, skills, cli, copilot, claude, cursor, windsurf, developer-experience]
 image: /img/blog/agent-skills-cli-banner.png
 ---

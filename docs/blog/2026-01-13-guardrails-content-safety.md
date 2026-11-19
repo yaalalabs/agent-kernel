@@ -1,7 +1,7 @@
 ---
 slug: /guardrails-content-safety
 title: "Safe AI at Scale: Introducing Guardrails for Agent Kernel"
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, guardrails, content-safety, openai-guardrails, aws-bedrock, security, compliance, pii, moderation]
 image: /img/blog/guardrails-content-safety-banner.png
 ---

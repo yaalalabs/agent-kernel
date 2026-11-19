@@ -1,7 +1,7 @@
 ---
 slug: /blog/observability-support-langfuse-openllmetry
 title: "Production-Grade Observability: Agent Kernel Integrates Langfuse and OpenLLMetry"
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, observability, langfuse, traceloop, openllmetry, tracing, monitoring]
 image: /img/blog/observability-support-banner.png
 ---

@@ -1,7 +1,7 @@
 ---
 slug: /blog/announcing-agent-kernel
 title: Introducing Agent Kernel - Framework-Agnostic AI Agent Runtime
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, announcement, opensource, ai-agents]
 image: /img/blog/announcing-agent-kernel-banner.png
 ---

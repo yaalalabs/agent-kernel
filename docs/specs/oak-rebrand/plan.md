@@ -336,4 +336,6 @@ particle hero and the integration ledger are not, the level tiles are to be redo
   4. Tags use the site's tag style. The previous and next links, on docs pages too, are two flat cards in place of the glass pills.
   5. The shared author's picture is the mark on a disc (`docs/static/img/branding/oak-avatar.svg`): the bare mark touched the edge of its box and a round crop cut its corners.
 - **Verify:** the production build; captures of the index and a post in both modes and at phone width.
+- **Post authors:** the 14 posts credited to the shared "OAK" author now name their writers, taken from the commit history: twelve to Amitha Dissanayake and two to John Praveen (the Walled AI post by its history, the knowledge bases post on the maintainer's word). John Praveen's GitHub account has only the generated placeholder picture, so he keeps the OAK avatar.
+- **Hero dots:** settled with the maintainer over three trials. The body has about a quarter of the dots it started with (lattice step `UNITS / 64`), and each dot is about 40 per cent larger than the first version. The original small size was tried at this density and rejected as too faint.
 

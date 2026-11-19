@@ -5,6 +5,18 @@
     "url": "https://github.com/yaalalabs/agent-kernel",
     "image_url": "/img/branding/oak-avatar.svg"
   },
+  "amitha": {
+    "name": "Amitha Dissanayake",
+    "title": "Open Agent Kernel Team",
+    "url": "https://github.com/amithad",
+    "image_url": "https://github.com/amithad.png"
+  },
+  "john": {
+    "name": "John Praveen",
+    "title": "Open Agent Kernel Team",
+    "url": "https://github.com/JohnPraveenYL",
+    "image_url": "/img/branding/oak-avatar.svg"
+  },
   "lkumara": {
     "name": "Lakindu Kumara",
     "title": "Open Agent Kernel Team",

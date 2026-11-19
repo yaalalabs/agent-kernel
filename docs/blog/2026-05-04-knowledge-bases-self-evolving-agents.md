@@ -1,7 +1,7 @@
 ---
 slug: /knowledge-bases-self-evolving-agents
 title: "Knowledge Bases: The Missing Layer That Lets AI Agents Self-Evolve"
-authors: [yaala]
+authors: [john]
 tags: [agent-kernel, knowledge-bases, chromadb, neo4j, starburst, rag, vector-store, graph-database, self-evolving-agents, enterprise-ai]
 image: /img/blog/knowledge-bases-banner.png
 ---

@@ -1,7 +1,7 @@
 ---
 slug: /walledai-guardrails
 title: "Walled AI Guardrails in Practice"
-authors: [yaala]
+authors: [john]
 tags: [agent-kernel, guardrails, walledai, pii, safety, privacy, production]
 image: /img/blog/walledai-guardrails-banner.png
 ---

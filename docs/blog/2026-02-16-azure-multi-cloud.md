@@ -1,7 +1,7 @@
 ---
 slug: /azure-multi-cloud-support
 title: "Agent Kernel Goes Multi-Cloud: Azure Support is Here"
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, azure, multi-cloud, aws, container-apps, azure-functions, cosmos-db, cloud-agnostic]
 image: /img/blog/azure-multi-cloud-banner.png
 ---

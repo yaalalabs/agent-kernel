@@ -1,7 +1,7 @@
 ---
 slug: /hooks-and-smart-memory
 title: "Power Up Your Agents: Execution Hooks and Smart Memory in Agent Kernel"
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, hooks, memory, RAG, guard-rails, cache, execution-hooks, pre-hooks, post-hooks]
 image: /img/blog/hooks-and-smart-memory-banner.png
 ---

@@ -64,15 +64,15 @@ function buildField(): Field | null {
   };
 
   // Body: a lattice, lightly jittered so it does not moire against the screen.
-  const step = UNITS / 124;
-  // Every other dot is repeated on a layer behind, which gives the mark thickness as it turns.
+  const step = UNITS / 64;
+  // Every third dot is repeated on a layer behind, which gives the mark thickness as it turns.
   for (let row = 0, y = 0; y <= UNITS; y += step * 0.866, row++) {
     for (let column = 0, x = (row % 2) * step * 0.5; x <= UNITS; x += step, column++) {
       const jx = x + (random() - 0.5) * step * 0.3;
       const jy = y + (random() - 0.5) * step * 0.3;
       if (!inside(jx, jy)) continue;
       place(jx, jy, 0, 0);
-      if ((column + row) % 2 === 0) place(jx, jy, -0.1, 3);
+      if ((column + row) % 3 === 0) place(jx, jy, -0.1, 3);
     }
   }
 
@@ -87,7 +87,7 @@ function buildField(): Field | null {
     path.setAttribute('d', d);
     svg.appendChild(path);
     const length = path.getTotalLength();
-    for (let at = 0; at < length; at += 0.28) {
+    for (let at = 0; at < length; at += 0.55) {
       const point = path.getPointAtLength(at);
       place(point.x + (random() - 0.5) * 0.25, point.y + (random() - 0.5) * 0.25, 0, 1);
     }
@@ -95,7 +95,7 @@ function buildField(): Field | null {
   svg.remove();
 
   // Dust: a sparse cloud around the mark, for depth.
-  for (let i = 0; i < 520; i++) {
+  for (let i = 0; i < 300; i++) {
     const angle = random() * Math.PI * 2;
     const radius = 0.35 + random() * 1.1;
     target.push(Math.cos(angle) * radius, Math.sin(angle) * radius * 0.8, (random() - 0.5) * 0.9);
@@ -182,7 +182,7 @@ void main() {
   float sweep = smoothstep(0.07, 0.0, band) * (1.0 - dust);
 
   float edge = step(0.5, aKind) * (1.0 - step(1.5, aKind));
-  float size = mix(mix(2.0, 2.4, edge), mix(1.7, 1.3, dust), max(dust, back));
+  float size = mix(mix(2.8, 3.2, edge), mix(2.4, 1.7, dust), max(dust, back));
   size *= (0.8 + aSeed.w * 0.5) * depth * (1.0 + max(ring, 0.0) * 1.4 + max(wave, 0.0) * 0.3 + sweep * 0.5);
   gl_PointSize = max(size * uInk * uDpr * clamp(uSize / 440.0, 0.65, 1.25), 1.0);
 
