@@ -109,6 +109,14 @@ class LLMGateway(ABC):
 
     # Helpers for adapters.
 
+    def _api_key(self) -> str | None:
+        """The key for model calls: ``api_key``, else the secret ``api_key_key`` names. Resolved per call."""
+        return self.config.api_key or self.secrets.get(self.config.api_key_key, default=None)
+
+    def _admin_key(self) -> str | None:
+        """The key for usage reads and budget sync: ``admin_key``, else its secret, else the api key."""
+        return self.config.admin_key or self.secrets.get(self.config.admin_key_key, default=None) or self._api_key()
+
     def _require_filters(self, query: UsageQuery) -> None:
         """Raise ``UnsupportedCapabilityError`` for a dimension ``query`` filters on that the gateway cannot."""
         unsupported = query.filters() - self.capabilities.filters

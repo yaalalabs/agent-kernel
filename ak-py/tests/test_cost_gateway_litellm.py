@@ -1,10 +1,10 @@
-"""LiteLLMGateway (spec §5.1): capabilities per mode, attribution headers, budget-refusal recognition, factory branch.
-
-The LLMGatewayContract runs here once usage reads (2.3) and budget sync (2.4) exist.
-"""
+"""LiteLLMGateway (spec §5.1): capabilities per mode, attribution headers, budget-refusal recognition, usage reads over
+a fake /spend/logs/v2, the LLMGatewayContract, and the factory branch."""
 
 import json
 import sys
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from unittest.mock import MagicMock
 
 import httpx
@@ -12,8 +12,18 @@ import openai
 import pytest
 
 from agentkernel.core.config import _CostGatewayConfig
-from agentkernel.cost import Attribution, GatewayCapabilities, GatewayFilter, LLMGatewayFactory
+from agentkernel.cost import (
+    Attribution,
+    GatewayCapabilities,
+    GatewayFilter,
+    LLMGatewayFactory,
+    UnsupportedCapabilityError,
+    UsageQuery,
+    UsageRetrievalError,
+    UsageTruncatedError,
+)
 from agentkernel.cost.gateway.litellm import LiteLLMGateway
+from agentkernel.cost.testing import LLMGatewayContract
 from agentkernel.secret import SecretManager
 
 _BUDGET_BODY = {"error": {"message": "Budget has been exceeded!", "type": "budget_exceeded", "param": None, "code": "429"}}
@@ -171,3 +181,293 @@ class TestFactory:
 
         with pytest.raises(ImportError, match="'cost' extra"):
             LLMGatewayFactory.create(_CostGatewayConfig(type="litellm", base_url="https://litellm.test"))
+
+
+# Usage reads
+
+
+_T0 = datetime(2026, 1, 5, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _second(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+class _FakeSpendLogs:
+    """/spend/logs/v2 as the 1.105 proxy serves it: second-granular inclusive bounds, startTime ascending, the count cap."""
+
+    def __init__(self) -> None:
+        self.rows: list[dict] = []
+        self.requests: list[httpx.Request] = []
+        self.failure: str | None = None
+        self.override: dict | None = None  # a fixed body to return instead
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.failure == "unreachable":
+            raise httpx.ConnectError("connection refused", request=request)
+        if self.failure in ("auth", "server", "malformed"):
+            return httpx.Response({"auth": 401, "server": 500, "malformed": 200}[self.failure], content=b"<html/>")
+        if self.override is not None:
+            return httpx.Response(200, json=self.override)
+        assert request.url.path == "/spend/logs/v2"
+        params = request.url.params
+        rows = [
+            row
+            for row in self.rows
+            if params["start_date"] <= _second(datetime.fromisoformat(row["startTime"])) <= params["end_date"]
+            and ("end_user" not in params or row["end_user"] == params["end_user"])
+            and ("model" not in params or row["model"] == params["model"])
+        ]
+        rows.sort(key=lambda row: (datetime.fromisoformat(row["startTime"]), row["request_id"]))
+        page, size = int(params["page"]), int(params["page_size"])
+        total = min(len(rows), 10_000)
+        return httpx.Response(
+            200,
+            json={
+                "data": rows[(page - 1) * size : page * size],
+                "total": total,
+                "page": page,
+                "page_size": size,
+                "total_pages": (total + size - 1) // size,
+                "total_is_capped": len(rows) > 10_000,
+            },
+        )
+
+
+def _log(gateway: LiteLLMGateway, row_id: str, at: datetime, user: str = "alice", **overrides) -> dict:
+    """One spend-log row in the proxy's shape."""
+    row = {
+        "request_id": row_id,
+        "startTime": at.isoformat(),
+        "end_user": gateway.gateway_user_id(user),
+        "custom_llm_provider": "openai",
+        "model": "gpt-4o",
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "spend": 0.001,
+        "request_tags": [],
+        "metadata": {"spend_logs_metadata": {}, "usage_object": {}},
+    }
+    row.update(overrides)
+    return row
+
+
+def _reading_gateway(backend: _FakeSpendLogs, api: str = "end_user", secrets=None, **config) -> LiteLLMGateway:
+    litellm = {"api": api, "customer_org_alias": "acme"} if api == "customer_management" else {"api": api}
+    if secrets is None:
+        secrets = MagicMock()
+        secrets.get.return_value = None
+    return LiteLLMGateway(
+        _CostGatewayConfig(type="litellm", base_url="https://litellm.test", litellm=litellm, **config),
+        secrets,
+        transport=httpx.MockTransport(backend.handle),
+    )
+
+
+def _query(**overrides) -> UsageQuery:
+    return UsageQuery(**{"user_id": "alice", "start": _T0 - timedelta(hours=1), "end": _T0 + timedelta(hours=1), **overrides})
+
+
+class TestLiteLLMEndUserContract(LLMGatewayContract):
+    page_size = 1000
+
+    @pytest.fixture
+    def gateway(self) -> LiteLLMGateway:
+        backend = _FakeSpendLogs()
+        gateway = _reading_gateway(backend)
+        gateway.fake = backend  # type: ignore[attr-defined]
+        return gateway
+
+    def seed(self, gateway, rows):
+        backend = gateway.fake
+        for row in rows:
+            logged = {"ak_session_id": row.session_id, "ak_request_id": row.request_id}
+            backend.rows.append(
+                _log(
+                    gateway,
+                    row.row_id,
+                    row.timestamp,
+                    user=row.user_id,
+                    custom_llm_provider=row.provider,
+                    model=row.model,
+                    prompt_tokens=row.input_tokens,
+                    completion_tokens=row.output_tokens,
+                    spend=None if row.provider_cost is None else str(row.provider_cost),
+                    request_tags=[f"ak-agent:{gateway.gateway_user_id(row.agent_id)}"] if row.agent_id else [],
+                    metadata={
+                        "spend_logs_metadata": {k: v for k, v in logged.items() if v is not None},
+                        "usage_object": {"prompt_tokens_details": {"cached_tokens": row.cached_input_tokens}},
+                    },
+                )
+            )
+
+    def fail(self, gateway, mode):
+        gateway.fake.failure = mode
+
+    def test_contract_operations_match_declared_capabilities(self):
+        pytest.skip("end_user declares native_user_budget; the budget sync lands in iteration 2.4")
+
+
+class TestFetchUsage:
+    @pytest.mark.asyncio
+    async def test_request_shape(self):
+        backend = _FakeSpendLogs()
+        gateway = _reading_gateway(backend, admin_key="sk-admin")
+
+        await gateway.fetch_usage(_query(start=_T0 + timedelta(microseconds=900_000), end=_T0 + timedelta(seconds=5), model="gpt-4o"))
+
+        request = backend.requests[0]
+        assert dict(request.url.params) == {
+            "start_date": "2026-01-05 12:00:00",
+            "end_date": "2026-01-05 12:00:05",
+            "page": "1",
+            "page_size": "1000",
+            "sort_by": "startTime",
+            "sort_order": "asc",
+            "end_user": "alice",
+            "model": "gpt-4o",
+        }
+        assert request.headers["Authorization"] == "Bearer sk-admin"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("config", "secret_values", "expected"),
+        [
+            ({"admin_key": "sk-admin", "api_key": "sk-api"}, {}, "Bearer sk-admin"),
+            ({"api_key": "sk-api"}, {"COST_GATEWAY_ADMIN_KEY": "sk-admin-secret"}, "Bearer sk-admin-secret"),
+            ({}, {"COST_GATEWAY_API_KEY": "sk-api-secret"}, "Bearer sk-api-secret"),
+            ({}, {}, None),
+        ],
+    )
+    async def test_the_admin_key_falls_back_to_the_api_key(self, config, secret_values, expected):
+        backend = _FakeSpendLogs()
+        secrets = MagicMock()
+        secrets.get.side_effect = lambda key, default=None: secret_values.get(key, default)
+
+        await _reading_gateway(backend, secrets=secrets, **config).fetch_usage(_query())
+
+        assert backend.requests[0].headers.get("Authorization") == expected
+
+    @pytest.mark.asyncio
+    async def test_pages_until_the_total_is_read(self):
+        backend = _FakeSpendLogs()
+        gateway = _reading_gateway(backend)
+        backend.rows = [_log(gateway, f"r{n:05d}", _T0 + timedelta(milliseconds=n)) for n in range(2500)]
+
+        result = await gateway.fetch_usage(_query())
+
+        assert [row.row_id for row in result.rows] == [f"r{n:05d}" for n in range(2500)]
+        assert [request.url.params["page"] for request in backend.requests] == ["1", "2", "3"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("body", [{"data": [], "total": 10_000}, {"data": [], "total": 9_999, "total_is_capped": True}])
+    async def test_the_row_cap_is_truncation(self, body):
+        backend = _FakeSpendLogs()
+        backend.override = body
+
+        with pytest.raises(UsageTruncatedError):
+            await _reading_gateway(backend).fetch_usage(_query())
+
+    @pytest.mark.asyncio
+    async def test_the_window_is_exact_on_the_client(self):
+        backend = _FakeSpendLogs()
+        gateway = _reading_gateway(backend)
+        start, end = _T0 + timedelta(microseconds=500_000), _T0 + timedelta(seconds=2)
+        backend.rows = [
+            _log(gateway, "before-start", _T0 + timedelta(microseconds=100_000)),  # in start's second
+            _log(gateway, "at-start", start),
+            _log(gateway, "at-end", end),  # the next window's
+        ]
+
+        result = await gateway.fetch_usage(_query(start=start, end=end))
+
+        assert [row.row_id for row in result.rows] == ["at-start"]
+
+    @pytest.mark.asyncio
+    async def test_a_body_without_data_is_a_retrieval_error(self):
+        backend = _FakeSpendLogs()
+        backend.override = {"detail": "nope"}
+
+        with pytest.raises(UsageRetrievalError):
+            await _reading_gateway(backend).fetch_usage(_query())
+
+    @pytest.mark.asyncio
+    async def test_a_row_that_does_not_map_fails_the_read(self):
+        backend = _FakeSpendLogs()
+        backend.override = {"data": [{"request_id": "r1"}], "total": 1}  # no startTime
+
+        with pytest.raises(UsageRetrievalError):
+            await _reading_gateway(backend).fetch_usage(_query())
+
+
+class TestRowMapping:
+    @staticmethod
+    async def _one(row_overrides: dict, **query) -> object:
+        backend = _FakeSpendLogs()
+        gateway = _reading_gateway(backend)
+        row = _log(gateway, "r1", _T0)
+        row.update(row_overrides)
+        backend.override = {"data": [row], "total": 1}
+        (only,) = (await gateway.fetch_usage(_query(**query))).rows
+        return only
+
+    @pytest.mark.asyncio
+    async def test_the_full_mapping(self):
+        gateway = _reading_gateway(_FakeSpendLogs())
+        row = await self._one(
+            {
+                "end_user": gateway.gateway_user_id("ü,user"),
+                "request_tags": ["other", f"ak-agent:{gateway.gateway_user_id('billing,refunds')}"],
+                "metadata": {
+                    "spend_logs_metadata": {"ak_session_id": "s-1", "ak_request_id": "q-1"},
+                    "usage_object": {"prompt_tokens_details": {"cached_tokens": 4}},
+                },
+            },
+            user_id="ü,user",
+        )
+
+        assert (row.user_id, row.agent_id, row.session_id, row.request_id) == ("ü,user", "billing,refunds", "s-1", "q-1")
+        assert (row.provider, row.model, row.input_tokens, row.output_tokens, row.cached_input_tokens) == ("openai", "gpt-4o", 10, 5, 4)
+        assert row.provider_cost == Decimal("0.001") and row.currency == "USD" and row.row_id == "r1"
+
+    @pytest.mark.asyncio
+    async def test_missing_values_stay_unknown(self):
+        row = await self._one({"prompt_tokens": None, "completion_tokens": None, "spend": None, "metadata": None, "request_tags": None})
+
+        assert (row.input_tokens, row.output_tokens, row.cached_input_tokens, row.provider_cost) == (None, None, None, None)
+        assert (row.agent_id, row.session_id) == (None, None)
+
+    @pytest.mark.asyncio
+    async def test_a_zero_spend_stays_zero(self):
+        assert (await self._one({"spend": 0})).provider_cost == Decimal(0)
+
+    @pytest.mark.asyncio
+    async def test_json_string_columns_from_older_proxies(self):
+        row = await self._one(
+            {
+                "request_tags": json.dumps(["ak-agent:support"]),
+                "metadata": json.dumps({"spend_logs_metadata": json.dumps({"ak_session_id": "s-1"})}),
+            }
+        )
+
+        assert (row.agent_id, row.session_id) == ("support", "s-1")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stamp", ["2026-01-05T12:00:00.250000", "2026-01-05T12:00:00.25Z", "2026-01-05T14:00:00.25+02:00"])
+    async def test_timestamps_come_back_in_utc(self, stamp):
+        row = await self._one({"startTime": stamp})
+
+        assert row.timestamp == _T0 + timedelta(milliseconds=250)
+        assert row.timestamp.tzinfo == timezone.utc
+
+
+class TestCustomerManagementReads:
+    @pytest.mark.asyncio
+    async def test_usage_reads_are_unsupported(self):
+        gateway = _reading_gateway(_FakeSpendLogs(), api="customer_management")
+
+        with pytest.raises(UnsupportedCapabilityError):
+            await gateway.fetch_usage(_query())
+        with pytest.raises(UnsupportedCapabilityError):
+            await gateway.fetch_usage_since("alice", None, _T0)

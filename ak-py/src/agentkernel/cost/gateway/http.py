@@ -67,10 +67,19 @@ class GatewayHTTP:
         self._loop: asyncio.AbstractEventLoop | None = None
         _REDACTOR.prefixes.add(str(httpx.URL(self._base_url)))  # normalised as httpx logs it (lower-case host)
 
-    async def request(self, method: str, path: str, *, params: dict[str, Any] | None = None, json: Any = None) -> Any:
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: Any = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
         """Send one request and return its parsed JSON body.
 
         :param path: Relative to the base URL, without a query string; pass the query as ``params``.
+        :param headers: Per-request headers over the client's, e.g. an auth header resolved per call.
         :raises UsageRetrievalError: On a connect, timeout, decoding or redirect error, a non-2xx status (``auth`` set for 401 and 403),
             or a body that is not JSON.
         """
@@ -78,9 +87,9 @@ class GatewayHTTP:
         if self._client is None or self._loop is None or self._loop.is_closed():
             self._client, self._loop = self._new_client(), loop
         if self._loop is loop:
-            return await self._send(self._client, method, path, params, json)
+            return await self._send(self._client, method, path, params, json, headers)
         async with self._new_client() as client:
-            return await self._send(client, method, path, params, json)
+            return await self._send(client, method, path, params, json, headers)
 
     async def close(self) -> None:
         """Close the shared client; one bound to another (possibly dead) loop is dropped instead."""
@@ -91,10 +100,12 @@ class GatewayHTTP:
     def _new_client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(base_url=self._base_url, headers=self._headers, timeout=self._timeout, transport=self._transport)
 
-    async def _send(self, client: httpx.AsyncClient, method: str, path: str, params: dict[str, Any] | None, json: Any) -> Any:
+    async def _send(
+        self, client: httpx.AsyncClient, method: str, path: str, params: dict[str, Any] | None, json: Any, headers: dict[str, str] | None
+    ) -> Any:
         where = f"gateway '{self._gateway}' {method} {path}"
         try:
-            response = await client.request(method, path, params=params, json=json)
+            response = await client.request(method, path, params=params, json=json, headers=headers)
         except httpx.RequestError as exc:  # transport, decoding and redirect failures
             self._log.warning(f"{where} failed: {type(exc).__name__}")
             raise UsageRetrievalError(f"{where} failed: {type(exc).__name__}", gateway=self._gateway, path=path) from exc
