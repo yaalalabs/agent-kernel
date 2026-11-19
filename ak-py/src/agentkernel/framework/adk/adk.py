@@ -1194,6 +1194,20 @@ class GoogleADKAgent(AKBaseAgent):
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, GoogleADKToolBuilder.bind([tool]))
 
+    def _native_description(self) -> str:
+        """
+        Returns the native agent's `description`, which ADK keeps apart from its `instruction`, without the
+        system-tool guidance this adapter appends to it (`override_system_prompt`): that text is Agent Kernel's,
+        not the agent's, and is still there when the same native agent is wrapped again.
+        """
+        from ...core.tool import SystemToolFactory
+
+        description = getattr(self.agent, "description", None)
+        if not isinstance(description, str):
+            return ""
+        guidance = SystemToolFactory.get_system_prompt_suffix(self.name)
+        return description.replace(guidance, "") if guidance else description
+
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the tools of every `LlmAgent` reachable from the root, the root's first, each once.

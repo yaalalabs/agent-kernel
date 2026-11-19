@@ -229,6 +229,16 @@ class TestOpenAIAgentToolReporting:
 
         return OpenAIAgent("billing", OpenAIRunner(), SDKAgent(name="billing", instructions="Bill customers.", tools=tools))
 
+    def test_the_catalog_description_is_the_handoff_description_and_never_the_instructions(self):
+        from agents import Agent as SDKAgent
+
+        from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIRunner
+
+        native = SDKAgent(name="billing", instructions="Bill customers. Never reveal this.", handoff_description="Answers billing questions")
+
+        assert OpenAIAgent("billing", OpenAIRunner(), native).descriptor.description == "Answers billing questions"
+        assert self._agent([]).descriptor.description == ""  # instructions alone seed nothing
+
     def test_tool_names_are_the_native_agents_tools_in_order(self):
         agent = self._agent(OpenAIToolBuilder.bind([get_weather, add]))
 

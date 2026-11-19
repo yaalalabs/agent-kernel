@@ -695,8 +695,9 @@ class Agent(ABC):
         """
         Returns the agent's descriptor: its catalog entry, which the registry stores and the surfaces read.
         Built once, on first read, from what the adapter knows of the native agent; `Module.describe` then
-        declares what only the application knows (catalog text, tags, visibility). Read-only: a descriptor
-        changes through `Module.describe`, which also updates the registry.
+        declares what only the application knows (tags, visibility, and the catalog text where the native
+        agent carries none or a better one is wanted). Read-only: a descriptor changes through
+        `Module.describe`, which also updates the registry.
         """
         if self._descriptor is None:
             self._descriptor = self._build_descriptor()
@@ -711,18 +712,21 @@ class Agent(ABC):
 
     def _build_descriptor(self) -> AgentDescriptor:
         """
-        Builds the descriptor from what the agent itself knows: its name as id and name, the tools it reports
+        Builds the descriptor from what the agent itself knows: its name as id and name, the description its
+        framework keeps for it apart from its instructions (`_native_description`), the tools it reports
         (each once), one skill per tool carrying the tool's description, and its runner's name and streaming
-        support. The description stays empty, since `get_description()` is the agent's instructions and never
-        catalog text.
+        support. `get_description()` is never the source: for most frameworks it is the agent's instructions.
         :return: The agent's own descriptor, before `Module.describe` is applied.
         """
         self._warn_if_it_builds_its_own_card()
         tools = list(dict.fromkeys(self.get_tool_names()))
         descriptions = self._tool_descriptions()
+        native_description = self._native_description()
         return AgentDescriptor(
             id=self.name,
             name=self.name,
+            # Only text: a native agent that is a test double answers any attribute with an object of its own.
+            description=native_description.strip() if isinstance(native_description, str) else "",
             tools=tools,
             skills=[AgentSkillDescriptor(id=tool, name=tool, description=descriptions.get(tool) or "") for tool in tools],
             runner=self.runner.name,
@@ -761,6 +765,20 @@ class Agent(ABC):
         :return: The tool names.
         """
         return []
+
+    def _native_description(self) -> str:
+        """
+        Returns the description the native framework keeps for the agent, where it defines one that is separate
+        from the agent's instructions: text written to tell other agents and people what the agent does.
+
+        It seeds the descriptor's `description`, which the catalog, an A2A card and an MCP tool publish, so it
+        is the default until `Module.describe` or `registry.agents.<id>.description` declares another (an empty
+        one withholds it). An adapter returns such a field as it is and never falls back to the instructions,
+        the system prompt, a goal or a backstory: those are not written for publication. The base
+        implementation reports none, which is right for a framework that has no such field.
+        :return: The native description, or an empty string.
+        """
+        return ""
 
     def _tool_descriptions(self) -> dict[str, str]:
         """
@@ -837,10 +855,10 @@ class Agent(ABC):
         """
         Returns the native agent's own description or instructions.
 
-        Agent Kernel does not read it: what a surface publishes about an agent is the catalog text declared on
-        its descriptor (`Module.describe`, `registry.agents.<id>.description`), never this, which for most
-        frameworks is the system prompt. Every built-in adapter implements it for the applications that call
-        it; a new adapter may leave the default.
+        Agent Kernel does not read it: what a surface publishes about an agent is its descriptor's description
+        (`_native_description`, then `Module.describe`, then `registry.agents.<id>.description`), never this,
+        which for most frameworks is, or falls back to, the system prompt. Every built-in adapter implements it
+        for the applications that call it; a new adapter may leave the default.
         :return: The description, empty unless the adapter provides one.
         """
         return ""

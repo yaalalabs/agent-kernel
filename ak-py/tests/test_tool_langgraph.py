@@ -275,6 +275,10 @@ class TestLangGraphAgentToolReporting:
         builder.add_edge(previous, END)
         return LangGraphAgent(name="graph", runner=LangGraphRunner(), agent=builder.compile())
 
+    def test_the_catalog_description_is_not_seeded_for_a_compiled_graph(self):
+        # A compiled graph carries no description of its own.
+        assert self._agent([get_weather]).descriptor.description == ""
+
     def test_tool_names_are_the_tools_of_the_graphs_tool_node(self):
         assert self._agent([get_weather, add]).get_tool_names() == ["get_weather", "add"]
 

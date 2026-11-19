@@ -892,6 +892,13 @@ class OpenAIAgent(BaseAgent):
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, OpenAIToolBuilder.bind([tool]))
 
+    def _native_description(self) -> str:
+        """
+        Returns the agent's `handoff_description`: the SDK's own description of what the agent does and when to
+        call on it, kept apart from its instructions.
+        """
+        return self.agent.handoff_description or ""
+
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the native agent's tools, hosted tools included.

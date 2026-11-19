@@ -45,17 +45,17 @@ if __name__ == "__main__":
     CLI.main()
 ```
 
-:::warning name= is required, and description= is not the catalog text
+:::warning name= is required, and description= is what Agent Kernel publishes
 - **`name=` is mandatory.** Pydantic AI infers an agent's name lazily from the call frame on first
   run, but Agent Kernel registers agents by name *immediately* at load time — before any run. A
   Pydantic AI agent without an explicit `name=` therefore reaches registration with `name is None`,
   and `PydanticAIModule` raises a `ValueError`. Always pass `name=`.
-- **`description=` is not published.** What an A2A card, an MCP agent tool and the agent catalog say
-  about an agent is the description you declare for Agent Kernel, with
-  `PydanticAIModule([agent]).describe(agent, description="...")` or under
-  `registry.agents.<id>.description`, on every framework alike. Pydantic AI's own `description=` (and
-  its `instructions=`) never reach a card or a tool, so declare the catalog text even when the native
-  field is set. See [Describing an agent](../core-concepts/module.md#describing-an-agent).
+- **`description=` should be set.** It is the default for what an A2A card, an MCP agent tool and the
+  agent catalog say about the agent, so write it for people and other agents. A description declared
+  with `PydanticAIModule([agent]).describe(agent, description="...")` or under
+  `registry.agents.<id>.description` replaces it. The agent's `instructions=` are never published: an
+  agent with no `description=` and none declared gets only a neutral sentence on those surfaces. See
+  [Describing an agent](../core-concepts/module.md#describing-an-agent).
 :::
 
 ## Multi-Agent System

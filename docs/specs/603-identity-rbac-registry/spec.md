@@ -13,7 +13,7 @@ Evidence is cited against `feature/603-identity-rbac-registry` at `d9d0d18bc` (a
 over the develop merge `287ec7485`; every `.py` cited is identical in both). The change ships as a
 breaking change with no compatibility window (design section 10).
 
-Twelve places where detailing refined the design are listed in [Design refinements](#design-refinements)
+Fourteen places where detailing refined the design are listed in [Design refinements](#design-refinements)
 at the end; each is a mechanism change inside a settled decision, not a new decision, and each is
 reflected in `design.md`.
 
@@ -651,7 +651,18 @@ class AgentRegistry(ABC):
    attaches the system tools after the base constructor returns, so the first read is
    `Runtime.register`): `id = name`, `name`, `tools = self.get_tool_names()`, `skills` one per
    tool (`id = name = tool name`, `description = self._tool_descriptions().get(name, "")`),
-   `runner = runner.name`, `supports_streaming = runner.supports_streaming`, `description = ""`.
+   `runner = runner.name`, `supports_streaming = runner.supports_streaming`, `description =
+   self._native_description()`.
+   `Agent._native_description() -> str` (base `""`) returns the description the native framework
+   keeps for the agent where it defines one apart from the instructions, text written to tell
+   other agents and people what the agent does (design refinement 14): OpenAI
+   `handoff_description`; the `description` of an ADK, Pydantic AI, MAF or smolagents agent;
+   `ClaudeAgentSpec.description`. CrewAI (role, goal and backstory all go into the prompt) and
+   LangGraph (a compiled graph carries none) leave the default. An adapter returns the field as
+   it is and never falls back to instructions, a system prompt, a goal or a backstory, which is
+   what separates it from `get_description()`; the ADK adapter removes the system-tool guidance
+   it appends to the native `description` itself (`override_system_prompt`). The base keeps only
+   a string, stripped, so a native agent that is a test double seeds nothing.
    `Agent.get_tool_names() -> list[str]` is a new method each adapter implements (section 9 lists
    the source per adapter); the base implementation returns `[]`. It reports the tools
    **declared** on the native agent when it is loaded, under the names the model calls them by,
@@ -746,14 +757,19 @@ The two failures are different errors (settled 2026-11-18, design refinement 9):
 - A request naming no agent while the registry knows none raises `ValueError("No agent
   available")`, a 400 as before: there is no name to hide.
 
-The `LookupError` lands in iteration 19, together with the mapping it needs; until then the
-unknown case keeps raising the `ValueError`, because a `LookupError` no surface maps is a 500.
+The `LookupError` lands in iteration 17a, together with the mapping it needs and ahead of the
+gate (iteration 18), which raises the same error for an agent the caller may not see: wired in
+before any surface maps it, a hidden agent would answer 500 (moved from iteration 19 on
+2026-11-19). Until 17a the unknown case keeps raising the `ValueError`, because a `LookupError`
+no surface maps is a 500.
 The mapping, each in its own section: `ChatService`'s presentation wrappers and the SSE branch of
 the chat route (8.1, 8.2); the pipeline precheck (8.3); the thread routes, before any write
 (8.10; `thread_chat.py:344-352` beside the 400 and 403 branches); the schedule routes'
 `_as_http_error` (8.11; `schedule/handler.py:158-176`), where the branch sits after the
-`KeyError` one so a missing schedule keeps its own text; and AG-UI's `_resolve_agent` (8.5),
-which catches it where it caught the `ValueError`. The schedule tools already turn any error into
+`KeyError` one so a missing schedule keeps its own text. AG-UI's `_resolve_agent` (8.5) answers
+404 with this text from its own descriptor lookup and does not call the check, so it needs no
+mapping. The pipeline precheck arrives with the gate in iteration 19 and maps the error then.
+The schedule tools already turn any error into
 `{"error": ...}` and now carry this text; MCP keeps `ToolError("Agent not available")`.
 
 Then, when `AccessGate.get()` is not `None` and a name is given:
@@ -783,9 +799,18 @@ queue-mode `RequestHandler` mounts the same `list_agents` (`pipeline/request_han
 when each request arrives: an agent added or removed between two requests can repeat or skip an
 entry on the next page.
 
-`rest` in `surfaces` governs this listing. A chat request that names an agent kept off `rest`
-is still served: the three removed lists had no REST counterpart, and nothing in the design
-makes `surfaces` an access check on the chat route (open question recorded in the plan).
+`rest` in `surfaces` governs this listing, and from iteration 17b the chat requests that enter
+by the REST API as well (design refinement 13, decided 2026-11-19). Until then a chat request
+that names an agent kept off `rest` is still served: the three removed lists had no REST
+counterpart, so phase C carried nothing over. From 17b such a request answers like one for an
+agent that does not exist, and a request naming no agent defaults to the first agent on `rest`.
+The check cannot simply sit in the shared service, which also runs the requests A2A, MCP, the
+messaging integrations, the CLI and scheduled occurrences bring, so the request carries the
+surface it entered by: `BaseChatRequest.surface`, set by the entry point beside `principal`,
+never honoured from a client, and riding the queued body. `ensure_agent_available(name, ...,
+surface=)` and `AgentService.select(..., surface=)` then refuse or skip an agent not exposed on
+it. Requests with no surface (messaging, the CLI, a scheduled occurrence) are not governed by
+`surfaces`; a schedule's agent is checked when the task is created, by the route that creates it.
 
 An entry is `AgentDescriptor.catalog_entry()`, the descriptor without its `identity`, and the
 response is `AgentDescriptorPage.catalog()` (added 2026-11-18, before phase C merged). `identity`
@@ -839,8 +864,9 @@ Cards are built by the A2A surface from the registry, not by the adapters (desig
   per such class saying nothing calls it and where the card comes from now.
 - The description is the declared catalog text and nothing else. Six adapters put the agent's
   instructions or backstory on the card (`openai.py:905`, `crewai.py:523`, `maf.py:798`,
-  `smolagents.py:319`, `claude.py:1062`, `pydanticai.py:886`); that source is gone, so the
-  descriptor's description is empty until `Module.describe` or the overlay sets one. A2A 1.0
+  `smolagents.py:319`, `claude.py:1062`, `pydanticai.py:886`); that source is gone. The
+  descriptor's description is what `Module.describe` or the overlay declares, else the native
+  description field where the framework keeps one (descriptor sources, above), else empty. A2A 1.0
   requires the field on a card and on each skill, and the pinned SDK leaves an empty string out
   of the served JSON altogether (protobuf drops default-valued fields), so the builder puts a
   neutral sentence naming the agent, or the skill, on the card in its place, as MCP does for an
@@ -1213,9 +1239,10 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `description = descriptor.description`, where the tool text was `agent.get_description()`, the
   agent's instructions (154). A process over a store-backed registry therefore exposes agents it
   does not host, as it serves their A2A cards. A description is always passed, because FastMCP
-  publishes the executor's own docstring when given none: an agent that declares none gets
-  `MCP.UNDESCRIBED_TOOL_TEXT` ("Sends a prompt to the '<id>' agent and returns its reply."), which
-  says what the call does and nothing about the agent, and `_build` logs one warning naming
+  publishes the executor's own docstring when given none: an agent whose descriptor carries none
+  (none declared, and no native description field to seed it) gets `MCP.UNDESCRIBED_TOOL_TEXT`
+  ("Sends a prompt to the '<id>' agent and returns its reply."), which says what the call does and
+  nothing about the agent, and `_build` logs one warning naming
   `Module.describe` and `registry.agents.<id>.description`, since a client chooses a tool by
   that text. Unlike a card's description this one is not left empty: it describes the tool, and
   an empty one leaves a client nothing to choose by. Tools are registered once, at build, so an
@@ -1694,19 +1721,22 @@ Each is intentional; the justification is design section 10 unless stated.
     process restarts (section 6, A2A card).
 31. An A2A card's description is the declared `descriptor.description`, where the OpenAI, CrewAI,
     MAF, smolagents, Pydantic AI and Claude cards carried the agent's instructions or backstory.
-    Until `Module.describe` or `registry.agents.<id>.description` sets one the card carries a
-    neutral sentence naming the agent ("The '<id>' agent."), since A2A requires the field and an
-    empty one is dropped from the served JSON, and the agent logs a warning at mount. A skill
+    The description is what `Module.describe` or `registry.agents.<id>.description` declares,
+    else the description the framework keeps for the agent apart from its instructions (OpenAI
+    `handoff_description`; the `description` of an ADK, Pydantic AI, MAF, Claude or smolagents
+    agent). An agent with neither gets a neutral sentence naming it ("The '<id>' agent."), since
+    A2A requires the field and an empty one is dropped from the served JSON, and logs a warning
+    at mount. A skill
     with no description gets a sentence of the same kind. A card's `version` is the descriptor's
     (`0.0.0` until declared), where it was the Agent Kernel library version.
 32. In the catalog and on A2A cards, a skill backed by a tool the caller's level does not allow
     is left out with the tool; the A2A catalog and card responses carry `Vary: Authorization`
     (sections 6 and 8.7).
-33. An agent's MCP tool is described by the declared `descriptor.description`, or by a neutral
-    sentence naming the agent when none is declared (with a warning at build), where it carried
-    the agent's instructions. The tools are registered from the registry's descriptors, in id
-    order, so a process over a store-backed registry exposes agents it does not host
-    (section 8.6).
+33. An agent's MCP tool is described by `descriptor.description` (declared, else the native
+    description field of item 31), or by a neutral sentence naming the agent when there is none
+    (with a warning at build), where it carried the agent's instructions. The tools are registered
+    from the registry's descriptors, in id order, so a process over a store-backed registry
+    exposes agents it does not host (section 8.6).
 34. A request naming an agent the registry does not know is answered 404 `Agent '<name>' not
     found` on REST chat, threads and schedules, where it was 400 `No agent available`: the answer
     a hidden agent gets, so the two cannot be told apart (AG-UI already answered so). The
@@ -1723,6 +1753,10 @@ Each is intentional; the justification is design section 10 unless stated.
 37. Connecting to Redis or Valkey logs the scheme, host, port and path of the connection URL at
     DEBUG, never its user, password or query, where it logged the URL whole
     (`core/util/driver/redis_like.py`; every store on the shared driver, not the registry alone).
+38. From iteration 17b, a chat request that enters by the REST API and names an agent whose
+    `surfaces` leaves out `rest` is answered like one for an unknown agent (404), and a request
+    naming no agent runs the first agent that is on `rest`, where either ran whatever agent was
+    named or registered first (section 6, Catalog; design refinement 13).
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (one optional
 `last_error` on schedule occurrences and `principal` on tasks aside); the queue envelope
@@ -1854,13 +1888,13 @@ New files under `ak-py/tests/`:
   through `is_empty`, never a listing), a hosted agent is answered without a store read, and the
   `hosted=True` form refuses an agent the registry only knows. `test_thread_integration` pins
   the direct handler using it: an agent another process hosts is a 400 with no thread written.
-- With the unknown-agent `LookupError` (iteration 19), the cases that pin the unknown named agent
+- With the unknown-agent `LookupError` (iteration 17a), the cases that pin the unknown named agent
   as a `ValueError` or a 400 follow it: `TestAvailability`'s unknown case,
   `tests/test_chat_service_core.py:108-111, 282-287, 400-447`, `tests/test_schedule_manager.py:260`,
   `tests/test_schedule_tools.py:376` and `tests/test_thread_integration.py:265` expect the
   `LookupError`, the 404 and the `Agent '<name>' not found` text; the unnamed case keeps its
-  `ValueError`. `test_api_http` gains the parity case: an unknown agent and a hidden one answer
-  with the same status and body.
+  `ValueError`. `test_api_http` gains the unknown agent's 404 there, and in iteration 19 the
+  parity case: an unknown agent and a hidden one answer with the same status and body.
 - `test_api_catalog.py` also pins that an entry never carries the agent's `identity`, and
   `test_agent_registry` that the stored descriptor keeps it. `test_api_a2a_surface` and
   `test_api_mcp` cover the empty-surface warning: once when agents are known and none is exposed,
@@ -1874,6 +1908,13 @@ New files under `ak-py/tests/`:
   pins that the no-agents check asks `is_empty` and survives a registry it cannot read.
   `test_config` covers the refused `ttl` and the unknown `registry` key, from YAML-shaped input
   and from the environment; `test_shared_drivers` the connection log without credentials.
+  The description default is pinned on real SDK objects in each `test_tool_<adapter>.py`: the
+  native field seeds `descriptor.description`, an agent with instructions and no description
+  gets an empty one (the Pydantic AI, MAF, Claude and smolagents cases show `get_description()`
+  answering with the prompt while the descriptor does not), ADK's leaves out the appended
+  system-tool guidance on a first and a second wrap, and CrewAI and LangGraph seed nothing.
+  `test_agent_registry` covers the precedence: `Module.describe` and the overlay replace the
+  native description, and an empty overlaid one withholds it.
 - `test_api_catalog.py`: `GET /api/v1/agents` descriptors, filtering by caller, `tools`
   narrowing and the `skills` narrowed with it (a tool-backed skill goes with its tool, a declared
   skill that names no tool stays), cursor and limit, 400 on a bad cursor, `surfaces` narrowing
@@ -2193,7 +2234,7 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    body on the HTTP routes (REST chat, the pipeline chat route, threads, schedules, AG-UI). The
    two surfaces that answer in another form keep it, the same for unknown as for hidden: MCP's
    `ToolError("Agent not available")` and the schedule tools' `{"error": ...}`. A request naming
-   no agent stays a 400. It lands in iteration 19 with the mapping (section 6, Availability;
+   no agent stays a 400. It lands in iteration 17a with the mapping (section 6, Availability;
    section 7).
 10. **A duplicate id is refused per process, not across the store** (recorded 2026-11-19, from
    the phase C review). Design section 4 has `register` raise `AgentRegistrationError` on a
@@ -2217,3 +2258,21 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    it replaces were read by exactly that process. The overlaid registry applies its entries to
    every descriptor it returns, and matches a key that differs from an id only in case, which
    is how an environment variable spells it (section 6, descriptor sources).
+13. **`surfaces` governs the REST chat routes, not only the catalog** (decided 2026-11-19, from
+   the phase C review; iteration 17b). The design narrows the catalog routes by `surfaces` and
+   says nothing of the chat route, so an agent kept off `rest` was hidden from the listing and
+   still ran for anyone who named it, unlike the other three surfaces, where leaving a surface
+   out makes the agent unreachable on it. A REST-entered chat request now gets the answer an
+   unknown agent gets. The request carries its entry surface, set where its principal is set,
+   so the one availability check enforces it for requests that are queued and run elsewhere
+   (section 6, Catalog).
+14. **The description defaults to a native description field** (decided 2026-11-19, from the
+   phase C review). The design never defaults `description` from `get_description()`, which
+   for most frameworks is the system prompt, and refinement 8 left it empty until declared.
+   Where a framework keeps a description of the agent apart from its instructions, that text is
+   catalog text already, so `Agent._native_description()` seeds the descriptor with it and a
+   declared description replaces it (an empty declared one withholds it). Frameworks without
+   such a field are as before. It softens the break for the agents whose cards carried a real
+   description, at the cost of publishing a field written for a neighbouring audience (a
+   handoff description) without a declaration; instructions stay unpublished (section 6,
+   descriptor sources).

@@ -553,10 +553,13 @@ mcp:
   url: "http://localhost:8000/mcp"  # Public URL of the MCP endpoint (behind a proxy, the public one)
 ```
 
-3. Declare a description for each exposed agent. It is the tool's description, which a client model
-   chooses the tool by; the agent's instructions are never published, and an agent with no
-   declared description gets only a generic sentence (a warning at startup names it). Declare it
-   where the agent is loaded, or per agent id in `config.yaml`:
+3. Give each exposed agent a description. It is the tool's description, which a client model
+   chooses the tool by. By default it is the description the framework keeps for the agent
+   (OpenAI `handoff_description`; the `description` of an ADK, Pydantic AI, MAF, Claude or
+   smolagents agent); the agent's instructions are never published, and an agent with no
+   description gets only a generic sentence (a warning at startup names it). Declare one for a
+   CrewAI or LangGraph agent, or to replace the default, where the agent is loaded or per agent
+   id in `config.yaml`:
 ```python
 OpenAIModule([general, math]).describe(general, description="Answers general questions").describe(
     math, description="Solves math problems"
@@ -1706,8 +1709,11 @@ the AG-UI listing are all built from it. There is nothing to install or enable: 
 block the descriptors live in the process that loads the agents.
 
 1. Describe each agent. The description is catalog text for people and other agents (an A2A card
-   and an MCP tool publish it); an agent's instructions are never published. Declare it where the
-   agent is loaded:
+   and an MCP tool publish it); an agent's instructions are never published. It defaults to the
+   description the framework keeps for the agent, where it has one apart from the instructions
+   (OpenAI `handoff_description`; the `description` of an ADK, Pydantic AI, MAF, Claude or
+   smolagents agent; nothing for CrewAI and LangGraph). Declare it, or replace the default, where
+   the agent is loaded:
 ```python
 OpenAIModule([general, math]).describe(
     general, description="Answers general questions", version="1.2.0", tags=["support"]

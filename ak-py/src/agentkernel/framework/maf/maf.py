@@ -782,6 +782,13 @@ class MAFAgent(BaseAgent):
                     wrapped.name,
                 )
 
+    def _native_description(self) -> str:
+        """
+        :return: The native agent's `description`, which the framework keeps apart from its instructions. Unlike
+            `get_description()`, it never falls back to them.
+        """
+        return self.agent.description or ""
+
     def get_tool_names(self) -> list[str]:
         """
         Not reported: tools passed per run through the `options` run option, and a hosted tool given as a dict,

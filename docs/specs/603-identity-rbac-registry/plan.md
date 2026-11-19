@@ -1,6 +1,7 @@
 # #603: Identity layer, RBAC and agent registry: Implementation Plan
 
-Builds `spec.md` in 29 iterations grouped into eight phases. Every iteration is one theme a
+Builds `spec.md` in 31 iterations (1 to 29, with 17a and 17b between 17 and 18) grouped into
+eight phases. Every iteration is one theme a
 reviewer can read as a single diff and is expected to leave the branch green; within a phase only
 the suites an iteration's Verify names are run, and the full suite (`cd ak-py && uv run --no-sync
 pytest`) runs once at the end of each phase. The phase order is set by two dependencies: nothing above the
@@ -629,7 +630,9 @@ What changed in phase C after iteration 16, before it merged (2026-11-18). Each 
 the spec section it changes.
 
 - **Unknown agents (decision).** A request naming an agent the registry does not know will answer
-  like a hidden one, a 404 `LookupError`, from iteration 19 (spec 6, design refinement 9).
+  like a hidden one, a 404 `LookupError`, from iteration 17a (spec 6, design refinement 9). It
+  was planned as the first two steps of iteration 19 and moved ahead of iteration 18 on
+  2026-11-19: see iteration 17a.
 - **Empty surface warning.** `A2A._build` and `MCP._build` warn once when agents are known and
   none is exposed on the surface; the surface was otherwise mounted empty and silent (spec 6,
   8.6; `api/a2a/a2a.py`, `api/mcp/akmcp.py`).
@@ -652,8 +655,10 @@ the spec section it changes.
   Redis, Valkey and DynamoDB marquee tiles name the agent registry among the stores they back;
   the MCP and A2A cards say where a tool's text and a card come from; and the What's New tip in
   `docs/docs/intro.md` and the Features list in `ak-py/README.md` each carry an Agent Registry
-  entry. The `WhatsNewBanner` in `index.tsx`, the persona pages and the root `README.md` were
-  left as they were.
+  entry. The tip was also cut down to its two current entries, Agent Registry and Identity and
+  Access, on purpose (confirmed 2026-11-19); merging develop keeps the pruned list over the
+  Human in the Loop entry #860 edited there. The `WhatsNewBanner` in `index.tsx`, the persona
+  pages and the root `README.md` were left as they were.
 - **Review follow-ups (PR #983, 2026-11-19).** Fixed from the review, each with a test:
   - The overlay is applied on read as well as at registration, and matches an id in another
     case (design refinement 12; `core/registry.py`).
@@ -689,22 +694,23 @@ the spec section it changes.
   - An A2A card keeps naming the provider's scheme as its one security requirement, with no
     empty alternative, although an uncredentialed call still runs anonymous until
     authorization refuses it (spec 6, A2A card). The A2A page says what the server does.
-- **Left open by the review.**
-  - `surfaces` without `rest` keeps an agent out of the catalog and does not refuse a chat
-    request that names it. Refusing it belongs at the REST edges (chat, pipeline chat, threads,
-    schedules), not in the shared service the A2A and MCP runs also go through, and it touches
-    the same call sites as iterations 18 and 19. To be decided before iteration 18; the docs
-    say what `rest` governs today.
-  - Whether an adapter should seed `descriptor.description` from a native description field
-    that is separate from the instructions (Pydantic AI and MAF `description=`,
-    `ClaudeAgentSpec.description`). The design only rules out the instructions.
+  - `surfaces` without `rest` will refuse a chat request that enters by the REST API, not only
+    hide the agent from the catalog: iteration 17b (design refinement 13). Until it lands the
+    docs say what `rest` governs today.
+  - The descriptor's description defaults to the description a framework keeps for the agent
+    apart from its instructions (`Agent._native_description()`: OpenAI `handoff_description`;
+    the `description` of an ADK, Pydantic AI, MAF, Claude or smolagents agent; nothing for
+    CrewAI and LangGraph). A declared description replaces it and an empty declared one
+    withholds it. Implemented with phase C, with a case per adapter on real SDK objects
+    (design refinement 14).
+- **Deferred by the review.**
   - A runnable example of the shared registry (an IO process that does not import the agents):
     `examples/k8s/openai-queue-mode` still loads them in both processes. It needs the kind
     smoke to change with it, so it is left for iteration 29's examples pass.
   - Tool-reporting gaps per adapter, which matter once phase E gates on `descriptor.tools`:
     see Phase E.
 
-## Phase D: Authorization (iterations 17 to 20)
+## Phase D: Authorization (iterations 17, 17a, 17b and 18 to 20)
 
 ### Iteration 17: Authorizer
 
@@ -722,6 +728,77 @@ the spec section it changes.
      `AuthorizerContract` (spec 7).
 - **Verify:** new `tests/test_authorizer_static.py`; `test_config` authorization cases; the
   `FakeCfg` stubs gain `authorization = None`.
+
+### Iteration 17a: An unknown agent answers 404
+
+Moved ahead of iteration 18 on 2026-11-19 (these were steps 1 and 2 of iteration 19). Iteration
+18 wires the gate into `ensure_agent_available`, and the gate raises `LookupError` for an agent
+the caller may not see. With no surface mapping that error yet, a hidden agent would answer 500
+on REST chat, threads and schedules from iteration 18 until iteration 19. Landing the error and
+its mapping first, for the one case that needs no gate (an agent that does not exist), means the
+gate's `LookupError` is already a 404 the day it is wired in. It depends on nothing in iteration
+17 and can land before it.
+
+- **Goal:** a request naming an agent the registry does not know is a 404 `Agent '<name>' not
+  found` on every HTTP route, where it was a 400 `No agent available`; a request naming no agent
+  while none exists stays a 400.
+- **Files:** `core/service.py`, `core/chat_service.py`, `api/handler.py`,
+  `integration/thread/thread_chat.py`, `schedule/handler.py`.
+- **Steps:**
+  1. `ensure_agent_available` raises `LookupError(f"Agent '{name}' not found")` for a named
+     agent the registry does not know, and in its `hosted=True` form for one this process does
+     not host; a request naming none while none exists keeps its `ValueError` (spec 6, design
+     refinement 9; settled 2026-11-18).
+  2. `LookupError` maps to 404 with that text wherever the availability check is answered:
+     `ChatService`'s presentation wrappers (the `PermissionError` to 403 branch landed in 3) and
+     the chat route's SSE branch, the thread routes before any write, and the schedule routes'
+     `_as_http_error` after its `KeyError` branch (spec 6, 8.1). AG-UI already answers 404 with
+     this text from its own lookup and does not call the check, so it needs no change. The
+     schedule tools carry the text in their `error`; MCP keeps `ToolError("Agent not
+     available")`.
+- **Verify:** the cases that pinned the unknown named agent as a 400 or a `ValueError`, now a
+  404 and a `LookupError`, in `test_agent_registry` (`TestAvailability`),
+  `test_chat_service_core`, `test_schedule_manager`, `test_schedule_tools` and
+  `test_thread_integration` (the unknown agent and the one another process hosts); an unknown
+  agent answering 404 on the chat route, JSON and SSE, in `test_api_http`.
+
+### Iteration 17b: An agent off `rest` is not served over REST
+
+Decided 2026-11-19 from the phase C review (design refinement 13). It builds on 17a, whose
+`LookupError` and 404 mapping it reuses, and lands before the gate so that iteration 18 adds
+the caller to a check that already knows the surface.
+
+- **Goal:** a chat request that enters by the REST API and names an agent whose `surfaces`
+  leaves out `rest` is answered like one for an unknown agent, and a request naming no agent
+  runs the first agent that is on `rest`. Requests from A2A, MCP, AG-UI, the messaging
+  integrations, the CLI and scheduled occurrences behave as before.
+- **Files:** `core/model.py`, `core/service.py`, `core/chat_service.py`, `api/handler.py`,
+  `pipeline/request_handler.py`, `pipeline/ws/handler.py`,
+  `integration/thread/thread_chat.py`, `schedule/manager.py`, and the deployment entry points
+  that set the principal on a chat body (the Lambda routers, the ECS WebSocket API, the Azure
+  handler).
+- **Steps:**
+  1. `BaseChatRequest.surface: Optional[AgentSurface] = None`: the surface a request entered
+     by. Set by the entry point where it sets `principal`, overwritten when a client sends one
+     and kept out of the public schema like the other internal fields, and carried in the queued
+     body to the runner.
+  2. `ensure_agent_available(name, *, hosted, surface)` raises the unknown-agent `LookupError`
+     for a named agent not exposed on the surface; `AgentService.select(..., surface=)` defaults
+     an unnamed request to the first hosted agent exposed on it, and the check raises
+     `ValueError("No agent available")` when there is none. `ChatService.execute*` and
+     `prepare_agent_handler` pass `req.surface`.
+  3. Every REST-family entry point sets `surface="rest"`: the chat and multipart routes, the
+     queue-mode chat route, the thread handlers, the WebSocket chat frames and the deployment
+     routers. The A2A and MCP executors and AG-UI set their own, which their routes already
+     enforce. Messaging, the CLI and a scheduled occurrence set none; `ScheduleManager.create`
+     checks the task's agent against the surface of the request that creates it.
+- **Verify:** `test_api_http` and `test_pipeline_request_handler` (an agent off `rest` is a 404
+  with the unknown agent's body, named over chat, multipart and the queued route; the unnamed
+  default skips it; a client-sent `surface` is overwritten); `test_thread_integration` (no
+  thread written); `test_schedule_manager`; `test_api_a2a` and `test_api_mcp` (an agent on
+  `a2a` or `mcp` only still runs when the request comes from that surface, queued and direct);
+  `test_integration_roundtrip` and `test_cli_token` (unaffected). `rest-api.md` and
+  `configuration.md` drop the sentence saying a named agent off `rest` is still served.
 
 ### Iteration 18: Access gate and Runtime enforcement
 
@@ -745,33 +822,21 @@ the spec section it changes.
 
 ### Iteration 19: Service, pipeline and schedule enforcement
 
-- **Goal:** an unauthorized request is a 403 or 404 before anything is enqueued or run, an
-  unknown agent answers exactly like a hidden one, the catalog shows only visible agents, and a
-  scheduled task whose owner lost access is skipped and recorded.
-- **Files:** `core/service.py`, `core/chat_service.py`, `pipeline/request_handler.py`,
-  `api/handler.py`, `integration/thread/thread_chat.py`, `integration/agui/handler.py`,
-  `schedule/handler.py`, `schedule/manager.py`, `schedule/store/*`. Thirteen source files or
-  so, over the size rule: steps 1 and 2 (the 404) and steps 3 to 5 split cleanly if the diff
-  reads long.
+- **Goal:** an unauthorized request is a 403 or 404 before anything is enqueued or run, a hidden
+  agent answers exactly like the unknown one of iteration 17a, the catalog shows only visible
+  agents, and a scheduled task whose owner lost access is skipped and recorded.
+- **Files:** `core/chat_service.py`, `pipeline/request_handler.py`, `api/handler.py`,
+  `schedule/handler.py`, `schedule/manager.py`, `schedule/store/*`. The unknown-agent 404 that
+  was planned here landed in iteration 17a, which brought this iteration back under the size
+  rule.
 - **Steps:**
-  1. `ensure_agent_available` raises `LookupError(f"Agent '{name}' not found")` for a named
-     agent the registry does not know; a request naming none while none exists keeps its
-     `ValueError` (spec 6, design refinement 9; settled 2026-11-18).
-  2. `LookupError` maps to 404 with that text wherever the availability check is answered:
-     `ChatService`'s presentation wrappers (the `PermissionError` to 403 branch landed in 3) and
-     the chat route's SSE branch, the thread routes before any write, the schedule routes'
-     `_as_http_error` after its `KeyError` branch, and AG-UI's `_resolve_agent` in place of the
-     `ValueError` it caught (spec 6, 8.1).
-  3. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
+  1. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
      403 reply and the warning (spec 8.1, 8.11).
-  4. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
-  5. The catalog filtered by `visible_agents`, each entry's `tools` and tool-backed `skills`
+  2. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
+  3. The catalog filtered by `visible_agents`, each entry's `tools` and tool-backed `skills`
      narrowed to the caller; `get_router()` calls `validate_configuration` (spec 6, 7).
 - **Verify:** 403/404 cases in `test_api_http`, with the parity case (an unknown agent and a
-  hidden one answer with one status and body); the cases that pinned the unknown named agent as
-  a 400 or a `ValueError`, now a 404 and a `LookupError`, in `test_agent_registry`
-  (`TestAvailability`), `test_chat_service_core`, `test_schedule_manager`,
-  `test_schedule_tools` and `test_thread_integration`; `test_agui_handler`;
+  hidden one answer with one status and body); `test_agui_handler`;
   `test_pipeline_request_handler` (the riskiest consumer: the precheck on a store-backed
   registry with no local agents); the fire-time skip in `test_schedule_principal`; visibility
   and the `tools` and `skills` narrowing in `test_api_catalog`.

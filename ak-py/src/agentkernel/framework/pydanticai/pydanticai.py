@@ -860,6 +860,13 @@ class PydanticAIAgent(BaseAgent):
             if w.name not in function_toolset.tools:
                 function_toolset.add_tool(w)
 
+    def _native_description(self) -> str:
+        """
+        Returns the native agent's `description`, which Pydantic AI keeps apart from its instructions. Unlike
+        `get_description()`, it never falls back to them.
+        """
+        return self.agent.description or ""
+
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the native agent's function tools.

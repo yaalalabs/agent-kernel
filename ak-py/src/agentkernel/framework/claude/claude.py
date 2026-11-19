@@ -1052,6 +1052,12 @@ class ClaudeAgent(BaseAgent):
         names = {t.name for t in self.agent.tools}
         self.agent.tools.extend(t for t in ClaudeToolBuilder.bind([tool]) if t.name not in names)
 
+    def _native_description(self) -> str:
+        """
+        Returns the spec's `description`. Unlike `get_description()`, it never falls back to the system prompt.
+        """
+        return self.agent.description or ""
+
     def get_tool_names(self) -> list[str]:
         """
         Returns the names of the declared in-process tools, as declared (the SDK serves each as `mcp__ak__<name>`).

@@ -447,7 +447,10 @@ and `research/design-options.md` section 4).
   which each process applies both to the agents it registers and to the descriptors it reads,
   so a restriction in the configuration of a process that serves a surface holds for agents
   another process hosts (spec refinement 12). `description` is never defaulted from
-  `get_description()`, which nothing reads any more.
+  `get_description()`, which nothing reads any more; it defaults to the description field a
+  framework keeps for the agent apart from its instructions, where it has one (OpenAI
+  `handoff_description`, the `description` of an ADK, Pydantic AI, MAF, Claude or smolagents
+  agent), and a declared description replaces it (spec refinement 14).
 - Availability now means "a descriptor exists in the registry": `AgentService.ensure_agent_available`
   (`core/service.py:49-70`) consults `registry.descriptor(name)`, so on a store-backed registry the
   io-handler process can list and precheck agents it does not host; `select` still needs the local
@@ -818,10 +821,14 @@ registry:
   adapters. An adapter reports its tools through `get_tool_names()` and `_tool_descriptions()`
   instead, and one that still defines the old method is told once that nothing calls it.
   `Agent.get_description()` stays, concrete and unread (spec refinement 8).
-- What a surface publishes about an agent is the declared catalog text: an A2A card's
-  description and an agent's MCP tool description no longer carry the agent's instructions or
-  backstory, and each carries a neutral sentence naming the agent until a description is
-  declared. A card's `version` is the descriptor's, not the library's (spec refinement 8).
+- What a surface publishes about an agent is catalog text: an A2A card's description and an
+  agent's MCP tool description no longer carry the agent's instructions or backstory. They
+  carry the declared description, else the framework's own description field for the agent
+  where it keeps one, else a neutral sentence naming the agent. A card's `version` is the
+  descriptor's, not the library's (spec refinements 8 and 14).
+- From iteration 17b a chat request entering by the REST API for an agent whose `surfaces`
+  leaves out `rest` is answered like one for an unknown agent, where the agent was only left
+  out of the catalog (spec refinement 13).
 - `GET /api/v1/agents` returns `{"agents": [<descriptor>...], "next_cursor": ...}`, the agents on
   the `rest` surface in id order and without their `identity`, where it returned a list of
   names. AG-UI's `/agents` lists ids in id order too.

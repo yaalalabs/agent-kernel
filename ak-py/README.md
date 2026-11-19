@@ -1144,7 +1144,9 @@ served on, in code (`Module.describe`) or in this block.
   - **Description**: Catalog fields set for one agent, over what the code declares with
     `Module.describe(agent, ...)`. `surfaces` lists where the agent is served (`rest`, `a2a`, `mcp`, `agui`); an
     agent that declares none is on every surface, and `[]` puts it on none. `description` is the text an A2A card
-    and an MCP tool publish; an agent's instructions are never published. `visibility` is recorded and not
+    and an MCP tool publish; an agent's instructions are never published, and when none is declared the
+    description the agent's framework keeps for it (OpenAI `handoff_description`, the `description` of ADK,
+    Pydantic AI, MAF, Claude and smolagents agents) is used. `visibility` is recorded and not
     enforced yet. An unknown key under an agent, or under `registry`, is a startup error. Each process applies its
     own block to the agents it reads from the registry, so a restriction set where a surface is served holds for
     agents another process hosts

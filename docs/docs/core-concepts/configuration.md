@@ -702,8 +702,11 @@ export AK_REGISTRY__AGENTS__BILLING__SURFACES='["rest"]'  # a per-agent field; t
   catalog. It is not enforced yet: until authorization ships, every agent listed on a surface is listed to every
   caller, and the catalog route answers a caller with no credential. `surfaces` is what keeps an agent off a
   listing today.
-- **Description.** The description is catalog text you write for people and other agents. It is what an A2A card
-  and an MCP tool publish; an agent's instructions are never published.
+- **Description.** The description is catalog text for people and other agents. It is what an A2A card and an
+  MCP tool publish; an agent's instructions are never published. Left undeclared, it is the description the
+  agent's framework keeps for it, where it has one apart from the instructions
+  ([which field per framework](./module.md#describing-an-agent)); setting `description: ""` here keeps that
+  native text off every surface.
 
 #### Bring your own registry
 

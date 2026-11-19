@@ -178,6 +178,10 @@ class TestCrewAIAgentToolReporting:
         native = CrewAgent(role="Researcher", goal="Research topics", backstory="A researcher", verbose=False, tools=tools)
         return CrewAIAgent("Researcher", CrewAIRunner(), native, [native])
 
+    def test_the_catalog_description_is_not_seeded_from_the_goal_or_the_backstory(self):
+        # CrewAI has no description apart from what it puts in the prompt, so there is nothing to seed from.
+        assert self._agent([]).descriptor.description == ""
+
     def test_tool_names_are_the_native_agents_tools_in_order(self):
         agent = self._agent(CrewAIToolBuilder.bind([get_weather, add]))
 

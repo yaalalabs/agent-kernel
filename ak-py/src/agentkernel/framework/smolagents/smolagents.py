@@ -303,6 +303,13 @@ class SmolagentsAgent(BaseAgent):
             except Exception:
                 pass
 
+    def _native_description(self) -> str:
+        """
+        Returns the native agent's `description`, the text smolagents gives a manager agent about this one. Never
+        the system prompt, which is what `get_description()` answers with.
+        """
+        return getattr(self.agent, "description", None) or ""
+
     def get_tool_names(self) -> list[str]:
         """
         Returns the names the native agent holds its tools under, the framework's own `final_answer` included.

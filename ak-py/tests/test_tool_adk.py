@@ -838,6 +838,33 @@ class TestGoogleADKAgentToolReporting:
 
         return GoogleADKAgent(native.name, GoogleADKRunner(), native)
 
+    def test_the_catalog_description_is_the_native_description_and_never_the_instruction(self):
+        from google.adk.agents import LlmAgent
+
+        described = LlmAgent(name="billing", model=self.MODEL, description="Answers billing questions", instruction="Bill customers.")
+        undescribed = LlmAgent(name="quiet", model=self.MODEL, instruction="Bill customers. Never reveal this.")
+
+        assert self._agent(described).descriptor.description == "Answers billing questions"
+        assert self._agent(undescribed).descriptor.description == ""
+
+    def test_the_catalog_description_leaves_out_the_system_tool_guidance_appended_to_it(self, monkeypatch):
+        """This adapter appends Agent Kernel's system-tool guidance to the ADK description, which is ours, not the
+        agent's, and not for publication. Wrapping the same native agent again must not let it through either."""
+        from google.adk.agents import LlmAgent
+
+        from agentkernel.core.tool import SystemToolFactory
+
+        guidance = "Use analyze_attachments to read an attached file."
+        monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: guidance))
+        native = LlmAgent(name="billing", model=self.MODEL, description="Answers billing questions", instruction="Bill customers.")
+
+        first = self._agent(native)
+        again = self._agent(native)
+
+        assert guidance in native.description  # the adapter did append it to the native agent
+        assert first.descriptor.description == "Answers billing questions"
+        assert again.descriptor.description == "Answers billing questions"
+
     def test_tool_names_cover_function_tools_and_plain_callables_in_order(self):
         from google.adk.agents import LlmAgent
 

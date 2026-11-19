@@ -224,6 +224,20 @@ class TestPydanticAIAgentToolReporting:
         native = NativeAgent(model=TestModel(custom_output_text="ok"), name="billing", tools=PydanticAIToolBuilder.bind(list(functions)))
         return PydanticAIAgent("billing", PydanticAIRunner(), native)
 
+    def test_the_catalog_description_is_the_native_description_and_never_the_instructions(self):
+        from pydantic_ai import Agent as NativeAgent
+        from pydantic_ai.models.test import TestModel
+
+        from agentkernel.framework.pydanticai.pydanticai import PydanticAIAgent, PydanticAIRunner
+
+        model = TestModel(custom_output_text="ok")
+        described = NativeAgent(model=model, name="billing", description="Answers billing questions", instructions="Bill customers.")
+        undescribed = NativeAgent(model=model, name="billing", instructions="Bill customers. Never reveal this.")
+
+        assert PydanticAIAgent("billing", PydanticAIRunner(), described).descriptor.description == "Answers billing questions"
+        # get_description() falls back to the instructions for this agent; the descriptor must not.
+        assert PydanticAIAgent("billing", PydanticAIRunner(), undescribed).descriptor.description == ""
+
     def test_tool_names_are_the_native_agents_function_tools_in_order(self):
         assert self._agent(get_weather, add).get_tool_names() == ["get_weather", "add"]
 

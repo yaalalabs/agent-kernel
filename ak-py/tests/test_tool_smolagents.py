@@ -174,6 +174,19 @@ class TestSmolagentsAgentToolReporting:
 
         return SmolagentsAgent("smol", SmolagentsRunner(), ToolCallingAgent(tools=tools, model=MagicMock(), name="smol"))
 
+    def test_the_catalog_description_is_the_native_description_and_never_the_system_prompt(self):
+        from unittest.mock import MagicMock
+
+        from smolagents import ToolCallingAgent
+
+        from agentkernel.framework.smolagents.smolagents import SmolagentsAgent, SmolagentsRunner
+
+        described = ToolCallingAgent(tools=[], model=MagicMock(), name="smol", description="Looks things up on the web")
+
+        assert SmolagentsAgent("smol", SmolagentsRunner(), described).descriptor.description == "Looks things up on the web"
+        # get_description() answers with the system prompt for this agent; the descriptor must not.
+        assert self._agent([]).descriptor.description == ""
+
     def test_tool_names_are_the_native_agents_tools_and_the_frameworks_own_final_answer(self):
         agent = self._agent(SmolagentsToolBuilder.bind([get_weather, add]))
 

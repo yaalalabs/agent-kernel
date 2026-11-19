@@ -87,6 +87,17 @@ class ToolReportingAgent(StubAgent):
         return dict(self._descriptions)
 
 
+class NativelyDescribedAgent(StubAgent):
+    """An adapter whose framework gives an agent a description of its own, apart from its instructions."""
+
+    def __init__(self, name: str, native_description: str):
+        super().__init__(name)
+        self._native = native_description
+
+    def _native_description(self) -> str:
+        return self._native
+
+
 class NativeAgent:
     """Stands in for a framework's own agent object, which a module wraps."""
 
@@ -657,6 +668,16 @@ class TestRegistryOverlay:
         descriptor = runtime.registry.descriptor("billing")
         assert (descriptor.version, descriptor.owner) == ("2.0.0", "alice")
 
+    def test_an_overlaid_description_wins_over_the_native_one_and_an_empty_one_withholds_it(self, monkeypatch):
+        runtime = self._runtime(monkeypatch, billing={"description": "Refunds and invoices"}, support={"description": ""})
+
+        runtime.register(NativelyDescribedAgent("billing", "Answers invoice questions"))
+        runtime.register(NativelyDescribedAgent("support", "Written for a sibling agent, not for publication"))
+        runtime.register(NativelyDescribedAgent("search", "Searches the knowledge base"))
+
+        described = {descriptor.id: descriptor.description for descriptor in runtime.registry.descriptors()}
+        assert described == {"billing": "Refunds and invoices", "support": "", "search": "Searches the knowledge base"}
+
     def test_an_agent_the_overlay_does_not_name_is_left_as_declared(self, monkeypatch):
         runtime = self._runtime(monkeypatch, billing={"version": "2.0.0"})
         agent = StubAgent("support")
@@ -812,6 +833,29 @@ class TestAgentDescriptor:
         assert descriptor.tools == []
         assert descriptor.skills == []
         assert descriptor.description == ""  # catalog text is declared, never taken from get_description()
+
+    def test_the_description_is_seeded_from_the_native_agents_own_description(self):
+        descriptor = NativelyDescribedAgent("billing", "Answers invoice questions").descriptor
+
+        assert descriptor.description == "Answers invoice questions"
+
+    def test_the_instructions_never_seed_the_description(self):
+        # StubAgent.get_description() returns its instructions, as most adapters' does; nothing reads it.
+        assert StubAgent("billing").descriptor.description == ""
+        assert StubAgent("billing")._native_description() == ""
+
+    @pytest.mark.parametrize("native", [None, "", "   "])
+    def test_a_native_description_that_says_nothing_seeds_nothing(self, native):
+        assert NativelyDescribedAgent("billing", native).descriptor.description == ""
+
+    def test_a_declared_description_wins_over_the_native_one(self, runtime):
+        runtime.register(NativelyDescribedAgent("billing", "Answers invoice questions"))
+        agent = runtime.agents()["billing"]
+
+        agent._set_descriptor(agent.descriptor.model_copy(update={"description": "Refunds and invoices"}))
+        runtime.register(agent)
+
+        assert runtime.registry.descriptor("billing").description == "Refunds and invoices"
 
     def test_a_streaming_runner_is_described_as_streaming(self):
         assert StubAgent("billing", StubRunner(streaming=True)).descriptor.supports_streaming is True

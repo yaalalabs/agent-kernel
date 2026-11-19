@@ -37,9 +37,11 @@ if __name__ == "__main__":
 Agents are automatically exposed as MCP tools if you set `mcp.expose_agents` to `true`. Each agent becomes one
 tool, named by the agent's id and taking a `prompt` and a `session_id`.
 
-The tool's description is the agent's declared description, the catalog text in its descriptor. A client model
-chooses a tool by that text, so declare one for every agent you expose, either where the agent is loaded or per
-agent id in configuration:
+The tool's description is the agent's description, the catalog text in its descriptor. A client model chooses a
+tool by that text. It defaults to the description your framework keeps for the agent, where it has one apart
+from the instructions ([which field per framework](../core-concepts/module.md#describing-an-agent)); declare
+one for every other agent you expose, or to replace the default, either where the agent is loaded or per agent
+id in configuration:
 
 ```python
 OpenAIModule([math]).describe(math, description="Solves math problems and returns the final answer")
@@ -52,7 +54,7 @@ registry:
       description: Solves math problems and returns the final answer
 ```
 
-An agent's instructions are never published. An agent with no declared description still gets a tool, described
+An agent's instructions are never published. An agent with no description still gets a tool, described
 only as `Sends a prompt to the '<id>' agent and returns its reply.`, and a warning at startup names it.
 
 Every agent is exposed unless its descriptor's `surfaces` leaves `mcp` out (`rest`, `a2a`, `mcp`, `agui`; unset

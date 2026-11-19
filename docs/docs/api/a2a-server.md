@@ -127,9 +127,12 @@ such a call is what authorization adds.
 Each exposed agent automatically publishes an A2A **agent card**. Agent Kernel builds the card from the
 agent's **descriptor**, the record the agent registry keeps for it, so every framework gets a card the same way.
 
-- **Name, description and version** are the descriptor's. The description is the catalog text you declare,
-  never the agent's instructions. A2A requires the field, so until you declare one the card says only
-  `The '<id>' agent.`, and a warning at startup names each agent served that way. A skill with no description
+- **Name, description and version** are the descriptor's. The description is catalog text, never the agent's
+  instructions: what you declare, or by default the description your framework keeps for the agent where it
+  has one apart from the instructions
+  ([which field per framework](../core-concepts/module.md#describing-an-agent)). A2A requires the field, so an
+  agent with neither gets a card that says only `The '<id>' agent.`, and a warning at startup names each agent
+  served that way. A skill with no description
   gets a sentence of the same kind. Declare the description where the agent is loaded, or per agent id in
   configuration:
 

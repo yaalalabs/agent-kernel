@@ -155,8 +155,8 @@ keeps for it.
 ```
 
 - `description`, `version`, `owner`, `tags`, `visibility` and `surfaces` are what the application declares, with
-  `Module.describe` or under `registry.agents.<id>`. The description is never the agent's instructions, so it is
-  empty until declared.
+  `Module.describe` or under `registry.agents.<id>`. The description is never the agent's instructions: when none
+  is declared it is the description the agent's framework keeps for it, and empty where the framework has none.
 - `tools` and `skills` come from the agent's framework: the tools it can call, and one skill per tool.
 - `surfaces` is `null` for an agent served on every surface. An agent whose `surfaces` leaves out `rest` is not
   listed here; a chat request that names it is still served.
