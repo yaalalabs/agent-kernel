@@ -1,6 +1,18 @@
-import pytest
+from decimal import Decimal
 
-from agentkernel.core.config import AKConfig, _CostConfig, _CostGatewayConfig
+import pytest
+from pydantic import ValidationError
+
+from agentkernel.core.config import (
+    AKConfig,
+    _CostBudgetLimit,
+    _CostBudgetPeriod,
+    _CostBudgetsConfig,
+    _CostConfig,
+    _CostGatewayConfig,
+    _CostLedgerConfig,
+    _CostStaticPricingConfig,
+)
 from agentkernel.core.util.factory import AKConfigError
 
 
@@ -97,3 +109,130 @@ def test_gateway_keeps_extra_settings_for_dotted_path_gateways():
 def test_cost_config_accepts_built_gateway():
     gateway = _CostGatewayConfig(type="litellm", base_url="http://x")
     assert _CostConfig(gateway=gateway).gateway is gateway
+
+
+_GATEWAY = {"type": "litellm", "base_url": "http://x"}
+
+
+def test_cost_sections_default():
+    cost = _CostConfig(gateway=_GATEWAY)
+    assert cost.attribution.type == "default"
+    assert cost.view.type == "default"
+    assert cost.pricing.type == "passthrough"
+    assert cost.pricing.static is None
+    assert cost.budgets is None
+
+
+def test_full_cost_block_from_yaml(tmp_path, monkeypatch):
+    cfg = _load_yaml(
+        tmp_path,
+        monkeypatch,
+        """
+cost:
+  gateway: {type: litellm, base_url: "http://litellm:4000"}
+  pricing:
+    type: static
+    static:
+      markup: 1.2
+      models:
+        openai/gpt-4o-mini: {input: 0.15, output: 0.60, cached_input: 0.075}
+  budgets:
+    default: {amount: 10}
+    users:
+      alice: {amount: 2.5, currency: EUR, period: daily, action: warn, message: slow down}
+    ledger:
+      type: redis
+      redis: {url: "redis://cache:6379"}
+""",
+    )
+    cost = cfg.cost
+    rate = cost.pricing.static.models["openai/gpt-4o-mini"]
+    assert cost.pricing.static.markup == Decimal("1.2")
+    assert (rate.input, rate.output, rate.cached_input) == (Decimal("0.15"), Decimal("0.60"), Decimal("0.075"))
+
+    budgets = cost.budgets
+    assert budgets.on_error == "block"
+    assert budgets.policy.type == "static"
+    assert budgets.default == _CostBudgetLimit(amount=Decimal(10))
+    assert budgets.default.period is _CostBudgetPeriod.MONTHLY
+    assert budgets.default.currency == "USD"
+    alice = budgets.users["alice"]
+    assert (alice.amount, alice.currency, alice.period, alice.action, alice.message) == (
+        Decimal("2.5"),
+        "EUR",
+        _CostBudgetPeriod.DAILY,
+        "warn",
+        "slow down",
+    )
+    assert budgets.ledger.type == "redis"
+    assert budgets.ledger.redis.url == "redis://cache:6379"
+    assert budgets.ledger.redis.prefix == "ak:cost:ledger:"
+    assert budgets.ledger.redis.ttl == 0
+
+
+def test_ledger_store_defaults():
+    ledger = _CostLedgerConfig(
+        dynamodb={},
+        firestore={},
+        cosmosdb={"connection_string": "cs"},
+        valkey={},
+    )
+    assert ledger.type == "in_memory"
+    assert (ledger.dynamodb.table_name, ledger.dynamodb.ttl) == ("ak-cost-ledger", 0)
+    assert (ledger.firestore.collection_name, ledger.firestore.ttl) == ("ak_cost_ledger", 0)
+    assert (ledger.cosmosdb.table_name, ledger.cosmosdb.ttl) == ("akcostledger", 0)
+    assert (ledger.valkey.prefix, ledger.valkey.ttl) == ("ak:cost:ledger:", 0)
+
+
+@pytest.mark.parametrize("key, reason", [("", "empty"), ("  ", "empty"), ("ak-system", "reserved"), (" ak-system ", "reserved")])
+def test_budget_users_refuses_empty_and_reserved_keys(key, reason):
+    with pytest.raises(AKConfigError, match=f"{key!r} is {reason}"):
+        _CostBudgetsConfig(users={key: {"amount": 1}})
+
+
+@pytest.mark.parametrize(
+    "limit",
+    [{"amount": 0}, {"amount": -1}, {"amount": 1, "action": "other"}, {"amount": 1, "period": "yearly"}],
+)
+def test_budget_limit_constraints(limit):
+    with pytest.raises(ValidationError):
+        _CostBudgetLimit(**limit)
+
+
+@pytest.mark.parametrize(
+    "static",
+    [
+        {"markup": 0},
+        {"models": {"m": {"input": -1, "output": 0}}},
+        {"models": {"m": {"input": 0, "output": 0, "typo": 1}}},
+    ],
+)
+def test_static_pricing_constraints(static):
+    with pytest.raises(ValidationError):
+        _CostStaticPricingConfig(**static)
+
+
+def test_pluggable_sections_keep_extra_settings():
+    cost = _CostConfig(
+        gateway=_GATEWAY,
+        attribution={"type": "my.Attributor", "header": "x-tenant"},
+        view={"type": "my.View", "limit": 5},
+        pricing={"type": "my.Pricing", "table": "rates"},
+        budgets={"policy": {"type": "my.Policy", "tier": "gold"}},
+    )
+    assert cost.attribution.model_extra == {"header": "x-tenant"}
+    assert cost.view.model_extra == {"limit": 5}
+    assert cost.pricing.model_extra == {"table": "rates"}
+    assert cost.budgets.policy.model_extra == {"tier": "gold"}
+
+
+def test_budgets_from_env(monkeypatch):
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    monkeypatch.setenv("AK_COST__GATEWAY__TYPE", "litellm")
+    monkeypatch.setenv("AK_COST__GATEWAY__BASE_URL", "http://litellm:4000")
+    monkeypatch.setenv("AK_COST__BUDGETS__ON_ERROR", "allow")
+    monkeypatch.setenv("AK_COST__BUDGETS__DEFAULT__AMOUNT", "5")
+
+    budgets = AKConfig.get().cost.budgets
+    assert budgets.on_error == "allow"
+    assert budgets.default.amount == Decimal(5)

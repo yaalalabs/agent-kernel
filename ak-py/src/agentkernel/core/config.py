@@ -1,4 +1,6 @@
 import importlib.metadata
+from decimal import Decimal
+from enum import StrEnum
 from threading import RLock
 from typing import Any, ClassVar, Literal, Optional
 
@@ -1607,10 +1609,147 @@ class _CostGatewayConfig(BaseModel):
         return self
 
 
+# Reserved user id for runs with no principal; cost/model.py aliases it as SYSTEM_USER_ID (config may not import cost/).
+_COST_SYSTEM_USER_ID = "ak-system"
+
+
+class _CostBudgetPeriod(StrEnum):
+    """Budget window. Defined here, not in cost/model.py, because config may not import cost/; cost/model.py aliases it."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class _CostBudgetLimit(BaseModel):
+    """A spend limit for one period. Aliased as BudgetLimit in cost/model.py."""
+
+    amount: Decimal = Field(gt=0, description="Spend limit per period, in currency")
+    currency: str = Field(default="USD", description="Currency of amount; must be one the gateway reports")
+    period: _CostBudgetPeriod = Field(default=_CostBudgetPeriod.MONTHLY, description="Budget window: daily, weekly or monthly (UTC)")
+    action: Literal["block", "warn"] = Field(default="block", description="What reaching the limit does: block the run, or warn and continue")
+    message: str | None = Field(default=None, description="Message shown when the limit is reached")
+
+
+class _CostAttributionConfig(BaseModel):
+    """Which Attributor maps a run to the user it is billed to."""
+
+    # A dotted-path class reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(default="default", description="default, or a dotted path to an Attributor subclass")
+
+
+class _CostViewConfig(_CostAttributionConfig):
+    """Which UsageView serves usage reads."""
+
+    type: str = Field(default="default", description="default, or a dotted path to a UsageView subclass")
+
+
+class _CostBudgetPolicyConfig(_CostAttributionConfig):
+    """Which BudgetPolicy decides the limit that applies to a user."""
+
+    type: str = Field(default="static", description="static, or a dotted path to a BudgetPolicy subclass")
+
+
+class _CostStaticModelRate(BaseModel):
+    """Per-model rates of the static pricing source, in USD per 1M tokens."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    input: Decimal = Field(ge=0, description="USD per 1M input tokens")
+    output: Decimal = Field(ge=0, description="USD per 1M output tokens")
+    cached_input: Decimal | None = Field(default=None, ge=0, description="USD per 1M cached input tokens; omitted = the input rate")
+
+
+class _CostStaticPricingConfig(BaseModel):
+    """Settings of the static pricing source."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    markup: Decimal = Field(default=Decimal(1), gt=0, description="Multiplier applied to the rated cost")
+    models: dict[str, _CostStaticModelRate] = Field(default_factory=dict, description="Rates by model name")
+
+
+class _CostPricingConfig(BaseModel):
+    """Which PricingSource turns usage into cost."""
+
+    # Extras are a bring-your-own pricing source's settings (``model_extra``).
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(default="passthrough", description="passthrough | static, or a dotted path to a PricingSource")
+    static: _CostStaticPricingConfig | None = Field(default=None, description="Settings of the static pricing source")
+
+
+# Ledger ttl 0 = expiry derived from the budget periods; a value above 0 overrides it.
+class _CostLedgerRedisConfig(_RedisConfig):
+    prefix: str = Field(default="ak:cost:ledger:", description="Key prefix for Redis spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger entry TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerValkeyConfig(_ValkeyConfig):
+    prefix: str = Field(default="ak:cost:ledger:", description="Key prefix for Valkey spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger entry TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerDynamoDBConfig(_DynamoDBConfig):
+    table_name: str = Field(default="ak-cost-ledger", description="DynamoDB table name for spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger item TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerCosmosDBConfig(_CosmosDBConfig):
+    table_name: str = Field(default="akcostledger", description="Cosmos DB table name for spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger entry TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerFirestoreConfig(_FirestoreConfig):
+    collection_name: str = Field(default="ak_cost_ledger", description="Firestore collection name for spend-ledger storage")
+    ttl: int = Field(default=0, description="Ledger document TTL in seconds; 0 = derived from the budget periods")
+
+
+class _CostLedgerConfig(BaseModel):
+    """Spend ledger backing fallback budgets on gateways that cannot enforce them natively."""
+
+    type: str = Field(
+        default="in_memory",
+        description="in_memory | redis | valkey | dynamodb | cosmosdb | firestore, or a dotted path to a SpendLedger",
+    )
+    redis: _CostLedgerRedisConfig | None = None
+    valkey: _CostLedgerValkeyConfig | None = None
+    dynamodb: _CostLedgerDynamoDBConfig | None = None
+    cosmosdb: _CostLedgerCosmosDBConfig | None = None
+    firestore: _CostLedgerFirestoreConfig | None = None
+
+
+class _CostBudgetsConfig(BaseModel):
+    """Per-user spend budgets."""
+
+    on_error: Literal["block", "allow"] = Field(default="block", description="What a failed budget check does")
+    default: _CostBudgetLimit | None = Field(default=None, description="Budget of every user without an entry in users; omitted = no budget")
+    users: dict[str, _CostBudgetLimit] = Field(default_factory=dict, description="Budgets by user id")
+    ledger: _CostLedgerConfig | None = Field(default=None, description="Spend ledger for fallback budgets")
+    policy: _CostBudgetPolicyConfig = Field(default_factory=_CostBudgetPolicyConfig, description="Policy that picks a user's budget")
+
+    @field_validator("users")
+    @classmethod
+    def _check_user_ids(cls, users: dict[str, _CostBudgetLimit]) -> dict[str, _CostBudgetLimit]:
+        """Refuse empty user ids and the reserved system id."""
+        for key in users:
+            if not key.strip():
+                raise AKConfigError(f"cost.budgets.users key {key!r} is empty")
+            if key.strip() == _COST_SYSTEM_USER_ID:
+                raise AKConfigError(f"cost.budgets.users key {key!r} is reserved")
+        return users
+
+
 class _CostConfig(BaseModel):
     """Cost management: the LLM gateway, attribution, usage and budgets."""
 
     gateway: _CostGatewayConfig = Field(description="The LLM gateway model calls go through")
+    attribution: _CostAttributionConfig = Field(default_factory=_CostAttributionConfig, description="Attributor that bills a run to a user")
+    view: _CostViewConfig = Field(default_factory=_CostViewConfig, description="UsageView that serves usage reads")
+    pricing: _CostPricingConfig = Field(default_factory=_CostPricingConfig, description="Pricing source that turns usage into cost")
+    budgets: _CostBudgetsConfig | None = Field(default=None, description="Per-user spend budgets; omitted = no budgets")
 
     @model_validator(mode="before")
     @classmethod
