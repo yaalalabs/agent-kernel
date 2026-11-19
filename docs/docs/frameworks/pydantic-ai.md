@@ -45,7 +45,7 @@ if __name__ == "__main__":
     CLI.main()
 ```
 
-:::warning name= is required, and description= is what Agent Kernel publishes
+:::warning name= is required, and description= is what OAK publishes
 - **`name=` is mandatory.** Pydantic AI infers an agent's name lazily from the call frame on first
   run, but OAK registers agents by name *immediately* at load time — before any run. A
   Pydantic AI agent without an explicit `name=` therefore reaches registration with `name is None`,

@@ -33,10 +33,9 @@ const TARGETS: Target[] = [
   {
     icon: <FaMicrosoft />,
     name: 'Microsoft Azure',
-    description: 'Functions or Container Apps with Cosmos DB session storage.',
-    modes: ['Azure Functions (serverless)', 'Azure Container Apps (containerized)'],
+    description: 'Container Apps with Cosmos DB session storage.',
+    modes: ['Azure Container Apps (containerized)', 'Queue mode over Azure Service Bus'],
     modules: [
-      { kind: 'terraform', name: 'Azure serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm' },
       { kind: 'terraform', name: 'Azure containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
     ],
   },

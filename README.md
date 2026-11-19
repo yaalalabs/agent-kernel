@@ -42,7 +42,7 @@ Agent frameworks are good at defining an agent: its prompt, its tools and its ha
 OAK is that layer. You keep writing agents in the framework you already use and register them with an OAK module. The runtime supplies the rest.
 
 - **Framework-agnostic.** Agents built with OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework and Claude Agent SDK run on the same runtime, and agents from different frameworks can run side by side.
-- **Cloud-agnostic.** The same agent code runs as a local CLI, a REST container, on AWS Lambda or ECS, Azure Functions or Container Apps, GCP Cloud Run, or any Kubernetes cluster.
+- **Cloud-agnostic.** The same agent code runs as a local CLI, a REST container, on AWS Lambda or ECS, Azure Container Apps, GCP Cloud Run, or any Kubernetes cluster.
 - **Configured, not coded.** Session stores, guardrails, identity, secrets, tracing and sandboxing are switched on in `config.yaml` or through `AK_` environment variables.
 - **Open.** Apache 2.0 licensed, with MCP, A2A, AG-UI and A2UI support built in.
 
@@ -111,7 +111,7 @@ Every agent request passes through six stages, and each one is switched on with 
 | Stage | What OAK provides | Docs |
 |---|---|---|
 | **Build** | Adapters for OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework and Claude Agent SDK, including several in one runtime. Tools written once and bound to any framework, pre and post execution hooks, multi-agent patterns, and image and file input | [Frameworks](https://kernel.yaala.ai/docs/frameworks/overview), [Tools](https://kernel.yaala.ai/docs/core-concepts/tools), [Hooks](https://kernel.yaala.ai/docs/integrations/hooks), [Multi-agent](https://kernel.yaala.ai/docs/advanced/multi-agent), [Multimodal](https://kernel.yaala.ai/docs/advanced/multimodal) |
-| **Connect** | An interactive CLI, a REST API with SSE streaming and WebSocket delivery. MCP and A2A servers, AG-UI event streaming and A2UI generative UI documents. Slack, WhatsApp, Microsoft Teams, Telegram, Gmail, Messenger and Instagram, plus LiveKit voice for OpenAI Agents SDK and Google ADK agents | [REST API](https://kernel.yaala.ai/docs/api/rest-api), [MCP](https://kernel.yaala.ai/docs/api/mcp-server), [A2A](https://kernel.yaala.ai/docs/api/a2a-server), [AG-UI](https://kernel.yaala.ai/docs/api/agui-server), [A2UI](https://kernel.yaala.ai/docs/advanced/a2ui), [Integrations](https://kernel.yaala.ai/docs/integrations/overview) |
+| **Connect** | An interactive CLI, a REST API with SSE streaming and WebSocket delivery. An agent catalog, A2A cards and MCP tools built from one descriptor per agent. MCP and A2A servers, AG-UI event streaming and A2UI generative UI documents. Slack, WhatsApp, Microsoft Teams, Telegram, Gmail, Messenger and Instagram, plus LiveKit voice for OpenAI Agents SDK and Google ADK agents | [REST API](https://kernel.yaala.ai/docs/api/rest-api), [MCP](https://kernel.yaala.ai/docs/api/mcp-server), [A2A](https://kernel.yaala.ai/docs/api/a2a-server), [AG-UI](https://kernel.yaala.ai/docs/api/agui-server), [A2UI](https://kernel.yaala.ai/docs/advanced/a2ui), [Integrations](https://kernel.yaala.ai/docs/integrations/overview) |
 | **Remember** | Pluggable session stores, persistent conversation threads, and request-scoped and session-scoped caches. ChromaDB, Neo4j, Starburst Galaxy and Open Knowledge Format bundles behind one `KnowledgeBase` interface | [Sessions](https://kernel.yaala.ai/docs/core-concepts/session), [Memory backends](https://kernel.yaala.ai/docs/core-concepts/memory-backends), [Threads](https://kernel.yaala.ai/docs/advanced/threads), [Knowledge bases](https://kernel.yaala.ai/docs/advanced/knowledge-bases) |
 | **Guard** | Input and output guardrails, one identity provider for every surface, secret resolution from a managed store, runs that pause for a person's approval or answer, and sandboxed code execution | [Guardrails](https://kernel.yaala.ai/docs/advanced/guardrails), [Identity](https://kernel.yaala.ai/docs/advanced/identity-and-access), [Secrets](https://kernel.yaala.ai/docs/advanced/secrets), [Human in the loop](https://kernel.yaala.ai/docs/advanced/human-in-the-loop), [Sandbox](https://kernel.yaala.ai/docs/advanced/sandbox) |
 | **Scale** | A queued pipeline for every chat request: in-process by default, and over SQS, Kafka, NATS JetStream, Google Cloud Pub/Sub or Azure Service Bus in distributed deployments. Serverless and containerized targets on AWS, Azure, GCP and Kubernetes, and deferred and recurring chats | [Queue mode](https://kernel.yaala.ai/docs/advanced/queue-mode-guide), [Deployment](https://kernel.yaala.ai/docs/deployment/overview), [Scheduling](https://kernel.yaala.ai/docs/advanced/scheduling) |
@@ -176,7 +176,7 @@ flowchart TB
     subgraph targets["Runs on"]
         direction TB
         aws["AWS<br/>Lambda, ECS Fargate"]
-        azure["Azure<br/>Functions, Container Apps"]
+        azure["Azure<br/>Container Apps"]
         gcp["GCP<br/>Cloud Run"]
         k8s["Kubernetes<br/>Helm chart"]
     end
@@ -195,7 +195,7 @@ The same agent code runs on every target. Terraform modules cover AWS, Azure and
 | Platform | Serverless | Containerized | Guides |
 |---|---|---|---|
 | **AWS** | [Lambda](ak-deployment/ak-aws/serverless) | [ECS Fargate](ak-deployment/ak-aws/containerized) | [Serverless](https://kernel.yaala.ai/docs/deployment/aws-serverless), [Containerized](https://kernel.yaala.ai/docs/deployment/aws-containerized) |
-| **Azure** | [Functions](ak-deployment/ak-azure/serverless) | [Container Apps](ak-deployment/ak-azure/containerized) | [Serverless](https://kernel.yaala.ai/docs/deployment/azure-serverless), [Containerized](https://kernel.yaala.ai/docs/deployment/azure-containerized) |
+| **Azure** | Not applicable | [Container Apps](ak-deployment/ak-azure/containerized), in one container or split over Service Bus | [Containerized](https://kernel.yaala.ai/docs/deployment/azure-containerized) |
 | **GCP** | [Cloud Run, scale to zero](ak-deployment/ak-gcp/serverless) | [Cloud Run, always on](ak-deployment/ak-gcp/containerized) | [Serverless](https://kernel.yaala.ai/docs/deployment/gcp-serverless), [Containerized](https://kernel.yaala.ai/docs/deployment/gcp-containerized) |
 | **Kubernetes and on-prem** | Not applicable | [Helm chart](ak-deployment/ak-k8s) for bare metal and EKS, with Kafka or NATS queue mode and KEDA autoscaling | [Kubernetes](https://kernel.yaala.ai/docs/deployment/onprem-kubernetes) |
 
@@ -246,7 +246,7 @@ The [`examples/`](examples/) directory holds runnable projects, grouped by how t
 
 - [`cli/`](examples/cli): one project per framework, plus guardrails, knowledge bases, tracing and test evaluators
 - [`api/`](examples/api): REST, MCP, A2A, AG-UI, human in the loop, scheduling and each messaging channel
-- [`aws-serverless/`](examples/aws-serverless), [`aws-containerized/`](examples/aws-containerized), [`azure-serverless/`](examples/azure-serverless), [`azure-containerized/`](examples/azure-containerized), [`gcp-serverless/`](examples/gcp-serverless), [`gcp-containerized/`](examples/gcp-containerized) and [`k8s/`](examples/k8s): deployable projects for each target
+- [`aws-serverless/`](examples/aws-serverless), [`aws-containerized/`](examples/aws-containerized), [`azure-containerized/`](examples/azure-containerized), [`gcp-serverless/`](examples/gcp-serverless), [`gcp-containerized/`](examples/gcp-containerized) and [`k8s/`](examples/k8s): deployable projects for each target
 - [`memory/`](examples/memory), [`sandbox/`](examples/sandbox) and [`transport/`](examples/transport): session stores, sandbox providers and queue transports
 
 ## Community and support

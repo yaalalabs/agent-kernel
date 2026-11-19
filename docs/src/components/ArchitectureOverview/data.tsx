@@ -75,7 +75,7 @@ export const DESTINATIONS: ArchCard[] = [
     title: "Clouds and observability",
     chips: [
       { name: "AWS", href: "/docs/deployment/aws-serverless", icon: <FaAws /> },
-      { name: "Microsoft Azure", href: "/docs/deployment/azure-serverless", icon: <VscAzure /> },
+      { name: "Microsoft Azure", href: "/docs/deployment/azure-containerized", icon: <VscAzure /> },
       { name: "Google Cloud", href: "/docs/deployment/gcp-serverless", icon: <SiGooglecloud /> },
       ...pick("Kubernetes", "Langfuse", "OpenTelemetry"),
     ],

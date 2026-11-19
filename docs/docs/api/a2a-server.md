@@ -125,7 +125,7 @@ such a call is what authorization adds.
 
 ## Agent Capabilities
 
-Each exposed agent automatically publishes an A2A **agent card**. Agent Kernel builds the card from the
+Each exposed agent automatically publishes an A2A **agent card**. OAK builds the card from the
 agent's **descriptor**, the record the agent registry keeps for it, so every framework gets a card the same way.
 
 - **Name, description and version** are the descriptor's. The description is catalog text, never the agent's

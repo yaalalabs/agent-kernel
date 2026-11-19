@@ -193,7 +193,7 @@ OpenAIModule([triage, math]).describe(
 | `skills` | The skills an A2A card lists; by default one per tool |
 | `identity` | How the agent identifies itself when it acts as a principal |
 
-**Where the description comes from.** When you declare none, Agent Kernel uses the description the native
+**Where the description comes from.** When you declare none, OAK uses the description the native
 agent carries, if its framework keeps one separately from the instructions:
 
 | Framework | Field used as the default description |
