@@ -12,7 +12,7 @@ def issue_refund(order_id: str) -> str:
 tools = OpenAIToolBuilder.bind([issue_refund], needs_approval=True)
 ```
 
-The OpenAI Agents SDK stops before running the tool and hands the pending call back. Agent Kernel
+The OpenAI Agents SDK stops before running the tool and hands the pending call back. Open Agent Kernel (OAK)
 turns that into a **paused reply**, stores what it needs to continue, and answers the client with
 HTTP `202`.
 
@@ -80,12 +80,12 @@ Pressing a button sends the next run with a `resume` block:
 { "resume": [ { "interruptId": "call_abc123", "status": "resolved", "payload": true } ] }
 ```
 
-The protocol carries two statuses where Agent Kernel carries three. `cancelled` is its own status,
+The protocol carries two statuses where OAK carries three. `cancelled` is its own status,
 so "nobody decided" never reaches the model as a refusal; approve and deny are both `resolved`, told
 apart by a boolean payload — which is just the answer to "may I?".
 
 There is deliberately nowhere to say *why* something was refused. AG-UI has no field for it, and
-Agent Kernel does not reserve keys inside `payload` to smuggle one: the SDK states that `payload` is
+OAK does not reserve keys inside `payload` to smuggle one: the SDK states that `payload` is
 "the answer the agent asked for", so squatting there would both contradict the protocol and swallow a
 real answer that happened to use the same key. If you need the human's words to reach the model, use
 the REST surface above, where `message` is a field of its own.
@@ -142,7 +142,7 @@ curl -s localhost:8000/api/v1/chat -H 'content-type: application/json' -d '{
 |---|---|---|
 | `approved` | do it | the tool runs |
 | `denied` | a person said no | your `message`, so the model can explain the refusal |
-| `cancelled` | nobody decided — it timed out, or the UI was closed | Agent Kernel's own wording, which reads as *undecided*, not refused |
+| `cancelled` | nobody decided — it timed out, or the UI was closed | OAK's own wording, which reads as *undecided*, not refused |
 
 A boolean would collapse the last two, and the agent would report a refusal that never happened.
 
@@ -159,7 +159,7 @@ session:
     url: "redis://localhost:6379"
 ```
 
-Agent Kernel logs a `WARNING` the first time a pause is written while `type: in_memory`, naming this
+OAK logs a `WARNING` the first time a pause is written while `type: in_memory`, naming this
 exact problem. Take it seriously — without a shared backend the decision arrives at a replica that
 has never heard of the pause.
 
@@ -185,7 +185,7 @@ The example runs **two**, and the difference between them is the most useful thi
 ### Why OpenAI cannot ask a question
 
 The OpenAI Agents SDK records an approval as a **boolean** — `RunState.approve()` takes no value —
-so there is nowhere in its resume path for "the human chose Store credit". Agent Kernel refuses a
+so there is nowhere in its resume path for "the human chose Store credit". OAK refuses a
 `payload` on that adapter rather than dropping it silently:
 
 > The OpenAI adapter cannot deliver a structured answer … `RunState.approve()` takes no value.
@@ -213,9 +213,9 @@ else is wanted.
 
 Answer both and the graph runs on. Answer one and the other comes back as a fresh pause — a new run,
 but **the same interruption id**, which LangGraph derives from a task that has not run. That is also
-the case that exercises Agent Kernel's checkpointer, since the pause has to survive between turns.
+the case that exercises OAK's checkpointer, since the pause has to survive between turns.
 
-Two things worth knowing, both LangGraph's behaviour rather than Agent Kernel's:
+Two things worth knowing, both LangGraph's behaviour rather than OAK's:
 
 - **A node re-runs from the top** on resume, its `interrupt()` returning the stored answer instead
   of pausing again — so anything with a side effect belongs *after* the question.

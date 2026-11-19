@@ -1,6 +1,6 @@
-# Agent Kernel with Pydantic Logfire tracing
+# Open Agent Kernel with Pydantic Logfire tracing
 
-This package demonstrates Agent Kernel tracing agent execution to
+This package demonstrates Open Agent Kernel tracing agent execution to
 [Pydantic Logfire](https://logfire.pydantic.dev). The agents are the same OpenAI Agents SDK agents as
 [../openai](../openai) — tracing is transparent, so the only difference is `config.yaml`, which sets:
 

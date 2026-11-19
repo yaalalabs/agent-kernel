@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Testing Overview
 
-Agent Kernel provides a comprehensive testing framework for testing CLI-based agents with both interactive and automated test capabilities.
+Open Agent Kernel (OAK) provides a comprehensive testing framework for testing CLI-based agents with both interactive and automated test capabilities.
 
 ## Testing Approaches
 
@@ -79,7 +79,7 @@ Best for:
 
 ### Test Comparison Modes
 
-Agent Kernel supports three comparison modes for validating agent responses:
+OAK supports three comparison modes for validating agent responses:
 
 #### Score Mode
 Deterministic, offline string-match scoring with configurable thresholds. The default `deepeval` evaluator uses `Scorer.quasi_exact_match_score`; the built-in `opik` evaluator uses its graded `LevenshteinRatio` metric instead (`jev` has no score mode):

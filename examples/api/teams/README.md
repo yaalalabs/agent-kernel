@@ -1,6 +1,6 @@
 # Microsoft Teams Bot Example
 
-This example demonstrates how to run a Microsoft Teams bot using Agent Kernel.
+This example demonstrates how to run a Microsoft Teams bot using Open Agent Kernel (OAK).
 
 ## Prerequisites
 

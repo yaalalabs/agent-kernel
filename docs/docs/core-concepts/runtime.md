@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Runtime
 
-The **Runtime** is the global orchestrator that manages all agents, sessions, and execution across Agent Kernel. You can skip this section if you are not planning to contribute to Agent Kernel.
+The **Runtime** is the global orchestrator that manages all agents, sessions, and execution across Open Agent Kernel (OAK). You can skip this section if you are not planning to contribute to OAK.
 
 ## Overview
 
@@ -24,7 +24,7 @@ graph TB
     J[MCP Server] --> R
     K[A2A Server] --> R
     
-    style R fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style R fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ## What is the Runtime?

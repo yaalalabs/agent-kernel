@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-secret-provider
 description: >
-  Step-by-step guide for adding a new built-in secret provider to Agent Kernel's secret-resolution
+  Step-by-step guide for adding a new built-in secret provider to Open Agent Kernel's secret-resolution
   capability (beyond env, aws_ssm and kubernetes). Use this skill when you need a new managed secret store
   (e.g. AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, HashiCorp Vault) addressable by a
   short `secret.provider.type` name. Covers the SecretProvider contract, addressing, factory
@@ -177,13 +177,13 @@ real value into state.
 - `ak-py/README.md`: the extra, if new.
 - The bundled `ak-cloud-deploy` skill (`ak-py/src/agentkernel/skills/ak-cloud-deploy/SKILL.md`), if
   you added a deployment flag.
-- Landing page inventories (`docs/src/components/*/data.tsx`): a tile in the **Cloud &
-  infrastructure** row of `IntegrationsMarquee/data.tsx` (role `Secrets`, `href` to the secrets
-  docs page, logo or `react-icons/si` glyph; a vendor already on the marquee for another role,
-  such as AWS Systems Manager, gets the new role appended to its `title` instead of a second tile),
-  and the store in the **Secret Resolution** card's `tags` and `description` under the Guard tab
-  in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in
-  `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+- Landing page inventories (`docs/src/components/HomeSections/`): an item in the **Cloud &
+  infrastructure** row of `INTEGRATION_ROWS` in `integrations.data.tsx` (role `Secrets`, `href` to
+  the secrets docs page, logo or `react-icons/si` glyph; a vendor already listed for another role,
+  such as AWS Systems Manager, gets the new role appended to its `title` instead of a second item),
+  and the store in the `summary` of the **Secret resolution** capability under Guard in
+  `docs/src/pages/features.tsx`, which names each provider. Logo sourcing and the build check are
+  in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
 ## Checklist
 
@@ -196,5 +196,5 @@ real value into state.
 - [ ] Factory tests (`tests/test_secret_factory.py`)
 - [ ] Terraform grant flag, if a cloud store (`ak-deployment/`)
 - [ ] Docs: `docs/docs/advanced/secrets.md`, architecture skill, `ak-py/README.md`
-- [ ] Landing page inventories: marquee tile or role (`IntegrationsMarquee/data.tsx`), Secret Resolution card tags (`FeatureExplorer/data.tsx`)
+- [ ] Landing page inventories: integration item or its `title` (`HomeSections/integrations.data.tsx`), the Secret resolution capability's summary (`docs/src/pages/features.tsx`)
 - [ ] `cd ak-py && uv run pytest tests/test_secret_*.py` and `make lint-check-all` clean

@@ -8,7 +8,7 @@ Track, monitor, and debug all agent operations with built-in tracing and observa
 
 ## Overview
 
-Agent Kernel provides comprehensive observability capabilities through integration with popular tracing platforms. Monitor agent execution, debug issues, and gain insights into your AI agent systems.
+Open Agent Kernel (OAK) provides comprehensive observability capabilities through integration with popular tracing platforms. Monitor agent execution, debug issues, and gain insights into your AI agent systems.
 
 ```mermaid
 graph TB
@@ -22,13 +22,13 @@ graph TB
     F --> G
     G --> H[Langfuse/OpenLLMetry/Logfire/CloudWatch]
     
-    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style G fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
     style H fill:#ff6b35,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Supported Platforms
 
-Agent Kernel supports the following observability platforms:
+OAK supports the following observability platforms:
 
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends
@@ -39,7 +39,7 @@ Agent Kernel supports the following observability platforms:
 
 ### Installation
 
-Install Agent Kernel with Langfuse support:
+Install OAK with Langfuse support:
 
 ```bash
 uv add "agentkernel[langfuse]"
@@ -103,7 +103,7 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 ### Running on AWS Lambda
 
-The Langfuse client normally exports in the background, but Lambda freezes the execution environment as soon as an invocation returns, so pending spans would wait for the next invocation or be lost. When `AWS_LAMBDA_FUNCTION_NAME` is set, Agent Kernel therefore flushes the Langfuse client at the end of every agent run, including failed runs. The cost is one export round trip added to each run. Streamed runs are not flushed.
+The Langfuse client normally exports in the background, but Lambda freezes the execution environment as soon as an invocation returns, so pending spans would wait for the next invocation or be lost. When `AWS_LAMBDA_FUNCTION_NAME` is set, OAK therefore flushes the Langfuse client at the end of every agent run, including failed runs. The cost is one export round trip added to each run. Streamed runs are not flushed.
 
 ### Getting Langfuse Credentials
 
@@ -118,7 +118,7 @@ For self-hosted Langfuse, see the [Langfuse documentation](https://langfuse.com/
 
 ### Installation
 
-Install Agent Kernel with OpenLLMetry support:
+Install OAK with OpenLLMetry support:
 
 ```bash
 uv add "agentkernel[openllmetry]"
@@ -196,7 +196,7 @@ OpenLLMetry provides:
 
 ## What Gets Traced
 
-When tracing is enabled, Agent Kernel automatically captures:
+When tracing is enabled, OAK automatically captures:
 
 ### Execution Metrics
 - **Request/Response**: Full input prompts and agent responses
@@ -463,7 +463,7 @@ Set your Logfire write token via an environment variable:
 export LOGFIRE_TOKEN=your-write-token
 ```
 
-Without `LOGFIRE_TOKEN`, Logfire runs locally and does **not** ship traces (Agent Kernel configures it with `send_to_logfire="if-token-present"`), so your agents still run.
+Without `LOGFIRE_TOKEN`, Logfire runs locally and does **not** ship traces (OAK configures it with `send_to_logfire="if-token-present"`), so your agents still run.
 
 ### Getting a Logfire Token
 
@@ -481,7 +481,7 @@ Logfire configures the global OpenTelemetry tracer provider, and each non-stream
 | CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
 | Google ADK | Full — OpenInference Google ADK instrumentor |
 | Claude Agent SDK | Agent and tool spans — native `logfire.instrument_claude_agent_sdk()`; model calls run inside the Claude Code CLI |
-| Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
+| Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; OAK activates nothing extra) |
 | LangGraph | Session span only |
 | Smolagents | Session span only |
 
@@ -489,7 +489,7 @@ Microsoft Agent Framework's own spans carry **metadata only** by default (operat
 
 ## Getting Started with AWS CloudWatch
 
-[Amazon CloudWatch](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search.html) ingests OpenTelemetry traces through AWS X-Ray and makes every span searchable with Transaction Search. Agent Kernel exports spans over OTLP/HTTP straight to the regional X-Ray endpoint, signed with your AWS credentials (SigV4), so no collector or sidecar is needed. That makes it work the same way on AWS Lambda, ECS, EKS, and EC2.
+[Amazon CloudWatch](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search.html) ingests OpenTelemetry traces through AWS X-Ray and makes every span searchable with Transaction Search. OAK exports spans over OTLP/HTTP straight to the regional X-Ray endpoint, signed with your AWS credentials (SigV4), so no collector or sidecar is needed. That makes it work the same way on AWS Lambda, ECS, EKS, and EC2.
 
 ### Installation
 
@@ -530,12 +530,12 @@ export AK_TRACE__TYPE=cloudwatch
 ### AWS Prerequisites
 
 1. **Enable Transaction Search** once per account and region. In the CloudWatch console, choose **Application Signals → Transaction Search → Enable Transaction Search**. To do it with the AWS CLI instead, follow the [AWS guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Enable-TransactionSearch.html): add a CloudWatch Logs resource policy for `xray.amazonaws.com`, then run `aws xray update-trace-segment-destination --destination CloudWatchLogs`. `aws xray get-trace-segment-destination` reports `"Status": "ACTIVE"` once spans are being ingested, which can take about 10 minutes.
-2. **Grant write access**: attach the AWS managed policy `AWSXrayWriteOnlyAccess` to the identity that runs your agent (the Lambda execution role, ECS task role, or your local profile). Agent Kernel's Terraform modules do not attach it for you.
-3. **Region and credentials**: the region is read only from `AWS_REGION`, and Agent Kernel raises an error if it is not set (`AWS_DEFAULT_REGION` and the profile region are not used). Lambda and ECS set it for you. Credentials can come from environment variables, a profile, SSO, or an instance or task role.
+2. **Grant write access**: attach the AWS managed policy `AWSXrayWriteOnlyAccess` to the identity that runs your agent (the Lambda execution role, ECS task role, or your local profile). OAK's Terraform modules do not attach it for you.
+3. **Region and credentials**: the region is read only from `AWS_REGION`, and OAK raises an error if it is not set (`AWS_DEFAULT_REGION` and the profile region are not used). Lambda and ECS set it for you. Credentials can come from environment variables, a profile, SSO, or an instance or task role.
 
 ### Export Endpoint
 
-The exporter uses the standard OpenTelemetry environment variables, so no Agent Kernel configuration beyond `trace.type` is needed:
+The exporter uses the standard OpenTelemetry environment variables, so no OAK configuration beyond `trace.type` is needed:
 
 | Setting | Behaviour |
 |---------|-----------|
@@ -547,13 +547,13 @@ The exporter uses the standard OpenTelemetry environment variables, so no Agent 
 
 The other standard `OTEL_*` variables (headers, timeout, compression, sampler, batch processor, attribute limits) apply as usual.
 
-If an OpenTelemetry tracer provider is already installed, Agent Kernel reuses it rather than registering a second one. This happens, for example, when you run under `opentelemetry-instrument` with the AWS Distro for OpenTelemetry, or inside Bedrock AgentCore Runtime. In that case it adds only its session processor, and the existing provider's exporter configuration applies.
+If an OpenTelemetry tracer provider is already installed, OAK reuses it rather than registering a second one. This happens, for example, when you run under `opentelemetry-instrument` with the AWS Distro for OpenTelemetry, or inside Bedrock AgentCore Runtime. In that case it adds only its session processor, and the existing provider's exporter configuration applies.
 
 ### What Gets Traced
 
 Each non-streaming agent run is wrapped in a span named `Agent Kernel <Framework>`. The span carries:
 
-- `session.id`: the Agent Kernel session ID. It is also copied onto every span the framework instrumentation emits during the run, so you can filter a whole conversation in Transaction Search.
+- `session.id`: the OAK session ID. It is also copied onto every span the framework instrumentation emits during the run, so you can filter a whole conversation in Transaction Search.
 - `input.value` / `output.value`: the prompt and the agent's reply.
 
 The service resource defaults to `service.name=AgentKernel` and `aws.service.type=gen_ai_agent`. Values set through `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` win.
@@ -567,7 +567,7 @@ Streaming runs (`execution.message_type: delta`) are not wrapped in a session sp
 | Google ADK | Full — OpenInference Google ADK instrumentor |
 | Pydantic AI | Full — Pydantic AI instrumentation + OpenInference span processor |
 | Claude Agent SDK | Agent and tool spans — OpenInference Claude Agent SDK instrumentor; model calls run inside the Claude Code CLI |
-| Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
+| Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; OAK activates nothing extra) |
 | LangGraph | Session span only |
 | Smolagents | Session span only |
 
@@ -577,13 +577,13 @@ X-Ray rejects spans larger than 200 KB. If your prompts or replies are very larg
 
 ### Running on AWS Lambda
 
-The batch span processor normally exports in the background, but Lambda freezes the execution environment as soon as an invocation returns. When `AWS_LAMBDA_FUNCTION_NAME` is set, Agent Kernel therefore flushes pending spans at the end of every agent run, including failed runs. The cost is one export round trip added to each invocation. Agent spans are not parented under the function's own X-Ray segment when Lambda active tracing is on: with X-Ray sampling, that parent would cause most agent spans to be dropped.
+The batch span processor normally exports in the background, but Lambda freezes the execution environment as soon as an invocation returns. When `AWS_LAMBDA_FUNCTION_NAME` is set, OAK therefore flushes pending spans at the end of every agent run, including failed runs. The cost is one export round trip added to each invocation. Agent spans are not parented under the function's own X-Ray segment when Lambda active tracing is on: with X-Ray sampling, that parent would cause most agent spans to be dropped.
 
 ### Viewing Traces in CloudWatch
 
 1. Open the CloudWatch console in the region you export to.
 2. Go to **Application Signals → Transaction Search** and filter spans by `session.id` or by service `AgentKernel`. Open a trace to see the run span with its agent, LLM, and tool spans nested under it.
-3. Optionally, check **GenAI Observability**. Agent Kernel sets the `aws.service.type=gen_ai_agent` resource attribute and `session.id` that the AWS Distro for OpenTelemetry sets, but AWS does not document whether its agent and session views list agents that export without the distro, so treat Transaction Search as the supported view.
+3. Optionally, check **GenAI Observability**. OAK sets the `aws.service.type=gen_ai_agent` resource attribute and `session.id` that the AWS Distro for OpenTelemetry sets, but AWS does not document whether its agent and session views list agents that export without the distro, so treat Transaction Search as the supported view.
 
 ## Fetching Spans Back
 
@@ -613,7 +613,7 @@ for span in tool_calls:
 | `start` / `end` | Span start time window (`end` defaults to now, `start` to `end - last`) |
 | `last` | Look-back window when `start` is not given (default 1 hour) |
 | `kinds` | `SpanKind.AGENT`, `LLM`, `TOOL` or `OTHER` (everything else); `None` returns all |
-| `session_id` | Only spans of this AK session |
+| `session_id` | Only spans of this OAK session |
 | `trace_ids` | Only spans of these traces (fetch tool calls first, then their whole traces) |
 | `name` | Exact span name |
 | `limit` | Maximum spans returned (default 1000); the most recent are kept, and a warning is logged when a fetch reaches it |
@@ -623,7 +623,7 @@ usage, attributes) plus `raw`, the provider's full record. Its `provider` is the
 (`langfuse`, `logfire`, `openllmetry` or `cloudwatch`). Spans are returned oldest first.
 
 `status` is a `SpanStatus` (`UNSET`, `OK` or `ERROR`), following the OpenTelemetry span status; each provider's own field
-(Langfuse's `level`, the OTel status code elsewhere) is mapped onto it. Agent Kernel maps each provider's fields onto
+(Langfuse's `level`, the OTel status code elsewhere) is mapped onto it. OAK maps each provider's fields onto
 these neutral ones but doesn't correct a provider's own mistakes, such as a span it labels with the wrong type.
 
 `usage` is a `SpanUsage` (`input_tokens`, `output_tokens`, `total_tokens`, `cost` in USD) for spans that record a
@@ -667,11 +667,11 @@ Each `FetchedTrace` has `trace_id`, `session_id`, `spans` (oldest first), and:
 | `usage` | A `SpanUsage` summed over the spans; a field stays `None` when no span reports it |
 
 `fetch_traces` is one pass over the window's spans, so a trace at the edge of the window can be partial (the window
-filters on span start time), and Agent Kernel doesn't decide when a trace is complete: it returns what the provider has
+filters on span start time), and OAK doesn't decide when a trace is complete: it returns what the provider has
 stored, as the provider's own UI does while spans are still arriving. A trace whose root is missing comes back with
 `root=None` instead of being dropped. The `limit` still applies to spans, not traces.
 
-On OpenLLMetry (Traceloop), Agent Kernel adds no wrapper span around a run, so the root is the framework's own span
+On OpenLLMetry (Traceloop), OAK adds no wrapper span around a run, so the root is the framework's own span
 (for example `Agent Workflow` for the OpenAI Agents SDK), which carries no input or output: `user_input` and `output`
 are empty there.
 
@@ -682,7 +682,7 @@ are empty there.
 | OpenLLMetry (Traceloop) | Warehouse spans REST API | Same `TRACELOOP_API_KEY` (and `TRACELOOP_BASE_URL`) |
 | AWS CloudWatch | CloudWatch Logs Insights over the `aws/spans` log group | The standard AWS chain and region; the identity needs `logs:StartQuery`, `logs:GetQueryResults` and `logs:StopQuery` on `aws/spans` (`AWSXrayWriteOnlyAccess` does not grant them) |
 
-`LOGFIRE_READ_TOKEN` and `TRACELOOP_API_KEY` are read through Agent Kernel's [secret manager](./secrets.md): an
+`LOGFIRE_READ_TOKEN` and `TRACELOOP_API_KEY` are read through OAK's [secret manager](./secrets.md): an
 environment variable wins, and with `secret.provider.type: aws_ssm` the key can live in SSM Parameter Store
 instead. The `LANGFUSE_*` keys are read by the Langfuse SDK itself, so they stay environment variables.
 
@@ -747,7 +747,7 @@ AWS Lambda whose Langfuse traces are read back per session, graded by Opik LLM j
 
 ## Integrate with Your Own Traceability Platform
 
-Agent Kernel's plugin architecture makes it easy to integrate your own observability platform. If you're already using a different monitoring solution or have specific requirements, you can add support in just a few steps.
+OAK's plugin architecture makes it easy to integrate your own observability platform. If you're already using a different monitoring solution or have specific requirements, you can add support in just a few steps.
 
 ### How to Add Your Own Platform
 
@@ -798,7 +798,7 @@ Custom runner supersedes all other trace configurations
 export MY_TRACE_API_KEY=your-api-key
 ```
 
-Your custom observability platform is now integrated with Agent Kernel.
+Your custom observability platform is now integrated with OAK.
 
 ### Example Use Cases
 

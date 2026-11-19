@@ -1,6 +1,6 @@
 # Mathru — Maternal Health Companion
 
-A WhatsApp agent built on Agent Kernel that supports expectant mothers and the Public
+A WhatsApp agent built on Open Agent Kernel (OAK) that supports expectant mothers and the Public
 Health Midwife (PHM) assigned to them. Mothers register, ask about their upcoming clinic
 visits, and report symptoms in plain language. The screening tool classifies reported text
 in Python and attempts to notify an approved assigned midwife when severity is red.
@@ -45,7 +45,7 @@ current caseload, and acknowledge escalations to close them out.
 | `danger_sign_agent` | Structured symptom screening and escalation. |
 | `phm_agent` | Caseload queries and escalation acknowledgement. |
 
-### How it uses Agent Kernel
+### How it uses OAK
 
 - **WhatsApp integration** as the sole user interface, via
   `WhatsAppInboundAdapter`, `WebhookRESTRequestHandler`, and `IOHandler`.
@@ -117,7 +117,7 @@ through on validation errors. See [guardrail configuration](guardrails/README.md
 routing. PHM tool results omit routing identifiers and raw delivery errors. The mother's
 profile and registration results still contain her own record, and a free-text symptom
 excerpt may contain identifiers supplied by the sender. Log-record creation applies phone
-redaction before handlers run, including non-propagating Agent Kernel loggers; it never
+redaction before handlers run, including non-propagating OAK loggers; it never
 changes stored records or delivery destinations. This is phone-pattern redaction, not
 complete PII removal.
 
@@ -172,7 +172,7 @@ uv sync --frozen --all-extras --dev
 ```
 
 The same `uv` command works in PowerShell. On Bash, `./build.sh` runs it for you. The lockfile
-resolves Agent Kernel **0.9.3**, using the published WhatsApp adapter and pipeline APIs;
+resolves OAK **0.9.3**, using the published WhatsApp adapter and pipeline APIs;
 this project does not import the repository's `ak-py/src` checkout. The dependency range is
 `>=0.9.3,<0.10`; deliberate upgrades must refresh and retest `uv.lock`.
 
@@ -257,7 +257,7 @@ you can temporarily set `AK_GUARDRAIL__INPUT__ENABLED=false` and
 `AK_GUARDRAIL__OUTPUT__ENABLED=false` in the process environment or `.env`, then restore
 both to `true`. A run with these disabled does not validate guardrail behavior.
 
-`load_dotenv()` is called explicitly because Agent Kernel's own `.env` support reads only
+`load_dotenv()` is called explicitly because OAK's own `.env` support reads only
 `AK_`-prefixed keys into its settings model, never into `os.environ` — and the OpenAI SDK
 reads `OPENAI_API_KEY` from `os.environ` directly.
 
@@ -393,4 +393,4 @@ use-cases/mathru-phm-companion/
 ## 9. Acknowledgements
 
 Built for the IDEALIZE 2026 mini-competition organised by AIESEC in University of
-Moratuwa, using [Agent Kernel](https://github.com/yaalalabs/agent-kernel) by Yaala Labs.
+Moratuwa, using [OAK](https://github.com/yaalalabs/agent-kernel) by Yaala Labs.

@@ -1,7 +1,7 @@
 
 ## AWS Serverless WebSocket + OpenAI Example
 
-This example deploys **Agent Kernel** on AWS using the `yaalalabs/ak-serverless/aws` Terraform module and exposes:
+This example deploys **Open Agent Kernel (OAK)** on AWS using the `yaalalabs/ak-serverless/aws` Terraform module and exposes:
 
 - A REST API (custom endpoints: `/api/app`, `/api/app_info`)
 - A WebSocket API (connect/disconnect handled by `lambda_ws_connection_handler.py`)
@@ -32,7 +32,7 @@ Project dependencies are declared in `pyproject.toml`:
 
 - `agentkernel[aws,openai,redis]>=0.8.1`
 
-### Agent Kernel runtime config
+### OAK runtime config
 
 `config.yaml` is bundled into each Lambda package/image. Update it if you need to point at a different Redis endpoint or adjust execution/response-store settings.
 

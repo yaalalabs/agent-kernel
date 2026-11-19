@@ -1,12 +1,12 @@
-# Agent Kernel running OpenAI Agents SDK based agents in GCP Serverless (Cloud Run) with Firestore
+# Open Agent Kernel running OpenAI Agents SDK based agents in GCP Serverless (Cloud Run) with Firestore
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using GCP Cloud Run with scale-to-zero capability and Firestore for session storage.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using GCP Cloud Run with scale-to-zero capability and Firestore for session storage.
 
 ## Deployed Resources
 
 This demo deploys the following GCP resources:
 
-- **Cloud Run Service (edge)** - Serverless container platform running the Agent Kernel implementation with scale-to-zero capability
+- **Cloud Run Service (edge)** - Serverless container platform running the OAK implementation with scale-to-zero capability
 - **Agent Runner (Cloud Run)** - A second, private service from the same image. Pub/Sub pushes each request to it; it runs the agents and publishes the reply
 - **Pub/Sub** - Request and reply topics, plus dead-letter topics for messages that keep failing
 - **Memorystore Redis** - Hands each reply from the agent runner back to the edge

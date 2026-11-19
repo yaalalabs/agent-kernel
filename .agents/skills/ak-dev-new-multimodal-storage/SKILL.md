@@ -2,7 +2,7 @@
 name: ak-dev-new-multimodal-storage
 description: >
   Step-by-step guide for adding a new multimodal attachment storage backend to
-  Agent Kernel. Use this skill when you need to integrate a new storage service
+  Open Agent Kernel (OAK). Use this skill when you need to integrate a new storage service
   (beyond in-memory, Redis, and DynamoDB) for persisting image and file
   attachments. Covers implementing the AttachmentStore interface, factory
   registration, configuration, and testing.
@@ -14,7 +14,7 @@ metadata:
 
 # Adding a New Multimodal Storage Backend
 
-This guide walks through adding a new attachment storage backend to Agent Kernel's multimodal subsystem. Use the existing Redis (`ak-py/src/agentkernel/core/multimodal/storage/redis.py`) and DynamoDB (`ak-py/src/agentkernel/core/multimodal/storage/dynamodb.py`) implementations as reference.
+This guide walks through adding a new attachment storage backend to Open Agent Kernel's multimodal subsystem. Use the existing Redis (`ak-py/src/agentkernel/core/multimodal/storage/redis.py`) and DynamoDB (`ak-py/src/agentkernel/core/multimodal/storage/dynamodb.py`) implementations as reference.
 
 ## Existing Backends
 
@@ -340,9 +340,9 @@ Add or update `docs/docs/advanced/multimodal.md` with:
 - Required environment variables or credentials
 - Any infrastructure setup steps (e.g., creating tables, buckets)
 
-Then update the landing page inventories in `docs/src/components/*/data.tsx`: add the backend to the **Attachment Storage** card's `tags` under the Remember tab in `FeatureExplorer/data.tsx`; if the vendor is new to the site, add a tile to the **Memory, knowledge & data** row in `IntegrationsMarquee/data.tsx` (role `Memory`, every store it backs listed in `title`), and if it already has a tile for a session or thread store, append the attachment role to that tile's `title` instead. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+Then update the landing page inventories under `docs/src/components/`: if the vendor is new to the site, add an item to the **Memory, knowledge & data** row of `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx` (role `Memory`, every store it backs listed in `title`), and if it already has an item for a session or thread store, append the attachment role to that item's `title` instead. On the features page (`docs/src/pages/features.tsx`), the **Multimodal input** capability under Build names no backends today; add a `points` line listing them only when the list is worth showing. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
-Grep `docs/src/pages/*.tsx` for the existing backend names (for example "DynamoDB") in case a features page card enumerates storage backends; the Smart Memory Management card in `docs/src/pages/features.tsx` lists session backends and is the usual place such a roll call appears.
+Grep `docs/src/pages/*.tsx` and the root `README.md` for the existing backend names (for example "DynamoDB") in case a page enumerates storage backends: on the features page the **Sessions** capability under Remember lists the session backends in `points`, and a store that also serves sessions belongs there.
 
 ## Reference: Existing Implementations
 
@@ -380,4 +380,4 @@ Grep `docs/src/pages/*.tsx` for the existing backend names (for example "DynamoD
 - [ ] Unit tests for save/get/delete, max attachments pruning, session isolation
 - [ ] Configuration example in documentation
 - [ ] Documentation in `docs/docs/advanced/multimodal.md`
-- [ ] Landing page inventories: Attachment Storage card tags (`FeatureExplorer/data.tsx`), marquee tile or role (`IntegrationsMarquee/data.tsx`)
+- [ ] Landing page inventories: integration item or its `title` (`HomeSections/integrations.data.tsx`); the Multimodal input capability on `docs/src/pages/features.tsx` when it lists backends

@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # Google ADK
 
-Integrate Google's Agent Development Kit with Agent Kernel.
+Integrate Google's Agent Development Kit with Open Agent Kernel (OAK).
 
 ## Installation
 
@@ -88,7 +88,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 
 ## Structured Output
 
-Configure structured output with ADK's `output_schema` parameter on `LlmAgent`. ADK returns the final response as a JSON string conforming to the schema; Agent Kernel validates and parses it, returning an `AgentReplyAny` whose `content` is the result as a dict:
+Configure structured output with ADK's `output_schema` parameter on `LlmAgent`. ADK returns the final response as a JSON string conforming to the schema; OAK validates and parses it, returning an `AgentReplyAny` whose `content` is the result as a dict:
 
 ```python
 from google.adk.agents import LlmAgent
@@ -117,7 +117,7 @@ Structured output applies to non-streaming execution only. Streamed runs emit ty
 
 ## Per-run context/state
 
-Google ADK **round-trips all caller keys** of the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key **except AK-internal ones**. It is merged into the ADK session `state` on input (the internal `ak_tool_context` key is written last, so a caller key of that name cannot displace it); on write-back the accumulated state is read back with `ak_tool_context` and ADK's `app:`/`user:`/`temp:`-prefixed keys stripped: the first two are app- and user-scoped values ADK merges in on read, the third is invocation-scoped, and none are per-session caller state. Because the rest of the state is returned whole, keys a tool **adds** during the run survive to the next turn. ADK's native state is in-memory only, so this write-back is what gives the context cross-turn durability.
+Google ADK **round-trips all caller keys** of the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key **except OAK-internal ones**. It is merged into the ADK session `state` on input (the internal `ak_tool_context` key is written last, so a caller key of that name cannot displace it); on write-back the accumulated state is read back with `ak_tool_context` and ADK's `app:`/`user:`/`temp:`-prefixed keys stripped: the first two are app- and user-scoped values ADK merges in on read, the third is invocation-scoped, and none are per-session caller state. Because the rest of the state is returned whole, keys a tool **adds** during the run survive to the next turn. ADK's native state is in-memory only, so this write-back is what gives the context cross-turn durability.
 
 Two consequences of reading the state back wholesale:
 
@@ -127,7 +127,7 @@ Two consequences of reading the state back wholesale:
 ## Native run options
 
 Google ADK's own per-run options are declared per agent with
-[`Module.run_options`](../core-concepts/runner.md#native-run-options). Agent Kernel constructs the
+[`Module.run_options`](../core-concepts/runner.md#native-run-options). OAK constructs the
 ADK `Runner` per run, so the options have three destinations: `plugins` go to the `App` (ADK refuses
 an `App` and `plugins` on the `Runner` together, and this adapter always builds an `App`, see
 [Human in the Loop](#human-in-the-loop)), `memory_service`, `artifact_service`, `credential_service`
@@ -196,7 +196,7 @@ ADK consumes the confirmation response and writes its own for the original call,
   arguments: the payload never reaches it. It is now rejected rather than dropped. Model the
   question as a `LongRunningFunctionTool`, whose result *is* the human's answer and takes any shape,
   or have the model propose the value in the tool's arguments for the human to approve.
-- **`cancelled` reads as `denied`.** The wording Agent Kernel sends for "nobody decided" rides in
+- **`cancelled` reads as `denied`.** The wording OAK sends for "nobody decided" rides in
   ADK's `hint`, which does not reach the model. This is the one adapter where the two negative
   statuses are indistinguishable; a long-running tool on ADK keeps the distinction.
 
@@ -213,7 +213,7 @@ See [Human in the Loop](../advanced/human-in-the-loop.md).
 
 ## Realtime voice
 
-With `execution.mode: realtime`, an ADK agent runs a live Gemini conversation through ADK's own `Runner.run_live()`. The root is an `LlmAgent` with `sub_agents` (ADK's transfers) or a `Workflow`. ADK runs the tools and the transfers; Agent Kernel carries the audio. A speaking `Workflow` node must set `mode="chat"` or `mode="task"`. `Module.run_options` takes `run_config` and the `Runner` options (`plugins`, services). AK hooks and guardrails do not run on this path. See [LiveKit Voice](../integrations/livekit.md) and [Realtime Voice Internals](../architecture/realtime-internals.md).
+With `execution.mode: realtime`, an ADK agent runs a live Gemini conversation through ADK's own `Runner.run_live()`. The root is an `LlmAgent` with `sub_agents` (ADK's transfers) or a `Workflow`. ADK runs the tools and the transfers; OAK carries the audio. A speaking `Workflow` node must set `mode="chat"` or `mode="task"`. `Module.run_options` takes `run_config` and the `Runner` options (`plugins`, services). OAK hooks and guardrails do not run on this path. See [LiveKit Voice](../integrations/livekit.md) and [Realtime Voice Internals](../architecture/realtime-internals.md).
 
 ## Features
 

@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # Knowledge Bases
 
-Agent Kernel provides a **backend-agnostic knowledge base interface** that lets agents retrieve and persist long-term knowledge across storage systems - vector stores, graph databases, SQL engines, and directories of markdown documents - through one consistent API. Each backend **declares what it supports** in a `KnowledgeCapabilities` object, and both the interface and the agent's tool set follow that declaration: an operation a backend does not declare is never offered to the agent.
+Open Agent Kernel (OAK) provides a **backend-agnostic knowledge base interface** that lets agents retrieve and persist long-term knowledge across storage systems - vector stores, graph databases, SQL engines, and directories of markdown documents - through one consistent API. Each backend **declares what it supports** in a `KnowledgeCapabilities` object, and both the interface and the agent's tool set follow that declaration: an operation a backend does not declare is never offered to the agent.
 
 This builds on top of core session and memory concepts:
 - **Session + caches** → short‑ and medium‑term conversation state.
@@ -415,7 +415,7 @@ Everything above is the programmatic path: build a store, wrap it in a backend, 
 `KnowledgeBuilder`, bind its tools, and write the agent's navigation instructions yourself.
 
 For OKF bundles there is a shorter path. An `okf` block in `config.yaml` names the bundles and
-the agents that may reach them, and Agent Kernel attaches each agent's tools and appends its
+the agents that may reach them, and OAK attaches each agent's tools and appends its
 instructions automatically. The application writes no knowledge-base code at all.
 
 ```yaml

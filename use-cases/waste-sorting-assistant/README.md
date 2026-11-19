@@ -1,12 +1,12 @@
 # Waste Sorting Assistant
 
-An Agent Kernel project for a single-agent waste sorting advisor. The agent recommends the correct disposal method for an item based on the item material and the user's local recycling rules.
+An Open Agent Kernel project for a single-agent waste sorting advisor. The agent recommends the correct disposal method for an item based on the item material and the user's local recycling rules.
 
 The project includes:
 
-- Agent Kernel CLI entry point using the OpenAI Agents SDK.
+- OAK CLI entry point using the OpenAI Agents SDK.
 - A lookup tool backed by structured disposal rules embedded in `tool.py`.
-- Agent Kernel session memory for region-specific rules and remembered session regions.
+- OAK session memory for region-specific rules and remembered session regions.
 - AWS Lambda deployment with DynamoDB-backed session persistence.
 
 ## Prerequisites
@@ -20,11 +20,11 @@ The project includes:
 
 ## Project Layout
 
-- `demo.py` registers the `waste_sorting_advisor` Agent Kernel agent.
+- `demo.py` registers the `waste_sorting_advisor` OAK agent.
 - `lambda.py` registers the same agent for AWS Lambda via `agentkernel.aws.Lambda`.
 - `agent.py` holds the shared OpenAI Agents SDK definition used by local and deployed execution.
-- `tool.py` contains Agent Kernel tools: `lookup_disposal_category`, `remember_region_rule`, and `get_region_memory`.
-- `config.yaml` configures Agent Kernel local sessions and test mode.
+- `tool.py` contains OAK tools: `lookup_disposal_category`, `remember_region_rule`, and `get_region_memory`.
+- `config.yaml` configures OAK local sessions and test mode.
 - `SPEC.md` documents the agent requirements used to generate the project.
 - `deploy/` contains Terraform, `deploy.sh`, and `Dockerfile` for AWS Lambda deployment.
 
@@ -35,7 +35,7 @@ chmod +x build.sh
 ./build.sh
 ```
 
-For interactive Agent Kernel CLI usage, set an OpenAI API key:
+For interactive OAK CLI usage, set an OpenAI API key:
 
 ```bash
 export OPENAI_API_KEY="sk-..."
@@ -53,7 +53,7 @@ Inside the CLI, the default agent is `waste_sorting_advisor`. You can also run:
 
 `demo.py` is for local CLI usage. `lambda.py` is the AWS Lambda entry point and registers the same `waste_sorting_advisor` agent with `handler = Lambda.handler`.
 
-The Terraform deployment uses Agent Kernel's AWS serverless module in synchronous REST mode and DynamoDB for session storage. Region-specific rules remembered by the agent are stored in Agent Kernel's non-volatile session cache, which becomes durable through DynamoDB in Lambda.
+The Terraform deployment uses OAK's AWS serverless module in synchronous REST mode and DynamoDB for session storage. Region-specific rules remembered by the agent are stored in OAK's non-volatile session cache, which becomes durable through DynamoDB in Lambda.
 
 Deploy from the `deploy` folder:
 

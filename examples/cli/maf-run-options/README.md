@@ -1,4 +1,4 @@
-# Agent Kernel: per-agent native run options (Microsoft Agent Framework)
+# Open Agent Kernel: per-agent native run options (Microsoft Agent Framework)
 
 This demo shows how to pass Microsoft Agent Framework's own **per-run options** to an agent through Agent
 Kernel: a model setting (`max_tokens`) inside MAF's `options` mapping, and `function_invocation_kwargs`, which
@@ -17,14 +17,14 @@ MAFModule([weather_agent]).run_options(
 
 1. **Declaration.** The keywords are `Agent.run`'s own arguments (`options`, `function_invocation_kwargs`,
    `client_kwargs`, `tools`, `compaction_strategy`, ...). Model settings such as `temperature` and
-   `response_format` nest inside `options`. Agent Kernel copies the keywords into the call and writes the keys
+   `response_format` nest inside `options`. Open Agent Kernel copies the keywords into the call and writes the keys
    it owns (`session`, `stream`) last.
 2. **Reserved keys.** `messages`, `stream` and `session` raise `ValueError` at declaration. Per-run state
    belongs to `framework_context`, which the adapter injects as `session.state["ak_context"]`.
 3. **Both modes.** The same keywords apply in run mode and on a streamed run (`execution.message_type: delta`).
 4. **Progress.** MAF has no per-run hook argument; its lifecycle hooks are **middleware on the agent**, so
    `count_model_requests` (a chat middleware) and `count_tool_calls` (a function middleware) need nothing from
-   Agent Kernel. They run inside the Agent Kernel run, so `Session.current()` resolves, and they record what
+   OAK. They run inside the OAK run, so `Session.current()` resolves, and they record what
    the native calls actually received: the model call's `options` and the tool call's keyword arguments.
 5. **Showing it.** `AppendRunStatsPostHook` appends a `Run stats:` line to every reply.
 

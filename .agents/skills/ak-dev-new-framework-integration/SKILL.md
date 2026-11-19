@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-framework-integration
 description: >
-  Step-by-step guide for adding a new agent framework adapter to Agent Kernel.
+  Step-by-step guide for adding a new agent framework adapter to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new agent framework (beyond OpenAI,
     CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK). Covers creating the adapter module, implementing
   Agent/Runner/Module subclasses, adding optional dependencies, exports, and tests.
@@ -13,7 +13,7 @@ metadata:
 
 # Adding a New Framework Integration
 
-This guide walks through adding support for a new agent framework to Agent Kernel. Use the existing OpenAI adapter (`ak-py/src/agentkernel/framework/openai/`) as the canonical reference implementation.
+This guide walks through adding support for a new agent framework to Open Agent Kernel (OAK). Use the existing OpenAI adapter (`ak-py/src/agentkernel/framework/openai/`) as the canonical reference implementation.
 
 ## Prerequisites
 
@@ -53,7 +53,7 @@ class <Name>Session:
         self._history.clear()
 ```
 
-The session data is stored in the Agent Kernel `Session` via `session.set("<name>", <Name>Session())` and retrieved via `session.get("<name>")`. This key **must** be the same string passed as your Runner's `name` (see Step 3) — hook authors reach it via `Session.get_framework_session()`, which resolves `Agent.current().runner.name` under the hood.
+The session data is stored in the OAK `Session` via `session.set("<name>", <Name>Session())` and retrieved via `session.get("<name>")`. This key **must** be the same string passed as your Runner's `name` (see Step 3) — hook authors reach it via `Session.get_framework_session()`, which resolves `Agent.current().runner.name` under the hood.
 
 ### 3. Implement the Runner
 
@@ -119,9 +119,9 @@ class <Name>Runner(Runner):
 - Always reset `ToolContext` in a `finally` block
 - Handle all `AgentRequest` subtypes (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`)
 - Return an `AgentReply` (`AgentReplyText` or `AgentReplyImage`)
-- Resolve the run options once per `run()` and once per `stream()` with `options = await agent.resolve_run_options(session, requests)` (#758), after the request-shape early returns and before the framework-context load, then build the native call's keyword arguments with `self._native_kwargs(options, <ak_owned>=...)` (#754), never a fixed keyword set: the resolved per-agent run options (the static declaration with a per-run factory's result merged over it) are copied first and the keys your adapter populates (the session, the framework context, the input) are written last. Pass the same mapping to any helper of yours that reads options; never read `agent.run_options` at a call site. If the framework's options object and yours are one object (LangGraph's `config`) or must be adjusted per mode (ADK's `RunConfig` in stream mode), merge or copy it before passing it as an AK-owned key, and do the same in `stream()`
+- Resolve the run options once per `run()` and once per `stream()` with `options = await agent.resolve_run_options(session, requests)` (#758), after the request-shape early returns and before the framework-context load, then build the native call's keyword arguments with `self._native_kwargs(options, <ak_owned>=...)` (#754), never a fixed keyword set: the resolved per-agent run options (the static declaration with a per-run factory's result merged over it) are copied first and the keys your adapter populates (the session, the framework context, the input) are written last. Pass the same mapping to any helper of yours that reads options; never read `agent.run_options` at a call site. If the framework's options object and yours are one object (LangGraph's `config`) or must be adjusted per mode (ADK's `RunConfig` in stream mode), merge or copy it before passing it as an OAK-owned key, and do the same in `stream()`
 
-### 3b. Implement `stream()` with AK Stream Events
+### 3b. Implement `stream()` with OAK Stream Events
 
 `Runner` declares `stream()` as `@abstractmethod`, returning `AsyncGenerator[StreamEvent, None]` —
 **every** adapter must implement it, even if the framework doesn't support token streaming, and it
@@ -131,7 +131,7 @@ must yield `StreamEvent` members (`core/event.py`: `MessageStart`/`TextDelta`/`M
 rejected by `StreamChunk.event` with a `pydantic.ValidationError`; there is no string-normalisation
 fallback in `Runtime.stream()`.
 
-**If the framework's SDK exposes a token-delta stream**, map its native events onto AK events —
+**If the framework's SDK exposes a token-delta stream**, map its native events onto OAK events —
 bracket assistant text with `MessageStart`/`MessageEnd` (deferred until text actually arrives, so a
 tool-only turn doesn't emit an empty message), and map tool-call/tool-result events onto
 `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult` correlated by the framework's own call
@@ -210,7 +210,7 @@ loop (writing back framework context, for instance) will not run on a halted run
 
 The base `Runner` provides two helpers so a caller-supplied, framework-agnostic context/state dict
 (seeded by a hook via `session.set_framework_context(...)`) rides across turns. **Your `run()` and
-`stream()` must call them and map the one AK-level dict onto your framework's native
+`stream()` must call them and map the one OAK-level dict onto your framework's native
 context/state mechanism** (or decline it explicitly, as CrewAI does):
 
 - `incoming = self._load_framework_context(session)` — call **before** the native invocation.
@@ -236,8 +236,8 @@ before the `except`** — and for `stream()`, **after the `async for` loop but s
 `try`**, never in `finally`. A framework error or a client disconnect (`GeneratorExit`) then unwinds
 before it, leaving the previously stored context intact rather than persisting partial state.
 
-**Seed AK-internal keys last.** If you inject the caller's dict by merging it into a native state
-dict that also carries AK-internal entries, assign the internal ones **after** the caller's keys so a
+**Seed OAK-internal keys last.** If you inject the caller's dict by merging it into a native state
+dict that also carries OAK-internal entries, assign the internal ones **after** the caller's keys so a
 caller key can never displace them (`ak_tool_context` in ADK, `messages` in LangGraph). The failures
 this prevents are silent and confusing — a broken tool-context lookup, or a replaced message list.
 
@@ -287,8 +287,8 @@ class <Name>Agent(Agent):
 ```
 
 **Key requirements:**
-- `get_description()` is optional since #603: nothing in Agent Kernel reads it, and the base returns `""`. Implement it when the native agent has a description worth handing to application code; never rely on it reaching a card, a tool or the catalog
-- `_native_description()` seeds the descriptor's `description`, which the agent catalog, an A2A card and an MCP tool publish (#603). Implement it **only** when the framework has a field that is a description by its own definition, separate from the instructions (OpenAI `handoff_description`, ADK and Pydantic AI `description`), and return that field as it is. Never fall back to the instructions, a system prompt, a goal or a backstory: leave the base's `""` and the application declares the text with `Module.describe`. If your adapter appends Agent Kernel's system-tool guidance to that same native field, strip it here (the ADK adapter does)
+- `get_description()` is optional since #603: nothing in OAK reads it, and the base returns `""`. Implement it when the native agent has a description worth handing to application code; never rely on it reaching a card, a tool or the catalog
+- `_native_description()` seeds the descriptor's `description`, which the agent catalog, an A2A card and an MCP tool publish (#603). Implement it **only** when the framework has a field that is a description by its own definition, separate from the instructions (OpenAI `handoff_description`, ADK and Pydantic AI `description`), and return that field as it is. Never fall back to the instructions, a system prompt, a goal or a backstory: leave the base's `""` and the application declares the text with `Module.describe`. If your adapter appends OAK's system-tool guidance to that same native field, strip it here (the ADK adapter does)
 - `get_tool_names()` and `_tool_descriptions()` report the native agent's tools (#603). The base class builds the agent's descriptor from them, once, on first read, so read the native agent in these methods rather than caching anything in `__init__` (system tools are attached after the base constructor returns). The contract is **statically declared tools only**: report what the native agent object holds when it is loaded, under the name the application declared each tool by, and do no I/O to find more. A prefix or rename the application puts on a toolset is part of that name; a prefix your adapter adds itself to serve a tool is not (the Claude adapter serves `lookup` as `mcp__ak__lookup` and reports `lookup`, mapping between the two where it gates the call). Tools that only exist at run time (a remote MCP server's, a toolset resolved per run, a handoff target's) are not reported; say in the method's docstring what your adapter leaves out, since an authorization policy can only name a tool the descriptor lists. Do not build an A2A card: `get_a2a_card()` was removed, and the A2A surface builds every card from the registry's descriptor (`A2ACardBuilder.build(descriptor)`); MCP agent tools and the catalog route read the same record. Add the descriptor cases to `tests/test_tool_<name>.py` (tool names in order, one skill per tool with its description)
 - Store the native agent in `self._native_agent` for access in the Runner
 - Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
@@ -429,8 +429,8 @@ Create at minimum:
 
 - Add a page under `docs/docs/frameworks/<name>.md` — note the page slug may differ from the adapter directory name (e.g. the `adk` adapter's page is `docs/docs/frameworks/google-adk.md`, referenced as `'frameworks/google-adk'` in `docs/sidebars.js`)
 - Update `docs/sidebars.js` to include the new framework
-- Landing page (`docs/src/components/*/data.tsx`): add a tile to the **Agent frameworks & dev tools** row in `IntegrationsMarquee/data.tsx` (role `Framework`, `href` to the new page, logo or `react-icons/si` glyph); add `pick("<tile name>")` to the **Agent frameworks** card in `ArchitectureOverview/data.tsx`; add the framework to the **Framework Adapters** card's `tags` and `description` under the Build tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*
-- Features page (`docs/src/pages/features.tsx`): the `integrations` list and the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
+- Landing page (`docs/src/components/`): add an item to the **Agent frameworks & dev tools** row of `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx` (role `Framework`, `href` to the new page, logo or `react-icons/si` glyph); add `pick("<item name>")` to the **Agent frameworks** card in `ArchitectureOverview/data.tsx`; raise the count in the Build stage's "Adapters for eight agent frameworks" point in `HomeSections/index.tsx` (`STAGES`). Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*
+- Features page (`docs/src/pages/features.tsx`): the **Framework adapters** capability under Build: the count in its `summary` and a `more` link to the new page. Grep `docs/src/pages/*.tsx`, `docs/src/components/FAQ/index.tsx`, the root `README.md` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
 - The framework's own page carries the same sections as the other framework pages: Tool Binding, Structured Output, Per-run context/state, Native run options, Human in the loop (say so when `supports_pause` stays `False`), Features and Example
 - Every other roll call. Grep the whole repo for the most recently added framework's name and compare its hits with the new framework's, e.g. `grep -rIl -i 'pydantic.\?ai' docs/docs docs/src ak-py/src/agentkernel/skills .agents/skills README.md ak-py/README.md`. Typical surfaces: `installation.md` (the framework's section and the `all` extras line), `quick-start.md` (a tab), `examples/overview.md`, the streaming-capable lists (`api/rest-api.md`, `core-concepts/configuration.md`, `core-concepts/overview.md`, the Azure/GCP deployment pages), the AG-UI tables (`api/agui-server.md`, `integrations/agui.md`), `advanced/human-in-the-loop.md`, the traceability depth tables, the native-handle list in `core-concepts/session.md`, `docs/src/components/FrameworkSelector`, the marketing pages under `docs/src/pages/`, the bundled user skills (`ak-build`, `ak-init`, `ak-test`, `ak-add-capabilities`), and the framework lists in the developer skills
 
@@ -454,9 +454,9 @@ Create at minimum:
 - [ ] `_native_agent_name` overridden if the registered name is not `agent.name`
 - [ ] `<Name>Agent.get_tool_names()` and `_tool_descriptions()` report the tools declared on the native agent (#603), their docstring says what is left out, no `get_a2a_card()` is defined, and `tests/test_tool_<name>.py` covers the names, the descriptions and the resulting descriptor skills
 - [ ] `<Name>Agent._native_description()` returns the framework's own description field if it has one apart from the instructions, and is left at the default otherwise; `tests/test_tool_<name>.py` asserts both that the field seeds `descriptor.description` and that instructions alone seed nothing
-- [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an AK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module; a factory-merged mapping (a mock whose `resolve_run_options` returns it) wins over the static key at the native call, and `resolve_run_options` is awaited exactly once per `run` and per `stream` (#758)
+- [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an OAK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module; a factory-merged mapping (a mock whose `resolve_run_options` returns it) wins over the static key at the native call, and `resolve_run_options` is awaited exactly once per `run` and per `stream` (#758)
 - [ ] CLI example in `examples/cli/<name>/`
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`
-- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Agent frameworks card (`ArchitectureOverview/data.tsx`), Framework Adapters card tags (`FeatureExplorer/data.tsx`)
-- [ ] Framework inventories on `docs/src/pages/features.tsx` (`integrations` and SDK count) and in `docs/docs/intro.md`
+- [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), `pick()` chip on the Agent frameworks card (`ArchitectureOverview/data.tsx`), the framework count in the Build stage's points (`HomeSections/index.tsx`)
+- [ ] The Framework adapters capability on `docs/src/pages/features.tsx` (count and `more` link), the FAQ answers, and `docs/docs/intro.md`
 - [ ] Every other framework roll call updated (Step 14: installation, quick start, examples overview, streaming lists, AG-UI and tracing tables, session handles, FrameworkSelector, marketing pages, bundled and developer skills)

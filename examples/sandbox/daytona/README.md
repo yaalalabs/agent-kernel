@@ -38,7 +38,7 @@ explicit image that permits `python` package installs), `offline` (`network_egre
 and `small` (cpu/memory limits Daytona enforces on the container). This is a richer
 enforcement set than `docker`, which cannot map resource limits as cleanly. Note: resource
 limits require an image-based sandbox, so a `small`-style profile cannot also pin a
-`snapshot` (Agent Kernel rejects that combination at creation).
+`snapshot` (Open Agent Kernel rejects that combination at creation).
 
 ## Prerequisites
 

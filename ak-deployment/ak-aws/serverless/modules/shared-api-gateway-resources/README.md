@@ -2,7 +2,7 @@
 
 ## Overview
 
-This module provides shared resources for both REST and WebSocket API Gateways in the Agent Kernel AWS serverless deployment. It eliminates resource conflicts and reduces infrastructure complexity by providing a single source of truth for API Gateway resources, primarily focusing on CloudWatch logging infrastructure.
+This module provides shared resources for both REST and WebSocket API Gateways in the Open Agent Kernel AWS serverless deployment. It eliminates resource conflicts and reduces infrastructure complexity by providing a single source of truth for API Gateway resources, primarily focusing on CloudWatch logging infrastructure.
 
 ## Problem Solved
 

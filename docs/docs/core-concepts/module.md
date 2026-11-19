@@ -11,21 +11,21 @@ The **Module** is a container that wraps framework-specific agents and registers
 ```mermaid
 graph LR
     A[Framework Agents] --> B[Module]
-    B --> C[Create AK Agents]
+    B --> C[Create OAK Agents]
     B --> D[Create Runners]
     C --> E[Runtime Registry]
     D --> E
     
     style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff
-    style B fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
-    style E fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
+    style E fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ## What is a Module?
 
 A Module:
 - **Wraps** framework-specific agents
-- **Creates** Agent Kernel Agent instances
+- **Creates** Open Agent Kernel Agent instances
 - **Creates** appropriate Runners
 - **Registers** agents with the Runtime
 
@@ -78,14 +78,14 @@ GoogleADKModule([agent])
 sequenceDiagram
     participant A as Framework Agents
     participant M as Module
-    participant AK as AK Agent
+    participant OAK as OAK Agent
     participant R as Runner
     participant RT as Runtime
     
     A->>M: Pass agents to Module
-    M->>AK: Create AK Agent wrappers
+    M->>OAK: Create OAK Agent wrappers
     M->>R: Create framework Runners
-    M->>AK: Associate Runners
+    M->>OAK: Associate Runners
     M->>RT: Register agents
     RT-->>M: Registration complete
 ```
@@ -193,7 +193,7 @@ OpenAIModule([triage, math]).describe(
 | `skills` | The skills an A2A card lists; by default one per tool |
 | `identity` | How the agent identifies itself when it acts as a principal |
 
-**Where the description comes from.** When you declare none, Agent Kernel uses the description the native
+**Where the description comes from.** When you declare none, OAK uses the description the native
 agent carries, if its framework keeps one separately from the instructions:
 
 | Framework | Field used as the default description |
@@ -241,7 +241,7 @@ if __name__ == "__main__":
 ## Summary
 
 - Modules wrap framework agents
-- Create AK Agents and Runners
+- Create OAK Agents and Runners
 - Automatically register with Runtime
 - Each framework has its own Module class
 

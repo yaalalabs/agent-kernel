@@ -18,7 +18,7 @@ AWS Bedrock Guardrails enable:
 
 ## Installation
 
-Install Agent Kernel with AWS support:
+Install Open Agent Kernel (OAK) with AWS support:
 
 ```bash
 uv add "agentkernel[aws]"
@@ -78,7 +78,7 @@ Or use AWS CLI configuration:
 aws configure
 ```
 
-### 3. Update Agent Kernel Configuration
+### 3. Update OAK Configuration
 
 Add guardrail configuration to your `config.yaml`:
 
@@ -194,7 +194,7 @@ Your IAM role/user needs the following permissions:
 ### Input Guardrails
 
 1. User sends a request to the agent
-2. Agent Kernel extracts text from the request
+2. OAK extracts text from the request
 3. Text is sent to Bedrock `ApplyGuardrail` API with `source=INPUT`
 4. If guardrail is triggered: Return safe error message
 5. If validation passes: Continue to agent processing
@@ -202,7 +202,7 @@ Your IAM role/user needs the following permissions:
 ### Output Guardrails
 
 1. Agent generates a response
-2. Agent Kernel extracts text from the response
+2. OAK extracts text from the response
 3. Text is sent to Bedrock `ApplyGuardrail` API with `source=OUTPUT`
 4. If guardrail is triggered: Replace response with safe message
 5. If validation passes: Return original response to user

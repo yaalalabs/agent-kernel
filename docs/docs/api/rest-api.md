@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # REST API
 
-Agent Kernel provides a built-in REST API server for agent interaction.
+Open Agent Kernel (OAK) provides a built-in REST API server for agent interaction.
 
 ## Starting the API Server
 
@@ -253,7 +253,7 @@ Please study the [Hooks documentation](/docs/integrations/hooks) for the use of 
 
 ## Passing images and files
 
-Agent Kernel supports sending images and files to agents in two ways: via JSON body with base64-encoded data, or as multipart form data for larger files. 
+OAK supports sending images and files to agents in two ways: via JSON body with base64-encoded data, or as multipart form data for larger files. 
 
 :::info Current Limitation
 Currently, passing images and files only work with OpenAI SDK & Google ADK. Other implementations will be provided in future
@@ -412,7 +412,7 @@ A detailed example with tests are provided [here](https://github.com/yaalalabs/a
 
 ## Custom Routes
 
-Agent Kernel REST API allows the users to add custom routes to the existing REST server by two ways. This is a support functionality that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
+OAK REST API allows the users to add custom routes to the existing REST server by two ways. This is a support functionality that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
 
 ### Option 1
 

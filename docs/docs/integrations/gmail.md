@@ -1,10 +1,10 @@
 # Gmail Integration
 
-Deploy your Agent Kernel agents as Gmail bots that automatically read and reply to emails using AI. This integration connects your agents directly to Gmail, enabling intelligent email automation for support, sales, and more.
+Deploy your Open Agent Kernel agents as Gmail bots that automatically read and reply to emails using AI. This integration connects your agents directly to Gmail, enabling intelligent email automation for support, sales, and more.
 
 ## Overview
 
-The `GmailInboundAdapter`/`GmailOutboundAdapter` pair bridges Agent Kernel and Gmail. `PollerRunner` hosts the inbound adapter, which polls for new mail and enqueues each message; the agent runs behind the queue and the outbound adapter sends the reply. The integration handles OAuth2 authentication, polling, message parsing, and reply threading.
+The `GmailInboundAdapter`/`GmailOutboundAdapter` pair bridges OAK and Gmail. `PollerRunner` hosts the inbound adapter, which polls for new mail and enqueues each message; the agent runs behind the queue and the outbound adapter sends the reply. The integration handles OAuth2 authentication, polling, message parsing, and reply threading.
 
 ### How it works:
 

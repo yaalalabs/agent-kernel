@@ -1,6 +1,6 @@
-# Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (no queue)
+# Open Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (no queue)
 
-This package contains a demo of Agent Kernel running agents built with the OpenAI Agents SDK,
+This package contains a demo of Open Agent Kernel running agents built with the OpenAI Agents SDK,
 deployed on AWS ECS and exposed over a **WebSocket API in direct (non-queue) mode**.
 
 Unlike the queue-based containerized examples (`openai-dynamodb-scalable`), there is only **one**

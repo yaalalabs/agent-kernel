@@ -1,6 +1,6 @@
 # LiveKit Voice Integration
 
-This example shows how to run an Agent Kernel instance connected directly to a LiveKit Room using WebRTC. This enables ultra-low-latency real-time voice streaming with the OpenAI Realtime API (`gpt-realtime` by default).
+This example shows how to run an Open Agent Kernel instance connected directly to a LiveKit Room using WebRTC. This enables ultra-low-latency real-time voice streaming with the OpenAI Realtime API (`gpt-realtime` by default).
 
 ## Setup
 
@@ -8,7 +8,7 @@ You will need a LiveKit project (e.g. via [LiveKit Cloud](https://cloud.livekit.
 
 ## Realtime Configuration
 
-Agent Kernel handles realtime streaming pacing via the `execution.realtime` block in your config.
+OAK handles realtime streaming pacing via the `execution.realtime` block in your config.
 
 ```yaml
 execution:
@@ -26,7 +26,7 @@ Install dependencies using `uv` and the provided build script:
 ./build.sh
 ```
 
-To install local dependencies in development mode (linking directly to your local Agent Kernel clone):
+To install local dependencies in development mode (linking directly to your local OAK clone):
 
 ```bash
 ./build.sh local
@@ -34,7 +34,7 @@ To install local dependencies in development mode (linking directly to your loca
 
 ## Run
 
-Run this demo by first setting up your environment variables. Agent Kernel automatically binds environment variables starting with `AK_` to the configuration.
+Run this demo by first setting up your environment variables. OAK automatically binds environment variables starting with `AK_` to the configuration.
 
 ```bash
 # Agent Kernel OpenAI credentials

@@ -1,6 +1,6 @@
-# Agent Kernel Realtime Voice over Kafka (LiveKit)
+# Open Agent Kernel Realtime Voice over Kafka (LiveKit)
 
-This demo runs Agent Kernel's `REALTIME` execution pipeline for voice over WebRTC, using LiveKit as the frontend gateway and a Kafka broker to connect the pipeline.
+This demo runs Open Agent Kernel's `REALTIME` execution pipeline for voice over WebRTC, using LiveKit as the frontend gateway and a Kafka broker to connect the pipeline.
 
 ```
 LiveKit WebRTC → IOHandler → agent-input → Agent Runner → agent-output → IOHandler → LiveKit WebRTC
@@ -14,7 +14,7 @@ Because Kafka is a high-performance broker transport, the pipeline is split acro
 - `OPENAI_API_KEY` exported
 - `AK_LIVEKIT__URL`, `AK_LIVEKIT__API_KEY`, and `AK_LIVEKIT__API_SECRET` exported (from your LiveKit Cloud dashboard)
 
-> Note: If you are actively developing Agent Kernel core features (like `RealtimeAgentRunner`), compile your local changes first by running `cd ../../../../../ak-py && make build`, and then use `./build.sh local` in this folder instead of `./build.sh`.
+> Note: If you are actively developing OAK core features (like `RealtimeAgentRunner`), compile your local changes first by running `cd ../../../../../ak-py && make build`, and then use `./build.sh local` in this folder instead of `./build.sh`.
 
 ## Quickstart
 

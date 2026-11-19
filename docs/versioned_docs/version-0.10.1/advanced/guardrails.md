@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Overview
 
-Guardrails provide content safety and compliance validation for agent interactions. Agent Kernel supports both input and output guardrails to ensure agent requests and responses meet your safety and policy requirements.
+Guardrails provide content safety and compliance validation for agent interactions. Open Agent Kernel (OAK) supports both input and output guardrails to ensure agent requests and responses meet your safety and policy requirements.
 
 ## Introduction
 
@@ -97,7 +97,7 @@ uv add "agentkernel[walledai]"
 
 See the [Walled AI Guardrails Guide](./guardrails-walledai) for setup instructions.
 
-### 2. Configure Agent Kernel
+### 2. Configure OAK
 
 Add guardrail configuration to `config.yaml`:
 

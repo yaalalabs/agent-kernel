@@ -1,6 +1,6 @@
 # WhatsApp
 
-The WhatsApp integration allows you to deploy Agent Kernel agents as WhatsApp bots that can respond to messages via the WhatsApp Business API. This integration uses the WhatsApp Cloud API webhooks to provide real-time conversational AI capabilities.
+The WhatsApp integration allows you to deploy Open Agent Kernel agents as WhatsApp bots that can respond to messages via the WhatsApp Business API. This integration uses the WhatsApp Cloud API webhooks to provide real-time conversational AI capabilities.
 
 ## Overview
 

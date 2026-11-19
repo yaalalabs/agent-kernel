@@ -4,11 +4,11 @@ sidebar_position: 3
 
 # Agent Skills
 
-Agent Kernel ships with **Agent Skills**: structured guides that coding agents (GitHub Copilot, Claude Code, Codex, etc.) can follow to help you build, extend, and deploy AI agents. Skills use the [Agent Skills Open Standard](https://agentskills.io) (SKILL.md format) for cross-agent compatibility.
+Open Agent Kernel (OAK) ships with **Agent Skills**: structured guides that coding agents (GitHub Copilot, Claude Code, Codex, etc.) can follow to help you build, extend, and deploy AI agents. Skills use the [Agent Skills Open Standard](https://agentskills.io) (SKILL.md format) for cross-agent compatibility.
 
 ## What Are Agent Skills?
 
-Agent Skills are machine-readable guides that coding agents discover and follow automatically. Instead of reading documentation yourself and translating it into code, you describe what you want in natural language and the coding agent reads the relevant skill to generate correct, idiomatic code for Agent Kernel.
+Agent Skills are machine-readable guides that coding agents discover and follow automatically. Instead of reading documentation yourself and translating it into code, you describe what you want in natural language and the coding agent reads the relevant skill to generate correct, idiomatic code for OAK.
 
 Each skill is a `SKILL.md` file with:
 - **YAML frontmatter**: name, description, metadata for discovery (~100 tokens)
@@ -62,7 +62,7 @@ These skills are bundled with the `agentkernel` PyPI package and help you build 
 
 ### ak-init
 
-Interactively scaffold a new Agent Kernel project. Covers all supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
+Interactively scaffold a new OAK project. Covers all supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
 
 **Example prompts:**
 - *"Create a new agent project using CrewAI for AWS Lambda"*
@@ -115,7 +115,7 @@ Set up testing and debug common issues. Covers test modes (score, llm, fallback)
 
 ## Developer Skills: Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains nineteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+OAK doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains nineteen developer skills that teach coding assistants how to work on the OAK codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards, eliminating the onboarding curve for new contributors.
 
@@ -143,7 +143,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 
 ### How Contributors Benefit
 
-A first-time contributor doesn't need to spend hours reading source code to understand how Agent Kernel is structured. They simply ask their coding assistant:
+A first-time contributor doesn't need to spend hours reading source code to understand how OAK is structured. They simply ask their coding assistant:
 
 - *"Add support for a new agent framework called X"* → The assistant reads `ak-dev-new-framework-integration` and generates the complete adapter module with correct subclasses, exports, and tests.
 - *"Add a new tracing provider for Datadog"* → The assistant reads `ak-dev-new-tracing-provider` and implements the `BaseTrace` interface, creates traced runners, and wires the factory.
@@ -172,13 +172,13 @@ The skills carry the same architectural knowledge the core team has: patterns, c
 
 ## Real-World Use Cases
 
-The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) directory in the repository contains complete agent projects built using this exact workflow. Each project starts from a `SPEC.md` describing the agent's purpose, and the coding assistant uses the Agent Kernel skills to generate all code, configuration, and deployment files.
+The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) directory in the repository contains complete agent projects built using this exact workflow. Each project starts from a `SPEC.md` describing the agent's purpose, and the coding assistant uses the OAK skills to generate all code, configuration, and deployment files.
 
 **Example: Waste Sorting Assistant**
 
 The [`waste-sorting-assistant`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/waste-sorting-assistant) is a domain-specific agent that recommends waste disposal categories based on item material and local recycling rules. It demonstrates:
 - OpenAI Agents SDK agent with custom tools
-- Agent Kernel session memory for region-specific rules
+- OAK session memory for region-specific rules
 - AWS Lambda deployment with DynamoDB-backed session persistence
 
 **Example: Mathru — Maternal Health Companion**

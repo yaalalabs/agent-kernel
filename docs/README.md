@@ -1,6 +1,6 @@
-# Agent Kernel Documentation
+# Open Agent Kernel Documentation
 
-This directory contains the comprehensive documentation for Agent Kernel, built with [Docusaurus 2](https://docusaurus.io/).
+This directory contains the comprehensive documentation for Open Agent Kernel (OAK), built with [Docusaurus 2](https://docusaurus.io/).
 
 ## 🚀 Quick Start
 
@@ -193,7 +193,7 @@ To contribute to the documentation:
 
 ## 📄 License
 
-The documentation is released under the same Apache License 2.0 as Agent Kernel.
+The documentation is released under the same Apache License 2.0 as OAK.
 
 ### Third-Party Dependency Note
 
@@ -203,7 +203,7 @@ The docs UI uses `gsap` for client-side animations. `gsap` is distributed under 
 
 - [Docusaurus Documentation](https://docusaurus.io/docs)
 - [Mermaid Documentation](https://mermaid.js.org/)
-- [Agent Kernel GitHub](https://github.com/yaalalabs/agent-kernel)
+- [OAK GitHub](https://github.com/yaalalabs/agent-kernel)
 
 ---
 

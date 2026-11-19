@@ -4,8 +4,8 @@ sidebar_position: 7
 
 # Pydantic AI
 
-Integrate [Pydantic AI](https://ai.pydantic.dev) with Agent Kernel. Pydantic AI is built by the
-Pydantic team and gives Agent Kernel native, first-class support for many model providers
+Integrate [Pydantic AI](https://ai.pydantic.dev) with Open Agent Kernel (OAK). Pydantic AI is built by the
+Pydantic team and gives OAK native, first-class support for many model providers
 (OpenAI, Anthropic, Google, Bedrock, Groq, Mistral, Cohere, xAI, Ollama, …) plus `FallbackModel`
 for automatic provider failover.
 
@@ -47,13 +47,13 @@ if __name__ == "__main__":
 
 :::warning name= and description= are both required in practice
 - **`name=` is mandatory.** Pydantic AI infers an agent's name lazily from the call frame on first
-  run, but Agent Kernel registers agents by name *immediately* at load time — before any run. A
+  run, but OAK registers agents by name *immediately* at load time — before any run. A
   Pydantic AI agent without an explicit `name=` therefore reaches registration with `name is None`,
   and `PydanticAIModule` raises a `ValueError`. Always pass `name=`.
 - **`description=` should be set.** Unlike the OpenAI adapter (where `instructions` is effectively
   mandatory and doubles as the description), Pydantic AI's `description` is an optional, separate
-  field — and it is what Agent Kernel reports as the agent's description and A2A card summary. When
-  `description=` is unset, Agent Kernel falls back to the agent's static `instructions=` on a
+  field — and it is what OAK reports as the agent's description and A2A card summary. When
+  `description=` is unset, OAK falls back to the agent's static `instructions=` on a
   best-effort basis (Pydantic AI has no public getter for instructions, so this reads a private
   attribute and degrades to an empty string if that attribute changes in a future release). Setting
   `description=` explicitly is the reliable path; an agent with neither yields an empty description,
@@ -135,13 +135,13 @@ PydanticAIModule([agent])
 
 Tools bound this way reach execution context (session, agent, requests) through `ToolContext.get()` —
 the same portable mechanism as every other adapter, so a tool function bound here also works unchanged
-on any other framework. Agent Kernel does not require `deps_type`/`RunContext` for its own tools;
+on any other framework. OAK does not require `deps_type`/`RunContext` for its own tools;
 `deps` carries the per-run [framework context](#per-run-contextstate) instead, which your **native**
 Pydantic AI tools can read. See [Tools](../core-concepts/tools) for the full guide.
 
 ## Structured Output
 
-Configure structured output with Pydantic AI's `output_type` parameter. Agent Kernel detects the
+Configure structured output with Pydantic AI's `output_type` parameter. OAK detects the
 structured result and returns an `AgentReplyAny` whose `content` is the result as a dict; no
 re-parsing of text needed:
 
@@ -207,7 +207,7 @@ Two caveats:
   argument, so inside an override block the framework context never reaches your tools and the
   write-back stores the unmutated copy.
 
-Agent Kernel owns the `deps` slot: it exposes no way for application code to pass its own `deps`, so
+OAK owns the `deps` slot: it exposes no way for application code to pass its own `deps`, so
 this injection cannot displace a caller-supplied value.
 
 ## Native run options
@@ -256,7 +256,7 @@ def ask_reason(ctx: RunContext, order_id: str) -> str:
     raise CallDeferred
 ```
 
-This is the framework's requirement, not Agent Kernel's: a pause *is* a run whose output is a
+This is the framework's requirement, not OAK's: a pause *is* a run whose output is a
 `DeferredToolRequests`, so an agent that cannot return one has nowhere to put it. Leave it out and
 the run fails with *"A deferred tool call was present, but `DeferredToolRequests` is not among
 output types"* however the tools are declared.
@@ -275,7 +275,7 @@ A deferred call's answer is supplied as the tool's result, passed through exactl
 list and the model receives a list, send a string and it receives a string.
 
 **A partial resume is refused.** The framework requires every deferred call resolved together, and
-Agent Kernel pre-empts it — naming the ids you missed — so the error reaches you instead of being
+OAK pre-empts it — naming the ids you missed — so the error reaches you instead of being
 flattened into a generic reply by the adapter's error handling.
 
 **On an approval, a payload must be a JSON object.** There it becomes `ToolApproved(override_args=...)`,
@@ -310,7 +310,7 @@ for a complete triage/math/weather delegation-via-tool example.
 
 For per-run context/state carried across turns, see
 [examples/cli/pydanticai_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/pydanticai_context)
-— a cart kept in the framework context, mutated by native `RunContext` tools alongside an Agent Kernel
+— a cart kept in the framework context, mutated by native `RunContext` tools alongside an OAK
 tool that uses `ToolContext`, so the two tool styles are shown side by side.
 
 For per-agent native run options, see [examples/cli/pydanticai-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/pydanticai-run-options) (`UsageLimits` and an `event_stream_handler`, with a deterministic `Run stats:` line on every reply).

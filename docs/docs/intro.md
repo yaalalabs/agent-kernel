@@ -3,22 +3,18 @@ sidebar_position: 1
 slug: /
 ---
 
-# Introduction to Agent Kernel
+# Introduction to Open Agent Kernel
 
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
-:::tip What's New
-🗂️ **Agent Registry** - Every agent carries one descriptor (name, version, description, owner, tags, skills and tools), and the agent catalog (`GET /api/v1/agents`), A2A cards, MCP agent tools and the AG-UI listing are all built from it. Describe an agent with `Module.describe` or `registry.agents.<id>`, choose the surfaces it is served on, and share the registry across processes with Redis, Valkey or DynamoDB. [Learn more →](./core-concepts/configuration.md#agent-registry)
-
-
-🪪 **Identity and Access** - One configured identity provider (Auth0, Keycloak or Okta over OIDC, Amazon Cognito, Microsoft Entra ID, Firebase, a static map, or your own) authenticates every surface, and tools, hooks, threads and scheduled tasks see the same `Principal`. [Learn more →](./advanced/identity-and-access.md)
-
-
+:::tip What's new
+The agent registry and identity and access are the latest additions.
+[See everything that is new](./whats-new.md).
 :::
 
-## What is Agent Kernel?
+## What is OAK?
 
-Agent Kernel is an **open-source runtime** that lets you build, test and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code, and scales from a single REST container to queue-backed, token-streaming production topologies. Built-in integrations for Slack, WhatsApp and more mean your agents can reach users instantly.
+Open Agent Kernel (OAK) is an **open-source runtime** that lets you build, test and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code, and scales from a single REST container to queue-backed, token-streaming production topologies. Built-in integrations for Slack, WhatsApp and more mean your agents can reach users instantly.
 
 **Think of it like Express.js for web servers, or Spring Boot for Java microservices**, but for AI agents. It gives you the scaffolding, execution environment, session management and deployment infrastructure so you can focus on writing the logic that matters.
 
@@ -48,20 +44,20 @@ flowchart LR
     LK["LiveKit"] -->|Voice integration| B
     G["Test Framework"]
     B --> G
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
     style B fill:#2e4555,stroke:#fff,stroke-width:2px,color:#fff
     style G fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-## Why Agent Kernel?
+## Why OAK?
 
 ### Effortless Migration
 
-Build agents using any AI agentic framework and migrate them to Agent Kernel to benefit from its execution framework capabilities. No need to build a platform code from scratch to run your agents. You can focus on domain-specific Agent development and Agent Kernel takes care of testing, deployment and execution.
+Build agents using any AI agentic framework and migrate them to OAK to benefit from its execution framework capabilities. No need to build a platform code from scratch to run your agents. You can focus on domain-specific Agent development and OAK takes care of testing, deployment and execution.
 
 ### Ready-to-Use Execution
 
-Agent Kernel provides pre-built execution capabilities:
+OAK provides pre-built execution capabilities:
 - **CLI Testing Environment** for local development
 - **REST API Server** for web integration
 - **Built-in popular integrations** for pluggable integrations and ability to build custom integrations quickly
@@ -91,7 +87,7 @@ Agent Kernel provides pre-built execution capabilities:
 
 ### Multi-Cloud Architecture
 
-Deploy the same agent code to **AWS, Azure, or GCP** without modification. Agent Kernel provides:
+Deploy the same agent code to **AWS, Azure, or GCP** without modification. OAK provides:
 - Cloud-agnostic agent development
 - Provider-specific optimizations
 - Consistent APIs across clouds
@@ -99,7 +95,7 @@ Deploy the same agent code to **AWS, Azure, or GCP** without modification. Agent
 
 ### Pluggable Architecture
 
-Easily extend Agent Kernel with custom framework adapters, memory back-ends, and deployment profiles.
+Easily extend OAK with custom framework adapters, memory back-ends, and deployment profiles.
 
 ### Enterprise-Ready Features
 
@@ -156,7 +152,7 @@ from agentkernel.core import Agent, Runner, Session, Module, Runtime
 ```
 
 All framework adapters expose the same core abstractions:
-- **Agent**: Framework-specific agent wrapped by Agent Kernel
+- **Agent**: Framework-specific agent wrapped by OAK
 - **Runner**: Framework-specific execution strategy
 - **Session**: Shared conversational state
 - **Module**: Container for registering agents
@@ -199,7 +195,7 @@ Two types of cache with identical APIs but different lifecycles:
 
 ### Multi-Framework Support
 
-Agent Kernel currently supports:
+OAK currently supports:
 
 - **OpenAI Agents SDK** - Official OpenAI agents framework
 - **CrewAI** - Role-based multi-agent framework
@@ -228,23 +224,23 @@ flowchart LR
     D -- Integration --> I["Slack"] & J["WhatsApp"] & M["Messenger"] & N["Instagram"] & O["Telegram"] & P["Gmail"] & T["Teams"]
     B -- Realtime --> LK["LiveKit"]
 
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
     style E fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
     style F fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
     style K fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
     style L fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
     style Q fill:#4285F4,stroke:#fff,stroke-width:2px,color:#fff
     style R fill:#4285F4,stroke:#fff,stroke-width:2px,color:#fff
-    style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style N fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style O fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style I fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style J fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style M fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style N fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style O fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ## Quick Example
 
-Here's a simple agent built with Agent Kernel using CrewAI:
+Here's a simple agent built with OAK using CrewAI:
 
 ```python
 from crewai import Agent as CrewAgent
@@ -277,21 +273,21 @@ You can:
 
 All without changing your agent code!
 
-## Who Should Use Agent Kernel?
+## Who Should Use OAK?
 
-Agent Kernel is built for four types of teams:
+OAK is built for four types of teams:
 
 ### Software Companies (Services)
-Development houses and IT services firms with clients asking for AI-powered solutions. Agent Kernel lets them stand up AI agent capabilities quickly without a 6-month R&D cycle, focusing developer time on client-specific agent logic, not infrastructure.
+Development houses and IT services firms with clients asking for AI-powered solutions. OAK lets them stand up AI agent capabilities quickly without a 6-month R&D cycle, focusing developer time on client-specific agent logic, not infrastructure.
 
 ### Software Companies (Products)
-SaaS and enterprise software companies wanting to embed AI agents into their products. Agent Kernel's framework-agnostic design eliminates lock-in: add intelligent agents today, switch frameworks tomorrow, and your platform code never changes.
+SaaS and enterprise software companies wanting to embed AI agents into their products. OAK's framework-agnostic design eliminates lock-in: add intelligent agents today, switch frameworks tomorrow, and your platform code never changes.
 
 ### AI Startups
 Early to growth-stage startups building AI-native products. With open-source, no licensing costs, and full deployment infrastructure (Terraform, Docker) out of the box, startups go from prototype to production in days, not quarters.
 
 ### Domain Experts
-Subject matter experts in finance, healthcare, legal, education, or other fields who want to build AI products without a fulltime engineering team. Agent Kernel dramatically reduces the software engineering surface area: define your agent logic, and Agent Kernel handles the rest.
+Subject matter experts in finance, healthcare, legal, education, or other fields who want to build AI products without a fulltime engineering team. OAK dramatically reduces the software engineering surface area: define your agent logic, and OAK handles the rest.
 
 → **[Explore all use cases →](/use-cases)**
 
@@ -299,7 +295,7 @@ Subject matter experts in finance, healthcare, legal, education, or other fields
 
 Ready to get started? Here's what to do next:
 
-1. [**Install Agent Kernel**](/docs/installation) - Get up and running in minutes
+1. [**Install OAK**](/docs/installation) - Get up and running in minutes
 2. [**Quick Start Guide**](/docs/quick-start) - Build your first agent
 3. [**Core Concepts**](/docs/core-concepts/overview) - Understand the architecture
 4. [**Execution Hooks**](/docs/integrations/hooks) - Add guardrails, RAG, and response control
@@ -317,7 +313,7 @@ Ready to get started? Here's what to do next:
 
 ## License
 
-Agent Kernel is released under the Apache License 2.0. See the [LICENSE](https://github.com/yaalalabs/agent-kernel/blob/develop/LICENSE) file for details.
+OAK is released under the Apache License 2.0. See the [LICENSE](https://github.com/yaalalabs/agent-kernel/blob/develop/LICENSE) file for details.
 
 ---
 
