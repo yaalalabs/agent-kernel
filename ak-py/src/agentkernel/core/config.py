@@ -1,4 +1,5 @@
 import importlib.metadata
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import StrEnum
 from threading import RLock
@@ -1619,6 +1620,26 @@ class _CostBudgetPeriod(StrEnum):
     DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
+
+    def start_of(self, now: datetime) -> datetime:
+        """Start of the period containing ``now``, in UTC: 00:00; Monday 00:00; the 1st 00:00."""
+        if now.tzinfo is None:
+            raise ValueError("BudgetPeriod needs a timezone-aware datetime")
+        day = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        if self is _CostBudgetPeriod.DAILY:
+            return day
+        if self is _CostBudgetPeriod.WEEKLY:
+            return day - timedelta(days=day.weekday())
+        return day.replace(day=1)
+
+    def end_of(self, now: datetime) -> datetime:
+        """End of the period containing ``now``: the next period's start."""
+        start = self.start_of(now)
+        if self is _CostBudgetPeriod.DAILY:
+            return start + timedelta(days=1)
+        if self is _CostBudgetPeriod.WEEKLY:
+            return start + timedelta(days=7)
+        return start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
 
 
 class _CostBudgetLimit(BaseModel):
