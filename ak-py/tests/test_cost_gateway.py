@@ -280,6 +280,17 @@ class TestGatewayHTTP:
         assert "someone" not in str(caught.value)
 
     @pytest.mark.asyncio
+    async def test_a_rejection_keeps_its_body_as_detail_only(self, caplog):
+        caplog.set_level(logging.DEBUG)
+        http = self._http(lambda request: httpx.Response(400, json={"error": "Budget with id 'ak-1' already exists."}))
+
+        with pytest.raises(UsageRetrievalError) as caught:
+            await http.request("POST", "/budget/new", json={})
+
+        assert "already exists" in caught.value.detail
+        assert "already exists" not in str(caught.value) and "already exists" not in caplog.text
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("error", [httpx.ConnectError, httpx.ReadTimeout, httpx.DecodingError, httpx.TooManyRedirects])
     async def test_maps_transport_errors(self, error):
         def handler(request):

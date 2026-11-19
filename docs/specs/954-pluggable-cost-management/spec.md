@@ -90,6 +90,12 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     `gateway_user_id(agent_id)`. `is_budget_refusal` first checked only `body["error"]["type"]`, which misses OpenAI SDK
     errors, whose `body` is the inner object (§5.1). `LLMGateway.capabilities` is a plain class attribute, not a
     `ClassVar`, so LiteLLM can set it per instance (§4).
+25. **LiteLLM `customer_management` budget sync is deferred; `end_user` sync details.** The 1.111 customer API
+    (templates per organization id, LiteLLM-assigned template ids, an implicit default, 409 on create) does not
+    match §5.1's first sketch and cannot be verified against a stable release, so that mode no longer declares
+    `native_user_budget` (§5.1). In `end_user` mode the `budget_id` hash normalizes the amount, and
+    `UsageRetrievalError` gains `detail` (the response text, never in the message or logs) so the adapter can tell
+    "already exists" from other 400s.
 
 ## Design
 
@@ -438,7 +444,8 @@ Checked against the proxy source at LiteLLM 1.95.1.
   - Without LiteLLM Enterprise it is capped at 5 organizations, 5 teams per organization and 5 members per team.
     Per-user budgets for more users need Enterprise. Documented.
   - There are no per-member spend rows. `fetch_usage_since` is not declared and nothing replaces it, so only native
-    budgets work in this mode. Documented.
+    budgets could work in this mode, and their sync is deferred (deviation 25). Until the follow-up this mode only
+    attributes calls; `CostManager`'s capability check refuses a `budgets` block with it. Documented.
 
 **Capabilities**
 
@@ -451,7 +458,7 @@ Checked against the proxy source at LiteLLM 1.95.1.
 | `agent_aggregation` | yes (client-side, from `request_tags`) | no |
 | `session_filter` | no (client-side only) | no |
 | `custom_metadata` | yes | yes |
-| `native_user_budget` | yes | yes |
+| `native_user_budget` | yes | no (sync deferred, deviation 25) |
 | `request_level_budget_check` | yes | yes |
 | `streaming_usage` | yes (with `always_include_stream_usage`) | yes |
 | `filters` | `{USER, TIME_RANGE, MODEL}` | `{}` |
@@ -480,7 +487,10 @@ mode as its own subclass.
 - Request: `GET /spend/logs/v2` with `end_user=<user_id>`, `start_date`, `end_date`, optional `model`,
   `page_size=1000`, `sort_by=startTime` and `sort_order=asc` (parameters at `spend_management_endpoints.py:1734-1806`).
 - Authentication is `admin_key`, falling back to `api_key`.
-- Pages are read until `page × page_size ≥ total`. A `total` of 10 000 or more is a `UsageTruncatedError`.
+- Pages are read until `page × page_size ≥ total`. A `total` of 10 000 or more, or `total_is_capped` (1.105+), is a
+  `UsageTruncatedError`.
+- Rows are kept only when `start ≤ timestamp < end`, on the client: the route is inclusive to the second, and a
+  `UsageWindow` end is the next period's start.
 - The view sub-windows long ranges (§13).
 - `start_date` and `end_date` are `YYYY-MM-DD HH:MM:SS` strings, read as UTC. The v2 route also accepts `YYYY-MM-DD`,
   and both bounds are inclusive (`startTime` `gte` / `lte`; `spend_management_endpoints.py:1866-1890`). The
@@ -525,7 +535,11 @@ when native sync applies).
    - `max_budget=float(amount)`
    - `budget_duration={daily: "1d", weekly: "7d", monthly: "1mo"}[period]` (deviation 8)
    - The upsert is `POST /budget/new` (`budget_management_endpoints.py:29`), and on a 400 "already exists"
-     `POST /budget/update` (`:122`). The **unverified** error text is pinned by the live test.
+     `POST /budget/update` (`:122`). At 1.105.7 the texts are `Budget with id '…' already exists.` and
+     `Customer already exists, …`; the 400's body reaches the adapter as `UsageRetrievalError.detail`. Any other
+     non-auth 4xx is a rejected shape and raises `AKConfigError`.
+   - The amount in the `budget_id` hash is normalized (`format(amount.normalize(), "f")`), so `10` and `10.00`
+     share a row (deviation 25).
    - It is called once per process, at startup, with the default budget and every `users` budget. That is one or
      two calls per distinct budget, and a deployment usually has only a few.
 2. `sync_budgets(budgets)` upserts each user's customer row, for budgets whose rows already exist.
@@ -534,10 +548,12 @@ when native sync applies).
    - So each user costs one or two admin calls.
    - A `None` value upserts the customer with no `budget_id`. Startup uses this for `ak-system` (§8.3).
 
-`customer_management` upserts members instead: `POST /management/v1/customer_members/upsert` with the org alias,
-the member id `gateway_user_id(user_id)` (rule 5) and a budget. The default budget goes to `/management/v1/customer_organizations/{org_id}/default_budgets`. These
-routes exist only from 1.111 (**unverified** against source; they are not in the locked 1.95.1). They are pinned by a
-recorded-response test.
+`customer_management` budget sync is **deferred** (deviation 25). LiteLLM's documented 1.111 API differs from the
+first sketch: budgets are named templates inside an organization (`/management/v1/customer_organizations/{org_id}/default_budgets`,
+addressed by the organization's id, not its alias), a member selects one by LiteLLM's own `budget_id` through
+`/management/v1/customer_members/upsert`, the first template silently becomes the organization's default (so a member
+with no budget, such as `ak-system`, would inherit it), and an existing record answers 409. 1.111 is prerelease only and
+the installed proxy has no source for these routes, so the shapes cannot be verified yet.
 
 **`probe`**
 

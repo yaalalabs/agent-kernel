@@ -114,7 +114,9 @@ class GatewayHTTP:
         if not response.is_success:
             auth = status in (401, 403)
             self._log.warning(f"{where} returned {status}")
-            raise UsageRetrievalError(f"{where} returned {status}", gateway=self._gateway, path=path, status=status, auth=auth)
+            raise UsageRetrievalError(
+                f"{where} returned {status}", gateway=self._gateway, path=path, status=status, auth=auth, detail=response.text[:500]
+            )
         try:
             return response.json()
         except ValueError:

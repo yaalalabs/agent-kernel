@@ -2,6 +2,7 @@
 a fake /spend/logs/v2, the LLMGatewayContract, and the factory branch."""
 
 import json
+import logging
 import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -12,8 +13,11 @@ import openai
 import pytest
 
 from agentkernel.core.config import _CostGatewayConfig
+from agentkernel.core.util.factory import AKConfigError
 from agentkernel.cost import (
     Attribution,
+    BudgetLimit,
+    BudgetPeriod,
     GatewayCapabilities,
     GatewayFilter,
     LLMGatewayFactory,
@@ -57,7 +61,7 @@ class TestCapabilities:
 
     def test_customer_management(self):
         assert _gateway("customer_management").capabilities == GatewayCapabilities(
-            custom_metadata=True, native_user_budget=True, request_level_budget_check=True, streaming_usage=True
+            custom_metadata=True, request_level_budget_check=True, streaming_usage=True  # budget sync deferred
         )
 
     def test_the_mode_is_per_instance(self):
@@ -200,7 +204,12 @@ class _FakeSpendLogs:
         self.rows: list[dict] = []
         self.requests: list[httpx.Request] = []
         self.failure: str | None = None
-        self.override: dict | None = None  # a fixed body to return instead
+        self.override: dict | None = None  # a fixed /spend/logs/v2 body to return instead
+        self.budgets: dict[str, dict] = {}
+        self.customers: dict[str, dict] = {}
+        self.posts: list[tuple[str, dict]] = []
+        self.forced: dict[str, httpx.Response] = {}  # path -> a fixed response
+        self.version: str | None = "1.111.0"
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -208,9 +217,16 @@ class _FakeSpendLogs:
             raise httpx.ConnectError("connection refused", request=request)
         if self.failure in ("auth", "server", "malformed"):
             return httpx.Response({"auth": 401, "server": 500, "malformed": 200}[self.failure], content=b"<html/>")
+        path = request.url.path
+        if path in self.forced:
+            return self.forced[path]
+        if request.method == "POST":
+            return self._admin(path, json.loads(request.content))
+        if path == "/health/readiness":
+            return httpx.Response(200, json={"status": "healthy", "db": "connected", "litellm_version": self.version})
         if self.override is not None:
             return httpx.Response(200, json=self.override)
-        assert request.url.path == "/spend/logs/v2"
+        assert path == "/spend/logs/v2"
         params = request.url.params
         rows = [
             row
@@ -233,6 +249,21 @@ class _FakeSpendLogs:
                 "total_is_capped": len(rows) > 10_000,
             },
         )
+
+    def _admin(self, path: str, body: dict) -> httpx.Response:
+        """The budget and customer routes, with the 1.105 proxy's "already exists" replies."""
+        self.posts.append((path, body))
+        table, key = (self.budgets, "budget_id") if path.startswith("/budget/") else (self.customers, "user_id")
+        if path.endswith("/new"):
+            if body[key] in table:
+                if table is self.budgets:  # an HTTPException
+                    return httpx.Response(400, json={"detail": {"error": f"Budget with id '{body[key]}' already exists."}})
+                message = f"Customer already exists, passed user_id={body[key]}. Please pass a new user_id."
+                return httpx.Response(400, json={"error": {"message": message, "type": "bad_request", "param": "user_id", "code": "400"}})
+            table[body[key]] = dict(body)
+        else:
+            table[body[key]].update(body)
+        return httpx.Response(200, json=table[body[key]])
 
 
 def _log(gateway: LiteLLMGateway, row_id: str, at: datetime, user: str = "alice", **overrides) -> dict:
@@ -304,9 +335,6 @@ class TestLiteLLMEndUserContract(LLMGatewayContract):
 
     def fail(self, gateway, mode):
         gateway.fake.failure = mode
-
-    def test_contract_operations_match_declared_capabilities(self):
-        pytest.skip("end_user declares native_user_budget; the budget sync lands in iteration 2.4")
 
 
 class TestFetchUsage:
@@ -462,6 +490,14 @@ class TestRowMapping:
         assert row.timestamp.tzinfo == timezone.utc
 
 
+class TestLiteLLMCustomerManagementContract(LLMGatewayContract):
+    """Declares no reads and no budget sync, so only the header and "undeclared raises" cases apply."""
+
+    @pytest.fixture
+    def gateway(self) -> LiteLLMGateway:
+        return _reading_gateway(_FakeSpendLogs(), api="customer_management")
+
+
 class TestCustomerManagementReads:
     @pytest.mark.asyncio
     async def test_usage_reads_are_unsupported(self):
@@ -471,3 +507,199 @@ class TestCustomerManagementReads:
             await gateway.fetch_usage(_query())
         with pytest.raises(UnsupportedCapabilityError):
             await gateway.fetch_usage_since("alice", None, _T0)
+
+
+# Native budgets and the probe
+
+
+_MONTHLY_10 = BudgetLimit(amount=Decimal("10"))
+
+
+def _admin_gateway(backend: _FakeSpendLogs, **config) -> LiteLLMGateway:
+    return _reading_gateway(backend, **({"admin_key": "sk-admin"} | config))
+
+
+class TestBudgetId:
+    def test_equal_amounts_share_a_row(self):
+        assert LiteLLMGateway.budget_id(BudgetLimit(amount=Decimal("10.00"))) == LiteLLMGateway.budget_id(_MONTHLY_10)
+
+    @pytest.mark.parametrize(
+        "other",
+        [
+            BudgetLimit(amount=Decimal("10.5")),
+            BudgetLimit(amount=Decimal("10"), period=BudgetPeriod.WEEKLY),
+            BudgetLimit(amount=Decimal("10"), currency="EUR"),
+        ],
+    )
+    def test_each_dimension_changes_it(self, other):
+        assert LiteLLMGateway.budget_id(other) != LiteLLMGateway.budget_id(_MONTHLY_10)
+
+    def test_shape(self):
+        budget_id = LiteLLMGateway.budget_id(_MONTHLY_10)
+
+        assert budget_id.startswith("ak-") and len(budget_id) == 19 and int(budget_id[3:], 16) >= 0
+
+
+class TestSyncBudgetDefinitions:
+    @pytest.mark.asyncio
+    async def test_creates_each_distinct_budget_once(self):
+        backend = _FakeSpendLogs()
+        weekly = BudgetLimit(amount=Decimal("2.5"), period=BudgetPeriod.WEEKLY)
+
+        await _admin_gateway(backend).sync_budget_definitions([_MONTHLY_10, BudgetLimit(amount=Decimal("10.00")), weekly])
+
+        assert backend.posts == [
+            ("/budget/new", {"budget_id": LiteLLMGateway.budget_id(_MONTHLY_10), "max_budget": 10.0, "budget_duration": "1mo"}),
+            ("/budget/new", {"budget_id": LiteLLMGateway.budget_id(weekly), "max_budget": 2.5, "budget_duration": "7d"}),
+        ]
+        assert all(request.headers["Authorization"] == "Bearer sk-admin" for request in backend.requests)
+
+    @pytest.mark.asyncio
+    async def test_an_existing_budget_is_updated(self):
+        backend = _FakeSpendLogs()
+        daily = BudgetLimit(amount=Decimal("1"), period=BudgetPeriod.DAILY)
+        gateway = _admin_gateway(backend)
+        await gateway.sync_budget_definitions([daily])
+
+        await gateway.sync_budget_definitions([daily])
+
+        assert [path for path, _ in backend.posts] == ["/budget/new", "/budget/new", "/budget/update"]
+        assert backend.posts[-1][1]["budget_duration"] == "1d"
+
+    @pytest.mark.asyncio
+    async def test_a_non_usd_budget_is_refused(self):
+        backend = _FakeSpendLogs()
+
+        with pytest.raises(AKConfigError, match="USD"):
+            await _admin_gateway(backend).sync_budget_definitions([BudgetLimit(amount=Decimal("10"), currency="EUR")])
+        assert backend.posts == []
+
+
+class TestSyncBudgets:
+    @pytest.mark.asyncio
+    async def test_customers_are_linked_to_their_budget_row(self):
+        backend = _FakeSpendLogs()
+        gateway = _admin_gateway(backend)
+
+        await gateway.sync_budgets({"alice": _MONTHLY_10, "ak-system": None})
+
+        assert backend.posts == [
+            ("/customer/new", {"user_id": "alice", "budget_id": LiteLLMGateway.budget_id(_MONTHLY_10)}),
+            ("/customer/new", {"user_id": "ak-system"}),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_an_existing_customer_is_updated(self):
+        backend = _FakeSpendLogs()
+        gateway = _admin_gateway(backend)
+        await gateway.sync_budgets({"alice": None})
+
+        await gateway.sync_budgets({"alice": _MONTHLY_10})
+
+        assert [path for path, _ in backend.posts] == ["/customer/new", "/customer/new", "/customer/update"]
+        assert backend.customers["alice"]["budget_id"] == LiteLLMGateway.budget_id(_MONTHLY_10)
+
+    @pytest.mark.asyncio
+    async def test_awkward_ids_are_sent_encoded(self):
+        backend = _FakeSpendLogs()
+        gateway = _admin_gateway(backend)
+
+        await gateway.sync_budgets({"ü,\r\nuser": None})
+
+        (sent,) = [body["user_id"] for _, body in backend.posts]
+        assert sent == gateway.gateway_user_id("ü,\r\nuser") and sent.isascii() and "," not in sent
+
+
+class TestBudgetSyncErrors:
+    @pytest.mark.asyncio
+    async def test_no_admin_key_is_a_config_error_naming_it(self):
+        backend = _FakeSpendLogs()
+        secrets = MagicMock()
+        secrets.get.return_value = None
+        secrets.describe.return_value = "cost.gateway.admin_key or the COST_GATEWAY_ADMIN_KEY environment variable"
+        gateway = _reading_gateway(backend, secrets=secrets)
+
+        await gateway.sync_budget_definitions([])  # nothing to send: no key needed
+        await gateway.sync_budgets({})
+        with pytest.raises(AKConfigError, match="COST_GATEWAY_ADMIN_KEY"):
+            await gateway.sync_budgets({"alice": None})
+        assert backend.requests == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("response", "raised"),
+        [
+            (httpx.Response(401), UsageRetrievalError),
+            (httpx.Response(500), UsageRetrievalError),
+            (httpx.Response(422, json={"detail": "budget_duration invalid"}), AKConfigError),
+            (httpx.Response(400, json={"detail": {"error": "max_budget must be a non-negative finite number"}}), AKConfigError),
+        ],
+    )
+    async def test_failures(self, response, raised):
+        backend = _FakeSpendLogs()
+        backend.forced["/budget/new"] = response
+
+        with pytest.raises(raised) as caught:
+            await _admin_gateway(backend).sync_budget_definitions([_MONTHLY_10])
+
+        if raised is UsageRetrievalError:
+            assert caught.value.auth is (response.status_code == 401)
+        assert [path for path, _ in backend.posts] == []  # forced responses never reach the tables
+
+    @pytest.mark.asyncio
+    async def test_a_failed_update_is_mapped_too(self):
+        backend = _FakeSpendLogs()
+        gateway = _admin_gateway(backend)
+        await gateway.sync_budgets({"alice": None})
+        backend.forced["/customer/update"] = httpx.Response(422, json={"detail": "bad"})
+
+        with pytest.raises(AKConfigError, match="/customer/update"):
+            await gateway.sync_budgets({"alice": _MONTHLY_10})
+
+    @pytest.mark.asyncio
+    async def test_customer_management_does_not_sync(self):
+        gateway = _admin_gateway(_FakeSpendLogs(), api="customer_management")
+
+        with pytest.raises(UnsupportedCapabilityError):
+            await gateway.sync_budget_definitions([_MONTHLY_10])
+        with pytest.raises(UnsupportedCapabilityError):
+            await gateway.sync_budgets({"alice": None})
+
+
+class TestProbe:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("version", ["1.111.0", "1.111.0.dev4", "1.112.3", "2.0.0"])
+    async def test_customer_management_accepts_1_111_and_later(self, version):
+        backend = _FakeSpendLogs()
+        backend.version = version
+
+        await _admin_gateway(backend, api="customer_management").probe()
+
+        assert backend.requests[0].url.path == "/health/readiness"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("version", ["1.110.9", "1.105.7", None, "unknown"])
+    async def test_customer_management_refuses_older_or_unknown(self, version):
+        backend = _FakeSpendLogs()
+        backend.version = version
+
+        with pytest.raises(AKConfigError, match="1.111"):
+            await _admin_gateway(backend, api="customer_management").probe()
+
+    @pytest.mark.asyncio
+    async def test_an_unready_proxy_is_an_availability_error(self):
+        backend = _FakeSpendLogs()
+        backend.forced["/health/readiness"] = httpx.Response(503, json={"status": "unhealthy"})
+
+        with pytest.raises(UsageRetrievalError):
+            await _admin_gateway(backend, api="customer_management").probe()
+
+    @pytest.mark.asyncio
+    async def test_end_user_only_logs_the_timezone_assumption(self, caplog):
+        backend = _FakeSpendLogs()
+        caplog.set_level(logging.INFO, logger="ak.cost.gateway.litellm")
+
+        await _admin_gateway(backend).probe()
+
+        assert backend.requests == []
+        assert "budgets assume UTC" in caplog.text
