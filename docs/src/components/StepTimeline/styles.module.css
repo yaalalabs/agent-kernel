@@ -25,8 +25,8 @@
   border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0);
 
   /* Frosted glass - transparent by default */
-  backdrop-filter: saturate(180%) blur(0px);
-  -webkit-backdrop-filter: saturate(180%) blur(0px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 
   /* Transition for smooth background fade and positioning */
   transition:
@@ -45,8 +45,8 @@
   pointer-events: auto;
   background-color: rgba(var(--ak-bg-rgb), 0.65);
   border-bottom-color: rgba(var(--ak-fg-rgb), 0.05);
-  backdrop-filter: saturate(180%) blur(16px);
-  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* ── Inner layout ────────────────────────────────────────────────────── */
@@ -103,7 +103,7 @@
   transform: scaleX(var(--fill, 0));
   transform-origin: left;
   background: var(--timeline-color);
-  box-shadow: 0 0 8px 1px var(--timeline-color-glow);
+  box-shadow: none;
   transition: transform 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
@@ -164,7 +164,7 @@
   width: 12px;
   height: 12px;
   background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--timeline-color) 35%, var(--timeline-color-dark) 75%, #000000 100%);
-  box-shadow: 0 0 14px 4px var(--timeline-color-glow-strong), inset 0 -1px 2px rgba(var(--ak-shadow-rgb), 0.4);
+  box-shadow: none;
 }
 
 .pip--done {
@@ -195,7 +195,7 @@
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 0.875rem;
   font-weight: 500;
   letter-spacing: 0.01em;
   line-height: 1;
@@ -214,7 +214,7 @@
 .label--active {
   font-weight: 600;
   color: var(--timeline-color);
-  text-shadow: 0 0 8px var(--timeline-color-glow);
+  text-shadow: none;
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────── */
@@ -259,7 +259,7 @@
   background: var(--timeline-color-bg-hover);
   border-color: var(--timeline-color);
   color: var(--timeline-color);
-  box-shadow: 0 0 10px 2px var(--timeline-color-glow);
+  box-shadow: none;
   transform: translateY(-50%) translateX(-2px);
 }
 

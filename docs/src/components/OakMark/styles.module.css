@@ -133,13 +133,6 @@
   position: absolute;
 }
 
-/* On narrow screens the hero mark sits behind the headline, so it steps back. */
-@media (max-width: 996px) {
-  .particles {
-    opacity: 0.35;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .animated .outline path,
   .animated .fill,

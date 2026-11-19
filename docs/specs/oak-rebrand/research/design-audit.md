@@ -304,6 +304,8 @@ maintainer asked; how integrations are shown changes.
 
 **Integrations: a compatibility matrix.** Today it is three rows of moving logo chips.
 
+> Superseded during implementation: the four-column matrix below showed about 30 of the 76 integrations and dropped whole categories, such as identity and secrets. The home page now has a ledger, with one row per category and every integration listed by name. See iteration 13 in `plan.md`.
+
 - Four columns under one heading: Frameworks, Clouds, Channels, Data and observability.
 - Each column lists its most used entries by name with a small single-colour logo, then a count and a link
   to the full list.

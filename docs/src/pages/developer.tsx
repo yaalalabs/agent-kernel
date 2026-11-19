@@ -1,4 +1,4 @@
-import OakMark from '@site/src/components/OakMark';
+import { ClosingPanel } from '@site/src/components/HomeSections';
 import React, { useEffect, useRef } from "react";
 import gsap from "gsap";
 import ScrollTrigger from "gsap/dist/ScrollTrigger";
@@ -542,10 +542,10 @@ export default function DeveloperPage() {
               </p>
               <h2 className={styles.devTitle}>
                 <span>
-                  All Enterprise Features Available
+                  All enterprise features available,
                 </span><br />
                 <span>
-                  Free And Open-Source
+                  free and open source
                 </span>
               </h2>
 
@@ -599,7 +599,7 @@ export default function DeveloperPage() {
               <p className={styles.devStepLabel}>Step 03: Framework</p>
               <h2 className={styles.devTitle}>
                 <span>
-                  Use The Framework You Prefer
+                  Use the framework you prefer
                 </span>
               </h2>
 
@@ -610,7 +610,7 @@ export default function DeveloperPage() {
             <div className={styles.devArchitectureSection} data-step="dev-05">
               <p className={styles.devStepLabel}>Step 04: How It Works</p>
               <h2 className={styles.devTitle}>
-                <span>How OAK Fits In</span>
+                <span>How OAK fits in</span>
               </h2>
 
               <p className={styles.devFrameworkBody}>
@@ -692,43 +692,7 @@ export default function DeveloperPage() {
         </div>
       </section>
 
-      <section className={styles.ctaSection}>
-        <div className="container">
-          <div className={styles.ctaContent}>
-            <h2 className={styles.ctaTitle}>
-              Ready to Ship Your
-              <br />
-              First{" "}
-              <span className={styles.ctaTitleGradient}>Agent</span>?
-            </h2>
-            <p className={styles.ctaSubtitle}>
-              Free, open-source, Apache 2.0. No licensing costs, no vendor
-              lock-in. Join hundreds of developers building production AI agents
-              with OAK.
-            </p>
-            <div className={styles.ctaButtons}>
-              <Link
-                className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-                to="/docs"
-              >
-                Get Started
-              </Link>
-              <Link
-                className={styles.heroBtnLink}
-                to="https://github.com/yaalalabs/agent-kernel"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View On GitHub
-              </Link>
-            </div>
-
-            <div className={styles.ctaImageWrapper}>
-              <OakMark variant="cta" className={styles.ctaImage} />
-            </div>
-          </div>
-        </div>
-      </section>
+      <ClosingPanel />
     </Layout>
   );
 }

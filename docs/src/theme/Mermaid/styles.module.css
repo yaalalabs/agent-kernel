@@ -17,15 +17,15 @@
   gap: 0.35rem;
   padding: 0.3rem 0.6rem;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.18);
-  border-radius: 0.5rem;
+  border-radius: var(--ak-radius-control);
   background: rgba(var(--ak-bg-rgb), 0.75);
   color: rgba(var(--ak-fg-rgb), 0.85);
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-family: inherit;
   cursor: pointer;
   opacity: 0;
   transition: opacity 150ms ease, background 150ms ease;
-  backdrop-filter: blur(4px);
+  backdrop-filter: none;
   z-index: 2;
 }
 
@@ -59,7 +59,7 @@
   display: flex;
   flex-direction: column;
   background: rgba(var(--ak-bg-rgb), 0.94);
-  backdrop-filter: blur(6px);
+  backdrop-filter: none;
 }
 
 .toolbar {
@@ -72,7 +72,7 @@
   gap: 0.4rem;
   padding: 0.35rem;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.15);
-  border-radius: 0.625rem;
+  border-radius: var(--ak-radius-control);
   background: rgba(var(--ak-bg-rgb), 0.9);
 }
 
@@ -84,7 +84,7 @@
   height: 2rem;
   padding: 0 0.5rem;
   border: none;
-  border-radius: 0.4rem;
+  border-radius: var(--ak-radius-control);
   background: transparent;
   color: rgba(var(--ak-fg-rgb), 0.85);
   font-size: 1rem;
@@ -100,14 +100,14 @@
 }
 
 .resetButton {
-  font-size: 0.8rem;
+  font-size: 0.875rem;
 }
 
 .zoomLevel {
   min-width: 3.25rem;
   text-align: center;
   color: rgba(var(--ak-fg-rgb), 0.7);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
@@ -153,10 +153,10 @@
   left: 50%;
   transform: translateX(-50%);
   padding: 0.3rem 0.75rem;
-  border-radius: 999px;
+  border-radius: var(--ak-radius-control);
   background: rgba(var(--ak-bg-rgb), 0.85);
   color: rgba(var(--ak-fg-rgb), 0.55);
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   pointer-events: none;
   user-select: none;
 }

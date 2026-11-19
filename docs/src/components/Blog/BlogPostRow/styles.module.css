@@ -24,7 +24,7 @@
   align-items: center;
   gap: 0.5rem;
   font-family: 'Archivo', sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   color: var(--ak-text-secondary);
 }
 
@@ -52,7 +52,7 @@
 
 .title {
   font-family: 'Archivo', sans-serif;
-  font-size: 1.45rem;
+  font-size: var(--ak-type-h3);
   font-weight: 800;
   letter-spacing: -0.015em;
   line-height: 1.25;
@@ -72,7 +72,7 @@
 .excerpt {
   font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, Georgia,
     serif;
-  font-size: 1rem;
+  font-size: var(--ak-type-body);
   line-height: 1.5;
   color: var(--ak-text-secondary);
   margin: 0;
@@ -88,7 +88,7 @@
   gap: 0.9rem;
   margin-top: 0.9rem;
   font-family: 'Archivo', sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   color: var(--ak-text-secondary);
 }
 
@@ -100,9 +100,9 @@
   white-space: nowrap;
   background: rgba(var(--ak-fg-rgb), 0.07);
   color: var(--ak-text);
-  border-radius: 100px;
+  border-radius: var(--ak-radius-control);
   padding: 0.22rem 0.75rem;
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   font-weight: 500;
   text-decoration: none;
   transition: background 0.15s ease;

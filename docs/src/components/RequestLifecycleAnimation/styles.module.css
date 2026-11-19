@@ -17,14 +17,14 @@
 
 .badge {
   display: inline-block;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ak-sky);
   background: rgba(var(--ak-sky-rgb), 0.1);
   border: 1px solid rgba(var(--ak-sky-rgb), 0.2);
-  border-radius: 999px;
+  border-radius: var(--ak-radius-control);
   padding: 0.3rem 0.9rem;
   margin-bottom: 1rem;
 }
@@ -74,7 +74,7 @@
   gap: 0.35rem;
   background: var(--ak-surface-raised);
   border: 1px solid var(--ak-border);
-  border-radius: 0.75rem;
+  border-radius: var(--ak-radius-card);
   padding: 0.85rem 0.4rem 0.7rem;
   min-width: 80px;
   max-width: 120px;
@@ -106,7 +106,7 @@
 /* Active stage */
 .stageActive {
   border-color: var(--ak-primary) !important;
-  box-shadow: 0 0 0 1px var(--ak-primary), 0 4px 20px var(--ak-primary-glow);
+  box-shadow: none;
 }
 
 .stageActive .stageIcon {
@@ -143,7 +143,7 @@
 }
 
 .stageLabel {
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   font-weight: 700;
   color: var(--ak-text);
   text-align: center;
@@ -151,7 +151,7 @@
 }
 
 .stageSublabel {
-  font-size: 0.62rem;
+  font-size: 0.875rem;
   color: var(--ak-text-muted);
   text-align: center;
   line-height: 1.2;
@@ -216,7 +216,7 @@
     align-items: center;
     gap: 0.75rem;
     text-align: left;
-    border-radius: 0.5rem;
+    border-radius: var(--ak-radius-control);
     position: relative;
   }
 
@@ -237,7 +237,7 @@
 
   .stageActive::before {
     background: var(--ak-primary) !important;
-    box-shadow: 0 0 6px var(--ak-primary-glow);
+    box-shadow: none;
   }
 
   /* Replace ring animation with dot — hide the ring on mobile */
@@ -251,12 +251,12 @@
   }
 
   .stageLabel {
-    font-size: 0.82rem;
+    font-size: 0.875rem;
     text-align: left;
   }
 
   .stageSublabel {
-    font-size: 0.68rem;
+    font-size: 0.875rem;
     text-align: left;
   }
 

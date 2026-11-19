@@ -1,4 +1,4 @@
-import OakMark from '@site/src/components/OakMark';
+import { ClosingPanel } from '@site/src/components/HomeSections';
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import ScrollTrigger from "gsap/dist/ScrollTrigger";
@@ -265,7 +265,7 @@ export default function BusinessLeaderPage() {
               <div className={styles.contentStep}>
                 <p className={styles.stepLabel}>Step 01: Identify the gap</p>
                 <h1 className={styles.contentTitle}>
-                  Where Is The Gap In Your Business?
+                  Where is the gap in your business?
                 </h1>
                 <p className={styles.contentDescription}>
                   Most businesses have processes that still depend too much on
@@ -369,9 +369,9 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "2rem" }} data-step="bl-02">
               <p className={styles.stepLabel}>Step 02: Meet the solution</p>
               <h2 className={styles.contentTitle}>
-                <span>An AI Agent Doesn't Just Answer,</span>
+                <span>An AI agent doesn't just answer,</span>
                 {' '}<br />
-                <span>It Gets Things Done.</span>
+                <span>it gets things done.</span>
               </h2>
 
               <AgentExecutionFlowDiagram />
@@ -381,7 +381,7 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "2rem" }} data-step="bl-03">
               <p className={styles.stepLabel}>Step 03: OAK</p>
               <h2 className={styles.contentTitle}>
-                <span>OAK Is The Engine That Powers It At Scale To Run</span>
+                <span>OAK is the engine that powers it at scale to run</span>
                 {' '}
                 <span>Compliant AI Agents</span>
               </h2>
@@ -446,7 +446,7 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "2rem" }} data-step="bl-04">
               <p className={styles.stepLabel}>Step 04: See it in action</p>
               <h2 className={styles.contentTitle}>
-                <span>See Your OAK In Action</span>
+                <span>See your OAK in action</span>
               </h2>
               <p className={styles.contentDescription}>
                 Curious what your agent can actually do? Here are some real
@@ -460,7 +460,7 @@ export default function BusinessLeaderPage() {
             <div style={{ marginTop: "3rem" }} data-step="bl-05">
               <p className={styles.stepLabel}>Step 05: How it works</p>
               <h2 className={styles.contentTitle}>
-                <span>OAK Is The Engine That Powers It All</span>
+                <span>OAK is the engine that powers it all</span>
               </h2>
               <p className={styles.contentDescription}>
                 You write your AI agent's logic. OAK handles everything
@@ -541,43 +541,7 @@ export default function BusinessLeaderPage() {
         </div>
       </section>
 
-      <section className={styles.ctaSection}>
-        <div className="container">
-          <div className={styles.ctaContent}>
-            <h2 className={styles.ctaTitle}>
-              Ready to Ship Your
-              <br />
-              First{" "}
-              <span className={styles.ctaTitleGradient}>Agent</span>?
-            </h2>
-            <p className={styles.ctaSubtitle}>
-              Free, open-source, Apache 2.0. No licensing costs, no vendor
-              lock-in. Join hundreds of developers building production AI agents
-              with OAK.
-            </p>
-            <div className={styles.ctaButtons}>
-              <Link
-                className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-                to="/docs"
-              >
-                Get Started
-              </Link>
-              <Link
-                className={styles.heroBtnLink}
-                to="https://github.com/yaalalabs/agent-kernel"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View On GitHub
-              </Link>
-            </div>
-
-            <div className={styles.ctaImageWrapper}>
-              <OakMark variant="cta" className={styles.ctaImage} />
-            </div>
-          </div>
-        </div>
-      </section>
+      <ClosingPanel />
     </Layout>
   );
 }

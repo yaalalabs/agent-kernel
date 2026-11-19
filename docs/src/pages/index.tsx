@@ -1,6 +1,8 @@
-import { CertSeal, PersonaArt, type PersonaKind } from '@site/src/components/BrandArt';
+import SectionHeader from '@site/src/components/ui/SectionHeader';
+import { CapabilityRail, ClosingPanel, CompatibilityMatrix, TrustMarks } from '@site/src/components/HomeSections';
+import { PersonaArt, type PersonaKind } from '@site/src/components/BrandArt';
 import OakMark from '@site/src/components/OakMark';
-import React, { useRef, useEffect, useLayoutEffect, useState } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import Link from "@docusaurus/Link";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import Layout from "@theme/Layout";
@@ -11,9 +13,7 @@ import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 import { StepTimeline } from "../components/StepTimeline";
 import PlantParticlesBackground from "../components/PlantParticlesBackground";
 import FAQ from "../components/FAQ";
-import IntegrationsMarquee from "../components/IntegrationsMarquee";
 import ArchitectureOverview from "../components/ArchitectureOverview";
-import FeatureExplorer from "../components/FeatureExplorer";
 import {
   MdCheck,
   MdContentCopy,
@@ -24,7 +24,6 @@ import {
   FaMicrosoft,
 } from "react-icons/fa";
 import { SiTerraform, SiGooglecloud, SiKubernetes, SiHelm } from "react-icons/si";
-import { useHistory } from "@docusaurus/router";
 
 /* ─── What's New Banner ─────────────────────────────────────────────────── */
 
@@ -100,314 +99,79 @@ function WhatsNewBanner() {
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
-  const installCommands = ["uv tool install agentkernel", "ak skill install"];
-  const leftRef = useRef(null);
-  const titleRef = useRef(null);
-  const subtitleRef = useRef(null);
-  const buttonsRef = useRef(null);
-  const videoRef = useRef(null);
-  const scrollLabelRef = useRef(null);
-  const [copiedInstall, setCopiedInstall] = useState(false);
+  const installCommand = "pip install agentkernel";
+  const [copied, setCopied] = useState(false);
 
-  const handleCopyInstall = async () => {
+  const handleCopy = async () => {
     if (typeof navigator === "undefined" || !navigator.clipboard) {
       return;
     }
-
     try {
-      await navigator.clipboard.writeText(installCommands.join("\n"));
-      setCopiedInstall(true);
-      window.setTimeout(() => setCopiedInstall(false), 1800);
+      await navigator.clipboard.writeText(installCommand);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
     } catch {
       // Clipboard may be unavailable due to permissions or non-secure context.
     }
   };
 
-  const subtitleLines = [
-    "Open Agent Kernel (OAK) is the open source platform for building and deploying enterprise AI agents seamlessly at scale.",
-    "OAK reduces months of engineering work to minutes.",
-    "Works with any major Agentic technology, runs on any cloud, interfaces with all mainstream communication channels seamlessly out of the box, no framework/platform lock-in, production ready from day one.",
-  ];
-
-  // Reading speed: ~200 words/minute → ~3ms per char is a safe hold duration floor
-  // Line 1: ~16 words → ~4.8s hold | Line 2: ~9 words → ~3s hold | Line 3: ~29 words → ~8.5s hold
-  const holdDurations = [4.8, 3.0, 8.5];
-
-  useLayoutEffect(() => {
-    const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
-
-    gsap.set(
-      [
-        titleRef.current,
-        subtitleRef.current,
-        buttonsRef.current,
-        videoRef.current,
-        scrollLabelRef.current,
-      ],
-      { opacity: 0, y: 28 }
-    );
-
-    tl.to(titleRef.current, { opacity: 1, y: 0, duration: 0.85 })
-      .to(subtitleRef.current, { opacity: 1, y: 0, duration: 0.6 }, "-=0.5")
-      .to(buttonsRef.current, { opacity: 1, y: 0, duration: 0.55 }, "-=0.35")
-      .to(videoRef.current, { opacity: 1, y: 0, duration: 0.9 }, "-=0.7")
-      .to(scrollLabelRef.current, { opacity: 1, y: 0, duration: 0.5 }, "-=0.4");
-
-    const reducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    let pulse: any = null;
-    if (!reducedMotion && scrollLabelRef.current) {
-      pulse = gsap.to(scrollLabelRef.current, {
-        y: 6,
-        repeat: -1,
-        yoyo: true,
-        ease: "power1.inOut",
-        duration: 1.1,
-        delay: 1.2,
-      });
-    }
-
-    // ── Cycling subtitle animation ───────────────────────────────
-    const subtitleEl = subtitleRef.current as HTMLElement | null;
-    let cycleTimeout: ReturnType<typeof setTimeout>;
-    let currentIndex = 0;
-    let cycleKilled = false;
-
-    const fadeDuration = 0.45; // seconds for fade in / fade out
-
-    const showLine = (index: number) => {
-      if (cycleKilled || !subtitleEl) return;
-
-      const text = subtitleLines[index];
-      const hold = holdDurations[index];
-
-      // Set new text while invisible
-      gsap.set(subtitleEl, { opacity: 0, y: 10 });
-      subtitleEl.textContent = text;
-
-      // Fade in + slide up
-      gsap.to(subtitleEl, {
-        opacity: 1,
-        y: 0,
-        duration: fadeDuration,
-        ease: "power2.out",
-        onComplete: () => {
-          if (cycleKilled) return;
-          // Hold for reading, then fade out and advance
-          cycleTimeout = setTimeout(() => {
-            if (cycleKilled) return;
-            gsap.to(subtitleEl, {
-              opacity: 0,
-              y: -8,
-              duration: fadeDuration,
-              ease: "power2.in",
-              onComplete: () => {
-                if (cycleKilled) return;
-                currentIndex = (index + 1) % subtitleLines.length;
-                showLine(currentIndex);
-              },
-            });
-          }, hold * 1000);
-        },
-      });
-    };
-
-    // Kick off the cycle once the entry animation has brought the subtitle into view.
-    // The entry tl finishes roughly 2.2s in; we wait a touch longer for comfort.
-    const startDelay = setTimeout(() => {
-      if (!cycleKilled) showLine(0);
-    }, 2400);
-
-    return () => {
-      tl.kill();
-      if (pulse) pulse.kill();
-      cycleKilled = true;
-      clearTimeout(cycleTimeout);
-      clearTimeout(startDelay);
-      gsap.killTweensOf(subtitleEl);
-    };
-  }, []);
-
   return (
-    <section className={styles.hero}>
-      <div className={styles.inner}>
-        {/* ── LEFT ───────────────────────────────── */}
-        <div ref={leftRef} className={styles.left}>
-          <h1 ref={titleRef} className={styles.title}>
-            <span className={styles.titleDim}>The Operating System</span>
-            <br />
-            <span className={styles.titleDim}>for</span> Scalable & Compliant
-            <br />
-            Enterprise AI{" "}
-            <span className={styles.gradientWord}>Agents</span>
-          </h1>
+    <section className={styles.homeHero}>
+      <div className={`ak-container ${styles.homeHeroGrid}`}>
+        <div className={styles.homeHeroCopy}>
+          <div className={styles.homeHeroHeading}>
+            <p className="ak-label">Open-source agent runtime</p>
+            <h1 className="ak-display">
+              The operating system for enterprise{" "}
+              <span className="ak-accent-text">AI agents</span>
+            </h1>
+            <p className="ak-lead">
+              Open Agent Kernel (OAK) is the open-source runtime for scalable, compliant
+              agents. Build in the framework you already use and run on any cloud.
+            </p>
+          </div>
 
-          <p ref={subtitleRef} className={styles.subtitle}>
-            OAK is the open source platform for building and deploying
-            enterprise AI agents seamlessly at scale.
+          <div className={styles.homeHeroActions}>
+            <Link className="ak-btn ak-btn--primary" to="/docs/quick-start">
+              Quick start
+            </Link>
+            <Link
+              className="ak-btn ak-btn--secondary"
+              to="https://github.com/yaalalabs/agent-kernel"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View on GitHub
+            </Link>
+          </div>
+
+          <div className={styles.homeHeroInstall}>
+            <code className={styles.homeHeroCommand}>
+              <span className={styles.homeHeroPrompt} aria-hidden="true">$</span>
+              {installCommand}
+            </code>
+            <button
+              type="button"
+              className={styles.homeHeroCopyButton}
+              onClick={handleCopy}
+              aria-label="Copy install command"
+              title={copied ? "Copied" : "Copy command"}
+            >
+              {copied ? <MdCheck aria-hidden="true" /> : <MdContentCopy aria-hidden="true" />}
+            </button>
+          </div>
+
+          {/* The id keeps old #agent-skills links landing here. */}
+          <p id="agent-skills" className={`ak-small ${styles.homeHeroNote}`}>
+            Using a coding assistant?{" "}
+            <Link to="/docs/agent-skills" className="ak-link">
+              Install the OAK agent skills
+            </Link>
           </p>
-
-          <div ref={buttonsRef} className={styles.heroActions}>
-            <div className={styles.heroButtons}>
-              <Link
-                className={`button button--secondary button--sm ${styles.heroBtnPrimary}`}
-                to="/docs/quick-start"
-              >
-                Quick Start
-                <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
-              </Link>
-            </div>
-
-            {/* Agent Skills: deliberately low-key; the id keeps old #agent-skills links landing here. */}
-            <div id="agent-skills" className={styles.heroSkills}>
-              <div className={styles.heroSkillsHead}>
-                <span className={styles.heroSkillsLabel}>Agent Skills</span>
-                <span className={styles.heroSkillsHint}>
-                  Claude Code · Cursor · Codex · Windsurf · Copilot
-                </span>
-              </div>
-              <div className={styles.heroSkillsCmds}>
-                {installCommands.map((command) => (
-                  <code key={command} className={styles.heroSkillsCmd}>
-                    <span className={styles.heroInstallPrompt} aria-hidden="true">$</span>
-                    {command}
-                  </code>
-                ))}
-                <button
-                  type="button"
-                  className={`${styles.heroInstallCopy} ${styles.heroSkillsCopy} ${
-                    copiedInstall ? styles.heroInstallCopied : ""
-                  }`}
-                  onClick={handleCopyInstall}
-                  aria-label="Copy install commands"
-                  title={copiedInstall ? "Copied" : "Copy commands"}
-                >
-                  {copiedInstall ? (
-                    <MdCheck className={styles.heroInstallCopyIcon} aria-hidden="true" />
-                  ) : (
-                    <MdContentCopy className={styles.heroInstallCopyIcon} aria-hidden="true" />
-                  )}
-                </button>
-              </div>
-              <p className={styles.heroSkillsText}>
-                Guides your coding assistant follows to scaffold, extend, test and deploy
-                OAK agents.{" "}
-                <Link to="/docs/agent-skills" className={styles.heroSkillsLink}>
-                  Learn more <span aria-hidden="true">→</span>
-                </Link>
-              </p>
-            </div>
-          </div>
         </div>
 
-        {/* ── RIGHT – particle video ───────────── */}
-        <div ref={videoRef} className={styles.right}>
+        <div className={styles.homeHeroArt}>
           <OakMark variant="hero" />
-        </div>
-
-        {/* ── Scroll label ────────────────────── */}
-        <div ref={scrollLabelRef} className={styles.scrollLabel} aria-hidden="true">
-          <div className={styles.scrollLabelInner}>
-            <span className={styles.scrollLine} />
-            <span className={styles.scrollText}>
-              Agent OS for
-              <br />
-              <strong>Enterprise AI</strong>
-            </span>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Affiliations Strip ────────────────────────────────────────────────── */
-
-function AffiliationsStrip() {
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useLayoutEffect(() => {
-    const section = sectionRef.current;
-    if (!section) return;
-
-    const reducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const label = section.querySelector(`.${styles.affiliationsLabel}`);
-    const row = section.querySelector(`.${styles.affiliationsRow}`);
-
-    if (!label || !row) return;
-
-    if (reducedMotion) {
-      gsap.set([label, row], { opacity: 1, y: 0, scale: 1 });
-      return;
-    }
-
-    gsap.set([label, row], { opacity: 0, y: 18 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: section,
-        start: "top 80%",
-        once: true,
-      },
-    });
-
-    tl.to(label, {
-      opacity: 1,
-      y: 0,
-      duration: 0.45,
-      ease: "power2.out",
-    }).to(
-      row,
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.5,
-        ease: "power2.out",
-      },
-      "-=0.18",
-    );
-
-    return () => {
-      tl.scrollTrigger?.kill();
-      tl.kill();
-    };
-  }, []);
-
-  return (
-    <section ref={sectionRef} className={styles.affiliationsStrip}>
-      <div className="container">
-        <p className={styles.affiliationsLabel}>Member of</p>
-        <div className={styles.affiliationsRow}>
-          <a
-            href="https://www.linuxfoundation.org"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.affiliationItem}
-          >
-            <img
-              src="/img/lf_membership.svg"
-              alt="Linux Foundation Member"
-              className={styles.affiliationLogo}
-            />
-          </a>
-          <span className={styles.affiliationSeparator}>●</span>
-          <a
-            href="https://aaif.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.affiliationItem}
-          >
-            <img
-              src="/img/aaif_membership.svg"
-              alt="Agentic AI Foundation Member"
-              className={styles.affiliationLogo}
-            />
-          </a>
         </div>
       </div>
     </section>
@@ -539,22 +303,13 @@ function Deployment() {
 
   return (
     <section className={styles.deploySection}>
-      {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
-
-      <div className="container">
-        <div className={styles.deployHeader}>
-          <div className={styles.Badge}>
-            <span className={styles.badgeStar}>✦</span>
-            Deployment
-          </div>
-          <h2 className={styles.deployTitle}>Deploy Anywhere</h2>
-          <p className={styles.deploySubtitle}>
-            Run the same agent code on AWS, Azure, GCP, or your own Kubernetes cluster. Zero rewrites.
-            <br />
-            Includes production-ready Terraform modules and a Helm chart with best practices baked in.
-          </p>
-        </div>
+      <div className="ak-container">
+        <SectionHeader
+          index="04"
+          label="Deployment"
+          title="Deploy anywhere"
+          lead="Run the same agent code on AWS, Azure, GCP or your own Kubernetes cluster. Terraform modules and a Helm chart are included."
+        />
 
         <div className={styles.cloudGrid} ref={gridRef}>
           {clouds.map((c, i) => (
@@ -612,128 +367,6 @@ function Deployment() {
 
             </div>
           ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Trust / Compliance ─────────────────────────────────────────────────── */
-
-function TrustSection() {
-  const sectionRef = useRef(null);
-  const badgeRef = useRef(null);
-  const labelRef = useRef(null);
-  const rowRef = useRef(null);
-
-  useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
-
-    gsap.set([badgeRef.current, labelRef.current], { opacity: 0, y: 16 });
-    gsap.set(rowRef.current?.children || [], { opacity: 0, y: 24 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: sectionRef.current,
-        start: "top 85%",
-        toggleActions: "play none none none",
-        once: true,
-      },
-    });
-
-    tl.to(badgeRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" })
-      .to(labelRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, "-=0.3")
-      .to(
-        rowRef.current?.children || [],
-        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out", stagger: 0.1 },
-        "-=0.2"
-      );
-
-    return () => {
-      tl.kill();
-      if (tl.scrollTrigger) {
-        tl.scrollTrigger.kill();
-      }
-    };
-  }, []);
-
-  return (
-    <section ref={sectionRef} className={styles.trustSection}>
-      <div className={styles.topGlow} />
-
-      <div ref={badgeRef} className={styles.Badge}>
-        <span className={styles.badgeStar}>✦</span>
-        Security &amp; Compliance
-      </div>
-
-      <p ref={labelRef} className={styles.trustLabel}>
-        Built on a certified ISO 27001 and SOC 2 environment.
-      </p>
-
-      <div ref={rowRef} className={styles.trustCertRow}>
-        <div className={styles.trustCertTile} tabIndex={0}>
-          <CertSeal shape="seal" className={styles.trustCertLogo} />
-          <p className={styles.trustCertName}>ISO 27001</p>
-          <p className={styles.trustCertMeta}>Certified</p>
-          <p className={styles.trustCertDesc}>
-            Information Security Management System certified to the international standard.
-          </p>
-        </div>
-        <div className={styles.trustCertTile} tabIndex={0}>
-          <CertSeal shape="shield" className={styles.trustCertLogo} />
-          <p className={styles.trustCertName}>SOC 2 Type 2</p>
-          <p className={styles.trustCertMeta}>Audited</p>
-          <p className={styles.trustCertDesc}>
-            Security, availability, and confidentiality independently audited against the AICPA SOC 2 framework.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Community / CTA ───────────────────────────────────────────────────── */
-interface CommunityProps {
-  sectionRef?: React.Ref<HTMLElement>;
-}
-
-function Community({ sectionRef }: CommunityProps) {
-  return (
-    <section ref={sectionRef} className={styles.ctaSection}>
-      <div className="container">
-        <div className={styles.ctaContent}>
-          <h2 className={styles.ctaTitle}>
-            Ready to Ship Your
-            <br />
-            First{" "}
-            <span className={styles.ctaTitleGradient}>Agent</span>?
-          </h2>
-          <p className={styles.ctaSubtitle}>
-            Free, open-source, Apache 2.0. No licensing costs, no vendor
-            lock-in. Join hundreds of developers building production AI agents
-            with OAK.
-          </p>
-          <div className={styles.ctaButtons}>
-            <Link
-              className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-              to="/docs/quick-start"
-            >
-              Quick Start
-              <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
-            </Link>
-            <Link
-              className={styles.heroBtnLink}
-              to="https://github.com/yaalalabs/agent-kernel"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View On GitHub
-            </Link>
-          </div>
-
-          <div className={styles.ctaImageWrapper}>
-            <OakMark variant="cta" className={styles.ctaImage} />
-          </div>
         </div>
       </div>
     </section>
@@ -817,7 +450,7 @@ function Levels() {
     });
 
     tl.fromTo(
-      [badgeRef.current, titleRef.current, subtitleRef.current],
+      [badgeRef.current],
       { opacity: 0, y: 20 },
       {
         opacity: 1,
@@ -983,19 +616,13 @@ function Levels() {
       <div className={styles.levelsAurora} aria-hidden="true" />
 
       <div className={styles.levelsFrameContainer}>
-        <div className={styles.levelsHeader}>
-          <div ref={badgeRef} className={styles.Badge}>
-            <span className={styles.badgeStar}>✦</span>
-            Built for Every Level of Expertise
-          </div>
-          <h2 ref={titleRef} className={styles.levelsTitle}>
-            <span>OAK, Explained</span>
-            {" "}
-            <span>For Your Level of Expertise</span>
-          </h2>
-          <p ref={subtitleRef} className={styles.levelsSubtitle}>
-            Pick the path that fits you best
-          </p>
+        <div ref={badgeRef}>
+          <SectionHeader
+            index="05"
+            label="Choose your path"
+            title="OAK, explained for your level of expertise"
+            lead="Three guided tours of the same runtime. Pick the one that fits you."
+          />
         </div>
 
         <div className={styles.levelsOuterContainer}>
@@ -1123,16 +750,16 @@ export default function Home() {
       <WhatsNewBanner />
       <Hero />
       <main>
+        <TrustMarks />
+        <CapabilityRail />
         <ArchitectureOverview />
+        <CompatibilityMatrix />
+        <Deployment />
         <div ref={levelsRef} id="levels">
           <Levels />
         </div>
-        <FeatureExplorer />
-        <Deployment />
-        <IntegrationsMarquee />
-        <TrustSection />
         <FAQ />
-        <Community sectionRef={communityRef} />
+        <ClosingPanel />
       </main>
     </Layout>
   );

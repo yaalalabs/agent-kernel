@@ -1,3 +1,4 @@
+import SectionHeader from '@site/src/components/ui/SectionHeader';
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "@docusaurus/Link";
 import clsx from "clsx";
@@ -169,18 +170,13 @@ export default function ArchitectureOverview() {
 
   return (
     <section id="architecture" className={styles.section}>
-      <div className={styles.topGlow} />
-
-      <div className={styles.header}>
-        <div className={styles.badge}>
-          <span className={styles.badgeStar}>✦</span>
-          Architecture
-        </div>
-        <h2 className={styles.title}>One runtime between your channels and your agents</h2>
-        <p className={styles.subtitle}>
-          Requests arrive from any channel or protocol. OAK runs your framework-native
-          agents with sessions, guardrails, queues and sandboxes, on whichever cloud you choose.
-        </p>
+      <div className="ak-container">
+        <SectionHeader
+          index="02"
+          label="Architecture"
+          title="One runtime between your channels and your agents"
+          lead="Requests arrive from any channel or protocol. OAK runs your framework-native agents with sessions, guardrails, queues and sandboxes, on whichever cloud you choose."
+        />
       </div>
 
       <div ref={diagramRef} className={styles.diagram}>

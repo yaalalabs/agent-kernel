@@ -1,0 +1,384 @@
+/* Home page sections. Type, spacing, buttons and section headers come from the
+   design system in custom.css; this file is layout and the few local parts. */
+
+/* ── Trust marks ── */
+
+.trust {
+  border-block: 1px solid var(--ak-border);
+}
+
+.trustRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ak-space-24) var(--ak-space-48);
+  margin-block: 0;
+  padding-block: var(--ak-space-32);
+  list-style: none;
+}
+
+.trustItem,
+.trustLink {
+  display: flex;
+  align-items: center;
+  gap: var(--ak-space-12);
+}
+
+.trustLink {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.trustLink:hover {
+  color: inherit;
+  text-decoration: none;
+}
+
+.trustLink:hover .trustValue {
+  color: var(--ak-primary-text);
+}
+
+.trustItem:not(:has(.trustSeal)):not(:has(.trustLink)),
+.trustText {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.trustText {
+  display: flex;
+}
+
+.trustSeal {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+}
+
+.trustValue {
+  font-size: var(--ak-type-body);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ak-fg);
+  transition: color 0.15s ease;
+}
+
+.trustLabel {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ak-text-muted);
+}
+
+/* ── Capability rail ── */
+
+.rail {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border-top: 1px solid var(--ak-border);
+}
+
+.railStop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-8);
+  margin-top: -1px;
+  padding: var(--ak-space-24) var(--ak-space-16) var(--ak-space-24) 0;
+  border: 0;
+  border-top: 2px solid transparent;
+  background: none;
+  text-align: left;
+  color: var(--ak-text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.railStop:hover {
+  color: var(--ak-fg);
+}
+
+.railStop:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: -2px;
+}
+
+.railStopActive {
+  border-top-color: var(--ak-primary);
+  color: var(--ak-fg);
+}
+
+.railIndex {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  letter-spacing: 0.08em;
+}
+
+.railStopActive .railIndex {
+  color: var(--ak-primary-text);
+}
+
+.railName {
+  font-size: var(--ak-type-h4);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-48);
+  padding-top: var(--ak-space-48);
+  border-top: 1px solid var(--ak-border);
+}
+
+/* The intro and the plate share one pair of columns, so the points sit over the code */
+.panelIntro,
+.plate {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+}
+
+.panelIntro {
+  gap: var(--ak-space-64);
+  align-items: start;
+}
+
+.panelCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-16);
+}
+
+.points {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.points li {
+  position: relative;
+  padding-left: var(--ak-space-24);
+  font-size: var(--ak-type-body);
+  line-height: 1.5;
+  color: var(--ak-text);
+}
+
+.points li::before {
+  content: '';
+  position: absolute;
+  top: 0.7em;
+  left: 0;
+  width: 0.75rem;
+  height: 1px;
+  background-color: var(--ak-primary);
+}
+
+/* The plate: the stage's line drawing on the left, the lines that switch it on on the right.
+   Its height is fixed by the tallest snippet, so the page does not jump between stages. */
+.plate {
+  min-height: 24rem;
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-card);
+  overflow: hidden;
+}
+
+.plateDrawing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ak-space-24);
+}
+
+.plateCode {
+  display: flex;
+  min-width: 0;
+  border-left: 1px solid var(--ak-border);
+  background-color: var(--ak-bg-alt);
+}
+
+.plateCode :global(.theme-code-block) {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.plateCode :global(.theme-code-block),
+.plateCode :global(pre),
+.plateCode :global(pre code) {
+  background-color: var(--ak-bg-alt) !important;
+}
+
+.plateCode :global(pre) {
+  font-size: var(--ak-type-small);
+}
+
+/* The plate is the frame: the code block inside it carries no border of its own */
+.plateCode :global(.prism-code) {
+  border: 0;
+  border-radius: 0;
+}
+
+.plateCode :global(.theme-code-block > div:first-child) {
+  border-bottom-color: var(--ak-border);
+}
+
+/* ── Integration ledger ── */
+
+.ledger {
+  margin: 0;
+  border-top: 1px solid var(--ak-border);
+}
+
+.ledgerRow {
+  display: grid;
+  grid-template-columns: 17rem minmax(0, 1fr);
+  gap: var(--ak-space-32);
+  align-items: baseline;
+  padding-block: var(--ak-space-24);
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.ledgerTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ak-space-12);
+  color: var(--ak-text-secondary);
+}
+
+.ledgerCount {
+  color: var(--ak-text-muted);
+}
+
+.ledgerItems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ak-space-12) var(--ak-space-32);
+  margin: 0;
+}
+
+.ledgerItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ak-space-8);
+  font-size: 1rem;
+  line-height: 1.4;
+  color: var(--ak-text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.ledgerItem:hover {
+  color: var(--ak-primary-text);
+  text-decoration: none;
+}
+
+.ledgerLogo {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  font-size: 1.1rem;
+  color: var(--ak-text-secondary);
+}
+
+.ledgerLogo img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.ledgerMono {
+  filter: var(--ak-mono-filter);
+}
+
+.ledgerAll {
+  margin-top: var(--ak-space-32);
+}
+
+/* ── Closing panel ── */
+
+.closing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--ak-space-48);
+  padding: var(--ak-space-64);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-card);
+  background-color: var(--ak-surface-raised);
+}
+
+.closingCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-24);
+}
+
+.closingActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ak-space-16);
+}
+
+@media (max-width: 1100px) {
+  .panel {
+    gap: var(--ak-space-32);
+  }
+
+  .panelIntro,
+  .plate {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panelIntro {
+    gap: var(--ak-space-24);
+  }
+
+  .plate {
+    min-height: 0;
+  }
+
+  .plateDrawing {
+    max-width: 30rem;
+    margin: 0 auto;
+  }
+
+  .plateCode {
+    border-left: 0;
+    border-top: 1px solid var(--ak-border);
+  }
+}
+
+@media (max-width: 720px) {
+  /* The rail scrolls sideways; the stage names stay on one line */
+  .rail {
+    grid-template-columns: repeat(6, minmax(8rem, 1fr));
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .ledgerRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ak-space-16);
+  }
+
+  .closing {
+    padding: var(--ak-space-32);
+  }
+}

@@ -93,3 +93,11 @@
     height: 18px;
   }
 }
+
+/* On small screens the chat launcher is the only floating control, so nothing else covers the text. */
+@media (max-width: 996px) {
+  .container {
+    display: none;
+  }
+}
+

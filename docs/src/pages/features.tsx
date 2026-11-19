@@ -1,3 +1,4 @@
+import { ClosingPanel } from '@site/src/components/HomeSections';
 import OakMark from '@site/src/components/OakMark';
 import { BRAND, brandRgba } from '@site/src/lib/brand';
 import React, {
@@ -91,7 +92,7 @@ const FEATURE_PAGE_MAP: {
     {
       anchor: "core",
       number: "02",
-      title: "Core Capabilities",
+      title: "Core capabilities",
       hint: "Runtime, memory, hooks, and more",
     },
     {
@@ -121,7 +122,7 @@ const FEATURE_PAGE_MAP: {
     {
       anchor: "protocols",
       number: "07",
-      title: "Protocol Support",
+      title: "Protocol support",
       hint: "MCP and A2A out of the box",
     },
   ];
@@ -206,9 +207,9 @@ function WhyAgentKernel() {
           <p ref={labelRef} className={styles.sectionLabel}>
             Why OAK
           </p>
-          <h2 ref={titleRef} className={styles.sectionTitle}>
-            Everything You Need to Build, Run and Scale AI Agents
-          </h2>
+          <h1 ref={titleRef} className={styles.sectionTitle}>
+            Everything you need to build, run and scale AI agents
+          </h1>
           <p ref={subtitleRef} className={styles.sectionSubtitle}>
             From runtime and memory to guardrails, observability, testing, and
             multi-cloud deployment.
@@ -324,7 +325,7 @@ function FeaturesPageMap({
             Feature Map
           </div>
           <h2 id="features-page-map-heading" className={styles.sectionTitle}>
-            Everything OAK Does
+            Everything OAK does
           </h2>
           <p className={styles.sectionSubtitle}>
             Seven production-ready capabilities. Explore any area below.
@@ -656,7 +657,7 @@ function ProblemTable() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>01: The Problem</p>
-          <h2 className={styles.sectionTitle}>The Problem OAK Solves</h2>
+          <h2 className={styles.sectionTitle}>The problem OAK solves</h2>
           <p className={styles.sectionSubtitle}>
             Building production AI agents today involves solving many hard
             problems that have nothing to do with the actual agent intelligence.
@@ -855,7 +856,7 @@ function CoreFeatures() {
     },
     {
       icon: <MdTerminal />,
-      title: "Sandboxed Code Execution",
+      title: "Sandboxed code execution",
       description:
         "Agents run code, shell commands, file operations, and permitted package installs in isolated sandboxes. The Execution Broker routes every execution to a pluggable, policy-governed provider, in-process or over a queue to a separate worker fleet.",
       highlights: [
@@ -1051,8 +1052,8 @@ function CoreFeatures() {
     >
       <div className="container">
         <div className={styles.sectionHeader}>
-          <p className={styles.sectionLabel}>02: Core Capabilities</p>
-          <h2 className={styles.sectionTitle}>Core Capabilities</h2>
+          <p className={styles.sectionLabel}>02: Core capabilities</p>
+          <h2 className={styles.sectionTitle}>Core capabilities</h2>
           <p className={styles.sectionSubtitle}>
             Everything you need to build, run, and scale production AI agents
             without building platform code.
@@ -1144,7 +1145,7 @@ function SandboxSection() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>03: Sandboxed Execution</p>
-          <h2 className={styles.sectionTitle}>Sandboxed Code Execution</h2>
+          <h2 className={styles.sectionTitle}>Sandboxed code execution</h2>
           <p className={styles.sectionSubtitle}>
             Agents write code; OAK gives it a safe place to run.
             Every execution flows through the OAK Execution Broker to
@@ -1448,7 +1449,7 @@ function FrameworkSupport() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>04: Framework Support</p>
-          <h2 className={styles.sectionTitle}>One Runtime, Any Framework</h2>
+          <h2 className={styles.sectionTitle}>One runtime, any framework</h2>
           <p className={styles.sectionSubtitle}>
             Use the best framework for each job, and run them all together in a
             single deployment.
@@ -1657,7 +1658,7 @@ function TestingSection() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>05: Testing</p>
-          <h2 className={styles.sectionTitle}>Testing &amp; Evaluation</h2>
+          <h2 className={styles.sectionTitle}>Testing and evaluation</h2>
           <p className={styles.sectionSubtitle}>
             Test your agents like any other code. CLI testing for development,
             automated suites for CI/CD, three comparison modes, and a pluggable
@@ -1836,7 +1837,7 @@ function MessagingSection() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>06: Messaging</p>
-          <h2 className={styles.sectionTitle}>Messaging & Voice Integrations</h2>
+          <h2 className={styles.sectionTitle}>Messaging and voice integrations</h2>
           <p className={styles.sectionSubtitle}>
             Your agents meet users on the channels they already use. Every
             integration routes through the same OAK runtime. Pick a
@@ -1905,7 +1906,7 @@ function MessagingSection() {
   );
 }
 
-/* ─── Protocol Support ──────────────────────────────────────────────────── */
+/* ─── Protocol support ──────────────────────────────────────────────────── */
 
 function ProtocolSupport() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -1990,7 +1991,7 @@ function ProtocolSupport() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>07: Protocol</p>
-          <h2 className={styles.sectionTitle}>Protocol Support</h2>
+          <h2 className={styles.sectionTitle}>Protocol support</h2>
           <p className={styles.sectionSubtitle}>
             Standard protocols for tool connectivity and multi-agent
             coordination. Wired into the runtime.
@@ -2135,7 +2136,7 @@ export default function Features() {
         <ProtocolSupport />
       </main>
 
-      <CTASection sectionRef={ctaRef} />
+      <ClosingPanel />
     </Layout>
   );
 }

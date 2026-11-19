@@ -169,6 +169,15 @@ When you write or update documentation, READMEs, skills or website copy:
   `--ak-bg*` and `--ak-surface*`, which flip with the mode. Use `--ak-primary-text` for orange text
   and `--ak-primary` for orange fills. Canvas and WebGL code reads colours through
   `docs/src/lib/brand.ts`. Check new UI in both modes.
+- **One design system for website pages.** Marketing pages are flat and left-aligned. Build new
+  sections from the shared pieces in `docs/src/css/custom.css` (`ak-container`, `ak-section`, the
+  `ak-display` to `ak-label` type classes, `ak-btn`, `ak-link`, `ak-card`, `ak-tag`) and the
+  `SectionHeader` component, not from page-local copies. Sizes come from the `--ak-type-*` and
+  `--ak-space-*` tokens, corners from the two radii (`--ak-radius-control`, `--ak-radius-card`). No
+  gradients, glows, blur or drop shadows on surfaces, no text under 15 px except the 13 px monospace
+  label, and headings in sentence case. Moving illustrations use the line-art vocabulary in
+  `docs/src/components/VectorMotion/`. The full rules are in
+  [branding/README.md](branding/README.md#website-design-system).
 
 ## Conventions
 

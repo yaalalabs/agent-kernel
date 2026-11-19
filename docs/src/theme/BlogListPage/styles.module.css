@@ -10,7 +10,7 @@
 
 .heroTitle {
   font-family: 'Archivo', sans-serif;
-  font-size: 2.75rem;
+  font-size: var(--ak-type-h2);
   font-weight: 800;
   letter-spacing: -0.025em;
   color: var(--ak-text);
@@ -46,12 +46,12 @@
 
 .topic {
   font-family: 'Archivo', sans-serif;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--ak-text-secondary);
   background: rgba(var(--ak-fg-rgb), 0.07);
   border: 1px solid transparent;
-  border-radius: 100px;
+  border-radius: var(--ak-radius-control);
   padding: 0.4rem 1rem;
   white-space: nowrap;
   cursor: pointer;
@@ -83,10 +83,10 @@
 
 @media (max-width: 768px) {
   .heroTitle {
-    font-size: 2rem;
+    font-size: var(--ak-type-h2);
   }
 
   .heroSubtitle {
-    font-size: 1rem;
+    font-size: var(--ak-type-body);
   }
 }

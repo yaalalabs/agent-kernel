@@ -1,3 +1,4 @@
+import SectionHeader from '@site/src/components/ui/SectionHeader';
 import React, { useState } from "react";
 import styles from "./styles.module.css";
 import pageStyles from "../../pages/index.module.css";
@@ -92,19 +93,13 @@ export default function FAQ() {
 
   return (
     <section className={styles.faqSection}>
-      <div className={pageStyles.topGlow} />
-      <div className="container">
-        <div className={styles.faqHeader}>
-          <div className={styles.faqBadge}>
-            <span className={styles.badgeStar}>✦</span>
-            Frequently Asked Questions
-          </div>
-          <h2 className={styles.faqTitle}>Questions We Hear a Lot</h2>
-          <p className={styles.faqSubtitle}>
-            Explore answers to common questions about OAK, its capabilities,
-            costs, deployment, and more.
-          </p>
-        </div>
+      <div className="ak-container">
+        <SectionHeader
+          index="06"
+          label="Questions"
+          title="Questions we hear a lot"
+          lead="What OAK is, what it costs, and how it fits with the tools you already use."
+        />
 
         <div className={styles.faqContainer}>
           {FAQ_ITEMS.map((item) => (

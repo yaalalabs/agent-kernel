@@ -3,7 +3,7 @@
 .figure {
   margin: 0;
   width: 100%;
-  border-radius: 0.5rem;
+  border-radius: var(--ak-radius-control);
   overflow: hidden;
 }
 
@@ -23,7 +23,7 @@
   min-height: 24rem;
   padding: 2rem 1.75rem;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
-  border-radius: 0.5rem;
+  border-radius: var(--ak-radius-control);
   background: transparent;
   overflow-x: auto;
   overflow-y: hidden;
@@ -118,12 +118,10 @@
   justify-content: center;
   text-align: center;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
-  border-radius: 1rem;
+  border-radius: var(--ak-radius-card);
   background: var(--node-surface);
-  backdrop-filter: blur(8px);
-  box-shadow:
-    inset 0 1px 1px rgba(var(--ak-fg-rgb), 0.08),
-    0 4px 20px rgba(var(--ak-shadow-rgb), 0.25);
+  backdrop-filter: none;
+  box-shadow: none;
   transition:
     border-color 0.3s ease,
     transform 0.3s ease,
@@ -133,9 +131,7 @@
 .flowNode:hover {
   border-color: color-mix(in srgb, var(--node-color, var(--ak-primary-dark)) 45%, transparent);
   transform: translateY(-3px) scale(1.02);
-  box-shadow:
-    inset 0 1px 1px rgba(var(--ak-fg-rgb), 0.15),
-    0 10px 30px color-mix(in srgb, var(--node-color, var(--ak-primary-dark)) 20%, transparent);
+  box-shadow: none;
 }
 
 .flowNodeLabel {
@@ -160,12 +156,12 @@
 
 .node_memory {
   --node-surface: rgba(var(--ak-prussian-rgb), 0.75);
-  border-radius: 999px;
+  border-radius: var(--ak-radius-control);
   border-color: rgba(var(--ak-blue-rgb), 0.4);
 }
 
 .node_memory .flowNodeLabel {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   padding: 0.55rem 1rem;
 }
 
@@ -173,22 +169,22 @@
   --node-surface: rgba(var(--ak-prussian-rgb), 0.75);
   min-width: 11.5rem;
   max-width: 14rem;
-  border-radius: 1.25rem;
+  border-radius: var(--ak-radius-card);
   border-color: rgba(var(--ak-sky-rgb), 0.5);
-  box-shadow: 0 0 20px rgba(var(--ak-sky-rgb), 0.1);
+  box-shadow: none;
 }
 
 .node_runner .flowNodeLabel {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   line-height: 1.25;
   padding: 0.875rem 1rem;
 }
 
 .runnerSubtitle {
-  font-size: 0.6875rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: rgba(var(--ak-sky-rgb), 0.65);
 }
@@ -197,14 +193,14 @@
   --node-surface: rgba(var(--ak-bg-rgb), 0.75);
   width: 100%;
   min-height: 2.5rem;
-  border-radius: 0.5rem;
+  border-radius: var(--ak-radius-control);
   border-color: rgba(var(--ak-blue-rgb), 0.28);
   justify-content: flex-start;
   text-align: left;
 }
 
 .node_external .flowNodeLabel {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 600;
   padding: 0.6rem 0.875rem;
 }

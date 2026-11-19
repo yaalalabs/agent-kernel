@@ -53,7 +53,7 @@
   gap: 0.4rem;
   padding: 0.35rem 1rem;
   border: 2px solid var(--ak-border);
-  border-radius: 999px;
+  border-radius: var(--ak-radius-control);
   font-size: 0.9rem;
   font-weight: 500;
   color: rgba(var(--ak-sky-rgb), 0.9);
@@ -63,15 +63,16 @@
 }
 
 .badgeStar {
-  font-size: 0.8rem;
+  font-size: 0.875rem;
 }
 
 .title {
+  color: var(--ak-fg);
   font-size: 2.4rem;
   font-weight: 600;
-  background: linear-gradient(to bottom, var(--ak-fg) 0%, #898989 100%);
+  background: none;
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-text-fill-color: currentColor;
   background-clip: text;
   letter-spacing: -0.03em;
   line-height: 1.15;
@@ -92,7 +93,7 @@
   margin: 0 auto;
   padding: 2.5rem 2rem 2rem;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.08);
-  border-radius: 24px;
+  border-radius: var(--ak-radius-card);
   background:
     radial-gradient(ellipse at 50% 45%, rgba(var(--ak-blue-rgb), 0.06) 0%, transparent 55%),
     linear-gradient(180deg, rgba(var(--ak-bg-rgb), 0.85) 0%, rgba(var(--ak-bg-rgb), 0.95) 100%);
@@ -169,7 +170,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -208,9 +209,9 @@
   position: relative;
   padding: 1rem 1.15rem 1.1rem;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
-  border-radius: 16px;
+  border-radius: var(--ak-radius-card);
   background: rgba(var(--ak-bg-rgb), 0.92);
-  box-shadow: 0 10px 30px rgba(var(--ak-shadow-rgb), 0.35);
+  box-shadow: none;
 }
 
 .cardTitle {
@@ -234,7 +235,7 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: var(--ak-radius-control);
   border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
   background: var(--ak-bg);
   color: var(--ak-fg);
@@ -305,7 +306,7 @@
   height: 300px;
   transform: translate(-50%, -58%);
   border: 1px dashed rgba(var(--ak-sky-rgb), 0.35);
-  border-radius: 48px;
+  border-radius: var(--ak-radius-card);
   pointer-events: none;
 }
 
@@ -317,19 +318,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 36px;
+  border-radius: var(--ak-radius-card);
   border: 1px solid rgba(var(--ak-sky-rgb), 0.4);
   background: linear-gradient(160deg, rgba(var(--ak-prussian-rgb), 0.96) 0%, rgba(var(--ak-bg-rgb), 0.96) 100%);
-  box-shadow:
-    0 0 60px rgba(var(--ak-blue-rgb), 0.16),
-    inset 0 0 40px rgba(var(--ak-blue-rgb), 0.06);
+  box-shadow: none;
 }
 
 .coreLogo {
   width: 96px;
   height: 96px;
   display: block;
-  filter: drop-shadow(0 0 18px rgba(var(--ak-blue-rgb), 0.35));
+  filter: none;
 }
 
 .coreName {
@@ -343,7 +342,7 @@
 
 .coreSub {
   position: relative;
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ak-text-secondary);
@@ -363,11 +362,11 @@
   align-items: center;
   gap: 0.55rem;
   padding: 0.5rem 0.95rem;
-  border-radius: 999px;
+  border-radius: var(--ak-radius-control);
   border: 1px solid rgba(var(--ak-fg-rgb), 0.14);
   background: var(--ak-bg-alt);
-  box-shadow: 0 8px 26px rgba(var(--ak-shadow-rgb), 0.4);
-  font-size: 0.85rem;
+  box-shadow: none;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--ak-fg);
   white-space: nowrap;
@@ -389,7 +388,7 @@
   height: 7px;
   border-radius: 50%;
   background: var(--ak-primary);
-  box-shadow: 0 0 10px rgba(var(--ak-primary-rgb), 0.8);
+  box-shadow: none;
 }
 
 .pill-0 {
@@ -425,7 +424,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -456,7 +455,7 @@
   align-items: baseline;
   gap: 0.55rem;
   padding-bottom: 0.7rem;
-  font-size: 0.82rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -529,7 +528,7 @@
     width: 180px;
     height: 180px;
     margin-top: 0;
-    border-radius: 30px;
+    border-radius: var(--ak-radius-card);
   }
 
   .coreLogo {
@@ -597,7 +596,7 @@
 
   .diagram {
     padding: 1.5rem 1rem 1.5rem;
-    border-radius: 18px;
+    border-radius: var(--ak-radius-card);
   }
 
   .chip {
@@ -616,7 +615,7 @@
   }
 
   .flowWords {
-    font-size: 0.72rem;
+    font-size: 0.875rem;
     gap: 0.4rem;
   }
 
@@ -625,3 +624,17 @@
     height: 160px;
   }
 }
+
+/* ── Design system: section spacing and alignment ── */
+
+.section {
+  padding: var(--ak-section-pad) 0;
+  text-align: left;
+}
+
+.diagram {
+  max-width: calc(var(--ak-container) + 2 * var(--ak-gutter) - 2 * var(--ak-gutter));
+  margin-inline: auto;
+  text-align: center;
+}
+

@@ -56,7 +56,7 @@
   gap: 0.4rem;
   padding: 0.35rem 1rem;
   border: 2px solid var(--ak-border);
-  border-radius: 999px;
+  border-radius: var(--ak-radius-control);
   font-size: 0.9rem;
   font-weight: 500;
   color: rgba(var(--ak-sky-rgb), 0.9);
@@ -72,13 +72,14 @@
 }
 
 .heroTitle {
+  color: var(--ak-fg);
   font-size: clamp(0.9rem, 3.78vw, 3.15rem);
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1.1;
-  background: linear-gradient(to bottom, var(--ak-fg) 0%, #898989 100%);
+  background: none;
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-text-fill-color: currentColor;
   background-clip: text;
   margin-bottom: 0.75rem;
   text-rendering: optimizeLegibility;
@@ -117,11 +118,11 @@
   justify-content: center !important;
   padding: 0.65rem 1.8rem !important;
   background: rgba(var(--ak-fg-rgb), 0.06) !important;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   color: var(--ak-fg) !important;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.12) !important;
-  border-radius: 9999px !important;
+  border-radius: var(--ak-radius-control) !important;
   font-weight: 600 !important;
   font-size: 0.92rem !important;
   letter-spacing: 0.01em !important;
@@ -139,9 +140,7 @@
   background: rgba(var(--ak-fg-rgb), 0.06) !important;
   color: var(--ak-fg) !important;
   border-color: var(--ak-primary) !important;
-  box-shadow:
-    0 0 16px rgba(var(--ak-primary-rgb), 0.65),
-    0 0 8px rgba(var(--ak-primary-rgb), 0.3) !important;
+  box-shadow: none !important;
   transform: translateY(-2px) !important;
   text-decoration: none !important;
 }

@@ -103,7 +103,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Telegram", role: "Channel", href: "/docs/integrations/telegram", logo: "/img/integrations/telegram-logo.png" },
       { name: "Gmail", role: "Channel", href: "/docs/integrations/gmail", logo: "/img/integrations/gmail-logo.png" },
       // Drop /next after the LiveKit integration is released.
-      { name: "LiveKit", role: "Voice integration", href: "/docs/next/integrations/livekit", logo: "/img/integrations/livekit-mark.svg" },
+      { name: "LiveKit", role: "Voice integration", href: "/docs/next/integrations/livekit", logo: "/img/integrations/livekit-mark.svg", mono: true },
       { name: "MCP", role: "Protocol", href: "/docs/api/mcp-server", icon: <SiModelcontextprotocol /> },
       { name: "A2A", role: "Protocol", href: "/docs/api/a2a-server", logo: "/img/integrations/a2a-white.svg", mono: true },
       { name: "AG-UI", role: "Protocol", href: "/docs/api/agui-server", logo: "/img/integrations/agui.svg", mono: true },
@@ -177,7 +177,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "DeepEval", role: "Evaluator", href: TESTING, logo: "/img/integrations/deepeval.svg" },
       { name: "Opik", role: "Evaluator", href: TESTING, logo: "/img/integrations/opik.svg", mono: true, wide: true },
       { name: "TypeSafe JEV", role: "Evaluator", href: TESTING, logo: "/img/integrations/typesafe.png" },
-      { name: "LiteLLM", role: "LLM gateway", href: "/docs/advanced/multimodal", logo: "/img/integrations/litellm.png" },
+      { name: "LiteLLM", role: "LLM gateway", href: "/docs/advanced/multimodal", logo: "/img/integrations/litellm.png", mono: true },
     ],
   },
 ];

@@ -225,6 +225,301 @@ body {
 }
 
 /* =============================================================================
+   Design system: foundations
+   One type scale, one spacing scale, one container, two radii. Sizes are fluid
+   between a 390 px and a 1440 px viewport. Starting values and the reasoning are
+   in docs/specs/oak-rebrand/research/design-audit.md.
+   ============================================================================= */
+
+:root {
+  /* Type scale */
+  --ak-type-display: clamp(2.75rem, 1.729rem + 4.19vw, 5.5rem);    /* 44 to 88 px: hero headline only */
+  --ak-type-h1: clamp(2.375rem, 1.771rem + 2.476vw, 4rem);         /* 38 to 64 px */
+  --ak-type-h2: clamp(2rem, 1.536rem + 1.905vw, 3.25rem);          /* 32 to 52 px */
+  --ak-type-h3: clamp(1.5rem, 1.361rem + 0.571vw, 1.875rem);       /* 24 to 30 px */
+  --ak-type-h4: clamp(1.25rem, 1.204rem + 0.19vw, 1.375rem);       /* 20 to 22 px */
+  --ak-type-lead: clamp(1.125rem, 1.055rem + 0.286vw, 1.3125rem);  /* 18 to 21 px */
+  --ak-type-body: clamp(1.0625rem, 1.039rem + 0.095vw, 1.125rem);  /* 17 to 18 px */
+  --ak-type-small: 0.9375rem;                                      /* 15 px */
+  --ak-type-label: 0.8125rem;                                      /* 13 px, monospace only */
+
+  /* Spacing scale, named by pixel value */
+  --ak-space-4: 0.25rem;
+  --ak-space-8: 0.5rem;
+  --ak-space-12: 0.75rem;
+  --ak-space-16: 1rem;
+  --ak-space-24: 1.5rem;
+  --ak-space-32: 2rem;
+  --ak-space-48: 3rem;
+  --ak-space-64: 4rem;
+  --ak-space-96: 6rem;
+  --ak-space-128: 8rem;
+  --ak-space-160: 10rem;
+
+  /* Layout */
+  --ak-container: 80rem;                                            /* 1280 px */
+  --ak-gutter: clamp(1.5rem, 0.9rem + 2.5vw, 3rem);
+  --ak-section-pad: clamp(4rem, 2.514rem + 6.1vw, 8rem);            /* 64 to 128 px */
+  --ak-measure: 45rem;                                              /* 720 px, for prose */
+
+  /* Corner radii: two, and no others */
+  --ak-radius-control: 8px;
+  --ak-radius-card: 16px;
+
+  --ifm-navbar-height: 4.5rem;                                      /* 72 px */
+}
+
+.ak-container {
+  width: 100%;
+  max-width: calc(var(--ak-container) + 2 * var(--ak-gutter));
+  margin-inline: auto;
+  padding-inline: var(--ak-gutter);
+}
+
+.ak-section {
+  padding-block: var(--ak-section-pad);
+}
+
+/* Headings: weight 600, a solid colour, never a gradient */
+.ak-display,
+.ak-h1,
+.ak-h2,
+.ak-h3,
+.ak-h4 {
+  margin: 0;
+  font-family: var(--ifm-font-family-base);
+  font-weight: 600;
+  color: var(--ak-fg);
+  text-wrap: balance;
+}
+
+.ak-display {
+  font-size: var(--ak-type-display);
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+.ak-h1 {
+  font-size: var(--ak-type-h1);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.ak-h2 {
+  font-size: var(--ak-type-h2);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+}
+
+.ak-h3 {
+  font-size: var(--ak-type-h3);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.ak-h4 {
+  font-size: var(--ak-type-h4);
+  line-height: 1.3;
+}
+
+.ak-lead,
+.ak-body,
+.ak-small {
+  margin: 0;
+  font-weight: 400;
+}
+
+.ak-lead {
+  max-width: 40rem;
+  font-size: var(--ak-type-lead);
+  line-height: 1.5;
+  color: var(--ak-text-secondary);
+}
+
+.ak-body {
+  font-size: var(--ak-type-body);
+  line-height: 1.6;
+  color: var(--ak-text-secondary);
+}
+
+.ak-small {
+  font-size: var(--ak-type-small);
+  line-height: 1.5;
+  color: var(--ak-text-muted);
+}
+
+/* Section label: the only text set below 14 px, and always in the monospace face */
+.ak-label {
+  margin: 0;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ak-text-muted);
+}
+
+.ak-label__index {
+  margin-right: 0.75em;
+  color: var(--ak-primary-text);
+}
+
+.ak-accent-text {
+  color: var(--ak-primary-text);
+}
+
+/* Buttons: rectangular, three kinds. One primary button per view. */
+.ak-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 3.25rem;
+  padding: 0 1.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--ak-radius-control);
+  font-family: var(--ifm-font-family-base);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.ak-btn:hover {
+  text-decoration: none;
+}
+
+.ak-btn--primary,
+.ak-btn--primary:hover {
+  color: var(--ak-on-primary);
+}
+
+.ak-btn--primary {
+  background-color: var(--ak-primary);
+}
+
+.ak-btn--primary:hover {
+  background-color: var(--ak-primary-light);
+}
+
+.ak-btn--secondary,
+.ak-btn--secondary:hover {
+  color: var(--ak-fg);
+}
+
+.ak-btn--secondary {
+  background-color: transparent;
+  border-color: rgba(var(--ak-fg-rgb), 0.28);
+}
+
+.ak-btn--secondary:hover {
+  border-color: var(--ak-fg);
+}
+
+.ak-btn--small {
+  height: 2.5rem;
+  padding: 0 1rem;
+  font-size: var(--ak-type-small);
+}
+
+/* Tertiary action: a text link with an arrow */
+.ak-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-weight: 600;
+  color: var(--ak-primary-text);
+  text-decoration: none;
+}
+
+.ak-link::after {
+  content: '\2192';
+  transition: transform 0.15s ease;
+}
+
+.ak-link:hover {
+  color: var(--ak-primary-text);
+  text-decoration: none;
+}
+
+.ak-link:hover::after {
+  transform: translateX(3px);
+}
+
+.ak-btn:focus-visible,
+.ak-link:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 3px;
+}
+
+/* =============================================================================
+   Design system: components
+   Flat surfaces: a solid fill with a hairline border, or no fill and a rule.
+   No gradients, glows, blur or shadows.
+   ============================================================================= */
+
+/* Section header: numbered label, heading, lead. Left aligned. */
+.ak-section-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-24);
+  margin-bottom: var(--ak-space-64);
+}
+
+.ak-section-header .ak-lead {
+  max-width: var(--ak-measure);
+}
+
+/* A section on the raised surface, to separate it from its neighbours without a glow */
+.ak-section--raised {
+  background-color: var(--ak-bg-alt);
+  border-block: 1px solid var(--ak-border);
+}
+
+.ak-rule {
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--ak-border);
+}
+
+.ak-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-16);
+  padding: var(--ak-space-32);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-card);
+  background-color: var(--ak-bg-alt);
+}
+
+/* Tags are labels, not actions: outlined, monospace, never clickable */
+.ak-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 1.75rem;
+  padding: 0 var(--ak-space-12);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  line-height: 1;
+  color: var(--ak-text-secondary);
+  white-space: nowrap;
+}
+
+.ak-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ak-space-8);
+}
+
+/* =============================================================================
    Global
    ============================================================================= */
 
@@ -301,10 +596,8 @@ article {
 
 .navbar {
   background-color: var(--ak-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  height: 60px;
-  padding: 0 2rem;
+  height: var(--ifm-navbar-height);
+  padding: 0 var(--ak-gutter);
   z-index: 100 !important;
 }
 
@@ -329,13 +622,13 @@ article {
 }
 
 .navbar__logo {
-  height: 2.75rem;
+  height: 3.25rem;
 }
 
 /* Nav links */
 .navbar__link {
   font-weight: 500;
-  font-size: 0.88rem;
+  font-size: 1rem;
   color: rgba(var(--ak-fg-rgb), 0.75);
   transition: color 0.15s ease;
 }
@@ -379,39 +672,26 @@ article {
   opacity: 1;
 }
 
-/* Center Navbar Links on Desktop */
+/* Navbar layout on desktop: logo, then the links, with the tools and the primary action on the
+   right. The links follow the logo instead of being centred, so they can never collide with the
+   right-hand group when it grows (the version menu appears on docs pages). */
 @media (min-width: 1200px) {
   .navbar__inner {
-    position: relative;
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
+    align-items: center;
     width: 100%;
+    max-width: calc(var(--ak-container) + 2 * var(--ak-gutter));
+    margin-inline: auto;
+    padding-inline: var(--ak-gutter);
   }
 
   .navbar__brand {
-    position: absolute;
-    left: 2rem;
-    top: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
+    margin-right: var(--ak-space-48);
   }
 
   .navbar__inner > .navbar__items:first-child {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    margin-right: 0 !important;
-  }
-
-  .navbar__items--right {
-    position: absolute;
-    right: 2rem;
-    top: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    margin-left: 0 !important;
+    gap: var(--ak-space-8);
   }
 }
 
@@ -1363,3 +1643,62 @@ article {
 .theme-back-to-top-button {
   display: none !important;
 }
+
+/* Navbar: the one primary action sits at the far right, after the mode switch and search */
+.navbar .navbar-cta {
+  order: 10;
+  margin-left: var(--ak-space-16);
+  color: var(--ak-on-primary);
+}
+
+.navbar .navbar-cta:hover {
+  color: var(--ak-on-primary);
+}
+
+@media (max-width: 996px) {
+  .navbar .navbar-cta {
+    display: none;
+  }
+}
+
+/* The version menu only means something on docs pages */
+html:not(.plugin-docs) .navbar-version-dropdown {
+  display: none !important;
+}
+
+@media (min-width: 1200px) {
+  .navbar {
+    padding: 0;
+  }
+}
+
+/* =============================================================================
+   Design system: docs chrome
+   The sidebar and the table of contents are plain columns separated from the
+   content by a hairline, not boxed panels that glow on hover.
+   ============================================================================= */
+
+.theme-doc-sidebar-container,
+.theme-doc-sidebar-container:hover,
+.theme-doc-toc-desktop,
+.theme-doc-toc-desktop:hover {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--ak-border) !important;
+}
+
+.theme-doc-toc-desktop {
+  border-left: 1px solid var(--ak-border) !important;
+}
+
+/* Light mode elevation: on white, a card lifts with one soft shadow instead of a border. */
+[data-theme='light'] .ak-card {
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(var(--ak-shadow-rgb), 0.06), 0 10px 28px rgba(var(--ak-shadow-rgb), 0.07);
+}
+

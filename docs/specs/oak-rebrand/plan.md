@@ -106,6 +106,7 @@ after the design is approved.
 
 ## Iteration 10: Foundations
 
+- **Status:** done on 2026-11-19. Tokens and utility classes are in `docs/src/css/custom.css`; the navbar and the home hero use them. The maintainer reviewed the checkpoint and asked for the remaining iterations.
 - **Goal:** the type scale, spacing scale, container, radii and flat surface rules exist as tokens, proven on the home hero and navbar.
 - **Findings:** F1, F17, F18, F3, F9, F19.
 - **Files:** `docs/src/css/custom.css`, `docs/src/pages/index.module.css`
@@ -117,6 +118,7 @@ after the design is approved.
 
 ## Iteration 11: Components
 
+- **Status:** done for buttons, section headers, cards, tags and text links (`docs/src/css/custom.css`, `docs/src/components/ui/SectionHeader.tsx`). Legacy stylesheets were brought onto the two radii and the flat-surface rules by a one-off normalisation script. Not done: one icon family, and SVG versions of the PNG integration logos.
 - **Goal:** one implementation each of button, section header, card, tag and text link.
 - **Findings:** F2, F4, F9, F8, F22.
 - **Files:** `docs/src/css/custom.css`, a new `docs/src/components/ui/` folder, the stylesheets that define today's variants
@@ -128,6 +130,7 @@ after the design is approved.
 
 ## Iteration 12: Vector animation set
 
+- **Status:** done for the six stage drawings (`StageMotion` in `docs/src/components/VectorMotion/`), which sit in the capability rail beside the configuration that switches each stage on. They are SMIL only, use two theme tokens, pause off screen and render a static frame on the server and for reduced motion. Not done: the architecture flow drawing, the in-browser review of the motion language with the maintainer (step 2 was skipped, so all six were drawn before review), and a check in Safari and Firefox.
 - **Goal:** the site has its own moving line art, in one vocabulary.
 - **Findings:** F23, F14.
 - **Files:** a new `docs/src/components/VectorMotion/` folder
@@ -139,6 +142,7 @@ after the design is approved.
 
 ## Iteration 13: Home page
 
+- **Status:** done. Nine sections: hero, trust marks, capability rail, architecture, integration ledger, deploy, paths, questions, closing panel. The four-column compatibility matrix was replaced by a ledger after review, because the matrix showed about 30 of the 76 integrations and dropped whole categories (identity, secrets, queues, sandboxes). The ledger has one hairline row per category and lists every integration by name; it reads the same data file as the marquee, and an integration whose role is not mapped to a category still appears, under "More". The footer membership badges were kept, because they are the foundations' own artwork and their display terms were not checked. The architecture diagram keeps its old internals; only its header and spacing changed.
 - **Goal:** the home page has the nine lighter sections, the capability rail and the compatibility matrix.
 - **Findings:** F5, F20, F11, F21, F7.
 - **Files:** `docs/src/pages/index.tsx`, `docs/src/pages/index.module.css`, `docs/src/components/FeatureExplorer/*`, `docs/src/components/IntegrationsMarquee/*`, `docs/src/components/FAQ/*`
@@ -152,6 +156,7 @@ after the design is approved.
 
 ## Iteration 14: Features, use-cases and persona pages
 
+- **Status:** partly done. Type floor, radii, flat surfaces, sentence-case headings, left-aligned section headers and the shared closing panel are applied; the features page has an `h1`. Not done: shortening the persona journeys, the neutral colour for "before" comparisons, and one container width on the features page.
 - **Goal:** the other marketing pages use the system.
 - **Findings:** F18, F15, F7, F1.
 - **Files:** `docs/src/pages/features.tsx`, `use-cases.tsx`, `developer.tsx`, `ai-engineer.tsx`, `business-leader.tsx` and their stylesheets
@@ -163,6 +168,7 @@ after the design is approved.
 
 ## Iteration 15: Docs, blog and site chrome
 
+- **Status:** partly done. The docs sidebar and table of contents are unboxed, the navbar is 72 px with its primary action, and the scroll-to-top button is hidden on small screens. Not done: moving the "What's New" list to a changelog, and the blog banners (the posts still carry the old name, which is the maintainer's call).
 - **Goal:** the docs, blog, navbar and footer match.
 - **Findings:** F10, F6, F12, F13.
 - **Files:** `docs/src/css/custom.css`, `docs/src/css/blog-medium.css`, `docs/src/theme/*`, `docs/docusaurus.config.js`, `docs/static/img/blog/*`, `docs/docs/intro.md`
@@ -175,6 +181,7 @@ after the design is approved.
 
 ## Iteration 16: Motion, accessibility and light mode
 
+- **Status:** partly done. Glows, blur and gradient fills are removed, and light-mode cards lift with a shadow. Not done: replacing the scroll-triggered reveals on the features and persona pages, and a keyboard pass.
 - **Goal:** content never waits on an animation, and the light mode is designed, not inverted.
 - **Findings:** F14, F16.
 - **Steps:**
@@ -185,6 +192,7 @@ after the design is approved.
 
 ## Iteration 17: Tests, then docs and skills
 
+- **Status:** partly done. The production build passes on an isolated copy with the current docs and version 0.10.1 (the full build with every frozen version was not re-run). `AGENTS.md` and `branding/README.md` carry the design-system rules. Not done: the screenshot set for review.
 - **Goal:** the whole phase passes the checks, and the guidance matches.
 - **Steps:**
   1. Run the Testing steps of the spec on the full tree, and the production build.

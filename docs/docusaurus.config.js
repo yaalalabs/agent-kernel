@@ -464,6 +464,12 @@ const config = {
             dropdownItemsAfter: [],
             className: 'navbar-version-dropdown',
           },
+          {
+            to: '/docs/quick-start',
+            label: 'Quick start',
+            position: 'right',
+            className: 'ak-btn ak-btn--primary ak-btn--small navbar-cta',
+          },
 
 
         ],

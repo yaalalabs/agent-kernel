@@ -1,3 +1,4 @@
+import { ClosingPanel } from '@site/src/components/HomeSections';
 import OakMark from '@site/src/components/OakMark';
 import { BRAND } from '@site/src/lib/brand';
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
@@ -43,7 +44,7 @@ function Hero() {
   return (
     <HeroAnimation
       badge="Use Cases"
-      title="Who Is Open Agent Kernel Built For?"
+      title="Who is Open Agent Kernel built for?"
       subtitle="Open Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code."
     />
   );
@@ -416,7 +417,7 @@ function RealWorldUseCases() {
             <span className={styles.badgeStar}>✦</span>
             Use Cases
           </div>
-          <h2 className={styles.realWorldSectionTitle}>Real World Use Cases</h2>
+          <h2 className={styles.realWorldSectionTitle}>Real-world use cases</h2>
         </div>
         <ul className={styles.featuresGrid}>
           {REAL_WORLD_USE_CASES.map((useCase, i) => (
@@ -506,7 +507,7 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
             <span className={styles.badgeStar}>✦</span>
             Trust
           </div>
-          <h2 className={styles.sectionTitle}>Why Teams Choose OAK</h2>
+          <h2 className={styles.sectionTitle}>Why teams choose OAK</h2>
           <p className={styles.sectionSubtitle}>
             What makes OAK different from rolling your own or using other platforms.
           </p>
@@ -612,7 +613,7 @@ export default function UseCases() {
         <UseCaseJourneyMap />
         <RealWorldUseCases />
         <Differentiators backgroundRef={backgroundRef} />
-        <Community />
+        <ClosingPanel />
       </main>
 
       {activeSegment && (

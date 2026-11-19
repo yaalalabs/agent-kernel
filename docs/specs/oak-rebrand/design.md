@@ -164,7 +164,9 @@ surface, in a flat and clean style.
   - nine sections: hero, trust marks, what OAK does, architecture, works with, deploy anywhere, choose your path, questions, closing section
   - the hero headline is short enough to set at display size
   - the feature section becomes a rail of six stages (Build, Connect, Remember, Guard, Scale, Observe); each stage shows one sentence, three points, its vector animation and the code or config that enables it, replacing the six tabs of cards
-  - integrations stay on the home page as a four-column compatibility matrix, replacing the three marquee rows
+  - integrations stay on the home page as a ledger, replacing the three marquee rows
+    - one row per category, and every integration listed by name: none is hidden behind a count or a link
+    - the ledger and the marquee read one data file, so there is one list to maintain
   - every FAQ question stays, in two columns of flat rows
   - a row of trust marks (licence, foundations, compliance) replaces the separate trust section and the footer badges; it carries no figures until real ones exist
 - The reference site named by the maintainer (choreolabs.com) informs principles only: type that carries the

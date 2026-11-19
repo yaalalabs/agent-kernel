@@ -3,7 +3,7 @@
 .figure {
   margin: 0;
   width: 100%;
-  border-radius: 0.5rem;
+  border-radius: var(--ak-radius-control);
   overflow: hidden;
 }
 
@@ -23,7 +23,7 @@
   min-height: 29rem;
   padding: 2.5rem 2.25rem 2.25rem;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
-  border-radius: 0.5rem;
+  border-radius: var(--ak-radius-control);
   background: transparent;
   overflow-x: auto;
   overflow-y: hidden;
@@ -129,12 +129,10 @@
   justify-content: center;
   text-align: center;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.12);
-  border-radius: 0.75rem;
+  border-radius: var(--ak-radius-card);
   background: var(--node-surface);
-  backdrop-filter: blur(8px);
-  box-shadow:
-    inset 0 1px 1px rgba(var(--ak-fg-rgb), 0.08),
-    0 4px 20px rgba(var(--ak-shadow-rgb), 0.25);
+  backdrop-filter: none;
+  box-shadow: none;
   transition:
     border-color 0.3s ease,
     transform 0.3s ease,
@@ -144,9 +142,7 @@
 .flowNode:hover {
   border-color: color-mix(in srgb, var(--node-color, var(--ak-primary-dark)) 45%, transparent);
   transform: translateY(-3px) scale(1.02);
-  box-shadow:
-    inset 0 1px 1px rgba(var(--ak-fg-rgb), 0.15),
-    0 10px 30px color-mix(in srgb, var(--node-color, var(--ak-primary-dark)) 20%, transparent);
+  box-shadow: none;
 }
 
 .flowNodeLabel {
@@ -188,13 +184,13 @@
   --node-surface: rgba(var(--ak-bg-rgb), 0.75);
   width: 100%;
   min-height: 3.3rem;
-  border-radius: 0.5rem;
+  border-radius: var(--ak-radius-control);
   border-style: dashed;
   border-color: rgba(var(--ak-blue-rgb), 0.45);
 }
 
 .node_framework .flowNodeLabel {
-  font-size: 0.825rem;
+  font-size: 0.875rem;
   line-height: 1.35;
   padding: 0.8rem 1rem 0.8rem 0.85rem;
 }
@@ -202,13 +198,13 @@
 .node_test {
   --node-surface: rgba(var(--ak-prussian-rgb), 0.75);
   min-width: 9.75rem;
-  border-radius: 0.5rem;
+  border-radius: var(--ak-radius-control);
   border-style: dashed;
   border-color: rgba(var(--ak-blue-rgb), 0.45);
 }
 
 .node_test .flowNodeLabel {
-  font-size: 0.825rem;
+  font-size: 0.875rem;
   line-height: 1.35;
 }
 

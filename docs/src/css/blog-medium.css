@@ -34,7 +34,7 @@ html.blog-post-page article {
 /* Title */
 html.blog-post-page article header h1 {
   font-family: 'Archivo', sans-serif;
-  font-size: 2.5rem;
+  font-size: var(--ak-type-h2);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.15;
@@ -53,14 +53,14 @@ html.blog-post-page article header .avatar__name a {
 
 html.blog-post-page article header .avatar__subtitle {
   color: var(--ak-text-secondary);
-  font-size: 0.82rem;
+  font-size: 0.875rem;
 }
 
 html.blog-post-page article header time,
 html.blog-post-page article header [class*='readingTime'] {
   color: var(--ak-text-secondary);
   font-family: 'Archivo', sans-serif;
-  font-size: 0.88rem;
+  font-size: 0.9375rem;
 }
 
 html.blog-post-page article header {
@@ -76,7 +76,7 @@ html.blog-post-page article header {
 html.blog-post-page article .markdown {
   font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, Georgia,
     serif;
-  font-size: 1.25rem;
+  font-size: var(--ak-type-h4);
   line-height: 1.75;
   letter-spacing: -0.003em;
   color: var(--ak-text);
@@ -92,18 +92,18 @@ html.blog-post-page article .markdown h4 {
 }
 
 html.blog-post-page article .markdown h1 {
-  font-size: 2rem !important;
+  font-size: var(--ak-type-h2) !important;
 }
 
 html.blog-post-page article .markdown h2 {
-  font-size: 1.6rem !important;
+  font-size: var(--ak-type-h3) !important;
   border-bottom: none;
   padding-bottom: 0;
   margin-top: 2.75rem;
 }
 
 html.blog-post-page article .markdown h3 {
-  font-size: 1.3rem !important;
+  font-size: var(--ak-type-h4) !important;
   margin-top: 2.25rem;
 }
 
@@ -125,7 +125,7 @@ html.blog-wrapper .markdown a:hover {
 /* Fenced code blocks: generous spacing to punctuate the reading flow */
 html.blog-wrapper .markdown .theme-code-block {
   margin: 2rem 0;
-  border-radius: 8px;
+  border-radius: var(--ak-radius-control);
 }
 
 /* Blockquote, Medium-style */
@@ -134,7 +134,7 @@ html.blog-wrapper .markdown blockquote {
   padding: 0 0 0 1.25rem;
   margin: 2rem 0;
   font-style: italic;
-  font-size: 1.3rem;
+  font-size: var(--ak-type-h4);
   color: var(--ak-text-secondary);
   background: transparent;
 }
@@ -151,7 +151,7 @@ html.blog-wrapper .markdown img {
 html.blog-wrapper .markdown .docusaurus-mermaid-container {
   background: var(--ak-bg);
   border: 1px solid rgba(var(--ak-fg-rgb), 0.15);
-  border-radius: 8px;
+  border-radius: var(--ak-radius-control);
   padding: 1.5rem;
   margin: 2rem 0;
   display: flex;
@@ -193,9 +193,9 @@ html.blog-wrapper .theme-blog-post-tags a {
   background: rgba(var(--ak-fg-rgb), 0.07);
   border: none;
   color: var(--ak-text) !important;
-  border-radius: 100px;
+  border-radius: var(--ak-radius-control);
   padding: 0.3rem 0.9rem;
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   text-decoration: none;
   transition: background 0.15s ease;
 }
@@ -236,7 +236,7 @@ html.blog-wrapper .blog-back-btn {
   border-radius: 50%;
   border: 1px solid rgba(var(--ak-fg-rgb), 0.15);
   background: rgba(var(--ak-bg-rgb), 0.8);
-  backdrop-filter: blur(8px);
+  backdrop-filter: none;
   color: var(--ak-text-secondary);
   cursor: pointer;
   outline: none;
@@ -285,7 +285,7 @@ html.blog-wrapper .blog-back-btn:hover {
 
 @media (max-width: 768px) {
   html.blog-post-page article header h1 {
-    font-size: 1.85rem;
+    font-size: var(--ak-type-h3);
   }
 
   html.blog-post-page article .markdown {

@@ -70,6 +70,58 @@ background: linear-gradient(135deg, #B1CDFF 0%, #3F598A 100%);
 background: radial-gradient(ellipse at 50% 0%, #ABCEE1 0%, #3F598A 75%);
 ```
 
+The website does not use the gradients: its surfaces are flat (see below). They are for covers, social
+cards and print.
+
+## Website design system
+
+The website (`docs/`) is built from one small system. Its tokens and classes are in
+`docs/src/css/custom.css`, under "Design system: foundations" and "Design system: components".
+
+**Type.** One scale, fluid between a 390 px and a 1440 px viewport.
+
+| Token | Class | Size | Use it for |
+|---|---|---|---|
+| `--ak-type-display` | `ak-display` | 44 to 88 px | The hero headline only |
+| `--ak-type-h1` | `ak-h1` | 38 to 64 px | The page title |
+| `--ak-type-h2` | `ak-h2` | 32 to 52 px | Section titles |
+| `--ak-type-h3` | `ak-h3` | 24 to 30 px | Titles inside a section |
+| `--ak-type-h4` | `ak-h4` | 20 to 22 px | Card titles |
+| `--ak-type-lead` | `ak-lead` | 18 to 21 px | The sentence under a title |
+| `--ak-type-body` | `ak-body` | 17 to 18 px | Running text |
+| `--ak-type-small` | `ak-small` | 15 px | Captions and secondary text: the smallest size for prose |
+| `--ak-type-label` | `ak-label` | 13 px | Monospace section labels, in capitals |
+
+**Space.** Use the `--ak-space-*` steps (4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 160 px). Page content sits in
+`ak-container` (1280 px with a fluid gutter), sections use `ak-section` for their vertical padding, and prose
+is held to `--ak-measure` (720 px).
+
+**Shape.** Two corner radii: `--ak-radius-control` (8 px) for buttons, inputs and tags, and
+`--ak-radius-card` (16 px) for cards and panels. Borders are one-pixel hairlines in `--ak-border`.
+
+**Components.**
+
+| Piece | Class or component | Notes |
+|---|---|---|
+| Section header | `SectionHeader` (`docs/src/components/ui/`) | A numbered monospace label, a title and one lead sentence, left-aligned |
+| Buttons | `ak-btn` with `ak-btn--primary` or `ak-btn--secondary`, and `ak-btn--small` | Rectangular. One primary action per view |
+| Text link | `ak-link` | Orange text with an arrow, for "Learn more" style links |
+| Card | `ak-card` | A hairline border in the dark mode, a soft shadow in the light mode |
+| Tag | `ak-tag` in an `ak-tag-row` | Short labels only |
+| Dark panel | `ak-dark` | Pins a subtree to the dark values in either mode, as the closing panel does |
+
+**Rules.**
+
+- Surfaces are flat: no gradients, glows, blur or drop shadows. The one exception is the light-mode card shadow.
+- Section headers are left-aligned and headings are in sentence case.
+- Orange is for the one thing to notice in a view: the primary action, the active item, the accent in a drawing.
+- Every colour comes from a token, so that both colour modes work. Check new work in both.
+
+**Moving illustrations.** The site's own illustration style is line art in motion, called particles on
+rails: fine blue rails, dots that travel along them, and one orange element per drawing. The drawings are in
+`docs/src/components/VectorMotion/` (`StageMotion`). A new drawing uses the same two colours and stroke
+width, pauses when it is off screen, and shows a still frame when the visitor asks for reduced motion.
+
 ## Source files
 
 The designer's originals (the Illustrator file, the guideline PDF and PNG exports) live in `branding/source/`,

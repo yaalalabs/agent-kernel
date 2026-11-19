@@ -11,7 +11,7 @@
 
 .heroTitle {
   font-family: 'Archivo', sans-serif;
-  font-size: 2.25rem;
+  font-size: var(--ak-type-h2);
   font-weight: 800;
   letter-spacing: -0.025em;
   color: var(--ak-text);
@@ -28,7 +28,7 @@
 
 .backLink {
   font-family: 'Archivo', sans-serif;
-  font-size: 0.9rem;
+  font-size: 0.9375rem;
   font-weight: 500;
   color: var(--ak-text-secondary);
   text-decoration: none;

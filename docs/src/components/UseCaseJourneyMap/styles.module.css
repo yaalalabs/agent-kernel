@@ -9,7 +9,7 @@
 
 .journeySection {
   padding: 5rem 0 4rem;
-  backdrop-filter: blur(4px);
+  backdrop-filter: none;
   border-top: 1px solid var(--ifm-color-emphasis-200);
 }
 
@@ -27,7 +27,7 @@
   gap: 0.4rem;
   padding: 0.35rem 1rem;
   border: 1px solid rgba(var(--ak-blue-rgb), 0.55);
-  border-radius: 999px;
+  border-radius: var(--ak-radius-control);
   font-size: 0.9rem;
   font-weight: 500;
   color: rgba(var(--ak-sky-rgb), 0.9);
@@ -43,7 +43,7 @@
 }
 
 .eyebrow {
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -52,21 +52,23 @@
 }
 
 .title {
+  color: var(--ak-fg);
   font-size: clamp(2rem, 4vw, 2.8rem);
   font-weight: 600;
   letter-spacing: -0.03em;
-  background: linear-gradient(to bottom, var(--ak-fg) 0%, #898989 100%);
+  background: none;
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-text-fill-color: currentColor;
   background-clip: text;
   margin: 0;
   line-height: 1.1;
 }
 
 .gradientText {
+  color: var(--ak-primary-text);
   background: var(--ak-primary);
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-text-fill-color: currentColor;
   background-clip: text;
 }
 
@@ -102,7 +104,7 @@
 }
 
 .colTitle {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -186,7 +188,7 @@
   min-height: 32px;
   transform-origin: top center;
   transform: scaleY(0);
-  border-radius: 999px;
+  border-radius: var(--ak-radius-control);
 }
 
 .connector_traditional {
@@ -249,7 +251,7 @@
 }
 
 .stepSub {
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   color: var(--ifm-color-emphasis-600);
   line-height: 1.4;
 }
@@ -261,8 +263,8 @@
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border-radius: 999px;
-  font-size: 0.85rem;
+  border-radius: var(--ak-radius-control);
+  font-size: 0.875rem;
   font-weight: 700;
   opacity: 0;
   margin-top: 0.75rem;
@@ -296,7 +298,7 @@
 .savingsCard {
   margin-top: 2rem;
   padding: 1rem 1.25rem;
-  border-radius: 12px;
+  border-radius: var(--ak-radius-card);
   background: rgba(var(--ak-blue-rgb), 0.1);
   border: 1px solid rgba(var(--ak-blue-rgb), 0.25);
   opacity: 0;
@@ -314,7 +316,7 @@
 }
 
 .savingsLabel {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: rgba(var(--ak-primary-rgb), 0.8);
   margin: 0 0 2px;
   text-transform: uppercase;

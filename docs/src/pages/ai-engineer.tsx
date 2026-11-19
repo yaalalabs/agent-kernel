@@ -1,4 +1,4 @@
-import OakMark from '@site/src/components/OakMark';
+import { ClosingPanel } from '@site/src/components/HomeSections';
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import gsap from "gsap";
 import ScrollTrigger from "gsap/dist/ScrollTrigger";
@@ -653,9 +653,9 @@ export default function AIEngineerPage() {
             data-step="ai-01"
           >
             <p className={styles.aiStepLabel}>Step 01: Analogy</p>
-            <h2 className={styles.aiTitle}>
-              Guardrails, Traceability, Memory and Other Enterprise Features for Your Agent Code.
-            </h2>
+            <h1 className={styles.aiTitle}>
+              Guardrails, traceability, memory and other enterprise features for your agent code.
+            </h1>
             <div className={styles.aiDescription}>
               <p className={styles.devIntro}>
                 OAK is a unified, capable runtime for the AI agents. Its pluggable architecture allows you to attach capabilities to your effortlessly.
@@ -714,7 +714,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 02: Stand Out</p>
             <h2 className={styles.aiTitle}>
-              <span>What Makes OAK Stand Out</span>
+              <span>What makes OAK stand out</span>
             </h2>
 
             <div className={styles.akComparePanel}>
@@ -857,9 +857,9 @@ export default function AIEngineerPage() {
               Step 03: Features
             </p>
             <h2 className={styles.aiTitle}>
-              <span>Focus on Agent Logic.</span>
+              <span>Focus on agent logic.</span>
               {' '}<br />
-              <span>We Handle the Rest.</span>
+              <span>We handle the rest.</span>
             </h2>
 
             <p className={styles.aiDescription}>
@@ -917,7 +917,7 @@ export default function AIEngineerPage() {
               Step 04: Frameworks
             </p>
             <h2 className={styles.aiTitle}>
-              <span>Use The Framework You Prefer</span>
+              <span>Use the framework you prefer</span>
             </h2>
 
             <FrameworkSelector showTitle={false} showDescription={true} />
@@ -930,7 +930,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 05: Build Agents</p>
             <h2 className={styles.aiTitle}>
-              <span>How OAK Helps You Build Production-Ready Compliant AI Agents</span>
+              <span>How OAK helps you build production-ready, compliant AI agents</span>
             </h2>
 
             {/* Tab Cards Row */}
@@ -1011,7 +1011,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 06: Complete Picture</p>
             <h2 className={styles.aiTitle}>
-              <span>How OAK Fits In</span>
+              <span>How OAK fits in</span>
             </h2>
 
             <p className={styles.aiDescription}>
@@ -1034,7 +1034,7 @@ export default function AIEngineerPage() {
           >
             <p className={styles.aiStepLabel}>Step 07: Operating System Depth</p>
             <h2 className={styles.aiTitle}>
-              <span>Why OAK is a Powerful</span>
+              <span>Why OAK is a powerful</span>
               {' '}<br />
               <span>Operating System</span>
             </h2>
@@ -1220,43 +1220,7 @@ export default function AIEngineerPage() {
         </div>
       </section>
 
-      <section className={styles.ctaSection}>
-        <div className="container">
-          <div className={styles.ctaContent}>
-            <h2 className={styles.ctaTitle}>
-              Ready to Ship Your
-              <br />
-              First{" "}
-              <span className={styles.ctaTitleGradient}>Agent</span>?
-            </h2>
-            <p className={styles.ctaSubtitle}>
-              Free, open-source, Apache 2.0. No licensing costs, no vendor
-              lock-in. Join hundreds of developers building production AI agents
-              with OAK.
-            </p>
-            <div className={styles.ctaButtons}>
-              <Link
-                className={`button button--primary button--lg ${styles.heroBtnSecondary}`}
-                to="/docs"
-              >
-                Get Started
-              </Link>
-              <Link
-                className={styles.heroBtnLink}
-                to="https://github.com/yaalalabs/agent-kernel"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View On GitHub
-              </Link>
-            </div>
-
-            <div className={styles.ctaImageWrapper}>
-              <OakMark variant="cta" className={styles.ctaImage} />
-            </div>
-          </div>
-        </div>
-      </section>
+      <ClosingPanel />
     </Layout>
   );
 }
