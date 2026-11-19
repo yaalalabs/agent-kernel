@@ -21,7 +21,6 @@ const config = {
 
   clientModules: [
     './src/clientModules/ensureGtagGlobal.ts',
-    './src/clientModules/scrollReveal.ts',
   ],
 
   onBrokenLinks: 'throw',
@@ -512,7 +511,7 @@ const config = {
             ],
           },
         ],
-        copyright: `© ${new Date().getFullYear()} Open Agent Kernel. All rights reserved.`,
+        copyright: `© ${new Date().getFullYear()} <a href="https://yaalalabs.com" target="_blank" rel="noopener noreferrer">Yaala Labs</a>. All rights reserved.`,
       },
       prism: {
         theme: prismThemes.oneLight,

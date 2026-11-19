@@ -324,9 +324,9 @@ Add `docs/docs/advanced/tracing-<provider>.md` covering:
 - What gets traced (spans, attributes)
 - Dashboard screenshots (optional)
 
-Then update the landing page inventories in `docs/src/components/*/data.tsx`: add a tile to the **Observability, safety & testing** row in `IntegrationsMarquee/data.tsx` (role `Tracing`, `href` to the provider's docs page, logo under `docs/static/img/integrations/` or a `react-icons/si` glyph); add the provider to the **Tracing** card's `tags` and `description` under the Observe tab in `FeatureExplorer/data.tsx`; optionally add `pick("<tile name>")` to the **Clouds & observability** card in `ArchitectureOverview/data.tsx` if it is a headline backend. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+Then update the landing page inventories under `docs/src/components/`: add an item to the **Observability, safety & testing** row of `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx` (role `Tracing`, `href` to the provider's docs page, logo under `docs/static/img/integrations/` or a `react-icons/si` glyph); add the provider to the Observe stage's tracing point in `HomeSections/index.tsx` (`STAGES`); optionally add `pick("<item name>")` to the **Clouds and observability** card in `ArchitectureOverview/data.tsx` if it is a headline backend. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
-Then add the provider to the docs-site features page (`docs/src/pages/features.tsx`): the Observability card's `highlights` list one entry per provider, and the Problem section's `rows` name the built-in tracing providers in a `with:` cell. Grep `docs/src/pages/*.tsx` for "Langfuse" to find every roll call.
+Then add the provider to the docs-site features page (`docs/src/pages/features.tsx`): the first line of `points` in the **Tracing** capability under Observe lists every provider. Grep `docs/src/pages/*.tsx` and the root `README.md` for "Langfuse" to find every roll call.
 
 ## How Framework Modules Consume Tracing
 
@@ -353,4 +353,4 @@ This means tracing is **transparent** — users don't change their agent code, t
 - [ ] Optional dependencies in `pyproject.toml`
 - [ ] Tests for factory creation and span wrapping
 - [ ] Documentation in `docs/docs/advanced/tracing-<provider>.md`
-- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), Tracing card tags (`FeatureExplorer/data.tsx`); features page Observability highlights and `with:` cells
+- [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), the Observe stage's tracing point (`HomeSections/index.tsx`); the Tracing capability's provider list on the features page

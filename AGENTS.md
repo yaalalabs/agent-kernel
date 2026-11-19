@@ -107,10 +107,11 @@ reviews against them (full detail in the "House Patterns for New Features" secti
 
 When documentation changes, the React landing and features pages hold hard-coded inventories of
 frameworks, integrations, providers, deployment targets, and capabilities; update them alongside
-`docs/docs/`. On the landing page they live in `docs/src/components/IntegrationsMarquee/data.tsx`,
-`ArchitectureOverview/data.tsx`, and `FeatureExplorer/data.tsx`; on the features page in
-`docs/src/pages/features.tsx` (see `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features
-Pages*, for the change-type to entry mapping).
+`docs/docs/`. On the landing page they live under `docs/src/components/HomeSections/`
+(`integrations.data.tsx`, `index.tsx`, `Deployment.tsx`, `Announcement.tsx`) and in
+`ArchitectureOverview/data.tsx`; on the features page in `docs/src/pages/features.tsx`; and the
+newest capabilities are listed in `docs/docs/whats-new.md` (see `ak-dev-sync-docs-from-branch`,
+*Docs-Site Landing and Features Pages*, for the change-type to entry mapping).
 
 ## Setup, build, lint, test
 
@@ -173,10 +174,14 @@ When you write or update documentation, READMEs, skills or website copy:
   sections from the shared pieces in `docs/src/css/custom.css` (`ak-container`, `ak-section`, the
   `ak-display` to `ak-label` type classes, `ak-btn`, `ak-link`, `ak-card`, `ak-tag`) and the
   `SectionHeader` component, not from page-local copies. Sizes come from the `--ak-type-*` and
-  `--ak-space-*` tokens, corners from the two radii (`--ak-radius-control`, `--ak-radius-card`). No
-  gradients, glows, blur or drop shadows on surfaces, no text under 15 px except the 13 px monospace
-  label, and headings in sentence case. Pages below the home page start with `PageHero` and end with
-  `ClosingPanel`; the only entrance effect is `Reveal`. Interface icons are Tabler outline icons
+  `--ak-space-*` tokens, corners from the two radii (`--ak-radius-control`, `--ak-radius-card`).
+  Running text is 15 px or larger; the only smaller sizes are the 13 px monospace label and 14 px for
+  labels inside diagrams. Surfaces are flat (no gradient fills, glass blur, glows or drop shadows),
+  with two exceptions: cards lift with one soft shadow in the light mode, and floating layers (the
+  chat launcher and its panel) carry a shadow. Headings are in sentence case. Content is never hidden
+  without script, with reduced motion, in print, or when it is already on screen at load. Pages below
+  the home page start with `PageHero` and end with `ClosingPanel`; the only entrance effect is
+  `Reveal`, which fades content below the fold up once. Interface icons are Tabler outline icons
   (`react-icons/tb`) and brand marks are Simple Icons (`react-icons/si`). Moving illustrations use the
   line-art vocabulary in `docs/src/components/VectorMotion/`. The full rules are in
   [branding/README.md](branding/README.md#website-design-system).

@@ -21,9 +21,6 @@
   <a href="https://kernel.yaala.ai/docs"><img src="https://img.shields.io/badge/docs-kernel.yaala.ai-02284F?style=flat-square" alt="Documentation"></a>
 </p>
 
-> [!NOTE]
-> This project was previously called Agent Kernel. The `agentkernel` package and the `ak` CLI are unchanged, as are the `AK` class prefix and the `AK_` environment variables.
-
 <p align="center">
   <a href="https://kernel.yaala.ai/docs">Documentation</a> ·
   <a href="#quick-start">Quick start</a> ·
@@ -137,7 +134,7 @@ Every agent request passes through six stages, and each one is switched on with 
 <details>
 <summary><strong>Human in the loop, scheduling and sandboxing</strong></summary>
 
-- **Human in the loop.** A run can stop to ask a person for an approval or an answer, then resume from their decision minutes or hours later, on any replica. OAK returns HTTP 202 with `status: "PAUSED"` and the client answers with a `resume` block. OpenAI Agents SDK, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework agents can pause, over REST, streaming, WebSocket and AG-UI, with Approve and Deny buttons in Slack and Telegram.
+- **Human in the loop.** A run can stop to ask a person for an approval or an answer, then resume from their decision minutes or hours later, on any replica. OAK returns HTTP 202 with `status: "PAUSED"` and the client answers with a `resume` block. OpenAI Agents SDK, LangGraph, Pydantic AI, Google ADK, Microsoft Agent Framework and Claude Agent SDK agents can pause, over REST, streaming, WebSocket and AG-UI, with Approve and Deny buttons in Slack and Telegram.
 - **Deferred and recurring chats.** A `schedule` block in config turns on scheduling with no code change. A chat is deferred by a `schedule` block on the request (acknowledged with HTTP 202), by the agent's own `create_schedule` tool, or by a direct `ScheduleManager` call. Tasks can be listed, amended, paused and cancelled over `/api/v1/schedules`.
 - **Sandboxed code execution.** Enabling the sandbox in config gives agents code, command and file tools that run in an isolated environment. Workload profiles set the sandbox lifetime (per call, per session or shared) and a permission policy that is enforced fail-closed: network egress, filesystem, CPU and memory, timeout, languages and package installs. Code can run under the invoking user's identity instead of one shared agent identity.
 
@@ -195,7 +192,7 @@ The same agent code runs on every target. Terraform modules cover AWS, Azure and
 | Platform | Serverless | Containerized | Guides |
 |---|---|---|---|
 | **AWS** | [Lambda](ak-deployment/ak-aws/serverless) | [ECS Fargate](ak-deployment/ak-aws/containerized) | [Serverless](https://kernel.yaala.ai/docs/deployment/aws-serverless), [Containerized](https://kernel.yaala.ai/docs/deployment/aws-containerized) |
-| **Azure** | Not applicable | [Container Apps](ak-deployment/ak-azure/containerized), in one container or split over Service Bus | [Containerized](https://kernel.yaala.ai/docs/deployment/azure-containerized) |
+| **Azure** | Not offered (Functions is retired, see #957) | [Container Apps](ak-deployment/ak-azure/containerized), in one container or split over Service Bus | [Containerized](https://kernel.yaala.ai/docs/deployment/azure-containerized) |
 | **GCP** | [Cloud Run, scale to zero](ak-deployment/ak-gcp/serverless) | [Cloud Run, always on](ak-deployment/ak-gcp/containerized) | [Serverless](https://kernel.yaala.ai/docs/deployment/gcp-serverless), [Containerized](https://kernel.yaala.ai/docs/deployment/gcp-containerized) |
 | **Kubernetes and on-prem** | Not applicable | [Helm chart](ak-deployment/ak-k8s) for bare metal and EKS, with Kafka or NATS queue mode and KEDA autoscaling | [Kubernetes](https://kernel.yaala.ai/docs/deployment/onprem-kubernetes) |
 

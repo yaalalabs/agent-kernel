@@ -199,13 +199,14 @@ pins every dependency with.
 - The bundled skills that list the providers: `ak-add-capabilities` (its *Identity* section) and
   `ak-cloud-deploy` (*Deploying the Identity Provider*), with their `evals/evals.json` when an
   expected output names the providers.
-- Landing page inventories: the **Identity & Access** card's `tags` and `description` under the
-  Guard tab in `docs/src/components/FeatureExplorer/data.tsx`; a marquee tile when the provider is
-  a third-party service, in the **Observability, safety & testing** row of
-  `IntegrationsMarquee/data.tsx` with role `Identity` and `href: IDENTITY` (an issuer you only
-  documented as an `oidc` configuration gets a tile too, its `title` saying so, as Auth0, Okta and
-  Keycloak have); and the highlights of the **Identity & Access** card in `docs/src/pages/features.tsx`.
-  Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`.
+- Landing page inventories: an integration item when the provider is a third-party service, in
+  the **Observability, safety & testing** row of `INTEGRATION_ROWS` in
+  `docs/src/components/HomeSections/integrations.data.tsx`, with role `Identity` and
+  `href: IDENTITY` (an issuer you only documented as an `oidc` configuration gets an item too, its
+  `title` saying so, as Auth0, Okta and Keycloak have); and the provider lines in the `points` of
+  the **Identity and access** capability under Guard in `docs/src/pages/features.tsx`. The home
+  page announcement (`HomeSections/Announcement.tsx`) names the providers while identity is the
+  newest capability. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`.
 
 ## Gotchas
 

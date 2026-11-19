@@ -100,7 +100,7 @@ writes back.
 - `framework_context` must be a **picklable `dict`** — sessions are persisted with `pickle`. A
   non-picklable value raises a descriptive `TypeError` naming the offending key/type.
 - Round-trip fidelity is **not uniform across frameworks**. OpenAI has **full** round-trip (shown
-  here). ADK round-trips all keys except AK-internal ones; smolagents round-trips only pre-seeded
+  here). ADK round-trips all keys except OAK-internal ones; smolagents round-trips only pre-seeded
   keys; prebuilt LangGraph agents round-trip only declared state channels; **CrewAI does not support
   it** (a set context is ignored with a warning). To write portably across frameworks, pre-seed
   every key you intend to write. See the

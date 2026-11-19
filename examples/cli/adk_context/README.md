@@ -118,7 +118,7 @@ Write through `tool_context.state`, or from application code / a post-hook that 
   non-`dict` value, or a non-picklable one, raises a descriptive `TypeError` naming the offending
   key/type.
 - Round-trip fidelity is **not uniform across frameworks**. ADK round-trips all keys except
-  AK-internal and scope-prefixed ones (shown here). OpenAI has full round-trip; smolagents round-trips
+  OAK-internal and scope-prefixed ones (shown here). OpenAI has full round-trip; smolagents round-trips
   only pre-seeded keys; prebuilt LangGraph agents round-trip only declared state channels; **CrewAI
   does not support it** (a set context is ignored with a warning). To write portably across
   frameworks, pre-seed every key you intend to write. See the

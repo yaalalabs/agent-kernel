@@ -431,14 +431,37 @@ export default function ParticleLogo({ className }: { className?: string }): JSX
       setPlain(true);
       return undefined;
     }
-    const stop = start(stage.current, canvas.current, anchor.current);
+    const stageNode = stage.current;
+    const canvasNode = canvas.current;
+    const anchorNode = anchor.current;
+    let stop = start(stageNode, canvasNode, anchorNode);
     if (!stop) setPlain(true);
-    return stop ?? undefined;
+
+    // A browser can take the WebGL context away (a phone after switching apps, a GPU reset).
+    // The drawing stops and the plain mark stands in. If the context comes back, so do the dots.
+    const onLost = (event: Event) => {
+      event.preventDefault();
+      stop?.();
+      stop = null;
+      setPlain(true);
+    };
+    const onRestored = () => {
+      stop?.();
+      stop = start(stageNode, canvasNode, anchorNode);
+      setPlain(!stop);
+    };
+    canvasNode.addEventListener('webglcontextlost', onLost);
+    canvasNode.addEventListener('webglcontextrestored', onRestored);
+    return () => {
+      canvasNode.removeEventListener('webglcontextlost', onLost);
+      canvasNode.removeEventListener('webglcontextrestored', onRestored);
+      stop?.();
+    };
   }, []);
 
   return (
     <div ref={stage} className={clsx(styles.stage, className)} aria-hidden="true">
-      <canvas ref={canvas} className={styles.canvas} />
+      <canvas ref={canvas} className={clsx(styles.canvas, plain && styles.canvasOff)} />
       <div ref={anchor} className={styles.anchor}>
         {plain && <PlainMark />}
         <noscript>

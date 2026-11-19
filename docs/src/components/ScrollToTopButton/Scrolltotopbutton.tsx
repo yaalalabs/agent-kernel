@@ -30,11 +30,21 @@ export default function ScrollToTopButton(): JSX.Element {
     };
   }, []);
 
+  // After the scroll this button hides, so focus must not stay on it: it goes to the main
+  // content, which is where a keyboard user would start reading from the top.
+  const toTop = () => {
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' });
+    const main = document.querySelector<HTMLElement>('main') ?? document.body;
+    if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
+    main.focus({ preventScroll: true });
+  };
+
   return (
     <button
       type="button"
       className={clsx(styles.button, visible && styles.visible)}
-      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      onClick={toTop}
       tabIndex={visible ? 0 : -1}
       aria-hidden={!visible}
       aria-label="Scroll to top"

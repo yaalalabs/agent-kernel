@@ -290,9 +290,9 @@ Create `examples/cli/guardrail/<provider>/` with:
 
 Add guardrail provider docs to `docs/docs/advanced/guardrails.md` or create `docs/docs/advanced/guardrails-<provider>.md`.
 
-Then update the landing page inventories in `docs/src/components/*/data.tsx`: add a tile to the **Observability, safety & testing** row in `IntegrationsMarquee/data.tsx` (role `Guardrail`, `href` to the provider's docs page, logo or `react-icons/si` glyph), and add the provider to the **Content Guardrails** card's `tags` and `description` under the Guard tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+Then update the landing page inventories under `docs/src/components/HomeSections/`: add an item to the **Observability, safety & testing** row of `INTEGRATION_ROWS` in `integrations.data.tsx` (role `Guardrail`, `href` to the provider's docs page, logo or `react-icons/si` glyph), and add the provider to the Guard stage's guardrails point in `index.tsx` (`STAGES`). Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
-Then check the docs-site features page (`docs/src/pages/features.tsx`): the Problem section's `rows` name the built-in guardrail providers in a `with:` cell ("OpenAI and Bedrock guardrails built in"); add the new provider wherever the existing ones are listed (grep `docs/src/pages/*.tsx` for "Bedrock").
+Then check the docs-site features page (`docs/src/pages/features.tsx`): the **Guardrails** capability under Guard links to each provider's page in `more`; add a link to the new page, and add the new provider wherever the existing ones are listed (grep `docs/src/pages/*.tsx` and the root `README.md` for "Bedrock").
 
 ## Checklist
 
@@ -303,4 +303,4 @@ Then check the docs-site features page (`docs/src/pages/features.tsx`): the Prob
 - [ ] Unit tests added to `ak-py/tests/test_guardrail.py`
 - [ ] Example in `examples/cli/guardrail/<provider>/`
 - [ ] Documentation in `docs/docs/advanced/guardrails*.md`
-- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), Content Guardrails card tags (`FeatureExplorer/data.tsx`); features page `with:` cells
+- [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), the Guard stage's guardrails point (`HomeSections/index.tsx`); the Guardrails capability's `more` links on the features page

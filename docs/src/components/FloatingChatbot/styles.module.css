@@ -342,7 +342,7 @@
   border: 0;
   border-radius: var(--ak-radius-control);
   background-color: #0d1117;
-  font-size: 0.8125rem;
+  font-size: var(--ak-type-small);
   line-height: 1.5;
 }
 

@@ -78,7 +78,7 @@ export function Deployment(): JSX.Element {
 
         <div className={styles.grid}>
           {TARGETS.map((target, index) => (
-            <Reveal key={target.name} as="article" delay={index * 70} className={clsx('ak-card', styles.card)}>
+            <Reveal key={target.name} delay={index * 70} className={clsx('ak-card', styles.card)}>
               <div className={styles.head}>
                 <span className={styles.icon} aria-hidden="true">
                   {target.icon}

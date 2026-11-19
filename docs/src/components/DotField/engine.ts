@@ -166,8 +166,24 @@ export function runDots(canvas: HTMLCanvasElement, scene: DotScene, still = fals
   );
   waiting.observe(canvas);
 
+  // A browser can take the WebGL context away (a phone after switching apps, a GPU reset).
+  // The scene stops, and is set up again if the context comes back.
+  const onLost = (event: Event) => {
+    event.preventDefault();
+    stop?.();
+    stop = null;
+  };
+  const onRestored = () => {
+    stop?.();
+    stop = begin();
+  };
+  canvas.addEventListener('webglcontextlost', onLost);
+  canvas.addEventListener('webglcontextrestored', onRestored);
+
   return () => {
     waiting.disconnect();
+    canvas.removeEventListener('webglcontextlost', onLost);
+    canvas.removeEventListener('webglcontextrestored', onRestored);
     stop?.();
   };
 }

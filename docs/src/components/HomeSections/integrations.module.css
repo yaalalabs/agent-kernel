@@ -253,7 +253,8 @@
   letter-spacing: -0.01em;
 }
 
-/* The panels share one cell, so the frame is as tall as the tallest and never jumps */
+/* The panels share one cell. The component gives the cell the height of the tallest panel,
+   so the frame never jumps, and hides the panels that are not showing (see Integrations.tsx). */
 .pinned .panels {
   display: grid;
   align-items: start;
@@ -264,15 +265,29 @@
   display: block;
   padding: 0;
   border: 0;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.15s ease, visibility 0s linear 0.15s;
+}
+
+/* Hidden until found: skipped when painting, still searched by find-in-page */
+.pinned .panel[hidden='until-found'] {
+  content-visibility: hidden;
+}
+
+/* Browsers that do not know that value get a plainly hidden panel */
+.pinned .panel[hidden]:not([hidden='until-found']) {
+  display: none;
 }
 
 .pinned .panelActive {
-  opacity: 1;
-  visibility: visible;
-  transition: opacity 0.25s ease 0.1s;
+  animation: integrations-panel-in 0.25s ease both;
+}
+
+@keyframes integrations-panel-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .pinned .panel > :global(.ak-h3) {

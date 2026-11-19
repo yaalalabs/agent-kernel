@@ -110,7 +110,7 @@ injected but dropped on the way out.
   non-picklable value raises a descriptive `TypeError` naming the offending key/type.
 - Round-trip fidelity is **not uniform across frameworks**. LangGraph round-trips only **declared
   state channels** (shown here). OpenAI has full round-trip; ADK round-trips all keys except
-  AK-internal ones; smolagents round-trips only pre-seeded keys; **CrewAI does not support it** (a
+  OAK-internal ones; smolagents round-trips only pre-seeded keys; **CrewAI does not support it** (a
   set context is ignored with a warning). To write portably across frameworks, pre-seed every key
   you intend to write. See the
   [Runner docs](https://github.com/yaalalabs/agent-kernel/blob/develop/docs/docs/core-concepts/runner.md)

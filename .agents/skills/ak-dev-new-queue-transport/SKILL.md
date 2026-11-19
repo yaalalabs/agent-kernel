@@ -170,14 +170,14 @@ containerized e2e tests.
 - Docs: the transport matrix and a "Running Queue Mode on <name>" section in
   `docs/docs/advanced/queue-mode-guide.md`; the transports list in
   `docs/docs/deployment/onprem-kubernetes.md` if the transport is k8s-relevant; the transport
-  roll call on the docs-site features page (`docs/src/pages/features.tsx`: the "Queue broker
-  over SQS, Kafka, NATS, or Azure Service Bus" highlight on the Sandboxed Code Execution card, and any
-  other transport roll call found by grepping `docs/src/pages/*.tsx` for "NATS").
-- Landing page inventories (`docs/src/components/*/data.tsx`): a tile in the **Cloud &
-  infrastructure** row of `IntegrationsMarquee/data.tsx` (role `Queue`, `href` to the queue mode
-  guide, logo or `react-icons/si` glyph), and the transport in the **Queue Pipeline** card's
-  `tags` and `description` under the Scale tab in `FeatureExplorer/data.tsx`. Logo sourcing and
-  the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+  roll call on the docs-site features page (`docs/src/pages/features.tsx`: the transport list in
+  the `points` of the **Queue mode** capability under Scale, and any other transport roll call
+  found by grepping `docs/src/pages/*.tsx` and the root `README.md` for "NATS").
+- Landing page inventories (`docs/src/components/HomeSections/`): an item in the **Cloud &
+  infrastructure** row of `INTEGRATION_ROWS` in `integrations.data.tsx` (role `Queue`, `href` to
+  the queue mode guide, logo or `react-icons/si` glyph), and the transport in the Scale stage's
+  transports point in `index.tsx` (`STAGES`). Logo sourcing and the build check are in
+  `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 - Skills: the pipeline section of `.agents/skills/ak-dev-architecture/SKILL.md`, and the
   user-facing queue/deploy content in `ak-py/src/agentkernel/skills/` where transports are
   enumerated.

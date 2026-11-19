@@ -1,7 +1,15 @@
 # Rebrand to Open Agent Kernel (OAK): implementation plan
 
-Order of work for [spec.md](spec.md). Each iteration leaves the site building. Nothing is committed until
-the maintainer asks.
+Order of work for [spec.md](spec.md). Each iteration leaves the site building.
+
+- The iterations are the ones that shipped, in the order the work was done. All are done on
+  `feat/rebranding_oak`. What was not checked is listed under Known gaps.
+- A direction that was tried and replaced is not an iteration. Where one explains a decision it is named
+  in a **Decided** line. The review rounds behind those decisions are in
+  [research/review-log.md](research/review-log.md).
+- "spec N" is a numbered section of `spec.md`. "Testing step N" is a step of its Testing section. The
+  design system's rules are in `branding/README.md` (*Website design system*), which is the spec for
+  iterations 7 to 12 wherever it covers them.
 
 ## Iteration 1: Brand assets
 
@@ -9,345 +17,203 @@ the maintainer asks.
 - **Files:** `branding/**`, `.gitignore`, `docs/static/img/branding/*`, `docs/static/img/{logo.svg,favicon.ico,favicon-16.png,favicon-32.png,apple-touch-icon.png,card.png}`
 - **Steps:**
   1. Copy and rename the 22 SVGs into `branding/`; write `branding/README.md`; confirm `branding/source` is ignored (spec 1).
-  2. Add the three site SVGs; render the favicon set, `logo.svg` and the social card (spec 1).
+  2. Add the site SVGs; render the favicon set, `logo.svg` and the social card (spec 1).
   3. Repoint the asset references and delete the nine old SVGs (spec, Consumer changes).
-- **Verify:** Testing step 4 for the SVG names; the README lockup renders in a markdown preview.
+- **Verify:** Testing step 4; the README lockup renders in a markdown preview.
 
 ## Iteration 2: Theme tokens and checkpoint
 
 - **Goal:** the token layer carries the new palette, and the direction is confirmed before it spreads.
-- **Files:** `docs/src/css/custom.css`, `docs/src/css/blog-medium.css`, `docs/src/theme/brand.ts`, `docs/src/pages/index.module.css`
+- **Files:** `docs/src/css/custom.css`, `docs/src/lib/brand.ts`
 - **Steps:**
   1. Rewrite the tokens and Infima variables (spec 2).
-  2. Add `brand.ts` (spec 3, rule 5).
+  2. Add `brand.ts` for canvas and WebGL code (spec 3, rule 5).
   3. Apply the colour replacement to the home page styles (spec 3).
-  4. Screenshot the home page and one docs page; send them for review. Tune derived steps if asked.
-- **Verify:** Testing step 6; the two screenshots.
+  4. Capture the home page and one docs page for review; tune the derived steps if asked.
+- **Verify:** Testing step 6; the two captures.
 
-## Iteration 3: Theme propagation
+## Iteration 3: Theme propagation and the two colour modes
 
-- **Goal:** no old-palette colour remains in the site source.
-- **Files:** the remaining `docs/src/**/*.css` and `.tsx` files with colours, `docs/docusaurus.config.js` (Mermaid block), the 29 `docs/docs` pages with diagram fills
+- **Goal:** no old-palette colour remains in the site source, and one set of token names serves a light and a dark mode.
+- **Files:** the `docs/src/**/*.css` and `.tsx` files with colours, `docs/docusaurus.config.js` (colour mode, Mermaid block), the 29 pages with diagram fills in `docs/docs` and in `docs/versioned_docs/version-0.10.1`
 - **Steps:**
-  1. First pass by property, then second pass by eye, page by page (spec 3, rules 1 to 4).
-  2. Particle background palette and clear colour (spec 4).
-  3. Mermaid theme variables and in-page diagram fills (spec 3, Diagram colours).
-- **Verify:** Testing steps 3 and 6; screenshots of `/features`, `/use-cases`, `/docs/quick-start`.
+  1. Replace colours by rule block, then by eye, page by page (spec 3, rules 1 to 4).
+  2. Add the light token set; convert white, grey and shadow literals to tokens; pin the footer and the dark panels (spec 2, rules for the two modes).
+  3. Enable the navbar switch with light as the default (spec, Config changes).
+  4. Set the dark Mermaid variables and recolour the in-page diagram fills (spec 3, Diagram colours).
+- **Verify:** Testing steps 3 and 6; captures of `/`, `/features`, `/use-cases` and `/docs/quick-start` in both modes.
 
-## Iteration 4: Hero and call-to-action visuals
-
-- **Goal:** the old mark is gone from every page.
-- **Files:** `docs/src/components/OakMark/*`, `docs/src/components/CTASection/index.tsx`, the six page files, `docs/src/pages/index.module.css`, `docs/src/pages/features.module.css`
-- **Steps:**
-  1. Build `OakMark` with its three variants and the reduced-motion path (spec 4).
-  2. Replace the 3 video and 7 image call sites; delete `hero.mp4` and `cta-bg.png` (spec, Consumer changes).
-- **Verify:** Testing steps 4 and 6; a screenshot of the hero with reduced motion on and off.
-
-## Iteration 5: Site copy
+## Iteration 4: Site copy
 
 - **Goal:** the website reads "Open Agent Kernel" and "OAK" throughout.
-- **Files:** `docs/docusaurus.config.js`, 24 `.tsx` files under `docs/src`, `docs/src/pages/*.md`, `docs/blog/authors.json`, `docs/static/robots.txt`, `docs/README.md`, `docs/SETUP.md`
+- **Files:** `docs/docusaurus.config.js`, the `.tsx` files under `docs/src`, `docs/src/pages/*.md`, `docs/blog/authors.json`, `docs/static/robots.txt`, `docs/README.md`, `docs/SETUP.md`
 - **Steps:**
   1. Apply the config table (spec, Config changes).
   2. Edit the `.tsx` copy by hand, page by page (spec 5, site source).
-  3. Run the script on the markdown files in this set (spec 5).
+  3. Run the rename script on the markdown files in this set (spec 5).
 - **Verify:** Testing step 2 for these files; Testing step 6.
 
-## Iteration 6: Docs
+## Iteration 5: Docs
 
-- **Goal:** current docs and the `0.10.1` snapshot carry the new name.
+- **Goal:** the current docs and the `0.10.1` snapshot carry the new name.
 - **Files:** `docs/docs/**`, `docs/versioned_docs/version-0.10.1/**`
 - **Steps:**
-  1. Check the snapshot precondition (spec 5, Snapshot mirror).
-  2. Run the script on `docs/docs`; review the replacement list and the flagged lines.
-  3. Mirror to the snapshot.
+  1. Run the script on `docs/docs`; review the replacement list and the flagged lines.
+  2. Run the script on the snapshot as its own area, and port the hand edits one by one (spec 5, The `0.10.1` snapshot).
+- **Decided:** the snapshot is not mirrored from `docs/docs`. Ten of its pages already differ from `docs/docs` at the merge base, so a mirror would publish unreleased behaviour under `0.10.1`.
 - **Verify:** Testing steps 2, 5 and 6.
 
-## Iteration 7: READMEs and skills
+## Iteration 6: READMEs and skills
 
 - **Goal:** every other in-scope markdown file carries the new name.
 - **Files:** root markdown files, `ak-py/README.md`, markdown under `examples/`, `use-cases/`, `ak-deployment/`, `e2e/`, `agent/`, `scripts/`, `.github/`, `.agents/skills/`, `ak-py/src/agentkernel/skills/`
 - **Steps:**
   1. Run the script per area; review each area's replacement list (spec 5).
   2. Hand-check the README header, the skill `description` lines and the flagged lines.
+  3. Fix the hyphenated prose compounds the script skips, such as "AK-internal" (spec 5, rule 6).
 - **Verify:** Testing step 2 for these areas.
 
-## Iteration 7b: Home page review, hero scene and light mode
+## Iteration 7: Design system foundations and components
 
-- **Goal:** the home page has no off-palette artwork, the hero is the 3D scene, and the site has a light mode.
-- **Files:** `docs/src/components/OakMark/*`, `docs/src/components/BrandArt/*`, `docs/src/lib/brand.ts`, `docs/src/css/custom.css`, the site stylesheets, `docs/src/pages/index.tsx`, `docs/src/theme/Footer/Layout/index.tsx`, `docs/docusaurus.config.js`
+- **Goal:** one type scale, one spacing scale, one container, two radii, and one implementation each of the button, section header, page header, card, tag, text link and entrance effect.
+- **Files:** `docs/src/css/custom.css`, `docs/src/components/ui/` (`SectionHeader`, `PageHero`, `Reveal`), `docs/docusaurus.config.js` (navbar items, client modules), the stylesheets that held page-local variants
 - **Steps:**
-  1. Replace the path-card images and the compliance badges with `BrandArt`; restyle the footer brand column and the chat launcher.
-  2. Rebuild the hero as the 3D scene (spec 4).
-  3. Add the light token set, convert white, grey and shadow literals to tokens, enable the switch, pin the footer, launcher and persona pages (spec 2, rules for the two modes).
-- **Verify:** Testing steps 3, 6 and 7 in both modes.
+  1. Add the type, space, radius and container tokens and the `ak-*` classes (`branding/README.md`, *Website design system*).
+  2. Build the shared components; replace the page-local buttons, pills and eyebrows; use one label per kind of action.
+  3. Raise the navbar to 72 px, keep the three-line lockup, add one primary action, and show the version menu on docs pages only.
+  4. Move interface icons to Tabler outline and brand marks to Simple Icons, with AWS, Microsoft and Azure from another set; replace PNG integration logos with a vector mark where one exists.
+  5. Make `Reveal` the only entrance effect, and remove the scroll-reveal client module (design, Motion).
+- **Verify:** Testing steps 7 to 9; no `react-icons/md` import is left under `docs/src`, and `react-icons/fa` and `react-icons/vsc` supply only the three brand exceptions.
 
-## Iteration 8: Tests
+## Iteration 8: Stage drawings
+
+- **Goal:** the site has its own moving line art, in one vocabulary.
+- **Files:** `docs/src/components/VectorMotion/`
+- **Steps:**
+  1. Build the primitives (rail, port, dot, pulse) on theme tokens, with a static frame that is a real moment of the loop.
+  2. Draw the six stages: Build, Connect, Remember, Guard, Scale, Observe.
+- **Verify:** each drawing in both colour modes; with reduced motion each shows its static frame (Testing step 8).
+
+## Iteration 9: Home page
+
+- **Goal:** the home page is an announcement strip and nine sections built from the design system.
+- **Files:** `docs/src/pages/index.tsx`, `docs/src/components/HomeSections/*`, `docs/src/components/ArchitectureOverview/*`, `docs/src/components/LevelStack/*`, `docs/src/components/BrandArt/*`, `docs/src/components/FAQ/*`
+- **Steps:**
+  1. Hero copy: a headline short enough for display size, a lead, two actions, and an install line that switches between `pip install agentkernel` and `uv add agentkernel`.
+  2. Trust marks row with the drawn seals; the separate trust section goes, and the footer keeps its two membership badges.
+  3. Capability rail: six stages, each with its drawing and the code or config that switches it on (spec 6).
+  4. Architecture as three columns joined by straight rails (spec 6).
+  5. Integrations as the pinned, scroll-stepped section over one data file, with the stacked fallback (spec 6).
+  6. Deployment targets; the three reading levels as the level stack (spec 6); every FAQ question in two columns of flat rows; the closing panel; the announcement strip.
+- **Decided:** integrations were first a four-column matrix and then a ledger. The matrix showed about 30 of the 76 integrations and dropped whole categories, which is why the requirement is that every integration is listed by name.
+- **Verify:** Testing steps 7 to 9; all 76 integration names are in the server-rendered page.
+
+## Iteration 10: Hero mark and dot fields
+
+- **Goal:** the hero shows the mark built from particles, and the closing panel and integrations section carry their dot fields.
+- **Files:** `docs/src/components/ParticleLogo/*`, `docs/src/components/DotField/*`, `docs/src/components/HomeSections/{Hero,Integrations}.tsx`, `docs/src/components/HomeSections/index.tsx`
+- **Steps:**
+  1. Build `ParticleLogo` with its plain-mark fallback (spec 4).
+  2. Build the dot runner and the `Wave` behind the closing panel (spec 4).
+  3. Build the `Floor` along the bottom edge of the integrations section (spec 4).
+- **Decided:** four earlier hero directions were turned down (a fade-in mark, an extruded mark, a particle mark on a 2D canvas, and a system drawing of channels and frameworks). The maintainer then set the brief: the mark builds from particles on load, moves under the pointer and scatters on scroll.
+- **Decided:** a dot cloud behind the integrations list was removed as oddly placed, cut by the bottom of the window. The floor replaced it.
+- **Verify:** Testing step 8; captures of the hero, the closing panel and the integrations section in both modes.
+
+## Iteration 11: Features, use-cases and persona pages
+
+- **Goal:** each page says each thing once, in the shared layout, and helps a reader decide.
+- **Files:** `docs/src/pages/{features,use-cases,developer,ai-engineer,business-leader}.tsx`, `docs/src/pages/{features,use-cases,persona}.module.css`, `docs/src/components/PersonaKit/*`, `docs/src/components/StepTimeline/*`
+- **Steps:**
+  1. Review features and use cases, and record what repeats and what is kept in `research/features-use-cases-review.md`.
+  2. Rebuild features as a reference of capabilities under the six stages, each linked to its guide (spec 7).
+  3. Rebuild use cases on the shared layout; remove unsourced figures and cards that link nowhere; use a neutral colour for "before" comparisons.
+  4. Rebuild the three persona pages on one skeleton from `PersonaKit`, with the way back to the path selection and the level stack in the header (spec 7).
+- **Verify:** Testing steps 7 and 9 for these pages.
+
+## Iteration 12: Docs pages and site chrome
+
+- **Goal:** the docs pages, the footer and the chat assistant match the design system in both colour modes.
+- **Files:** `docs/src/css/custom.css`, `docs/src/theme/Mermaid/*`, `docs/src/theme/DocSidebar/Desktop/*`, `docs/src/theme/Footer/Layout/index.tsx`, `docs/src/components/FloatingChatbot/*`, `docs/src/components/ScrollToTopButton/*`, `advanced/threads.md` in `docs/docs` and in the `0.10.1` snapshot
+- **Steps:**
+  1. Remove the boxed panels around the docs sidebar and table of contents; give the sidebar its own lockup.
+  2. Send the light Mermaid palette with each diagram on the light page (spec 3, Diagram colours).
+  3. Repair the sequence diagram in `advanced/threads.md`: a semicolon in a message ended the statement.
+  4. Rebuild the chat launcher as a flat labelled button and its panel on solid surfaces; these two floating layers keep a shadow.
+  5. Make the previous and next links flat cards; hide the scroll-to-top button on small screens. The footer copyright is unchanged: Yaala Labs is the holder, as in `NOTICE`.
+- **Verify:** Testing step 7; flowcharts, sequence diagrams and a diagram with front matter in both modes.
+
+## Iteration 13: What's new page
+
+- **Goal:** the "What's new" list is its own page, and the introduction is short again.
+- **Files:** `docs/docs/whats-new.md`, `docs/docs/intro.md`, `docs/sidebars.js`, the same three in the `0.10.1` snapshot (`whats-new.md`, `intro.md`, `docs/versioned_sidebars/version-0.10.1-sidebars.json`), `docs/src/components/HomeSections/Announcement.tsx`
+- **Steps:**
+  1. Move the list to `whats-new.md`, newest first; leave a two-line tip in the introduction (spec 8).
+  2. Do the same in the snapshot, without entries for capabilities that are not in that release.
+  3. Point the home page announcement at the newest headline capability.
+- **Verify:** Testing steps 5 and 6.
+
+## Iteration 14: Blog
+
+- **Goal:** the blog uses the design system, posts name their writers, and every post has a banner.
+- **Files:** `docs/src/css/blog.css`, `docs/src/theme/{BlogListPage,BlogTagsPostsPage,BlogPostPage}/*`, `docs/src/components/Blog/*`, `docs/blog/authors.json`, front matter in `docs/blog/*.md`, `docs/static/img/blog/*`, `docs/static/img/branding/oak-avatar.svg`, `branding/blog-banner/*`
+- **Steps:**
+  1. Audit the blog and record the findings and proposals in `research/blog-audit.md`.
+  2. Rebuild the index, the tag page and the post page (spec 8, Blog pages).
+  3. Rename the shared author to "OAK" with the disc avatar; credit the 14 posts that used it to their writers (spec 8, Authors).
+  4. Recolour the eight existing images in place; render a banner from the template for the ten posts without one (spec 8, Banners).
+- **Decided:** the existing banners are recoloured, not regenerated from the template, because seven of them carry their post's own diagram.
+- **Verify:** Testing step 1 (the blog guard), steps 6 and 7.
+
+## Iteration 15: Root README
+
+- **Goal:** the root README follows the site.
+- **Files:** `README.md`
+- **Steps:**
+  1. Use the site's headline and lead; group the capabilities by the six stages; show `pip` beside `uv`; link the three guided tours.
+  2. Carry no note about the former name (design, Open questions).
+- **Verify:** the README renders in a markdown preview in a light and a dark scheme; Testing step 2.
+
+## Iteration 16: Dead code and dependencies
+
+- **Goal:** nothing unused is left in the site source.
+- **Files:** the deleted components, stylesheets and static files listed in spec, Consumer changes; `docs/package.json`
+- **Steps:**
+  1. Remove the components, stylesheets, images and 3D models that no page refers to.
+  2. Remove `gsap`, `three` and `@types/three`.
+- **Verify:** Testing steps 4 and 6; no import of `gsap` or `three` is left under `docs/src`.
+
+## Iteration 17: Merge develop
+
+- **Goal:** the branch carries what develop gained while it was open: the agent registry (#983) and the first part of the Azure Functions retirement (#984).
+- **Steps:**
+  1. Text conflicts in skills and docs pages: take develop's content, in the new name.
+  2. `docs/src/pages/features.tsx`: keep this branch's structure and carry develop's edits into it (the "Agent registry and catalog" capability under Connect, and the MCP and A2A summaries).
+  3. `docs/docs/intro.md` keeps the short tip and names the registry; the registry entry heads `docs/docs/whats-new.md`. The `0.10.1` copy is not changed, since the registry is not in that release.
+  4. Azure Functions: the home page, the features page, the FAQ and the root README no longer offer it. The pages under `docs/docs` are left to `docs/specs/957-retire-azure-functions/`.
+- **Verify:** the rename script reports nothing left to change in the files develop touched; Testing step 6.
+
+## Iteration 18: Tests
 
 - **Goal:** the whole change passes the spec's checks.
-- **Steps:** run Testing steps 1 to 8 in order on the full working tree; fix and re-run until all pass.
-- **Verify:** all eight steps pass; the screenshot set is attached for review.
+- **Steps:** run Testing steps 1 to 10 in order on the full tree; fix and re-run until all pass.
+- **Verify:** every step passes; the capture set is ready for review.
 
-## Iteration 9: Sync docs and skills
+## Iteration 19: Sync docs and skills
 
-- **Goal:** contributors and the docs-sync automation keep using the new name.
-- **Files:** `AGENTS.md`, `.agents/skills/ak-dev-sync-docs-from-branch/SKILL.md`, `.agents/skills/ak-dev-sync-skills-from-branch/SKILL.md`, `.agents/skills/ak-dev-sync-skills-and-docs-from-commit/SKILL.md`
+- **Goal:** contributors and the docs-sync automation write the new name and find the site's new files.
+- **Files:** `AGENTS.md`, `branding/README.md`, `.agents/skills/**`
 - **Steps:**
-  1. Add the naming section to `AGENTS.md` (design, Contributor guidance) and link `branding/README.md`.
+  1. Add the *Naming and brand* section to `AGENTS.md` (design, Contributor guidance) and link `branding/README.md`.
   2. Point the three sync skills at that section.
-  3. No other dev skill describes behaviour that this change alters; the prose rename in iteration 7 is their only edit. Confirm by re-reading the diff of `.agents/skills/`.
-- **Verify:** Testing step 2 still passes; the `ak-dev-sync-docs-from-branch` checklist finds nothing left to sync.
+  3. State the design-system rules in `AGENTS.md` and `branding/README.md`, with the same wording for the type floor and the surface rule.
+  4. Rewrite the *Docs-Site Landing and Features Pages* section of `ak-dev-sync-docs-from-branch` for the rebuilt site: the data files, their shapes, and which entry each kind of change touches.
+  5. Bring every other dev skill that names a site file into line. Thirteen do: `ak-dev-sync-skills-and-docs-from-commit`, `ak-dev-review-pr`, and the eleven `ak-dev-new-*` skills for an evaluator, framework, guardrail, identity provider, knowledge base, messaging platform, multimodal store, queue transport, sandbox, secret provider and tracing provider.
+- **Verify:** Testing step 4; the `ak-dev-sync-docs-from-branch` checklist finds nothing left to sync.
 
-# Phase 2: design system
+## Known gaps
 
-Not started. It implements the Design system section of [design.md](design.md). Finding numbers (F1 to F23)
-refer to [research/design-audit.md](research/design-audit.md). The detailed spec for this phase is written
-after the design is approved.
-
-## Iteration 10: Foundations
-
-- **Status:** done on 2026-11-19. Tokens and utility classes are in `docs/src/css/custom.css`; the navbar and the home hero use them. The maintainer reviewed the checkpoint and asked for the remaining iterations.
-- **Goal:** the type scale, spacing scale, container, radii and flat surface rules exist as tokens, proven on the home hero and navbar.
-- **Findings:** F1, F17, F18, F3, F9, F19.
-- **Files:** `docs/src/css/custom.css`, `docs/src/pages/index.module.css`
-- **Steps:**
-  1. Add type, space, radius and container tokens; add heading and text utility classes.
-  2. Apply them to the hero and one more section; tune the scale against screenshots.
-  3. Checkpoint with the maintainer before the scale spreads.
-- **Verify:** the measurement script reports no text below 13 px in those sections; screenshots in both modes.
-
-## Iteration 11: Components
-
-- **Status:** done for buttons, section headers, cards, tags and text links (`docs/src/css/custom.css`, `docs/src/components/ui/SectionHeader.tsx`). Legacy stylesheets were brought onto the two radii and the flat-surface rules by a one-off normalisation script. Not done: one icon family, and SVG versions of the PNG integration logos.
-- **Goal:** one implementation each of button, section header, card, tag and text link.
-- **Findings:** F2, F4, F9, F8, F22.
-- **Files:** `docs/src/css/custom.css`, a new `docs/src/components/ui/` folder, the stylesheets that define today's variants
-- **Steps:**
-  1. Build the five components from the tokens.
-  2. Replace the existing button, pill and eyebrow variants across pages; unify action labels.
-  3. Move icons to one family; convert the remaining PNG integration logos to SVG where a vector exists.
-- **Verify:** the measurement script reports two card radii and three button styles site-wide.
-
-## Iteration 12: Vector animation set
-
-- **Status:** done for the six stage drawings (`StageMotion` in `docs/src/components/VectorMotion/`), which sit in the capability rail beside the configuration that switches each stage on. They are SMIL only, use two theme tokens, pause off screen and render a static frame on the server and for reduced motion. Not done: the architecture flow drawing, the in-browser review of the motion language with the maintainer (step 2 was skipped, so all six were drawn before review), and a check in Safari and Firefox.
-- **Goal:** the site has its own moving line art, in one vocabulary.
-- **Findings:** F23, F14.
-- **Files:** a new `docs/src/components/VectorMotion/` folder
-- **Steps:**
-  1. Build the three primitives (rail, dot, pulse) with the limits from the audit: tokens for colour, pause off screen, static frame for reduced motion.
-  2. Prototype one stage drawing (Guard) and checkpoint with the maintainer on the motion language before drawing the rest. Stills cannot show motion, so this review happens in the browser.
-  3. Draw the other five stages and the architecture flow.
-- **Verify:** each drawing in both colour modes and with reduced motion on; the measurement script reports one running illustration per view.
-
-## Iteration 13: Home page
-
-- **Status:** done. Nine sections: hero, trust marks, capability rail, architecture, integration ledger, deploy, paths, questions, closing panel. The four-column compatibility matrix was replaced by a ledger after review, because the matrix showed about 30 of the 76 integrations and dropped whole categories (identity, secrets, queues, sandboxes). The ledger has one hairline row per category and lists every integration by name; it reads the same data file as the marquee, and an integration whose role is not mapped to a category still appears, under "More". The footer membership badges were kept, because they are the foundations' own artwork and their display terms were not checked. The architecture diagram keeps its old internals; only its header and spacing changed.
-- **Goal:** the home page has the nine lighter sections, the capability rail and the compatibility matrix.
-- **Findings:** F5, F20, F11, F21, F7.
-- **Files:** `docs/src/pages/index.tsx`, `docs/src/pages/index.module.css`, `docs/src/components/FeatureExplorer/*`, `docs/src/components/IntegrationsMarquee/*`, `docs/src/components/FAQ/*`
-- **Steps:**
-  1. Hero: short headline at display size, lead, two actions, one-line install command.
-  2. Trust marks row; remove the trust section and the footer badges.
-  3. Rebuild the feature section as the six-stage rail, each stage with its drawing and a code panel.
-  4. Rebuild integrations as the four-column compatibility matrix.
-  5. Enlarge and simplify the architecture diagram and give it the flow animation; set the FAQ in two columns with every question kept; flat closing panel.
-- **Verify:** section count; the measurement script on the page; screenshots at 1440 and 390 px in both modes.
-
-## Iteration 14: Features, use-cases and persona pages
-
-- **Status:** partly done. Type floor, radii, flat surfaces, sentence-case headings, left-aligned section headers and the shared closing panel are applied; the features page has an `h1`. Not done: shortening the persona journeys, the neutral colour for "before" comparisons, and one container width on the features page.
-- **Goal:** the other marketing pages use the system.
-- **Findings:** F18, F15, F7, F1.
-- **Files:** `docs/src/pages/features.tsx`, `use-cases.tsx`, `developer.tsx`, `ai-engineer.tsx`, `business-leader.tsx` and their stylesheets
-- **Steps:**
-  1. Give every page one `h1` and the shared heading sizes.
-  2. Apply the container, spacing and components; replace red with neutral on "before" comparisons.
-  3. Shorten the persona journeys and enlarge the step timeline.
-- **Verify:** the measurement script per page; screenshots in both modes.
-
-## Iteration 15: Docs, blog and site chrome
-
-- **Status:** partly done. The docs sidebar and table of contents are unboxed, the navbar is 72 px with its primary action, and the scroll-to-top button is hidden on small screens. Not done: moving the "What's New" list to a changelog, and the blog banners (the posts still carry the old name, which is the maintainer's call).
-- **Goal:** the docs, blog, navbar and footer match.
-- **Findings:** F10, F6, F12, F13.
-- **Files:** `docs/src/css/custom.css`, `docs/src/css/blog-medium.css`, `docs/src/theme/*`, `docs/docusaurus.config.js`, `docs/static/img/blog/*`, `docs/docs/intro.md`
-- **Steps:**
-  1. Remove the boxed panels around the docs sidebar and table of contents; widen the content column.
-  2. Move the "What's New" list out of the introduction to a changelog page.
-  3. Raise the navbar to 72 px, add the primary action, show the version menu on docs pages only; keep one floating button.
-  4. Regenerate the blog banners from one template in the brand palette.
-- **Verify:** screenshots of a docs page, the blog list and a post in both modes.
-
-## Iteration 16: Motion, accessibility and light mode
-
-- **Status:** partly done. Glows, blur and gradient fills are removed, and light-mode cards lift with a shadow. Not done: replacing the scroll-triggered reveals on the features and persona pages, and a keyboard pass.
-- **Goal:** content never waits on an animation, and the light mode is designed, not inverted.
-- **Findings:** F14, F16.
-- **Steps:**
-  1. Replace scroll-triggered reveals with one short fade that never hides content; remove decorative loops, keeping only the vector drawings.
-  2. Check contrast and focus states for every component in both modes.
-  3. In the light mode, replace card borders with one soft shadow.
-- **Verify:** the measurement script reports at most a handful of running animations per page; a keyboard pass.
-
-## Iteration 17: Tests, then docs and skills
-
-- **Status:** partly done. The production build passes on an isolated copy with the current docs and version 0.10.1 (the full build with every frozen version was not re-run). `AGENTS.md` and `branding/README.md` carry the design-system rules. Not done: the screenshot set for review.
-- **Goal:** the whole phase passes the checks, and the guidance matches.
-- **Steps:**
-  1. Run the Testing steps of the spec on the full tree, and the production build.
-  2. Update the *Naming and brand* section of `AGENTS.md` and `branding/README.md` with the type scale, spacing and component rules.
-- **Verify:** the build passes; the screenshot set is attached for review.
-
-
-# Phase 3: review round of 2026-11-19
-
-The maintainer reviewed the phase 2 site. The stage drawings are accepted as the motion language. The
-particle hero and the integration ledger are not, the level tiles are to be redone, and the items left
-"not done" in phase 2 are to be finished. Shared pieces for this phase: `PageHero` and `Reveal` in
-`docs/src/components/ui/`.
-
-## Iteration 18: Home hero as a system drawing
-
-- **Status:** rejected. The system drawing (channels, the mark, frameworks, with simulated traffic under a full-width headline) was built and the maintainer found it worse than the particle mark. It was removed, and the particle hero is back as a placeholder. Four hero directions have now been turned down (a fade-in mark, an extruded mark, the particle mark, the system drawing), so the next one is chosen by the maintainer from options before anything is built: a cinematic mark in WebGL like the original video, ambient line art, a product-in-action terminal, or type only.
-- **Goal:** the hero shows the runtime at work, in the accepted motion language, and reads as alive.
-- **Files:** `docs/src/components/VectorMotion/`, `docs/src/pages/index.tsx`, `docs/src/components/OakMark/`
-- **Steps:**
-  1. Draw one scene: channels on the left, the mark as the kernel, agent frameworks on the right, with requests and replies travelling the rails without a fixed loop.
-  2. Replace the particle mark; remove its code.
-- **Verify:** frame sequences in both colour modes, at desktop and phone width, and with reduced motion.
-
-## Iteration 19: Integrations as a scroll-stepped section
-
-- **Status:** done (`docs/src/components/HomeSections/Integrations.tsx`). Six groups named after the stages, 76 integrations, all in the server-rendered page. The section pins at 997 px and wider when the window is at least 700 px tall and motion is allowed; otherwise the groups are stacked. The data file moved to `HomeSections/integrations.data.tsx`, and the marquee component was removed.
-- **Goal:** every integration is still shown, one group at a time, as the visitor scrolls.
-- **Files:** `docs/src/components/HomeSections/`
-- **Steps:**
-  1. Group the integrations by the six stages, so the section continues the story of section 01.
-  2. Pin the section while the scroll steps through the groups; the group list on the left is also a control.
-  3. Fall back to a plain stacked list on small screens, short viewports, reduced motion and without script.
-- **Verify:** captures at each step in both modes; the fallback at phone width; all 76 integrations present in the server-rendered page.
-
-## Iteration 20: Level section
-
-- **Status:** done. The levels are three layers of one isometric stack (`docs/src/components/LevelStack/`): the outcome, the code, the runtime. On the home page the stack sits beside three rows, a row lights its layer and a layer lights its row, and the light walks down the stack until the visitor points at something. Each persona page header shows the stack with its own layer lit.
-- **Goal:** the three reading levels are presented as one idea, with drawings in the motion language.
-- **Files:** `docs/src/components/HomeSections/`, `docs/src/components/VectorMotion/`, `docs/src/pages/index.tsx`
-- **Steps:**
-  1. Draw the same request path at three depths: the overview, the build view, the internals.
-  2. Present the levels as depth rows that link to the persona pages; reuse each drawing in its persona page header.
-- **Verify:** both modes, phone width, keyboard focus on each row.
-
-## Iteration 21: Architecture flow drawing
-
-- **Status:** done in place. The existing diagram keeps its layout; its glow and gradients are gone, its connectors are solid rails, and a dot travels each one (paused off screen, absent for reduced motion). Its links now show a focus ring.
-- **Goal:** the architecture section moves in the same language as the rest of the page.
-- **Files:** `docs/src/components/ArchitectureOverview/`, `docs/src/components/VectorMotion/`
-- **Verify:** both modes; one running illustration per view.
-
-## Iteration 22: Features and use-cases pages
-
-- **Status:** done. Features is a reference with a sticky index of the six stages and 35 capabilities, each linked to its guide (2,142 lines of page code to about 550). Use cases has three real projects, ten scenarios with a guide and an example each, four kinds of team, and a neutral before and after list. The review is in `research/features-use-cases-review.md`. Unsourced figures and two cards that linked nowhere were removed.
-- **Goal:** each page says each thing once, in the shared layout, and helps a reader decide.
-- **Files:** `docs/src/pages/features.tsx`, `docs/src/pages/use-cases.tsx`, their stylesheets, and the components only they use
-- **Steps:**
-  1. Review both pages and record the findings in `research/features-use-cases-review.md`: what each section says, what repeats the home page or the other page, what is kept.
-  2. Restructure on `PageHero`, `SectionHeader`, `ak-container` and the component classes; remove the duplicates and the dead code.
-  3. Replace scroll-triggered reveals with `Reveal`; use the neutral colour for "before" comparisons.
-- **Verify:** both modes at desktop and phone width; the measurement script.
-
-## Iteration 23: Persona pages
-
-- **Status:** done. One skeleton for the three pages: `PageHero`, a sticky step rail, five sections, links to the other levels, the closing panel (`docs/src/components/PersonaKit/`, `docs/src/pages/persona.module.css`). 2,471 lines of page code to about 1,000. The titles, leads and the business page's commitment answers are new copy and need the maintainer's read.
-- **Goal:** the three persona pages are shorter and share the page header and the step pattern.
-- **Files:** `docs/src/pages/developer.tsx`, `ai-engineer.tsx`, `business-leader.tsx`, and the components only they use
-- **Steps:**
-  1. Shorten each journey to the steps a reader needs; enlarge the step timeline.
-  2. Replace scroll-triggered reveals with `Reveal`; use the neutral colour for "before" comparisons.
-- **Verify:** both modes at desktop and phone width; a keyboard pass.
-
-## Iteration 24: One icon family and vector logos
-
-- **Status:** done for icons: only the three brand exceptions (AWS, Microsoft, Azure) come from outside Tabler and Simple Icons. Seven channel logos moved from PNG to vector marks. Eight integration logos stay as PNG because neither set has a mark for them (Google ADK, Bedrock, Daytona, E2B, Langfuse, LiteLLM, OpenLLMetry, TypeSafe).
-- **Goal:** interface icons come from one family, and integration logos are vectors where one exists.
-- **Rule:** interface icons are Tabler outline icons (`react-icons/tb`). Brand marks come from Simple Icons (`react-icons/si`), and from another set only where Simple Icons has no mark (AWS, Microsoft, Azure).
-- **Verify:** no `react-icons/md` or interface icon from `react-icons/fa` is left under `docs/src`.
-
-## Iteration 25: Changelog and blog banners
-
-- **Status:** partly done. The "What's new" list is its own page (`docs/docs/whats-new.md`, mirrored to 0.10.1) and the introduction links to it. The blog banners are not started: seven are bespoke illustrations that carry each post's diagram, so replacing them from one template would lose content, and redrawing them is a design decision for the maintainer.
-- **Steps:**
-  1. Move the "What's New" list from the docs introduction to a changelog page, in the current docs and in `0.10.1`.
-  2. Regenerate the blog banners from one template in the brand palette, and keep the template in the repository.
-- **Verify:** the docs build; the blog index in both modes.
-
-## Iteration 26: Dead code, keyboard pass and checks
-
-- **Status:** done except the browser check. Removed: ten unused components, the 6,100-line `index.module.css`, unused images and the three.js models, and gsap from the last component that used it. A keyboard pass on the home, features, use-cases and developer pages found every control reachable with a visible focus ring. The production build passes on an isolated copy with no broken links or anchors. Not done: Safari and Firefox, the full build with every frozen version, and removing `gsap` and `three` from `package.json` (left until the hero direction is chosen, since a WebGL hero would need `three`).
-- **Steps:**
-  1. Remove unused components, unused local functions and stylesheet rules that no page refers to.
-  2. Keyboard pass on every marketing page.
-  3. Production build; the screenshot set; a check of the drawings in Safari and Firefox.
-- **Verify:** the build passes; a scan reports no unused class in the page stylesheets.
-
-## Iteration 27: second review round of 2026-11-19
-
-- **Status:** done.
-- **Goal:** the seven points from the maintainer's second review.
-- **Steps:**
-  1. Light is the default colour mode (`docs/docusaurus.config.js`); the dark mode stays on the navbar switch.
-  2. The hero install line switches between `pip install agentkernel` and `uv add agentkernel`.
-  3. The persona pages have a "Back to path selection" link at the top of the page header (`PageHero` takes a `back` prop) and a button at the foot.
-  4. The architecture diagram is rebuilt: the runtime is one panel as tall as the columns beside it, so each card joins it with one straight rail. No connector bends, crosses a box or stops short, and the diagram needs no script.
-  5. The chat launcher is a flat labelled button ("Ask OAK"), and the panel is rebuilt on solid surfaces: in the light mode it had been translucent, with a white heading on white.
-  6. The hero is a particle mark on the GPU (`docs/src/components/ParticleLogo/`), following the maintainer's brief and the reference they named: it builds from particles on load, ripples, swirls and leans under the pointer, and scatters as the page scrolls. This supersedes iteration 18. `gsap` and `three` are removed from `package.json`.
-  7. Blog banners: the eight existing ones are recoloured and carry the new mark (text baked into them keeps the old name), and the ten posts without one have a banner from a template kept in `branding/blog-banner/`. The blog index thumbnail takes the banners' shape.
-- **Verify:** the production build passes on an isolated copy; captures of each change in both colour modes. Not checked: Safari and Firefox, and the particle hero on a low-power device.
-- **Open:** resolved in iteration 28: the maintainer chose the closing panel and the integrations section.
-
-## Iteration 28: particle fields and light diagrams
-
-- **Status:** done.
-- **Steps:**
-  1. Closing panel: a slow sheet of dots behind the copy, with the accent on its crests (`docs/src/components/DotField/Wave.tsx`). It appears wherever the closing panel does.
-  2. Integrations section: a dot cloud behind the stage list was built and then removed. The maintainer found it oddly placed: a shape floating under the list, cut by the bottom of the window. Its replacement, chosen by the maintainer from three options, is a floor of dots along the bottom edge of the pinned section (`DotField/Floor.tsx`). It differs from the closing panel's wave on purpose: centred and calm, one colour at rest, with the accent only as a ripple that crosses it when the stage changes, in the direction of travel.
-  3. The wave uses a small WebGL runner (`DotField/engine.ts`), which starts a scene when it first nears the screen, pauses it off screen, and draws a single still frame for reduced motion.
-  4. Docs diagrams follow the colour mode. The maintainer asked for a real light version, not a dark plate: on the light page each Mermaid diagram is sent a light palette as an init directive (`docs/src/theme/Mermaid/index.tsx`), and the plate is white. Nodes a diagram colours itself set both fill and text colour in all 1,866 cases across every doc version, so they read on either background.
-  5. A sequence diagram in `docs/docs/advanced/threads.md` had a semicolon in a message, which ends a statement and broke the diagram. Fixed in the current docs and the 0.10.1 copy.
-  6. The home page announcement now leads with identity provider support.
-- **Verify:** the production build passes on an isolated copy; flowcharts, a front-matter diagram and sequence diagrams captured in both modes; Not checked: Safari and Firefox, and class or state diagrams in the light palette.
-- **Hero entrance, revised:** the maintainer found the spiral fly-in too intense and chose a calmer one from four options. The mark now comes into focus over two seconds: the dots start as a haze close to their places and tighten. Hover and scroll behaviour are unchanged.
-
-## Iteration 29: names, README and blog audit
-
-- **Status:** done, except the blog changes, which wait for the maintainer's choice.
-- **Steps:**
-  1. The shared blog author is "OAK" with the mark as its picture, and the footer copyright names Open Agent Kernel.
-  2. The root README follows the site: the same headline, capabilities grouped by the six stages, pip beside uv, and the three guided tours.
-  3. Blog design audit: findings and proposals are in `research/blog-audit.md`. Nothing is implemented.
-
-## Iteration 30: blog redesign
-
-- **Status:** done. It carries out the four proposals in `research/blog-audit.md`.
-- **Steps:**
-  1. Type: the blog uses the site's faces and scale. Charter is gone, headings are weight 600, article text is 19 px and code 15 px (`docs/src/css/blog.css`, which replaces `blog-medium.css`).
-  2. Index: the shared `PageHero`, a topic filter that stays in view, the newest post as a lead card and the rest as a three-column grid of cards with banners (`docs/src/theme/BlogListPage/`, `docs/src/components/Blog/BlogPostCard/`). The tag page uses the same grid.
-  3. Post page: a 720 px reading column on the page container, an "All posts" link and the post's topic above the title, and a table of contents beside the post on wide screens (`docs/src/theme/BlogPostPage/`).
-  4. Tags use the site's tag style. The previous and next links, on docs pages too, are two flat cards in place of the glass pills.
-  5. The shared author's picture is the mark on a disc (`docs/static/img/branding/oak-avatar.svg`): the bare mark touched the edge of its box and a round crop cut its corners.
-- **Verify:** the production build; captures of the index and a post in both modes and at phone width.
-- **Post authors:** the 14 posts credited to the shared "OAK" author now name their writers, taken from the commit history: twelve to Amitha Dissanayake and two to John Praveen (the Walled AI post by its history, the knowledge bases post on the maintainer's word). John Praveen's GitHub account has only the generated placeholder picture, so he keeps the OAK avatar.
-- **Hero dots:** settled with the maintainer over three trials. The body has about a quarter of the dots it started with (lattice step `UNITS / 64`), and each dot is about 40 per cent larger than the first version. The original small size was tried at this density and rejected as too faint.
-- **Hero ripple:** at the maintainer's request the ripple trails the cursor by a moment, and fades slowly once the pointer leaves the mark.
-
-## Iteration 31: merge develop before the pull request
-
-- **Status:** done. The maintainer committed the merge.
-- **Why:** develop gained two changes while this branch was open: the agent registry (#983) and the first part of the Azure Functions retirement (#984). Eight files conflicted.
-- **Steps:**
-  1. Text conflicts in skills and docs pages: develop's content, in the new name. Six places where develop's new prose said "Agent Kernel" now say OAK.
-  2. `docs/src/pages/features.tsx` and `FeatureExplorer/data.tsx`: this branch's restructure is kept, and develop's edits are carried into it: an "Agent registry and catalog" entry under Connect, and the MCP and A2A summaries.
-  3. `docs/docs/intro.md`: the short tip is kept and names the registry; the registry entry heads `docs/docs/whats-new.md`. The 0.10.1 copy is not changed, since the registry is not in that release.
-  4. Azure Functions: the two examples develop deleted stay deleted. The home page deployment card, the integration list, the FAQ, the features page and the root README no longer offer Functions. The docs pages under `docs/docs` still mention it: that sweep is iteration 4 of `docs/specs/957-retire-azure-functions/plan.md`, not this change.
-- **Verify:** the rename tool reports nothing left to change in the files develop touched; the production build passes.
-
+- Not checked: Safari and Firefox; the WebGL hero on a low-power device; class and state diagrams in the light palette.
+- Eight integration logos stay as PNG because neither icon set has a mark for them (Google ADK, Bedrock, Daytona, E2B, Langfuse, LiteLLM, OpenLLMetry, TypeSafe).
+- Post bodies, and the headlines baked into the older banners, still say "Agent Kernel" (design, Open questions).
+- The hero headline, the blog heading and the persona page titles and leads are new copy and need the maintainer's read.

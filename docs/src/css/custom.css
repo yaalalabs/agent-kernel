@@ -606,6 +606,12 @@ body {
   }
 }
 
+/* The scroll-to-top button hands focus to the main content, which is not itself a control:
+   it takes the focus without drawing a ring around the whole page. */
+main[tabindex='-1']:focus {
+  outline: none;
+}
+
 /* Reveal: the one entrance effect (components/ui/Reveal.tsx). The waiting class is only ever
    set by script, on content below the fold, so nothing is hidden without it. */
 .ak-reveal--waiting {
@@ -690,24 +696,14 @@ section {
   }
 }
 
-/* Docs and blog — article remounts on every client-side navigation */
-article {
-  animation: pageFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-/* Scroll reveal — applied by clientModules/scrollReveal.js */
-.scroll-reveal {
-  opacity: 0;
-  transform: translateY(24px);
-  transition:
-    opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-}
-
-.scroll-reveal.scroll-reveal-visible {
-  opacity: 1;
-  transform: translateY(0);
+/* A docs page or a blog post fades up when it is opened. It is scoped to those two, so it
+   does not fight Reveal on cards that happen to be articles, and it is off for visitors who
+   ask for reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .theme-doc-markdown,
+  html.blog-post-page main article {
+    animation: pageFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
 }
 
 /* =============================================================================
@@ -730,8 +726,8 @@ article {
 }
 
 [data-theme='light'] .navbar {
-  background-color: rgba(255, 255, 255, 0.95);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background-color: var(--ak-bg);
+  border-bottom: 1px solid var(--ak-border);
 }
 
 .navbar__title {
@@ -767,7 +763,7 @@ article {
   color: var(--ak-bg-alt) !important;
   border-radius: 9999px !important;
   border: none !important;
-  font-size: 0.82rem !important;
+  font-size: var(--ak-type-small) !important;
   font-weight: 600 !important;
   padding: 0.4rem 1.1rem !important;
   display: flex !important;
@@ -863,7 +859,7 @@ article {
 
 .footer__brand-tagline {
   color: rgba(var(--ak-fg-rgb), 0.45);
-  font-size: 0.8rem;
+  font-size: var(--ak-type-small);
   line-height: 1.6;
   margin: 0;
 }
@@ -891,9 +887,9 @@ article {
   width: 36px;
   height: 36px;
   border-radius: 999px;
-  border: 1px solid rgba(177, 205, 255, 0.24);
-  background-color: rgba(177, 205, 255, 0.06);
-  color: #B1CDFF;
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.24);
+  background-color: rgba(var(--ak-blue-rgb), 0.06);
+  color: var(--ak-blue);
   text-decoration: none;
   transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
 }
@@ -935,7 +931,7 @@ article {
 
 .footer__member-label {
   color: rgba(var(--ak-fg-rgb), 0.35);
-  font-size: 0.7rem;
+  font-size: var(--ak-type-label);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1008,7 +1004,7 @@ article {
 
 .footer__title {
   color: rgba(var(--ak-fg-rgb), 0.9);
-  font-size: 0.75rem;
+  font-size: var(--ak-type-label);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1017,7 +1013,7 @@ article {
 
 .footer__link-item {
   color: rgba(var(--ak-fg-rgb), 0.45);
-  font-size: 0.875rem;
+  font-size: var(--ak-type-small);
   transition: color 0.15s ease;
   text-decoration: none;
 }
@@ -1040,7 +1036,7 @@ article {
 
 .footer__copyright {
   color: rgba(var(--ak-fg-rgb), 0.3);
-  font-size: 0.8rem;
+  font-size: var(--ak-type-small);
   margin: 0;
   padding: 0;
   border-top: none;
@@ -1049,7 +1045,7 @@ article {
 /* Docusaurus wraps copyright text in a div — target it */
 .footer__copyright>* {
   color: rgba(var(--ak-fg-rgb), 0.3);
-  font-size: 0.8rem;
+  font-size: var(--ak-type-small);
   margin: 0;
 }
 
@@ -1061,7 +1057,7 @@ article {
 
 .footer__legal-link {
   color: rgba(var(--ak-fg-rgb), 0.3);
-  font-size: 0.8rem;
+  font-size: var(--ak-type-small);
   text-decoration: none;
   transition: color 0.15s ease;
   white-space: nowrap;
@@ -1272,7 +1268,7 @@ code {
 .menu__link {
   border-radius: 0.375rem;
   color: var(--ak-fg) !important;
-  font-size: 0.9rem;
+  font-size: var(--ak-type-small);
   font-weight: 500;
   transition: color 0.15s ease, background 0.15s ease;
 }
@@ -1334,7 +1330,7 @@ code {
   color: rgba(var(--ak-fg-rgb), 0.7) !important;
   opacity: 1 !important;
   text-transform: uppercase !important;
-  font-size: 0.72rem !important;
+  font-size: var(--ak-type-small) !important;
   letter-spacing: 0.08em !important;
   font-weight: 600 !important;
 }
@@ -1450,7 +1446,7 @@ code {
     transition: all 0.25s ease;
     overflow-y: auto;
     scrollbar-width: thin !important;
-    scrollbar-color: rgba(255, 255, 255, 0.15) transparent !important;
+    scrollbar-color: rgba(var(--ak-fg-rgb), 0.15) transparent !important;
   }
 
   .theme-doc-toc-desktop:hover {
@@ -1545,7 +1541,7 @@ article {
 /* Table of Contents */
 .table-of-contents__link {
   color: var(--ak-text-muted);
-  font-size: 0.85rem;
+  font-size: var(--ak-type-small);
   transition: color 0.15s ease;
 }
 
@@ -1661,33 +1657,27 @@ article {
 
 /* "Edit this page" premium button styling */
 .theme-edit-this-page {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  background: rgba(var(--ak-fg-rgb), 0.05) !important;
-  color: rgba(var(--ak-fg-rgb), 0.9) !important;
-  font-size: 0.85rem !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.03em !important;
-  padding: 0.6rem 1.6rem !important;
-  border-radius: 9999px !important;
-  border: 1px solid rgba(var(--ak-fg-rgb), 0.12) !important;
-  box-shadow: inset 0 1px 0 0 rgba(var(--ak-fg-rgb), 0.15), 0 4px 15px rgba(var(--ak-shadow-rgb), 0.2) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  text-decoration: none !important;
-  backdrop-filter: blur(12px) !important;
-  width: fit-content !important;
-  gap: 0.5rem !important;
-  margin-top: 0 !important;
-  margin-left: 0.5rem !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  margin-top: 0;
+  margin-left: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.28);
+  border-radius: var(--ak-radius-control);
+  background: none;
+  font-size: var(--ak-type-small);
+  font-weight: 600;
+  color: var(--ak-fg);
+  text-decoration: none;
+  transition: border-color 0.15s ease;
 }
 
 .theme-edit-this-page:hover {
-  background: #ffffff !important;
-  border-color: var(--ak-fg) !important;
-  color: #000000 !important;
-  box-shadow: 0 0 20px rgba(var(--ak-fg-rgb), 0.4) !important;
-  text-decoration: none !important;
+  border-color: var(--ak-fg);
+  color: var(--ak-fg);
+  text-decoration: none;
 }
 
 /* Align edit button and metadata with content boundaries */
@@ -1712,7 +1702,7 @@ article {
   border: 1px solid rgba(var(--ak-fg-rgb), 0.12) !important;
   border-radius: 9999px !important;
   padding: 0.35rem 0.85rem !important;
-  font-size: 0.82rem !important;
+  font-size: var(--ak-type-small) !important;
   font-weight: 600 !important;
   color: var(--ak-fg) !important;
   height: 30px !important;

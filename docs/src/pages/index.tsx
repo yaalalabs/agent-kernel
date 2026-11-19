@@ -20,7 +20,7 @@ export default function Home(): JSX.Element {
   return (
     <Layout
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
-      description="OAK is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, or the Claude Agent SDK to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, sandboxed code execution, and observability (Langfuse, OpenLLMetry, Pydantic Logfire, AWS CloudWatch)."
+      description="Open Agent Kernel (OAK) is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, or the Claude Agent SDK to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, sandboxed code execution, and observability (Langfuse, OpenLLMetry, Pydantic Logfire, AWS CloudWatch)."
     >
       <Announcement />
       <Hero />

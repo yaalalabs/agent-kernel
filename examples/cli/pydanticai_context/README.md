@@ -126,7 +126,7 @@ through `ctx.deps` instead — that is the object OAK writes back.
   argument, so inside an override block the framework context never reaches your tools and the
   write-back stores the unmutated copy.
 - Round-trip fidelity is **not uniform across frameworks**. Pydantic AI and OpenAI have **full**
-  round-trip (shown here). ADK round-trips all keys except AK-internal ones; smolagents round-trips
+  round-trip (shown here). ADK round-trips all keys except OAK-internal ones; smolagents round-trips
   only pre-seeded keys; prebuilt LangGraph agents round-trip only declared state channels; **CrewAI
   does not support it** (a set context is ignored with a warning). To write portably across
   frameworks, pre-seed every key you intend to write. See the

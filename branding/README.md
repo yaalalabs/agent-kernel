@@ -89,8 +89,11 @@ The website (`docs/`) is built from one small system. Its tokens and classes are
 | `--ak-type-h4` | `ak-h4` | 20 to 22 px | Card titles |
 | `--ak-type-lead` | `ak-lead` | 18 to 21 px | The sentence under a title |
 | `--ak-type-body` | `ak-body` | 17 to 18 px | Running text |
-| `--ak-type-small` | `ak-small` | 15 px | Captions and secondary text: the smallest size for prose |
+| `--ak-type-small` | `ak-small` | 15 px | Captions and secondary text: the smallest size for running text |
 | `--ak-type-label` | `ak-label` | 13 px | Monospace section labels, in capitals |
+
+Running text is 15 px or larger; the only smaller sizes are the 13 px monospace label and 14 px for labels
+inside diagrams.
 
 **Space.** Use the `--ak-space-*` steps (4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 160 px). Page content sits in
 `ak-container` (1280 px with a fluid gutter), sections use `ak-section` for their vertical padding, and prose
@@ -110,11 +113,14 @@ is held to `--ak-measure` (720 px).
 | Tag | `ak-tag` in an `ak-tag-row` | Short labels only |
 | Dark panel | `ak-dark` | Pins a subtree to the dark values in either mode, as the closing panel does |
 | Page header | `PageHero` (`docs/src/components/ui/`) | The header of every page below the home page: label, title, lead, actions and an optional drawing |
-| Entrance | `Reveal` (`docs/src/components/ui/`) | The one entrance effect: content below the fold fades up once. Without script it is simply visible |
+| Entrance | `Reveal` (`docs/src/components/ui/`) | The one entrance effect: content below the fold fades up once as it enters the view |
 
 **Rules.**
 
-- Surfaces are flat: no gradients, glows, blur or drop shadows. The one exception is the light-mode card shadow.
+- Surfaces are flat (no gradient fills, glass blur, glows or drop shadows), with two exceptions: cards lift
+  with one soft shadow in the light mode, and floating layers (the chat launcher and its panel) carry a shadow.
+- Content is never hidden without script, with reduced motion, in print, or when it is already on screen at
+  load. `Reveal` is the only entrance effect.
 - Section headers are left-aligned and headings are in sentence case.
 - Orange is for the one thing to notice in a view: the primary action, the active item, the accent in a drawing.
 - Every colour comes from a token, so that both colour modes work. Check new work in both.
@@ -126,6 +132,13 @@ rails: fine blue rails, dots that travel along them, and one orange element per 
 `docs/src/components/VectorMotion/` (`StageMotion`, one per stage) and `docs/src/components/LevelStack/`
 (the three reading levels as one stack). A new drawing uses the same two colours and stroke width, pauses
 when it is off screen, and shows a still frame when the visitor asks for reduced motion.
+
+**Dot fields.** Three places draw fields of fine dots on the GPU: the mark in the home hero
+(`docs/src/components/ParticleLogo/`), the wave behind the closing panel and the floor under the
+integrations section (`docs/src/components/DotField/`, `Wave` and `Floor`, on the shared runner in
+`engine.ts`). They use no library, read their colours from the theme tokens and pause off screen. They are
+decoration, so nothing depends on them: without WebGL or with reduced motion the hero shows the plain mark,
+the wave is one still frame with reduced motion, and the floor is not drawn.
 
 ## Blog banners
 

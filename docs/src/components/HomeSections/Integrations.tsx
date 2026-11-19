@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import useIsomorphicLayoutEffect from '@docusaurus/useIsomorphicLayoutEffect';
 import Link from '@docusaurus/Link';
 import clsx from 'clsx';
 import SectionHeader from '@site/src/components/ui/SectionHeader';
@@ -139,6 +140,8 @@ function Logo({ item }: { item: IntegrationItem }): JSX.Element {
 export function Integrations(): JSX.Element {
   const section = useRef<HTMLElement>(null);
   const frame = useRef<HTMLDivElement>(null);
+  const panels = useRef<HTMLDivElement>(null);
+  const panelNodes = useRef<Array<HTMLDivElement | null>>([]);
   const [pinned, setPinned] = useState(false);
   const [active, setActive] = useState(0);
 
@@ -179,18 +182,73 @@ export function Integrations(): JSX.Element {
   }, [pinned]);
 
   // A stage in the list scrolls the page to the middle of that stage's step.
-  const goTo = useCallback((index: number) => {
+  const goTo = useCallback((index: number, behavior: ScrollBehavior = 'smooth') => {
     const node = section.current;
     const sticky = frame.current;
     if (!node || !sticky) return;
     const travel = node.offsetHeight - sticky.offsetHeight;
     const top = parseFloat(getComputedStyle(sticky).top) || 0;
     const start = node.getBoundingClientRect().top + window.scrollY - top;
-    window.scrollTo({
-      top: start + ((index + 0.5) / PANELS.length) * travel,
-      behavior: 'smooth',
-    });
+    window.scrollTo({ top: start + ((index + 0.5) / PANELS.length) * travel, behavior });
   }, []);
+
+  // Pinning makes the section taller after the first paint. A link to an anchor further down
+  // the page (the persona pages link to #levels) has already been scrolled to by then, so the
+  // target is scrolled to once more. Browsers without scroll anchoring would otherwise miss it.
+  const settled = useRef(false);
+  useEffect(() => {
+    if (!pinned || settled.current) return;
+    settled.current = true;
+    const node = section.current;
+    const target = window.location.hash ? document.getElementById(decodeURIComponent(window.location.hash.slice(1))) : null;
+    if (node && target && !node.contains(target) && node.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING) {
+      target.scrollIntoView();
+    }
+  }, [pinned]);
+
+  // While pinned, the groups that are not showing are hidden "until found": the browser's
+  // find-in-page still searches them, and a match brings its group forward. Where a browser
+  // does not know that value, they are plainly hidden.
+  useIsomorphicLayoutEffect(() => {
+    const searchable = 'onbeforematch' in document.documentElement;
+    panelNodes.current.forEach((panel, index) => {
+      if (!panel) return;
+      if (!pinned || index === active) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', searchable ? 'until-found' : '');
+    });
+  }, [pinned, active]);
+
+  useEffect(() => {
+    if (!pinned) return undefined;
+    const nodes = panelNodes.current;
+    const handlers = nodes.map((_, index) => () => goTo(index, 'auto'));
+    nodes.forEach((panel, index) => panel?.addEventListener('beforematch', handlers[index]));
+    return () => nodes.forEach((panel, index) => panel?.removeEventListener('beforematch', handlers[index]));
+  }, [pinned, goTo]);
+
+  // The frame keeps the height of the tallest group, so it does not jump between stages.
+  useIsomorphicLayoutEffect(() => {
+    const holder = panels.current;
+    if (!holder) return undefined;
+    if (!pinned) {
+      holder.style.removeProperty('min-height');
+      return undefined;
+    }
+    const measure = () => {
+      const nodes = panelNodes.current.filter((panel): panel is HTMLDivElement => panel !== null);
+      const hidden = nodes.map((panel) => panel.getAttribute('hidden'));
+      nodes.forEach((panel) => panel.removeAttribute('hidden'));
+      const tallest = Math.max(0, ...nodes.map((panel) => panel.offsetHeight));
+      nodes.forEach((panel, index) => {
+        const value = hidden[index];
+        if (value !== null) panel.setAttribute('hidden', value);
+      });
+      holder.style.minHeight = `${tallest}px`;
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [pinned]);
 
   return (
     <section
@@ -211,16 +269,15 @@ export function Integrations(): JSX.Element {
               lead={`${ALL_ITEMS.length} integrations, and every one is an adapter. Swap one without touching the others.`}
             />
 
-            {/* The stage list: shown only while the section is pinned */}
-            <div className={styles.steps} role={pinned ? 'tablist' : undefined} aria-label="Integration groups" aria-orientation="vertical">
+            {/* The stage list: shown only while the section is pinned. Its buttons move the page to
+                a stage, so they are plain buttons with the current one marked, not tabs. */}
+            <div className={styles.steps} role="group" aria-label="Integration groups">
               <span className={styles.marker} aria-hidden="true" />
               {PANELS.map((panel, index) => (
                 <button
                   key={panel.id}
                   type="button"
-                  id={`integrations-tab-${panel.id}`}
-                  role={pinned ? 'tab' : undefined}
-                  aria-selected={pinned ? index === active : undefined}
+                  aria-current={index === active ? 'true' : undefined}
                   aria-controls={`integrations-panel-${panel.id}`}
                   className={clsx(styles.step, index === active && styles.stepActive)}
                   onClick={() => goTo(index)}
@@ -237,16 +294,17 @@ export function Integrations(): JSX.Element {
             </Link>
           </div>
 
-          <div className={styles.panels}>
+          <div ref={panels} className={styles.panels}>
             {PANELS.map((panel, index) => {
               // Chips come in one after another across the whole panel, not set by set.
               let order = 0;
               return (
                 <div
                   key={panel.id}
+                  ref={(node) => {
+                    panelNodes.current[index] = node;
+                  }}
                   id={`integrations-panel-${panel.id}`}
-                  role={pinned ? 'tabpanel' : undefined}
-                  aria-labelledby={pinned ? `integrations-tab-${panel.id}` : undefined}
                   className={clsx(styles.panel, index === active && styles.panelActive)}
                 >
                   <p className={clsx('ak-label', styles.panelLabel)}>

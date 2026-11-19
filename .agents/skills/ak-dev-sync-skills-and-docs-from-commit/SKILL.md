@@ -162,7 +162,7 @@ Do not stop after one side if the capability impact clearly affects both contrib
 Evaluate and update all relevant documentation surfaces:
 
 1. `ak-py/README.md`
-2. docs website pages under `docs/` (including intro/getting-started/reference and example pages, the What's New tip in `docs/docs/intro.md`, and the hard-coded inventories of the React landing and features pages: the landing page's inventories live in `docs/src/components/IntegrationsMarquee/data.tsx`, `ArchitectureOverview/data.tsx`, and `FeatureExplorer/data.tsx`, and the features page's inventories live in `docs/src/pages/features.tsx`; the surface table in `ak-dev-sync-docs-from-branch` maps change types to the entries in those files)
+2. docs website pages under `docs/` (including intro/getting-started/reference and example pages, the what's new page `docs/docs/whats-new.md` with the tip in `docs/docs/intro.md` that links to it, and the hard-coded inventories of the React landing and features pages: the landing page's inventories live in `docs/src/components/HomeSections/` (`integrations.data.tsx`, `index.tsx`, `Deployment.tsx`, `Announcement.tsx`) and `ArchitectureOverview/data.tsx`, and the features page's inventories live in `docs/src/pages/features.tsx`; the surface table in `ak-dev-sync-docs-from-branch` maps change types to the entries in those files)
 3. README files under `ak-deployment/`
 4. changed/new example READMEs under `examples/` plus docs-site references to those examples
 5. root `README.md`
@@ -220,7 +220,7 @@ Documentation files:
 - `docs/docs/**`
 - `docs/sidebars.js`
 - `docs/src/pages/index.tsx`
-- `docs/src/components/IntegrationsMarquee/data.tsx`, `docs/src/components/ArchitectureOverview/data.tsx`, `docs/src/components/FeatureExplorer/data.tsx` (the landing page inventories)
+- `docs/src/components/HomeSections/integrations.data.tsx`, `HomeSections/index.tsx`, `HomeSections/Deployment.tsx`, `HomeSections/Announcement.tsx`, `docs/src/components/ArchitectureOverview/data.tsx` (the landing page inventories)
 - `docs/src/pages/features.tsx`
 - `ak-deployment/**/README.md`
 - `examples/**/README.md`
