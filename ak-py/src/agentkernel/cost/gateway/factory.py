@@ -36,6 +36,11 @@ class LLMGatewayFactory:
                 from .agentgateway import AgentgatewayGateway
 
             return AgentgatewayGateway(config, SecretManager.current())
+        if key == "langfuse":
+            with require_extra("cost", "cost.gateway.type: langfuse"):
+                from .langfuse import LangfuseGateway
+
+            return LangfuseGateway(config, SecretManager.current())
         if "." not in key:
             raise AKConfigError(
                 f"unknown cost.gateway.type '{config.type}'; expected one of litellm, agentgateway, langfuse or a dotted path to an LLMGateway subclass"
