@@ -697,7 +697,8 @@ export AK_REGISTRY__AGENTS__BILLING__SURFACES='["rest"]'  # a per-agent field; t
   (`GET /api/v1/agents`); a chat request that names the agent is still served. This replaces the `a2a.agents`,
   `mcp.agents` and `agui.agents` lists. Those lists named the agents a surface served, where `surfaces` is set per
   agent, so removing a list is not enough to keep what it did: give every agent the list left out a `surfaces`
-  value without that surface.
+  value without that surface. There is no allow-list any more: an agent added later with no `surfaces` is on
+  every surface, so set it for each new agent that should not be.
 - **Visibility.** `visibility` (`private`, `internal`, `public`) is recorded on the descriptor and published in the
   catalog. It is not enforced yet: until authorization ships, every agent listed on a surface is listed to every
   caller, and the catalog route answers a caller with no credential. `surfaces` is what keeps an agent off a
@@ -726,19 +727,31 @@ A registry over a store other processes share can subclass `StoreBackedAgentRegi
 `_put`, `_remove`, `descriptor` and `descriptors`. Run the conformance suite against it:
 
 ```python
+from uuid import uuid4
+
 import pytest
 from agentkernel.identity.registry.testing import AgentRegistryContract
 
 
 class TestMyRegistry(AgentRegistryContract):
     @pytest.fixture
-    def registry(self):
-        return MyRegistry()
+    def namespace(self):
+        # Every case starts from an empty registry, so each test gets a store, table or key prefix of its own.
+        name = f"registry-test-{uuid4().hex}"
+        yield name
+        MyRegistry(namespace=name).drop()  # whatever removes that test's records from your store
 
     @pytest.fixture
-    def peer(self):  # a second instance over the same store; omit for a registry that shares nothing
-        return MyRegistry()
+    def registry(self, namespace):
+        return MyRegistry(namespace=namespace)
+
+    @pytest.fixture
+    def peer(self, namespace):  # a second instance over the same store; omit for a registry that shares nothing
+        return MyRegistry(namespace=namespace)
 ```
+
+The factory builds your class with no arguments, so give test-only parameters such as `namespace` a default
+that reads your own settings.
 
 ### Test Configuration {#test-configuration-env-vars}
 

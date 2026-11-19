@@ -128,7 +128,7 @@ class _StreamingAgentService:
     def __init__(self, stream_multi):
         self._stream_multi = stream_multi
 
-    def ensure_agent_available(self, agent):
+    def ensure_agent_available(self, agent, *, hosted=False):
         pass
 
     def select(self, session_id, agent):

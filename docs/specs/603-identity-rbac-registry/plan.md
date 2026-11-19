@@ -703,6 +703,27 @@ the spec section it changes.
     CrewAI and LangGraph). A declared description replaces it and an empty declared one
     withholds it. Implemented with phase C, with a case per adapter on real SDK objects
     (design refinement 14).
+- **Third review pass (2026-11-19).** Fixed, each with a test:
+  - `Module.describe` writes the registry before the agent takes the descriptor, so a run during
+    a slow store write never acts as described ahead of the record; after a registration error
+    the store's record is the old one or the new one until the agent is described again (spec
+    6, descriptor source 2).
+  - `Module.load` rolls a failed load back agent by agent: the load's own error is raised, a
+    cleanup failure is logged, and what could not be deregistered stays in the module for
+    `unload()` to finish.
+  - `AgentHandler.initialize` and, on the in-memory transport, `ScheduleManager.create` need the
+    agent hosted, as the direct thread handler does.
+  - The redis-like `is_empty` counts only index members that have a document; the contract
+    round-trips a non-empty `surfaces`; an overlay set through the environment for a mixed-case
+    id is tested from the variable.
+  - The driver logs a fixed placeholder for a connection URL that does not parse.
+  - Docs: a new agent with no `surfaces` is on every surface, since there is no allow-list any
+    more; the bring-your-own contract example isolates its store per test; an undescribed
+    agent's catalog entry is empty while its card and tool carry the neutral sentence.
+  Declined: a server-side check of the index key's type before a registration (it guards a
+  keyspace something else wrote into, where every registration fails loudly anyway), and
+  reporting the Claude adapter's tools under `mcp__ak__<name>` (a policy names a tool as the
+  application declared it; the prefix is the adapter's own serving detail, spec 9).
 - **Deferred by the review.**
   - A runnable example of the shared registry (an IO process that does not import the agents):
     `examples/k8s/openai-queue-mode` still loads them in both processes. It needs the kind

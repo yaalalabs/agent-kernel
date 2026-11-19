@@ -259,6 +259,36 @@ class TestCreation:
 
         assert store.list() == ([], None)
 
+    def test_creation_in_one_process_rejects_an_agent_only_the_registry_knows(self, manager, store, descriptor_only_registry):
+        """On the in-memory transport the occurrence is run by this process. A descriptor left in a shared registry by
+        a deployment that removed the agent must not arm a task every occurrence of which fails."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(ValueError, match="No agent available"):
+                _create(manager, agent="billing")
+
+        assert store.list() == ([], None)
+
+    def test_creation_on_a_broker_accepts_an_agent_another_process_hosts(self, provider, store, monkeypatch, descriptor_only_registry):
+        """There the agent runner is another process: the registry is what says the agent exists."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda *args, **kwargs: "sqs"))
+        monkeypatch.setattr(ScheduleManager, "_validate_store_topology", lambda self: None)
+        on_a_broker = ScheduleManager(provider=provider, store=store)
+        registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            task = _create(on_a_broker, agent="billing")
+
+        assert task.agent == "billing"
+
     def test_creation_without_an_agent_name_is_not_prechecked(self, manager, provider):
         # The default agent is resolved by whichever process fires the occurrence, which is not
         # necessarily this one, so an unnamed agent is left to run time.

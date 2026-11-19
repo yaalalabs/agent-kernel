@@ -60,8 +60,11 @@ class _RedisLikeAgentRegistry(StoreBackedAgentRegistry):
         return found
 
     def is_empty(self) -> bool:
-        """Whether no agent is listed, read from the index set alone, without fetching a document."""
-        return not self._driver.smembers(self._index_key())
+        """Whether no agent is listed: no index member has a document. Stops at the first that does, and fetches none.
+
+        A member whose document was deleted on its own is not an agent, so emptiness agrees with `descriptors()`.
+        """
+        return not any(self._driver.exists(self._agent_key(id)) for id in self._driver.smembers(self._index_key()))
 
     def _put(self, descriptor: AgentDescriptor) -> None:
         """Write a descriptor document and its index membership, together.

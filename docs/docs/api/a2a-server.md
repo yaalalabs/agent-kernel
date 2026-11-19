@@ -58,7 +58,8 @@ route answers 404.
 The list named the agents A2A served, and every other agent was left out. `surfaces` works the other way
 round: an agent with none set is served. To keep what a list did, give **every agent the list left out** a
 `surfaces` value without `a2a` before you remove the list. Adding `a2a` to the agents it named is not
-enough, since the others are then served too.
+enough, since the others are then served too. The same goes for every agent you add later: with no
+`surfaces` it is served over A2A, where the list would have kept it out.
 
 In a split deployment the process that mounts the A2A routes applies its own `registry.agents` block to the
 agents it serves, so set `surfaces` in that process's configuration (or in one file both processes read).

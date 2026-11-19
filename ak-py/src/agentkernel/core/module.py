@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Self
 
@@ -17,6 +18,8 @@ class Module(ABC):
     framework. Agent Kernel provides an implementation of the Module class for each supported agent
     framework, allowing the agents to be registered and managed in a framework-agnostic manner.
     """
+
+    _log: ClassVar[logging.Logger] = logging.getLogger("ak.core.module")
 
     _REPORTED_DESCRIPTOR_FIELDS: ClassVar[frozenset[str]] = frozenset({"tools", "runner", "supports_streaming", "updated_at"})
     """
@@ -81,10 +84,31 @@ class Module(ABC):
                 registered.append(wrapped)
             except Exception:
                 self._agents = registered
-                self.unload()
+                self._roll_back()
                 raise
         self._agents = registered
         return self
+
+    def _roll_back(self) -> None:
+        """
+        Deregisters the agents a failed load had registered, one by one.
+
+        A failure here is logged and never raised: the error that failed the load is the one the caller needs,
+        and over a shared registry the outage that caused it usually fails the cleanup too. Every agent is
+        attempted whatever happened to the one before it. Those that could not be removed stay in the module,
+        still registered, so `unload()` finishes the cleanup once the registry answers again.
+        """
+        remaining = []
+        for agent in self._agents:
+            try:
+                Runtime.current().deregister(agent)
+            except Exception as e:
+                remaining.append(agent)
+                self._log.error(
+                    f"Agent '{agent.name}' is still registered after a failed load: it could not be deregistered ({e}). "
+                    "Call unload() on this module once the registry is reachable, or restart the process."
+                )
+        self._agents = remaining
 
     def pre_hook(self, agent: Any, hooks: list[PreHook]) -> Self:
         """
@@ -183,15 +207,15 @@ class Module(ABC):
         runtime = Runtime.current()
         if runtime.registry.get(described.id) is not wrapped:
             raise ValueError(f"Agent '{wrapped.name}' is not registered in the current runtime")
+        # The registry first, the agent after: a run that starts while a store is still writing must not act as
+        # described here (its identity, say) before any reader can see it, and a registration that raises leaves
+        # the agent as it was. After an error the store holds the old record or the new one (a write can be
+        # applied and still report failure); the agent keeps the old one, and describing it again settles both.
         declared = wrapped.descriptor
-        wrapped._set_descriptor(described)
-        try:
-            runtime.register(wrapped)
-        except Exception:
-            # The registry kept its record, so the agent keeps the descriptor that record was written from:
-            # it would otherwise act as described here (its identity, say) while every reader sees the old one.
-            wrapped._set_descriptor(declared)
-            raise
+        runtime.registry.register(described, wrapped)
+        if wrapped.descriptor is declared:
+            # No overlay names the agent, so the registry set nothing over it.
+            wrapped._set_descriptor(described)
         return self
 
     def _wrapped(self, agent: Any) -> Agent:

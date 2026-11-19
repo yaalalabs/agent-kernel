@@ -756,7 +756,10 @@ class Agent(ABC):
         Returns the names of the tools declared on the native agent, as an authorization policy names them.
 
         Declared, not discovered: an adapter reads the tools its native agent object holds when the agent is
-        loaded, under the names the model calls them by, and performs no I/O to find more. What only exists at
+        loaded, under the names the application declared them by, and performs no I/O to find more. A prefix or
+        rename the application puts on a toolset is part of that name; a prefix the adapter itself adds to serve
+        a tool is not (the Claude adapter serves `lookup` as `mcp__ak__lookup` and reports `lookup`, mapping
+        between the two where it gates the call). What only exists at
         run time is therefore not reported: the tools of a remote MCP server or of a toolset resolved per run,
         the tools of an agent this one hands off to, and tools nested in a sub-workflow or sub-graph the
         adapter does not walk. Each adapter's own docstring names what it leaves out.

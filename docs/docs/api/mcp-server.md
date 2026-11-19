@@ -73,7 +73,8 @@ no agent is exposed on `mcp`, a warning at startup says so.
 
 The list named the agents that became tools, and every other agent was left out. `surfaces` works the other way
 round: an agent with none set is exposed. To keep what a list did, give **every agent the list left out** a
-`surfaces` value without `mcp` before you remove the list. In a split deployment the process that serves MCP
+`surfaces` value without `mcp` before you remove the list, and do the same for every agent you add later: with
+no `surfaces` it becomes a tool, where the list would have kept it out. In a split deployment the process that serves MCP
 applies its own `registry.agents` block, so set `surfaces` in that process's configuration (or in one file both
 processes read).
 

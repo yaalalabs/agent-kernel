@@ -54,7 +54,8 @@ if __name__ == "__main__":
   agent catalog say about the agent, so write it for people and other agents. A description declared
   with `PydanticAIModule([agent]).describe(agent, description="...")` or under
   `registry.agents.<id>.description` replaces it. The agent's `instructions=` are never published: an
-  agent with no `description=` and none declared gets only a neutral sentence on those surfaces. See
+  agent with no `description=` and none declared gets only a neutral sentence on its A2A card and its
+  MCP tool, and an empty `description` in the catalog. See
   [Describing an agent](../core-concepts/module.md#describing-an-agent).
 :::
 

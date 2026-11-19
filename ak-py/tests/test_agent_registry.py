@@ -212,6 +212,9 @@ class _FakeRedisLikeClient:
             self.values.pop(key, None)
             self.sets.pop(key, None)
 
+    def exists(self, key: str) -> int:
+        return int(key in self.values or key in self.sets)
+
     def sadd(self, key: str, member: str) -> None:
         self.sets.setdefault(key, set()).add(member)
 
@@ -317,6 +320,15 @@ class TestRedisAgentRegistry(AgentRegistryContract):
 
         assert registry.is_empty() is False
         assert client.reads == []
+
+    def test_an_index_member_without_a_document_does_not_make_the_registry_look_populated(self, registry, client):
+        # Emptiness must agree with the listing: a member left behind when its document was deleted by hand would
+        # otherwise admit a request naming no agent with nothing to run it, and silence the no-agents warning.
+        registry.register(_descriptor("billing"), StubAgent("billing"))
+        del client.values["ak:registry:agent:billing"]
+
+        assert registry.descriptors() == []
+        assert registry.is_empty() is True
 
     def test_an_index_member_without_a_document_is_not_listed(self, registry, client):
         registry.register(_descriptor("billing"), StubAgent("billing"))
@@ -803,6 +815,21 @@ class TestRegistryOverlay:
         assert agent.descriptor.surfaces == ["rest"]
         assert runtime.registry.descriptor("Billing").surfaces == ["rest"]
 
+    def test_a_restriction_set_through_the_environment_reaches_an_agent_with_a_mixed_case_id(self, monkeypatch):
+        """End to end, from the variable: the environment source lowercases the id on the way in."""
+        monkeypatch.setenv("AK_REGISTRY__AGENTS__Billing__SURFACES", '["rest"]')
+        AKConfig._reset()
+        assert list(AKConfig.get().registry.agents) == ["billing"]  # how the id arrives
+        runtime = Runtime(InMemorySessionStore())
+        agent = StubAgent("Billing")
+
+        runtime.register(agent)
+
+        read = runtime.registry.descriptor("Billing")
+        assert read.surfaces == ["rest"]
+        assert (read.exposed_on("rest"), read.exposed_on("mcp"), read.exposed_on("a2a")) == (True, False, False)
+        assert agent.descriptor.surfaces == ["rest"]
+
     def test_an_exact_overlay_key_wins_over_one_in_another_case(self, monkeypatch):
         runtime = self._runtime(monkeypatch, billing={"version": "1.0.0"}, Billing={"version": "2.0.0"})
 
@@ -1090,6 +1117,28 @@ class TestModuleDescribe:
         assert (descriptor.id, descriptor.name, descriptor.tools) == ("billing", "Billing desk", ["search"])
         assert [skill.id for skill in descriptor.skills] == ["refunds"]
 
+    def test_the_agent_does_not_carry_the_described_fields_while_the_registry_is_still_writing_them(self):
+        """A run on another thread during a slow store write must not act as something no reader can see yet:
+        the agent takes the new descriptor once the registry has it, never before."""
+        seen_during_the_write = []
+
+        class _Observing(InMemoryAgentRegistry):
+            def register(self, descriptor, agent):
+                seen_during_the_write.append(agent.descriptor.identity.subject)
+                super().register(descriptor, agent)
+
+        runtime = Runtime(InMemorySessionStore(), registry=_Observing())
+        with runtime:
+            native = NativeAgent("billing")
+            module = StubModule([native])
+            module.describe(native, identity={"subject": "svc-old"})
+
+            module.describe(native, identity={"subject": "svc-new"})
+
+        # The load, the first describe and the second: at each write the agent still carried what it had before.
+        assert seen_during_the_write == [None, None, "svc-old"]
+        assert module.get_agent("billing").descriptor.identity.subject == "svc-new"
+
     def test_a_registration_the_registry_refuses_leaves_the_agent_as_it_was_described(self):
         class _FailingStore(InMemoryAgentRegistry):
             """Accepts the first registration and then loses its store."""
@@ -1130,6 +1179,58 @@ class TestModuleDescribe:
 
         actor = agent.runner.principals[0].actor
         assert (actor.kind, actor.subject, actor.provider) == ("agent", "svc-billing", "agentkernel")
+
+
+class TestModuleLoadRollback:
+    """A load that fails part way deregisters what it registered. With a shared registry that cleanup can fail too."""
+
+    class _FailingStore(InMemoryAgentRegistry):
+        """Refuses to register `support`, and cannot remove `billing` while its store is down."""
+
+        def __init__(self):
+            super().__init__()
+            self.down = True
+
+        def register(self, descriptor, agent):
+            if descriptor.id == "support":
+                raise ConnectionError("the store went down while registering support")
+            super().register(descriptor, agent)
+
+        def deregister(self, id):
+            if id == "billing" and self.down:
+                raise TimeoutError("the store is still down")
+            super().deregister(id)
+
+    def _failed_load(self):
+        registry = self._FailingStore()
+        runtime = Runtime(InMemorySessionStore(), registry=registry)
+        with runtime:
+            module = StubModule([])
+            with pytest.raises(Exception) as raised:
+                module.load([NativeAgent("billing"), NativeAgent("search"), NativeAgent("support")])
+        return runtime, registry, module, raised.value
+
+    def test_the_error_that_failed_the_load_is_the_one_raised_whatever_the_cleanup_does(self):
+        _, _, _, error = self._failed_load()
+
+        assert isinstance(error, ConnectionError) and "registering support" in str(error)
+
+    def test_every_registered_agent_is_cleaned_up_even_after_one_cleanup_fails(self):
+        _, registry, _, _ = self._failed_load()
+
+        # `search` comes after `billing`, whose removal failed: it is still deregistered.
+        assert list(registry.agents()) == ["billing"]
+
+    def test_the_agents_that_could_not_be_removed_are_kept_so_unload_can_finish_the_cleanup(self):
+        runtime, registry, module, _ = self._failed_load()
+        assert [agent.name for agent in module.agents] == ["billing"]
+        registry.down = False
+
+        with runtime:
+            module.unload()
+            module.load([NativeAgent("billing"), NativeAgent("search")])
+
+        assert sorted(registry.agents()) == ["billing", "search"]
 
 
 class TestAvailability:

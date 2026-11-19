@@ -92,8 +92,10 @@ class AgentRegistryContract:
         assert self.stored(registry.descriptor("billing")) == expected
         assert [self.stored(found) for found in registry.descriptors()] == [expected]
 
-    def test_contract_every_field_of_a_descriptor_survives_the_registry(self, registry):
-        """`surfaces=[]` (on no surface) must not come back as None (on every surface): it is the exposure boundary."""
+    @pytest.mark.parametrize("surfaces", [[], ["rest"]], ids=["no-surface", "rest-only"])
+    def test_contract_every_field_of_a_descriptor_survives_the_registry(self, registry, surfaces):
+        """`surfaces` is the exposure boundary: `[]` (on no surface) must not come back as None (on every surface),
+        and a list that names some must come back naming the same ones."""
         descriptor = self.descriptor(
             "billing",
             version="1.2.0",
@@ -101,7 +103,7 @@ class AgentRegistryContract:
             owner="finance-platform",
             tags=["finance"],
             visibility="internal",
-            surfaces=[],
+            surfaces=surfaces,
             skills=[AgentSkillDescriptor(id="refund", name="refund", description="Refunds an invoice")],
             tools=["refund"],
             runner="contract",
@@ -114,7 +116,8 @@ class AgentRegistryContract:
 
         read = registry.descriptor("billing")
         assert self.stored(read) == expected
-        assert read.surfaces == [] and read.exposed_on("rest") is False
+        assert read.surfaces == surfaces
+        assert (read.exposed_on("rest"), read.exposed_on("mcp")) == ("rest" in surfaces, False)
         assert read.identity == AgentIdentitySpec(subject="svc-billing")
         assert [self.stored(found) for found in registry.descriptors()] == [expected]
 

@@ -605,7 +605,13 @@ class AgentRegistry(ABC):
   and its index membership are written in one MULTI/EXEC transaction and removed in another
   (`driver.client.pipeline()`, the `rpush_with_expiry` shape), so an interrupted write leaves
   no document a peer resolves and never lists, and a registration by another process lands
-  wholly before or wholly after a removal. `is_empty` reads the index set alone.
+  wholly before or wholly after a removal. A transaction is not a rollback: a command that fails
+  inside it (`SADD` against an index key of the wrong type) leaves the commands before it
+  applied, so a registration over a keyspace something else wrote into fails on every attempt
+  and can leave a document behind, which the next registration that succeeds overwrites; no
+  server-side check guards against that, the registry prefix being the registry's own.
+  `is_empty` checks the index members with `EXISTS` until one has a document, so a member whose
+  document was deleted on its own does not make the registry look populated.
   DynamoDB one item per agent, partition key `agent_id`, no sort key, denormalized `updated_at`,
   listing by scan (`schedule/store/dynamodb.py:1-18`) with `ConsistentRead`, since cards and
   tools are built from one listing at mount and an agent an eventually consistent scan missed
@@ -685,19 +691,29 @@ class AgentRegistry(ABC):
    `updated_at`; a descriptor claiming its runner streams would open an AG-UI stream that can
    only fail, and a declared tool list would name tools the agent cannot call to whoever writes a
    policy from it; `name` and `skills` stay declarable) and for
-   an agent the current runtime does not host; nothing is stored on any of them. It then replaces
-   the agent's descriptor and registers the agent again (`Runtime.register`), which is how the
-   registry, already holding the descriptor from `load`, receives the described one. When that
-   registration raises (a store that cannot be reached), the agent gets back the descriptor it
-   had, so it never acts as described (an `identity`, say) while every reader sees the old record.
+   an agent the current runtime does not host; nothing is stored on any of them. It then
+   registers the described descriptor (`runtime.registry.register(described, wrapped)`), which is
+   how the registry, already holding the descriptor from `load`, receives it, and only once that
+   returns does the agent take it (unless the overlay already set one over it). The registry
+   first, the agent after: a run that starts while a store is still writing never acts as
+   described (an `identity`, say) before any reader can see it, and a registration that raises
+   leaves the agent as it was. After such an error the outcome of the write is not known: a store
+   can apply a write and still report failure (a reply lost, or a redis transaction whose `SET`
+   ran before a later command failed), so it holds the old record or the new one while the agent
+   keeps the old. Nothing reconciles them in the background. `describe` raises, which at module
+   definition time stops the load; a caller that carries on describes the agent again, and that
+   write settles both. An identity or a description the host has not confirmed is never used by
+   the host, which is the half that matters.
 3. The `registry.agents.<id>` overlay, applied by `AgentRegistryFactory`'s returned registry in
    `register` (`_OverlaidAgentRegistry`, constructed with each entry's set fields: a field left
    out or null in the block is not an override), which also sets the resulting descriptor on the
    agent it was handed (`Agent._set_descriptor`) once the backend has accepted the registration,
    so a refused one leaves the agent as declared. In the hosting process
    `agent.descriptor` and `registry.descriptor(id)` are therefore one record (a store's
-   `updated_at` aside): Runtime's actor subject (section 3) sees an overlaid `identity`, and
-   nothing reads a descriptor the overlay has not reached.
+   `updated_at` aside) after every registration that returned: Runtime's actor subject (section
+   3) sees an overlaid `identity`, and nothing reads a descriptor the overlay has not reached.
+   The one exception is a registration that raised over a shared store, whose outcome is
+   unknown until the next one (source 2, above).
 
    The overlay is applied again on every read (`descriptor`, `descriptors`, and so `list`), which
    changes nothing for an agent registered here and is what makes the configuration of a process
@@ -735,13 +751,18 @@ The agents the process hosts answer first (`registry.get(name)`, `registry.agent
 store is read only for an agent that is not hosted here and a hosted agent costs no round trip
 per request. (`principal` arrives with the gate in phase D; phase C ships `name` and `hosted`.)
 
-`hosted=True` is what a surface that runs the agent in its own process passes: only the agents
-hosted here count and the store is never read. The direct thread handler uses it
-(`AgentThreadRequestHandler._check_agent_available`): an agent a shared registry knows from
-another process would otherwise pass, have its user message recorded, and then fail to be
-selected, where before the registry the request failed before any thread write. The queue-mode
-handlers and the schedule manager keep the registry-wide form, since another process runs the
-agent. For an agent hosted elsewhere the check is a blocking store read, so an `async` caller
+`hosted=True` is what a caller that runs the agent in its own process passes: only the agents
+hosted here count and the store is never read. Three callers do. `AgentHandler.initialize`
+(`core/chat_service.py`), the execution point every surface reaches, so a request for an agent
+this process cannot select is `No agent available` before a session is loaded or a stream
+opened, where it was a 200 stream carrying an error chunk. The direct thread handler
+(`AgentThreadRequestHandler._check_agent_available`): such an agent would otherwise pass, have
+its user message recorded, and then fail to be selected, where before the registry the request
+failed before any thread write. And `ScheduleManager.create` on the `in_memory` transport, where
+this process fires the occurrences: a descriptor a removed agent left in a shared registry would
+otherwise arm a task every occurrence of which fails. The queue-mode edge handlers, and the
+schedule manager on a broker transport, keep the registry-wide form, since another process runs
+the agent. For an agent hosted elsewhere the check is a blocking store read, so an `async` caller
 over a shared registry runs it off the event loop (`ThreadRequestHandler._record_user_message`
 through `asyncio.to_thread`; AG-UI's resolution likewise, section 8.5).
 
@@ -1751,7 +1772,8 @@ Each is intentional; the justification is design section 10 unless stated.
     the registry existed, where the registry-wide check alone let the user message be recorded
     ahead of a run that could not select the agent (section 6, Availability).
 37. Connecting to Redis or Valkey logs the scheme, host, port and path of the connection URL at
-    DEBUG, never its user, password or query, where it logged the URL whole
+    DEBUG, never its user, password or query, and a fixed placeholder for a value that does not
+    parse as a URL with a scheme and a host, where it logged the URL whole
     (`core/util/driver/redis_like.py`; every store on the shared driver, not the registry alone).
 38. From iteration 17b, a chat request that enters by the REST API and names an agent whose
     `surfaces` leaves out `rest` is answered like one for an unknown agent (404), and a request
@@ -1797,7 +1819,9 @@ for the two caches and the framework context; public exports other than those na
 | Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; `deregister` raises and keeps the agent hosted, so a retry removes the record; at mount, `A2A._build`, `MCP._build` and the `agui.default_agent` check raise and the process does not start (cards and tools built from an unread registry would stay empty until a restart), while `IOHandler._warn_if_no_agents` only logs that it could not check; per request, the catalog route, `ensure_agent_available` for an agent hosted elsewhere and AG-UI's resolution raise, which the surface answers 500 |
 | `ttl` set on a registry store block, or a key the `registry` block does not take | the config model | `AKConfigError` naming `registry.<store>.ttl`; a validation error at load |
 | `Module.describe` naming `tools`, `runner`, `supports_streaming` or `updated_at` | `Module.describe` | `ValueError`; nothing stored |
-| `Module.describe` whose registration the registry refuses | `Module.describe` | the registry's error; the agent keeps the descriptor it had |
+| `Module.describe` whose registration the registry refuses | `Module.describe` | the registry's error; the agent keeps the descriptor it had; a shared store holds the old record or the new one until the agent is described again |
+| A load fails part way and its cleanup fails too (a shared store down) | `Module.load` (`_roll_back`) | the load's own error is raised; each cleanup failure is logged; the agents that could not be deregistered stay registered and in the module, for `unload()` to finish |
+| Direct execution of an agent only the registry knows | `AgentHandler.initialize`, the direct thread handler, `ScheduleManager.create` on `in_memory` | `ValueError("No agent available")` before a session, a thread write or a task; 400 |
 | Adapter class still defining `get_a2a_card` | `Agent._build_descriptor` | one warning per class; the method is never called |
 
 Concurrency: `IdentityProviderFactory.get()`, `AuthorizerFactory.get()` and `AccessGate.get()`
@@ -1915,6 +1939,16 @@ New files under `ak-py/tests/`:
   system-tool guidance on a first and a second wrap, and CrewAI and LangGraph seed nothing.
   `test_agent_registry` covers the precedence: `Module.describe` and the overlay replace the
   native description, and an empty overlaid one withholds it.
+  From the third review pass: `Module.describe` writing the registry before the agent takes the
+  descriptor (a registry that records what the agent carried during each write); the failed-load
+  rollback (`TestModuleLoadRollback`: the load's error raised whatever the cleanup does, every
+  agent attempted, the ones that could not be removed kept for `unload()`); an overlay set
+  through `AK_REGISTRY__AGENTS__<Id>__SURFACES` reaching an agent with a mixed-case id; redis-like
+  emptiness agreeing with the listing when an index member has no document; the contract's
+  round trip for a non-empty `surfaces`; `AgentHandler.initialize` refusing an agent only the
+  registry knows (`test_chat_service_core`); a schedule refused for such an agent on the
+  in-memory transport and accepted on a broker (`test_schedule_manager`); and the connection log
+  placeholder for a URL that does not parse (`test_shared_drivers`).
 - `test_api_catalog.py`: `GET /api/v1/agents` descriptors, filtering by caller, `tools`
   narrowing and the `skills` narrowed with it (a tool-backed skill goes with its tool, a declared
   skill that names no tool stays), cursor and limit, 400 on a bad cursor, `surfaces` narrowing
