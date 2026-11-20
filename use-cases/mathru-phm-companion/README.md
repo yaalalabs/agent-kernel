@@ -393,4 +393,4 @@ use-cases/mathru-phm-companion/
 ## 9. Acknowledgements
 
 Built for the IDEALIZE 2026 mini-competition organised by AIESEC in University of
-Moratuwa, using [OAK](https://github.com/yaalalabs/agent-kernel) by Yaala Labs.
+Moratuwa, using [OAK](https://github.com/yaalalabs/agent-kernel).

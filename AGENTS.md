@@ -159,6 +159,11 @@ When you write or update documentation, READMEs, skills or website copy:
 - **Identifiers are not renamed.** The package is still `agentkernel`, the CLI is `ak`, classes keep
   their `AK` prefix (`AKConfig`) and environment variables keep `AK_`. Repository paths, the
   `yaalalabs/agent-kernel` URL and `kernel.yaala.ai` are unchanged.
+- **The company is named only in legal text.** "Yaala Labs" appears in the privacy, cookie and terms
+  pages, in `NOTICE`, in copyright lines (the READMEs and the website footer) and nowhere else: not in
+  page metadata, sign-off lines, docs or package metadata, where the author is "Open Agent Kernel".
+  The `yaalalabs` identifiers (the GitHub organisation, the Terraform and container registries, the
+  email addresses) stay, as do released doc versions and published blog posts.
 - **Quote product output exactly.** Strings the code emits still carry the old name, for example the
   OpenAPI title `Agent Kernel REST API`, trace span names such as `Agent Kernel OpenAI` and the
   `AgentKernel` service name. Code blocks and quoted output keep them as emitted.

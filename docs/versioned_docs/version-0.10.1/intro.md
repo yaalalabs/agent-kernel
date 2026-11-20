@@ -315,6 +315,3 @@ Ready to get started? Here's what to do next:
 
 OAK is released under the Apache License 2.0. See the [LICENSE](https://github.com/yaalalabs/agent-kernel/blob/develop/LICENSE) file for details.
 
----
-
-**Built with ❤️ by [Yaala Labs](https://www.yaalalabs.com/)**

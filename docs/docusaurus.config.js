@@ -66,14 +66,14 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'keywords',
-        content: 'open agent kernel, OAK, agent kernel, AI agent framework, AI agent runtime, AI agent deployment, AI agent platform, agentic AI development, multi-cloud AI agents, framework-agnostic AI, deploy AI agents, how to build AI agents, how to deploy AI agents to AWS, how to deploy AI agents to Azure, AI agent development platform open source, build AI agents with Python, LangGraph vs OpenAI agents vs CrewAI, AI agent Slack integration, WhatsApp AI bot, production AI agent deployment, AI agent testing framework, AI agent session management, AI agent guardrails, AI agent safety, agent-to-agent communication, MCP protocol, model context protocol, AI agent observability, AI agent tracing, agentkernel, Yaala Labs, LangGraph runtime, OpenAI Agents SDK deployment, Google ADK deployment, CrewAI deployment, serverless AI agents, containerized AI agents, multi-agent systems, AI agent orchestration, enterprise AI agents, Python AI agents, open source AI agent platform',
+        content: 'open agent kernel, OAK, agent kernel, AI agent framework, AI agent runtime, AI agent deployment, AI agent platform, agentic AI development, multi-cloud AI agents, framework-agnostic AI, deploy AI agents, how to build AI agents, how to deploy AI agents to AWS, how to deploy AI agents to Azure, AI agent development platform open source, build AI agents with Python, LangGraph vs OpenAI agents vs CrewAI, AI agent Slack integration, WhatsApp AI bot, production AI agent deployment, AI agent testing framework, AI agent session management, AI agent guardrails, AI agent safety, agent-to-agent communication, MCP protocol, model context protocol, AI agent observability, AI agent tracing, agentkernel, LangGraph runtime, OpenAI Agents SDK deployment, Google ADK deployment, CrewAI deployment, serverless AI agents, containerized AI agents, multi-agent systems, AI agent orchestration, enterprise AI agents, Python AI agents, open source AI agent platform',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         name: 'author',
-        content: 'Yaala Labs',
+        content: 'Open Agent Kernel',
       },
     },
     {
@@ -108,7 +108,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:site_name',
-        content: 'Open Agent Kernel by Yaala Labs',
+        content: 'Open Agent Kernel',
       },
     },
     {
@@ -156,15 +156,8 @@ const config = {
     {
       tagName: 'meta',
       attributes: {
-        name: 'company',
-        content: 'Yaala Labs',
-      },
-    },
-    {
-      tagName: 'meta',
-      attributes: {
         name: 'publisher',
-        content: 'Yaala Labs',
+        content: 'Open Agent Kernel',
       },
     },
     {
@@ -195,11 +188,11 @@ const config = {
         },
         author: {
           '@type': 'Organization',
-          name: 'Yaala Labs',
-          url: 'https://www.yaalalabs.com',
+          name: 'Open Agent Kernel',
+          url: 'https://kernel.yaala.ai',
         },
         url: 'https://kernel.yaala.ai',
-        keywords: 'Open Agent Kernel, OAK, Agent Kernel, agentkernel, agent os, agent operating system, agent runtime, enterprise agents, agent deployment, compliant agents, scalable production agents, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
+        keywords: 'Open Agent Kernel, OAK, Agent Kernel, agentkernel, agent os, agent operating system, agent runtime, enterprise agents, agent deployment, compliant agents, scalable production agents, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
         featureList: [
           'Framework-neutral runtime: OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents',
           'Realtime voice through the LiveKit integration for OpenAI Agents SDK and Google ADK agents',
@@ -226,7 +219,7 @@ const config = {
         '@context': 'https://schema.org',
         '@type': 'WebSite',
         name: 'Open Agent Kernel',
-        alternateName: ['OAK', 'Agent Kernel', 'Open Agent Kernel by Yaala Labs'],
+        alternateName: ['OAK', 'Agent Kernel'],
         url: 'https://kernel.yaala.ai/',
       }),
     },
@@ -275,13 +268,14 @@ const config = {
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'Organization',
-        name: 'Yaala Labs',
-        url: 'https://www.yaalalabs.com',
+        name: 'Open Agent Kernel',
+        alternateName: 'OAK',
+        url: 'https://kernel.yaala.ai',
         logo: 'https://kernel.yaala.ai/img/logo.svg',
         sameAs: [
           'https://github.com/yaalalabs/agent-kernel',
         ],
-        description: 'Yaala Labs is a technology company that builds next-generation cloud-native marketplace and capital markets infrastructure for both traditional and digital assets. Creator and maintainer of Open Agent Kernel (OAK), the open-source operating system for scalable, compliant enterprise AI agents.',
+        description: 'Open Agent Kernel (OAK) is the open-source operating system for scalable, compliant enterprise AI agents.',
       }),
     },
   ],

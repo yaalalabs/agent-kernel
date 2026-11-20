@@ -40,7 +40,8 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
   - every later mention on that page, and H2 or lower headings: "OAK"
   - diagram node labels: "OAK"
 - The prose abbreviation "AK" becomes "OAK" ("AK session" becomes "OAK session").
-- "Agent Kernel by Yaala Labs" becomes "Open Agent Kernel by Yaala Labs".
+- "Agent Kernel by Yaala Labs" becomes "Open Agent Kernel". The company is named only in legal text: the
+  policy pages, `NOTICE` and copyright lines, the website footer among them (decided 2026-11-20).
 - Identifiers do not change:
   - `agentkernel`, the `ak` CLI, `AKConfig` and every other class, `AK_*` environment variables, config keys
   - `ak-py`, `ak-deployment`, skill names (`ak-init`, `ak-dev-*`)
