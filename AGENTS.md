@@ -204,7 +204,8 @@ When you write or update documentation, READMEs, skills or website copy:
   generated, so a new docs page needs nothing. The summary above the list is hand-written in
   `template.md`: update it when a framework is added or removed, the supported Python versions change,
   or the install command or an identifier changes. Give a new docs page an opening sentence that says
-  what the page is for, because that sentence becomes its description in the index.
+  what the page is for, because that sentence becomes its description in the index. `npm test` in
+  `docs/` runs the tests of the plugin's text helpers.
 
 ## Conventions
 

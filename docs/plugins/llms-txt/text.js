@@ -6,7 +6,7 @@
 
 // A link's description is one sentence. A longer opening is cut at a word, with an ellipsis.
 const DESCRIPTION_LIMIT = 220;
-const FENCE = /^\s*(`{3,}|~{3,})/;
+const FENCE = /^\s*(`{3,}|~{3,})(.*)$/;
 const MDX_IMPORT = /^import\s.+\sfrom\s+['"][^'"]+['"];?\s*$/;
 // The first line of a block that is not prose: a heading, an image, JSX, a table, a rule, a quote or a list.
 const NOT_PROSE = /^(#|!\[|<|\||---|>|[-*+]\s|\d+\.\s)/;
@@ -35,19 +35,37 @@ function oneSentence(text) {
 }
 
 /**
+ * Follows fenced code through a document, one line at a time: the returned function says whether
+ * the line it is given is part of a fenced block (its opening and closing markers included).
+ * As in CommonMark, a block closes only on a marker of the same character that is at least as
+ * long as the one that opened it and has nothing after it. So a page that shows a markdown file
+ * inside four backticks keeps the three-backtick blocks of that file as code.
+ */
+function fenceTracker() {
+  let open = null;
+  return (line) => {
+    const mark = line.match(FENCE);
+    if (!open) {
+      if (!mark) return false;
+      open = { character: mark[1][0], length: mark[1].length };
+      return true;
+    }
+    if (mark && mark[1][0] === open.character && mark[1].length >= open.length && mark[2].trim() === '') {
+      open = null;
+    }
+    return true;
+  };
+}
+
+/**
  * Applies `change` to every line that is not inside a fenced code block, and drops a line when
  * `change` returns null. Code is left exactly as written.
  */
 function outsideCode(markdown, change) {
-  let fence = '';
+  const inCode = fenceTracker();
   const lines = [];
   for (const line of markdown.split('\n')) {
-    const mark = line.match(FENCE);
-    if (mark) {
-      if (!fence) fence = mark[1][0];
-      else if (mark[1][0] === fence) fence = '';
-      lines.push(line);
-    } else if (fence) {
+    if (inCode(line)) {
       lines.push(line);
     } else {
       const changed = change(line);
@@ -74,7 +92,7 @@ function bodyOf(source) {
 function openingOf(body) {
   const blocks = [];
   let block = [];
-  let fence = '';
+  const inCode = fenceTracker();
   let inAdmonition = false;
   const close = () => {
     if (block.length > 0) blocks.push(block);
@@ -82,13 +100,8 @@ function openingOf(body) {
   };
   for (const raw of body.split('\n')) {
     const line = raw.trim();
-    const mark = raw.match(FENCE);
-    if (mark) {
-      if (!fence) fence = mark[1][0];
-      else if (mark[1][0] === fence) fence = '';
+    if (inCode(raw)) {
       close();
-    } else if (fence) {
-      // inside code
     } else if (line.startsWith(':::')) {
       inAdmonition = line !== ':::';
       close();

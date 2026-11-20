@@ -58,6 +58,7 @@ No GitHub issue exists for this work yet, so the folder is un-numbered (see Open
   - `docs/docs` and the `docs/versioned_docs/version-0.10.1` snapshot
   - website copy: `docs/docusaurus.config.js`, `docs/src/**/*.tsx`, the three legal pages, `docs/static/robots.txt`, `docs/blog/authors.json`, `docs/README.md`, `docs/SETUP.md`
   - website source for the redesign: `docs/src/**`, `docs/static/**`, `docs/sidebars.js`, `docs/package.json`
+  - `docs/plugins/**`: the build-time plugin that writes the llms.txt files (see llms.txt)
   - blog posts: front matter (`authors`, `image`) and the banner image under the title only; the text of a post is not edited (see Blog)
   - `branding/` (new)
   - `ak-py/README.md`
@@ -227,17 +228,36 @@ Findings and proposals are in [research/blog-audit.md](research/blog-audit.md).
   - an entry for a capability that is not in the `0.10.1` release appears in `docs/docs` only
 - The home page announcement strip names the newest headline capability and links to its guide.
 
+### llms.txt
+
+- The site publishes two files for AI assistants, in the format of llmstxt.org, written on every build with no new dependency:
+  - `/llms.txt`: a summary of the project, then an index of the docs, the main site pages, the source and package links, and the blog posts
+  - `/llms-full.txt`: the text of the docs pages in one file
+- Both describe the docs of the latest release, the ones served at `/docs`, not the unreleased docs.
+- The index and the full text are generated from the docs themselves: adding, renaming or removing a docs page needs no edit to a list.
+  - order: the docs sidebar
+  - description of a page or a blog post: its front matter `description`, else the first sentence of its opening paragraph
+- Only the summary, the list of site pages and the list of source links are hand-written, in one template file.
+- The summary states the former name, "Agent Kernel", and the identifiers that kept it.
+  - This is the one public exception to the former-name rule (Open questions, Former-name note).
+  - Reason: an assistant trained on older content knows the project by that name, and the blog titles listed in the same file still carry it.
+- In the full text every link is absolute, and fenced code is unchanged.
+- The files are not linked from a page and are not listed in the sitemap.
+
 ### Contributor guidance
 
 - `AGENTS.md` gains a short naming section stating the rules above, so that contributors and the docs-sync automation write the new name.
 - The three sync skills (`ak-dev-sync-docs-from-branch`, `ak-dev-sync-skills-from-branch`, `ak-dev-sync-skills-and-docs-from-commit`) point at that section.
 - `AGENTS.md` and `branding/README.md` (*Website design system*) state the design-system rules; the two documents use the same wording for the type floor and the surface rule.
+- `AGENTS.md` and the docs sync skill say which part of llms.txt is hand-written and when to update it.
 - Every dev skill that tells a contributor where a new integration is listed on the site names the files that exist after the redesign.
 
 ### Verification
 
 - No file outside the in-scope set changes; in particular no `.py`, `.toml`, `.tf`, `.yaml` or `.yml` file.
-- "Agent Kernel" remains in in-scope files only inside code spans, code blocks, the search-continuity entries, and the sentence in `AGENTS.md` that records the former name.
+  - one exception, made later: the author name in `ak-py/pyproject.toml` (Naming, the company is named only in legal text)
+- "Agent Kernel" remains in in-scope files only inside code spans, code blocks, the search-continuity entries, the sentence in `AGENTS.md` that records the former name, and the summary of `/llms.txt`.
+- llms.txt: both files are in the build; every address in them under the site's own domain is a page of the build; the full text has one entry for each published docs page and no relative link outside fenced code.
 - The `0.10.1` snapshot's diff against the merge base holds only:
   - the rename
   - the recoloured diagram `style` lines (the same 29 pages as `docs/docs`)
@@ -268,7 +288,8 @@ Findings and proposals are in [research/blog-audit.md](research/blog-audit.md).
   foundations' own artwork and are shown unmodified. Is a monochrome treatment acceptable to them?
 - **Former-name note.** Resolved on 2026-11-19: no public page carries a note about the former name. The
   root README had one and it was removed; the docs introduction never had one. `AGENTS.md` keeps one
-  sentence, because the naming rules for contributors refer to the old name.
+  sentence, because the naming rules for contributors refer to the old name. One public exception was
+  made on 2026-11-20: the summary of `/llms.txt` says what the project was called (see llms.txt).
 - **New copy.** The hero headline ("The Operating System For Enterprise AI Agents", capitalised word by word at the maintainer's request), the blog heading and
   the persona page titles and leads are new wording. They need the maintainer's read.
 - **Trust figures.** No real figures exist yet. The row ships with marks only.

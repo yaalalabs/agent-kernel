@@ -109,19 +109,29 @@ module.exports = function llmsTxtPlugin(context) {
         })
         .join('\n\n');
 
+      // A post is described the way a docs page is: by its front matter, else by its opening
+      // paragraph. Docusaurus' own excerpt is the first line of the post, which is the banner
+      // image under the title, so it would give the banner's alt text.
       const blogPlugin = plugins.find((plugin) => plugin.name === BLOG_PLUGIN);
       const posts = /** @type {any} */ (blogPlugin?.content)?.blogPosts ?? [];
-      const blogIndex = posts
-        .filter((post) => !post.metadata.draft && !post.metadata.unlisted)
-        .map((post) => entry(post.metadata.title, post.metadata.permalink, oneSentence(post.metadata.description)))
-        .join('\n');
+      const blogLines = [];
+      for (const { metadata } of posts) {
+        if (metadata.draft || metadata.unlisted) continue;
+        const text = await fs.readFile(metadata.source.replace(/^@site/, context.siteDir), 'utf8');
+        const description = oneSentence(
+          metadata.frontMatter?.description || openingOf(bodyOf(text)) || metadata.description,
+        );
+        blogLines.push(entry(metadata.title, metadata.permalink, description));
+      }
+      const blogIndex = blogLines.join('\n');
 
       const template = await fs.readFile(path.join(__dirname, 'template.md'), 'utf8');
+      // Function replacers: a string replacement would read "$&" or "$'" in the text as a pattern.
       const index = template
-        .replaceAll('{{site}}', site)
-        .replaceAll('{{version}}', version.versionName)
-        .replaceAll('{{docs}}', docsIndex)
-        .replaceAll('{{blog}}', blogIndex);
+        .replaceAll('{{site}}', () => site)
+        .replaceAll('{{version}}', () => version.versionName)
+        .replaceAll('{{docs}}', () => docsIndex)
+        .replaceAll('{{blog}}', () => blogIndex);
       await fs.writeFile(path.join(outDir, 'llms.txt'), `${index.trim()}\n`);
 
       // The full text: every listed page, in the same order, under a line that says where it lives.

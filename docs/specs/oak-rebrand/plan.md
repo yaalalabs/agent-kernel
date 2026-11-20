@@ -251,12 +251,13 @@ Order of work for [spec.md](spec.md). Each iteration leaves the site building.
 ## Iteration 23: llms.txt
 
 - **Goal:** an AI assistant can find out what OAK is and where each docs page is, from one file.
-- **Files:** `docs/plugins/llms-txt/{index.js,text.js,template.md}`, `docs/docusaurus.config.js`, `docs/README.md`, `AGENTS.md`, `.agents/skills/ak-dev-sync-docs-from-branch/SKILL.md`
+- **Files:** `docs/plugins/llms-txt/{index.js,text.js,text.test.js,template.md}`, `docs/docusaurus.config.js`, `docs/package.json`, `docs/README.md`, `AGENTS.md`, `.agents/skills/ak-dev-sync-docs-from-branch/SKILL.md`
 - **Steps:**
   1. Write the plugin (spec, section 9) and register it under `plugins` in the site config.
   2. Write the summary in `template.md`.
   3. Tell contributors which part is hand-written: `AGENTS.md` and the docs sync skill.
-- **Verify:** the build writes both files; every address in `llms.txt` under the site's own domain is a page of the build; `llms-full.txt` has one `Source:` line for each docs page and no relative link outside code.
+  4. Review fixes: blog posts are described from their own opening, not the banner's alt text; a fenced block closes as in CommonMark; template values go in through function replacers; the helpers get tests.
+- **Verify:** Testing step 11.
 
 ## Known gaps
 
