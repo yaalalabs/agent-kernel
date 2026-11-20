@@ -1,10 +1,11 @@
 ---
 name: ak-dev-new-tracing-provider
 description: >
-  Step-by-step guide for adding a new observability/tracing provider to Agent Kernel.
+  Step-by-step guide for adding a new observability/tracing provider to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new tracing backend (beyond Langfuse,
   OpenLLMetry/Traceloop, Pydantic Logfire, and AWS CloudWatch). Covers implementing the BaseTrace interface, creating
-  framework-specific traced runners, configuration, and testing.
+  framework-specific traced runners, tracing realtime voice calls (traced realtime runners and the optional
+  openai_realtime/adk_realtime methods), configuration, and testing.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -13,13 +14,13 @@ metadata:
 
 # Adding a New Tracing Provider
 
-This guide walks through adding a new observability/tracing provider to Agent Kernel. Use the Langfuse implementation (`ak-py/src/agentkernel/trace/langfuse/`) as the canonical reference. For a backend reached through plain OpenTelemetry (no vendor SDK), see the CloudWatch provider (`ak-py/src/agentkernel/trace/cloudwatch/`): it installs its own SDK `TracerProvider` and OTLP exporter once (or reuses one already installed, since OpenTelemetry honours only the first), wraps each run through a `span(name, session)` context manager on the provider class that its runners receive, and adds a provider-specific helper module (`sigv4.py`) beside the runners.
+This guide walks through adding a new observability/tracing provider to Open Agent Kernel (OAK). Use the Langfuse implementation (`ak-py/src/agentkernel/trace/langfuse/`) as the canonical reference. For a backend reached through plain OpenTelemetry (no vendor SDK), see the CloudWatch provider (`ak-py/src/agentkernel/trace/cloudwatch/`): it installs its own SDK `TracerProvider` and OTLP exporter once (or reuses one already installed, since OpenTelemetry honours only the first), wraps each run through a `span(name, session)` context manager on the provider class that its runners receive, and adds a provider-specific helper module (`sigv4.py`) beside the runners.
 
 ## Architecture Overview
 
-Agent Kernel's tracing system:
+OAK's tracing system:
 
-1. **`BaseTrace`** (`trace/base.py`) defines the interface — one method per supported framework that returns a traced `Runner` (or `None`)
+1. **`BaseTrace`** (`trace/base.py`) defines the interface — one method per supported framework that returns a traced `Runner` (or `None`), plus two optional, non-abstract methods, `openai_realtime()` and `adk_realtime()` (#928), that return a traced **realtime runner class** (default `None`: a call is not traced). A traced realtime runner subclasses `TracedRealtimeRunner` before the framework's realtime runner and implements `_start_call_span` over a `RealtimeCallSpan` (opened around `connect`, `fail`, `end`); a provider whose backend exports every OpenTelemetry span can use `trace/otel.py`'s `OTelRealtimeCallSpan` and override `_tagged()` for its session tagging, but Langfuse needs its own client's observation because its export filter drops a span with no `gen_ai.*` attribute from a foreign tracer
 2. **`Trace`** (`trace/trace.py`) is a factory that creates the appropriate trace instance based on `AKConfig.trace.type`
 3. Each **framework Module** checks for a trace runner at initialization — if tracing is enabled, it uses the traced runner instead of the default
 4. Traced runners **extend the base framework runner** and wrap execution with spans/traces
@@ -183,6 +184,40 @@ class <Provider>LangGraphRunner(LangGraphRunner):
 
 Follow the same pattern for CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and Claude Agent SDK runners (see `trace/langfuse/smolagents.py` and `trace/openllmetry/smolagents.py` for reference).
 
+#### Realtime call tracing (optional, OpenAI and ADK)
+
+A realtime call (`execution.mode: realtime`) runs a native live session, not `Runner.run`, so the runners above never see it. A provider traces calls with one more class per framework and two optional methods on its main class (#928). Skip it and a call is simply untraced, as for a bring-your-own tracer.
+
+```python
+# ak-py/src/agentkernel/trace/<provider>/openai.py  (and adk.py, with GoogleADKRealtimeRunner)
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
+from ...framework.openai.openai import OpenAIRealtimeRunner
+
+
+class <Provider>OpenAIRealtimeRunner(TracedRealtimeRunner, OpenAIRealtimeRunner):  # traced base first
+    SPAN_NAME = "Agent Kernel OpenAI realtime"
+
+    def _start_call_span(self, session, agent) -> RealtimeCallSpan:
+        return <Provider>RealtimeCallSpan(self.SPAN_NAME, session.id)  # tagged as this provider's run() span is
+
+
+# ak-py/src/agentkernel/trace/<provider>/<provider>.py
+def openai_realtime(self):
+    from .openai import <Provider>OpenAIRealtimeRunner
+    # install the framework instrumentor here too, the way the text runner's __init__ does:
+    # an app that passes its own text runner never builds it
+    return <Provider>OpenAIRealtimeRunner  # a class: the pool builds it with no arguments, once per call
+```
+
+- The pool builds the class with no arguments, so the runner reaches the provider's client the way the provider already does elsewhere: `get_client()` (Langfuse), `trace.get_tracer("agentkernel.trace.<name>")` (OTel providers). Do not add a binding mechanism.
+
+- `TracedRealtimeRunner` opens the span around `connect`, marks it failed on a raising connect or an `error` event, and ends it once in `disconnect`; you write only the span.
+- `RealtimeCallSpan` has `opened()` (a context manager that starts the span and makes it current, with the session tagging, so the native session's tasks inherit it), `fail(message)` and `end()`. The span outlives the task that opens it, so it cannot be one `with` block.
+- A backend that exports every OpenTelemetry span of the provider it installs (Logfire, OpenLLMetry, CloudWatch) subclasses `trace/otel.py`'s `OTelRealtimeCallSpan` and overrides `_tagged()` for its session tagging. Do not use a plain OTel span where the backend filters spans: Langfuse drops one with no `gen_ai.*` attribute from a foreign tracer (`langfuse/_client/span_filter.py`), so it uses its client's observation with `end_on_exit=False`.
+- The `Module` picks the class when `trace.enabled`, and never over a class the app passed. It attaches the class whatever the execution mode, as it does the default: only the pipeline, in realtime mode, builds it.
+- Native spans: ADK's own `invoke_agent` / `execute_tool` nest under the call span; the OpenAI SDK's realtime session creates none, but the OpenInference OpenAI Agents instrumentor (installed by the Langfuse and CloudWatch OpenAI runners) traces `RealtimeSession` itself, so those calls also hold turn, assistant and tool spans. Without the instrumentor an OpenAI call is one span. The instrumentor tags its spans with OpenAI's own session id unless OpenInference's `session.id` context key is already set, which OAK does not set: on Langfuse the call span (AK session id) and the turn spans (OpenAI's) land in two sessions.
+- Hooks run outside the span, as post-hooks run outside a `run()` span.
+
 ### 4. Update the `__init__.py`
 
 ```python
@@ -212,7 +247,7 @@ class <Provider>(BaseTrace):
 
 The models live in `trace/fetch.py`: `TraceQuery` (window via `start`/`end` or `last`, `kinds`, `session_id`, `trace_ids`, `name`, `limit`; `window()` returns the UTC bounds and `matches(span)` checks every filter), `FetchedSpan`, `FetchedTrace` (spans grouped by trace, with `root`, `usage`, ...), `SpanKind`, `SpanStatus` (`SpanStatus.of(...)` maps a provider's status code onto `UNSET`/`OK`/`ERROR`), `SpanUsage` (`SpanUsage.of(...)` coerces raw values) and `OTelSpanClassifier` (kind, input/output, usage and session id from OTel attributes). The four built-in fetchers (`langfuse/`, `logfire/`, `openllmetry/`, `cloudwatch/` `fetch.py`) subclass the internal `TraceFetcher` base (also in `trace/fetch.py`, not exported) and follow these rules:
 
-1. **The fetcher never reads `AKConfig`.** It takes explicit constructor parameters (a client, a token, a base URL, an optional `httpx` transport or boto client); the tracer class builds it. A credential AK reads itself (not one the provider SDK reads) is resolved by the tracer with `SecretManager.current().get(KEY, None)` and passed in; the fetcher's constructor raises `AKConfigError` naming the key when it is `None` (see `Logfire.fetch_spans` / `OpenLLMetry.fetch_spans`).
+1. **The fetcher never reads `AKConfig`.** It takes explicit constructor parameters (a client, a token, a base URL, an optional `httpx` transport or boto client); the tracer class builds it. A credential OAK reads itself (not one the provider SDK reads) is resolved by the tracer with `SecretManager.current().get(KEY, None)` and passed in; the fetcher's constructor raises `AKConfigError` naming the key when it is `None` (see `Logfire.fetch_spans` / `OpenLLMetry.fetch_spans`).
 2. **No provider SDK import at module scope** in `fetch.py`: import it under `TYPE_CHECKING` or inside the method that uses it, so the fetcher is testable without the extra. Keep the provider package's `__init__.py` empty for the same reason.
 3. **Classify per span, never per provider.** OTel-shaped results go through `OTelSpanClassifier`; a backend that types spans server side (Langfuse observations) maps its types directly.
 4. **Same result contract:** oldest first (`FetchedSpan.oldest_first`), at most `limit` spans with the most recent kept when more match, unique span ids, the provider record in `raw`, `status` mapped from the provider's own field (never a workaround for its mistakes: `kind` and `status` are trusted as the provider reports them), `provider` set from the fetcher's `provider` class variable (the `trace.type` short name), and `input`/`output` returned as stored (never parsed or rewritten).
@@ -315,6 +350,7 @@ Create `ak-py/tests/test_trace_<provider>.py`, and add a missing-extra test to `
 - Test that traced runners properly wrap execution with spans
 - Test that errors are recorded in spans
 - Use mocks for the tracing client
+- For realtime call tracing: the provider returns its two classes (non-abstract, `SPAN_NAME` set), and its call span carries the session id as its `run()` span does; `tests/test_trace_realtime.py` holds the generic cases (`TracedRealtimeRunner`, `OTelRealtimeCallSpan` on a local provider, `Module` selection, ADK spans nesting under the call span), so a provider adds only its own tagging and class checks
 
 ### 11. Add Documentation
 
@@ -324,9 +360,9 @@ Add `docs/docs/advanced/tracing-<provider>.md` covering:
 - What gets traced (spans, attributes)
 - Dashboard screenshots (optional)
 
-Then update the landing page inventories in `docs/src/components/*/data.tsx`: add a tile to the **Observability, safety & testing** row in `IntegrationsMarquee/data.tsx` (role `Tracing`, `href` to the provider's docs page, logo under `docs/static/img/integrations/` or a `react-icons/si` glyph); add the provider to the **Tracing** card's `tags` and `description` under the Observe tab in `FeatureExplorer/data.tsx`; optionally add `pick("<tile name>")` to the **Clouds & observability** card in `ArchitectureOverview/data.tsx` if it is a headline backend. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+Then update the landing page inventories under `docs/src/components/`: add an item to the **Observability, safety & testing** row of `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx` (role `Tracing`, `href` to the provider's docs page, logo under `docs/static/img/integrations/` or a `react-icons/si` glyph); add the provider to the Observe stage's tracing point in `HomeSections/index.tsx` (`STAGES`); optionally add `pick("<item name>")` to the **Clouds and observability** card in `ArchitectureOverview/data.tsx` if it is a headline backend. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
-Then add the provider to the docs-site features page (`docs/src/pages/features.tsx`): the Observability card's `highlights` list one entry per provider, and the Problem section's `rows` name the built-in tracing providers in a `with:` cell. Grep `docs/src/pages/*.tsx` for "Langfuse" to find every roll call.
+Then add the provider to the docs-site features page (`docs/src/pages/features.tsx`): the first line of `points` in the **Tracing** capability under Observe lists every provider. Grep `docs/src/pages/*.tsx` and the root `README.md` for "Langfuse" to find every roll call.
 
 ## How Framework Modules Consume Tracing
 
@@ -341,16 +377,17 @@ class OpenAIModule(Module):
         self.load(agents)
 ```
 
-This means tracing is **transparent** — users don't change their agent code, they just add `trace` config.
+This means tracing is **transparent** — users don't change their agent code, they just add `trace` config. `OpenAIModule` and `GoogleADKModule` also pick the tracer's realtime class (`tracer.openai_realtime()` / `adk_realtime()`) when tracing is enabled, asking `Trace.get()` once per module.
 
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/trace/<provider>/` directory with `__init__.py` and main class
 - [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK)
 - [ ] Optional: `fetch_spans` on the main class and `<provider>/fetch.py` (step 6), with a `TraceFetchContract` subclass where the backend can be faked
+- [ ] Optional: realtime call tracing: `openai_realtime()` / `adk_realtime()` on the main class and a `<Provider>OpenAIRealtimeRunner` / `<Provider>ADKRealtimeRunner` (each a `TracedRealtimeRunner` over a `RealtimeCallSpan`)
 - [ ] Registration in `trace/trace.py` factory
 - [ ] Configuration via `type: "<provider>"` in `config.yaml`
 - [ ] Optional dependencies in `pyproject.toml`
 - [ ] Tests for factory creation and span wrapping
 - [ ] Documentation in `docs/docs/advanced/tracing-<provider>.md`
-- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), Tracing card tags (`FeatureExplorer/data.tsx`); features page Observability highlights and `with:` cells
+- [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), the Observe stage's tracing point (`HomeSections/index.tsx`); the Tracing capability's provider list on the features page

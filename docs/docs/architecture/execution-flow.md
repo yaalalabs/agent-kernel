@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Execution Flow
 
-How requests flow through Agent Kernel from user input to agent response: synchronously, streamed, or through queues.
+How requests flow through Open Agent Kernel (OAK) from user input to agent response: synchronously, streamed, or through queues.
 
 ## Request Lifecycle
 
@@ -48,10 +48,10 @@ graph TD
     L --> M[Persist session,<br/>clear volatile cache]
     M --> N[Reply / StreamChunks]
 
-    style H fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style I fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
-    style L fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
-    style CORE fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style H fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style I fill:#ABCEE1,stroke:#fff,stroke-width:2px,color:#02284F
+    style L fill:#ABCEE1,stroke:#fff,stroke-width:2px,color:#02284F
+    style CORE fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ### Which layer does new code call?
@@ -230,6 +230,7 @@ graph TB
         MEM["in_memory<br/>(default, in-process)"]
         SQS["sqs<br/>(AWS, via the deployment adapters)"]
         KN["kafka · nats<br/>(on-prem / Kubernetes)"]
+        PS["pubsub<br/>(GCP Cloud Run)"]
     end
 
     subgraph DELIV["Pluggable: reply delivery: execution.mode + message_type"]
@@ -246,9 +247,9 @@ graph TB
     RESP --> WS
     RS -.->|"rest_sync await / rest_async poll"| RH
 
-    style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RESP fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RESP fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 What the abstraction fixes, and what it leaves open:
@@ -258,7 +259,7 @@ What the abstraction fixes, and what it leaves open:
   the failure contract: a message that exhausts `max_receive_count` triggers a permanent-failure
   error reply, so the caller never hangs.
 - **Pluggable**: the queue transport (`in_memory` default; `sqs` on AWS via the deployment
-  adapters; `kafka`/`nats` for on-prem / Kubernetes), the response store backend, and the reply
+  adapters; `pubsub` on GCP Cloud Run; `kafka`/`nats` for on-prem / Kubernetes), the response store backend, and the reply
   delivery path per `execution.mode` and `execution.message_type`.
 - **Shared machinery**: the Agent Runner and Response Handler are both driven by `ConsumerLoop`
  : one implementation of batch fetch, receive-count checking, and the
@@ -445,7 +446,7 @@ graph LR
     E --> F[Agent runs on text only]
     F -->|"analyze_attachments(ids, prompt)"| D
 
-    style B fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#ABCEE1,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 The agent's conversation history stays free of binary data; the auto-registered `analyze_attachments` tool retrieves stored attachments on demand. See [Multimodal](../advanced/multimodal).

@@ -1,0 +1,789 @@
+---
+sidebar_position: 3
+---
+
+# Quick Start
+
+Build and run your first AI agent with Open Agent Kernel (OAK) in under 5 minutes!
+
+:::info Requirements
+**Python Version:** 3.12 - 3.13.x (Python 3.14+ support to be available soon)  
+**Cloud Platforms:** AWS, Azure, GCP (multi-cloud support)
+:::
+
+## Create a Project
+
+OAK installs into a [uv](https://docs.astral.sh/uv/getting-started/installation/) project. Create one and move into it:
+
+```bash
+uv init --python 3.12 my-agent
+cd my-agent
+```
+
+Run the framework steps below from inside this directory.
+
+## Choose Your Framework
+
+OAK supports multiple frameworks. Pick the one you're most comfortable with:
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<Tabs>
+<TabItem value="openai" label="OpenAI Agents" default>
+
+## OpenAI Agents Quick Start
+
+### 1. Install
+
+```bash
+uv add "agentkernel[openai]"
+```
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from agents import Agent as OpenAIAgent
+from agentkernel.cli import CLI
+from agentkernel.openai import OpenAIModule
+
+# Define your agent
+general_agent = OpenAIAgent(
+    name="general",
+    handoff_description="Agent for general questions",
+    instructions="You provide assistance with general queries. Give short and direct answers.",
+)
+
+math_agent = OpenAIAgent(
+    name="math",
+    handoff_description="Specialist agent for math questions",
+    instructions="You provide help with math problems. Explain your reasoning.",
+)
+
+# Register agents with Agent Kernel
+OpenAIModule([general_agent, math_agent])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export OPENAI_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+uv run python my_agent.py
+```
+
+</TabItem>
+<TabItem value="crewai" label="CrewAI">
+
+## CrewAI Quick Start
+
+### 1. Install
+
+```bash
+uv add "agentkernel[crewai]"
+```
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from crewai import Agent as CrewAgent
+from agentkernel.cli import CLI
+from agentkernel.crewai import CrewAIModule
+
+# Define your agents
+general_agent = CrewAgent(
+    role="general",
+    goal="Agent for general questions",
+    backstory="You provide assistance with general queries. Give direct and short answers",
+    verbose=False,
+)
+
+math_agent = CrewAgent(
+    role="math",
+    goal="Specialist agent for math questions",
+    backstory="You provide help with math problems. Explain your reasoning at each step.",
+    verbose=False,
+)
+
+# Register agents with Agent Kernel
+CrewAIModule([general_agent, math_agent])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export OPENAI_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+uv run python my_agent.py
+```
+
+</TabItem>
+<TabItem value="langgraph" label="LangGraph">
+
+## LangGraph Quick Start
+
+### 1. Install
+
+```bash
+uv add "agentkernel[langgraph]"
+```
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from typing import TypedDict
+from langgraph.graph import StateGraph, END
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
+
+# Define state
+class State(TypedDict):
+    messages: list
+    
+# Define nodes
+def respond(state: State):
+    # Your agent logic here
+    messages = state["messages"]
+    response = f"Processed: {messages[-1]}"
+    return {"messages": messages + [response]}
+
+# Build graph
+workflow = StateGraph(State)
+workflow.add_node("agent", respond)
+workflow.set_entry_point("agent")
+workflow.add_edge("agent", END)
+
+# Compile graph
+graph = workflow.compile()
+graph.name = "assistant"
+
+# Register with Agent Kernel
+LangGraphModule([graph])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export OPENAI_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+uv run python my_agent.py
+```
+
+</TabItem>
+<TabItem value="adk" label="Google ADK">
+
+## Google ADK Quick Start
+
+### 1. Install
+
+```bash
+uv add "agentkernel[adk]"
+```
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from adk import Agent as ADKAgent
+from agentkernel.cli import CLI
+from agentkernel.adk import GoogleADKModule
+
+# Define your agent
+agent = ADKAgent(
+    name="assistant",
+    model="gemini-2.0-flash-exp",
+    instructions="You are a helpful AI assistant. Provide clear and concise answers.",
+)
+
+# Register with Agent Kernel
+GoogleADKModule([agent])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export GOOGLE_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+uv run python my_agent.py
+```
+
+</TabItem>
+<TabItem value="smolagents" label="Smolagents">
+
+## Smolagents Quick Start
+
+### 1. Install
+
+```bash
+uv add "agentkernel[smolagents]"
+```
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from smolagents import LiteLLMModel, ToolCallingAgent
+from agentkernel.cli import CLI
+from agentkernel.smolagents import SmolagentsModule
+
+model = LiteLLMModel(model_id="openai/gpt-4o")
+
+assistant = ToolCallingAgent(
+    tools=[],
+    model=model,
+    name="assistant",
+    description="You are a helpful AI assistant. Provide concise and accurate answers.",
+)
+
+# Register with Agent Kernel
+SmolagentsModule([assistant])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export OPENAI_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+uv run python my_agent.py
+```
+
+</TabItem>
+<TabItem value="pydanticai" label="Pydantic AI">
+
+## Pydantic AI Quick Start
+
+### 1. Install
+
+```bash
+uv add "agentkernel[pydanticai]"
+```
+
+`agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only. Install the
+provider you intend to use, e.g. `uv add "pydantic-ai-slim[openai]"`.
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from pydantic_ai import Agent
+from agentkernel.cli import CLI
+from agentkernel.pydanticai import PydanticAIModule
+
+# Define your agent
+assistant = Agent(
+    model="openai:gpt-4o-mini",
+    name="assistant",              # required — AK registers agents by name eagerly
+    description="A helpful AI assistant.",
+    instructions="You are a helpful AI assistant. Provide concise and accurate answers.",
+)
+
+# Register with Agent Kernel
+PydanticAIModule([assistant])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export OPENAI_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+uv run python my_agent.py
+```
+
+</TabItem>
+<TabItem value="maf" label="Microsoft Agent Framework">
+
+## Microsoft Agent Framework Quick Start
+
+### 1. Install
+
+```bash
+uv add "agentkernel[maf]" agent-framework-openai
+```
+
+`agentkernel[maf]` installs the provider-agnostic `agent-framework-core` only. Install the MAF package for
+the model provider you intend to use, e.g. `agent-framework-openai`.
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from agent_framework import Agent
+from agent_framework.openai import OpenAIChatClient
+from agentkernel.cli import CLI
+from agentkernel.maf import MAFModule
+
+# Define your agent
+assistant = Agent(
+    OpenAIChatClient(model="gpt-4.1-mini"),
+    name="assistant",              # required — AK registers agents by name eagerly
+    description="A helpful AI assistant.",
+    instructions="You are a helpful AI assistant. Provide concise and accurate answers.",
+)
+
+# Register with Agent Kernel
+MAFModule([assistant])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export OPENAI_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+uv run python my_agent.py
+```
+
+</TabItem>
+<TabItem value="claude" label="Claude Agent SDK">
+
+## Claude Agent SDK Quick Start
+
+### 1. Install
+
+```bash
+uv add "agentkernel[claude]"
+```
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from claude_agent_sdk import ClaudeAgentOptions
+from agentkernel.claude import ClaudeAgentSpec, ClaudeModule
+from agentkernel.cli import CLI
+
+# Define your agent
+assistant = ClaudeAgentSpec(
+    name="assistant",
+    description="A helpful AI assistant.",
+    options=ClaudeAgentOptions(
+        model="sonnet",
+        system_prompt="You are a helpful AI assistant. Provide concise and accurate answers.",
+        tools=[],                   # no built-in Claude Code tools (Bash, file edits, ...)
+        setting_sources=[],         # ignore ~/.claude settings
+        permission_mode="dontAsk",  # deny any tool call that is not explicitly approved
+    ),
+)
+
+# Register with Agent Kernel
+ClaudeModule([assistant])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export ANTHROPIC_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+uv run python my_agent.py
+```
+
+</TabItem>
+</Tabs>
+
+## Testing Your Agent
+
+Once your agent is running, you'll see an interactive CLI:
+
+```
+(kernel) >> Using in-memory session store
+AgentKernel CLI (type !help for commands or !quit to exit):
+(kernel) >> No agent was requested. Defaulting to first agent in the list
+(kernel) >> Selected agent: triage
+(kernel) >> Starting new session: 07ec500e-f103-4b0e-8ecb-d794232f5992
+(triage) >>
+(triage) >> !list
+Available agents:
+  triage
+  math
+  general
+
+(triage) >> !select math
+(math) >> What is 2 + 2?
+
+[math agent responds]
+(math) >> 2 + 2 = 4. This is basic addition where we combine two quantities...
+
+(math) >>
+```
+
+## Understanding the Structure
+
+Every OAK application follows this pattern:
+
+```mermaid
+graph TB
+    A[Framework Agent<br/>OpenAI/CrewAI/LangGraph/ADK/Smolagents] --> B[Module<br/>OpenAIModule/CrewAIModule/etc]
+    B --> C[Runtime<br/>Global Registry]
+    C --> D[Execution<br/>CLI/API/Lambda]
+    
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+```
+
+1. **Define agents** using your preferred framework
+2. **Wrap them** in an OAK Module
+3. **Run them** using OAK's execution modes (CLI, API, AWS, etc.)
+
+## Next Steps
+
+### Add Custom Tools
+
+Enhance your agent with custom tools:
+
+```python
+from crewai import Agent, Tool
+
+def search_database(query: str) -> str:
+    # Your custom logic
+    return f"Results for: {query}"
+
+search_tool = Tool(
+    name="search",
+    description="Search the database",
+    func=search_database
+)
+
+agent = Agent(
+    role="researcher",
+    goal="Find information",
+    backstory="You are a research assistant",
+    tools=[search_tool],
+    verbose=False
+)
+```
+
+### Deploy as REST API
+
+Run your agent as a REST API server:
+
+```bash
+# Install API dependencies
+uv add "agentkernel[api]"
+```
+Use the RESTAPI module run the agents
+
+```python
+from agents import Agent as OpenAIAgent
+from agentkernel.api import RESTAPI
+from agentkernel.openai import OpenAIModule
+
+# Define your agent
+general_agent = OpenAIAgent(
+    name="general",
+    handoff_description="Agent for general questions",
+    instructions="You provide assistance with general queries. Give short and direct answers.",
+)
+
+math_agent = OpenAIAgent(
+    name="math",
+    handoff_description="Specialist agent for math questions",
+    instructions="You provide help with math problems. Explain your reasoning.",
+)
+
+# Register agents with Agent Kernel
+OpenAIModule([general_agent, math_agent])
+
+if __name__ == "__main__":
+    RESTAPI.run()
+```
+
+Run the agents
+
+```bash
+# Run as API server
+uv run python my_agent.py
+```
+
+Configure the API port by editing `config.yaml`
+
+```yaml
+api:
+    port: 8000
+```
+
+Test it:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"agent": "general", "prompt": "Hello!"}'
+```
+
+### Deploy to AWS Lambda
+
+Package and deploy to AWS Lambda:
+
+```bash
+# Install AWS dependencies
+uv add "agentkernel[aws]"
+```
+Use the Lambda module to run the agents
+
+```python
+from agents import Agent
+from agentkernel.aws import Lambda
+from agentkernel.openai import OpenAIModule
+
+math_agent = Agent(
+    name="math",
+    handoff_description="Specialist agent for math questions",
+    instructions="You provide help with math problems. Explain your \
+        reasoning at each step and include examples. \
+        If prompted for anything else you refuse to answer.",
+)
+
+history_agent = Agent(
+    name="history",
+    handoff_description="Specialist agent for historical questions",
+    instructions="You provide assistance with historical queries. \
+        Explain important events and context clearly.",
+)
+
+triage_agent = Agent(
+    name="triage",
+    instructions="You determine which agent to use based on the user's question.",
+    handoffs=[history_agent, math_agent],
+)
+
+OpenAIModule([triage_agent, math_agent, history_agent])
+
+handler = Lambda.handler
+```
+
+Create a deployment folder and add `deploy/main.tf`:
+
+```hcl
+terraform {
+    required_version = ">= 1.9.5"
+    required_providers {
+        aws = {
+            source  = "hashicorp/aws"
+            # Pinned; 6.69.0 fails to create zip-packaged Lambdas (https://github.com/hashicorp/terraform-provider-aws/issues/50474)
+            version = "6.70.0"
+        }
+        docker = {
+            source  = "kreuzwerker/docker"
+            version = "3.6.2"
+        }
+    }
+}
+
+variable "region" {
+    type    = string
+    default = "us-east-1"
+}
+
+variable "openai_api_key" {
+    type      = string
+    sensitive = true
+}
+
+provider "aws" {
+    region = var.region
+}
+
+# Docker authenticates against ECR to push the image this module builds
+data "aws_caller_identity" "current" {}
+data "aws_ecr_authorization_token" "token" {}
+
+provider "docker" {
+    registry_auth {
+        address  = format("%v.dkr.ecr.%v.amazonaws.com", data.aws_caller_identity.current.account_id, var.region)
+        username = data.aws_ecr_authorization_token.token.user_name
+        password = data.aws_ecr_authorization_token.token.password
+    }
+}
+
+module "serverless_agents" {
+    source    = "yaalalabs/ak-serverless/aws"
+    version   = "0.8.1"
+    providers = { aws = aws, docker = docker }
+
+    prefix               = "ak-dev-quickstart"
+    region               = var.region
+    product_display_name = "AK Quick Start"
+
+    request_handler = {
+        function_name       = "ak-quickstart"
+        function_description = "Agent Kernel Quick Start Lambda"
+        handler_path        = "lambda.handler"
+        package_path        = "../dist"
+        package_type        = "Image"
+        memory_size         = 256
+        timeout             = 45
+        environment_variables = {
+            OPENAI_API_KEY = var.openai_api_key
+        }
+    }
+}
+```
+
+Then initialize and deploy:
+
+```bash
+# Deploy requires AWS credentials configured
+cd deploy
+terraform init
+terraform plan -var="openai_api_key=$OPENAI_API_KEY"
+terraform apply -var="openai_api_key=$OPENAI_API_KEY"
+
+```
+
+For advanced patterns (queue/scalable mode, S3 ZIP artifacts, ECR image URI, custom endpoints), see [AWS Serverless Deployment](./deployment/aws-serverless).
+
+### Configure Memory
+
+Use in-memory storage (default):
+
+```bash
+export AK_SESSION__TYPE=in_memory
+```
+
+Or add Redis-backed memory for persistent sessions:
+
+```bash
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://localhost:6379
+```
+
+Or add DynamoDB-backed memory for persisted sessions:
+
+```bash
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
+```
+
+Other persistent backends follow the same pattern: `valkey`, `cosmosdb` (Azure), and `firestore` (GCP).
+
+See [Choosing a Memory Backend](./core-concepts/memory-backends.md) for a comparison and recommended setup, or [session configuration](./core-concepts/configuration.md#session-storage) for every field.
+
+## Common Patterns
+
+### Session Management
+
+```python
+# Sessions automatically track conversation history
+# Each user/conversation gets a unique session ID
+# Configure via environment variables:
+# AK_SESSION__TYPE=redis
+# AK_SESSION__REDIS__URL=redis://localhost:6379
+```
+
+## Examples Gallery
+
+Explore more examples in our [Examples](./examples/basic-agent) section:
+
+- [Examples Overview](./examples/overview)
+- [Basic Single Agent](./examples/basic-agent)
+- [Multi-Agent System](./examples/multi-agent)
+
+Example snippets can be found [here](https://github.com/yaalalabs/agent-kernel/tree/develop/examples).
+
+## Troubleshooting
+
+### Agent Not Found
+
+Make sure you're using the correct agent name when running:
+
+```python
+# Agent names come from the framework-specific naming
+# OpenAI: agent.name
+# CrewAI: agent.role
+# LangGraph: graph.name
+```
+
+### API Key Errors
+
+Ensure your API key is set correctly:
+
+```bash
+# OpenAI (for OpenAI, CrewAI, LangGraph)
+export OPENAI_API_KEY=sk-...
+
+# Google (for ADK)
+export GOOGLE_API_KEY=...
+```
+
+### Import Errors
+
+Install the correct extras package:
+
+```bash
+uv add "agentkernel[your-framework]"
+```
+
+## Learn More
+
+- [Core Concepts](./core-concepts/overview) - Deep dive into OAK architecture
+- [Framework Integration](./frameworks/overview) - Framework-specific guides
+- [Deployment Guide](./deployment/overview) - Production deployment options
+- [API Reference](./api/rest-api) - Complete API documentation
+
+---
+
+**Need help?** Check out our [GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues) or open a discussion!

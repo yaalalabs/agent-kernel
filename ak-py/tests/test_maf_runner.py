@@ -109,22 +109,15 @@ def test_attachment_urls_and_data_uris_map_to_uri_and_data_content(runner):
     assert inline.type == "data" and inline.media_type == "image/jpeg"  # the MIME type comes from the data URI itself
 
 
-def test_the_a2a_card_lists_one_skill_per_tool(maf_agent):
-    # Checks what MAF hands the card builder; the builder itself is shared by every adapter.
-    pytest.importorskip("a2a")
-    from agentkernel.framework.maf import maf as maf_module
-
+def test_an_attached_tool_becomes_a_tool_and_a_skill_of_the_descriptor(maf_agent):
     def lookup(city: str) -> str:
         """Look up a city."""
         return city
 
     maf_agent.attach_tool(lookup)
-    with patch.object(maf_module.A2ACardBuilder, "build", return_value="card") as build:
-        assert maf_agent.get_a2a_card() == "card"
 
-    kwargs = build.call_args.kwargs
-    assert (kwargs["name"], kwargs["description"]) == ("test-agent", "Test system message")
-    assert [(skill.id, skill.description) for skill in kwargs["skills"]] == [("lookup", "Look up a city.")]
+    assert maf_agent.descriptor.tools == ["lookup"]
+    assert [(skill.id, skill.description) for skill in maf_agent.descriptor.skills] == [("lookup", "Look up a city.")]
 
 
 @pytest.mark.asyncio
@@ -738,6 +731,7 @@ async def _pause(gated, session, orders=("A1",)) -> AgentPausedReplyAny:
     runner, agent = gated(orders)
     reply = await runner.run(agent, session, [AgentRequestText(prompt="refund please")])
     assert isinstance(reply, AgentPausedReplyAny), reply
+    assert reply.answer_together is True, "_reject_unresumable refuses a partial answer; a surface has to know"
     return reply
 
 

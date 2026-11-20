@@ -1,6 +1,6 @@
 # Key-Value Cache Demo
 
-This example demonstrates the use of **volatile cache** and **non-volatile cache** in Agent Kernel to share data between hooks and agent tools.
+This example demonstrates the use of **volatile cache** and **non-volatile cache** in Open Agent Kernel (OAK) to share data between hooks and agent tools.
 
 ## Cache Types
 

@@ -4,7 +4,7 @@ sidebar_position: 10
 
 # Queue Mode Guide
 
-Queue mode is Agent Kernel's chat execution pipeline
+Queue mode is Open Agent Kernel's chat execution pipeline
 ([#495](https://github.com/yaalalabs/agent-kernel/issues/495)): every chat request travels
 
 ```
@@ -13,8 +13,9 @@ Request Handler → Input Queue → Agent Runner → Output Queue → Response H
 
 with the queue transport and the process topology selected by configuration. This guide covers
 the pipeline itself, [running it locally](#running-queue-mode-locally-in_memory) with the default
-`in_memory` transport, and the AWS deployments: Lambda (serverless) and ECS (containerized):
-where the queues are durable SQS FIFO queues.
+`in_memory` transport, the AWS deployments: Lambda (serverless) and ECS (containerized), where the
+queues are durable SQS FIFO queues, and [Google Cloud](#running-queue-mode-on-google-cloud-pubsub),
+where they are Pub/Sub topics.
 
 ---
 
@@ -51,6 +52,8 @@ declared by the application rather than inferred from the queue URLs a deploymen
 | `sqs` | ✅ | Two-process topology on AWS; also the transport behind the Lambda and ECS deployment adapters below |
 | `kafka` | ✅ (`uv add "agentkernel[kafka]"`) | Kubernetes / on-prem two-process topology |
 | `nats` (recommended on-prem) | ✅ (`uv add "agentkernel[nats]"`) | Kubernetes / on-prem two-process topology |
+| `pubsub` | ✅ (`uv add "agentkernel[pubsub]"`) | Google Cloud: the edge pulls replies; on Cloud Run the agent runner is pushed to |
+| `servicebus` | ✅ (`uv add "agentkernel[azure]"`) | Two-process topology on Azure Container Apps (edge + agent runner) |
 
 Delivery sub-modes (`execution.mode` + `execution.message_type`):
 
@@ -169,9 +172,21 @@ store it, whatever `execution.mode` is, because these callers wait for one whole
   that starts no agent runner (`RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on a broker,
   `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler`) raises `AKConfigError` at startup.
 - **Broker transports**: the response store must be shared (`redis`, `valkey` or `dynamodb`) in
-  every execution mode, not only the REST ones. Load the same agent modules in the IO process as
-  in the agent runner, since cards and agent tools are built from the IO process's registry; an
-  IO process without them logs a warning and serves empty catalogs.
+  every execution mode, not only the REST ones. Cards and agent tools are built from the
+  [agent registry](../core-concepts/configuration.md#agent-registry), so the IO process has to know
+  the agents: either load the same agent modules in the IO process as in the agent runner, or share
+  the registry (`registry.type: redis`, `valkey` or `dynamodb`), in which case the IO process reads
+  the descriptors the runner registered and need not load the agents at all. Cards and tools are
+  built when the IO process starts, so start the runner first and let it finish loading its agents
+  (their descriptors are then in the shared registry), and restart the IO process after adding an
+  agent or when it started before the runner had registered. An IO process whose registry knows no
+  agent logs a warning and serves empty catalogs.
+- **One set of agents per queue**: a request is taken by whichever agent runner reads it from the
+  input queue, and nothing routes it by agent. Every runner on a queue must therefore host every
+  agent the IO process serves from the registry; a runner that takes a request for an agent it did
+  not load answers it with an error. A shared registry shares what is known about the agents, not
+  the queue: on the single-process `in_memory` transport, an agent the registry only knows from
+  another process is listed and cannot be run.
 - **Wait budget**: the same `execution.response_store.retry_count × delay` as `rest_sync` (60 × 1 s
   without a block). Replies arrive on the next poll, so expect at least one `delay` of latency.
 - **Rolling upgrades** in a WebSocket mode: upgrade the agent runners first. A runner from before
@@ -227,9 +242,9 @@ acknowledgement model:
   consumers configured against it. Adding partitions later re-maps session keys, so size up
   front.
 - **Retry bookkeeping follows your session store.** Delivery counts and deduplication are
-  reconstructed by Agent Kernel, not the broker. With `session.type: redis` or `valkey` they are
+  reconstructed by OAK, not the broker. With `session.type: redis` or `valkey` they are
   stored there and survive a pod restart; with any other session type they are process-local and
-  Agent Kernel logs a warning at startup, because a message that crashes its worker would then
+  OAK logs a warning at startup, because a message that crashes its worker would then
   reset its own delivery count.
 - **No visibility timeout.** An unacknowledged record comes back through the in-process retry or,
   if the pod dies, when its uncommitted offset is reassigned. Nothing redelivers a record while
@@ -297,16 +312,123 @@ Three things to know:
 
 - **Partitions set your concurrency**, as on Kafka, but the server enforces it. Sessions hash to a
   partition subject, each served by a durable consumer with `max_ack_pending: 1`, so a session's
-  turns stay ordered and at most `partitions` messages are in flight cluster-wide. Agent Kernel logs
+  turns stay ordered and at most `partitions` messages are in flight cluster-wide. OAK logs
   the ratio at startup and warns when partitions are fewer than the configured consumers. Changing
   the count re-maps sessions, so size it up front.
 - **`ack_wait` must exceed your longest turn.** It defaults to 300 seconds here rather than
   JetStream's usual 30, because it is a visibility timeout: a turn that outlives it is redelivered
   and the agent runs again.
-- **`auto_provision` is off by default.** Locally, turn it on and Agent Kernel creates the streams
+- **`auto_provision` is off by default.** Locally, turn it on and OAK creates the streams
   and per-partition consumers at startup. In production, leave it off so a missing stream or consumer
   fails loudly at startup, naming the object, instead of being silently created with defaults
   alongside your NACK CRs.
+
+## Running Queue Mode on Azure Service Bus
+
+Two session-enabled, duplicate-detecting Service Bus queues carry the pipeline on Azure. Install the
+extra (`uv add "agentkernel[azure]"`) and configure it:
+
+```yaml
+execution:
+  mode: rest_sync
+  queues:
+    type: servicebus
+    input:
+      url: "https://my-ns.servicebus.windows.net/input"
+    output:
+      url: "https://my-ns.servicebus.windows.net/output"
+    servicebus:
+      ack_wait: 300           # seconds a session lock is renewed per turn: above your longest turn
+  response_store:             # required: the two processes must share it
+    type: redis
+```
+
+The transport signs in with `DefaultAzureCredential` (the Container App's managed identity on Azure);
+`servicebus.connection_string` is for the local emulator only. Process layout is the same as the other
+brokers: `IOHandler.run()` in one process, `AgentRunner.run()` in the other.
+
+The [`ak-containerized/azurerm` module](../deployment/azure-containerized) deploys this with
+`queue_mode = true`: the namespace, both queues, an agent runner Container App scaled by KEDA on the input
+queue, and the managed-identity roles. It injects the queue URLs, so `config.yaml` only declares the types.
+[`examples/azure-containerized/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/openai-queue-mode)
+runs it end to end.
+
+Like JetStream, the broker does most of the work: the session (`group_id`) gives per-session order with
+one message in flight, `delivery_count` is the receive count, the queue's `MessageId` duplicate detection
+is the dedup window, and `max_delivery_count` is the server-side ceiling. Three things to know:
+
+- **Queues must be session-enabled and duplicate-detecting.** OAK never creates them; the
+  Terraform module does, with `max_delivery_count` one above `max_receive_count` so OAK's
+  permanent-failure reply fires first.
+- **`ack_wait` must exceed your longest turn**, as on NATS: past it the session lock lapses and the turn
+  runs again.
+- **No WebSocket delivery and no scheduling yet** on Azure queue mode (scheduling is tracked in #952).
+
+---
+
+## Running Queue Mode on Google Cloud Pub/Sub
+
+The broker for queue mode on GCP: serverless, nothing to run, and it scales to zero. Install the extra
+(`uv add "agentkernel[pubsub]"`) and configure it:
+
+```yaml
+execution:
+  mode: rest_sync
+  queues:
+    type: pubsub
+    pubsub:
+      project_id: my-project     # unset uses the Application Default Credentials project
+      input_topic: agent-input
+      input_subscription: agent-input
+      output_topic: agent-output
+      output_subscription: agent-output
+      dlq_suffix: "-dlq"         # failed messages are copied to agent-input-dlq / agent-output-dlq
+      ack_wait: 300              # lease ceiling for pulled messages: exceed your longest turn
+      auto_provision: false      # true for the emulator and dev; Terraform owns them in production
+  response_store:                # required: the two processes must share it
+    type: redis
+    redis:
+      url: "redis://redis:6379"
+```
+
+The client libraries read `PUBSUB_EMULATOR_HOST` themselves, so the local
+[Pub/Sub emulator](https://cloud.google.com/pubsub/docs/emulator) needs no extra setting.
+
+**Process layout.** Locally (and off GCP) it is the same as the other broker transports:
+`IOHandler.run()` in one process, `AgentRunner.run()` in the other, both pulling. On Cloud Run the
+[GCP modules](../deployment/gcp-serverless#queue-mode) deploy queue mode by default: the edge runs
+`CloudRun.run()` and pulls replies, and the agent runner is a second, private service that Pub/Sub
+**pushes** each request to, started with `CloudRunAgentRunner.run()`. Cloud Run scales it on those
+pushes, down to zero. Pub/Sub waits at most 600 seconds for a push to be answered, so an agent run
+that takes longer is redelivered while it is still going and runs a second time; the runner's own
+request timeout is 60 minutes, so the run itself is never cut off.
+
+A runnable two-process version on the emulator, with a harness that peeks at subscriptions and
+measures delivery latency, is in
+[`examples/transport/pubsub`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/transport/pubsub);
+the Cloud Run deployment is
+[`examples/gcp-serverless/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-queue-mode).
+
+Pub/Sub provides less than the pipeline's contract, so the transport fills the gaps:
+
+- **Per-session order** comes from ordering keys (the session id), with ordering enabled on the
+  subscriptions. A pull can return several messages of one session; the consumer holds them and
+  serves one at a time. Push keeps one outstanding per session by itself.
+- **Exact delivery counts and deduplication** live in a key store, as on Kafka, because Pub/Sub's
+  delivery count is approximate and it does not deduplicate on publish. The store is the Redis or
+  Valkey session store, or else the Redis or Valkey response store (on GCP, sessions usually live in
+  Firestore), or else process-local memory with a warning.
+- **Acknowledged messages can come back:** when an earlier message of a session is redelivered,
+  Pub/Sub redelivers every later one too. The transport remembers acknowledged messages and
+  acknowledges such copies again without running them.
+- **Envelope in the message data.** Pub/Sub caps attributes at 100 per message and 1024 bytes each,
+  so the whole envelope travels in the data, with one marker attribute (`ak-envelope`).
+- **Permanent failure dead-letters.** After the pipeline's permanent-failure hook has answered the
+  caller, the message is copied to its dead-letter topic with the reason in `ak-error`, then
+  acknowledged. The subscription's dead-letter policy is the server-side backstop.
+- **`auto_provision` is off by default.** Locally, turn it on: the first send or consumer creates the
+  topics, dead-letter topics and ordered subscriptions. In production a missing object fails startup,
+  naming it.
 
 ---
 
@@ -451,9 +573,9 @@ graph TB
     RS -.->|poll| RH
     IQ -. "visibility timeout retries,<br/>DLQ after maxReceiveCount" .- IQ
 
-    style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RSH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RSH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 With `execution_mode = "async"` and `message_type = "delta"` the Agent Runner Lambda (`ServerlessStreamAgentRunner`) sends **one output-queue message per token chunk**, and the Response Handler broadcasts each as a `STREAM_CHUNK` WebSocket message.
@@ -607,8 +729,8 @@ graph TB
     OC1 --> RS[(DynamoDB Response Store)]
     RS -.->|"poll by request_id"| T1
 
-    style T1 fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style T1 fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RS fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 :::note
@@ -813,6 +935,8 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | `sqs` | ✅ | Two-process topology on AWS, wire-compatible with the Lambda/ECS adapters below |
 | `kafka` | ✅ | confluent-kafka client, per-session ordering by record key, DLQ topics, Strimzi-provisioned clusters. Needs the `kafka` extra and an `execution.queues.kafka` block; see the notes below |
 | `nats` (recommended on-prem) | ✅ | JetStream work-queue streams, partitioned per-session ordering, server-side delivery counts and dedup. Needs the `nats` extra and an `execution.queues.nats` block |
+| `pubsub` | ✅ | Google Cloud Pub/Sub: ordering keys for per-session order, delivery counts and dedup in a key store, dead-letter topics, pull consumer plus a push receiver for Cloud Run. Needs the `pubsub` extra and an `execution.queues.pubsub` block; see [Running Queue Mode on Google Cloud Pub/Sub](#running-queue-mode-on-google-cloud-pubsub) |
+| `servicebus` | ✅ | Azure Service Bus session queues: per-session ordering, server-side delivery counts and dedup, managed identity. Needs the `azure` extra; see [Running Queue Mode on Azure Service Bus](#running-queue-mode-on-azure-service-bus) |
 | WebSocket delivery (`async`, `complete` or `delta`) | ✅ | Gateway tier (`WebSocketGateway.run()`, authenticating the handshake through the `identity` block; co-hosted by `IOHandler` on `in_memory`) + session-backed shared connection store; see [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-async) |
 | Kubernetes Helm chart (baremetal + EKS) | ✅ | Two-Deployment topology (io-handler + agent-runner, optional ws-gateway), KEDA queue-depth autoscaling, NACK/Strimzi-provisioned brokers; see [On-Prem / Kubernetes](../deployment/onprem-kubernetes) |
 

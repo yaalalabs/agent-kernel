@@ -1,6 +1,6 @@
-# Agent Kernel on Kubernetes
+# Open Agent Kernel on Kubernetes
 
-A Helm chart deploying the Agent Kernel queue-execution pipeline to any Kubernetes cluster:
+A Helm chart deploying the Open Agent Kernel queue-execution pipeline to any Kubernetes cluster:
 an `io-handler` Deployment (Request Handler REST API + Response Handler), an `agent-runner`
 Deployment (the consumers executing your agents), and an optional `ws-gateway` Deployment for
 WebSocket delivery. Backing services (Valkey, NATS) ship as condition-gated dependencies of
@@ -138,7 +138,7 @@ secretStore:
   (`/var/run/secrets/agentkernel`); the chart always mounts there and has no value to move it.
 - **No RBAC.** The app reads files; it never calls the Kubernetes API. The chart creates no Role,
   RoleBinding or ServiceAccount for this.
-- **Key names.** Data keys must be the AK key name (`OPENAI_API_KEY`); other keys are never read.
+- **Key names.** Data keys must be the OAK key name (`OPENAI_API_KEY`); other keys are never read.
 - **Security.** Every key of every listed Secret is readable by any code in that tier, including code
   run by a `local_subprocess` sandbox. List only what agents need, keep unrelated keys out of those
   Secrets, and run untrusted code in an isolated sandbox provider.
@@ -268,7 +268,7 @@ This is the chart's first tier with its own identity:
   app config's `kubernetes.service_account` at it. The chart deliberately binds it to
   nothing: what code inside a sandbox may do against the cluster is application policy, so
   bind it to `view` (read-only kubectl) or a custom role in your app manifests. That RBAC is
-  the security boundary; Agent Kernel never treats command-string parsing as one.
+  the security boundary; OAK never treats command-string parsing as one.
 
 `sandboxWorker.hardening` gates namespace guardrails: a default-deny egress NetworkPolicy
 over all sandbox pods (with `egressAllow` re-opening required peers such as the API server),
@@ -290,7 +290,7 @@ backstop and a shutdown margin, so a hung operation is still recorded as timed o
 ### Standalone sandbox worker (agents in Lambda or ECS)
 
 The sandbox worker does not require the rest of the pipeline in the same cluster. When the
-agent side of Agent Kernel runs elsewhere (Lambda mode, ECS), this chart can deploy the
+agent side of OAK runs elsewhere (Lambda mode, ECS), this chart can deploy the
 worker tier alone; the two sides meet only on the sandbox queues and the response store:
 
 ```yaml
@@ -384,7 +384,7 @@ Then set `serviceMonitor.enabled: true` here if your image exposes an app metric
   via your own values overlay, and deploy Strimzi's Kafka Exporter for consumer-lag metrics
   (`spec.kafkaExporter: {}` on the Kafka CR).
 
-**Tracing**: Agent Kernel's tracing providers (Langfuse, OpenLLMetry, Logfire, CloudWatch) are app-level
+**Tracing**: OAK's tracing providers (Langfuse, OpenLLMetry, Logfire, CloudWatch) are app-level
 and configured through `config.yaml`/`AK_TRACE__*` in your image; on-cluster, run one
 OpenTelemetry Collector as the single funnel and point OTLP-capable providers at it:
 

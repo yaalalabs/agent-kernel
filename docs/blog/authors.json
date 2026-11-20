@@ -1,30 +1,42 @@
 {
   "yaala": {
-    "name": "Yaala Labs",
-    "title": "Agent Kernel Team",
-    "url": "https://github.com/yaalalabs",
-    "image_url": "https://github.com/yaalalabs.png"
+    "name": "OAK",
+    "title": "Open Agent Kernel Team",
+    "url": "https://github.com/yaalalabs/agent-kernel",
+    "image_url": "/img/branding/oak-avatar.svg"
+  },
+  "amitha": {
+    "name": "Amitha Dissanayake",
+    "title": "Open Agent Kernel Team",
+    "url": "https://github.com/amithad",
+    "image_url": "https://github.com/amithad.png"
+  },
+  "john": {
+    "name": "John Praveen",
+    "title": "Open Agent Kernel Team",
+    "url": "https://github.com/JohnPraveenYL",
+    "image_url": "/img/branding/oak-avatar.svg"
   },
   "lkumara": {
-    "name": "L. I. Kumara",
-    "title": "Agent Kernel Team",
+    "name": "Lakindu Kumara",
+    "title": "Open Agent Kernel Team",
     "image_url": "/img/blog/lkumara-avatar.png"
   },
   "induwara": {
     "name": "Induwara Senadheera",
-    "title": "Agent Kernel Team",
+    "title": "Open Agent Kernel Team",
     "url": "https://github.com/induwara-yaala",
     "image_url": "/img/blog/induwara_senadheera.png"
   },
   "malitha": {
     "name": "Malitha Liyanage",
-    "title": "Agent Kernel Team",
+    "title": "Open Agent Kernel Team",
     "url": "https://github.com/malithaYL",
     "image_url": "/img/blog/malitha_liyanage.jpg"
   },
   "pulindu": {
     "name": "Pulindu Vidmal",
-    "title": "Agent Kernel Team",
+    "title": "Open Agent Kernel Team",
     "url": "https://github.com/pulindu-yl",
     "image_url": "/img/blog/pulindu_vidmal.jpg"
   }

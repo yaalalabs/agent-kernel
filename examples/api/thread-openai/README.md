@@ -1,6 +1,6 @@
-# Agent Kernel Conversation Threads with OpenAI Agent SDK Agents on a REST API
+# Open Agent Kernel Conversation Threads with OpenAI Agent SDK Agents on a REST API
 
-This package contains a demo of Agent Kernel Conversation Thread Support with an agent built using the OpenAI
+This package contains a demo of Open Agent Kernel Conversation Thread Support with an agent built using the OpenAI
 Agents SDK. The app mounts `AgentThreadRequestHandler` (see `app.py`), which is what enables persistent
 conversation threads; the `thread` block in `config.yaml` selects the store backend. Every chat request must
 carry a bearer token (all chat routes here are the thread handler's, and a thread belongs to the caller), a

@@ -6,9 +6,9 @@ import logging
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
 from ....core.model import BaseRunRequest, Principal, StreamChunk
-from ....pipeline.realtime_pool import RealtimeConnectionPool
 from ....pipeline.thread_runner import ThreadRunner
 from ....pipeline.transport.base import QueueTransportFactory
+from ....realtime.pool import RealtimeConnectionPool
 from ..core.sqs_handler import SQSHandler
 from .core import ECSSQSConsumer
 

@@ -1,4 +1,4 @@
-# Agent Kernel — per-run framework context/state (Pydantic AI)
+# Open Agent Kernel — per-run framework context/state (Pydantic AI)
 
 This demo shows how to carry a **framework-agnostic context/state object across turns** using Agent
 Kernel's reserved `framework_context` session value, with an agent built on Pydantic AI.
@@ -8,9 +8,9 @@ declared in **both supported styles**, and the pairing is the point of this exam
 
 - `add_to_cart(ctx, item)` — **framework-recommended style**: a plain callable handed straight to
   `tools=` for Pydantic AI to register; appends to `ctx.deps`
-- `view_cart(ctx)` — **Agent Kernel style**: bound with `PydanticAIToolBuilder`, yet still declares a
+- `view_cart(ctx)` — **Open Agent Kernel style**: bound with `PydanticAIToolBuilder`, yet still declares a
   `RunContext` and reads `ctx.deps` — binding does not cut a tool off from the per-run context
-- `get_delivery_estimate(city)` — **Agent Kernel style, framework-agnostic**: also bound with
+- `get_delivery_estimate(city)` — **OAK style, framework-agnostic**: also bound with
   `PydanticAIToolBuilder`, but it uses `ToolContext`, takes no `RunContext`, and never sees `deps`
 
 The cart survives across turns even though each turn is a separate run — that persistence is the
@@ -26,7 +26,7 @@ feature.
 
 2. **Injection.** The `PydanticAIRunner` loads a deep copy of the context and passes it as the run's
    **`deps`** (`agent.run(..., deps=...)`, and `agent.run_stream(..., deps=...)` when streaming).
-   `deps` is Pydantic AI's only caller-dependency slot and Agent Kernel owns it — previously no `deps=`
+   `deps` is Pydantic AI's only caller-dependency slot and OAK owns it — previously no `deps=`
    was passed at all, so every agent received the `None` default. There is no way for application code
    to supply its own `deps`, so this injection cannot displace a caller value.
 
@@ -36,7 +36,7 @@ feature.
    was registered directly or bound with `PydanticAIToolBuilder`, since the builder just wraps the
    function in a Pydantic AI `Tool`.
 
-4. **Write-back.** After a **successful** run, Agent Kernel writes the (mutated) object back to the
+4. **Write-back.** After a **successful** run, OAK writes the (mutated) object back to the
    session. On a framework error or a client disconnect mid-stream, the previously stored context is
    left intact (write-back is atomic per turn). Fidelity is **full round-trip** here: every key
    survives, including ones a tool adds mid-run.
@@ -81,7 +81,7 @@ tools=[add_to_cart, *PydanticAIToolBuilder.bind([view_cart, get_delivery_estimat
 | | Declared as | Notes |
 |---|---|---|
 | Framework-recommended | plain callable in `tools=[add_to_cart]` (or the `@agent.tool` decorator) | Pydantic AI registers it; full access to the framework's own tool options — `retries`, `prepare`, docstring format, custom `Tool(...)` construction |
-| Agent Kernel | `tools=PydanticAIToolBuilder.bind([view_cart, get_delivery_estimate])` | The builder wraps each function in a Pydantic AI `Tool`; a function written without `RunContext` can be bound to another framework's builder unchanged |
+| OAK | `tools=PydanticAIToolBuilder.bind([view_cart, get_delivery_estimate])` | The builder wraps each function in a Pydantic AI `Tool`; a function written without `RunContext` can be bound to another framework's builder unchanged |
 
 Reach for the builder when you want the tool to stay portable across frameworks, and for direct
 registration when you need framework-specific tool options.
@@ -111,7 +111,7 @@ cart = session.get_framework_context()        # read back
 
 Do not write the context from inside a tool through `ToolContext.get().session`: the runner injected a
 deep copy and replaces the stored value wholesale on success, so such a write is discarded. Write
-through `ctx.deps` instead — that is the object Agent Kernel writes back.
+through `ctx.deps` instead — that is the object OAK writes back.
 
 ## Constraints
 
@@ -126,7 +126,7 @@ through `ctx.deps` instead — that is the object Agent Kernel writes back.
   argument, so inside an override block the framework context never reaches your tools and the
   write-back stores the unmutated copy.
 - Round-trip fidelity is **not uniform across frameworks**. Pydantic AI and OpenAI have **full**
-  round-trip (shown here). ADK round-trips all keys except AK-internal ones; smolagents round-trips
+  round-trip (shown here). ADK round-trips all keys except OAK-internal ones; smolagents round-trips
   only pre-seeded keys; prebuilt LangGraph agents round-trip only declared state channels; **CrewAI
   does not support it** (a set context is ignored with a warning). To write portably across
   frameworks, pre-seed every key you intend to write. See the

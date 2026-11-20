@@ -8,7 +8,7 @@ from agentkernel.core.util.config_yaml_util import YamlBaseSettingsModified
 
 
 class _LlmConfig(BaseModel):
-    model: str = Field(default="gpt-4o-mini", description="LLM Model name")
+    model: str = Field(default="gpt-6-luna", description="LLM Model name")
     provider: str = Field(default="openai", description="LLM Provider name")
     embedding_model: str = Field(default="text-embedding-3-small", description="Embedding Model name")
 

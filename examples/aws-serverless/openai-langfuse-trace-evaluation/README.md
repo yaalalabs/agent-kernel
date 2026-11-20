@@ -1,19 +1,19 @@
-# Agent Kernel OpenAI Agents with Langfuse Trace Evaluation in AWS Serverless (Lambda)
+# Open Agent Kernel OpenAI Agents with Langfuse Trace Evaluation in AWS Serverless (Lambda)
 
 This example grades an agent on its real traffic. An OpenAI Agents SDK agent runs on AWS Lambda with Langfuse
-tracing. When you call `/eval`, the example reads the session's traces back through Agent Kernel, scores each
+tracing. When you call `/eval`, the example reads the session's traces back through Open Agent Kernel (OAK), scores each
 request with four Opik LLM judges, and stores one row per request in DynamoDB.
 
-## What Agent Kernel does, and what the example writes
+## What OAK does, and what the example writes
 
-| Agent Kernel | The example |
+| OAK | The example |
 |---|---|
 | Traces every request to Langfuse from `config.yaml` (`trace.type: langfuse`) and flushes the spans before the Lambda freezes. The agent has no tracing code. | The agent itself (`lambda_agent_runner.py`). |
 | Reads the traces back with one call, `Trace.get().fetch_traces(session_id=..., last=...)`. Each `FetchedTrace` already holds the request, the answer, the tool spans, the agents that ran and the token usage. The example never calls Langfuse's own API. | `TraceCase` (`evaluator/case.py`): turns a `FetchedTrace` into the text the judges read. |
-| Defines how an evaluator looks: `AKEvaluator`, its input `AKEvaluationCase`, its verdict `AKEvaluationResult`, and the judge model in `AKTestConfig` (`AK_TEST__LLM__*`). | `OpikTraceEvaluator` (`evaluator/opik_evaluator.py`): the judges. AK's built-in evaluators need an expected answer, which production traffic doesn't have, so the example writes its own. |
+| Defines how an evaluator looks: `AKEvaluator`, its input `AKEvaluationCase`, its verdict `AKEvaluationResult`, and the judge model in `AKTestConfig` (`AK_TEST__LLM__*`). | `OpikTraceEvaluator` (`evaluator/opik_evaluator.py`): the judges. OAK's built-in evaluators need an expected answer, which production traffic doesn't have, so the example writes its own. |
 | Serves the API on Lambda (`Lambda.register`, `Lambda.handler`) and runs the agent in queue mode. | When grading runs (`/eval`), where results go (DynamoDB) and how they are read (`/check`). |
 
-Every place the code relies on Agent Kernel has a comment starting with `Agent Kernel:`, so you can list them:
+Every place the code relies on OAK has a comment starting with `Agent Kernel:`, so you can list them:
 
 ```bash
 grep -rn "Agent Kernel:" --include=*.py --include=*.yaml .
@@ -104,7 +104,7 @@ trace and any after it get no row and `/check` reports fewer than three.
 | `evaluator/store.py` | `EvaluationStore`: writes and reads the DynamoDB rows. |
 
 The example writes its own Opik evaluator, so it declares `opik` in its own `pyproject.toml` (the
-`request_handler` extra) rather than using Agent Kernel's `opik` extra.
+`request_handler` extra) rather than using OAK's `opik` extra.
 
 ## Metrics
 

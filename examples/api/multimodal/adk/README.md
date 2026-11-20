@@ -1,8 +1,8 @@
 # Multimodal Example — Google ADK
 
-Demonstrates Agent Kernel's multimodal (image/file) support using a Google Agent Development Kit (ADK) agent.
+Demonstrates Open Agent Kernel's multimodal (image/file) support using a Google Agent Development Kit (ADK) agent.
 
-Agent Kernel seamlessly binds to ADK, automatically injecting system tools like `analyze_attachments` to enable vision and document processing without any manual tool configurations.
+OAK seamlessly binds to ADK, automatically injecting system tools like `analyze_attachments` to enable vision and document processing without any manual tool configurations.
 
 ## Running the Example
 

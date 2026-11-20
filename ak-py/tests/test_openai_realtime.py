@@ -19,6 +19,7 @@ from agents.realtime import (
     RealtimeModel,
     RealtimeModelAudioEvent,
     RealtimeModelAudioInterruptedEvent,
+    RealtimeModelInputAudioTranscriptionCompletedEvent,
     RealtimeModelToolCallEvent,
     RealtimeModelTranscriptDeltaEvent,
     RealtimeModelTurnEndedEvent,
@@ -30,10 +31,11 @@ from agents.realtime.model_inputs import RealtimeModelSendToolOutput, RealtimeMo
 from agentkernel.core import Session
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.config import AKConfig
-from agentkernel.core.model import ExecutionMode
+from agentkernel.core.model import AgentRequestText, ExecutionMode
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIModule, OpenAIRealtimeRunner, OpenAIRunner
+from agentkernel.realtime.testing import RealtimeRunnerContract
 
 # --- a scripted model ---------------------------------------------------------------------------
 
@@ -303,7 +305,71 @@ class TestHandoffsAndTools:
 # --- what the adapter reports ---------------------------------------------------------------------
 
 
+def heard(transcript: str, then, *, item_id: str = "item-in-1"):
+    """A scripted step: the model transcribes the caller's speech, then plays ``then``."""
+
+    async def step(model: ScriptedModel):
+        await model.emit(RealtimeModelInputAudioTranscriptionCompletedEvent(item_id=item_id, transcript=transcript))
+        await then(model)
+
+    return step
+
+
 class TestEventMapping:
+    @pytest.mark.asyncio
+    async def test_a_finished_caller_utterance_is_reported_before_the_reply_that_answers_it(self, runtime, monkeypatch):
+        coordinator, _ = _team()
+        _no_system_tools(monkeypatch)
+        module = OpenAIModule([coordinator])
+        model = ScriptedModel(heard("  we have 2000 patients ", response("r1", say="Noted.")))
+        runner, recorder, _ = await _connect(runtime, module, "coordinator", model)
+        try:
+            await runner.send_text("hi")
+            await recorder.until("done")
+        finally:
+            await runner.disconnect()
+
+        assert recorder.kinds()[0] == "input_transcript"
+        assert recorder.of("input_transcript") == [{"text": "we have 2000 patients", "message_id": "item-in-1"}]
+        assert recorder.kinds().index("input_transcript") < recorder.kinds().index("transcript_delta")
+
+    @pytest.mark.asyncio
+    async def test_a_transcript_that_finishes_after_the_reply_is_still_reported(self, runtime, monkeypatch):
+        coordinator, _ = _team()
+        _no_system_tools(monkeypatch)
+        module = OpenAIModule([coordinator])
+
+        async def late(model: ScriptedModel):
+            await response("r1", say="Noted.")(model)
+            await model.emit(RealtimeModelInputAudioTranscriptionCompletedEvent(item_id="item-in-1", transcript="  we have 2000 patients "))
+
+        model = ScriptedModel(late)
+        runner, recorder, _ = await _connect(runtime, module, "coordinator", model)
+        try:
+            await runner.send_text("hi")
+            await recorder.until("input_transcript")
+        finally:
+            await runner.disconnect()
+
+        assert recorder.of("input_transcript") == [{"text": "we have 2000 patients", "message_id": "item-in-1"}]
+        # Reported in the order the framework finished it: after the reply, not moved ahead of it.
+        assert recorder.kinds().index("input_transcript") > recorder.kinds().index("transcript_delta")
+
+    @pytest.mark.asyncio
+    async def test_an_empty_caller_transcript_is_not_reported(self, runtime, monkeypatch):
+        coordinator, _ = _team()
+        _no_system_tools(monkeypatch)
+        module = OpenAIModule([coordinator])
+        model = ScriptedModel(heard("   ", response("r1", say="Hi.")))
+        runner, recorder, _ = await _connect(runtime, module, "coordinator", model)
+        try:
+            await runner.send_text("hi")
+            await recorder.until("done")
+        finally:
+            await runner.disconnect()
+
+        assert recorder.of("input_transcript") == []
+
     @pytest.mark.asyncio
     async def test_audio_text_and_the_end_of_a_turn_are_reported_in_order(self, runtime, monkeypatch):
         coordinator, _ = _team()
@@ -719,14 +785,14 @@ class TestThroughThePool:
     @pytest.mark.asyncio
     async def test_the_pool_queues_the_native_conversation_in_order(self, runtime, monkeypatch):
         from agentkernel.pipeline.envelope import QueueName
-        from agentkernel.pipeline.realtime_pool import RealtimeConnection
         from agentkernel.pipeline.transport.base import QueueTransportFactory
         from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+        from agentkernel.realtime.connection import RealtimeConnection
 
         async def send_inline(send, *args):
             return send(*args)
 
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool.asyncio.to_thread", send_inline)
+        monkeypatch.setattr("agentkernel.realtime.connection.asyncio.to_thread", send_inline)
         InMemoryTransport.reset()
         coordinator, billing = _team(billing_tools=[lookup_invoice])
         _no_system_tools(monkeypatch)
@@ -739,11 +805,19 @@ class TestThroughThePool:
         )
         agent = module.get_agent("coordinator")
         agent.run_options.update(model=model)
-        conn = RealtimeConnection("call-1", agent, runtime, Session("call-1"), asyncio.get_running_loop())
+        conn = RealtimeConnection(
+            "call-1",
+            agent,
+            runtime,
+            Session("call-1"),
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=AKConfig.get().execution.realtime.playback_lead_ms,
+        )
         conn.update_delivery_context("req", None, None, {})
         await conn.connect()
         try:
-            conn.send_text("billing please")  # on the pool loop: scheduled, not awaited
+            conn.send_text(AgentRequestText(prompt="billing please"))  # on the pool loop: scheduled, not awaited
             deadline = asyncio.get_running_loop().time() + 5
             consumer = QueueTransportFactory.create().create_consumer(QueueName.OUTPUT)
             seen: list[dict] = []
@@ -770,14 +844,14 @@ class TestThroughThePool:
     async def test_a_tool_the_sdk_runs_sees_the_ak_tool_context_session_and_agent(self, runtime, monkeypatch):
         """The SDK runs the tool on its own task; the pool set the context before the session opened, and the task inherits it."""
         from agentkernel.pipeline.envelope import QueueName
-        from agentkernel.pipeline.realtime_pool import RealtimeConnection
         from agentkernel.pipeline.transport.base import QueueTransportFactory
         from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+        from agentkernel.realtime.connection import RealtimeConnection
 
         async def send_inline(send, *args):
             return send(*args)
 
-        monkeypatch.setattr("agentkernel.pipeline.realtime_pool.asyncio.to_thread", send_inline)
+        monkeypatch.setattr("agentkernel.realtime.connection.asyncio.to_thread", send_inline)
         InMemoryTransport.reset()
         CONTEXT_SEEN.clear()
         _no_system_tools(monkeypatch)
@@ -787,11 +861,19 @@ class TestThroughThePool:
         agent = module.get_agent("voice")
         agent.run_options.update(model=model)
         session = Session("call-ctx")
-        conn = RealtimeConnection("call-ctx", agent, runtime, session, asyncio.get_running_loop())
+        conn = RealtimeConnection(
+            "call-ctx",
+            agent,
+            runtime,
+            session,
+            asyncio.get_running_loop(),
+            transport=QueueTransportFactory.create(),
+            playback_lead_ms=AKConfig.get().execution.realtime.playback_lead_ms,
+        )
         conn.update_delivery_context("req", None, None, {})
         await conn.connect()
         try:
-            conn.send_text("read it")
+            conn.send_text(AgentRequestText(prompt="read it"))
             deadline = asyncio.get_running_loop().time() + 5
             consumer = QueueTransportFactory.create().create_consumer(QueueName.OUTPUT)
             done = 0
@@ -810,3 +892,49 @@ class TestThroughThePool:
         assert CONTEXT_SEEN["tool_context"].agent is agent
         assert CONTEXT_SEEN["session"] is session
         assert CONTEXT_SEEN["agent"] is agent
+
+
+# --- the shared runner contract (agentkernel.realtime.testing) -------------------------------------
+
+
+class TestOpenAIRealtimeRunnerContract(RealtimeRunnerContract):
+    """The OpenAI adapter over the scripted model above."""
+
+    @pytest.fixture(autouse=True)
+    def _native_call(self, runtime, monkeypatch):
+        _no_system_tools(monkeypatch)
+        self.model = ScriptedModel(response("r1", say="Hello"))
+
+    def make_runner(self):
+        return OpenAIRealtimeRunner()
+
+    def _agent(self, **options):
+        coordinator, _ = _team()
+        agent = OpenAIModule([coordinator]).get_agent("coordinator")
+        agent.run_options.update(model=self.model, **options)
+        return agent
+
+    async def start_call(self, runner, callback):
+        await runner.connect(Session("s"), self._agent(), callback)
+
+    async def speak(self, runner):
+        await runner.send_text("hi")
+
+    async def fail_native_session(self, runner):
+        from agents.realtime.model_events import RealtimeModelExceptionEvent
+
+        await self.model.emit(RealtimeModelExceptionEvent(exception=RuntimeError("socket dropped"), context="listener"))
+
+    async def start_invalid_call(self, runner, callback):
+        await runner.connect(Session("s"), self._agent(context=object()), callback)
+
+    async def start_failing_call(self, runner, callback):
+        class Refusing(ScriptedModel):
+            async def connect(self, options):
+                raise ConnectionError("no route to the model")
+
+        self.model = Refusing()
+        await runner.connect(Session("s"), self._agent(), callback)
+
+    def nothing_opened(self, runner):
+        return not self.model.connected and self.model.listeners == [] and runner._listen_task is None

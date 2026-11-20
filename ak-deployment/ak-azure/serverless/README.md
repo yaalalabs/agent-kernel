@@ -1,4 +1,4 @@
-# Agent Kernel - Azure Serverless Module
+# Open Agent Kernel - Azure Serverless Module
 
 A comprehensive Terraform module for deploying serverless applications on Azure using Azure Functions Flex Consumption plan, with API Management (APIM), and optional Redis or Cosmos DB integration.
 

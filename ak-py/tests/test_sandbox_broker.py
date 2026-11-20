@@ -278,9 +278,6 @@ class DummyAgent(Agent):
     def runner(self):
         return self._runner
 
-    def get_a2a_card(self):
-        pass
-
     def get_description(self):
         pass
 

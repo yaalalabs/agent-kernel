@@ -1,6 +1,6 @@
 # WhatsApp Integration Example
 
-This example demonstrates how to create a WhatsApp Business API integration with Agent Kernel.
+This example demonstrates how to create a WhatsApp Business API integration with Open Agent Kernel (OAK).
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ Install dependencies using:
 ./build.sh
 ```
 
-For local development with Agent Kernel source:
+For local development with OAK source:
 
 ```bash
 ./build.sh local
@@ -179,5 +179,5 @@ See deployment documentation for AWS and other platforms.
 ## Resources
 
 - [WhatsApp Cloud API Docs](https://developers.facebook.com/docs/whatsapp/cloud-api)
-- [Agent Kernel Documentation](../../../docs/)
+- [OAK Documentation](../../../docs/)
 - [WhatsApp Integration Guide](../../../ak-py/src/agentkernel/integration/whatsapp/README.md)

@@ -1,4 +1,4 @@
-# Agent Kernel — per-run framework context/state (Google ADK)
+# Open Agent Kernel — per-run framework context/state (Google ADK)
 
 This demo shows how to carry a **framework-agnostic context/state object across turns** using Agent
 Kernel's reserved `framework_context` session key, with an agent built on Google ADK.
@@ -13,12 +13,12 @@ through ADK's native session state:
 
 ## Why this matters on ADK
 
-ADK keeps its state in an `InMemorySessionService`, which is **not** part of the pickled Agent Kernel
+ADK keeps its state in an `InMemorySessionService`, which is **not** part of the pickled Open Agent Kernel (OAK)
 session. Without the `framework_context` round-trip, anything your tools put in ADK state is lost as
 soon as the process goes away. The write-back copies that state into a durable session key, so the
 cart is reloaded on the next turn by whatever session store you have configured.
 
-The post-hook in this demo deliberately reads `session.get_framework_context()` — the Agent Kernel
+The post-hook in this demo deliberately reads `session.get_framework_context()` — the OAK
 session, not ADK's state. Everything it prints is therefore proof that the round-trip happened.
 
 ## How it works
@@ -29,7 +29,7 @@ session, not ADK's state. Everything it prints is therefore proof that the round
    one — is injected and round-tripped.
 
 2. **Injection.** The `GoogleADKRunner` loads a deep copy of `framework_context` and merges its keys
-   into the ADK session `state` for the run. Agent Kernel's own internal key (`ak_tool_context`) is
+   into the ADK session `state` for the run. OAK's own internal key (`ak_tool_context`) is
    written last, so a caller key can never displace it.
 
 3. **Tools read/write it.** Each tool declares a `tool_context: ToolContext` parameter — ADK injects
@@ -37,7 +37,7 @@ session, not ADK's state. Everything it prints is therefore proof that the round
    (`tool_context.state["cart"] = cart`) rather than mutating a list in place: ADK records a state
    delta on assignment, and only what lands in the state is read back.
 
-4. **Write-back.** After a **successful** run, Agent Kernel reads the accumulated ADK state back and
+4. **Write-back.** After a **successful** run, OAK reads the accumulated ADK state back and
    writes it to the session key. On a framework error or a client disconnect mid-stream, the
    previously stored context is left intact (write-back is atomic per turn).
 
@@ -47,14 +47,14 @@ session, not ADK's state. Everything it prints is therefore proof that the round
 ## Bound tools vs. direct tools
 
 The tools here are passed to the ADK agent **directly** (`tools=[add_to_cart, …]`), not through
-`GoogleADKToolBuilder.bind`. The builder wraps a function so that Agent Kernel's `ToolContext` is set
+`GoogleADKToolBuilder.bind`. The builder wraps a function so that OAK's `ToolContext` is set
 for the call — it consumes the `tool_context` argument and does not forward it, so a bound tool
 cannot reach ADK state.
 
 | You need | Pass the tool |
 |---|---|
 | ADK state (`tool_context.state`) — the per-run context | directly, declaring `tool_context: ToolContext` |
-| Agent Kernel's `ToolContext.get()` — session, runtime, agent | through `GoogleADKToolBuilder.bind([...])` |
+| OAK's `ToolContext.get()` — session, runtime, agent | through `GoogleADKToolBuilder.bind([...])` |
 
 ## Example session
 
@@ -94,7 +94,7 @@ Because the whole (stripped) ADK state is read back, two things follow:
   `LlmAgent(output_key="...")`, which stores the agent's response in the state — is indistinguishable
   from a tool write, so it also lands in `framework_context`.
 
-Agent Kernel strips its own `ak_tool_context` key plus ADK's `app:`/`user:`/`temp:`-prefixed entries
+OAK strips its own `ak_tool_context` key plus ADK's `app:`/`user:`/`temp:`-prefixed entries
 (app- and user-scoped values ADK merges in on read, and invocation-scoped scratch) before storing, so
 those never enter the caller's context.
 
@@ -118,7 +118,7 @@ Write through `tool_context.state`, or from application code / a post-hook that 
   non-`dict` value, or a non-picklable one, raises a descriptive `TypeError` naming the offending
   key/type.
 - Round-trip fidelity is **not uniform across frameworks**. ADK round-trips all keys except
-  AK-internal and scope-prefixed ones (shown here). OpenAI has full round-trip; smolagents round-trips
+  OAK-internal and scope-prefixed ones (shown here). OpenAI has full round-trip; smolagents round-trips
   only pre-seeded keys; prebuilt LangGraph agents round-trip only declared state channels; **CrewAI
   does not support it** (a set context is ignored with a warning). To write portably across
   frameworks, pre-seed every key you intend to write. See the

@@ -243,7 +243,10 @@ class AgentHandler:
         """Initialize AgentService with session and agent selection.
 
         The availability rule is checked before selecting, so an unservable request fails
-        without a session being created or loaded for it.
+        without a session being created or loaded for it. This is where the agent runs, so it
+        has to be hosted by this process: one a shared registry knows from another process
+        could not be selected, and the request fails here rather than opening a stream that
+        can only carry an error.
 
         :param session_id: Session identifier for the agent
         :param agent: Optional agent name/identifier to select
@@ -251,7 +254,7 @@ class AgentHandler:
         :raises ValueError: If no agent matching the request is available
         """
         self.service = AgentService()
-        self.service.ensure_agent_available(agent)
+        self.service.ensure_agent_available(agent, hosted=True)
         self.service.select(session_id, agent)
 
     @staticmethod
@@ -385,6 +388,7 @@ class ResponseBuilder:
             response_dict["run_id"] = result.run_id
             response_dict["agent"] = result.agent
             response_dict["interruptions"] = [i.model_dump(mode="json") for i in result.interruptions]
+            response_dict["answer_together"] = result.answer_together
 
         if session_id:
             response_dict["session_id"] = session_id

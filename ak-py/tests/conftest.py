@@ -189,3 +189,38 @@ def static_identity(monkeypatch):
     monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
     yield provider
     IdentityProviderFactory.reset()
+
+
+@pytest.fixture
+def descriptor_only_registry():
+    """The class of a registry that knows descriptors and hosts no agent (#603).
+
+    It stands in for a process over a shared registry store, which lists agents that run in another
+    process: ``descriptors()`` and ``descriptor(id)`` answer, ``get`` and ``agents`` find nothing, and
+    nothing registers into it. Build one with the descriptors it should know and hand it to ``Runtime``.
+    """
+    from agentkernel.core.registry import AgentRegistry
+
+    class DescriptorOnlyRegistry(AgentRegistry):
+        def __init__(self, descriptors):
+            self._descriptors = {descriptor.id: descriptor for descriptor in descriptors}
+
+        def register(self, descriptor, agent):  # pragma: no cover - nothing registers here
+            raise AssertionError("not registered into")
+
+        def deregister(self, id):  # pragma: no cover
+            raise AssertionError("not deregistered from")
+
+        def get(self, id):
+            return None
+
+        def descriptor(self, id):
+            return self._descriptors.get(id)
+
+        def agents(self):
+            return {}
+
+        def descriptors(self):
+            return list(self._descriptors.values())
+
+    return DescriptorOnlyRegistry

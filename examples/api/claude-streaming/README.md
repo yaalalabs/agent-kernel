@@ -1,4 +1,4 @@
-# Agent Kernel streaming a Claude Agent SDK agent over SSE
+# Open Agent Kernel streaming a Claude Agent SDK agent over SSE
 
 This example streams a Claude agent's reply as it is produced. With `execution.mode: rest_sync` and
 `execution.message_type: delta` in `config.yaml`, `POST /api/v1/chat` returns a Server-Sent Events (SSE) stream

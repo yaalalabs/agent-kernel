@@ -1,7 +1,7 @@
 ---
 name: ak-add-integration
 description: >
-  Add a messaging platform integration to an existing Agent Kernel project.
+  Add a messaging platform integration to an existing Open Agent Kernel project.
   This skill guides you through adding Slack, WhatsApp, Messenger, Instagram,
   Telegram, Teams, or Gmail integration by generating configuration, updating dependencies,
   and setting up webhook handlers. Designed for users extending their agents.
@@ -13,7 +13,7 @@ metadata:
 
 # Add a Messaging Integration
 
-Use this skill to add a messaging platform integration to your Agent Kernel project.
+Use this skill to add a messaging platform integration to your Open Agent Kernel project.
 
 ## Instructions for the Agent
 
@@ -97,7 +97,7 @@ handler = Lambda.handler
 Add `slack` to the extras:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack]>=0.10.0",
+    "agentkernel[openai,api,slack]>=0.10.1",
 ]
 ```
 
@@ -143,7 +143,7 @@ export SLACK_SIGNING_SECRET="..."          # App signing secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,whatsapp]>=0.10.0",
+    "agentkernel[openai,api,whatsapp]>=0.10.1",
 ]
 ```
 
@@ -190,7 +190,7 @@ export AK_WHATSAPP__APP_SECRET="..."           # App secret for signature verifi
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,messenger]>=0.10.0",
+    "agentkernel[openai,api,messenger]>=0.10.1",
 ]
 ```
 
@@ -234,7 +234,7 @@ export AK_MESSENGER__APP_SECRET="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,instagram]>=0.10.0",
+    "agentkernel[openai,api,instagram]>=0.10.1",
 ]
 ```
 
@@ -272,7 +272,7 @@ export AK_INSTAGRAM__INSTAGRAM_ACCOUNT_ID="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,telegram]>=0.10.0",
+    "agentkernel[openai,api,telegram]>=0.10.1",
 ]
 ```
 
@@ -314,7 +314,7 @@ export AK_TELEGRAM__WEBHOOK_SECRET="..."       # Your webhook secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gmail]>=0.10.0",
+    "agentkernel[openai,api,gmail]>=0.10.1",
 ]
 ```
 
@@ -353,7 +353,7 @@ if __name__ == "__main__":
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,teams]>=0.10.0",
+    "agentkernel[openai,api,teams]>=0.10.1",
 ]
 ```
 
@@ -419,7 +419,7 @@ if __name__ == "__main__":
 Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.10.0",
+    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.10.1",
 ]
 ```
 

@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # CLI Testing
 
-Interactive testing of CLI agents using the Agent Kernel Test framework.
+Interactive testing of CLI agents using the Open Agent Kernel Test framework.
 
 ## Test Class Overview
 
@@ -54,7 +54,7 @@ await test.expect(["Sri Lanka won the 1996 cricket world cup."])
 
 ## Test Comparison Modes
 
-Agent Kernel supports three comparison modes for validating responses. Each mode maps to a
+OAK supports three comparison modes for validating responses. Each mode maps to a
 method on the configured `AKEvaluator` — see "Bring your own evaluator" below for the pluggable
 interface.
 
@@ -161,7 +161,7 @@ Set default mode via a `test-config.yaml` file (in the directory the tests run f
 mode: llm  # Options: score, llm, fallback
 evaluator: deepeval  # Built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```

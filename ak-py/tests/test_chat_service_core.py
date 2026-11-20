@@ -321,9 +321,6 @@ class _ActingUserAgent(Agent):
     def get_description(self) -> str:
         return "Acting-user propagation test agent"
 
-    def get_a2a_card(self):
-        return None
-
     def override_system_prompt(self, prompt):
         pass
 
@@ -436,6 +433,23 @@ class TestEnsureAgentAvailable:
             assert service.agent is None
             assert service.session is None
 
+    def test_initialize_refuses_an_agent_only_the_registry_knows_before_selecting(self, descriptor_only_registry):
+        """`initialize` is where the agent runs. One a shared registry knows from another process cannot be selected
+        here, so the request fails as `No agent available` (a 400) rather than opening a stream that can only carry
+        an error, for a named agent and for a request naming none."""
+        from agentkernel.core.chat_service import AgentHandler
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        store = InMemorySessionStore()
+        registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
+        with Runtime(store, registry=registry):
+            with patch.object(store, "load", wraps=store.load) as load:
+                for agent in ("billing", None):
+                    with pytest.raises(ValueError, match="No agent available"):
+                        AgentHandler().initialize("s1", agent)
+                load.assert_not_called()
+
     def test_initialize_does_not_load_a_session_for_an_unknown_agent(self):
         from agentkernel.core.chat_service import AgentHandler
         from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -492,9 +506,6 @@ class _IncrementalAgent(Agent):
 
     def get_description(self) -> str:
         return "Incremental sync streaming test agent"
-
-    def get_a2a_card(self):
-        return None
 
     def override_system_prompt(self, prompt):
         pass

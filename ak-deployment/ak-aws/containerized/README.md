@@ -1,6 +1,6 @@
 # AWS Containerized Deployment
 
-Scalable, production-ready deployment of Agent Kernel on AWS using ECS Fargate with optional queue-based processing and auto-scaling.
+Scalable, production-ready deployment of Open Agent Kernel (OAK) on AWS using ECS Fargate with optional queue-based processing and auto-scaling.
 
 ## 📋 Table of Contents
 
@@ -16,7 +16,7 @@ Scalable, production-ready deployment of Agent Kernel on AWS using ECS Fargate w
 
 ## Overview
 
-This deployment uses AWS ECS Fargate to run containerized Agent Kernel applications with:
+This deployment uses AWS ECS Fargate to run containerized OAK applications with:
 
 - ✅ **Automatic scaling** based on queue depth
 - ✅ **Async processing** with SQS queues
@@ -408,7 +408,7 @@ create_dynamodb_schedule_table = true
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `execution_mode` | Execution mode: `rest_sync` (client waits on the same HTTP connection), `rest_async` (client polls a separate GET endpoint; requires `queue_mode = true`), `async` (WebSocket only; `message_type` picks one message per reply or one per chunk), or `realtime` (persistent model sockets behind a stateful edge such as the LiveKit gateway). `stream` was removed and fails at `terraform plan`: use `async` with `message_type = "delta"`. | `string` | `"rest_sync"` | no |
-| `message_type` | Reply delivery: `complete` (whole reply) or `delta` (one message per chunk). `null` leaves Agent Kernel's default (`delta` for `realtime`, `complete` otherwise). Injected as `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and the agent runner whenever non-null, in every mode, so the two containers always agree. For chunked replies use `delta` with `async` (WebSocket chunks): in queue mode `ECSIOHandler` refuses `rest_sync` + `delta` at startup (its REST container has no SSE route), and Agent Kernel rejects `rest_async` + `delta` and `realtime` + `complete` at config load. Terraform validates the value only; Agent Kernel checks the combination at startup. | `string` | `null` | no |
+| `message_type` | Reply delivery: `complete` (whole reply) or `delta` (one message per chunk). `null` leaves OAK's default (`delta` for `realtime`, `complete` otherwise). Injected as `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and the agent runner whenever non-null, in every mode, so the two containers always agree. For chunked replies use `delta` with `async` (WebSocket chunks): in queue mode `ECSIOHandler` refuses `rest_sync` + `delta` at startup (its REST container has no SSE route), and OAK rejects `rest_async` + `delta` and `realtime` + `complete` at config load. Terraform validates the value only; OAK checks the combination at startup. | `string` | `null` | no |
 
 ### Non-Queue Mode (Default)
 
@@ -471,6 +471,17 @@ curl -X POST .../chat -d '{"session_id":"...","prompt":"..."}'
 curl -X GET ".../chat?request_id=..."
 # Returns the stored response body directly, e.g.: {"...": "..."}
 ```
+
+### File Uploads
+
+Non-queue mode exposes `POST {agent_endpoint}-multipart` for file uploads. Queue mode does not expose it
+yet: the ECS queue-mode REST container still serves the older ECS handler, which has no upload route. It
+is added once ECS moves onto the shared queue pipeline (#870). From then on, queue-mode uploads need
+`multimodal.enabled: true` with a shared store (`storage_type: redis`, which `create_redis_cluster` can
+provide, or `dynamodb`, which holds files up to about 300 KB), with identical settings in both containers.
+
+API Gateway HTTP APIs cap a request body at 10 MB, multipart overhead included, so a file just under the
+default 10 MB `api.max_file_size` is refused at the gateway with a 413.
 
 ### WebSocket Mode (`async`)
 
@@ -539,16 +550,17 @@ the app as `x-ws-*` request headers.
 
 Used for external persistent WebRTC/WebSocket integrations like the LiveKit Voice Gateway.
 Unlike `async`, this mode **does not create an AWS API Gateway WebSocket**.
-Instead, the ingress service acts as a background worker running an infinite loop to maintain
-a connection to the external realtime provider (e.g., LiveKit Cloud).
+Instead, the ingress service serves the realtime provider's lifecycle webhook (LiveKit's room
+events) and holds one connection per live room, started and ended by those webhooks.
 
 It runs in either queue mode:
 
 - **`queue_mode = false`**: one container. The ingress service runs the app's
-  `IOHandler.run(gateways=[...])` on the `in_memory` transport, so the gateway, the agent runner
-  and the response handler share one process. No SQS queues or agent-runner service are created.
-- **`queue_mode = true`**: the ingress service hosts the gateway and the response handler, and the
-  agent-runner service holds the model sockets, with SQS between them.
+  `IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])` on the
+  `in_memory` transport, so the gateways, the agent runner and the response handler share one
+  process. No SQS queues or agent-runner service are created.
+- **`queue_mode = true`**: the ingress service serves the webhook and hosts the gateways and the
+  response handler, and the agent-runner service holds the model sockets, with SQS between them.
 
 Either way, run a single replica of each service (`desired_count = 1`, and
 `scaling_config.enabled = false` in queue mode): the gateway owns its rooms and the runner's

@@ -4,11 +4,11 @@ sidebar_position: 3
 
 # Automated Testing
 
-Create automated test suites for your CLI agents using pytest and the Agent Kernel Test framework.
+Create automated test suites for your CLI agents using pytest and the Open Agent Kernel Test framework.
 
 ## pytest Integration
 
-The Agent Kernel Test framework integrates seamlessly with pytest for automated testing:
+The OAK Test framework integrates seamlessly with pytest for automated testing:
 
 ```python
 import pytest
@@ -39,7 +39,7 @@ async def test_follow_up_question(test_client):
 
 ## Test Comparison Modes
 
-Agent Kernel supports three comparison modes for validating responses:
+OAK supports three comparison modes for validating responses:
 
 ### Score Mode
 
@@ -138,7 +138,7 @@ Set the default mode via a `test-config.yaml` file in the directory the tests ru
 mode: fallback  # Options: score, llm, fallback
 evaluator: deepeval  # Built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -147,7 +147,7 @@ Or via environment variables:
 
 ```bash
 export AK_TEST__MODE=llm
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```
@@ -357,7 +357,7 @@ Configure the default test comparison mode in `test-config.yaml`. The file is re
 mode: fallback  # Options: score, llm, fallback (default: fallback)
 evaluator: deepeval  # Built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
-  model: gpt-4o-mini  # LLM model for llm mode
+  model: gpt-6-luna  # LLM model for llm mode
   provider: openai  # LLM provider
   embedding_model: text-embedding-3-small  # Embedding model
 ```
@@ -366,7 +366,7 @@ Or via environment variables:
 
 ```bash
 export AK_TEST__MODE=llm
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```
@@ -460,7 +460,7 @@ def setup_test_env():
 
 Enable debug output for troubleshooting:
 
-Agent Kernel configures logging when the application loads its configuration (on first access, not at import). These settings apply to the application under test; set them in its environment or `config.yaml`:
+OAK configures logging when the application loads its configuration (on first access, not at import). These settings apply to the application under test; set them in its environment or `config.yaml`:
 
 **Using environment variables:**
 ```bash

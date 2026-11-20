@@ -9,11 +9,11 @@ We release patches for security vulnerabilities in the following versions:
 | Latest  | :white_check_mark: |
 | < Latest| :x:                |
 
-We recommend always using the latest version of Agent Kernel to ensure you have the most up-to-date security patches.
+We recommend always using the latest version of Open Agent Kernel (OAK) to ensure you have the most up-to-date security patches.
 
 ## Reporting a Vulnerability
 
-The Agent Kernel team takes security bugs seriously. We appreciate your efforts to responsibly disclose your findings and will make every effort to acknowledge your contributions.
+The OAK team takes security bugs seriously. We appreciate your efforts to responsibly disclose your findings and will make every effort to acknowledge your contributions.
 
 ### How to Report a Security Vulnerability
 
@@ -51,7 +51,7 @@ Instead, please report security vulnerabilities by:
 
 ## Security Best Practices
 
-When using Agent Kernel, please follow these security best practices:
+When using OAK, please follow these security best practices:
 
 ### API Keys and Secrets
 
@@ -62,7 +62,7 @@ When using Agent Kernel, please follow these security best practices:
 
 ### Dependencies
 
-- **Keep dependencies up to date**: Regularly update Agent Kernel and its dependencies
+- **Keep dependencies up to date**: Regularly update OAK and its dependencies
 - Review security advisories for dependencies
 - Use virtual environments to isolate projects
 
@@ -107,7 +107,7 @@ It does not apply to:
 
 - Third-party dependencies (report to their respective maintainers)
 - Forked or modified versions not maintained by the core team
-- Applications built using Agent Kernel (unless the vulnerability is in Agent Kernel itself)
+- Applications built using OAK (unless the vulnerability is in OAK itself)
 
 ## Security Resources
 
@@ -117,6 +117,6 @@ It does not apply to:
 
 ## Questions
 
-If you have questions about this security policy or Agent Kernel's security practices, please contact agentkernel@yaalalabs.com.
+If you have questions about this security policy or OAK's security practices, please contact agentkernel@yaalalabs.com.
 
-Thank you for helping keep Agent Kernel and our users safe!
+Thank you for helping keep OAK and our users safe!

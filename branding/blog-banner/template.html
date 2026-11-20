@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <!--
+    The blog banner template for Open Agent Kernel (OAK). One page, 1600 by 840 CSS px.
+    render.mjs opens it once per entry in banners.json and passes the entry as the query string:
+      label     short topic label for the pill, for example "Observability"
+      title     the headline, in sentence case
+      accent    optional last words of the headline, set in the accent colour
+      subtitle  one line under the headline
+      drawing   build, connect, remember, guard, scale or observe
+    Open it in a browser with the same query string to preview a banner.
+  -->
+  <head>
+    <meta charset="utf-8" />
+    <title>Blog banner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=block" rel="stylesheet" />
+    <style>
+      /* The palette is the one in branding/README.md */
+      :root {
+        --orange: #ff5e32;
+        --prussian: #02284f;
+        --dusk: #3f598a;
+        --sky: #abcee1;
+        --ice: #b1cdff;
+        --paper: #f7fafe;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+
+      body {
+        width: 1600px;
+        height: 840px;
+        overflow: hidden;
+        font-family: 'Archivo', sans-serif;
+        color: var(--prussian);
+        background-color: var(--paper);
+        /* The fine dot grid of the earlier banners */
+        background-image: radial-gradient(rgba(63, 89, 138, 0.16) 1.2px, transparent 1.3px);
+        background-size: 32px 32px;
+        background-position: 16px 12px;
+      }
+
+      /* The side margins are wide on purpose: the blog index shows a banner as a 3:2 thumbnail,
+         which trims about 166 px from each side. Nothing that matters sits in that strip. */
+      .banner {
+        display: grid;
+        grid-template-columns: 716px 1fr;
+        column-gap: 56px;
+        height: 100%;
+        padding: 88px 176px 80px;
+      }
+
+      .copy {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+      }
+
+      .brand img {
+        display: block;
+        height: 68px;
+        width: auto;
+      }
+
+      .pill {
+        padding: 9px 18px 8px;
+        border-radius: 999px;
+        background-color: var(--ice);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--prussian);
+      }
+
+      h1 {
+        margin-top: 72px;
+        font-size: 104px;
+        font-weight: 800;
+        line-height: 0.98;
+        letter-spacing: -0.035em;
+        text-wrap: balance;
+      }
+
+      h1 em {
+        font-style: normal;
+        color: var(--orange);
+      }
+
+      .subtitle {
+        max-width: 660px;
+        margin-top: 36px;
+        font-size: 31px;
+        line-height: 1.4;
+        color: #475b7a;
+        text-wrap: pretty;
+      }
+
+      .site {
+        margin-top: auto;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 20px;
+        color: #7d8fab;
+      }
+
+      /* The drawing: one still from the stage drawings of the website, in a card */
+      .art {
+        align-self: center;
+        padding: 40px 28px;
+        border: 2px solid #d3e0f5;
+        border-radius: 28px;
+        background-color: #fff;
+      }
+
+      .art svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+      }
+
+      .rail,
+      .faint,
+      .outline,
+      .port,
+      .accent,
+      .accentKnock {
+        fill: none;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .rail {
+        stroke: rgba(63, 89, 138, 0.6);
+      }
+
+      .faint {
+        stroke: rgba(63, 89, 138, 0.3);
+      }
+
+      .outline,
+      .port {
+        stroke: var(--dusk);
+        fill: #fff;
+      }
+
+      .dot {
+        fill: var(--dusk);
+      }
+
+      .accent {
+        stroke: var(--orange);
+      }
+
+      .accentKnock {
+        stroke: var(--orange);
+        fill: #fff;
+      }
+
+      .dotAccent {
+        fill: var(--orange);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="banner">
+      <div class="copy">
+        <div class="brand">
+          <img src="../primary/open-agent-kernel-color.svg" alt="Open Agent Kernel" />
+          <span class="pill" id="label"></span>
+        </div>
+        <h1 id="title"></h1>
+        <p class="subtitle" id="subtitle"></p>
+        <p class="site">kernel.yaala.ai</p>
+      </div>
+      <div class="art" id="art"></div>
+    </main>
+
+    <!-- Stills of the six stage drawings (docs/src/components/VectorMotion), one per stage -->
+    <template id="drawing-build"><svg viewBox="0 0 480 320" xmlns="http://www.w3.org/2000/svg"><path class="rail" d="M40,64L206,64L236,94L334,94M40,128L226,128L236,138L334,138M40,192L226,192L236,182L334,182M40,256L206,256L236,226L334,226M364,160L440,160"></path><circle class="port" cx="40" cy="64" r="3"></circle><circle class="port" cx="40" cy="128" r="3"></circle><circle class="port" cx="40" cy="192" r="3"></circle><circle class="port" cx="40" cy="256" r="3"></circle><circle class="port" cx="440" cy="160" r="3"></circle><g transform="translate(418 160)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(376 160)" opacity="0.8"><circle class="dot" r="3"></circle></g><rect class="accentKnock" x="304" y="64" width="60" height="192" rx="10"></rect><rect class="faint" x="316" y="76" width="36" height="36" rx="6"></rect><rect class="faint" x="316" y="120" width="36" height="36" rx="6"></rect><rect class="faint" x="316" y="164" width="36" height="36" rx="6"></rect><rect class="faint" x="316" y="208" width="36" height="36" rx="6"></rect><g transform="translate(334 94)" opacity="1"><circle class="outline" r="11"></circle></g><g transform="translate(334 138)" opacity="1"><polygon class="outline" points="0,-11.5 12,9 -12,9"></polygon></g><g transform="translate(334 182)" opacity="1"><rect class="outline" x="-10" y="-10" width="20" height="20" rx="2"></rect></g><g transform="translate(334 226)" opacity="1"><polygon class="outline" points="12,0 6,10.4 -6,10.4 -12,0 -6,-10.4 6,-10.4"></polygon></g></svg></template>
+    <template id="drawing-connect"><svg viewBox="0 0 480 320" xmlns="http://www.w3.org/2000/svg"><path class="rail" d="M40,64L144,64L240,160M40,112L192,112L240,160M40,160L240,160M40,208L192,208L240,160M40,256L144,256L240,160M240,160L336,64L440,64M240,160L288,112L440,112M240,160L440,160M240,160L288,208L440,208M240,160L336,256L440,256"></path><circle class="port" cx="40" cy="64" r="3"></circle><circle class="port" cx="440" cy="64" r="3"></circle><circle class="port" cx="40" cy="112" r="3"></circle><circle class="port" cx="440" cy="112" r="3"></circle><circle class="port" cx="40" cy="160" r="3"></circle><circle class="port" cx="440" cy="160" r="3"></circle><circle class="port" cx="40" cy="208" r="3"></circle><circle class="port" cx="440" cy="208" r="3"></circle><circle class="port" cx="40" cy="256" r="3"></circle><circle class="port" cx="440" cy="256" r="3"></circle><circle class="accentKnock" cx="240" cy="160" r="14"></circle><g transform="translate(440 160)" opacity="0"><circle class="dot" r="3"></circle></g><g transform="translate(380.2355 64)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(303.6396 223.6396)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(240 160)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(150 160)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(99.7645 64)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(440 160)" opacity="0"><circle class="dot" r="3"></circle></g><g transform="translate(440 64)" opacity="0"><circle class="dot" r="3"></circle></g></svg></template>
+    <template id="drawing-remember"><svg viewBox="0 0 480 320" xmlns="http://www.w3.org/2000/svg"><path class="rail" d="M40,232L440,232"></path><circle class="accent" cx="240" cy="160" r="72"></circle><circle class="port" cx="40" cy="232" r="3"></circle><circle class="port" cx="440" cy="232" r="3"></circle><g transform="translate(403 232)" opacity="0.961"><circle class="dot" r="3"></circle></g><g transform="translate(293 232)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(183 232)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(73 232)" opacity="0.8571"><circle class="dot" r="3"></circle></g><g transform="translate(440 232)" opacity="0"><circle class="dot" r="3"></circle></g><g transform="translate(440 232)" opacity="0"><circle class="dot" r="3"></circle></g><g transform="translate(184.8448 206.2807)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(169.5734 145.0304)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(208.4373 95.2868)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(271.5627 95.2868)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(310.4266 145.0304)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(295.1552 206.2807)" opacity="1"><circle class="dot" r="3"></circle></g></svg></template>
+    <template id="drawing-guard"><svg viewBox="0 0 480 320" xmlns="http://www.w3.org/2000/svg"><path class="rail" d="M40,160L174.855,160M305.145,160L440,160M169.855,160L121.855,208L40,208"></path><circle class="port" cx="40" cy="160" r="3"></circle><circle class="port" cx="40" cy="208" r="3"></circle><circle class="port" cx="440" cy="160" r="3"></circle><g transform="translate(174.855 94.855) scale(1.5)"><path class="accent" style="stroke-width:0.8333333333333334" d="M19.74,39.48v15.79l12.48,5.06c4.39,1.76,7.26,6.01,7.26,10.73v15.79l-27.78-11.11c-7.07-2.83-11.7-9.67-11.7-17.27V0l27.79,11.11c7.06,2.83,11.69,9.67,11.69,17.27v19.07L19.74,39.48Z"></path><path class="accent" style="stroke-width:0.8333333333333334" d="M86.86,0v58.47c0,7.6-4.64,14.44-11.7,17.27l-27.78,11.11v-23.69c0-4.72,2.87-8.97,7.26-10.73l12.48-5.06v-15.79l-19.74,7.97v-11.17c0-7.6,4.63-14.44,11.69-17.27L86.86,0Z"></path></g><g transform="translate(391 160)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(144.4481 185.4069)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(159.5714 160)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(43.8571 160)" opacity="0.1224"><circle class="dot" r="3"></circle></g><g transform="translate(40 208)" opacity="0"><circle class="dot" r="3"></circle></g><g transform="translate(440 160)" opacity="0"><circle class="dot" r="3"></circle></g><g transform="translate(440 160)" opacity="0"><circle class="dot" r="3"></circle></g></svg></template>
+    <template id="drawing-scale"><svg viewBox="0 0 480 320" xmlns="http://www.w3.org/2000/svg"><path class="rail" d="M40,160L184,160L440,160"></path><path class="rail" d="M184,160L216,128L440,128" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0" opacity="1"></path><g opacity="1"><circle class="port" cx="440" cy="128" r="3"></circle></g><path class="rail" d="M184,160L216,192L440,192" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0" opacity="1"></path><g opacity="1"><circle class="port" cx="440" cy="192" r="3"></circle></g><path class="rail" d="M216,128L248,96L440,96" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0" opacity="1"></path><g opacity="1"><circle class="port" cx="440" cy="96" r="3"></circle></g><path class="rail" d="M216,192L248,224L440,224" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0" opacity="1"></path><g opacity="1"><circle class="port" cx="440" cy="224" r="3"></circle></g><circle class="port" cx="40" cy="160" r="3"></circle><circle class="port" cx="440" cy="160" r="3"></circle><path class="accentKnock" d="M176,160L184,152L192,160L184,168Z"></path><g transform="translate(440 160)" opacity="0"><circle class="dot" r="3"></circle></g><g transform="translate(284.5 160)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(228.2452 128)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(194.253 170.253)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(155.8023 160)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(126.1909 160)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(114 160)" opacity="1"><circle class="dot" r="3"></circle></g><g transform="translate(104 160)" opacity="1"><circle class="dot" r="3"></circle></g></svg></template>
+    <template id="drawing-observe"><svg viewBox="0 0 480 320" xmlns="http://www.w3.org/2000/svg"><path class="faint" d="M40,64L440,64M40,59L40,64M80,59L80,64M120,59L120,64M160,59L160,64M200,59L200,64M240,59L240,64M280,59L280,64M320,59L320,64M360,59L360,64M400,59L400,64M440,59L440,64"></path><path class="rail" d="M40,96L440,96" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0.1429" opacity="1"></path><g opacity="1"><circle class="dot" cx="40" cy="96" r="3"></circle></g><path class="rail" d="M64,128L208,128" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0" opacity="1"></path><g opacity="1"><path class="faint" d="M64,96L64,128"></path><circle class="dot" cx="64" cy="128" r="3"></circle></g><path class="rail" d="M88,160L168,160" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0" opacity="1"></path><g opacity="1"><path class="faint" d="M88,128L88,160"></path><circle class="dot" cx="88" cy="160" r="3"></circle></g><path class="rail" d="M232,192L416,192" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0.1801" opacity="1"></path><g opacity="1"><path class="faint" d="M232,96L232,192"></path><circle class="dot" cx="232" cy="192" r="3"></circle></g><path class="rail" d="M256,224L344,224" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0" opacity="1"></path><g opacity="1"><path class="faint" d="M256,192L256,224"></path><circle class="dot" cx="256" cy="224" r="3"></circle></g><path class="rail" d="M360,256L416,256" pathLength="1" stroke-dasharray="1 2" stroke-dashoffset="0.5918" opacity="1"></path><g opacity="1"><path class="faint" d="M360,192L360,256"></path><circle class="dot" cx="360" cy="256" r="3"></circle></g><g transform="translate(382.8571 64)" opacity="1"><line class="accent" x1="0" y1="0" x2="0" y2="204"></line><circle class="dotAccent" r="3"></circle></g></svg></template>
+
+    <script>
+      const entry = new URLSearchParams(location.search);
+      const text = (name, fallback) => entry.get(name) || fallback;
+
+      document.getElementById('label').textContent = text('label', 'Label');
+      document.getElementById('subtitle').textContent = text('subtitle', 'One line under the headline.');
+
+      // A hyphenated word stays on one line: the hyphen is swapped for its non-breaking twin.
+      const whole = (words) => words.replace(/-/g, '\u2011');
+      const title = document.getElementById('title');
+      title.textContent = whole(text('title', 'The headline'));
+      if (entry.get('accent')) {
+        const accent = document.createElement('em');
+        accent.textContent = whole(entry.get('accent'));
+        title.append(' ', accent);
+      }
+
+      const drawing = document.getElementById(`drawing-${text('drawing', 'build')}`) || document.getElementById('drawing-build');
+      document.getElementById('art').append(drawing.content.cloneNode(true));
+
+      // A long headline steps down in size until it fits the column in three lines.
+      document.fonts.ready.then(() => {
+        let size = 104;
+        const tooBig = () => title.getBoundingClientRect().height > size * 0.98 * 3 + 4 || title.scrollWidth > title.clientWidth + 1;
+        while (tooBig() && size > 64) {
+          size -= 4;
+          title.style.fontSize = `${size}px`;
+        }
+      });
+    </script>
+  </body>
+</html>

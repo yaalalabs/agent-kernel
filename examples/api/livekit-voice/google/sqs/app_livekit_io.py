@@ -1,40 +1,64 @@
+import hmac
 import logging
 
-from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
+from agentkernel.integration.livekit import LiveKitLifecycleAdapter
 from agentkernel.pipeline import IOHandler
+from agentkernel.secret import SecretManager
 
 logging.basicConfig(level=logging.INFO)
 
-gateway = LiveKitEdgeGateway(session_id="room_01")
-
 from agentkernel.api.handler import RESTRequestHandler
 from agentkernel.core.config import AKConfig
-from agentkernel.secret import SecretManager
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 from livekit import api
 
 
 class LiveKitTokenHandler(RESTRequestHandler):
+    """Development helper that mints a join token for an allowed room.
+
+    The endpoint stays disabled until ``LIVEKIT_TOKEN_SECRET`` is set in the environment or the configured secret
+    provider, and then requires that secret in the ``X-LiveKit-Token-Secret`` header. ``LIVEKIT_ALLOWED_ROOMS`` is a
+    comma-separated allowlist (default ``call_01``). Protect or remove this route before exposing the service publicly.
+    """
+
     def get_router(self) -> APIRouter:
         router = APIRouter()
         router.add_api_route("/livekit/token", self.get_token, methods=["GET"])
         return router
 
-    def get_token(self, participant_name: str = "user"):
+    def get_token(self, request: Request, participant_name: str = "user", room: str = "call_01"):
+        secret = SecretManager.current().get("LIVEKIT_TOKEN_SECRET", None)
+        if not secret:
+            raise HTTPException(
+                status_code=503,
+                detail="Set LIVEKIT_TOKEN_SECRET to enable the token endpoint",
+            )
+        if not hmac.compare_digest(request.headers.get("x-livekit-token-secret", ""), secret):
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        allowed = {
+            name.strip() for name in SecretManager.current().get("LIVEKIT_ALLOWED_ROOMS", "call_01").split(",") if name.strip()
+        }
+        if room not in allowed:
+            raise HTTPException(status_code=403, detail=f"Room '{room}' is not in LIVEKIT_ALLOWED_ROOMS")
         config = AKConfig.get()
-        # An empty livekit field falls back to the secret provider (SSM), as the gateway's own do.
+        # An empty livekit field falls back to the secret provider (SSM), as the edge's own do.
         api_key = config.livekit.api_key or SecretManager.current().get("AK_LIVEKIT__API_KEY")
         api_secret = config.livekit.api_secret or SecretManager.current().get("AK_LIVEKIT__API_SECRET")
         token = (
             api.AccessToken(api_key, api_secret)
             .with_identity(f"user-{participant_name}")
             .with_name(participant_name)
-            .with_grants(api.VideoGrants(room_join=True, room="room_01"))
+            .with_grants(api.VideoGrants(room_join=True, room=room))
             .to_jwt()
         )
         return {"token": token}
 
 
 if __name__ == "__main__":
-    IOHandler.run(gateways=[GatewayRunner(gateway)], handlers=[LiveKitTokenHandler()])
+    IOHandler.run(
+        handlers=[
+            EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter()),
+            LiveKitTokenHandler(),
+        ]
+    )

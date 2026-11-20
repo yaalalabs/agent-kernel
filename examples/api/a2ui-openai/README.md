@@ -38,7 +38,7 @@ which means reopening the conversation gives the frontend the same pair it got l
 Without that, a form that rendered live would come back as a wall of JSON text — see
 [Reload](#reload) below.
 
-## What Agent Kernel does not do
+## What OAK does not do
 
 **It ships no catalog.** The component list in [`app.py`](app.py) is this application's, because a
 catalog has to match the components a given frontend can actually draw. One listing components your
@@ -116,12 +116,12 @@ browser can draw what exists *here*. They have to agree.
 
 Try breaking that agreement: add a component to the prompt in `app.py` and not to `catalog.tsx`. The
 model will emit it confidently, and the renderer draws a dashed box reading
-**⚠ Unknown component "…"**. That failure is why Agent Kernel ships no catalog — it cannot know what
+**⚠ Unknown component "…"**. That failure is why Open Agent Kernel (OAK) ships no catalog — it cannot know what
 your frontend implements, so any catalog it supplied would be wrong for somebody.
 
 `Surface.tsx` is deliberately dumb: look up `root`, render it, recurse through `children` by id. No
 validation, no data binding, no surface lifecycle. It does not judge whether the payload is *good*
-A2UI either — Agent Kernel labelled it without looking inside, and the renderer is the first party
+A2UI either — OAK labelled it without looking inside, and the renderer is the first party
 that knows which components exist.
 
 Submitting a form sends the values back as an **ordinary next message** ("Cost centre: ENG-4, Amount:
@@ -139,7 +139,7 @@ Two things make that round trip read correctly, and both are easy to miss:
   one missing field when it is not. What it must never do is render the editable form again, which
   looks exactly like the submission was lost.
 
-The second is worth dwelling on. Nothing in Agent Kernel can fix it, because Agent Kernel never
+The second is worth dwelling on. Nothing in OAK can fix it, because OAK never
 looks inside the payload and has no idea a form was shown. Closing the loop is the application's
 job, and it is mostly a prompting job.
 

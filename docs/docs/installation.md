@@ -4,11 +4,11 @@ sidebar_position: 2
 
 # Installation
 
-Get started with Agent Kernel in just a few minutes.
+Get started with Open Agent Kernel (OAK) in just a few minutes.
 
 ## Prerequisites
 
-Before installing Agent Kernel, ensure you have:
+Before installing OAK, ensure you have:
 
 - **Python 3.12 - 3.13.x** installed on your system
   - ⚠️ Python 3.14 and later support to be available soon
@@ -16,7 +16,7 @@ Before installing Agent Kernel, ensure you have:
 
 ## Basic Installation
 
-Create a uv project (skip this if you already have one), then add Agent Kernel to it:
+Create a uv project (skip this if you already have one), then add OAK to it:
 
 ```bash
 uv init --python 3.12 my-agent
@@ -24,12 +24,12 @@ cd my-agent
 uv add agentkernel
 ```
 
-This installs the core Agent Kernel library with minimal dependencies, records it in `pyproject.toml`, and creates
+This installs the core OAK library with minimal dependencies, records it in `pyproject.toml`, and creates
 the project's `.venv` for you.
 
 ## Framework-Specific Installation
 
-Agent Kernel supports multiple AI agent frameworks. Install the extras for the framework(s) you plan to use:
+OAK supports multiple AI agent frameworks. Install the extras for the framework(s) you plan to use:
 
 ### OpenAI Agents
 
@@ -127,6 +127,12 @@ For deploying to GCP (Cloud Run, includes Firestore session support):
 uv add "agentkernel[gcp]"
 ```
 
+For queue mode on GCP (the Google Cloud Pub/Sub queue transport):
+
+```bash
+uv add "agentkernel[pubsub]"
+```
+
 For multiple clouds:
 
 ```bash
@@ -207,7 +213,7 @@ uv pip install "agentkernel[openai,api]"
 
 ## Verify Installation
 
-After installation, verify that Agent Kernel is installed correctly:
+After installation, verify that OAK is installed correctly:
 
 ```bash
 # In a uv project
@@ -221,7 +227,7 @@ You should see the version number printed (e.g., `0.1.2`).
 
 ## Development Installation
 
-If you want to contribute to Agent Kernel or modify the source code:
+If you want to contribute to OAK or modify the source code:
 
 ```bash
 # Clone the repository
@@ -237,7 +243,7 @@ cd agent-kernel/ak-py
 
 ## Configuration
 
-Agent Kernel can be configured using environment variables or a configuration file. See the [Configuration Guide](./core-concepts/configuration) for details.
+OAK can be configured using environment variables or a configuration file. See the [Configuration Guide](./core-concepts/configuration) for details.
 
 ### Basic Environment Variables
 
@@ -258,7 +264,7 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 
 ### Python Version Issues
 
-Agent Kernel requires Python 3.12+. Check your Python version:
+OAK requires Python 3.12+. Check your Python version:
 
 ```bash
 uv run python --version
@@ -296,7 +302,7 @@ uv add "agentkernel[crewai]"
 
 ## Next Steps
 
-Now that you have Agent Kernel installed, proceed to the [Quick Start Guide](./quick-start) to build your first agent!
+Now that you have OAK installed, proceed to the [Quick Start Guide](./quick-start) to build your first agent!
 
 ## Version Information
 

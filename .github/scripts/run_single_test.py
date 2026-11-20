@@ -739,7 +739,28 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to retrieve agent_invoke_url output: {e}")
         return False
-    
+
+    # Queue-mode examples also expose their Service Bus namespace, for the live transport contract.
+    result = subprocess.run(
+        ['terraform', 'output', '-raw', 'servicebus_namespace'],
+        cwd=str(deploy_path), capture_output=True, text=True
+    )
+    # A missing output fails, and the setup-terraform wrapper may still print to stdout.
+    namespace = result.stdout.strip() if result.returncode == 0 else ''
+    pytest_cmd = ['uv', 'run', 'pytest']
+    if namespace:
+        test_env['AK_TEST_SERVICEBUS_NAMESPACE'] = namespace
+        # The contract authenticates as the CI principal through the az CLI; a long deploy can outlive
+        # the OIDC login, so refresh it the same way the serverless deploy does.
+        auth_cmd = os.environ.get('AK_PRE_DEPLOY_AUTH_CMD')
+        if auth_cmd and not run_command(['bash', '-c', auth_cmd], description="Refreshing Azure CLI login"):
+            return False
+        # The contract imports the transport under test, so the test venv needs the LOCAL wheel
+        # (same as the aws-containerized tests); --no-sync keeps uv.lock from reverting it.
+        if not run_command(['./build.sh', 'local'], cwd=path, description=f"Building {path} with local agentkernel"):
+            return False
+        pytest_cmd = ['uv', 'run', '--no-sync', 'pytest']
+
     #remove the config.yaml till the issue with it is being solved
     
     delete_config = run_command(
@@ -752,7 +773,7 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
+        pytest_cmd + ['-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env
@@ -1047,7 +1068,7 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
 def main():
     parser = argparse.ArgumentParser(description='Run a single test')
     parser.add_argument('--type', required=True, 
-                       choices=['api', 'memory', 'cli', 'containerized', 'aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless', 'gcp-containerized', 'gcp-serverless'],
+                       choices=['api', 'memory', 'cli', 'containerized', 'aws-containerized', 'aws-serverless', 'azure-containerized', 'gcp-containerized', 'gcp-serverless'],
                        help='Type of test to run')
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
@@ -1081,7 +1102,7 @@ def main():
     elif args.action == 'deploy':
         if args.type in ['aws-containerized', 'aws-serverless']:
             success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.request_handler_security_group_id, args.agent_runner_security_group_id, args.response_handler_security_group_id, args.alb_security_group_id, args.ecs_service_security_group_id)
-        elif args.type in ['azure-serverless', 'azure-containerized']:
+        elif args.type == 'azure-containerized':
             success = deploy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['gcp-serverless', 'gcp-containerized']:
             success = deploy_gcp_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
@@ -1091,7 +1112,7 @@ def main():
     elif args.action == 'destroy':
         if args.type in ['aws-containerized', 'aws-serverless']:
             success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.request_handler_security_group_id, args.agent_runner_security_group_id, args.response_handler_security_group_id, args.alb_security_group_id, args.ecs_service_security_group_id)
-        elif args.type in ['azure-serverless', 'azure-containerized']:
+        elif args.type == 'azure-containerized':
             success = destroy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['gcp-serverless', 'gcp-containerized']:
             success = destroy_gcp_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
@@ -1109,7 +1130,7 @@ def main():
             success = run_containerized_test(args.path)
         elif args.type in ['aws-containerized', 'aws-serverless']:
             success = test_aws_deployment(args.path, args.deploy_dir)
-        elif args.type in ['azure-containerized', 'azure-serverless']:
+        elif args.type == 'azure-containerized':
             success = test_azure_deployment(args.path, args.deploy_dir)
         elif args.type in ['gcp-containerized', 'gcp-serverless']:
             success = test_gcp_deployment(args.path, args.deploy_dir)

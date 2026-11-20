@@ -15,7 +15,6 @@ from .thread_runner import ThreadRunner
 from .transport.base import QueueTransportFactory
 
 if TYPE_CHECKING:  # pragma: no cover: typing only, so pipeline keeps importing core and api only
-    from ..integration.adapter.gateway import GatewayRunner
     from ..integration.adapter.poller import PollerRunner
 
 
@@ -41,7 +40,6 @@ class IOHandler:
         cls,
         handlers: list[RESTRequestHandler] | None = None,
         pollers: list["PollerRunner"] | None = None,
-        gateways: list["GatewayRunner"] | None = None,
         request_handler: RequestHandler | None = None,
     ) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
@@ -59,10 +57,6 @@ class IOHandler:
             threads on the ``in_memory`` transport only. On a broker transport they are their own
             containers (``PollerRunner.run(adapter)``), so poller count never tracks the replica
             count of this request-bound tier; passing them there logs a warning and starts none.
-        :param gateways: Optional stateful edge gateways (``GatewayRunner``), co-hosted as peer
-            threads. Unlike a poller, a gateway must run in this process: it registers itself as
-            the platform's outbound adapter when it starts, so replies route back to its live
-            connection.
         :param request_handler: Replaces the pipeline's own ``RequestHandler`` on the chat route
             — it does not join it, because both own ``POST /api/v1/chat`` and FastAPI would serve
             whichever registered first, silently. This is the seam a capability that has to act on
@@ -161,15 +155,6 @@ class IOHandler:
                 f"(transport={transport_type}); on broker transports start PollerRunner.run(adapter) as its own container"
             )
 
-        for gateway in gateways or []:
-            tasks.append(
-                ThreadRunner.Task(
-                    execution_function=lambda g=gateway: g.start(),
-                    thread_name=f"gateway-{gateway.adapter.name}",
-                    stop_all_on_failure=True,
-                )
-            )
-
         ThreadRunner.run(tasks=tasks, max_workers=len(tasks))
 
     @classmethod
@@ -262,20 +247,36 @@ class IOHandler:
 
     @classmethod
     def _warn_if_no_agents(cls, config) -> None:
-        """Warn when A2A or agent MCP is on but this process has registered no agents.
+        """Warn when A2A or agent MCP is on but the agent registry knows no agents.
 
-        A2A cards and MCP agent tools are built from this process's agent registry, even though
-        the agents run on the agent runner. A split deployment whose IO process loads no agent
-        modules would serve an empty catalog without saying why. A warning rather than an error:
-        the process still serves everything else.
+        A2A cards and MCP agent tools are built from the registry's descriptors when this process
+        mounts them, even though the agents run on the agent runner. The registry knows an agent
+        either because this process loaded its module or because a shared registry holds the
+        descriptor another process registered. A split deployment whose IO process has neither
+        would serve an empty catalog without saying why. A warning rather than an error: the
+        process still serves everything else.
+
+        A diagnostic never ends the process. When the registry's store cannot be read this says so and
+        returns: mounting the surfaces reads the same store next and raises its own error, which is
+        the one that should stop the start, since cards and tools built from an unread registry would
+        stay empty until a restart.
         """
         from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
         from ..core.runtime import Runtime
 
         surfaces = RESTAPI.agent_protocol_surfaces(config)
-        if surfaces and not Runtime.current().agents():
+        if not surfaces:
+            return
+        try:
+            empty = Runtime.current().registry.is_empty()
+        except Exception as e:
+            cls._log.warning(f"{' and '.join(surfaces)} enabled, but this process could not read the agent registry to check it knows any agent: {e}")
+            return
+        if empty:
             cls._log.warning(
-                f"{' and '.join(surfaces)} enabled but no agents are registered in this process: the A2A catalog and the MCP "
-                "agent tool list will be empty, and per-agent A2A routes are not mounted, so they return 404. Import the same "
-                "agent modules here as in the agent runner: cards and tools are built from this process's registry"
+                f"{' and '.join(surfaces)} enabled but the agent registry knows no agents: the A2A catalog and the MCP agent tool "
+                "list will be empty, and per-agent A2A routes are not mounted, so they return 404. Import the same agent modules "
+                "here as in the agent runner, or share the registry the agent runner registers into (registry.type: redis, "
+                "valkey or dynamodb) and start the runner first: cards and tools are built from the registry when this process "
+                "mounts them"
             )

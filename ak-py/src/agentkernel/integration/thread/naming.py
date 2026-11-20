@@ -27,6 +27,7 @@ import importlib.util
 import logging
 
 from ...core.config import AKConfig
+from ...core.util.reasoning import reasoning_off_params
 
 # Fallback when thread support is not configured (naming config unavailable).
 _DEFAULT_MAX_NAME_LENGTH = 80
@@ -117,10 +118,14 @@ class ThreadNamingStrategy:
         """
         import litellm  # optional dependency — imported lazily so naming degrades to the fallback without it
 
+        model = AKConfig.get().thread.naming.model
         response = litellm.completion(
-            model=AKConfig.get().thread.naming.model,
+            model=model,
             messages=[{"role": "user", "content": instruction}],
             max_tokens=50,
+            # Keep the short budget for the title: reasoning off where the model can turn it off.
+            **reasoning_off_params(model),
+            drop_params=True,
         )
         return response.choices[0].message.content or ""
 

@@ -9,11 +9,36 @@ resource "random_id" "connector" {
 }
 
 locals {
+  # Queue mode always needs Memorystore: the edge and the agent runner exchange replies through it.
+  create_redis = var.create_redis_cluster || var.queue_mode
+
   network_id        = var.network_id != null ? var.network_id : module.vpc[0].network_id
   network_name      = var.network_id != null ? null : module.vpc[0].network_name
   private_subnet_id = var.network_id != null ? var.private_subnet_id : module.vpc[0].private_subnet_id
-  redis_url         = var.create_redis_cluster ? module.redis[0].full_redis_url : null
+  redis_url         = local.create_redis ? module.redis[0].full_redis_url : null
   firestore_db_name = var.create_firestore_database ? module.firestore[0].database_name : null
+
+  # Session and thread connection settings, injected into every tier that runs agents (the
+  # service, and the agent runner in queue mode). Terraform injects only coordinates: the app's
+  # config.yaml declares session.type, except that the Firestore database implies it.
+  session_env = merge(
+    local.redis_url != null ? {
+      AK_SESSION__REDIS__URL = local.redis_url
+    } : {},
+    local.firestore_db_name != null ? {
+      AK_SESSION__TYPE                       = "firestore"
+      AK_SESSION__FIRESTORE__COLLECTION_NAME = module.firestore[0].collection_name
+      AK_SESSION__FIRESTORE__PROJECT_ID      = var.project_id
+      AK_SESSION__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
+    } : {},
+    # Collection name is literal, not module.firestore[0].collection_name — that
+    # output is the session collection; threads need their own.
+    (local.firestore_db_name != null && var.create_firestore_thread_collection) ? {
+      AK_THREAD__FIRESTORE__COLLECTION_NAME = "ak-agent-threads"
+      AK_THREAD__FIRESTORE__PROJECT_ID      = var.project_id
+      AK_THREAD__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
+    } : {},
+  )
 
   # Unique deployment identifier (8 hex chars)
   deployment_id = random_id.deployment.hex
@@ -63,10 +88,24 @@ locals {
     overwrite_path = "/api/v1/chat-multipart"
   }
 
-  default_gateway_map = {
-    "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}"     = local.default_gateway_endpoint
-    "${upper(local.multipart_gateway_endpoint.method)} ${local.multipart_gateway_endpoint.path}" = local.multipart_gateway_endpoint
+  # rest_async polling in queue mode: GET on the chat path reads a stored reply.
+  poll_gateway_endpoint = {
+    path           = local.default_endpoint_path
+    method         = "GET"
+    overwrite_path = "/api/v1/chat"
   }
+
+  # The multipart route is served in every mode (in queue mode the edge saves uploads and queues
+  # only their ids, #871); queue mode adds the poll route for rest_async.
+  default_gateway_map = merge(
+    {
+      "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}"     = local.default_gateway_endpoint
+      "${upper(local.multipart_gateway_endpoint.method)} ${local.multipart_gateway_endpoint.path}" = local.multipart_gateway_endpoint
+    },
+    var.queue_mode && var.execution_mode == "rest_async" ? {
+      "GET ${local.poll_gateway_endpoint.path}" = local.poll_gateway_endpoint
+    } : {},
+  )
 
   user_gateway_map = {
     for ep in var.gateway_endpoints :
@@ -128,7 +167,7 @@ resource "time_sleep" "wait_for_network" {
 # Redis — optional session cache
 module "redis" {
   source = "yaalalabs/ak-common/google//modules/memorystore"
-  count = var.create_redis_cluster ? 1 : 0
+  count = local.create_redis ? 1 : 0
 
   project_id    = var.project_id
   region        = var.region

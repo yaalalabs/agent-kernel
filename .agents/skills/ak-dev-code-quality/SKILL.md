@@ -3,7 +3,7 @@ name: ak-dev-code-quality
 description: >
   Code quality standards, formatting, Python style rules (classes over script-style
   functions, configuration-field rules), commit conventions, and PR workflow for
-  Agent Kernel development. Use this skill when making contributions, formatting
+  Open Agent Kernel development. Use this skill when making contributions, formatting
   code, writing commit messages, or preparing pull requests.
 license: Apache-2.0
 metadata:
@@ -15,7 +15,7 @@ metadata:
 
 ## Code Formatting
 
-Agent Kernel uses `black` for formatting, `isort` for import sorting, and `ruff` for the typing rules only
+Open Agent Kernel (OAK) uses `black` for formatting, `isort` for import sorting, and `ruff` for the typing rules only
 (pyupgrade `UP006`/`UP007`/`UP035`/`UP045`; see Type annotations below).
 
 ### Auto-format
@@ -293,10 +293,10 @@ Feature logic is written as classes, not as procedural module-level functions. T
 
 ### Logger Hierarchy
 
-- **AK Logger** (`"ak"`): Parent logger for all Agent Kernel components
+- **OAK Logger** (`"ak"`): Parent logger for all OAK components
   - Child loggers like `"ak.api"`, `"ak.runtime"`, etc. inherit from this
-  - Propagation is disabled at the AK level to prevent logs from bubbling to the root
-  - Use `logging.getLogger("ak.<module>")` for Agent Kernel components
+  - Propagation is disabled at the OAK level to prevent logs from bubbling to the root
+  - Use `logging.getLogger("ak.<module>")` for OAK components
 
 ### Log Levels
 

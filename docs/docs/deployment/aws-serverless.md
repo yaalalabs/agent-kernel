@@ -32,13 +32,13 @@ graph LR
     A[User] <--> B[API Gateway]
     B <--> C[Lambda Authorizer]
     B <--> D[Lambda Function]
-    D --> E[Agent Kernel Runtime]
+    D --> E[OAK Runtime]
     E <--> F[Your Agent]
     D <--> G[Redis/ElastiCache]
     D <--> H[DynamoDB]
     
     style C fill:#ff9900,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Queue Based Execution: using queues to improve the scalability (recommended for prod)
@@ -62,9 +62,9 @@ graph LR
     F <--> K[Your Agent]
     
     style C fill:#ff9900,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style H fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style F fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style H fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 #### ASYNC (WebSocket) mode
@@ -86,10 +86,10 @@ graph LR
     G <--> K[Session Store]
     G <--> L[Your Agent]
     
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style I fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style G fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style I fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 #### ASYNC + delta (WebSocket token streaming) mode: queue-based
@@ -113,10 +113,10 @@ graph LR
     G <--> K[Session Store]
     G <--> L[Your Agent]
 
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style I fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style G fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style I fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 #### ASYNC + delta (WebSocket token streaming) mode: direct (no queues)
@@ -131,8 +131,8 @@ graph LR
     D <--> F[Session Store]
     D <--> G[Your Agent]
 
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 The request handler receives the incoming API request, the agent runner executes the agent logic, and the response handler persists outbound messages to the configured response store. In queue-backed modes, the three-lambda split keeps request ingestion, execution, and response persistence independent.
@@ -145,7 +145,7 @@ With `message_type: delta`, each stream event is sent as a separate `STREAM_CHUN
 
 - AWS CLI configured
 - AWS credentials with Lambda/API Gateway permissions
-- Agent Kernel with AWS extras: `uv add "agentkernel[aws]"`
+- Open Agent Kernel (OAK) with AWS extras: `uv add "agentkernel[aws]"`
 - For authentication: `uv add "agentkernel[api,aws]"`
 
 ## Deployment
@@ -1420,14 +1420,14 @@ cost is one authorizer call per request, chat routes included.
 | Request-handler Lambda | `@Lambda.register("/slack/events", method="POST")` calling `LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter())).handle` |
 | Terraform | `gateway_endpoints = [{ path = "/slack/events", method = "POST" }]` |
 
-Each mismatch fails quietly from Agent Kernel's side:
+Each mismatch fails quietly from OAK's side:
 
 - In the authorizer and the gateway, but not registered: a 500 from the router's no-route error.
 - Registered and in the gateway, but not in the authorizer: a 403. A platform that sends no
   `Authorization` header is denied before your validator runs, with the authorizer logging
   `Event validation failed`; Teams, whose Bot Framework token does arrive in that header, reaches your
   validator and is rejected there.
-- A nonzero authorizer TTL: a 401 that Agent Kernel never logs, because API Gateway answers before the
+- A nonzero authorizer TTL: a 401 that OAK never logs, because API Gateway answers before the
   authorizer runs.
 
 ### Cold starts and Slack's 3 seconds
@@ -1492,8 +1492,8 @@ graph TB
     
     F --> G[DynamoDB<br/>Multi-AZ]
     
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style G fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style G fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 **Key Features:**
