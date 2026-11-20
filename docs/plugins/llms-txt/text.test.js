@@ -103,7 +103,7 @@ test('openingOf reads past a blog post title, banner and truncate marker', () =>
 test('rewriteLinks resolves relative targets and leaves complete ones', () => {
   const line = 'A [doc](../api/rest-api#run "Title"), an ![image](/img/x.png), [out](https://e.com) and [mail](mailto:a@b.c).';
   assert.equal(
-    rewriteLinks(line, (target) => `https://site${target.replace('..', '')}`),
+    rewriteLinks(line, (target) => new URL(target, 'https://site/docs/page').href),
     'A [doc](https://site/api/rest-api#run "Title"), an ![image](https://site/img/x.png), [out](https://e.com) and [mail](mailto:a@b.c).',
   );
 });
