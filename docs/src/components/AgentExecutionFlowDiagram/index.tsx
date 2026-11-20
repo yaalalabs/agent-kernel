@@ -283,6 +283,9 @@ export default function AgentExecutionFlowDiagram() {
           ))}
 
           <div className={styles.parallelCol}>
+            <span className={styles.parallelLabel} aria-hidden="true">
+              In parallel
+            </span>
             {parallelSteps.map((step) => (
               <FlowStepCard key={step.id} step={step} innerRef={setNodeRef(step.id)} />
             ))}

@@ -10,7 +10,11 @@ import styles from './levels.module.css';
    The three guided tours are the three layers of one drawing: the outcome on
    top, the code in the middle, the runtime underneath. The drawing and the
    list are one control: a row lights its layer, and a layer lights its row.
-   Until the visitor points at something, the light walks down the stack. */
+   Until the visitor points at something, the light walks down the stack.
+
+   On a small screen the drawing sits above the rows, so the two are never
+   in view together. There the light does not walk: the drawing is still and
+   every row is shown at full strength (see levels.module.css). */
 
 type Level = { to: string; tag: string; title: string; layer: string; text: string };
 
@@ -39,6 +43,8 @@ const LEVELS: Level[] = [
 ];
 
 const STEP_MS = 2800;
+// Below this width the drawing and the rows are stacked (the same breakpoint as the stylesheet).
+const STACKED_QUERY = '(max-width: 996px)';
 
 export function Levels(): JSX.Element {
   // The persona pages link back to this section: tell the build that the id exists.
@@ -47,10 +53,19 @@ export function Levels(): JSX.Element {
   const [active, setActive] = useState(0);
   // Once the visitor has pointed at a level, the light stops walking on its own.
   const [held, setHeld] = useState(false);
+  const [stacked, setStacked] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia(STACKED_QUERY);
+    const update = () => setStacked(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
 
   useEffect(() => {
     const node = section.current;
-    if (held || !node) return undefined;
+    if (held || stacked || !node) return undefined;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
     let timer = 0;
     const seen = new IntersectionObserver(
@@ -67,7 +82,7 @@ export function Levels(): JSX.Element {
       window.clearInterval(timer);
       seen.disconnect();
     };
-  }, [held]);
+  }, [held, stacked]);
 
   const choose = (level: number) => {
     setHeld(true);
@@ -86,7 +101,7 @@ export function Levels(): JSX.Element {
 
         <div className={styles.layout}>
           <div className={styles.art}>
-            <LevelStack active={active} onActivate={choose} />
+            <LevelStack active={stacked ? null : active} onActivate={stacked ? undefined : choose} />
           </div>
 
           <ol className={styles.rows}>
@@ -94,7 +109,7 @@ export function Levels(): JSX.Element {
               <li key={level.to}>
                 <Link
                   to={level.to}
-                  className={clsx(styles.row, index === active && styles.rowActive)}
+                  className={clsx(styles.row, !stacked && index === active && styles.rowActive)}
                   onPointerEnter={() => choose(index)}
                   onFocus={() => choose(index)}
                 >

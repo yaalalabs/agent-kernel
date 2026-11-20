@@ -22,6 +22,15 @@ export default function CookieConsent(): JSX.Element | null {
     }
   }, []);
 
+  // The chat launcher shares the bottom edge on small screens: it reads this to stay out of the way.
+  useEffect(() => {
+    if (!visible) return undefined;
+    document.documentElement.dataset.akConsent = 'pending';
+    return () => {
+      delete document.documentElement.dataset.akConsent;
+    };
+  }, [visible]);
+
   function accept() {
     localStorage.setItem(CONSENT_KEY, 'granted');
     updateGtagConsent('granted');
@@ -40,9 +49,12 @@ export default function CookieConsent(): JSX.Element | null {
     <div className={styles.banner} role="dialog" aria-modal="true" aria-label="Cookie consent">
       <div className={styles.text}>
         <span>
-          We use analytics cookies to understand how visitors use our documentation and improve it.
-          Your IP address is anonymized and no personal data is sold or shared.
-          You can browse the site without accepting; declining has no effect on access to content.{' '}
+          We use analytics cookies to understand how visitors use our documentation and improve it.{' '}
+          {/* The detail is one tap away in the policies, so a phone shows the first sentence only */}
+          <span className={styles.detail}>
+            Your IP address is anonymized and no personal data is sold or shared. You can browse the site
+            without accepting; declining has no effect on access to content.{' '}
+          </span>
           <Link to="/cookie-policy">Cookie Policy</Link> ·{' '}
           <Link to="/privacy-policy">Privacy Policy</Link>
         </span>

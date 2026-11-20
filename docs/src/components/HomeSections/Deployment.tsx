@@ -31,15 +31,6 @@ const TARGETS: Target[] = [
     ],
   },
   {
-    icon: <FaMicrosoft />,
-    name: 'Microsoft Azure',
-    description: 'Container Apps with Cosmos DB session storage.',
-    modes: ['Azure Container Apps (containerized)', 'Queue mode over Azure Service Bus'],
-    modules: [
-      { kind: 'terraform', name: 'Azure containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
-    ],
-  },
-  {
     icon: <SiGooglecloud />,
     name: 'Google Cloud',
     description: 'Cloud Run serverless or containerized deployments with Firestore session storage.',
@@ -47,6 +38,15 @@ const TARGETS: Target[] = [
     modules: [
       { kind: 'terraform', name: 'GCP serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/google' },
       { kind: 'terraform', name: 'GCP containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/google' },
+    ],
+  },
+  {
+    icon: <FaMicrosoft />,
+    name: 'Microsoft Azure',
+    description: 'Container Apps with Cosmos DB session storage.',
+    modes: ['Azure Container Apps (containerized)', 'Queue mode over Azure Service Bus'],
+    modules: [
+      { kind: 'terraform', name: 'Azure containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
     ],
   },
   {
@@ -73,7 +73,7 @@ export function Deployment(): JSX.Element {
           index="04"
           label="Deployment"
           title="Deploy anywhere"
-          lead="Run the same agent code on AWS, Azure, GCP or your own Kubernetes cluster. Terraform modules and a Helm chart are included."
+          lead="Run the same agent code on AWS, GCP, Azure or your own Kubernetes cluster. Terraform modules and a Helm chart are included."
         />
 
         <div className={styles.grid}>

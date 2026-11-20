@@ -114,6 +114,10 @@ const MIN_SCALE = 0.25;
 const MAX_SCALE = 8;
 const ZOOM_STEP = 1.2;
 const STAGE_PADDING = 48;
+// Below this stage width a diagram fitted to the screen is too small to read.
+const NARROW_STAGE = 600;
+// Room for the toolbar above a diagram that opens from its top edge.
+const TOOLBAR_CLEARANCE = 72;
 
 function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
@@ -150,6 +154,7 @@ function MermaidLightbox({
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [fitScale, setFitScale] = useState(1);
+  const [fitOffset, setFitOffset] = useState({ x: 0, y: 0 });
   const fittedRef = useRef(false);
   const dragRef = useRef<{
     pointerId: number;
@@ -204,10 +209,23 @@ function MermaidLightbox({
         (stage.clientWidth - STAGE_PADDING) / width,
         (stage.clientHeight - STAGE_PADDING) / height,
       );
-      const initial = clampScale(Math.min(fit, 2));
+      // On a phone the fitted diagram is still too small to read. It opens at twice that size,
+      // from its top left corner, and the reader drags it: the labels are legible at once.
+      const narrow = stage.clientWidth < NARROW_STAGE;
+      const initial = clampScale(narrow ? fit * 2 : Math.min(fit, 2));
+      const overX = (width * initial - stage.clientWidth) / 2;
+      const overY = (height * initial - stage.clientHeight) / 2;
+      const start = narrow
+        ? {
+            x: overX > 0 ? overX + STAGE_PADDING / 2 : 0,
+            y: overY > 0 ? overY + TOOLBAR_CLEARANCE : 0,
+          }
+        : { x: 0, y: 0 };
       fittedRef.current = true;
       setFitScale(initial);
+      setFitOffset(start);
       setScale(initial);
+      setOffset(start);
     });
     observer.observe(canvas);
     return () => observer.disconnect();
@@ -285,8 +303,8 @@ function MermaidLightbox({
   );
   const reset = useCallback(() => {
     setScale(fitScale);
-    setOffset({ x: 0, y: 0 });
-  }, [fitScale]);
+    setOffset(fitOffset);
+  }, [fitScale, fitOffset]);
 
   return createPortal(
     <div

@@ -17,6 +17,12 @@
   scrollbar-width: none;
   border-bottom: 1px solid var(--ak-border);
   background-color: var(--ak-bg);
+  transition: top 0.2s ease;
+}
+
+/* The navigation bar slides away when the page is scrolled down: the bar takes its place. */
+:global(html:has(.navbar[class*='navbarHidden'])) .topicBar {
+  top: 0;
 }
 
 .topicBar::-webkit-scrollbar {

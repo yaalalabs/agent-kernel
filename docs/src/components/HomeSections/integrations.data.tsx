@@ -1,7 +1,7 @@
 import React from "react";
 import { FaAws, FaMicrosoft } from "react-icons/fa";
 import { VscAzure } from "react-icons/vsc";
-import { TbBrandSlack, TbBrandTeams, TbPlugConnected } from "react-icons/tb";
+import { TbBrandSlack, TbBrandTeams, TbComponents, TbMarkdown, TbPlugConnected, TbTerminal2, TbVariable } from "react-icons/tb";
 import {
   SiApachekafka,
   SiAuth0,
@@ -66,6 +66,7 @@ const KB = "/docs/advanced/knowledge-bases";
 const SESSION = "/docs/core-concepts/session";
 const QUEUE = "/docs/advanced/queue-mode-guide";
 const SANDBOX = "/docs/advanced/sandbox";
+const SECRETS = "/docs/advanced/secrets";
 const TRACE = "/docs/advanced/traceability";
 const TESTING = "/docs/testing/automated-testing";
 const SKILLS = "/docs/agent-skills";
@@ -107,6 +108,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "MCP", role: "Protocol", href: "/docs/api/mcp-server", icon: <SiModelcontextprotocol /> },
       { name: "A2A", role: "Protocol", href: "/docs/api/a2a-server", logo: "/img/integrations/a2a-white.svg", mono: true },
       { name: "AG-UI", role: "Protocol", href: "/docs/api/agui-server", logo: "/img/integrations/agui.svg", mono: true },
+      { name: "A2UI", role: "Protocol", href: "/docs/advanced/a2ui", icon: <TbComponents />, title: "A2UI: an agent answers with an interface, carried over REST, MCP and AG-UI" },
       { name: "REST & SSE", role: "API", href: "/docs/api/rest-api", icon: <SiFastapi /> },
       { name: "WebSocket", role: "API", href: "/docs/api/rest-api", icon: <TbPlugConnected /> },
     ],
@@ -119,6 +121,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Amazon DynamoDB", role: "Memory", href: SESSION, icon: <FaAws />, title: "Amazon DynamoDB: session, thread, attachment, response, schedule and agent registry stores" },
       { name: "Azure Cosmos DB", role: "Memory", href: SESSION, icon: <VscAzure />, title: "Azure Cosmos DB: session and thread stores" },
       { name: "Google Firestore", role: "Memory", href: SESSION, icon: <SiFirebase />, title: "Google Firestore: session and thread stores" },
+      { name: "Open Knowledge Format", role: "Knowledge store", href: KB, icon: <TbMarkdown />, title: "Open Knowledge Format: markdown bundles from a local directory or S3, with no database to run" },
       { name: "Amazon S3", role: "Knowledge store", href: KB, icon: <FaAws /> },
       { name: "ChromaDB", role: "Vector knowledge", href: KB, logo: "/img/integrations/chroma.svg" },
       { name: "Neo4j", role: "Graph knowledge", href: KB, icon: <SiNeo4J /> },
@@ -135,7 +138,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Azure API Management", role: "Gateway", href: "/docs/deployment/azure-containerized", icon: <VscAzure /> },
       { name: "Google Cloud Run", role: "Serverless & containers", href: "/docs/deployment/gcp-serverless", icon: <SiGooglecloud /> },
       { name: "GCP API Gateway", role: "Gateway", href: "/docs/deployment/gcp-serverless", icon: <SiGooglecloud /> },
-      { name: "Kubernetes", role: "On-prem", href: K8S, icon: <SiKubernetes />, title: "Kubernetes: on-prem deployment and mounted Secrets" },
+      { name: "Kubernetes", role: "On-prem", href: K8S, icon: <SiKubernetes />, title: "Kubernetes: on-prem deployment with the Helm chart" },
       { name: "Helm", role: "Chart", href: K8S, icon: <SiHelm /> },
       { name: "KEDA", role: "Autoscaling", href: K8S, logo: "/img/integrations/keda.svg" },
       { name: "Terraform", role: "Infrastructure as code", href: "/docs/deployment/overview", icon: <SiTerraform /> },
@@ -145,11 +148,18 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Google Cloud Pub/Sub", role: "Queue", href: QUEUE, icon: <SiGooglepubsub /> },
       { name: "Azure Service Bus", role: "Queue", href: QUEUE, icon: <VscAzure /> },
       { name: "Amazon EventBridge", role: "Scheduler", href: "/docs/advanced/scheduling", icon: <FaAws /> },
-      // The secrets page is only in the unreleased docs until the next release; drop `next` once it ships.
-      { name: "AWS Systems Manager", role: "Secrets", href: "/docs/next/advanced/secrets", icon: <FaAws />, title: "AWS Systems Manager: Parameter Store secrets and EC2 sandbox attach" },
-      { name: "Docker", role: "Sandbox", href: SANDBOX, icon: <SiDocker /> },
-      { name: "E2B", role: "Sandbox", href: SANDBOX, logo: "/img/integrations/e2b.png" },
-      { name: "Daytona", role: "Sandbox", href: SANDBOX, logo: "/img/integrations/daytona.png" },
+      // Secret providers: every `secret.provider.type` the runtime ships.
+      { name: "Environment variables", role: "Secrets", href: SECRETS, icon: <TbVariable />, title: "Environment variables: the default secret provider" },
+      { name: "AWS Systems Manager", role: "Secrets", href: SECRETS, icon: <FaAws />, title: "AWS Systems Manager: Parameter Store secrets" },
+      { name: "Kubernetes Secrets", role: "Secrets", href: SECRETS, icon: <SiKubernetes />, title: "Kubernetes Secrets: mounted into the pod" },
+      // Sandbox providers: every sandbox profile `type` the runtime ships. The names differ from the
+      // deployment chips above (Kubernetes, AWS), because the architecture diagram picks chips by name.
+      { name: "Docker", role: "Sandbox", href: SANDBOX, icon: <SiDocker />, title: "Docker: a container per sandbox" },
+      { name: "Kubernetes pods", role: "Sandbox", href: SANDBOX, icon: <SiKubernetes />, title: "Kubernetes pods: a pod per sandbox" },
+      { name: "E2B", role: "Sandbox", href: SANDBOX, logo: "/img/integrations/e2b.png", title: "E2B: managed micro-VMs" },
+      { name: "Daytona", role: "Sandbox", href: SANDBOX, logo: "/img/integrations/daytona.png", title: "Daytona: managed container sandboxes" },
+      { name: "Amazon EC2", role: "Sandbox", href: SANDBOX, icon: <FaAws />, title: "Amazon EC2: attach to an existing instance over SSM Run Command" },
+      { name: "Local subprocess", role: "Sandbox", href: SANDBOX, icon: <TbTerminal2 />, title: "Local subprocess: runs on the host, for development and tests" },
     ],
   },
   {

@@ -50,44 +50,6 @@
   overflow: hidden;
 }
 
-/* pip or uv: two small switches at the head of the install line */
-.installers {
-  display: inline-flex;
-  align-self: stretch;
-  margin-left: calc(-1 * var(--ak-space-16));
-  border-right: 1px solid var(--ak-border);
-}
-
-.installer {
-  padding: 0 var(--ak-space-12);
-  border: 0;
-  background: none;
-  font-family: var(--ifm-font-family-monospace);
-  font-size: var(--ak-type-label);
-  letter-spacing: 0.06em;
-  color: var(--ak-text-muted);
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.installer:first-child {
-  padding-left: var(--ak-space-16);
-}
-
-.installer:hover,
-.installerActive {
-  color: var(--ak-fg);
-}
-
-.installerActive {
-  box-shadow: inset 0 -2px 0 var(--ak-primary);
-}
-
-.installer:focus-visible {
-  outline: 2px solid var(--ak-primary);
-  outline-offset: -2px;
-}
-
 .install .command {
   white-space: nowrap;
   padding: 0;
@@ -140,17 +102,15 @@
 
 }
 
-/* On a phone the install line has to fit in one row */
-@media (max-width: 480px) {
-  .install {
-    gap: var(--ak-space-12);
+/* On a phone the mark stands above the copy (see components/ParticleLogo): the copy starts
+   below it. --hero-mark is the size of the mark's box. */
+@media (max-width: 600px) {
+  .hero {
+    --hero-mark: 9rem;
   }
 
-  .install .command {
-    font-size: var(--ak-type-label);
-  }
-
-  .prompt {
-    display: none;
+  .grid {
+    padding-top: calc(var(--ak-space-24) + var(--hero-mark) + var(--ak-space-24));
+    padding-bottom: var(--ak-space-64);
   }
 }

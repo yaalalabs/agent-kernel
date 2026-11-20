@@ -121,7 +121,8 @@ is held to `--ak-measure` (720 px).
   with one soft shadow in the light mode, and floating layers (the chat launcher and its panel) carry a shadow.
 - Content is never hidden without script, with reduced motion, in print, or when it is already on screen at
   load. `Reveal` is the only entrance effect.
-- Section headers are left-aligned and headings are in sentence case.
+- Section headers are left-aligned and headings are in sentence case. The one exception is the home hero
+  headline, which capitalises every word.
 - Orange is for the one thing to notice in a view: the primary action, the active item, the accent in a drawing.
 - Every colour comes from a token, so that both colour modes work. Check new work in both.
 - Interface icons are Tabler outline icons (`react-icons/tb`). Brand marks are Simple Icons (`react-icons/si`), and another set only where Simple Icons has no mark (AWS, Microsoft, Azure).
@@ -139,6 +140,17 @@ integrations section (`docs/src/components/DotField/`, `Wave` and `Floor`, on th
 `engine.ts`). They use no library, read their colours from the theme tokens and pause off screen. They are
 decoration, so nothing depends on them: without WebGL or with reduced motion the hero shows the plain mark,
 the wave is one still frame with reduced motion, and the floor is not drawn.
+
+**Small screens.** Check new work at 390 px with touch emulation, in both modes.
+
+- The page never scrolls sideways. Wide content (code, tables, tab rows) scrolls inside its own box.
+- Touch targets are 44 px. Controls are sized to it. A one-line text link gets its target from an unseen
+  box under `@media (pointer: coarse)`, as `.ak-link` does, so the layout does not move.
+- Anything named only on hover has its name written out under `@media (hover: none)`.
+- A bar that sticks under the navbar follows it when it slides away, as `StepTimeline` does.
+- Form fields are 16 px or larger, or Safari zooms the page.
+- The navbar is 56 px under 996 px. On a phone the hero mark is a block above the copy, the chat launcher
+  is the mark alone, and the integrations fold into six groups.
 
 ## Blog banners
 

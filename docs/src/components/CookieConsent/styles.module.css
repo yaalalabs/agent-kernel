@@ -54,23 +54,6 @@
   flex-shrink: 0;
 }
 
-@media (max-width: 600px) {
-  .banner {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .actions {
-    width: 100%;
-  }
-
-  .decline,
-  .accept {
-    flex: 1;
-    text-align: center;
-  }
-}
-
 .decline,
 .accept {
   padding: 0.4rem 1rem;
@@ -97,4 +80,31 @@
   background: rgba(var(--ak-primary-rgb), 0.15);
   color: var(--ak-primary-text);
   border: 1px solid rgba(var(--ak-primary-rgb), 0.3);
+}
+
+/* Phones: one sentence, the two policy links, and two full-size buttons */
+@media (max-width: 600px) {
+  .banner {
+    flex-direction: column;
+    align-items: stretch;
+    bottom: 1rem;
+    gap: 1rem;
+    font-size: var(--ak-type-small);
+  }
+
+  .detail {
+    display: none;
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .decline,
+  .accept {
+    flex: 1;
+    min-height: 2.75rem;
+    font-size: var(--ak-type-small);
+    text-align: center;
+  }
 }

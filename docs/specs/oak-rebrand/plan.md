@@ -99,7 +99,7 @@ Order of work for [spec.md](spec.md). Each iteration leaves the site building.
 - **Goal:** the home page is an announcement strip and nine sections built from the design system.
 - **Files:** `docs/src/pages/index.tsx`, `docs/src/components/HomeSections/*`, `docs/src/components/ArchitectureOverview/*`, `docs/src/components/LevelStack/*`, `docs/src/components/BrandArt/*`, `docs/src/components/FAQ/*`
 - **Steps:**
-  1. Hero copy: a headline short enough for display size, a lead, two actions, and an install line that switches between `pip install agentkernel` and `uv add agentkernel`.
+  1. Hero copy: a headline short enough for display size, a lead, two actions, and an install line (`uv add agentkernel`; it first switched between pip and uv, see iteration 21).
   2. Trust marks row with the drawn seals; the separate trust section goes, and the footer keeps its two membership badges.
   3. Capability rail: six stages, each with its drawing and the code or config that switches it on (spec 6).
   4. Architecture as three columns joined by straight rails (spec 6).
@@ -211,7 +211,31 @@ Order of work for [spec.md](spec.md). Each iteration leaves the site building.
   5. Bring every other dev skill that names a site file into line. Thirteen do: `ak-dev-sync-skills-and-docs-from-commit`, `ak-dev-review-pr`, and the eleven `ak-dev-new-*` skills for an evaluator, framework, guardrail, identity provider, knowledge base, messaging platform, multimodal store, queue transport, sandbox, secret provider and tracing provider.
 - **Verify:** Testing step 4; the `ak-dev-sync-docs-from-branch` checklist finds nothing left to sync.
 
+## Iteration 20: Phone pass
+
+- **Goal:** the site works on a phone as well as it does on a desktop.
+- **Files:** `docs/src/css/custom.css`, `docs/src/css/blog.css`, `docs/src/components/HomeSections/**`, and the cookie banner, chat, FAQ, loop diagram, architecture, particle mark, footer, Mermaid and blog index components
+- **Steps:**
+  1. Audit eleven pages at 390 px with touch emulation (`research/mobile-audit.md`): 6 things broken, 16 design findings.
+  2. Fix all 22. What shipped for each is in the audit's Outcome table.
+  3. Add the small-screen rules to `AGENTS.md`.
+- **Verify:** no page scrolls sideways at 390, 360 or 320 px; the home page is unchanged at 1440 px; Testing step 6.
+
+## Iteration 21: Home page follow-ups
+
+- **Goal:** four requests from the maintainer after the phone pass.
+- **Files:** `docs/src/components/HomeSections/{integrations.data.tsx,Integrations.tsx,integrations.module.css,Hero.tsx,hero.module.css,Deployment.tsx}`, `README.md`
+- **Steps:**
+  1. The integrations section lists every built-in provider: three more sandboxes (Kubernetes pods, Amazon EC2 over SSM, local subprocess), two more secret providers (environment variables, Kubernetes Secrets), A2UI and Open Knowledge Format. 82 entries, from 75. In-memory defaults are not listed: they are not something to plug in.
+  2. The Guard group is taller for it, so the section now measures whether its tallest group fits the pinned frame, and falls back to the stacked list where it does not. Short or narrow windows set the groups a little closer.
+  3. The hero headline capitalises every word, on the site and in the root README.
+  4. The hero install line is `uv add agentkernel` alone.
+  5. Google Cloud comes before Azure in the deployment tiles.
+- **Verify:** the pinned section at 1440 by 900, 1280 by 720 and 1024 by 768, and the stacked list at 1000 by 700; Testing step 6.
+
 ## Known gaps
+
+- Phones were checked in Chrome's emulation only: no real device, Safari on iOS or Android Chrome.
 
 - Not checked: Safari and Firefox; the WebGL hero on a low-power device; class and state diagrams in the light palette.
 - Eight integration logos stay as PNG because neither icon set has a mark for them (Google ADK, Bedrock, Daytona, E2B, Langfuse, LiteLLM, OpenLLMetry, TypeSafe).

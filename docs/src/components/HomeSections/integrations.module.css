@@ -127,16 +127,104 @@
   filter: var(--ak-mono-filter);
 }
 
+/* ── Small screens: the groups fold. A group's heading is its switch (see Integrations.tsx). ── */
+
+.fold {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* The whole head of the group is the target: the label above the heading, and the count and
+   chevron beside it, not only the words of the heading */
+.fold::before {
+  content: '';
+  position: absolute;
+  inset: -3.25rem calc(-1 * var(--ak-space-48)) calc(-1 * var(--ak-space-16)) 0;
+}
+
+.fold:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 4px;
+}
+
+/* The count and the chevron sit beside the heading's first line, at the far end */
+.foldMeta {
+  position: absolute;
+  top: 0.2em;
+  right: calc(-1 * var(--ak-space-48));
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ak-space-8);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--ak-text-muted);
+}
+
+.foldIcon {
+  font-size: 1.25rem;
+  color: var(--ak-text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.panelOpen .foldIcon {
+  transform: rotate(180deg);
+}
+
 @media (max-width: 996px) {
+  .all {
+    margin-bottom: var(--ak-space-32);
+  }
+
   .panel {
+    position: relative;
     grid-template-columns: minmax(0, 1fr);
-    padding-block: var(--ak-space-32);
+    row-gap: var(--ak-space-8);
+    padding-block: var(--ak-space-24);
+  }
+
+  .panel:last-child {
+    padding-bottom: 0;
+  }
+
+  .panel > :global(.ak-h3) {
+    padding-right: var(--ak-space-48);
   }
 
   .sets {
     grid-column: 1;
     grid-row: auto;
-    margin-top: var(--ak-space-8);
+    margin-top: var(--ak-space-16);
+    padding-bottom: var(--ak-space-8);
+  }
+
+  /* Folded. Before script runs the closed groups are simply not shown. Once it has, they are
+     hidden "until found" instead, so find-in-page can still reach them. */
+  .panel:not(.panelOpen) .sets {
+    display: none;
+  }
+
+  .panel:not(.panelOpen) .sets[hidden='until-found'] {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    content-visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foldIcon {
+    transition: none;
   }
 }
 
@@ -297,6 +385,22 @@
 
 .pinned .sets {
   margin-top: var(--ak-space-32);
+}
+
+/* A short or narrow window: the groups are set a little closer, so the tallest still fits the frame */
+@media (max-height: 820px), (max-width: 1200px) {
+  .pinned .sets {
+    gap: var(--ak-space-16);
+    margin-top: var(--ak-space-24);
+  }
+
+  .pinned .setTitle {
+    margin-bottom: var(--ak-space-8);
+  }
+
+  .pinned .chip {
+    height: 2.25rem;
+  }
 }
 
 .pinned .panelActive .chips li {

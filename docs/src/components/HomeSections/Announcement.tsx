@@ -13,11 +13,13 @@ export function Announcement(): JSX.Element {
       <div className={clsx('ak-container', styles.inner)}>
         <span className={clsx('ak-tag', styles.tag)}>New</span>
         <p className={styles.text}>
-          <strong>Identity provider support.</strong> Auth0, Keycloak, Okta, Cognito, Entra ID or Firebase now
-          authenticates every surface.
+          <strong>Identity provider support.</strong>{' '}
+          <span className={styles.detail}>
+            Auth0, Keycloak, Okta, Cognito, Entra ID or Firebase now authenticates every surface.
+          </span>
         </p>
         <Link to="/docs/advanced/identity-and-access" className={clsx('ak-link', styles.link)}>
-          Read more
+          <span className={styles.linkText}>Read more</span>
         </Link>
       </div>
     </aside>

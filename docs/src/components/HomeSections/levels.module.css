@@ -125,6 +125,22 @@
     grid-template-columns: 2.5rem minmax(0, 1fr) auto;
     padding-block: var(--ak-space-24);
   }
+
+  /* The drawing is out of view while the rows are read, so no row is singled out:
+     all three are at full strength, and each arrow shows it can be followed. */
+  .row::before {
+    display: none;
+  }
+
+  .rowTitle {
+    color: var(--ak-fg);
+  }
+
+  .rowIndex,
+  .rowGo {
+    color: var(--ak-primary-text);
+    transform: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
