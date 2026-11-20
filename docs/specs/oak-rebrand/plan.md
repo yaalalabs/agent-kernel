@@ -248,6 +248,16 @@ Order of work for [spec.md](spec.md). Each iteration leaves the site building.
 - **Kept, by the maintainer's decision:** the footer copyright line, the 20 older doc versions and published blog posts; and, as legal text or identifiers, the policy pages, `NOTICE`, README copyright lines, the `yaalalabs` organisation and registry names, `kernel.yaala.ai` and the email addresses.
 - **Verify:** no "Yaala Labs" in the built home page outside the footer copyright; Testing step 6.
 
+## Iteration 23: llms.txt
+
+- **Goal:** an AI assistant can find out what OAK is and where each docs page is, from one file.
+- **Files:** `docs/plugins/llms-txt/{index.js,text.js,template.md}`, `docs/docusaurus.config.js`, `docs/README.md`, `AGENTS.md`, `.agents/skills/ak-dev-sync-docs-from-branch/SKILL.md`
+- **Steps:**
+  1. Write the plugin (spec, section 9) and register it under `plugins` in the site config.
+  2. Write the summary in `template.md`.
+  3. Tell contributors which part is hand-written: `AGENTS.md` and the docs sync skill.
+- **Verify:** the build writes both files; every address in `llms.txt` under the site's own domain is a page of the build; `llms-full.txt` has one `Source:` line for each docs page and no relative link outside code.
+
 ## Known gaps
 
 - Not checked: Safari and Firefox; a real phone or Android Chrome (phones were checked in Chrome's emulation only); the WebGL hero on a low-power device; class and state diagrams in the light palette.

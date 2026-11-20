@@ -591,6 +591,34 @@ banner are in `branding/README.md` (*Blog banners*).
 - `ak-dev-sync-docs-from-branch` tells a contributor to add an entry at the top when a branch ships a
   headline capability.
 
+### 9. llms.txt
+
+Two files for AI assistants, in the format of [llmstxt.org](https://llmstxt.org), written by a local
+plugin on every build. No dependency is added.
+
+**Plugin: `docs/plugins/llms-txt/`** (`index.js`, the text helpers in `text.js`, the summary in `template.md`)
+
+- It runs in `postBuild` and reads what Docusaurus has loaded: the docs plugin's versions, each page's
+  title, permalink and source file, the resolved sidebar, and the blog plugin's posts.
+- It describes the version served at `/docs` (`isLast`): the released docs, because that is what an
+  installed package matches. Pages marked `draft` or `unlisted` are left out.
+- `/llms.txt`:
+  1. the summary from `template.md`, hand-written: what OAK is, the identifiers that kept the old name,
+     the install command, the supported Python versions, where other versions of the docs are, and the
+     licence. `{{site}}` and `{{version}}` are filled in.
+  2. one section per top-level sidebar category, with the loose pages first under "Getting started".
+     Nested categories are flattened into their parent. A page no sidebar lists goes under "More".
+  3. each page as `- [title](absolute address): description`. The description is the front matter
+     `description` where there is one, else the first sentence of the page's opening paragraph, at most
+     220 characters. A nested page titled "Overview" is named after its category.
+  4. the hand-written "Website" and "Source and packages" sections, then the blog posts under
+     "Optional", which the format lets a reader skip.
+- `/llms-full.txt`: the markdown of the same pages in the same order, each under a `Source:` line with
+  its address. Front matter and MDX import lines are removed. Every relative link is made absolute: a
+  link to a markdown file becomes the address of that page, and any other path is resolved from the
+  page's own address. Fenced code is left exactly as written.
+- The files exist only in a build. `npm start` does not serve them.
+
 ### Consumer changes
 
 Asset references, as they are in the tree:

@@ -199,6 +199,12 @@ When you write or update documentation, READMEs, skills or website copy:
   follows it when it slides away (`html:has(.navbar[class*='navbarHidden'])`, as in `StepTimeline`).
   Form fields are 16 px or larger, or Safari zooms the page. Under 996 px the navbar is 56 px and
   anything scoped to `.navbar` also matches the phone menu, so scope bar-only rules to `.navbar__inner`.
+- **llms.txt.** `docs/plugins/llms-txt/` writes `/llms.txt` (an index for AI assistants) and
+  `/llms-full.txt` (the docs as one file) on every build, from the released docs. The list of pages is
+  generated, so a new docs page needs nothing. The summary above the list is hand-written in
+  `template.md`: update it when a framework is added or removed, the supported Python versions change,
+  or the install command or an identifier changes. Give a new docs page an opening sentence that says
+  what the page is for, because that sentence becomes its description in the index.
 
 ## Conventions
 
