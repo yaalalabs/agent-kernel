@@ -19,8 +19,7 @@ That experience needs more than a model that can speak. Audio has to keep moving
 
 ## See It on a Real Call
 
-Here is a flight disruption desk built on this path. A traveller whose flight was cancelled talks to a concierge, a rebooking specialist and a care specialist by voice. The case board starts empty and fills in as the agents work: the booking once the concierge finds it, then the new flight, the meal voucher and the compensation claim. Watch the handoffs between the three agents, each one taking the call under its own name and voice. (This is a recording of a live call, with the pauses where the caller was thinking shortened. The agents' response times are untouched. The three agents are live Gemini voices; the caller's voice is synthetic.)
-
+Here is a flight disruption desk built on this path. A traveller whose flight was cancelled talks to a concierge, a rebooking specialist and a care specialist by voice. The case board starts empty and fills in as the agents work: the booking once the concierge finds it, then the new flight, the meal voucher and the compensation claim. Watch the handoffs between the three agents, each one taking the call under its own name and voice. (This is a recording of a live call. The three agents are live Gemini voices. The caller is a scripted, synthetic voice, and its pauses after each agent finishes were shortened; the agents' response times are untouched.)
 <video
   controls
   playsInline
@@ -30,6 +29,8 @@ Here is a flight disruption desk built on this path. A traveller whose flight wa
   <source src="/video/realtime-flight-desk.mp4" type="video/mp4" />
   A recording of a live flight disruption call: a caller whose flight was cancelled talks to a concierge, a rebooking specialist and a care specialist, hears each agent in its own voice, and watches the case board fill in as the agents work.
 </video>
+
+*Use case: a flight disruption desk built with OAK. A concierge, a rebooking specialist and a care and claims specialist take a cancelled-flight call, hand it to each other, and update the case board as they work.*
 
 ## A Voice Call Is an Active Stream
 
@@ -106,7 +107,6 @@ A call now follows the same run lifecycle as a text request:
 4. Join a room. The agents join it as participants of their own.
 
 The [LiveKit voice examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/livekit-voice) include single-agent calls and multi-agent handoffs for OpenAI and Google ADK.
-
 ## The Bottom Line
 
 A voice agent that can only talk is a demo. A voice agent that can bring in a specialist, take an interruption, run your hooks and leave a trace is a service.
