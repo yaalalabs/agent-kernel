@@ -33,7 +33,7 @@ Here is a flight disruption desk built on this path. A traveller whose flight wa
 
 ## A Voice Call Is an Active Stream
 
-In a text chat, the agent can wait for a message and then return an answer. A voice call keeps moving: microphone audio arrives in small chunks, the model streams audio and text back, and the caller may speak before the response is finished.
+A text chat is like email: the agent waits for a message, then sends back an answer. A voice call is like a phone call. Both sides can talk at once, and nobody waits for a turn to be sent. Microphone audio arrives in small chunks, the model streams audio and text back, and the caller may speak before the response is finished.
 
 The LiveKit edge brings caller audio and room chat into OAK's realtime pipeline. The pipeline keeps a native live session for the OAK session, delivers input, and paces streamed output back to the room. If the caller talks over the agent, the response is interrupted and audio the caller has not heard is cleared from playback.
 
@@ -41,7 +41,7 @@ The LiveKit edge brings caller audio and room chat into OAK's realtime pipeline.
 
 ## Let the Framework Choose the Next Speaker
 
-OAK uses each framework's own live agent and handoff behavior. OpenAI's Agents SDK runs a native `RealtimeSession`; Google ADK runs `Runner.run_live()` with a `LiveRequestQueue`. Their native agents decide when to call a tool or transfer the conversation to another agent.
+OAK uses each framework's own live agent and handoff behavior. The OpenAI Agents SDK and Google ADK each run their own live session. Their native agents decide when to call a tool or transfer the conversation to another agent.
 
 For example, a general support agent can hand a billing question to a billing specialist. OAK maps the handoff to LiveKit participants, and the room can mark which agent is active. Only the active voice agent speaks to the caller. The agents do not talk over each other, and an agent's own audio is not fed back as caller audio.
 
@@ -51,9 +51,9 @@ The key boundary is simple: **the native SDK owns turns, tools, and handoffs; OA
 
 The call can produce more than audio. LiveKit clients can show agent captions as the words are spoken. Caller transcript lines are available when the SDK's input transcription is on. Where it starts on depends on the SDK: Google ADK enables it by default, and with the OpenAI Agents SDK you set it in the session settings.
 
-To follow the call from your own application, subclass `LiveKitEdgeAdapter` and override `deliver_chunk`. It receives each streamed chunk: audio, text, finished caller transcript lines (`InputTranscript`), agent changes (`AgentChanged`) and errors. Those events can update a call view or feed your own records. Keep slow work off this path, because the same path delivers the call's audio.
+To follow the call from your own application, subclass `LiveKitEdgeAdapter` and override `deliver_chunk`. It receives each streamed chunk: audio, text, finished caller transcript lines, changes of speaking agent, and errors. Those events can update a call view or feed your own records. Keep slow work off this path, because the same path delivers the call's audio.
 
-A call is a LiveKit room. LiveKit tells your app when a room opens (a signed webhook to `/livekit/webhook`), and OAK starts one edge for that room, with the room name as the session id. When the last caller leaves, the edge ends the session and closes its live session. A failed connection backs off before retrying, rather than reopening on every incoming audio chunk.
+A call is a LiveKit room. LiveKit tells your app when a room opens (through a signed webhook), and OAK starts one edge for that room, with the room name as the session id. When the last caller leaves, the edge ends the session and closes its live session. A failed connection backs off before retrying, rather than reopening on every incoming audio chunk.
 
 ```python
 from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
@@ -88,8 +88,8 @@ Two limits to know:
 
 A call now follows the same run lifecycle as a text request:
 
-- **Session:** `Session.current()` and `Agent.current()` work inside native tools and hooks. OAK stores a copy of the session after each finished turn and once more when the call closes, so a durable store (`redis`, `dynamodb` and others) keeps what the call changed. A call that fails stores nothing more, so it loses at most the turn in progress.
-- **Trace:** with `trace.enabled: true`, each call is one span, tagged with the session id in Langfuse, Logfire, OpenLLMetry and CloudWatch. What nests inside that span depends on the SDK: Google ADK adds its own agent and tool spans, while the OpenAI realtime session creates none, so an OpenAI call shows as one span with its duration and errors.
+- **Session:** native tools and hooks can read the current session and agent, as in any other mode. OAK stores a copy of the session after each finished turn and once more when the call closes, so a durable store such as Redis or DynamoDB keeps what the call changed. A call that fails stores nothing more, so it loses at most the turn in progress.
+- **Trace:** with tracing enabled, each call is one span, tagged with the session id in Langfuse, Logfire, OpenLLMetry and CloudWatch. What nests inside that span depends on the SDK: Google ADK adds its own agent and tool spans, while the OpenAI realtime session creates none, so an OpenAI call shows as one span with its duration and errors.
 
 ## What to Plan For
 
@@ -100,9 +100,9 @@ A call now follows the same run lifecycle as a text request:
 
 ## Get Started
 
-1. Set `execution.mode: realtime` in `config.yaml`, and the LiveKit settings (`AK_LIVEKIT__URL`, `AK_LIVEKIT__API_KEY`, `AK_LIVEKIT__API_SECRET`).
+1. Set `execution.mode: realtime` and your LiveKit credentials. The [LiveKit guide](https://github.com/yaalalabs/agent-kernel/blob/develop/docs/docs/integrations/livekit.md) lists the settings.
 2. Register your native live agents, with handoffs, in an OpenAI Agents SDK or Google ADK module.
-3. Run the `IOHandler` with the edge handler shown above, and add `https://<your-host>/livekit/webhook` as a webhook in your LiveKit project. On a laptop, point a local LiveKit server at `http://127.0.0.1:8000/livekit/webhook`.
+3. Run the `IOHandler` with the edge handler shown above, and point a webhook from your LiveKit project at it.
 4. Join a room. The agents join it as participants of their own.
 
 The [LiveKit voice examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/livekit-voice) include single-agent calls and multi-agent handoffs for OpenAI and Google ADK.
@@ -111,7 +111,7 @@ The [LiveKit voice examples](https://github.com/yaalalabs/agent-kernel/tree/deve
 
 A voice agent that can only talk is a demo. A voice agent that can bring in a specialist, take an interruption, run your hooks and leave a trace is a service.
 
-With OAK, a real-time agent can listen, speak, pause for an interruption, and hand the conversation to a specialist. Your hooks, session and traces come along, and the caller stays in the same room.
+With OAK, a realtime agent can listen, speak, pause for an interruption, and hand the conversation to a specialist. Your hooks, session and traces come along, and the caller stays in the same room.
 
 Open Agent Kernel is open source under Apache 2.0.
 
