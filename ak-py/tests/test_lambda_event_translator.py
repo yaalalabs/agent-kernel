@@ -207,3 +207,191 @@ class TestErrors:
         assert proxy["body"] == "Internal Server Error"
         assert "secret" not in proxy["body"]
         assert "secret" in caplog.text
+
+
+class ScriptedApp:
+    """An ASGI app that sends the given messages and records the scope and body it was called with."""
+
+    def __init__(self, messages):
+        self.messages = messages
+        self.scope = None
+        self.body = None
+
+    async def __call__(self, scope, receive, send):
+        self.scope = scope
+        self.body = (await receive())["body"]
+        for message in self.messages:
+            await send(message)
+
+
+def _answer(status=200, headers=(), *chunks):
+    """The ASGI messages for a response: a start, then one body message per chunk (the last one final)."""
+    parts = list(chunks) or [b""]
+    messages = [{"type": "http.response.start", "status": status, "headers": list(headers)}]
+    messages += [{"type": "http.response.body", "body": chunk, "more_body": index < len(parts) - 1} for index, chunk in enumerate(parts)]
+    return messages
+
+
+class TestCallApp:
+    """``call_app`` (#932): a whole ASGI app driven from an API Gateway event, answered as one proxy response."""
+
+    def test_every_body_chunk_is_buffered_into_one_body(self):
+        app = ScriptedApp(_answer(200, [(b"content-type", b"text/plain")], b"one,", b"two,", b"three"))
+
+        proxy = _run(translator.call_app(app, _event(), "/x"))
+
+        assert proxy["statusCode"] == 200
+        assert proxy["body"] == "one,two,three"
+        assert proxy["isBase64Encoded"] is False
+
+    def test_an_sse_answer_is_buffered_whole(self):
+        """MCP answers a tool call as text/event-stream; a proxy response is one body."""
+        event_stream = [b"event: message\n", b'data: {"jsonrpc":"2.0","id":1,"result":{}}\n\n']
+        app = ScriptedApp(_answer(200, [(b"content-type", b"text/event-stream")], *event_stream))
+
+        proxy = _run(translator.call_app(app, _event(), "/mcp/"))
+
+        assert proxy["statusCode"] == 200
+        assert proxy["multiValueHeaders"]["content-type"] == ["text/event-stream"]
+        assert proxy["body"] == 'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{}}\n\n'
+
+    def test_the_status_and_repeated_headers_are_kept(self):
+        app = ScriptedApp(_answer(201, [(b"set-cookie", b"a=1"), (b"set-cookie", b"b=2"), (b"x-id", b"7")], b"ok"))
+
+        proxy = _run(translator.call_app(app, _event(), "/x"))
+
+        assert proxy["statusCode"] == 201
+        assert proxy["multiValueHeaders"]["set-cookie"] == ["a=1", "b=2"]
+        assert proxy["multiValueHeaders"]["x-id"] == ["7"]
+
+    def test_a_non_utf8_answer_is_base64(self):
+        app = ScriptedApp(_answer(200, [], b"\xff\xfe", b"\x00"))
+
+        proxy = _run(translator.call_app(app, _event(), "/x"))
+
+        assert proxy["isBase64Encoded"] is True
+        assert base64.b64decode(proxy["body"]) == b"\xff\xfe\x00"
+
+    def test_the_app_routes_on_app_path_not_the_event_path(self):
+        app = ScriptedApp(_answer())
+
+        _run(translator.call_app(app, _event(path="/api/v1/mcp"), "/mcp/"))
+
+        assert app.scope["path"] == "/mcp/"
+        assert app.scope["raw_path"] == b"/mcp/"
+        assert app.scope["root_path"] == ""
+
+    def test_the_app_scope_and_a_request_agree_on_everything_but_the_path(self):
+        event = _event(
+            httpMethod="GET",
+            multiValueHeaders={"Host": ["h.example"], "X-Forwarded-Proto": ["http"], "X-Forwarded-Port": ["8080"], "Accept": ["a", "b"]},
+            multiValueQueryStringParameters={"k": ["1", "2"]},
+        )
+        app = ScriptedApp(_answer())
+
+        _run(translator.call_app(app, event, "/elsewhere"))
+        request_scope = translator.to_request(event).scope
+
+        assert {key: value for key, value in app.scope.items() if key not in ("path", "raw_path")} == {
+            key: value for key, value in request_scope.items() if key not in ("path", "raw_path")
+        }
+
+    @pytest.mark.parametrize(
+        "event_overrides, expected",
+        [
+            ({"body": '{"hello": "world"}'}, b'{"hello": "world"}'),
+            ({"body": base64.b64encode(bytes(range(256))).decode(), "isBase64Encoded": True}, bytes(range(256))),
+            ({"body": None}, b""),
+        ],
+    )
+    def test_the_app_reads_the_exact_body_bytes(self, event_overrides, expected):
+        app = ScriptedApp(_answer())
+
+        _run(translator.call_app(app, _event(**event_overrides), "/x"))
+
+        assert app.body == expected
+
+    def test_a_listener_for_disconnects_hears_it_only_after_the_response_is_complete(self):
+        """Starlette listens for a disconnect while it streams. Told at once, it would cut the answer short."""
+        seen: dict = {}
+
+        async def app(scope, receive, send):
+            await receive()  # the body
+            listener = asyncio.create_task(receive())
+            await asyncio.sleep(0)
+            seen["early"] = listener.done()
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"x", "more_body": True})
+            await asyncio.sleep(0)
+            seen["mid_stream"] = listener.done()
+            await send({"type": "http.response.body", "body": b"y", "more_body": False})
+            await asyncio.sleep(0)
+            seen["after"] = (listener.done(), listener.result())
+
+        proxy = _run(translator.call_app(app, _event(), "/x"))
+
+        assert seen == {"early": False, "mid_stream": False, "after": (True, {"type": "http.disconnect"})}
+        assert proxy["body"] == "xy"
+
+    def test_an_exception_from_the_app_reaches_the_host(self):
+        async def app(scope, receive, send):
+            raise RuntimeError("the app failed")
+
+        with pytest.raises(RuntimeError, match="the app failed"):
+            _run(translator.call_app(app, _event(), "/x"))
+
+    def test_an_app_that_never_answers_is_an_error(self):
+        async def app(scope, receive, send):
+            await receive()
+
+        with pytest.raises(RuntimeError, match="without starting a response"):
+            _run(translator.call_app(app, _event(), "/x"))
+
+    def test_a_real_fastapi_app_routes_validates_and_answers_as_it_would_on_uvicorn(self):
+        app = FastAPI()
+
+        @app.get("/hello/{name}")
+        async def hello(name: str, shout: bool = False):
+            return {"hello": name.upper() if shout else name}
+
+        @app.post("/echo")
+        async def echo(payload: dict):
+            return payload
+
+        @app.get("/gone")
+        async def gone():
+            raise HTTPException(410, detail="gone")
+
+        found = _run(translator.call_app(app, _event(httpMethod="GET", body=None, queryStringParameters={"shout": "true"}), "/hello/ada"))
+        posted = _run(translator.call_app(app, _event(body='{"a": 1}', headers={"Content-Type": "application/json"}), "/echo"))
+        gone = _run(translator.call_app(app, _event(httpMethod="GET", body=None), "/gone"))
+        missing = _run(translator.call_app(app, _event(httpMethod="GET", body=None), "/nope"))
+
+        assert (found["statusCode"], found["body"]) == (200, '{"hello":"ADA"}')
+        assert (posted["statusCode"], posted["body"]) == (200, '{"a":1}')
+        assert (gone["statusCode"], gone["body"]) == (410, '{"detail":"gone"}')
+        assert missing["statusCode"] == 404
+
+
+class TestProxyResponseFromParts:
+    def test_it_builds_the_proxy_response_from_a_status_raw_headers_and_a_body(self):
+        proxy = LambdaEventTranslator.proxy_response_from_parts(202, [(b"Set-Cookie", b"a=1"), (b"Set-Cookie", b"b=2")], b"queued")
+
+        assert proxy == {"statusCode": 202, "multiValueHeaders": {"Set-Cookie": ["a=1", "b=2"]}, "body": "queued", "isBase64Encoded": False}
+
+    @pytest.mark.parametrize(
+        "response",
+        [
+            Response(content=b"plain", status_code=201, media_type="text/plain"),
+            Response(content=b"\xff\xfe\x00", media_type="application/octet-stream"),
+            Response(status_code=204),
+        ],
+        ids=["text", "non-utf8", "no-content"],
+    )
+    def test_a_starlette_response_is_answered_exactly_as_before(self, response):
+        """``_proxy_response`` now delegates here: the existing wire format must not move."""
+        through_the_response = _run(translator.to_proxy_response(None, response))
+
+        assert through_the_response == LambdaEventTranslator.proxy_response_from_parts(
+            response.status_code, response.raw_headers, bytes(response.body)
+        )

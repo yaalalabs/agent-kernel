@@ -978,6 +978,41 @@ response_handler = {
   Redis/Valkey store the request handler can reach).
 - Full example: `examples/aws-serverless/slack-openai`.
 
+### G) A2A and MCP on Lambda
+
+The request-handler Lambda serves A2A and MCP next to chat in queue mode (`queue_mode = true`) with `rest_sync` or
+`rest_async` (not `async`), on the `sqs` transport. Build `LambdaProtocolHost()` after the agents are registered and
+register its `handle` for every route in `ProtocolPaths.ROUTES`:
+
+```python
+from agentkernel.aws import Lambda, LambdaProtocolHost, ProtocolPaths
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([assistant])
+protocol = LambdaProtocolHost()
+
+for path, method in ProtocolPaths.ROUTES:
+    Lambda.register(path, method=method)(protocol.handle)
+
+handler = Lambda.handler
+```
+
+- Terraform: `enable_a2a_server = true` and/or `enable_mcp_server = true` on the module (one API Gateway method per verb).
+- Authorizer: `APIGatewayAuthorizer(bypass=ProtocolRouteMatcher()).handle`, with `result_ttl_in_seconds = 0`. Only `/mcp`,
+  the agent cards and `/a2a/catalog` bypass it; every other A2A route needs a token.
+- `APIGatewayAuthorizer` takes one bypass. With a webhook (for example Slack) and A2A/MCP, combine the matchers:
+  `slack = WebhookRouteMatcher.for_integrations("slack")`, `protocols = ProtocolRouteMatcher()`,
+  `handler = APIGatewayAuthorizer(bypass=lambda event: slack(event) or protocols(event)).handle`.
+- Config: `mcp.stateless_http: true`, `a2a.url` and `mcp.url` set to the API's public URL (stage and base path included;
+  deploy twice, since the API id exists only after the first apply), and a response store with
+  `(retry_count - 1) x delay` at most 29 s.
+- The request handler builds the agent registry, so deploy it as a container image with 2 GB of memory, and set
+  `AK_SESSION__TYPE=in_memory` on it (the module gives it no session table in queue mode).
+- Limits: 29 s API Gateway wait, no task store (`tasks/{id}`), no streaming, MCP login metadata needs a custom domain.
+- Declare it in three places (`Lambda.register`, the Terraform flags, the authorizer bypass): not registered gives a 500;
+  no flag gives a 403 from API Gateway; no bypass gets the public cards and MCP refused.
+- Full example: `examples/aws-serverless/a2a-mcp-openai`.
+
 ## AWS Containerized (ECS/Fargate)
 
 ### A) Basic Mode (single container, direct execution)

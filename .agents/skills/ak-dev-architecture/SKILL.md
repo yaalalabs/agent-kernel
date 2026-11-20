@@ -652,6 +652,21 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   (the `QueueTransportContract` pattern), subclassed once per built-in in
   `tests/test_integration_adapter_contract.py`; `tests/test_integration_roundtrip.py` drives a
   platform event through the whole `in_memory` topology to a recording outbound adapter.
+- **A2A and MCP on AWS Lambda (#932)**: the request-handler Lambda serves both through
+  `deployment/aws/serverless/core/protocol_host.py::LambdaProtocolHost`, the mirror of `LambdaWebhookHost`
+  (queue mode, `rest_sync`/`rest_async`, `sqs`). The application builds `LambdaProtocolHost()` at module scope and
+  registers `handle` for every `(path, method)` in `core/protocol_paths.py::ProtocolPaths.ROUTES` with `Lambda.register`
+  (the router looks a route up by the API Gateway resource template, e.g. `/api/v1/a2a/{proxy+}`). The host runs the
+  `RESTAPI.build_app(handlers=[])` app that `IOHandler` serves, through `LambdaEventTranslator.call_app` (the ASGI
+  `receive()` blocks until the response is complete, so the buffered MCP SSE body is not empty); the queue workers are
+  unchanged. `AppLifespan` starts the app's lifespan once per execution environment. `LambdaProtocolGuard` fails the
+  cold start on a non-REST mode, a non-`sqs` transport, missing base-path variables, no response store, stateful MCP, a
+  wait over 29 s (`(retry_count - 1) x delay`) or a localhost `a2a.url`/`mcp.url`. `ProtocolRouteMatcher`
+  (`APIGatewayAuthorizer(bypass=...)`) lets only `/mcp*`, the agent cards and `/a2a/catalog` past the authorizer, by
+  method and path (authorizer TTL 0); the other A2A routes stay behind it. Terraform: `enable_a2a_server` and
+  `enable_mcp_server` add `proxy_routes`, one API Gateway method per verb (never `ANY`, which the authorizer sees as
+  `ANY`). `agentkernel.aws` exports `LambdaProtocolHost`, `ProtocolPaths` and `ProtocolRouteMatcher` lazily. WebSocket
+  `async` mode is #985; direct mode is #959.
 
 ## Realtime Voice (`realtime/`, `integration/livekit/`)
 

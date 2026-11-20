@@ -581,6 +581,7 @@ registry:
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. With `expose_agents: true`, `RESTAPI.run(handlers=[...])`,
      `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
+     On AWS Lambda the request handler serves MCP through `LambdaProtocolHost` (stateless MCP; see `ak-cloud-deploy`, section G).
    - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): the IO process must know the agents, since tools are
      built from the agent registry when it starts. Import the same agent modules in the IO process as in the
      agent runner, or share the registry (`registry.type: redis`, `valkey` or `dynamodb`) and start the runner
@@ -639,6 +640,7 @@ registry:
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on
      SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
+     On AWS Lambda the request handler serves A2A through `LambdaProtocolHost` (see `ak-cloud-deploy`, section G).
    - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): the IO process must know the agents, since cards are
      built from the agent registry when it starts. Import the same agent modules in the IO process as in the
      agent runner, or share the registry (`registry.type: redis`, `valkey` or `dynamodb`) and start the runner

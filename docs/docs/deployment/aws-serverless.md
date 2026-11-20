@@ -1512,6 +1512,131 @@ and one reply.
   in a second stack in `rest_async`, or on the pipeline.
 - Gmail (a poller) is not supported on Lambda.
 
+## A2A and MCP on Lambda
+
+The request-handler Lambda can serve [A2A](../api/a2a-server.md) and [MCP](../api/mcp-server.md) next to the chat route, in the
+REST modes (`rest_sync`, `rest_async`) with `queue_mode = true`. Both reach the agent the way chat does: the request handler
+enqueues the call, the agent-runner Lambda runs it, and the request handler reads the reply from the response store. The queue
+workers are unchanged.
+[`examples/aws-serverless/a2a-mcp-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/a2a-mcp-openai)
+deploys the whole path.
+
+```
+A2A / MCP client --> API Gateway --> Authorizer Lambda (lets through /mcp, the agent cards and the catalog)
+                                          |
+                                          v
+                               Request-handler Lambda
+                               LambdaProtocolHost -> the A2A routes + the MCP mount
+                                          |  enqueue, protocol = a2a | mcp
+                                          v
+                Input Queue --> Agent-runner Lambda --> Output Queue --> Response-handler Lambda
+                                          the request handler reads the reply from the response store
+```
+
+### Hosting the routes
+
+Build `LambdaProtocolHost` at module scope in the request-handler Lambda and register its `handle` for every route in
+`ProtocolPaths.ROUTES`:
+
+```python
+from agentkernel.aws import Lambda, LambdaProtocolHost, ProtocolPaths
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([assistant])  # the cards and tools are built from the agents registered in this Lambda
+protocol = LambdaProtocolHost()
+
+for path, method in ProtocolPaths.ROUTES:
+    Lambda.register(path, method=method)(protocol.handle)
+
+handler = Lambda.handler
+```
+
+The host runs the same FastAPI app the pipeline's `IOHandler` serves, so the A2A and MCP code is not copied. Enable the
+protocols in `config.yaml` as usual (`a2a.enabled`, `mcp.enabled`, `mcp.stateless_http: true`).
+
+### Terraform
+
+Set the two flags on the `ak-serverless` module. Each adds the `/a2a` or `/mcp` resources to API Gateway, one method per verb
+(`GET`, `POST`, `DELETE`) and not `ANY`, because the authorizer receives the method's configured name:
+
+```hcl
+module "ak_serverless" {
+  # ...
+  queue_mode        = true
+  enable_a2a_server = true
+  enable_mcp_server = true
+}
+```
+
+Both flags need a REST mode: the module refuses them with `async`.
+
+### Behind an authorizer
+
+Only three kinds of request go past the authorizer without a token, and nothing else:
+
+| Route | Authenticated by |
+|---|---|
+| `/mcp` and everything under it | FastMCP, in the request handler (it has to send the client's login metadata, which an authorizer cannot) |
+| `GET /a2a/catalog` and each agent's card | nobody: public by design |
+| every other `/a2a/...` route | the authorizer |
+
+```python
+from agentkernel.aws import APIGatewayAuthorizer, ProtocolRouteMatcher
+
+handler = APIGatewayAuthorizer(bypass=ProtocolRouteMatcher()).handle
+```
+
+The matcher uses the method and the path only, never a header. As with the webhooks, **set
+`authorizer.result_ttl_in_seconds = 0`**: with caching on, API Gateway answers a request with no `Authorization` header with
+401 before the authorizer runs.
+
+`APIGatewayAuthorizer` takes one bypass. A deployment with a webhook (for example Slack) and A2A or MCP combines the two
+matchers:
+
+```python
+from agentkernel.aws import APIGatewayAuthorizer, ProtocolRouteMatcher
+from agentkernel.integration.adapter import WebhookRouteMatcher
+
+slack = WebhookRouteMatcher.for_integrations("slack")
+protocols = ProtocolRouteMatcher()
+
+handler = APIGatewayAuthorizer(bypass=lambda event: slack(event) or protocols(event)).handle
+```
+
+Each matcher returns the name of the route it lets through, or `None`, so the first one that matches decides.
+
+### Declare the protocols in three places
+
+| Where | What | When it is missing |
+|---|---|---|
+| Request-handler Lambda | `Lambda.register(path, method=method)(protocol.handle)` for each `ProtocolPaths.ROUTES` | a 500: the router has no route |
+| Terraform | `enable_a2a_server`, `enable_mcp_server` | a 403 from API Gateway: no `/a2a` or `/mcp` route |
+| Authorizer Lambda | `ProtocolRouteMatcher()` | MCP and the public cards are refused by the authorizer |
+
+### Public URL
+
+The agent card advertises `a2a.url`, and MCP names `mcp.url` in its login metadata. Both have to be the API's public URL,
+stage and base path included (`https://<id>.execute-api.<region>.amazonaws.com/<stage>/api/v1/a2a`). The host refuses to start
+while they are `localhost`. The API id exists only after the API does, so deploy twice: the second apply passes the
+first one's URL to the request handler as `AK_A2A__URL` and `AK_MCP__URL`. With a custom domain you know the URL up front.
+
+### Session store
+
+Registering an agent builds the runtime's session store. In queue mode the module gives the request handler no session table
+(the agent runner owns the sessions), so a `dynamodb` session type in `config.yaml` fails the request handler at start. Set
+`AK_SESSION__TYPE=in_memory` on the request-handler Lambda, as the example does; it never runs an agent and holds no session.
+
+### Limits
+
+- **29 seconds.** API Gateway stops waiting at 29 s. `(execution.response_store.retry_count - 1) x delay` has to be at most 29, or the host refuses to start.
+- **No task store**: `tasks/{id}` across Lambda instances is not available.
+- **No streaming**: `message:stream` and streamed MCP replies are not supported.
+- **MCP login metadata** (OAuth, with an OpenID provider) needs a custom domain mapped at the root of the host.
+- **Memory**: the request handler loads the agents, so deploy it as a container image with far more than the 128 MB default.
+- **WebSocket `async` mode** is not supported (#985); direct mode is tracked in #959.
+
+The host checks all of this when it is built, on cold start, and fails the Lambda's init with a message naming the setting.
+
 ## Cost Optimization
 
 ### Lambda Configuration

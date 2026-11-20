@@ -388,7 +388,9 @@ credential of a static provider reaches that process as an environment variable 
   Deny (403). The
   request-handler Lambda puts that principal on the chat request; a custom route registered with
   `Lambda.register` reads it with `Lambda.principal(event)`. Webhook routes that carry their own
-  verification bypass the authorizer with `APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("slack"))`.
+  verification bypass the authorizer with `APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("slack"))`;
+  the A2A and MCP routes that need no token (`/mcp`, the agent cards and the catalog) use `ProtocolRouteMatcher()`
+  ([A2A and MCP on Lambda](../deployment/aws-serverless.md#a2a-and-mcp-on-lambda)).
   For WebSocket APIs the `$connect` Lambda is `handler = WebsocketConnectionHandler.handler`, which
   authenticates `?token=` and stores the principal with the connection; a custom WebSocket route
   registered with `Lambda.register` reads that connection's principal with `Lambda.principal(event)`

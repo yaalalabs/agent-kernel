@@ -72,6 +72,7 @@ def test_touching_lambda_loads_neither_fastapi_nor_the_webhook_host():
     assert "fastapi" not in loaded
     assert "starlette" not in loaded
     assert "agentkernel.deployment.aws.serverless.core.webhook_host" not in loaded
+    assert "agentkernel.deployment.aws.serverless.core.protocol_host" not in loaded
 
 
 def test_the_authorizer_and_its_bypass_load_neither_fastapi_nor_a_platform_sdk():
@@ -91,3 +92,58 @@ def test_touching_the_webhook_host_through_aws_resolves_it():
     loaded = _isolated_import("agentkernel.aws", touch=(("agentkernel.aws", "LambdaWebhookHost"),))
 
     assert "agentkernel.deployment.aws.serverless.core.webhook_host" in loaded
+
+
+def test_touching_the_protocol_host_through_aws_resolves_it():
+    loaded = _isolated_import("agentkernel.aws", touch=(("agentkernel.aws", "LambdaProtocolHost"),))
+
+    assert "agentkernel.deployment.aws.serverless.core.protocol_host" in loaded
+
+
+def test_touching_the_protocol_paths_through_aws_loads_no_fastapi_and_not_the_host():
+    """``ProtocolPaths`` is a plain export: an application reads its routes without importing the host that serves them."""
+    loaded = _isolated_import(
+        "agentkernel.aws",
+        drop_prefixes=("fastapi", "starlette"),
+        touch=(("agentkernel.aws", "ProtocolPaths"),),
+    )
+
+    assert "agentkernel.deployment.aws.serverless.core.protocol_paths" in loaded
+    assert "agentkernel.deployment.aws.serverless.core.protocol_host" not in loaded
+    assert "fastapi" not in loaded
+    assert "starlette" not in loaded
+
+
+def test_touching_the_protocol_route_matcher_through_aws_loads_no_fastapi_and_not_the_host():
+    """The authorizer Lambda builds the matcher: it carries no FastAPI, and must not pull the host in."""
+    loaded = _isolated_import(
+        "agentkernel.aws",
+        drop_prefixes=("fastapi", "starlette", "slack_bolt"),
+        touch=(("agentkernel.aws", "ProtocolRouteMatcher"),),
+    )
+
+    assert "agentkernel.deployment.aws.serverless.core.protocol_paths" in loaded
+    assert "agentkernel.deployment.aws.serverless.core.protocol_host" not in loaded
+    assert "fastapi" not in loaded
+    assert "starlette" not in loaded
+    assert "slack_bolt" not in loaded
+
+
+def test_the_protocol_paths_export_is_the_class_the_router_tests_and_the_host_read():
+    from agentkernel.aws import ProtocolPaths
+    from agentkernel.deployment.aws.serverless.core.protocol_paths import ProtocolPaths as Defined
+
+    assert ProtocolPaths is Defined
+
+
+def test_the_protocol_paths_load_neither_fastapi_nor_the_protocol_host():
+    """The authorizer's package reads the hosted paths, so they must not drag the host in."""
+    loaded = _isolated_import(
+        "agentkernel.deployment.aws.serverless.core.protocol_paths",
+        drop_prefixes=("fastapi", "starlette"),
+    )
+
+    assert "agentkernel.deployment.aws.serverless.core.protocol_paths" in loaded
+    assert "agentkernel.deployment.aws.serverless.core.protocol_host" not in loaded
+    assert "fastapi" not in loaded
+    assert "starlette" not in loaded
