@@ -1,4 +1,4 @@
-# Agent Kernel Realtime Voice Handoffs (Google ADK)
+# Open Agent Kernel Realtime Voice Handoffs (Google ADK)
 
 This example shows one voice conversation moving between several agents with **Google ADK's native agent transfers**, over LiveKit, powered by **Gemini Live**.
 
@@ -9,13 +9,13 @@ The scenario is a team offsite. You tell **Maya**, an enthusiastic planner, what
 | `planner` (Maya) | Takes your request, pitches the best experience, reports to you | `find_venues` | Aoede |
 | `budget` (Ben) | Checks the cost, challenges the plan, pushes back or accepts | `estimate_total` | Charon |
 
-`budget` is a `sub_agent` of `planner`, exactly as you would write it for a text run. ADK lets a sub-agent transfer back to its parent, so the two can pass the turn between them. Only the root agent, `planner`, is registered with Agent Kernel.
+`budget` is a `sub_agent` of `planner`, exactly as you would write it for a text run. ADK lets a sub-agent transfer back to its parent, so the two can pass the turn between them. Only the root agent, `planner`, is registered with Open Agent Kernel (OAK).
 
 It uses the `in_memory` queue transport, so the LiveKit edge and the agent runner run as threads in a single Python process.
 
 ## How a transfer works in realtime mode
 
-Agent Kernel starts one ADK `Runner.run_live()` call with one `LiveRequestQueue`. ADK handles the native `transfer_to_agent` action, calls the new agent's tools, and manages its Gemini Live connection. Agent Kernel reads ADK's event author and changes the speaking LiveKit participant. Each agent's voice is set on its native `Gemini(speech_config=...)` model.
+OAK starts one ADK `Runner.run_live()` call with one `LiveRequestQueue`. ADK handles the native `transfer_to_agent` action, calls the new agent's tools, and manages its Gemini Live connection. OAK reads ADK's event author and changes the speaking LiveKit participant. Each agent's voice is set on its native `Gemini(speech_config=...)` model.
 
 ## What you see in the room
 
@@ -55,13 +55,13 @@ Point LiveKit's webhook at the server (see the parent README), then join a room,
 4. After a few turns Maya turns to you: the agreed plan, the total, where they still disagree, and a question for you.
 5. *"I'd rather keep the lodge."* — Maya and Ben continue from there.
 
-The agents are told to stop after three turns each. This is an instruction in their prompts, not a limit enforced by Agent Kernel or ADK, so a model can still keep going. Say something to cut in: your speech interrupts whoever is talking.
+The agents are told to stop after three turns each. This is an instruction in their prompts, not a limit enforced by OAK or ADK, so a model can still keep going. Say something to cut in: your speech interrupts whoever is talking.
 
 ## Limits
 
 - **One LiveKit connection per agent.** Every listed agent is a participant for the whole call, so LiveKit bills connection minutes for each.
 - **Native live workflows.** Speaking workflow nodes use `mode='chat'` or `mode='task'`. ADK live mode does not support `ParallelAgent` or `LoopAgent`.
-- **Tools run in ADK.** ADK runs the tools declared on each `LlmAgent`; Agent Kernel system tools attach to the agents you register, as in other modes, when enabled. A tool that requires confirmation fails the connection, because a realtime session has no decision path.
+- **Tools run in ADK.** ADK runs the tools declared on each `LlmAgent`; OAK system tools attach to the agents you register, as in other modes, when enabled. A tool that requires confirmation fails the connection, because a realtime session has no decision path.
 - **One agent speaks at a time.** The conversation between the agents is a series of transfers. They do not listen to each other in parallel, and each one sees the earlier turns through ADK's session history.
 - **No enforced turn limit.** Keep a debate short through the prompts, as this example does.
-- **Transfers and recovery.** ADK owns Gemini connection changes. Agent Kernel does not replay a transcript. On `google-adk` 2.7 or later, a transfer refused by a `before_tool_callback` keeps the call open.
+- **Transfers and recovery.** ADK owns Gemini connection changes. OAK does not replay a transcript. On `google-adk` 2.7 or later, a transfer refused by a `before_tool_callback` keeps the call open.

@@ -10,15 +10,27 @@ has to be taken after the inbound state is applied, not before.
 import base64
 import json
 import threading
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Session
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, PausedInterruption, RunPaused, TextDelta
-from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestImage, ExecutionMode, Principal, ReplyMessageType, StreamChunk
+from agentkernel.core.model import (
+    AgentDescriptor,
+    AgentRequestAttachmentRef,
+    AgentRequestImage,
+    ExecutionMode,
+    Principal,
+    ReplyMessageType,
+    StreamChunk,
+)
+from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.identity import IdentityProvider, IdentityProviderFactory
 from agentkernel.integration.agui.queue_handler import AGUIPipelineRequestHandler
@@ -62,6 +74,24 @@ class _StubRequest:
     """Only `headers` is read once `_resolve_run_inputs` is stubbed out."""
 
     headers: dict = {}
+
+
+class _AuthenticatedRunRequest(_StubRequest):
+    """A request the identity dependency already authenticated, carrying a minimal RunAgentInput body."""
+
+    def __init__(self):
+        self.state = SimpleNamespace(principal=PRINCIPAL)
+
+    async def json(self) -> dict:
+        return {
+            "threadId": "t-1",
+            "runId": "r-1",
+            "state": None,
+            "messages": [{"id": "m1", "role": "user", "content": "hello"}],
+            "tools": [],
+            "context": [],
+            "forwardedProps": None,
+        }
 
 
 PRINCIPAL = Principal(subject="u1", provider="test", namespace="test")
@@ -413,7 +443,7 @@ def _edge_handler(monkeypatch, requests=None, store=None):
     skip it and hand `_run` the agent and requests it would have produced.
     """
     handler = TestPreconditions._construct(store or InMemoryResponseStore(), "in_memory")
-    agent = type("_Agent", (), {"name": "planner"})()
+    agent = AgentDescriptor(id="planner", name="Planner")  # what the edge resolves: the registry's record, by id
 
     async def _resolved(agent_name, request):
         return PRINCIPAL, agent, _RunInputStub(), list(requests or [])
@@ -430,6 +460,55 @@ async def _drain_events(response):
     async for part in response.body_iterator:
         events += [json.loads(line[len("data: ") :]) for line in part.splitlines() if line.startswith("data: ")]
     return events
+
+
+class TestTheEdgeServesAgentsItDoesNotHost:
+    """The edge enqueues a run for the process that hosts the agent, so what it lists and resolves is everything
+    the registry knows, where the direct handler lists and resolves only its own agents."""
+
+    @pytest.fixture
+    def registry(self, descriptor_only_registry):
+        return descriptor_only_registry(
+            [
+                AgentDescriptor(id="remote", name="remote", runner="openai", supports_streaming=True),
+                AgentDescriptor(id="remote-batch", name="remote-batch", runner="crewai", supports_streaming=False),
+                AgentDescriptor(id="remote-hidden", name="remote-hidden", runner="openai", supports_streaming=True, surfaces=["rest"]),
+            ]
+        )
+
+    def test_discovery_lists_the_streaming_agents_another_process_hosts(self, registry):
+        async def _authenticated(request: Request) -> None:
+            request.state.principal = PRINCIPAL
+
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        app = FastAPI()
+        app.include_router(handler.get_router(), dependencies=[Depends(_authenticated)])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            listing = TestClient(app).get("/agui/agents")
+
+        assert listing.json() == {"agents": ["remote"]}
+
+    @pytest.mark.asyncio
+    async def test_a_non_streaming_agent_known_only_through_the_registry_is_400_naming_its_framework(self, registry):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as refused:
+                await handler._resolve_run_inputs("remote-batch", _AuthenticatedRunRequest())
+
+        assert refused.value.status_code == 400
+        assert "crewai" in refused.value.detail
+
+    @pytest.mark.asyncio
+    async def test_an_agent_kept_off_agui_is_404_whichever_process_hosts_it(self, registry):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as refused:
+                await handler._resolve_run_inputs("remote-hidden", _AuthenticatedRunRequest())
+
+        assert refused.value.status_code == 404
 
 
 class TestTheEdgeNeverBlocksTheEventLoop:
@@ -469,6 +548,26 @@ class TestTheEdgeNeverBlocksTheEventLoop:
 
         assert threads, "close_stream was never called"
         assert threads[0] is not threading.current_thread(), "close_stream ran on the event loop"
+
+    @pytest.mark.asyncio
+    async def test_the_agent_is_read_from_the_registry_once_and_off_the_event_loop(self, descriptor_only_registry):
+        """The edge hosts no agent, so resolving one reads the shared registry's store on every run."""
+        reads = []
+
+        class _SharedRegistry(descriptor_only_registry):
+            def descriptor(self, id):
+                reads.append(threading.current_thread())
+                return super().descriptor(id)
+
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        registry = _SharedRegistry([AgentDescriptor(id="planner", name="Planner", runner="openai", supports_streaming=True)])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            _, agent, _, _ = await handler._resolve_run_inputs("planner", _AuthenticatedRunRequest())
+
+        assert agent.id == "planner"
+        assert len(reads) == 1, "existence and exposure were checked with separate store reads"
+        assert reads[0] is not threading.current_thread(), "the registry's store was read on the event loop"
 
 
 class TestTheAttachmentsAreOffloadedBeforeTheEnqueue:
@@ -555,6 +654,16 @@ class TestAPauseIsTheRunsTerminalOutcome:
         assert request.principal == PRINCIPAL
 
     @pytest.mark.asyncio
+    async def test_the_queued_request_names_the_agent_by_its_id(self, monkeypatch):
+        """The runner selects by id: the display name (`Planner`) would enqueue a run no runner can select."""
+        handler = _edge_handler(monkeypatch)
+
+        await handler._run("planner", _StubRequest())
+
+        [request] = handler._producer.requests
+        assert request.agent == "planner"
+
+    @pytest.mark.asyncio
     async def test_a_run_that_did_not_pause_still_finishes_without_an_outcome(self, monkeypatch):
         store = self._store_yielding(self._chunk(TextDelta(message_id="m1", content="hi")), {"done": True})
         handler = _edge_handler(monkeypatch, store=store)
@@ -585,6 +694,16 @@ class TestPreconditions:
             patch.object(IdentityProviderFactory, "get", classmethod(lambda cls: _Provider())),
         ):
             return AGUIPipelineRequestHandler()
+
+    def test_a_default_agent_another_process_hosts_is_accepted(self, monkeypatch, descriptor_only_registry):
+        """Unlike the direct handler, which serves only what it hosts: the edge enqueues the run for the runner."""
+        monkeypatch.setattr(AKConfig.get().agui, "default_agent", "planner")
+        registry = descriptor_only_registry([AgentDescriptor(id="planner", name="Planner", runner="openai", supports_streaming=True)])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            handler = self._construct(InMemoryResponseStore(), "in_memory")
+
+        assert isinstance(handler, AGUIPipelineRequestHandler)
 
     def test_a_store_that_cannot_stream_chunks_is_refused(self):
         store = DynamoDBResponseStore.__new__(DynamoDBResponseStore)

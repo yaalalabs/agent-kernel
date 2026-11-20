@@ -20,7 +20,6 @@ from ...core import Agent as BaseAgent
 from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -349,18 +348,26 @@ class OpenAIRunner(BaseRunner):
                 f"({type(e).__name__}: {e}). This usually means the SDK was upgraded while the run was paused."
             ) from e
 
-    def _apply(self, state: RunState, decisions: list[ResumeDecision]) -> None:
+    def _apply(self, state: RunState, decisions: list[ResumeDecision], run_config: Any = None) -> None:
         """
         Renders each decision onto the restored state.
 
-        `cancelled` reaches the model as a rejection carrying AK's own wording, because the SDK has
-        only approve and reject: without it, "nobody decided" would be indistinguishable from "the
-        human refused", which is the distinction the three-valued status exists to keep.
+        The SDK has only approve and reject, so both `denied` and `cancelled` reject — carrying
+        AK's own wording from :meth:`_rejection_text`, since `rejection_message` **becomes the
+        call's output**. Left to the SDK a refusal reads as approval still pending, and left to the
+        human's bare words it reads as what the tool returned.
+
+        An application that configured `RunConfig.tool_error_formatter` has said how a refused call
+        should read, so a denial carrying no reason of its own defers to it: the SDK consults the
+        formatter only when no explicit message is given. A denial that does carry a reason, and
+        `cancelled` in every case, keep AK's wording — nobody deciding is not a tool error.
 
         :param state: The restored state.
         :param decisions: The human's decisions, already validated against the record by Runtime.
+        :param run_config: The resolved run options' `run_config`, when one was declared.
         :raises ValueError: If a decision names an interruption the restored state does not hold.
         """
+        formatter = getattr(run_config, "tool_error_formatter", None)
         pending = {item.call_id: item for item in state.get_interruptions()}
         for decision in decisions:
             item = pending.get(decision.id)
@@ -371,10 +378,10 @@ class OpenAIRunner(BaseRunner):
                 )
             if decision.status == "approved":
                 state.approve(item)
-            elif decision.status == "denied":
-                state.reject(item, rejection_message=decision.message)
+            elif formatter is not None and decision.status == "denied" and not decision.message:
+                state.reject(item)
             else:
-                state.reject(item, rejection_message=self.CANCELLED_DECISION_MESSAGE)
+                state.reject(item, rejection_message=self._rejection_text(decision))
 
     async def resume(
         self,
@@ -404,9 +411,9 @@ class OpenAIRunner(BaseRunner):
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            self._apply(state, decisions)
-
             options = await agent.resolve_run_options(session, requests)
+            self._apply(state, decisions, options.get("run_config"))
+
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
             kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
@@ -456,9 +463,9 @@ class OpenAIRunner(BaseRunner):
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            self._apply(state, decisions)
-
             options = await agent.resolve_run_options(session, requests)
+            self._apply(state, decisions, options.get("run_config"))
+
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
             kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
@@ -883,16 +890,27 @@ class OpenAIAgent(BaseAgent):
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, OpenAIToolBuilder.bind([tool]))
 
-    def get_a2a_card(self):
+    def _native_description(self) -> str:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the agent's `handoff_description`: the SDK's own description of what the agent does and when to
+        call on it, kept apart from its instructions.
         """
-        from a2a.types import AgentSkill
+        return self.agent.handoff_description or ""
 
-        skills = []
-        for tool in self.agent.tools:
-            skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.agent.instructions, skills=skills)
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names of the native agent's tools, hosted tools included.
+
+        Not reported: the tools of the agent's `mcp_servers`, which are listed only when a run connects, and the
+        tools of an agent it hands off to, which that agent's own descriptor reports.
+        """
+        return [tool.name for tool in self.agent.tools]
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each native tool by name. A hosted tool carries none.
+        """
+        return {tool.name: getattr(tool, "description", None) or "" for tool in self.agent.tools}
 
 
 class OpenAIModule(Module):

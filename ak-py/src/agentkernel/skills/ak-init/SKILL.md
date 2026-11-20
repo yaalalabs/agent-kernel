@@ -1,19 +1,19 @@
 ---
 name: ak-init
 description: >
-  Scaffold a new Agent Kernel project from scratch. This skill guides you through
+  Scaffold a new Open Agent Kernel project from scratch. This skill guides you through
   choosing an agent framework, defining tools, selecting a deployment target, and
   generating a complete project with all necessary files. Designed for users who
-  want to build a new AI agent using the Agent Kernel library.
+  want to build a new AI agent using the OAK library.
 license: Apache-2.0
 metadata:
   author: yaalalabs
   category: user
 ---
 
-# Scaffold an Agent Kernel Project
+# Scaffold an Open Agent Kernel Project
 
-Use this skill to create a new AI agent project powered by Agent Kernel.
+Use this skill to create a new AI agent project powered by Open Agent Kernel (OAK).
 
 ## Instructions for the Agent
 
@@ -291,7 +291,7 @@ from pydantic_ai import Agent
 <agent_name> = Agent(
     model="openai:gpt-4o-mini",
     name="<name>",                # required — AK registers agents by name eagerly
-    description="<short description>",  # set it — AK reports this as the agent description / A2A summary
+    description="<short description>",  # set it: the default for the agent's catalog entry, A2A card and MCP tool text
     instructions="<instructions>",
     tools=PydanticAIToolBuilder.bind([]),
 )
@@ -314,7 +314,7 @@ from agentkernel.maf import MAFModule, MAFToolBuilder
 <agent_name> = Agent(
     OpenAIChatClient(model="gpt-4.1-mini"),
     name="<name>",                # required — AK registers agents by name immediately
-    description="<short description>",  # set it — AK reports this as the agent description / A2A summary
+    description="<short description>",  # set it: the default for the agent's catalog entry, A2A card and MCP tool text
     instructions="<instructions>",
     tools=MAFToolBuilder.bind([]),
 )

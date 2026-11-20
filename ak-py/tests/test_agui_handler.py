@@ -28,10 +28,11 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner, Session
-from agentkernel.core.config import _AGUIConfig, _GuardrailConfig
+from agentkernel.core.config import _AGUIConfig, _GuardrailConfig, _RegistryConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallStart
 from agentkernel.core.hooks import PreHook
-from agentkernel.core.model import AgentReplyText, Principal
+from agentkernel.core.model import AgentDescriptor, AgentReplyText, Principal
+from agentkernel.core.registry import InMemoryAgentRegistry
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
@@ -118,9 +119,6 @@ class ScriptedAgent(Agent):
     def __init__(self, name="assistant", script=None, streaming=True, runner_name="scripted"):
         super().__init__(name, ScriptedRunner(script if script is not None else [], runner_name, streaming))
 
-    def get_a2a_card(self):
-        return None
-
     def get_description(self):
         return f"{self.name} description"
 
@@ -149,12 +147,18 @@ class CopyingSessionStore(InMemorySessionStore):
         return deepcopy(super().load(session_id, strict))
 
 
-def _install_cfg(monkeypatch, agui_cfg):
+def _hidden_from_agui(*agent_ids: str) -> _RegistryConfig:
+    """A registry block whose overlay keeps the named agents off the AG-UI surface."""
+    return _RegistryConfig(agents={agent_id: {"surfaces": ["rest", "a2a", "mcp"]} for agent_id in agent_ids})
+
+
+def _install_cfg(monkeypatch, agui_cfg, registry_cfg=None):
     """Point AKConfig.get() at a stub carrying every section this path reads."""
 
     class _Cfg:
         agui = agui_cfg
         identity = None
+        registry = registry_cfg
         multimodal = None
         sandbox = None
         guardrail = _GuardrailConfig()
@@ -165,14 +169,31 @@ def _install_cfg(monkeypatch, agui_cfg):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
 
+class _SharedRegistry(InMemoryAgentRegistry):
+    """A registry over a shared store: it hosts what registers here and also knows `remote`, a streaming agent
+    another process registered."""
+
+    REMOTE = AgentDescriptor(id="remote", name="remote", runner="openai", supports_streaming=True)
+
+    def descriptor(self, id):
+        return super().descriptor(id) or (self.REMOTE if id == self.REMOTE.id else None)
+
+    def descriptors(self):
+        return [*super().descriptors(), self.REMOTE]
+
+
 @contextmanager
-def serving(monkeypatch, agents, agui_cfg=None, store=None):
-    """Mount the AG-UI router over a runtime holding the given agents, behind the identity dependency."""
-    _install_cfg(monkeypatch, agui_cfg if agui_cfg is not None else _AGUIConfig())
+def serving(monkeypatch, agents, agui_cfg=None, store=None, registry_cfg=None, registry=None):
+    """Mount the AG-UI router over a runtime holding the given agents, behind the identity dependency.
+
+    ``registry_cfg`` is the `registry` configuration block (its overlay sets an agent's surfaces);
+    ``registry`` replaces the runtime's registry outright, for agents this process does not host.
+    """
+    _install_cfg(monkeypatch, agui_cfg if agui_cfg is not None else _AGUIConfig(), registry_cfg)
     provider = _with_provider(monkeypatch, _TestProvider())
     Runtime._system_pre_hooks = []
     Runtime._system_post_hooks = []
-    runtime = Runtime(store if store is not None else InMemorySessionStore())
+    runtime = Runtime(store if store is not None else InMemorySessionStore(), registry=registry)
     for agent in agents:
         runtime.register(agent)
     try:
@@ -237,10 +258,20 @@ class TestDiscovery:
         with serving(monkeypatch, agents) as (client, _):
             assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["streamer"]}
 
-    def test_lists_the_intersection_with_the_agents_allowlist(self, monkeypatch):
+    def test_lists_only_the_streaming_agents_exposed_on_agui(self, monkeypatch):
         agents = [ScriptedAgent("exposed"), ScriptedAgent("hidden"), ScriptedAgent("batch-only", streaming=False)]
-        with serving(monkeypatch, agents, _AGUIConfig(agents=["exposed", "batch-only"])) as (client, _):
+        with serving(monkeypatch, agents, registry_cfg=_hidden_from_agui("hidden")) as (client, _):
             assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["exposed"]}
+
+    def test_lists_in_id_order_whatever_the_registration_order(self, monkeypatch):
+        with serving(monkeypatch, [ScriptedAgent("support"), ScriptedAgent("billing")]) as (client, _):
+            assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["billing", "support"]}
+
+    def test_lists_only_the_agents_this_process_hosts(self, monkeypatch):
+        """This handler runs agents itself. One a shared registry knows from another process cannot be run here,
+        so listing it would advertise an agent every run of which fails; the queue-mode handler lists those."""
+        with serving(monkeypatch, [ScriptedAgent("local")], registry=_SharedRegistry()) as (client, _):
+            assert client.get("/agui/agents", headers=AUTH).json() == {"agents": ["local"]}
 
     def test_discovery_publishes_names_only(self, monkeypatch):
         """Not agent.get_description(): several adapters return the agent's instructions from it, so
@@ -292,12 +323,30 @@ class TestConstructorGuards:
         with pytest.raises(AKConfigError, match="requires an identity block"):
             AGUIRequestHandler()
 
-    def test_a_default_agent_the_allowlist_hides_is_a_startup_error(self, monkeypatch):
+    def test_a_default_agent_not_exposed_on_agui_is_a_startup_error(self, monkeypatch):
         """A startup error, not a per-request one: the route would exist but always 404."""
-        _install_cfg(monkeypatch, _AGUIConfig(agents=["exposed"], default_agent="hidden"))
+        _install_cfg(monkeypatch, _AGUIConfig(default_agent="hidden"), _hidden_from_agui("hidden"))
         _with_provider(monkeypatch, _TestProvider())
-        with pytest.raises(ValueError, match="agui.default_agent"):
-            AGUIRequestHandler()
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(ScriptedAgent("hidden"))
+        with runtime:
+            with pytest.raises(ValueError, match="agui.default_agent is 'hidden'.*registry.agents.hidden.surfaces"):
+                AGUIRequestHandler()
+
+    def test_a_default_agent_the_registry_does_not_know_is_a_startup_error(self, monkeypatch):
+        _install_cfg(monkeypatch, _AGUIConfig(default_agent="nobody"))
+        _with_provider(monkeypatch, _TestProvider())
+        with Runtime(InMemorySessionStore()):
+            with pytest.raises(ValueError, match="agui.default_agent is 'nobody'"):
+                AGUIRequestHandler()
+
+    def test_a_default_agent_another_process_hosts_is_a_startup_error(self, monkeypatch):
+        """The bare route would exist and answer 404 on every call: this handler serves only what it hosts."""
+        _install_cfg(monkeypatch, _AGUIConfig(default_agent="remote"))
+        _with_provider(monkeypatch, _TestProvider())
+        with Runtime(InMemorySessionStore(), registry=_SharedRegistry()):
+            with pytest.raises(ValueError, match="agui.default_agent is 'remote'.*AGUIPipelineRequestHandler"):
+                AGUIRequestHandler()
 
 
 class TestAgentResolution:
@@ -309,11 +358,32 @@ class TestAgentResolution:
     def test_an_unexposed_agent_is_404_indistinguishable_from_unknown(self, monkeypatch):
         """Identical status *and* detail, so the surface never confirms that a name exists."""
         agents = [ScriptedAgent("exposed"), ScriptedAgent("hidden")]
-        with serving(monkeypatch, agents, _AGUIConfig(agents=["exposed"])) as (client, _):
+        with serving(monkeypatch, agents, registry_cfg=_hidden_from_agui("hidden")) as (client, _):
             hidden = client.post("/agui/hidden", headers=AUTH, json=body())
             unknown = client.post("/agui/nobody", headers=AUTH, json=body())
             assert hidden.status_code == unknown.status_code == 404
             assert hidden.json()["detail"].replace("hidden", "X") == unknown.json()["detail"].replace("nobody", "X")
+
+    def test_a_hosted_agent_is_resolved_from_its_own_descriptor_without_reading_the_registry_store(self, monkeypatch):
+        """Over a shared registry a store read per run would be a network round trip for an agent this process holds."""
+
+        class _NoStoreReads(InMemoryAgentRegistry):
+            def descriptor(self, id):
+                raise AssertionError("the registry's store was read for an agent this process hosts")
+
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)], registry=_NoStoreReads()) as (client, _):
+            response = client.post("/agui/assistant", headers=AUTH, json=body())
+            assert response.status_code == 200
+            assert types_of(response)[-1] == "RUN_FINISHED"
+
+    def test_an_agent_another_process_hosts_is_404_like_one_that_does_not_exist(self, monkeypatch):
+        """Not the 500 a run that cannot select its agent ends in: this handler does not serve the agent at all,
+        and says so the way it does for any name it does not serve."""
+        with serving(monkeypatch, [ScriptedAgent("local")], registry=_SharedRegistry()) as (client, _):
+            remote = client.post("/agui/remote", headers=AUTH, json=body())
+            unknown = client.post("/agui/nobody", headers=AUTH, json=body())
+            assert remote.status_code == unknown.status_code == 404
+            assert remote.json()["detail"].replace("remote", "X") == unknown.json()["detail"].replace("nobody", "X")
 
     def test_a_non_streaming_agent_is_400_naming_its_framework(self, monkeypatch):
         """A live path from day one for any app with a CrewAI or smolagents agent, so the message

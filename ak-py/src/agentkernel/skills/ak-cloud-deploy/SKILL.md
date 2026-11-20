@@ -1,7 +1,7 @@
 ---
 name: ak-cloud-deploy
 description: >
-  Deploy an Agent Kernel project to AWS, Azure, or GCP using Terraform modules, or to any
+  Deploy an Open Agent Kernel project to AWS, Azure, or GCP using Terraform modules, or to any
   Kubernetes cluster (on-prem, baremetal, EKS) using the official Helm chart.
   Supports serverless and containerized modes for all three clouds. AWS supports
   execution modes (rest_sync, rest_async, async) with a reply message_type (complete, delta),
@@ -22,7 +22,7 @@ metadata:
 
 # Deploy to Cloud
 
-Use this skill to deploy your Agent Kernel project to AWS, Azure, or GCP.
+Use this skill to deploy your Open Agent Kernel project to AWS, Azure, or GCP.
 
 ## Instructions for the Agent
 
@@ -66,7 +66,7 @@ Use official modules:
 Use current module version (`0.10.1`) unless user requests another.
 
 Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
-Agent Kernel repository and is published as an OCI artifact
+OAK repository and is published as an OCI artifact
 (`oci://ghcr.io/yaalalabs/charts/agent-kernel`, versioned with each release). Install the
 published chart, as in the Kubernetes section below, not a repository checkout.
 
@@ -75,7 +75,7 @@ All modules are provider-agnostic: they declare `required_providers` but do not 
 AWS-only features in this skill:
 - `authorizer` (the AWS Lambda authorizer; GCP's modules take a JWT `authorizer` object instead)
 
-`queue_mode`, `execution_mode` and `message_type` exist on AWS and GCP. On GCP `queue_mode` defaults to `true`, and `execution_mode` accepts only `rest_sync` and `rest_async`. `queue_mode` also exists on Azure Container Apps, over Service Bus: see Azure Containerized below. `execution.message_type` itself is plain Agent Kernel config.
+`queue_mode`, `execution_mode` and `message_type` exist on AWS and GCP. On GCP `queue_mode` defaults to `true`, and `execution_mode` accepts only `rest_sync` and `rest_async`. `queue_mode` also exists on Azure Container Apps, over Service Bus: see Azure Containerized below. `execution.message_type` itself is plain OAK config.
 
 Azure examples use the provider module's standard top-level inputs (`function_name`, `package_path`, `container_port`, `publisher_email`) rather than AWS serverless execution modes.
 
@@ -112,7 +112,7 @@ session:
 
 [Valkey](https://valkey.io/) is the open-source, Linux Foundation-governed fork of Redis. It is
 wire-compatible with Redis and available on AWS ElastiCache at a lower price point than the Redis
-OSS engine. Agent Kernel treats it as a first-class session and response store backend on AWS.
+OSS engine. OAK treats it as a first-class session and response store backend on AWS.
 
 - Dependency extras: include `valkey`
 - Typical dependency example:
@@ -966,7 +966,7 @@ response_handler = {
 - The route must be declared in all three places (the bypass, `Lambda.register`, `gateway_endpoints`).
   Not registered gives a 500; missing from the bypass gives a 403 (the authorizer logs
   `Event validation failed` for a request with no `Authorization` header); a nonzero TTL gives a 401
-  that Agent Kernel never logs.
+  that OAK never logs.
 - Attachments need `multimodal.enabled` with `create_dynamodb_multimodal_memory_table = true` (or a
   Redis/Valkey store the request handler can reach).
 - Full example: `examples/aws-serverless/slack-openai`.
@@ -1526,7 +1526,7 @@ optional `ws-gateway` Deployment for WebSocket modes. Backing services (Valkey, 
 condition-gated dependencies of the chart; flavors (dev, baremetal, EKS) are values files.
 
 Reference: the chart at `ak-deployment/ak-k8s/` and the end-to-end example at
-`examples/k8s/openai-queue-mode/` in the Agent Kernel repository.
+`examples/k8s/openai-queue-mode/` in the OAK repository.
 
 **Entry files** (one image per component; the chart's `command` defaults match these names):
 
@@ -1592,7 +1592,7 @@ helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 \
 ```
 
 **Model credentials as mounted Secrets (alternative to `extraEnv`):** create the Secret with the key
-named exactly like the AK key, set `secret.provider.type: kubernetes` in the image's `config.yaml`, and
+named exactly like the OAK key, set `secret.provider.type: kubernetes` in the image's `config.yaml`, and
 list it in the chart instead of the `extraEnv` flags:
 
 ```bash
@@ -1603,7 +1603,7 @@ kubectl create secret generic openai-credentials --from-literal=OPENAI_API_KEY="
 The chart mounts each Secret read-only at `/var/run/secrets/agentkernel/<name>` on the agent-executing
 tier only (agent-runner, or io in the single-process profile). A set environment variable still wins.
 
-The chart version tracks the Agent Kernel release (the pin above is the current one); the
+The chart version tracks the OAK release (the pin above is the current one); the
 flavor values files ship inside the chart, so no repository checkout is needed.
 `ak-deployment/ak-k8s/chart` in the repository is for developing the chart itself.
 

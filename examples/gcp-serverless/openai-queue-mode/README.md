@@ -1,6 +1,6 @@
-# Agent Kernel queue mode on GCP Cloud Run (OpenAI Agents SDK)
+# Open Agent Kernel queue mode on GCP Cloud Run (OpenAI Agents SDK)
 
-This example deploys Agent Kernel's queue mode to Google Cloud. One container image runs as two
+This example deploys Open Agent Kernel's queue mode to Google Cloud. One container image runs as two
 Cloud Run services, connected by Pub/Sub:
 
 ```

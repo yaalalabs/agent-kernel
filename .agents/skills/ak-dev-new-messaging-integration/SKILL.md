@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-messaging-integration
 description: >
-  Step-by-step guide for adding a new messaging platform integration to Agent Kernel.
+  Step-by-step guide for adding a new messaging platform integration to Open Agent Kernel (OAK).
   Use this skill when you need to add support for a new chat platform (beyond Slack,
     WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail). Covers writing the
   inbound/outbound adapter pair, hosting it, webhook verification, attachments, configuration,
@@ -14,7 +14,7 @@ metadata:
 
 # Adding a New Messaging Integration
 
-This guide walks through adding a new messaging platform integration to Agent Kernel. Use the WhatsApp adapter (`ak-py/src/agentkernel/integration/whatsapp/adapter.py`) as the canonical webhook reference, and Gmail (`integration/gmail/adapter.py`) as the polling one.
+This guide walks through adding a new messaging platform integration to Open Agent Kernel (OAK). Use the WhatsApp adapter (`ak-py/src/agentkernel/integration/whatsapp/adapter.py`) as the canonical webhook reference, and Gmail (`integration/gmail/adapter.py`) as the polling one.
 
 ## Architecture Overview
 
@@ -133,7 +133,7 @@ Rules the adapter must hold to:
 1. **Never execute.** No `ChatService`, `AgentService` or `Runtime` import. The only side effects allowed are platform API calls and attachment storage.
 2. **Read only your own config block**, `AKConfig.get().<platform>`.
 3. **`verify` before `parse`, `parse` before enqueue.** `verify` is concrete and a no-op on the base: override it only when verification is separable from parsing. (Slack and Teams verify inside their SDK's dispatch, so theirs stays the default.) Your check is the delivery's only one: `WebhookRESTRequestHandler` declares `authenticates_itself`, so `RESTAPI` mounts the webhook routes without the identity dependency (a platform token in `Authorization`, as Teams sends, would otherwise meet the app's identity provider), and on Lambda the authorizer's `WebhookRouteMatcher` bypass does the same.
-4. **`request_id` is the platform's message id** wherever one exists; that is what makes a webhook retry deduplicate instead of running the agent twice. Synthesize a stable one only when the platform gives you none (Slack: `f"slack:{channel}:{ts}"`).
+4. **`request_id` is the platform's message id** wherever one exists; that is what makes a webhook retry deduplicate instead of running the agent twice. Synthesize a stable one only when the platform gives you none (Slack: `f"slack:{channel}:{ts}"`). A press on a pause control is the exception: it is keyed `<platform>:<conversation>:<message id>:<interruption id>:<verb>`, never the platform's per-click id (Slack's `action_ts`, Telegram's `CallbackQuery.id`), so that pressing the same button twice deduplicates instead of reaching a pause the first press already resolved.
 5. **An ignored delivery returns an empty request list**, never an exception.
 6. **Override `missing_verification_settings()`** when `verify` skips its check for an unset secret
    (return e.g. `["<platform>.webhook_secret"]` while it is empty). `LambdaWebhookHost` refuses such an
@@ -151,7 +151,12 @@ Rules the adapter must hold to:
    the reply still goes to the header as written. Put sender facts the platform vouches for
    in `claims` (Gmail carries `Authentication-Results`); leave it empty when the platform vouches for the sender
    itself. A delivery naming no sender runs anonymous. `tests/test_principal_messaging.py` pins the seam and each
-   adapter suite pins its own namespace.
+   adapter suite pins its own namespace. Every request names the scope, not only the one parsed from a message: a
+   pause is recorded against `(namespace, subject)`, so a decision parsed from a pause control that names only the
+   subject is refused by `Runtime._validate_resume` as another principal's, and the person who opened the pause
+   cannot answer it. An interactive payload often spells the scope differently from an event (Slack names the
+   workspace as a string on an event and as an object on a press), so read it through one method rather than
+   inline at each call site.
 
 ### 3. Implement the Outbound Adapter
 
@@ -181,6 +186,10 @@ class <Platform>OutboundAdapter(OutboundAdapter):
         """Raising hands the message back for retry, then deliver_error."""
         await self._client.send(reply_context["to"], self.split_reply(str(reply)))
 
+    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: dict[str, str]) -> None:
+        """Optional. Override only to draw the pause with the platform's own controls."""
+        await self._client.send(reply_context["to"], self.split_reply(self.format_pause(reply)), buttons=self._buttons(reply))
+
     async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         try:
             await self._client.send(reply_context["to"], [message])
@@ -188,7 +197,8 @@ class <Platform>OutboundAdapter(OutboundAdapter):
             self._log.error(f"Could not deliver the <Platform> error message: {e}")
 ```
 
-- The reply always arrives as an `AgentReplyText`: the Agent Runner serializes the typed reply to its string form before the output queue.
+- The reply reaching `deliver` always arrives as an `AgentReplyText`: the Agent Runner serializes the typed reply to its string form before the output queue.
+- **A paused run arrives at `deliver_paused` instead**, and keeps its type: `AgentPausedReplyAny` carries the interruptions as structure, which is what a platform needs to draw a control per interruption. `deliver_paused` is concrete, not abstract — the base renders `format_pause(reply)` through `deliver`, so a platform with no interactive UI needs nothing. Override it only to draw buttons, and declare what they offer with the `DECISIONS` tuple (`("approved", "denied")` by default; add `"cancelled"` if the platform has room) and `DENY_COLLECTS_REASON` (whether denying opens a prompt for a reason). Both are class attributes like `MESSAGE_LIMIT`, so an application retunes them by subclassing and pointing `<platform>.outbound_adapter` at the subclass; neither is configuration. Every **word** a control shows is a class attribute for the same reason — `DECISION_LABELS` in the seam (read through `_label(verb)`, never as a module constant, or a subclass cannot reach it), overridden per platform where the platform's own affordances differ: Telegram prefixes a glyph because an inline keyboard button carries no styling, and Slack keeps `BUTTON_STYLES` of its own. Where the inbound half draws a control of its own — Slack's review form — the labels travel on the button that opened it, beside the verbs, since that half reads no outbound policy. **Put each question's controls against that question**, never a block of questions followed by a block of rows: unlabelled rows in the same order as the paragraphs above them is how somebody approves the wrong call. Use whatever the platform gives you — Slack's blocks are a flat list, so it emits a section plus an actions block per interruption; Telegram's keyboard is attached to a message and always renders at its foot, so it sends one message per question. `_pause_template(reply)` hands back the wording's two halves so an adapter doing either can place the opening and closing lines itself, and `format_pause` stays the whole-message renderer for a platform with no controls at all. Honour `reply.answer_together`: the frameworks that set it refuse a resume leaving any question unanswered, so a control per question would always fail there — offer one submit for the whole pause: Slack opens a form, Telegram draws a tally keyboard whose presses only mark an answer until Submit sends the set. Both rebuild their state from the pressed message — Slack from its blocks, Telegram from its keyboard — so neither adapter stores anything between presses. Where a platform can do neither, draw nothing and say so with `ANSWER_TOGETHER_NOTICE`. Draw controls only where `_decidable(interruption)` is true: an `input_required` interruption wants a **value**, so a decision verb would resume the framework with no answer — show `TYPED_ANSWER_NOTICE` where its controls would have been.
 - Outbound adapters are **cached and shared across consumer threads**, and each call runs on its own event loop. Keep no per-message state on `self`, and build loop-bound clients (an `httpx.AsyncClient`) per call.
 - `deliver_error` receives `OutboundAdapter.ERROR_MESSAGE`, not the raw exception: raw error text is logged, never sent to a platform user.
 
@@ -311,7 +321,7 @@ Create `examples/api/<platform>/` with:
 
 Two files:
 
-1. `ak-py/tests/test_integration_adapter_contract.py` — add a `IntegrationAdapterContract` subclass for the platform. The contract covers the invariants the queue hop needs: stable identifiers, an ignorable delivery that is not an error, a flat reply context inside its budget, and a clean round trip through `IntegrationProducer`.
+1. `ak-py/tests/test_integration_adapter_contract.py` — add a `IntegrationAdapterContract` subclass for the platform. The contract covers the invariants the queue hop needs: stable identifiers, an ignorable delivery that is not an error, a flat reply context inside its budget, a clean round trip through `IntegrationProducer`, and that a paused run reaches the platform as readable text rather than serialized JSON.
 2. `ak-py/tests/test_<platform>_integration.py` — the platform's own parsing and formatting. Build the adapter via `object.__new__` with a stubbed API client (see `test_whatsapp_integration.py`), and cover: message parsing, ignored deliveries, rejection paths (oversized, unsupported media, download failure), verification, reply chunking and acknowledgement.
 
 ### 14. Add Documentation
@@ -323,9 +333,9 @@ Add `docs/docs/integrations/<platform>.md` covering:
 - Webhook URL setup
 - The `multimodal.enabled` requirement if the platform accepts attachments
 
-Then update the landing page inventories in `docs/src/components/*/data.tsx`: add a tile to the **Channels & protocols** row in `IntegrationsMarquee/data.tsx` (role `Channel`, `href` to the new page, logo under `docs/static/img/integrations/` or a `react-icons/si` glyph); add `pick("<tile name>")` to the **Messaging channels** card in `ArchitectureOverview/data.tsx`; add the platform to the **Messaging Channels** card's `tags` and `description` under the Connect tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+Then update the landing page inventories under `docs/src/components/`: add an item to the **Channels & protocols** row of `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx` (role `Channel`, `href` to the new page, logo under `docs/static/img/integrations/` or a `react-icons/si` glyph); add `pick("<item name>")` to the **Messaging channels** card in `ArchitectureOverview/data.tsx`; add the platform to the list of channels in the Connect stage's `points` in `HomeSections/index.tsx` (`STAGES`). Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
-Then the features page: the `MESSAGING_PLATFORMS` list in `docs/src/pages/features.tsx` (logo, link to the new page). Grep `docs/src/pages/*.tsx`, `README.md`, and `docs/docs/intro.md` for the platform roll call ("Slack, WhatsApp, ...") and add the new name wherever the others are listed.
+Then the features page: the **Messaging channels** capability under Connect in `docs/src/pages/features.tsx` (`STAGES`): raise the count in its `summary` and add a `more` link to the new page. Grep `docs/src/pages/*.tsx`, `docs/src/components/FAQ/index.tsx`, `README.md`, and `docs/docs/intro.md` for the platform roll call ("Slack, WhatsApp, ...") and add the new name wherever the others are listed.
 
 ## Checklist
 
@@ -335,6 +345,7 @@ Then the features page: the `MESSAGING_PLATFORMS` list in `docs/src/pages/featur
 - [ ] Attachments offloaded with `AttachmentStorageManager.offload`, never inlined
 - [ ] `reply_context` flat, string-valued, inside the 8 KB budget
 - [ ] `MESSAGE_LIMIT` (and `MAX_CHUNKS`) set to the platform's limits
+- [ ] `deliver_paused` overridden if the platform has interactive controls, with `DECISIONS` and `DENY_COLLECTS_REASON` set to match, and the press parsed back in the inbound half as an `AgentResumeRequestAny`
 - [ ] Package `__init__.py` and public alias at `ak-py/src/agentkernel/<platform>.py`
 - [ ] Registered in `IntegrationAdapterFactory._BUILTIN_NAMES` and `_builtin`
 - [ ] A `WebhookRoute` in `integration/adapter/routes.py::BUILTIN_WEBHOOK_ROUTES`, with the adapter's paths read from it
@@ -344,5 +355,5 @@ Then the features page: the `MESSAGING_PLATFORMS` list in `docs/src/pages/featur
 - [ ] Example in `examples/api/<platform>/` mounting through `IOHandler.run`
 - [ ] `IntegrationAdapterContract` subclass plus the per-platform test file
 - [ ] Documentation in `docs/docs/integrations/<platform>.md`
-- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Messaging channels card (`ArchitectureOverview/data.tsx`), Messaging Channels card tags (`FeatureExplorer/data.tsx`)
-- [ ] Platform inventories on `docs/src/pages/features.tsx` (`MESSAGING_PLATFORMS`) and in the README/intro roll calls
+- [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), `pick()` chip on the Messaging channels card (`ArchitectureOverview/data.tsx`), the channel list in the Connect stage's points (`HomeSections/index.tsx`)
+- [ ] The Messaging channels capability on `docs/src/pages/features.tsx` (count and `more` link) and the README/intro roll calls

@@ -1,4 +1,4 @@
-# Agent Kernel - Azure Containerized Module
+# Open Agent Kernel - Azure Containerized Module
 
 A comprehensive Terraform module for deploying containerized applications on Azure using Container Apps, with API Management (APIM), and optional Redis or Cosmos DB integration.
 
@@ -270,7 +270,7 @@ module "container_app_cosmosdb" {
 
 With `queue_mode = true` the module adds:
 - A Standard Service Bus namespace (`<prefix>-queues`, local auth off) with session-enabled, duplicate-detecting
-  `input` and `output` queues (lock 1 minute, max delivery count 4: one above Agent Kernel's default
+  `input` and `output` queues (lock 1 minute, max delivery count 4: one above Open Agent Kernel's default
   `max_receive_count` of 3).
 - An agent runner Container App (`<prefix>-runner`, no ingress) running `agent_runner_command`, scaled by a KEDA
   `azure-servicebus` rule on `input` (one replica per 5 waiting messages) that authenticates with the app's
@@ -287,6 +287,12 @@ the module injects only coordinates, into both apps:
 
 The image's default command is the edge (`IOHandler.run()`); the runner overrides it with `agent_runner_command`
 (`AgentRunner.run()`). WebSocket is not supported in Azure queue mode.
+
+**File uploads in queue mode.** The `-multipart` route works in queue mode. The edge saves each uploaded
+file to the multimodal attachment store and queues only its ID, so both apps need `multimodal.enabled: true`
+and the same shared store (`storage_type: redis` with the same `multimodal.redis.url`, or `dynamodb`).
+Without one, requests that carry files get a 400; text chats still work, and the edge logs a warning at
+startup. Check your API Management tier's request size limit against `api.max_file_size` (default 10 MB).
 
 ## 📤 Outputs
 
@@ -345,8 +351,8 @@ https://{apim-name}.azure-api.net/{api_base_path}/{version}/{endpoint}
 ```
 
 **Default Endpoints**:
-- `POST /{api_base_path}/{version}/{agent_endpoint}` → `/run`
-- `POST /{api_base_path}/{version}/{agent_endpoint}-multipart` → `/run-multipart`
+- `POST /{api_base_path}/{version}/{agent_endpoint}` → `/api/v1/chat`
+- `POST /{api_base_path}/{version}/{agent_endpoint}-multipart` → `/api/v1/chat-multipart`
 
 **Private DNS Integration**:
 - Automatic DNS zone creation for Container App domain

@@ -1,6 +1,6 @@
 # Containerized Deployment Modules
 
-This directory contains reusable Terraform modules for the containerized Agent Kernel deployment, following the same pattern as the serverless deployment.
+This directory contains reusable Terraform modules for the containerized Open Agent Kernel deployment, following the same pattern as the serverless deployment.
 
 ## Architecture Overview
 

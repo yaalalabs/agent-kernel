@@ -1,6 +1,6 @@
 # Sandbox Queue Broker on Kubernetes: the NATS chart shape
 
-The #503 fully-in-cluster shape: the Agent Kernel two-process pipeline AND the sandbox
+The #503 fully-in-cluster shape: the Open Agent Kernel two-process pipeline AND the sandbox
 broker worker, all deployed by [the Helm chart](../../../ak-deployment/ak-k8s/) over NATS
 JetStream. Agents run in the `agent-runner` pods; their sandbox executions travel the
 sandbox queues to the `sandbox-worker` pod, which runs them as pods in a **hardened

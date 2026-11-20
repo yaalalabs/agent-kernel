@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Smolagents
 
-Integrate Hugging Face Smolagents with Agent Kernel.
+Integrate Hugging Face Smolagents with Open Agent Kernel (OAK).
 
 ## Installation
 
@@ -95,7 +95,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 
 ## Structured Output
 
-SmolAgents has no first-class schema parameter; the agent returns whatever value is passed to `final_answer`. Agent Kernel detects the value's type: a dict or Pydantic instance is returned as an `AgentReplyAny` whose `content` is the result as a dict; anything else is stringified into an `AgentReplyText` as before:
+SmolAgents has no first-class schema parameter; the agent returns whatever value is passed to `final_answer`. OAK detects the value's type: a dict or Pydantic instance is returned as an `AgentReplyAny` whose `content` is the result as a dict; anything else is stringified into an `AgentReplyText` as before:
 
 ```python
 from smolagents import CodeAgent
@@ -114,7 +114,7 @@ SmolagentsModule([agent])
 Pydantic results are converted via `model_dump()`, and `str(reply)` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
 :::info Streaming limitation
-Structured output applies to non-streaming execution only. Agent Kernel's Smolagents adapter does not
+Structured output applies to non-streaming execution only. OAK's Smolagents adapter does not
 implement `Runner.stream()` yet (smolagents itself supports streaming).
 :::
 
@@ -129,14 +129,14 @@ Smolagents **round-trips a filtered subset** of the reserved [`framework_context
 ## Native run options
 
 `agent.run`'s own arguments (`max_steps`, `images`) are declared per agent with
-[`Module.run_options`](../core-concepts/runner.md#native-run-options); Agent Kernel merges them into
+[`Module.run_options`](../core-concepts/runner.md#native-run-options); OAK merges them into
 the call and writes the keys it owns (`reset`, `additional_args`) last:
 
 ```python
 SmolagentsModule([agent]).run_options(agent, max_steps=6)
 ```
 
-Progress hooks need nothing from Agent Kernel here: smolagents takes `step_callbacks` on the agent
+Progress hooks need nothing from OAK here: smolagents takes `step_callbacks` on the agent
 constructor, which you already own. `agent.run` is called through `asyncio.to_thread`, which carries
 the context variables, so `Session.current()` resolves inside a step callback.
 
@@ -149,14 +149,14 @@ This adapter **cannot pause**, and reports it rather than pretending: its runner
 `supports_pause` at `False`, and `resume()` raises if called directly. A request that tries to resume
 a run on this framework is refused by `Runtime` with a message naming the runner.
 
-The framework's own human-in-the-loop facility does not intersect what Agent Kernel wraps — see
+The framework's own human-in-the-loop facility does not intersect what OAK wraps — see
 [Human in the Loop](../advanced/human-in-the-loop.md) for the five adapters that do pause.
 
 ## Features
 
 - ✅ ToolCalling and CodeAgent support
 - ✅ Managed agent delegation
-- ✅ Session management via Agent Kernel runtime
+- ✅ Session management via OAK runtime
 - ✅ Framework-agnostic tool binding
 - ✅ Structured output (dict / Pydantic `final_answer` → `AgentReplyAny`)
 

@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Conversation Threads
 
-Agent Kernel supports **persistent, named conversation threads**: every chat exchange is recorded against its
+Open Agent Kernel (OAK) supports **persistent, named conversation threads**: every chat exchange is recorded against its
 `session_id` and becomes readable over REST, so UIs can show a user's conversation list and full history across
 restarts and devices.
 
@@ -18,7 +18,7 @@ sequenceDiagram
     participant ThreadStore as Thread Store
     participant Agent
 
-    Client->>TH: POST /api/v1/chat (prompt, session_id; bearer credential)
+    Client->>TH: POST /api/v1/chat (prompt, session_id, bearer credential)
     TH->>ThreadStore: get_or_create_thread + append user message
     TH->>CS: execute(request, prebuilt requests)
     CS->>Agent: run
@@ -53,8 +53,8 @@ sequenceDiagram
 
 :::caution Platform scope
 Conversation threads are the history mechanism for clients that connect to the agent directly (first-party
-chat UIs). Messaging integrations (Slack, WhatsApp, Teams, ...) never record AK threads: those platforms own
-their own conversation history, and AK threads alongside them would create duplicate, divergent state.
+chat UIs). Messaging integrations (Slack, WhatsApp, Teams, ...) never record OAK threads: those platforms own
+their own conversation history, and OAK threads alongside them would create duplicate, divergent state.
 :::
 
 ## Enabling Thread Support

@@ -1,6 +1,6 @@
-# Agent Kernel Realtime Voice over AWS SQS (LiveKit)
+# Open Agent Kernel Realtime Voice over AWS SQS (LiveKit)
 
-This package demonstrates Agent Kernel's scalable, containerized architecture running in **`REALTIME` execution mode** for voice over WebRTC. It uses LiveKit as the frontend voice gateway and AWS SQS as the backend message broker.
+This package demonstrates Open Agent Kernel's scalable, containerized architecture running in **`REALTIME` execution mode** for voice over WebRTC. It uses LiveKit as the frontend voice gateway and AWS SQS as the backend message broker.
 
 ```
 LiveKit WebRTC → ECSIOHandler → Input SQS Queue → ECSAgentRunner → Output SQS Queue → ECSIOHandler → LiveKit WebRTC

@@ -158,14 +158,15 @@ class AttachmentStorageManager:
         *,
         attachments_disabled_error: str,
         session_cache_error: str,
+        max_attachments: int = sys.maxsize,
     ) -> tuple[list[AgentRequest], list[StoredAttachment]]:
         """Save each image/file request's bytes and replace it, in place, with a reference.
 
-        Two surfaces need this same rewrite before an agent request leaves the process it was
-        built in: conversation threads (the bytes must not be re-sent on every turn) and messaging
-        integrations (the bytes must not ride the queue, whose brokers cap a message far below
-        ``api.max_file_size``). ``MultimodalPreHook`` resolves the references later; no raw bytes
-        travel past storage.
+        Several surfaces need this same rewrite before an agent request leaves the process it was
+        built in: conversation threads (the bytes must not be re-sent on every turn), and messaging
+        integrations, AG-UI and the REST pipeline on a broker (the bytes must not ride the queue,
+        whose brokers cap a message far below ``api.max_file_size``). ``MultimodalPreHook``
+        resolves the references later; no raw bytes travel past storage.
 
         Requests that carry no attachment bytes pass through unchanged and keep their order, and a
         list with no attachments at all is returned as-is.
@@ -174,8 +175,12 @@ class AttachmentStorageManager:
         survives: base64 data is stored as bytes and its request replaced by a reference, while a
         remote reference (``http://``, ``https://``, ``s3://``, or a non-base64 ``data:`` URI) is
         stored as a url and its request travels on untouched for the adapter to resolve.
-        Attachments saved here are exempt from ``max_attachments`` eviction: they are part of a
-        request that has not run yet, so evicting one would lose the user's input.
+        By default attachments saved here are exempt from ``max_attachments`` eviction: a thread's
+        history must keep its old attachments. A caller without a thread passes a cap so the
+        session's store does not grow without bound.
+
+        Saving is all or nothing: when one save fails, the attachments this call already saved are
+        deleted before the error is raised, so a refused request leaves nothing behind.
 
         The two rejections are caller-worded because the remedy differs per surface, and both are
         configuration errors rather than runtime failures:
@@ -193,6 +198,7 @@ class AttachmentStorageManager:
             ``multimodal.enabled`` is false.
         :param session_cache_error: Message raised when attachments are present while
             ``multimodal.storage_type`` is ``session_cache``.
+        :param max_attachments: Most attachments the session keeps; older ones are evicted.
         :return: (rebuilt request list, references to the saved attachments).
         :raises ValueError: If attachments are present but cannot be stored (see above).
         """
@@ -208,27 +214,45 @@ class AttachmentStorageManager:
         manager = cls(session_id=session_id)
         rebuilt: list[AgentRequest] = []
         stored: list[StoredAttachment] = []
-        for req in requests:
-            extracted = AttachmentSource.extract(req)
-            if extracted is None:
-                rebuilt.append(req)
-                continue
-            is_reference = not extracted.is_base64
-            attachment_id = manager.save_attachment(
-                data="" if is_reference else extracted.data,
-                attachment_type=extracted.att_type,
-                name=extracted.name,
-                mime_type=extracted.mime_type,
-                max_attachments=sys.maxsize,
-                url=extracted.data if is_reference else None,
-            )
-            stored.append(StoredAttachment(attachment_id=attachment_id, name=extracted.name, mime_type=extracted.mime_type))
-            # A remote reference must not become an AgentRequestAttachmentRef: MultimodalPreHook
-            # strips every ref before the agent runs, so the attachment would reach the agent as
-            # nothing at all. It travels on untouched and the adapter resolves it.
-            rebuilt.append(req if is_reference else AgentRequestAttachmentRef(attachment_id=attachment_id))
-            _log.debug(f"Stored attachment {attachment_id} ({extracted.name}) for session {session_id}")
+        try:
+            for req in requests:
+                extracted = AttachmentSource.extract(req)
+                if extracted is None:
+                    rebuilt.append(req)
+                    continue
+                is_reference = not extracted.is_base64
+                attachment_id = manager.save_attachment(
+                    data="" if is_reference else extracted.data,
+                    attachment_type=extracted.att_type,
+                    name=extracted.name,
+                    mime_type=extracted.mime_type,
+                    max_attachments=max_attachments,
+                    url=extracted.data if is_reference else None,
+                )
+                stored.append(StoredAttachment(attachment_id=attachment_id, name=extracted.name, mime_type=extracted.mime_type))
+                # A remote reference must not become an AgentRequestAttachmentRef: MultimodalPreHook
+                # strips every ref before the agent runs, so the attachment would reach the agent as
+                # nothing at all. It travels on untouched and the adapter resolves it.
+                rebuilt.append(req if is_reference else AgentRequestAttachmentRef(attachment_id=attachment_id))
+                _log.debug(f"Stored attachment {attachment_id} ({extracted.name}) for session {session_id}")
+        except Exception:
+            manager.delete_attachments([s.attachment_id for s in stored])
+            raise
         return rebuilt, stored
+
+    def delete_attachments(self, attachment_ids: list[str]) -> None:
+        """Delete attachments by id, logging rather than raising on a failed delete.
+
+        A failed delete leaves the attachment to expire with the store's TTL, so it must not hide
+        the error that triggered the cleanup.
+
+        :param attachment_ids: Ids to delete; unknown ids are ignored by the store.
+        """
+        for attachment_id in attachment_ids:
+            try:
+                self._driver.delete(attachment_id)
+            except Exception as e:
+                _log.warning(f"Could not delete attachment {attachment_id}; it expires with the store's TTL: {e}")
 
     def save_attachment(
         self,

@@ -36,8 +36,12 @@ history_agent = ToolCallingAgent(
     "Give direct and correct answers. Answer the question only. Don't give any explanation",
 )
 
-OpenAIModule([general_agent, math_agent])
-SmolagentsModule([history_agent])
+# What each agent publishes about itself: its MCP tool description, its A2A card description and its
+# catalog entry. Declared here because an agent's instructions are never published.
+OpenAIModule([general_agent, math_agent]).describe(
+    general_agent, description="Answers general questions with short, clear answers."
+).describe(math_agent, description="Solves math problems.")
+SmolagentsModule([history_agent]).describe(history_agent, description="Answers questions about history.")
 
 mcp = MCP.get()
 

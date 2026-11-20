@@ -1,4 +1,4 @@
-# robots.txt for Agent Kernel Documentation
+# robots.txt for Open Agent Kernel Documentation
 # https://kernel.yaala.ai/robots.txt
 
 # Allow all search engines to crawl the site

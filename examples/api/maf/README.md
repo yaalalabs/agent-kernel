@@ -1,6 +1,6 @@
-# Agent Kernel MAF API Example
+# Open Agent Kernel MAF API Example
 
-This package contains a demo of Agent Kernel exposing agents built with Microsoft Agent Framework via a REST API.
+This package contains a demo of Open Agent Kernel exposing agents built with Microsoft Agent Framework via a REST API.
 
 Install dependencies using:
 

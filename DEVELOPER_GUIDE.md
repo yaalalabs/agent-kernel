@@ -1,6 +1,6 @@
 # Developer Guide
 
-This guide provides essential information for developers working on the Agent Kernel project.
+This guide provides essential information for developers working on the Open Agent Kernel project.
 
 ## Table of Contents
 
@@ -72,7 +72,7 @@ make help
 
 ### Formatting Standards
 
-Agent Kernel uses the following tools to maintain code quality:
+OAK uses the following tools to maintain code quality:
 
 - **[black](https://github.com/psf/black)**: Opinionated code formatter
 - **[isort](https://pycqa.github.io/isort/)**: Import statement organizer
@@ -199,5 +199,5 @@ Follow conventional commit format:
 - [AGENTS.md](AGENTS.md) - Guidance for AI coding agents contributing to this repo (architecture pointers, agent-specific gotchas)
 - [Documentation Setup](docs/SETUP.md) - Setting up the documentation site
 - [Examples](examples/) - Sample implementations
-- [Use Cases](use-cases/) - End-to-end agents built from `SPEC.md` using Agent Kernel skills
+- [Use Cases](use-cases/) - End-to-end agents built from `SPEC.md` using OAK skills
 - [e2e](e2e/README.md) - Messaging integration e2e harness (deployable app + Terraform + pytest suite) driven against real Slack, Telegram, WhatsApp, Messenger, Instagram, and Gmail accounts

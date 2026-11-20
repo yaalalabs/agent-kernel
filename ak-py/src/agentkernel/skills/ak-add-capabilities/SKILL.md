@@ -1,13 +1,15 @@
 ---
 name: ak-add-capabilities
 description: >
-  Add capabilities to an existing Agent Kernel project. This skill guides you through
+  Add capabilities to an existing Open Agent Kernel project. This skill guides you through
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
   A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support,
   scheduled tasks (deferred and recurring chat execution), the sandbox capability
   (isolated code execution), identity and authentication (who may call: an identity
   provider such as Auth0, Keycloak or Okta through oidc, Amazon Cognito, Microsoft Entra ID,
-  Firebase, static credentials or your own, plus role mapping), and secret resolution (environment first, then AWS SSM
+  Firebase, static credentials or your own, plus role mapping), the agent registry (describing agents
+  for the catalog, A2A cards and MCP tools, choosing the surfaces each agent is served on, and sharing
+  the registry between processes), and secret resolution (environment first, then AWS SSM
   Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
@@ -21,7 +23,7 @@ metadata:
 
 # Add Capabilities
 
-Use this skill to enhance your Agent Kernel project with additional capabilities.
+Use this skill to enhance your Open Agent Kernel project with additional capabilities.
 
 ## Instructions for the Agent
 
@@ -29,7 +31,7 @@ When the user wants to add a capability, follow this workflow:
 
 ### Step 1: Identify the Project
 
-Check for an existing Agent Kernel project with `pyproject.toml` and agent definition file.
+Check for an existing OAK project with `pyproject.toml` and agent definition file.
 
 ### Step 2: Ask Which Capability
 
@@ -51,6 +53,7 @@ Which capability would you like to add?
 14. **Human in the Loop** — Pause a run for a person's approval or answer and resume from their decision (a gated tool or an interrupt, a `resume` block on the next request)
 15. **A2UI** — Let an agent answer with an interface instead of prose: its JSON reply is labelled so the client receives a document, not a string
 16. **Identity** - Authenticate callers through a configured identity provider (static credentials, any OIDC issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft Entra ID, Firebase, or your own) and read the caller as a `Principal` in tools and hooks
+17. **Agent Registry** - Describe each agent for the catalog (`GET /api/v1/agents`), A2A cards and MCP tools, choose the surfaces it is served on, and share the registry between processes (Redis, Valkey or DynamoDB)
 
 ### Step 3: Generate Changes
 
@@ -546,24 +549,43 @@ dependencies = [
 ```yaml
 mcp:
   enabled: true
-  expose_agents: true             # Auto-expose all registered agents
-  # agents:                       # Or list specific agents
-  #   - name: general
-  #   - name: math
+  expose_agents: true             # Every agent becomes a tool, named by its id
   url: "http://localhost:8000/mcp"  # Public URL of the MCP endpoint (behind a proxy, the public one)
 ```
 
-3. No code changes needed. The MCP server endpoint is automatically available.
+3. Give each exposed agent a description. It is the tool's description, which a client model
+   chooses the tool by. By default it is the description the framework keeps for the agent
+   (OpenAI `handoff_description`; the `description` of an ADK, Pydantic AI, MAF, Claude or
+   smolagents agent); the agent's instructions are never published, and an agent with no
+   description gets only a generic sentence (a warning at startup names it). Declare one for a
+   CrewAI or LangGraph agent, or to replace the default, where the agent is loaded or per agent
+   id in `config.yaml`:
+```python
+OpenAIModule([general, math]).describe(general, description="Answers general questions").describe(
+    math, description="Solves math problems"
+)
+```
+```yaml
+registry:
+  agents:
+    math:
+      description: Solves math problems
+      surfaces: [rest]            # to keep an agent off MCP, list the surfaces it should be on
+```
+   Every agent is exposed unless its `surfaces` (`rest`, `a2a`, `mcp`, `agui`) leaves `mcp` out.
+   There is no `mcp.agents` list any more: setting it stops the application at startup. The MCP
+   server endpoint is automatically available.
 
 4. Know how agent tools run: through the queue pipeline, never on the HTTP request thread. Each call
    is enqueued, the agent runner executes it, and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. With `expose_agents: true`, `RESTAPI.run(handlers=[...])`,
      `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
-   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
-     agent runner (tools are built from the IO process's registry), configure a shared
-     `execution.response_store` (redis, valkey or dynamodb) in every execution mode, and set
-     `mcp.stateless_http: true` when more than one IO replica serves `/mcp`.
+   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): the IO process must know the agents, since tools are
+     built from the agent registry when it starts. Import the same agent modules in the IO process as in the
+     agent runner, or share the registry (`registry.type: redis`, `valkey` or `dynamodb`) and start the runner
+     first. Configure a shared `execution.response_store` (redis, valkey or dynamodb) in every execution mode,
+     and set `mcp.stateless_http: true` when more than one IO replica serves `/mcp`.
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
      block); failures reach the client as a fixed message, with details in the logs only.
    - Tools you add yourself to `MCP.get()` are your own code and still run in the IO process.
@@ -591,13 +613,23 @@ dependencies = [
 ```yaml
 a2a:
   enabled: true
-  agents:
-    - general         # List agents to expose via A2A
   url: "http://localhost:8000/a2a"   # public base of the A2A routes; each card advertises {url}/{agent}
+registry:
+  agents:
+    general:
+      description: Answers general questions   # the card's description; A2A requires one
+      version: "1.0.0"                         # quoted: YAML reads 1.0 or 2 as a number, which is refused
+    math:
+      surfaces: [rest]                         # keeps an agent off A2A; unset = every surface
 ```
+   Every agent is served over A2A unless its `surfaces` leaves `a2a` out. There is no `a2a.agents`
+   list any more: setting it stops the application at startup.
 
-3. No code changes needed. Each agent's card is served at `/a2a/{agent}/.well-known/agent-card.json`
-   (all cards at `/a2a/catalog`). Agent Kernel serves A2A 1.0 only (`a2a-sdk` 1.2.3): callers need
+3. Declare each served agent's description, in `config.yaml` as above or in code with
+   `Module.describe(agent, description=..., version=...)`. The card is built from the agent's
+   descriptor and never carries its instructions, so an undeclared description is empty (a warning
+   at startup names the agent). Each agent's card is served at `/a2a/{agent}/.well-known/agent-card.json`
+   (all cards at `/a2a/catalog`). OAK serves A2A 1.0 only (`a2a-sdk` 1.2.3): callers need
    an `a2a-sdk` 1.x client, built with `ClientFactory` (it sends the required `A2A-Version: 1.0`
    header). A reply labelled by the A2UI capability arrives as a data part.
 
@@ -607,9 +639,10 @@ a2a:
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on
      SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
-   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): import the same agent modules in the IO process as in the
-     agent runner (cards are built from the IO process's registry), and configure a shared
-     `execution.response_store` (redis, valkey or dynamodb) in every execution mode.
+   - Split deployment (SQS/Kafka/NATS/Pub/Sub/Service Bus): the IO process must know the agents, since cards are
+     built from the agent registry when it starts. Import the same agent modules in the IO process as in the
+     agent runner, or share the registry (`registry.type: redis`, `valkey` or `dynamodb`) and start the runner
+     first. Configure a shared `execution.response_store` (redis, valkey or dynamodb) in every execution mode.
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
      block). `message:stream` is refused: the cards declare `streaming: false`.
    - With an `identity` block (see Identity), a bearer token on the A2A routes is authenticated and
@@ -633,14 +666,16 @@ dependencies = [
 2. Update `config.yaml`:
 ```yaml
 agui:
-  agents: ["general"]        # omitted = every streaming-capable agent is reachable
   prefix: "/agui"
-  default_agent: "general"   # also serves POST /agui; must be one of `agents` when both are set
+  default_agent: "general"   # also serves POST /agui; the agent must be loaded and exposed on agui
   state:
     enabled: true             # attaches get_agui_state / update_agui_state
   client_context:
     enabled: true             # attaches read-only get_forwarded_props / get_agui_context
 ```
+   Every streaming-capable agent is reachable. To keep one off AG-UI, list the surfaces it should be
+   on under `registry.agents.<id>.surfaces` (for example `[rest]`); the `agui.agents` list no longer
+   exists, and setting it stops the application at startup.
 
 3. Mount `AGUIRequestHandler`. AG-UI has no anonymous mode, because a run executes an agent on the
    caller's behalf: the handler requires an `identity` block in `config.yaml` (it refuses to build
@@ -658,6 +693,10 @@ identity:
 from agentkernel.agui import AGUIRequestHandler
 from agentkernel.api import RESTAPI
 
+import my_agents  # noqa: F401  (builds OpenAIModule([general, ...]), which registers the agents)
+
+# Built after the agents are loaded: `default_agent` must already be registered and exposed on agui,
+# or the handler refuses to construct. Leave `default_agent` out if you only use POST /agui/{agent}.
 RESTAPI.run(handlers=[AGUIRequestHandler()])
 ```
 
@@ -764,11 +803,11 @@ module.pre_hook(agent, [RAGPreHook()])
 module.post_hook(agent, [DisclaimerPostHook()])
 ```
 
-**Framework-native run options:** Agent Kernel hooks wrap the whole run. For the framework's own
+**Framework-native run options:** OAK hooks wrap the whole run. For the framework's own
 per-run arguments and lifecycle hooks, declare them per agent with `module.run_options(agent,
 **options)`, chained like `pre_hook` / `post_hook`; repeated calls merge, the later call winning per
-key. Every keyword is one of the framework's native run arguments and Agent Kernel merges it into the
-call with the keys it owns written last. A native hook's callbacks run inside the Agent Kernel run,
+key. Every keyword is one of the framework's native run arguments and OAK merges it into the
+call with the keys it owns written last. A native hook's callbacks run inside the OAK run,
 so `Session.current()` resolves in them (keep per-run state in the session's volatile cache, not on
 the hook instance, which is shared by concurrent runs). This works in any execution mode, including
 `rest_sync`; the streaming hook below is the framework-agnostic path for streamed runs
@@ -815,14 +854,14 @@ module.run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
 | Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` on a streamed run, `message_type: delta`) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
 | Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped on a streamed run, `message_type: delta`, with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
 | Microsoft Agent Framework | `agent.run` (including `stream=True`); model settings nest inside `options` | native function-invocation configuration on the client | native middleware on the agent or client | `messages`, `session`, `stream` |
-| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
-| smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
+| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from OAK) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
+| smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from OAK) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
 | Claude Agent SDK | the run's `ClaudeAgentOptions` (any field; a name that is not a field is rejected) | `max_turns` (and `max_budget_usd`) | native `hooks` | `resume`, `session_id`, `continue_conversation`, `fork_session`, `resume_session_at`, `resume_drops_turn`, `session_store`, `session_store_flush`, `enable_file_checkpointing`, `include_partial_messages`, and the `ak` entry of `mcp_servers` |
 
 Worked demos: `examples/cli/<framework>-run-options` for each of the eight frameworks, and
 `examples/cli/openai-dynamic-run-options` for options computed per run.
 
-**Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.message_type: delta` is set (SSE under `execution.mode: rest_sync`, WebSocket chunks under `execution.mode: async`). Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
+**Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.message_type: delta` is set (SSE under `execution.mode: rest_sync`, WebSocket chunks under `execution.mode: async`). Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: OAK closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 
 ```python
 class RedactingPostHook(DisclaimerPostHook):
@@ -1376,7 +1415,7 @@ See `examples/api/schedule-openai`.
 **What it does:** Lets a run stop mid-way to ask a person something — approve this gated tool, answer
 this question — and resume from their decision minutes or hours later, possibly on another replica.
 There is **no `enabled` flag and no config block**: a pause happens when the framework decides one is
-needed, so it is declared where the framework declares it. Agent Kernel answers **HTTP 202** with
+needed, so it is declared where the framework declares it. OAK answers **HTTP 202** with
 `status: "PAUSED"` and the pending interruptions; the next request carries a `resume` block instead
 of a prompt.
 
@@ -1388,7 +1427,7 @@ rather than pretending.
 
 **Important:** the pause is written into the **session**, so a durable one needs a shared session
 backend. With `session.type: in_memory` the record lives in one process and the replica receiving the
-decision has never heard of the pause — Agent Kernel logs a warning the first time that happens.
+decision has never heard of the pause — OAK logs a warning the first time that happens.
 
 **Declaring it, per framework:**
 
@@ -1431,11 +1470,19 @@ curl -X POST http://localhost:8000/api/v1/chat -H "Content-Type: application/jso
 }'
 ```
 
+**If the agent is behind a Slack or Telegram integration, the pause is answered by pressing a
+button** — no extra code and no config: a press becomes the same decision the `curl` above sends.
+Slack's Deny opens a short form for the reason. Say two things when you set that up: Slack needs
+**Interactivity & Shortcuts** turned on with the same Request URL as its event subscription, or the
+buttons do nothing; and anyone who can see the message can press, since OAK ships no
+approver policy (the presser's id reaches the run as `acting_user_id`, for a `PreHook` to check).
+Every other platform gets the pause as readable text.
+
 A decision takes `status` (`approved` | `denied` | `cancelled` — "nobody decided", which never reaches
 the model as a refusal), an optional `message` for the human's own words, and an optional `payload`
 for a structured answer. `run_id` is optional: the run resolves from the interruption ids.
 
-**What each framework can carry back differs, and Agent Kernel refuses rather than silently dropping.**
+**What each framework can carry back differs, and OAK refuses rather than silently dropping.**
 OpenAI takes no `payload` at all (an approval is a boolean); Pydantic AI takes one only as a JSON
 object on an approval, since it becomes the call's `override_args`; ADK refuses one on a confirmation
 and cannot tell `cancelled` from `denied` there. Point the user at the
@@ -1662,6 +1709,62 @@ suite. See `examples/api/thread-openai` (two users), `examples/api/agui` (one cr
 
 ---
 
+#### Agent Registry
+
+Every agent has a **descriptor**: its id, name, version, description, owner, tags, tools and the
+surfaces it is served on. The agent catalog (`GET /api/v1/agents`), A2A cards, MCP agent tools and
+the AG-UI listing are all built from it. There is nothing to install or enable: with no `registry`
+block the descriptors live in the process that loads the agents.
+
+1. Describe each agent. The description is catalog text for people and other agents (an A2A card
+   and an MCP tool publish it); an agent's instructions are never published. It defaults to the
+   description the framework keeps for the agent, where it has one apart from the instructions
+   (OpenAI `handoff_description`; the `description` of an ADK, Pydantic AI, MAF, Claude or
+   smolagents agent; nothing for CrewAI and LangGraph). Declare it, or replace the default, where
+   the agent is loaded:
+```python
+OpenAIModule([general, math]).describe(
+    general, description="Answers general questions", version="1.2.0", tags=["support"]
+).describe(math, description="Solves math problems", surfaces=["rest"])
+```
+   or per agent id in `config.yaml`, which wins over what the code declares:
+```yaml
+registry:
+  agents:
+    math:
+      description: Solves math problems
+      version: "1.2.0"        # quoted: YAML reads 1.2 or 2 as a number, which is refused
+      owner: finance-platform
+      tags: [calculation]
+      surfaces: [rest]        # rest | a2a | mcp | agui; [] = none; omitted = every surface
+```
+   An unknown key under an agent, or under `registry`, stops the application at startup.
+
+2. Choose the surfaces. An agent with no `surfaces` is on every surface. `a2a`, `mcp` and `agui`
+   decide whether the agent can be reached on that protocol; `rest` decides whether it is listed in
+   the catalog. `visibility` (`private`, `internal`, `public`) is recorded and not enforced yet.
+
+3. Read the catalog: `GET /api/v1/agents?limit=50&tags=support` returns
+   `{"agents": [<descriptor>...], "next_cursor": ...}`, ordered by id.
+
+4. **Split deployments only**: share the registry so the IO process lists and serves agents the
+   agent runner hosts, without importing the agent modules there:
+```yaml
+registry:
+  type: redis               # redis | valkey | dynamodb (the same extras as the session store)
+  redis:
+    url: redis://localhost:6379
+```
+   - Start the runner first: A2A cards and MCP tools are built when the IO process starts.
+   - Every agent runner on the input queue must host every agent the IO process serves.
+   - Each process applies its own `registry.agents` block to what it reads, so put `surfaces`
+     restrictions in the configuration of the process that serves the surface (or in one file
+     both processes read).
+   - Descriptors do not expire and a `ttl` is refused at startup. After a deployment that renames
+     or removes an agent, delete its record from the store.
+
+---
+
 #### Secret Resolution
 
 **What it does:** `SecretManager.current().get("OPENAI_API_KEY")` resolves an
@@ -1699,7 +1802,7 @@ With `aws_ssm`, the key `OPENAI_API_KEY` is read from the SSM parameter
 path segment. Create the parameters yourself as `SecureString`.
 
 With `kubernetes`, the key is the file `<mount_path>/<secret-name>/OPENAI_API_KEY`, found across every
-mounted Secret (the same key in two Secrets is an error). Data keys must be named exactly like the AK key
+mounted Secret (the same key in two Secrets is an error). Data keys must be named exactly like the OAK key
 (`OPENAI_API_KEY`). On the Helm chart, set `secretStore.enabled: true` and list the Secrets in
 `secretStore.secrets`; see `examples/k8s/openai-queue-mode`.
 
@@ -1729,11 +1832,11 @@ pytest suite. See `examples/cli/openai-secret` (env), `examples/aws-serverless/o
 #### A2UI
 
 Let an agent answer with an *interface* rather than prose. It replies with an [A2UI](https://a2ui.org/)
-document — JSON naming components your frontend already implements — and Agent Kernel labels it, so
+document — JSON naming components your frontend already implements — and OAK labels it, so
 the reply arrives as an object with `media_type` beside it instead of a string the client has to
 parse a second time.
 
-Two things make it work, and only the second is configuration. **Agent Kernel ships no component
+Two things make it work, and only the second is configuration. **OAK ships no component
 catalog**: one listing components your frontend cannot draw is worse than none, because the model
 emits them confidently and nothing renders.
 
@@ -1774,7 +1877,7 @@ expenses_agent = Agent(name="expenses", instructions=f"{YOUR_INSTRUCTIONS}\n\n{C
 4. Two limits worth knowing before you build on this. It does **not** reach a streamed run
    (`execution.message_type: delta`) — the hook runs on `Runtime.run`, and a warning says so on the first
    request. And it does **not** touch a reply from an agent you gave a framework `output_type`,
-   since that schema is yours and Agent Kernel has never seen it; write your own post-hook there.
+   since that schema is yours and OAK has never seen it; write your own post-hook there.
    See `examples/api/a2ui-openai` for a full demo including a small React renderer.
 
 ---

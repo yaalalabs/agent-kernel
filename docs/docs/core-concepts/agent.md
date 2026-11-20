@@ -10,7 +10,7 @@ The **Agent** is the core abstraction that wraps framework-specific agent implem
 
 ```mermaid
 graph LR
-    A[OpenAI Agent] --> B[AK Agent]
+    A[OpenAI Agent] --> B[OAK Agent]
     C[CrewAI Agent] --> B
     D[LangGraph Graph] --> B
     E[Google ADK Agent] --> B
@@ -18,12 +18,12 @@ graph LR
     B --> F[Unified Interface]
     F --> G[Runtime]
     
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ## What is an Agent?
 
-An Agent in Agent Kernel is a wrapper that:
+An Agent in Open Agent Kernel (OAK) is a wrapper that:
 
 1. **Encapsulates** framework-specific agent implementations
 2. **Provides** a consistent interface for agent interaction
@@ -120,7 +120,7 @@ sequenceDiagram
 
 ## Multi-Agent Systems
 
-Agent Kernel supports multiple agents working together. It also supports agents from multiple frameworks running together in the same runtime.
+OAK supports multiple agents working together. It also supports agents from multiple frameworks running together in the same runtime.
 
 ```python
 from crewai import Agent as CrewAgent
@@ -304,7 +304,7 @@ graph TD
     D --> E{Runtime Registry}
     E --> F[Available for Execution]
     
-    style E fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style E fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 #### Accessing Registered Agents

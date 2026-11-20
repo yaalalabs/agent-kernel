@@ -12,12 +12,12 @@ import {
   ThemeClassNames,
 } from '@docusaurus/theme-common';
 import {useHistory, useLocation} from '@docusaurus/router';
-import BlogLayout from '@theme/BlogLayout';
-import BlogListPaginator from '@theme/BlogListPaginator';
+import Layout from '@theme/Layout';
 import SearchMetadata from '@theme/SearchMetadata';
 import BlogListPageStructuredData from '@theme/BlogListPage/StructuredData';
 import type {Props} from '@theme/BlogListPage';
-import BlogPostRow from '@site/src/components/Blog/BlogPostRow';
+import PageHero from '@site/src/components/ui/PageHero';
+import BlogPostCard from '@site/src/components/Blog/BlogPostCard';
 import {
   BLOG_TOPICS,
   postMatchesTopic,
@@ -40,8 +40,12 @@ function BlogListPageMetadata(props: Props): ReactNode {
   );
 }
 
+/**
+ * The blog index, in the site's page pattern: the shared page header, a topic filter that
+ * stays in view, the newest post as a lead card, and the rest as a grid of cards.
+ */
 function BlogListPageContent(props: Props): ReactNode {
-  const {metadata, items, sidebar} = props;
+  const {items} = props;
   const history = useHistory();
   const location = useLocation();
   const [activeTopicSlug, setActiveTopicSlug] = useState<string | null>(null);
@@ -72,27 +76,27 @@ function BlogListPageContent(props: Props): ReactNode {
       )
     : items;
 
+  // With no filter, the newest post leads the page. A filtered view is a plain grid.
+  const lead = activeTopic ? null : visibleItems[0];
+  const rest = lead ? visibleItems.slice(1) : visibleItems;
+
   const selectTopic = (slug: string | null) => {
     history.push({search: slug ? `?topic=${slug}` : ''});
   };
 
   return (
-    <BlogLayout sidebar={sidebar}>
-      <div className={styles.container}>
-        <header className={styles.hero}>
-          <h1 className={styles.heroTitle}>Blog</h1>
-          <p className={styles.heroSubtitle}>
-            Product announcements, engineering deep dives, and stories from
-            the Agent Kernel team.
-          </p>
-        </header>
+    <Layout>
+      <PageHero
+        label="Blog"
+        title="What we ship, and how it works"
+        lead="Product announcements, engineering deep dives and stories from the OAK team."
+      />
+      <main className={clsx('ak-container', styles.page)}>
         <nav className={styles.topicBar} aria-label="Filter posts by topic">
           <button
             type="button"
-            className={clsx(
-              styles.topic,
-              !activeTopic && styles.topicActive,
-            )}
+            className={clsx(styles.topic, !activeTopic && styles.topicActive)}
+            aria-pressed={!activeTopic}
             onClick={() => selectTopic(null)}>
             All
           </button>
@@ -104,22 +108,30 @@ function BlogListPageContent(props: Props): ReactNode {
                 styles.topic,
                 activeTopic?.slug === topic.slug && styles.topicActive,
               )}
+              aria-pressed={activeTopic?.slug === topic.slug}
               onClick={() => selectTopic(topic.slug)}>
               {topic.label}
             </button>
           ))}
         </nav>
-        <section className={styles.postList}>
-          {visibleItems.map(({content}) => (
-            <BlogPostRow key={content.metadata.permalink} content={content} />
+
+        {lead && (
+          <div className={styles.lead}>
+            <BlogPostCard content={lead.content} lead />
+          </div>
+        )}
+        <section className={styles.grid} aria-label="Posts">
+          {rest.map(({content}) => (
+            <BlogPostCard key={content.metadata.permalink} content={content} />
           ))}
-          {visibleItems.length === 0 && (
-            <p className={styles.empty}>No posts in this topic yet.</p>
-          )}
         </section>
-        <BlogListPaginator metadata={metadata} />
-      </div>
-    </BlogLayout>
+        {visibleItems.length === 0 && (
+          <p className={clsx('ak-body', styles.empty)}>
+            No posts in this topic yet.
+          </p>
+        )}
+      </main>
+    </Layout>
   );
 }
 

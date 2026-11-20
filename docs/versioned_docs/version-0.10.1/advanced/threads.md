@@ -1,0 +1,353 @@
+---
+sidebar_position: 3
+---
+
+# Conversation Threads
+
+Open Agent Kernel (OAK) supports **persistent, named conversation threads**: every chat exchange is recorded against its
+`session_id` and becomes readable over REST, so UIs can show a user's conversation list and full history across
+restarts and devices.
+
+## Overview
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant TH as AgentThreadRequestHandler
+    participant CS as ChatService core
+    participant ThreadStore as Thread Store
+    participant Agent
+
+    Client->>TH: POST /api/v1/chat (prompt, session_id, bearer credential)
+    TH->>ThreadStore: get_or_create_thread + append user message
+    TH->>CS: execute(request, prebuilt requests)
+    CS->>Agent: run
+    Agent-->>CS: reply
+    CS-->>TH: typed reply
+    TH->>ThreadStore: append assistant message
+    TH-->>Client: response
+    Client->>TH: GET /api/v1/threads/{session_id}
+    TH-->>Client: thread metadata + message history
+```
+
+### Key Design Decisions
+
+- **Threads are an integration.** Mounting `AgentThreadRequestHandler` is what enables the feature: it
+  serves the standard chat routes with thread recording wrapped around the ChatService execution core,
+  plus the thread read routes. The `thread` block in `config.yaml` only selects the store backend and
+  naming model.
+- **A thread is keyed by `session_id`**, with no separate thread id. The thread is auto-created on a session's
+  first chat request; every later request with the same `session_id` appends to it.
+- **Every thread belongs to the authenticated principal.** The thread handlers serve authenticated
+  callers only: they require an `identity` block in `config.yaml` (constructing one without it fails at
+  startup), a request nothing authenticated is rejected with 401, and the caller's principal becomes
+  the thread's owner. A `user_id` in a request body is rejected with 400: the acting user comes from
+  the credential, never from the client. Other surfaces are unaffected.
+- **Pluggable storage**: in-memory, Redis, Valkey, DynamoDB, Firestore, or Cosmos DB.
+- **Authentication is configuration, not code.** The `identity` block names the provider that
+  validates the bearer token: `static` for demos, `oidc` for Auth0, Keycloak, Okta and any other OIDC
+  issuer, `cognito`, `entra`, `firebase`, or your own `IdentityProvider`. See
+  [Identity and Access](./identity-and-access.md).
+- **Streaming included**: with `execution.message_type: delta`, the user message is recorded before the stream
+  starts and the assistant message is assembled from the streamed deltas on completion.
+
+:::caution Platform scope
+Conversation threads are the history mechanism for clients that connect to the agent directly (first-party
+chat UIs). Messaging integrations (Slack, WhatsApp, Teams, ...) never record OAK threads: those platforms own
+their own conversation history, and OAK threads alongside them would create duplicate, divergent state.
+:::
+
+## Enabling Thread Support
+
+Mount a thread chat handler instead of the default one — mounting is what enables threads. Which
+one depends on how chat executes; both serve `/api/v1/chat`, `/api/v1/chat-multipart`, and the
+thread read routes.
+
+**Direct execution** (the agent runs inside the request):
+
+```python
+from agentkernel.api import RESTAPI
+from agentkernel.thread import AgentThreadRequestHandler
+
+RESTAPI.run(handlers=[AgentThreadRequestHandler()])
+```
+
+**[Queue mode](./queue-mode-guide)** (the agent runs behind the input queue) — `ThreadRequestHandler`
+replaces the pipeline's own chat route rather than joining it, since both own `/api/v1/chat`:
+
+```python
+from agentkernel.pipeline import IOHandler
+from agentkernel.thread import ThreadRequestHandler
+
+IOHandler.run(request_handler=ThreadRequestHandler())
+```
+
+Recording is split across the queue there, because the run is: the user message, the thread and
+the attachment offload happen before the request is enqueued, and the Agent Runner appends the
+reply — it is the only process holding it. Give the agent-runner process the same `thread`
+configuration as the API process; without it the reply cannot be recorded and the runner logs a
+warning naming the missing block.
+
+Then select the store backend in `config.yaml` (constructing either handler without a `thread` block,
+or without an `identity` block, fails fast at startup):
+
+```yaml
+thread:
+  type: in_memory     # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
+```
+
+:::caution Custom thread stores
+A message's `content` is a JSON object, not a string, when the reply was labelled (see
+[A2UI](a2ui.md)). Every built-in backend serialises the whole `ThreadMessage` as one blob and is
+unaffected, but a bring-your-own `ThreadStore` that writes `message.content` into a typed text
+column must be updated to accept an object.
+:::
+
+## Chat Request Fields
+
+The owner is not a request field. It is the principal the `identity` block authenticated from the
+request's `Authorization: Bearer <credential>` header, fixed at creation and stored as the thread's
+`user_id` (the principal's subject); a `user_id` sent in the body is a 400.
+
+| Field | Required | Applied | Description |
+|---|---|---|---|
+| `session_id` | yes | every request | Identifies the thread |
+| `group_id` | no | at creation only | Caller-defined group/project scope for listing |
+| `thread_name` | no | any request | Sets (at creation) or renames (afterwards) the display name and locks it against automatic naming; blank values are ignored. When absent at creation, the name comes from the naming strategy (see below) |
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "What is the capital of France?", "session_id": "ses-1", "thread_name": "Capitals quiz"}'
+```
+
+## Thread Naming
+
+When a thread is created without a `thread_name`, its display name is generated by the active
+**`ThreadNamingStrategy`**. The built-in default makes a single LiteLLM call at thread creation (model
+from `thread.naming.model`, default `gpt-6-luna`; API keys are read from the environment) asking for a
+concise title of at most `thread.naming.max_length` characters. The call is capped at 50 tokens and passes
+`reasoning_effort="none"` to reasoning models that can turn reasoning off, so they spend that budget on the
+title rather than on thinking; other models (including ones that always think, like Gemini 2.5 Pro) don't get the setting. Gibberish or meaningless first prompts
+get a generic title ("New conversation") instead of becoming the name. The call happens once per thread,
+inline on the session's first chat request (~0.5–2s), never on later messages.
+
+Naming never fails thread creation: if `litellm` is not installed (it is an optional dependency; install
+it with the `thread` extra, `uv add "agentkernel[thread]"`), no API key is present, or the model call
+errors, the name falls back to a truncated prompt prefix: the first `max_length` characters, trimmed at a
+word boundary and suffixed with an ellipsis. The fallback is never silent: a missing `litellm` is warned
+about once at startup with the install hint, and every failed naming call logs a warning.
+
+```yaml
+thread:
+  type: in_memory
+  naming:
+    model: gpt-6-luna   # LiteLLM model used to generate thread names
+    max_length: 80      # max auto-generated name length
+```
+
+Override the strategy by subclassing and registering your subclass once at startup. Override
+`build_instruction` to keep the built-in LLM call with your own prompt, or override `generate_name` for
+any other logic (optionally calling `self._complete(instruction)` to reuse the LLM call machinery):
+
+```python
+from agentkernel.thread import ConversationThreadManager, ThreadNamingStrategy
+
+
+class MyNaming(ThreadNamingStrategy):
+    def build_instruction(self, prompt: str) -> str:
+        return f"Reply with a three-word title for a conversation starting with: {prompt}"
+
+
+ConversationThreadManager.set_naming_strategy(MyNaming())
+```
+
+Threads whose name was explicitly supplied (a `thread_name` on any chat request) are marked
+`name_locked: true` in their metadata and are never renamed automatically. No naming call is made for them.
+
+## Reading Threads
+
+The thread handler serves two read endpoints alongside the chat routes:
+
+```bash
+# List the caller's threads (metadata only), optionally filtered by group
+curl -H "Authorization: Bearer $ALICE_TOKEN" "http://localhost:8000/api/v1/threads?group_id=quizzes"
+
+# Get one thread with its message history
+curl -H "Authorization: Bearer $ALICE_TOKEN" "http://localhost:8000/api/v1/threads/ses-1"
+```
+
+Both endpoints are the caller's own: no query parameter widens a listing, and reading a thread another
+principal owns is a 403. Both paginate: pass `limit` (default 50, max 200) and the opaque `cursor` returned as `next_cursor`
+in the previous page (`null` on the last page).
+
+### Message Content
+
+A message's `content` is normally the text of the turn, and carries no other key. A message whose
+content is structured stores the object itself with a sibling `media_type` naming its format: a reply
+the agent labelled (see [A2UI](a2ui.md)), a [paused run](human-in-the-loop.md), or the decision
+answering it. The pause is an `assistant` message holding
+`run_id`, `agent` and `interruptions`; the decision is a `user` message holding the `resume` block that
+was sent, with the prompt beside it when the turn carried both.
+
+The two fields always agree: `media_type` present means `content` is an object or an array, absent
+means it is text. A labelled reply may be either; a pause and a decision are always objects. A human's
+decision is a `user` message because a person sent it, so the `user`/`assistant` roles are unchanged —
+a client tells the two structured kinds apart by `role`, or by the keys they carry:
+`content.interruptions` for a pause, `content.resume.decisions` for a decision.
+
+## Renaming Threads
+
+There is no dedicated rename endpoint. Send `thread_name` on any later chat request for the same
+`session_id` to rename its thread. Only the name changes (every other thread field is fixed at creation),
+the thread is marked `name_locked: true`, and blank names are ignored. Resending the same `thread_name` on
+every request is cheap: the name is only written when it actually changes.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "And of Italy?", "session_id": "ses-1", "thread_name": "European capitals"}'
+```
+
+## Authentication and Ownership
+
+The thread routes serve authenticated callers only, and authentication is configuration: the `identity`
+block in `config.yaml` names the provider that validates the `Authorization: Bearer <credential>` header
+on every request, and the principal it resolves is the caller. The handlers refuse to start without that
+block.
+
+```yaml
+identity:
+  provider:
+    type: static            # demos; oidc (Auth0, Keycloak, Okta, ...), cognito, entra, firebase, or a dotted path
+    static:
+      principals:
+        ALICE_TOKEN:        # a secret key, resolved through the secret capability (the environment by default)
+          subject: alice
+        BOB_TOKEN:
+          subject: bob
+```
+
+The credential values never live in the file: each key names a secret the
+[secret capability](./secrets.md) resolves when the provider is built. To validate real tokens, point the
+block at your issuer instead (`type: oidc` with its issuer and audience; Auth0, Keycloak and Okta are
+OIDC issuers) or at Cognito, Entra ID or Firebase; the handlers do not change. See
+[Identity and Access](./identity-and-access.md) for every provider and the role mapper.
+
+What the routes enforce:
+
+- A request without a credential gets 401 `Authentication required`; one with a credential the provider
+  refuses gets 401 `Unauthorized` (the provider's reason goes to the logs, not the response).
+- The thread is created under the principal's subject, and chatting on a `session_id` whose thread
+  another principal owns is a 403.
+- Listings are always the caller's own, and reading another principal's thread returns 403. (Renaming
+  flows through the chat request and rides its trust model: whoever can chat on a `session_id` can
+  rename its thread.)
+- A `user_id` in a request body is a 400: the acting user comes from the credential.
+
+## Storage Backends
+
+```yaml
+# Redis
+thread:
+  type: redis
+  redis:
+    url: "redis://localhost:6379"
+    prefix: "ak:thread:"
+    ttl: 2592000                   # seconds; 0 disables expiry
+
+# Valkey (Redis-protocol compatible; requires the `valkey` extra)
+thread:
+  type: valkey
+  valkey:
+    url: "valkey://localhost:6379"
+    prefix: "ak:thread:"
+    ttl: 2592000                   # seconds; 0 disables expiry
+
+# DynamoDB - table needs partition key `session_id` (S) and sort key `sk` (S)
+thread:
+  type: dynamodb
+  dynamodb:
+    table_name: "ak-agent-threads"
+    ttl: 2592000                   # item TTL in seconds; 0 disables
+
+# Firestore
+thread:
+  type: firestore
+  firestore:
+    collection_name: "ak-agent-threads"
+    project_id: "my-gcp-project"   # optional, inferred from ADC when omitted
+    database_id: "(default)"       # optional
+    ttl: 2592000                   # seconds; 0 disables
+
+# Cosmos DB (Table API, partitioned by session_id, no TTL support)
+thread:
+  type: cosmosdb
+  cosmosdb:
+    connection_string: "..."
+    table_name: "akagentthreads"
+```
+
+## Deploying the Thread Store
+
+Deploying threads takes **two** steps, and they split the same way session does — your application
+declares *which* backend, Terraform provisions it and supplies *where* it lives:
+
+1. Mount `AgentThreadRequestHandler` in your application (this is what enables the feature) and declare
+   the backend in `config.yaml`, e.g. `thread: {type: dynamodb}`.
+2. Set the matching Terraform flag, which provisions the backend and injects its connection detail:
+
+| Cloud | Flag | Provisions | Injects |
+|---|---|---|---|
+| AWS serverless + containerized | `create_dynamodb_thread_table` | A DynamoDB table (partition `session_id`, sort `sk`, TTL on `expiry_time`, no GSI) | `AK_THREAD__DYNAMODB__TABLE_NAME` |
+| GCP serverless + containerized | `create_firestore_thread_collection` | Nothing new — reuses the database from `create_firestore_database`; the collection is created on first write | `AK_THREAD__FIRESTORE__COLLECTION_NAME`, `__PROJECT_ID`, `__DATABASE_ID` |
+
+You do not need to set the table or collection name yourself — Terraform generates it and passes it in.
+
+:::warning Setting the flag without declaring `thread.type` runs threads in-memory
+`AKConfig.thread` is absent until something populates it, and any `AK_THREAD__*` variable is enough to
+populate it — but `thread.type` then falls back to its `in_memory` default. So a mounted
+`AgentThreadRequestHandler` combined with the Terraform flag but *without* a `thread:` block in
+`config.yaml` runs against the **in-memory** backend: the provisioned table sits unused and history is
+lost on every cold start, with no error. Declare `thread.type` and this cannot happen.
+
+The reverse mistake is safe: declaring `thread.type` *without* setting the flag fails loudly at
+startup — `ValueError: AKConfig.thread.dynamodb.table_name must be set` — because no connection detail
+was injected.
+:::
+
+Redis and Valkey have no Terraform flag — they reuse whatever cluster `create_redis_cluster` /
+`create_valkey_cluster` already provisions. Declare `thread: {type: redis}` (or `valkey`) with the
+cluster URL in `config.yaml`, or pass `AK_THREAD__REDIS__URL` through the generic
+`environment_variables` passthrough.
+
+## Attachments in Thread Mode
+
+Attachment support is still decided by `multimodal.enabled`; the `thread` block alone is text-only:
+
+- **`thread` only**: requests carrying images/files are rejected with 400.
+- **`thread` + `multimodal.enabled: true`**: attachment bytes are saved to the multimodal attachment store and
+  each thread message keeps only an `attachment_id` reference. Use a shared attachment store (`in_memory`,
+  `redis`, or `dynamodb`); `storage_type: session_cache` is rejected in thread mode.
+
+Every attachment gets an `attachment_id`, but what the store holds depends on how it arrived. Base64
+data — bare, or a `data:` URI carrying the base64 marker — is saved as bytes. An attachment sent as a
+URL (`http://`, `https://`, `s3://`), or as a `data:` URI without that marker, is recorded by address
+instead: the store keeps the URL and no bytes, and the request itself is left for the agent framework's
+adapter to resolve, exactly as it is when threads are off.
+
+```yaml
+multimodal:
+  enabled: true
+  storage_type: in_memory
+
+thread:
+  type: in_memory
+```
+
+## Examples
+
+- [`examples/api/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/thread-openai): text-only threads on the `static` identity provider, two users with their own thread lists
+- [`examples/api/multimodal/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/multimodal/thread-openai): threads with image/file attachments

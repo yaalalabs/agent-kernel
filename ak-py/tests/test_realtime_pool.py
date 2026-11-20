@@ -79,9 +79,6 @@ class _Agent(Agent):
     def get_description(self):
         return "fake"
 
-    def get_a2a_card(self):
-        return None
-
     def attach_tool(self, tool):
         pass
 

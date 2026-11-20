@@ -1,0 +1,71 @@
+/* The hero mark, drawn as dots. The stage fills the hero so the dots can travel across it;
+   the anchor is the box the mark settles into. */
+
+.stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* While the plain mark stands in, the canvas is out of the way */
+.canvasOff {
+  visibility: hidden;
+}
+
+.anchor {
+  position: absolute;
+  top: 50%;
+  /* The right edge of the page container, whatever the window width */
+  right: max(var(--ak-gutter), calc((100% - var(--ak-container)) / 2));
+  display: grid;
+  place-items: center;
+  width: min(27rem, 34%);
+  aspect-ratio: 1;
+  transform: translateY(-52%);
+}
+
+/* Shown only where the dots cannot run */
+.plain {
+  width: 80%;
+  fill: var(--ak-primary);
+}
+
+/* Below this width the copy needs the whole row, so the mark moves behind it and steps back. */
+@media (max-width: 1100px) {
+  .stage {
+    opacity: 0.3;
+  }
+
+  .anchor {
+    right: 50%;
+    width: min(24rem, 78%);
+    transform: translate(50%, -50%);
+  }
+}
+
+/* On a phone there is no room behind the copy: the dots would sit under the words. The mark
+   takes a block of its own above the copy, at full strength. The hero leaves the room for it
+   and says how large it is (--hero-mark, in HomeSections/hero.module.css). */
+@media (max-width: 600px) {
+  .stage {
+    opacity: 1;
+  }
+
+  .anchor {
+    top: var(--ak-space-24);
+    right: auto;
+    /* The dots overrun the box a little as the mark turns: step in, so they start on the gutter */
+    left: calc(var(--ak-gutter) + var(--hero-mark, 9rem) * 0.02);
+    /* The plain mark, where it stands in, starts on the same line */
+    justify-items: start;
+    width: var(--hero-mark, 9rem);
+    transform: none;
+  }
+}

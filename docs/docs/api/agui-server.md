@@ -11,7 +11,7 @@ protocol for talking to a user-facing frontend (chat UI, CopilotKit, or a custom
 
 AG-UI is a streaming, event-based wire format between an agent backend and a frontend: a run is a
 `RunAgentInput` in, and a stream of typed events out (`TextMessage*`, `ToolCall*`,
-`ReasoningMessage*`, `StateSnapshot`, `RunStarted`/`RunFinished`/`RunError`). Agent Kernel serves it
+`ReasoningMessage*`, `StateSnapshot`, `RunStarted`/`RunFinished`/`RunError`). Open Agent Kernel serves it
 the same way it serves conversation threads and messaging integrations: `AGUIRequestHandler` is a
 handler you mount, alongside REST / WebSocket / MCP / A2A: mounting it is what turns the surface
 on, and the `agui` config block only parameterizes it.
@@ -69,9 +69,8 @@ for the full table of what each setting may be.
 
 ```yaml
 agui:
-  agents: ["planner"]       # omitted = every streaming-capable agent is reachable
   prefix: "/agui"           # route prefix
-  default_agent: "planner"  # also serves POST /agui, must be one of `agents` when both are set
+  default_agent: "planner"  # also serves POST /agui; the agent must be loaded and exposed on agui
 
   state:
     enabled: true            # attaches get_agui_state / update_agui_state
@@ -82,6 +81,19 @@ agui:
     agents: ["planner"]      # omitted = every agent gets the tools
 ```
 
+- **Which agents are reachable** is part of each agent's descriptor, not of this block. Every
+  streaming-capable agent is reachable unless its `surfaces` leaves `agui` out; set that with
+  `registry.agents.<id>.surfaces` or `Module.describe(agent, surfaces=[...])`. The `agui.agents` list no
+  longer exists, and a configuration that still sets it stops the application at startup with a message
+  pointing at the new setting. `GET {prefix}/agents` lists agent ids in id order.
+- **Which agents a handler serves** depends on where it runs them. `AGUIRequestHandler` runs agents in its own
+  process, so it lists and serves only the agents loaded there: one that a shared
+  [agent registry](../core-concepts/configuration.md#agent-registry) knows from another process is a 404, as any
+  name it does not serve. `AGUIPipelineRequestHandler` puts the run on the queue, so it lists and serves every
+  agent the registry knows, including those another process hosts.
+- **`default_agent`** must name an agent the handler serves and that is exposed on `agui` when the handler is
+  built: loaded in this process for `AGUIRequestHandler`, loaded or known through a shared registry for
+  `AGUIPipelineRequestHandler`. Otherwise construction fails, rather than leaving a route that always answers 404.
 - **`state`** opts agents into shared JSON state: the frontend sends `state` on a run, the model
   amends it with `update_agui_state`, and the surface streams a `StateSnapshot` back only when the
   state actually changed.
@@ -97,10 +109,10 @@ no tool can read it: the handler logs a warning naming the config key to set.
 ## Streaming contract and the per-adapter matrix
 
 AG-UI always runs as a stream: there is no `execution.mode` setting to consult, since the protocol
-delivers every run as an event stream by definition. `AGUIMapper.to_agui` translates Agent Kernel's
+delivers every run as an event stream by definition. `AGUIMapper.to_agui` translates OAK's
 runner-agnostic `StreamEvent` (`message_start`/`text_delta`/`message_end`, `tool_call_*`,
 `step_start`/`step_end`, `reasoning_*`) into the matching AG-UI event; event types the mapper
-doesn't recognize are dropped rather than raising, so new AK event types are additive.
+doesn't recognize are dropped rather than raising, so new OAK event types are additive.
 
 Only agents whose runner declares `supports_streaming = True` are reachable: `GET /agui/agents`
 silently omits the rest, and `POST /agui/{agent}` returns `400` naming the framework for one that
@@ -138,7 +150,7 @@ A pause is an **outcome of the run**, not an event during it: the stream still c
 client branches on `outcome` rather than watching for a failure. Any `StateSnapshot` is emitted
 *before* it, so a client resuming from the snapshot has it in hand.
 
-Agent Kernel's interruption `kind` passes through as `reason` untranslated, because `reason` is a
+OAK's interruption `kind` passes through as `reason` untranslated, because `reason` is a
 free-form string rather than a closed enum. What the protocol has no field for, the tool name, its
 arguments, and the question a node posed, rides in `metadata`, not in `response_schema`, which means
 a JSON Schema.
@@ -155,12 +167,12 @@ Send the decisions on the next run:
 - **No run id is sent**, because the protocol has none pointing at a paused run. It is resolved from
   the interruption ids instead.
 - **The agent comes from the route** (`POST {prefix}/{agent_name}`), not the body.
-- **`status` carries two values where Agent Kernel carries three.** `cancelled` is its own status, so
+- **`status` carries two values where OAK carries three.** `cancelled` is its own status, so
   "nobody decided" never reaches the model as a refusal; approve and deny are both `resolved`, told
   apart by a boolean `payload`, which is simply the answer to "may I?". Any other payload is treated
   as the answer the agent asked for and passed through untouched.
 
-Three things this protocol cannot express, which Agent Kernel does **not** invent an encoding for:
+Three things this protocol cannot express, which OAK does **not** invent an encoding for:
 
 - **The wording of a refusal.** There is no field for it, and reserving keys inside `payload` would
   contradict the SDK, which describes `payload` as "the answer the agent asked for and will act on".
@@ -180,7 +192,7 @@ separate fields. See [Human in the Loop](../advanced/human-in-the-loop.md) for t
 
 A run may include `state`, `forwardedProps`, and `context` on the `RunAgentInput` body; all three
 land on the session's volatile cache and are readable only through the tools the config blocks
-above attach. `threadId` on the request is Agent Kernel's `session_id`: history is rebuilt from
+above attach. `threadId` on the request is OAK's `session_id`: history is rebuilt from
 the session store, so only the final `user` message in `messages` needs to be sent.
 
 ## Example

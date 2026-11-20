@@ -210,6 +210,7 @@
         "mcp:",
         "enabled: true",
         "expose_agents:",
+        "description",
         "agentkernel[",
         "mcp"
       ]
@@ -221,7 +222,8 @@
       "expected_outputs": [
         "a2a:",
         "enabled: true",
-        "agents:",
+        "registry:",
+        "description",
         "agentkernel[",
         "a2a",
         ".well-known/agent-card.json"
@@ -619,6 +621,35 @@
         "OPENAI_API_KEY",
         "agentkernel[",
         "aws"
+      ]
+    },
+    {
+      "id": "cap-registry-describe",
+      "name": "Describe an agent and keep it off A2A",
+      "input": "Give my math agent a description and version for the agent catalog, and stop it being served over A2A",
+      "expected_outputs": [
+        "describe(",
+        "description",
+        "surfaces",
+        "registry:",
+        "/api/v1/agents"
+      ],
+      "must_not_contain": [
+        "a2a.agents",
+        "agents: ["
+      ]
+    },
+    {
+      "id": "cap-registry-shared",
+      "name": "Share the agent registry between the IO process and the agent runner",
+      "input": "My IO process and agent runner are separate containers on Kafka. How does the IO process know the agents for A2A without importing them?",
+      "expected_outputs": [
+        "registry:",
+        "type: redis",
+        "runner first"
+      ],
+      "must_not_contain": [
+        "ttl:"
       ]
     }
   ]

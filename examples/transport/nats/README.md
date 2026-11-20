@@ -1,6 +1,6 @@
-# Agent Kernel queue mode over NATS JetStream (OpenAI Agents SDK)
+# Open Agent Kernel queue mode over NATS JetStream (OpenAI Agents SDK)
 
-This demo runs Agent Kernel's chat execution pipeline
+This demo runs Open Agent Kernel's chat execution pipeline
 
 ```
 Request Handler → AGENT_REQUESTS → Agent Runner → AGENT_REPLIES → Response Handler
@@ -90,7 +90,7 @@ exactly where the pipeline would have put it.
 
 ## Provisioning: two postures
 
-This example sets `auto_provision: true`, so Agent Kernel creates the streams and one durable
+This example sets `auto_provision: true`, so OAK creates the streams and one durable
 consumer per partition at startup. That is the local and dev posture.
 
 Production leaves it `false` and manages the objects declaratively (NACK CRs, or the `nats` CLI), so
@@ -121,7 +121,7 @@ the pipeline terminates it. It skips itself when Docker or `OPENAI_API_KEY` is m
 - **It is the closest fit of any backend here.** The server provides the visibility timeout
   (`ack_wait`), an exact delivery count (`num_delivered`), a server-enforced delivery ceiling
   (`max_deliver`), deduplication (`Nats-Msg-Id` plus the stream's duplicate window), and a terminal
-  disposition (`term()`). Unlike Kafka, none of that is rebuilt in Agent Kernel, so there is no
+  disposition (`term()`). Unlike Kafka, none of that is rebuilt in OAK, so there is no
   retry-bookkeeping store and no dead-letter topic to provision.
 - **Partitions set your concurrency, and the server enforces it.** Sessions hash to a partition
   subject, each served by a durable consumer with `max_ack_pending: 1`, so a session's turns stay

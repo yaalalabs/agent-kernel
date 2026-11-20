@@ -1,0 +1,471 @@
+/* Works with: the scroll-stepped integrations section.
+   The first half of this file is the plain layout, which is what every visitor gets before
+   script runs and what small screens, short windows and reduced motion keep: six groups,
+   stacked. The second half is the pinned layout, switched on by script where it fits. */
+
+.section {
+  padding-block: var(--ak-section-pad);
+  background-color: var(--ak-bg-alt);
+  border-block: 1px solid var(--ak-border);
+}
+
+.aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.aside :global(.ak-section-header) {
+  margin-bottom: var(--ak-space-24);
+}
+
+.steps {
+  display: none;
+}
+
+.all {
+  margin-bottom: var(--ak-space-48);
+}
+
+.panel {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  grid-template-rows: auto 1fr;
+  column-gap: var(--ak-space-64);
+  row-gap: var(--ak-space-16);
+  padding-block: var(--ak-space-48);
+  border-top: 1px solid var(--ak-border);
+}
+
+.panel:last-child {
+  padding-bottom: 0;
+}
+
+.panelLabel {
+  grid-column: 1;
+}
+
+.panel > :global(.ak-h3) {
+  grid-column: 1;
+}
+
+.sets {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-24);
+}
+
+.setTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ak-space-12);
+  margin-bottom: var(--ak-space-12);
+  color: var(--ak-text-secondary);
+}
+
+.setCount {
+  color: var(--ak-text-muted);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ak-space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ak-space-8);
+  height: 2.5rem;
+  padding: 0 var(--ak-space-16) 0 var(--ak-space-12);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  background-color: var(--ak-bg);
+  font-size: var(--ak-type-small);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ak-text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.chip:hover {
+  border-color: var(--ak-primary);
+  color: var(--ak-fg);
+  text-decoration: none;
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 2px;
+}
+
+.logo {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  font-size: 1.15rem;
+  color: var(--ak-text-secondary);
+}
+
+.logo img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.mono {
+  filter: var(--ak-mono-filter);
+}
+
+/* ── Small screens: the groups fold. A group's heading is its switch (see Integrations.tsx). ── */
+
+.fold {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* The whole head of the group is the target: the label above the heading, and the count and
+   chevron beside it, not only the words of the heading */
+.fold::before {
+  content: '';
+  position: absolute;
+  inset: -3.25rem calc(-1 * var(--ak-space-48)) calc(-1 * var(--ak-space-16)) 0;
+}
+
+.fold:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 4px;
+}
+
+/* The count and the chevron sit beside the heading's first line, at the far end */
+.foldMeta {
+  position: absolute;
+  top: 0.2em;
+  right: calc(-1 * var(--ak-space-48));
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ak-space-8);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--ak-text-muted);
+}
+
+.foldIcon {
+  font-size: 1.25rem;
+  color: var(--ak-text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.panelOpen .foldIcon {
+  transform: rotate(180deg);
+}
+
+@media (max-width: 996px) {
+  .all {
+    margin-bottom: var(--ak-space-32);
+  }
+
+  .panel {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--ak-space-8);
+    padding-block: var(--ak-space-24);
+  }
+
+  .panel:last-child {
+    padding-bottom: 0;
+  }
+
+  .panel > :global(.ak-h3) {
+    padding-right: var(--ak-space-48);
+  }
+
+  .sets {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: var(--ak-space-16);
+    padding-bottom: var(--ak-space-8);
+  }
+
+  /* Folded. Before script runs the closed groups are simply not shown. Once it has, they are
+     hidden "until found" instead, so find-in-page can still reach them. */
+  .panel:not(.panelOpen) .sets {
+    display: none;
+  }
+
+  .panel:not(.panelOpen) .sets[hidden='until-found'] {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    content-visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foldIcon {
+    transition: none;
+  }
+}
+
+/* ── Pinned: the section stays in view and the scroll steps through the stages ── */
+
+.pinned {
+  --row: 2.75rem;
+  /* One screen for the frame, then a stretch of scroll for each stage */
+  height: calc(100vh - var(--ifm-navbar-height) + var(--steps) * 45vh);
+  padding-block: 0;
+}
+
+.pinned .frame {
+  position: sticky;
+  top: var(--ifm-navbar-height);
+  display: flex;
+  align-items: center;
+  height: calc(100vh - var(--ifm-navbar-height));
+}
+
+/* The dot floor lies along the bottom edge of the pinned frame, behind both columns */
+.pinned .floor {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  height: 34%;
+}
+
+.pinned .layout {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: var(--ak-space-64);
+  align-items: start;
+}
+
+.pinned .aside :global(.ak-section-header) {
+  margin-bottom: 0;
+}
+
+.pinned .all {
+  margin: var(--ak-space-32) 0 0;
+}
+
+/* The list of stages, on a rail. The marker rides the rail with the scroll. */
+.pinned .steps {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  max-width: 24rem;
+  margin-top: var(--ak-space-32);
+  border-left: 1px solid var(--ak-border);
+}
+
+.marker {
+  position: absolute;
+  top: 0;
+  left: -1px;
+  width: 2px;
+  height: var(--row);
+  background-color: var(--ak-primary);
+  transform: translateY(
+    clamp(
+      0px,
+      calc(var(--progress, 0) * var(--steps) * var(--row) - var(--row) / 2),
+      calc((var(--steps) - 1) * var(--row))
+    )
+  );
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  height: var(--row);
+  padding: 0 var(--ak-space-8) 0 var(--ak-space-24);
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  color: var(--ak-text-muted);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.step:hover,
+.stepActive {
+  color: var(--ak-fg);
+}
+
+.step:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: -2px;
+}
+
+.stepIndex,
+.stepCount {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  letter-spacing: 0.08em;
+}
+
+.stepActive .stepIndex {
+  color: var(--ak-primary-text);
+}
+
+.stepName {
+  font-size: var(--ak-type-h4);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* The panels share one cell. The component gives the cell the height of the tallest panel,
+   so the frame never jumps, and hides the panels that are not showing (see Integrations.tsx). */
+.pinned .panels {
+  display: grid;
+  align-items: start;
+}
+
+.pinned .panel {
+  grid-area: 1 / 1;
+  display: block;
+  padding: 0;
+  border: 0;
+}
+
+/* Hidden until found: skipped when painting, still searched by find-in-page */
+.pinned .panel[hidden='until-found'] {
+  content-visibility: hidden;
+}
+
+/* Browsers that do not know that value get a plainly hidden panel */
+.pinned .panel[hidden]:not([hidden='until-found']) {
+  display: none;
+}
+
+.pinned .panelActive {
+  animation: integrations-panel-in 0.25s ease both;
+}
+
+@keyframes integrations-panel-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.pinned .panel > :global(.ak-h3) {
+  margin-top: var(--ak-space-16);
+  max-width: 34rem;
+}
+
+.pinned .sets {
+  margin-top: var(--ak-space-32);
+}
+
+/* A short or narrow window: the groups are set a little closer, so the tallest still fits the frame */
+@media (max-height: 820px), (max-width: 1200px) {
+  .pinned .sets {
+    gap: var(--ak-space-16);
+    margin-top: var(--ak-space-24);
+  }
+
+  .pinned .setTitle {
+    margin-bottom: var(--ak-space-8);
+  }
+
+  .pinned .chip {
+    height: 2.25rem;
+  }
+}
+
+.pinned .panelActive .chips li {
+  animation: integrations-chip-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(120ms + var(--i, 0) * 22ms);
+}
+
+@keyframes integrations-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Print: every group and every integration, whatever is folded or pinned on screen ──
+   A printed page is narrower than the fold breakpoint, so these rules undo the folded state by
+   class and by attribute, and lay a pinned section out as the plain list. */
+@media print {
+  .pinned {
+    height: auto;
+    padding-block: var(--ak-section-pad);
+  }
+
+  .pinned .frame {
+    position: static;
+    display: block;
+    height: auto;
+  }
+
+  .pinned .layout {
+    display: block;
+  }
+
+  .pinned .steps,
+  .floor,
+  .foldMeta {
+    display: none;
+  }
+
+  .pinned .panels {
+    display: block;
+    min-height: 0 !important;
+  }
+
+  .pinned .panel,
+  .pinned .panel[hidden] {
+    display: block !important;
+    padding-block: var(--ak-space-24);
+    animation: none;
+    content-visibility: visible !important;
+  }
+
+  .pinned .panelActive .chips li {
+    animation: none;
+  }
+
+  .panel .sets,
+  .panel:not(.panelOpen) .sets,
+  .panel:not(.panelOpen) .sets[hidden] {
+    display: flex !important;
+    margin-top: var(--ak-space-16);
+    content-visibility: visible !important;
+  }
+}

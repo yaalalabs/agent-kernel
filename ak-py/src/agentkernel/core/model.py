@@ -278,6 +278,9 @@ class AgentPausedReplyAny(AgentReplyAny):
     session_id: str : the session holding the record
     agent: str : the agent that paused, which also identifies the framework
     interruptions: list[PausedInterruption] : what the human has to decide
+    answer_together: bool : every interruption has to be decided in one resume. Set by the runners
+        whose framework refuses a partial answer, so a surface drawing controls can offer one
+        submit for the whole pause instead of a control per question that cannot work alone
 
     content is derived from the fields above and never set independently — a caller-supplied one is
     overwritten, so the two cannot drift. The opaque per-framework resume state is never on this
@@ -290,6 +293,7 @@ class AgentPausedReplyAny(AgentReplyAny):
     session_id: str
     agent: str
     interruptions: list[PausedInterruption]
+    answer_together: bool = False
 
     @model_validator(mode="after")
     def _derive_content(self) -> "AgentPausedReplyAny":
@@ -304,6 +308,7 @@ class AgentPausedReplyAny(AgentReplyAny):
             "session_id": self.session_id,
             "agent": self.agent,
             "interruptions": [interruption.model_dump(mode="json") for interruption in self.interruptions],
+            "answer_together": self.answer_together,
         }
         return self
 
@@ -594,6 +599,17 @@ class AgentDescriptor(BaseModel):
     def exposed_on(self, surface: str) -> bool:
         """Whether the agent is served on ``surface`` (``rest``, ``a2a``, ``mcp`` or ``agui``)."""
         return True if self.surfaces is None else surface in self.surfaces
+
+    def catalog_entry(self) -> dict[str, Any]:
+        """The descriptor as a catalog publishes it: every field but ``identity``.
+
+        ``identity`` says how the agent authenticates itself (its subject, its client id, the name of
+        its secret). The registry stores it for the process that hosts the agent; a caller listing
+        agents has no use for it and no claim to it.
+
+        :return: The JSON-ready entry.
+        """
+        return self.model_dump(mode="json", exclude={"identity"})
 
 
 class SystemTool(BaseModel):

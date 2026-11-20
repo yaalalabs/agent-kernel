@@ -33,6 +33,7 @@ from agentkernel.pipeline.request_handler import RequestHandler
 from agentkernel.pipeline.response_handler import ResponseHandler
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
 from agentkernel.pipeline.thread_runner import ThreadRunner
+from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
 AGENT_NAME = "thread-pipeline-agent"
@@ -65,9 +66,6 @@ class DummyAgent(Agent):
 
     def get_description(self) -> str:
         return "Thread pipeline test agent"
-
-    def get_a2a_card(self):
-        return None
 
     def override_system_prompt(self, prompt):
         pass
@@ -207,6 +205,22 @@ class TestEdgeRecording:
         body = json.loads(message.body)
         assert body.get("images") is None
         assert [req["type"] for req in body["requests"]] == ["text", "attachment_ref"]
+
+    def test_a_file_a_broker_cannot_carry_leaves_no_thread_behind(self, monkeypatch, dummy_agent):
+        """#871: the broker check runs before the recording, so a refused upload opens no thread."""
+        manager = _configure(monkeypatch, mode="rest_async")  # multimodal off
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
+        handler = ThreadRequestHandler()
+        handler._transport = InMemoryTransport()
+        handler._response_store = InMemoryResponseStore()
+
+        payload = _chat(images=[{"image_data": "aGVsbG8=", "name": "a.png", "mime_type": "image/png"}])
+        response = _client(handler).post(CHAT, json=payload)
+
+        assert response.status_code == 400
+        assert "multimodal support is disabled" in response.json()["detail"]["error"]
+        assert manager.get_thread("s1") is None
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
 
     def test_construction_fails_without_an_identity_block(self, monkeypatch):
         """Threads are keyed on the caller, so with nobody able to authenticate the handler is a configuration error (#603)."""

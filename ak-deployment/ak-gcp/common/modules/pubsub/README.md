@@ -1,6 +1,6 @@
 # Pub/Sub Module
 
-The Pub/Sub objects for Agent Kernel queue mode on GCP: a request queue (`<prefix>-agent-input`)
+The Pub/Sub objects for Open Agent Kernel queue mode on GCP: a request queue (`<prefix>-agent-input`)
 whose subscription **pushes** each request to the agent runner, and a reply queue
 (`<prefix>-agent-output`) whose subscription the edge **pulls**, plus a dead-letter topic per queue.
 
@@ -13,7 +13,7 @@ whose subscription **pushes** each request to the agent runner, and a reply queu
 - **Push:** the request subscription waits 600 seconds (Pub/Sub's maximum) for the runner to answer,
   and signs each push with an OIDC token for `input_push_service_account_email`. A longer agent run
   is redelivered while it is still going (the accepted trade-off of push).
-- **Leases:** the reply subscription's ack deadline is Pub/Sub's minimum (10 s). Agent Kernel's
+- **Leases:** the reply subscription's ack deadline is Pub/Sub's minimum (10 s). OAK's
   transport renews each pulled message's lease itself, up to its `ack_wait`.
 - **Never expire:** `expiration_policy { ttl = "" }`, so a quiet deployment keeps its queues.
 - **IAM:** grants Pub/Sub's service agent the rights dead-letter forwarding needs. The edge and the

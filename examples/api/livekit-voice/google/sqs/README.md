@@ -1,6 +1,6 @@
-# Agent Kernel Realtime Voice over AWS SQS (LiveKit + Gemini Live)
+# Open Agent Kernel Realtime Voice over AWS SQS (LiveKit + Gemini Live)
 
-This package demonstrates Agent Kernel's scalable, containerized architecture running in **`REALTIME` execution mode** for voice over WebRTC. It uses LiveKit as the frontend voice gateway, **Google Gemini Live** as the realtime model, and AWS SQS as the backend message broker.
+This package demonstrates Open Agent Kernel's scalable, containerized architecture running in **`REALTIME` execution mode** for voice over WebRTC. It uses LiveKit as the frontend voice gateway, **Google Gemini Live** as the realtime model, and AWS SQS as the backend message broker.
 
 ```
 LiveKit WebRTC → IOHandler → Input SQS Queue → ECSAgentRunner → Output SQS Queue → IOHandler → LiveKit WebRTC

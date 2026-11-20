@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-knowledgebase-integration
 description: >
-  Step-by-step guide for adding a new knowledge base backend to Agent Kernel.
+  Step-by-step guide for adding a new knowledge base backend to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new storage system with the
   KnowledgeBase interface and expose it through KnowledgeBuilder tools.
 license: Apache-2.0
@@ -282,7 +282,7 @@ Reference pattern:
 Document the backend in:
 - `docs/docs/advanced/knowledge-bases.md`
 - `docs/docs/core-concepts/overview.md` (if backend list appears there)
-- the Knowledge Bases card in `docs/src/pages/features.tsx` (its description and `highlights` name every backend) and the Knowledge Base line of the What's New tip in `docs/docs/intro.md`
+- the **Knowledge bases** capability in `docs/src/pages/features.tsx` (its `points` carry one line per backend) and, when the backend is worth announcing, an entry at the top of `docs/docs/whats-new.md`
 
 Include:
 - when to use this backend
@@ -295,10 +295,9 @@ Also add the example to the demo and README lists in `docs/docs/advanced/knowled
 `docs/docs/intro.md` and `docs/docs/installation.md` — those lists are the ones that silently go stale.
 
 The docs website carries more hard-coded backend lists, all of which need the new name:
-- the landing page inventories in `docs/src/components/*/data.tsx`: a tile in the **Memory, knowledge & data** row of `IntegrationsMarquee/data.tsx` (role `Vector knowledge`, `Graph knowledge`, or `SQL knowledge`; `href` to the knowledge base docs; logo or `react-icons/si` glyph), `pick("<tile name>")` on the **Memory & knowledge** card in `ArchitectureOverview/data.tsx`, and the **Knowledge Bases** card's `tags` and `description` under the Remember tab in `FeatureExplorer/data.tsx` (logo sourcing and the build check: `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*)
-- `docs/src/pages/features.tsx` — the Knowledge Bases card's `description` **and** its `highlights`
-- `docs/src/pages/developer.tsx` — the Knowledge Bases `items` array
-- `docs/src/pages/ai-engineer.tsx` — the Knowledge Bases `items` array
+- the landing page inventories under `docs/src/components/`: an item in the **Memory, knowledge & data** row of `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx` (role `Vector knowledge`, `Graph knowledge`, `SQL knowledge`, or `Knowledge store`; `href` to the knowledge base docs; logo or `react-icons/si` glyph), and `pick("<item name>")` on the **Memory and knowledge** card in `ArchitectureOverview/data.tsx` (logo sourcing and the build check: `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*)
+- `docs/src/pages/features.tsx`: the **Knowledge bases** capability under Remember, one line in `points` per backend
+- the root `README.md` capabilities table (the Remember row names every backend) and any backend roll call found by grepping `docs/src/pages/*.tsx` for "ChromaDB"
 
 ### 9. Add Tests
 
@@ -376,8 +375,9 @@ Validate that your backend works with `KnowledgeBuilder.build()` and tools:
 - [ ] Example added/updated under `examples/cli/knowledgebase/openai/`
 - [ ] Documentation updated in the knowledge base docs, and the backend added to the enumerations that
       list backends
-- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Memory &
-      knowledge card (`ArchitectureOverview/data.tsx`), Knowledge Bases card tags (`FeatureExplorer/data.tsx`)
+- [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), `pick()` chip on the
+      Memory and knowledge card (`ArchitectureOverview/data.tsx`), the Knowledge bases capability's points
+      (`docs/src/pages/features.tsx`)
 - [ ] `KnowledgeBaseContract` subclass registered in `ak-py/tests/test_knowledgebase_contract.py` and
       green (plus `DocumentStoreContract` for a new store)
 - [ ] Unit tests added under `ak-py/tests/` for connect, each declared operation, and constraints

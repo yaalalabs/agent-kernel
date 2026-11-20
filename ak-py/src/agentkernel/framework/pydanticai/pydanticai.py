@@ -18,7 +18,6 @@ from ...core import Agent as BaseAgent
 from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -247,6 +246,10 @@ class PydanticAIRunner(BaseRunner):
 
         :param agent: The agent that paused.
         :param session: The session the record is written to.
+        `answer_together` mirrors what :meth:`_reject_partial` enforces, so a surface drawing
+        controls can offer one submit for the whole pause rather than a control per question that
+        would be refused on its own.
+
         :param result: The run result whose `output` is a `DeferredToolRequests`.
         :return: The paused reply, carrying the assigned run id.
         """
@@ -263,7 +266,9 @@ class PydanticAIRunner(BaseRunner):
             interruptions=interruptions,
             payload={"messages": to_jsonable_python(result.all_messages())},
         )
-        return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
+        return AgentPausedReplyAny(
+            run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions, answer_together=True
+        )
 
     @staticmethod
     def _interruption(part: Any, kind: Literal["tool_call", "input_required"]) -> PausedInterruption:
@@ -388,9 +393,7 @@ class PydanticAIRunner(BaseRunner):
         """
         if decision.status == "approved":
             return ToolApproved(override_args=decision.payload) if decision.payload is not None else ToolApproved()
-        if decision.status == "denied":
-            return ToolDenied(message=decision.message) if decision.message else ToolDenied()
-        return ToolDenied(message=self.CANCELLED_DECISION_MESSAGE)
+        return ToolDenied(message=self._rejection_text(decision))
 
     async def resume(
         self,
@@ -861,13 +864,33 @@ class PydanticAIAgent(BaseAgent):
             if w.name not in function_toolset.tools:
                 function_toolset.add_tool(w)
 
-    def get_a2a_card(self) -> Any:
+    def _native_description(self) -> str:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the native agent's `description`, which Pydantic AI keeps apart from its instructions. Unlike
+        `get_description()`, it never falls back to them.
         """
-        from a2a.types import AgentSkill
+        return self.agent.description or ""
 
-        skills = []
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names of the native agent's function tools.
+
+        Not reported: the tools of a toolset that lists them only inside a run (an MCP server). A tool behind a
+        prefixing or renaming wrapper toolset is reported under its own name, not the one the wrapper exposes.
+        """
+        return list(self._function_tools())
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each function tool by name.
+        """
+        return {name: tool.description or "" for name, tool in self._function_tools().items()}
+
+    def _function_tools(self) -> dict[str, Any]:
+        """
+        Returns the native agent's function tools by name, across all of its toolsets.
+        """
+        found: dict[str, Any] = {}
 
         def visitor(ts: Any) -> None:
             # Only FunctionToolset (and subclasses) expose a public synchronous ``tools`` dict; the
@@ -875,15 +898,13 @@ class PydanticAIAgent(BaseAgent):
             # non-FunctionToolset leaves (e.g. MCP servers) are silently skipped. AK never attaches
             # those to a wrapped agent, so this is complete in practice.
             if isinstance(ts, FunctionToolset):
-                for name, tool in ts.tools.items():
-                    skills.append(AgentSkill(id=name, name=name, description=tool.description or "", tags=[]))
+                found.update(ts.tools)
 
         # ``apply()`` recurses into CombinedToolset/WrapperToolset members, so every real leaf
         # toolset is reached regardless of nesting. Do not index ``[0]`` — the toolset count varies.
         for toolset in self.agent.toolsets:
             toolset.apply(visitor)
-
-        return A2ACardBuilder.build(name=self.name, description=self.get_description(), skills=skills)
+        return found
 
 
 class PydanticAIModule(Module):

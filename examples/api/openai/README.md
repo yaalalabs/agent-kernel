@@ -1,14 +1,14 @@
-# Agent Kernel running OpenAI Agent SDK Agents on a REST API
+# Open Agent Kernel running OpenAI Agent SDK Agents on a REST API
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK. Users
-can interact with agents via the Agent Kernel REST API. The example also demonstrates how to add a custom route
-to the Agent Kernel REST API. This allows the users to utilize existing REST server for their custom REST endpoint
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK. Users
+can interact with agents via the OAK REST API. The example also demonstrates how to add a custom route
+to the OAK REST API. This allows the users to utilize existing REST server for their custom REST endpoint
 creations.
 
 Example also demonstrates how to optionally add a custom route and custom middleware (prehook) to manage additional
 context passed to the agent.
 
-Chat execution runs on Agent Kernel's **queue-mode pipeline**
+Chat execution runs on OAK's **queue-mode pipeline**
 ([#495](https://github.com/yaalalabs/agent-kernel/issues/495)): every request flows
 
 ```

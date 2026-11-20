@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import styles from './styles.module.css';
-
-gsap.registerPlugin(ScrollTrigger);
 
 type NodeKind = 'message' | 'guardrail' | 'memory' | 'supervisor' | 'agent' | 'tool';
 
@@ -15,20 +11,20 @@ type FlowNode = {
 };
 
 const FLOW_NODES: FlowNode[] = [
-  { id: 'input', label: 'Input Message', kind: 'message', color: '#f472b6' },
-  { id: 'guardIn', label: 'Guardrails', kind: 'guardrail', color: '#c084fc' },
-  { id: 'memory', label: 'Agent Memory', kind: 'memory', color: '#4ade80' },
-  { id: 'supervisor', label: 'Supervisor Agent', kind: 'supervisor', color: '#00ddff' },
-  { id: 'general', label: 'General Agent', kind: 'agent', color: '#c084fc' },
-  { id: 'travel', label: 'Travel Expert Agent', kind: 'agent', color: '#c084fc' },
-  { id: 'booking', label: 'Booking Agent', kind: 'agent', color: '#c084fc' },
-  { id: 'toolDest', label: 'Destination Discovery Tool', kind: 'tool', color: '#facc15' },
-  { id: 'toolKnowledge', label: 'Localized Knowledge Query Tool', kind: 'tool', color: '#facc15' },
-  { id: 'toolFlight', label: 'Flight Booking Tool', kind: 'tool', color: '#facc15' },
-  { id: 'toolHotel', label: 'Hotel Booking Tool', kind: 'tool', color: '#facc15' },
-  { id: 'toolLang', label: 'Language Detection and Translation Tool', kind: 'tool', color: '#facc15' },
-  { id: 'guardOut', label: 'Guardrails', kind: 'guardrail', color: '#c084fc' },
-  { id: 'output', label: 'Output Message', kind: 'message', color: '#f472b6' },
+  { id: 'input', label: 'Input Message', kind: 'message', color: 'var(--ak-sky)' },
+  { id: 'guardIn', label: 'Guardrails', kind: 'guardrail', color: 'var(--ak-blue)' },
+  { id: 'memory', label: 'Agent Memory', kind: 'memory', color: 'var(--ak-blue)' },
+  { id: 'supervisor', label: 'Supervisor Agent', kind: 'supervisor', color: 'var(--ak-primary)' },
+  { id: 'general', label: 'General Agent', kind: 'agent', color: 'var(--ak-blue)' },
+  { id: 'travel', label: 'Travel Expert Agent', kind: 'agent', color: 'var(--ak-blue)' },
+  { id: 'booking', label: 'Booking Agent', kind: 'agent', color: 'var(--ak-blue)' },
+  { id: 'toolDest', label: 'Destination Discovery Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'toolKnowledge', label: 'Localized Knowledge Query Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'toolFlight', label: 'Flight Booking Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'toolHotel', label: 'Hotel Booking Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'toolLang', label: 'Language Detection and Translation Tool', kind: 'tool', color: 'var(--ak-sky)' },
+  { id: 'guardOut', label: 'Guardrails', kind: 'guardrail', color: 'var(--ak-blue)' },
+  { id: 'output', label: 'Output Message', kind: 'message', color: 'var(--ak-sky)' },
 ];
 
 const CONNECTIONS: Array<{
@@ -120,7 +116,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
       data-flow-node={node.id}
       data-kind={node.kind}
       className={`${styles.flowNode} ${kindClass}`}
-      style={{ '--node-color': node.color ?? '#00d5be' } as React.CSSProperties}
+      style={{ '--node-color': node.color ?? 'var(--ak-blue)' } as React.CSSProperties}
     >
       <span className={styles.flowNodeLabel}>{node.label}</span>
     </div>
@@ -148,7 +144,7 @@ export default function BuildingAgentsFlowDiagram() {
     svg.innerHTML = `
       <defs>
         <marker id="baArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(255,255,255,0.65)" />
+          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(var(--ak-fg-rgb), 0.65)" />
         </marker>
       </defs>`;
 
@@ -207,7 +203,7 @@ export default function BuildingAgentsFlowDiagram() {
       base.setAttribute('y1', String(y1));
       base.setAttribute('x2', String(ex));
       base.setAttribute('y2', String(ey));
-      base.setAttribute('stroke', 'rgba(255,255,255,0.2)');
+      base.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.2)');
       base.setAttribute('stroke-width', '2');
       base.setAttribute('fill', 'none');
       svg.appendChild(base);
@@ -217,7 +213,7 @@ export default function BuildingAgentsFlowDiagram() {
       pulse.setAttribute('y1', String(y1));
       pulse.setAttribute('x2', String(ex));
       pulse.setAttribute('y2', String(ey));
-      pulse.setAttribute('stroke', 'rgba(255,255,255,0.7)');
+      pulse.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.7)');
       pulse.setAttribute('stroke-width', '2');
       pulse.setAttribute('fill', 'none');
       pulse.setAttribute('class', styles.pulseFlow);
@@ -248,7 +244,7 @@ export default function BuildingAgentsFlowDiagram() {
       const topY = toolBounds[0].b.cy;
       const botY = toolBounds[toolBounds.length - 1].b.cy;
 
-      const STROKE = 'rgba(255,255,255,0.22)';
+      const STROKE = 'rgba(var(--ak-fg-rgb), 0.22)';
       const DASH = '5 5';
       const W = '1.5';
 
@@ -321,7 +317,7 @@ export default function BuildingAgentsFlowDiagram() {
       const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       p.setAttribute('d', `M ${start.x} ${start.y} L ${end.x} ${end.y}`);
       p.setAttribute('fill', 'none');
-      p.setAttribute('stroke', 'rgba(255,255,255,0.22)');
+      p.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.22)');
       p.setAttribute('stroke-width', '1.5');
       p.setAttribute('stroke-dasharray', '5 5');
       p.setAttribute('class', styles.dashedFlow);
@@ -357,13 +353,22 @@ export default function BuildingAgentsFlowDiagram() {
   useEffect(() => {
     fitToWidth();
     const timer = setTimeout(fitToWidth, 150);
-    const ro = new ResizeObserver(fitToWidth);
+    // Fitting changes the height of the observed box. Refit only when its width changes, and in
+    // the next frame, so that the observer never resizes its own target while it is reporting.
+    let frame = 0;
+    let lastWidth = fitWrapRef.current?.clientWidth ?? 0;
+    const ro = new ResizeObserver(() => {
+      const width = fitWrapRef.current?.clientWidth ?? 0;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fitToWidth);
+    });
     if (fitWrapRef.current) ro.observe(fitWrapRef.current);
-    window.addEventListener('resize', fitToWidth);
     return () => {
       clearTimeout(timer);
+      cancelAnimationFrame(frame);
       ro.disconnect();
-      window.removeEventListener('resize', fitToWidth);
     };
   }, [fitToWidth]);
 
@@ -379,35 +384,6 @@ export default function BuildingAgentsFlowDiagram() {
     };
   }, [drawLines]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const nodes = container.querySelectorAll(`.${styles.flowNode}`);
-    const tween = gsap.fromTo(
-      nodes,
-      { opacity: 0, y: 16 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.5,
-        stagger: 0.05,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: container,
-          start: 'top 82%',
-          once: true,
-        },
-        onComplete: drawLines,
-        clearProps: 'transform',
-      }
-    );
-
-    return () => {
-      tween.scrollTrigger?.kill();
-      tween.kill();
-    };
-  }, [drawLines]);
 
   const getNode = (id: string) => FLOW_NODES.find((n) => n.id === id)!;
 
