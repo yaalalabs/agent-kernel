@@ -291,6 +291,11 @@ const config = {
       onBrokenMarkdownLinks: 'warn',
     },
   },
+  plugins: [
+    // Writes /llms.txt and /llms-full.txt for AI assistants, from the released docs (plugins/llms-txt)
+    './plugins/llms-txt',
+  ],
+
   themes: [
     '@docusaurus/theme-mermaid',
     [

@@ -591,6 +591,47 @@ banner are in `branding/README.md` (*Blog banners*).
 - `ak-dev-sync-docs-from-branch` tells a contributor to add an entry at the top when a branch ships a
   headline capability.
 
+### 9. llms.txt
+
+Two files for AI assistants, in the format of [llmstxt.org](https://llmstxt.org), written by a local
+plugin on every build. No dependency is added.
+
+**Plugin: `docs/plugins/llms-txt/`** (`index.js`, the text helpers in `text.js`, the summary in `template.md`)
+
+- It runs in `postBuild` and reads what Docusaurus has loaded: the docs plugin's versions, each page's
+  title, permalink and source file, the resolved sidebar, and the blog plugin's posts.
+- It describes the version served at `/docs` (`isLast`): the released docs, because that is what an
+  installed package matches. Pages marked `draft` or `unlisted` are left out.
+- `/llms.txt`:
+  1. the summary from `template.md`, hand-written: what OAK is, the former name and the identifiers that
+     kept it, the install command, the supported Python versions, where other versions of the docs are,
+     and the licence. `{{site}}` and `{{version}}` are filled in. The sentence that gives the former
+     name is the one public exception to the former-name rule (design, llms.txt).
+  2. one section per top-level sidebar category, with the loose pages first under "Getting started".
+     Nested categories are flattened into their parent. A page no sidebar lists goes under "More".
+  3. each page as `- [title](absolute address): description`. The description is the front matter
+     `description` where there is one, else the first sentence of the page's opening paragraph, at most
+     220 characters. A nested page titled "Overview" is named after its category.
+  4. the hand-written "Website" and "Source and packages" sections, then the blog posts under
+     "Optional", which the format lets a reader skip. A post is described the same way as a page: its
+     front matter `description`, else the first sentence of its opening paragraph. The excerpt that
+     Docusaurus computes is not used first, because it is the first line of the post, which is the
+     banner image under the title.
+- `/llms-full.txt`: the markdown of the same pages in the same order, each under a `Source:` line with
+  its address. Front matter and MDX import lines are removed. Every relative link is made absolute: a
+  link to a markdown file becomes the address of that page, and any other path is resolved from the
+  page's own address. A link to a place on the same page (`#section`) becomes that page's address
+  with the fragment, because in a file of many pages it no longer says which page it means. The
+  definition of a reference-style link (`[label]: target`) is rewritten the same way as an inline
+  link. Fenced code is left exactly as written. A fenced block ends as it does in
+  CommonMark, on a marker of the same character at least as long as the opening one with nothing after
+  it, so a page that shows a markdown file inside four backticks keeps that file's own code blocks as code.
+- Text taken from pages is put into the template with function replacers, so `$&` and the like in a
+  description are not read as replacement patterns.
+- `text.test.js` covers the helpers on Node's built-in test runner (`npm test` in `docs/`). CI does not
+  run it: the docs are built only on a push to `develop`.
+- The files exist only in a build. `npm start` does not serve them.
+
 ### Consumer changes
 
 Asset references, as they are in the tree:
@@ -652,8 +693,11 @@ Also in `docs/docusaurus.config.js`:
 - `clientModules`: the scroll-reveal module is removed; `ensureGtagGlobal.ts` stays.
 - Navbar items: one primary action ("Quick start", `ak-btn ak-btn--primary ak-btn--small`) is added on the
   right. The version menu stays in the config and is shown on docs pages only, by a rule in `custom.css`.
+- `plugins`: a new top-level entry, `['./plugins/llms-txt']`, registers the local plugin of section 9. It
+  takes no options.
 
-`docs/package.json`: `gsap`, `three` and `@types/three` are removed. Nothing is added.
+`docs/package.json`: `gsap`, `three` and `@types/three` are removed. No dependency is added. A `test`
+script runs the text helpers' tests (`node --test plugins/llms-txt/text.test.js`).
 
 ### Behavioural changes
 
@@ -675,6 +719,8 @@ Also in `docs/docusaurus.config.js`:
    sidebar. Intentional; the introduction links to it.
 10. Blog posts show a named writer in place of the shared team author, and every post has a banner.
     Blog URLs, slugs, dates and tags do not change. Intentional.
+11. The site serves two new public addresses, `/llms.txt` and `/llms-full.txt`. Intentional. No existing
+    address changes, and neither file is linked from a page or listed in the sitemap.
 
 **Non-changes:** the Python package and its behaviour, API titles, span names, log text, config keys,
 environment variables, documentation URLs and slugs, the rest of the sidebar structure, the 20 older doc
@@ -693,6 +739,10 @@ versions, the text of blog posts, the test suite.
   section id fails the build.
 - WebGL missing, refused or lost: the hero shows the plain mark and the dot fields draw nothing. No
   content depends on a canvas.
+- llms.txt: the build fails, with the plugin's name in the message, when the docs plugin has no loaded
+  version to describe, and when the markdown source of a docs page or a blog post cannot be read. A
+  missing `template.md` fails it the same way. Nothing is written half-made: a link in the full text
+  that cannot be resolved is left as it was written.
 
 ## Testing
 
@@ -747,6 +797,14 @@ No Python file changes, so the `ak-py` test suite is not part of this change. St
 9. **Keyboard.** On the home, features, use-cases and one persona page every control is reachable and
    shows a focus ring, including the group list of the integrations section and the blog topic filter.
 10. **Punctuation.** No added line contains a dash character that its removed counterpart did not.
+11. **llms.txt.** After the build of step 6:
+    - `npm test` in `docs/` passes (the text helpers, on Node's built-in runner)
+    - both files are in the build
+    - every address in `llms.txt` under the site's own domain is a page of the build, every entry has a
+      description, and no blog entry is described by its banner's alt text
+    - `llms-full.txt` has one `Source:` line for each published docs page, no relative link outside
+      fenced code, no MDX import line outside fenced code, and every address under the site's own domain
+      is a page of the build
 
 Not covered by these steps, and stated as such in the pull request: Safari and Firefox, class and state
 diagrams in the light palette, and the WebGL hero on a low-power device.
