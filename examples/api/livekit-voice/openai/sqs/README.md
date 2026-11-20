@@ -38,3 +38,4 @@ Because this is designed for production AWS deployments (AWS ECS), the pipeline 
     ```
    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so both services read
    the secrets from SSM at startup; no secret passes through Terraform.
+2. The development token endpoint (`GET /livekit/token`) stays disabled until `LIVEKIT_TOKEN_SECRET` is set in the environment or the configured secret provider, requires that secret in the `X-LiveKit-Token-Secret` header, and only mints tokens for rooms in `LIVEKIT_ALLOWED_ROOMS` (comma-separated, default `call_01`). Protect or remove it before exposing the service publicly.

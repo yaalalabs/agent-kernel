@@ -90,6 +90,7 @@ const STAGES: StageGroup[] = [
           'Pre-hooks for guardrails, retrieval, authentication and validation',
           'Post-hooks for moderation, disclaimers and analytics',
           'Hooks chain, and a pre-hook can end a request with its own reply',
+          'Run on realtime voice calls too',
         ],
         guide: { label: 'Hooks', to: '/docs/integrations/hooks' },
       },

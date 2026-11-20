@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from .paused_run import PausedRun
 
 if TYPE_CHECKING:  # pragma: no cover: typing only; avoids a base <-> realtime import cycle
-    from .realtime import RealtimeRunner
+    from ..realtime.base import RealtimeRunner
 
 _log = logging.getLogger("ak.core.runner")
 _agent_log = logging.getLogger("ak.core.agent")
@@ -636,7 +636,7 @@ class Agent(ABC):
         Initializes an Agent instance.
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
-        :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
+        :param realtime_runner_cls: Optional realtime runner class for ``execution.mode: realtime`` (a framework runner, or its traced subclass).
         """
         self._name: str = name
         self._runner: Runner = runner

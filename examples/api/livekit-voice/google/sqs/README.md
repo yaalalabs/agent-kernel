@@ -62,7 +62,7 @@ UV_PYTHON=3.12 ./deploy.sh local
 
 ## Testing
 
-1. Join LiveKit room `room_01` (mint a token for it, or use the LiveKit Agents Playground) and speak.
+1. Point LiveKit's webhook at the IO service (see the parent README), then join a LiveKit room, for example `call_01` (mint a token for it with `GET /livekit/token?room=call_01`, or use the LiveKit Agents Playground) and speak. Each room is its own call. The token endpoint is a development helper: it stays disabled until `LIVEKIT_TOKEN_SECRET` is set in the environment or the configured secret provider, requires that secret in the `X-LiveKit-Token-Secret` header, and only mints tokens for rooms in `LIVEKIT_ALLOWED_ROOMS` (comma-separated, default `call_01`). Protect or remove it before exposing the service publicly.
 2. Watch the IO service logs for `LiveKit WebRTC connection established.` and the agent runner logs
    for the agent selection / tool execution.
 
