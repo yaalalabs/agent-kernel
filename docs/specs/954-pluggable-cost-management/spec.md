@@ -123,6 +123,12 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     inside a running loop, and the first `CostManager.get()` can come from a run in the serving loop, so the startup
     sync runs `asyncio.run` on a one-shot thread the caller joins. `ensure` makes no call until the budget definitions
     are on the gateway, because linking a user to a budget row that does not exist yet only fails (§11.4, §15).
+31. **`CostManager` details.** `CostManager(config)` takes the `cost` block explicitly; only `get()` reads `AKConfig`.
+    Until the startup probe passes, `SpendReader` refuses reads with `UsageRetrievalError`, so budget checks apply
+    `on_error` (§11.5). An unavailable probe is retried on the same `ak-cost-budget-sync` thread, which runs the native
+    sync after it. The "fallback budgets need per-member rows" check is generalised: a budget that is not native-eligible
+    needs `windowed_spend` or `usage_retrieval`. The refusal walk counts the links it checks separately from its cycle
+    guard, so it always ends within 16 (§11.6, §15).
 
 ## Design
 
