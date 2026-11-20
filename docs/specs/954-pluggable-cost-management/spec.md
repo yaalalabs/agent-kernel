@@ -109,6 +109,26 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     `total_spend` sums observation rows. Header values go through `gateway_user_id` (a `langfuse-metadata` value that
     still holds a colon is quoted under `ak~`, so it reverses exactly), and only the 1 KiB per-value
     limit is checked, since four values cannot reach 8 KiB (§5.3).
+28. **Ledger backends with late expiry, and how each compares and sets.** DynamoDB TTL, Firestore TTL policies and
+    CosmosDB (no TTL) leave an expired document in place, which `load` reads as absent; a write from version 0 may
+    replace such a document, or the user's ledger would be stuck until the store deletes it. Firestore uses a write
+    conditioned on the snapshot's update time instead of a transaction. Redis and Valkey re-read the value, check its
+    version and pass those exact bytes to the driver's script. Every backend requires its own
+    `cost.budgets.ledger.<type>` block and runs I/O on a worker thread (§12.4).
+29. **Ledger read edges.** The unsettled read drops a row at exactly the settle line, which the catch-up already
+    committed, so it is not counted twice. The catch-up never reads before the start of the longest period in force:
+    an older stored cursor (an idle user) would otherwise replay rows no current budget can count, and could exhaust
+    `CATCH_UP_BUDGET` for nothing. Two conflicts in one read raise `LedgerConflictError` (§12.3).
+30. **Native budget sync runs on its own loop, and lazy upserts wait for the definitions.** `run_async_sync` raises
+    inside a running loop, and the first `CostManager.get()` can come from a run in the serving loop, so the startup
+    sync runs `asyncio.run` on a one-shot thread the caller joins. `ensure` makes no call until the budget definitions
+    are on the gateway, because linking a user to a budget row that does not exist yet only fails (§11.4, §15).
+31. **`CostManager` details.** `CostManager(config)` takes the `cost` block explicitly; only `get()` reads `AKConfig`.
+    Until the startup probe passes, `SpendReader` refuses reads with `UsageRetrievalError`, so budget checks apply
+    `on_error` (§11.5). An unavailable probe is retried on the same `ak-cost-budget-sync` thread, which runs the native
+    sync after it. The "fallback budgets need per-member rows" check is generalised: a budget that is not native-eligible
+    needs `windowed_spend` or `usage_retrieval`. The refusal walk counts the links it checks separately from its cycle
+    guard, so it always ends within 16 (§11.6, §15).
 
 ## Design
 
@@ -1123,7 +1143,8 @@ The default budget is synced lazily (deviation 6):
 
 - In `StaticBudgetPolicy.check`, a user with no `users` entry, when the default is native-eligible, goes through
   `NativeBudgetSync.ensure(uid, default)`.
-- `ensure` returns `False` with no I/O when the default is not native-eligible.
+- `ensure` returns `False` with no I/O when the default is not native-eligible, or before the startup sync has written
+  the budget definitions (the default's row may not exist yet; deviation 30).
 - If `uid` is in the process-local `synced: set[str]`, the call returns `True` at once.
 - Otherwise it calls `gateway.sync_budgets({uid: default})`. The default's budget row was written at startup, so this
   is only the customer upsert. On success it adds `uid` to the set.
@@ -1143,7 +1164,8 @@ The default budget is synced lazily (deviation 6):
   thread, which runs `asyncio.run` in its own loop (the `JWKSCache` loop-agnostic pattern) and retries with
   exponential backoff from 1 s to a 300 s cap until it succeeds.
 - Until it succeeds, `covers()` is false for those users, so they get the fallback check.
-- The backoff thread is named `ak-cost-budget-sync`. It stops at process exit.
+- The backoff thread is named `ak-cost-budget-sync`. It is a daemon, stopping at process exit, and
+  `NativeBudgetSync.close()` stops it at its next wait. A retry resumes after the last chunk of users written.
 
 Removed users are never deleted from the gateway. Documented.
 
@@ -1255,7 +1277,11 @@ total = (await ledger.read(uid, period, period.start_of(now))).merge(
     ledger, after a restart) is denied for a bounded number of runs, until the ledger catches up. Documented.
 - The cursor never passes `settle`, because `fetch_usage_since` stops there.
 - The unsettled read always starts at the settle line, never at an old cursor, so it covers at most `SETTLE_LAG` of
-  the user's rows.
+  the user's rows. It keeps only rows strictly after `settle`: a row at exactly the settle line was committed by the
+  catch-up, and an empty-id cursor at `settle` would return it again (deviation 29).
+- The catch-up reads from the stored cursor, or from the start of the longest period in force when the stored cursor
+  is older (a user back after an idle gap). `add` still receives the stored cursor as the expected one
+  (deviation 29).
   - `read_all` follows batches until `caught_up`, under the same deadline.
   - Unsettled rows are re-read on every check and never stored.
   - A `UsageTruncatedError` there applies `on_error`.
@@ -1276,9 +1302,9 @@ Each backend stores the document as JSON (`LedgerDocument.model_dump_json()`).
 |---|---|---|---|
 | `in_memory` | class-level `dict[user_id, LedgerDocument]` behind a `threading.Lock` | version compare under the lock | `expires_at` checked on load |
 | `redis`, `valkey` (`_RedisLikeSpendLedger`) | key `{prefix}{user_id}` | **new driver method** `_RedisLikeDriver.compare_and_set(key, expected: bytes \| None, value: bytes, ttl: int) -> bool`. It is one Lua script (`EVAL`): `GET` equals expected (absent equals `nil`) → `SET ... EX ttl` and return 1, else return 0. The driver gains it beside `rpush_with_expiry` (`core/util/driver/redis_like.py:242`). It is generic, with no ledger knowledge (driver rule 2) | `EX` per write |
-| `dynamodb` | item `{user_id (pk), doc, version, expiry_time}` through the native `DynamoDBDriver.table` handle (`driver/dynamodb.py:104`; driver rule 3) | `put_item` with `ConditionExpression = attribute_not_exists(user_id) OR version = :v` | `expiry_time` epoch (the table's TTL attribute, as `DynamoDBDriver` names it, `:147-149`) |
-| `cosmosdb` | Table API entity `{PartitionKey: user_id, RowKey: "ledger", doc, expiry_time}` through the native `CosmosDBDriver.table_client` (`driver/cosmosdb.py:39`) | `update_entity(mode=REPLACE, etag=..., match_condition=MatchConditions.IfNotModified)`, or `create_entity` when absent. `ResourceModifiedError` / `ResourceExistsError` → `False` | `expiry_time` checked on load (the Table API has no TTL; as the thread store, documented) |
-| `firestore` | document `{collection}/{user_id}` through the native `FirestoreDriver.collection` (`driver/firestore.py:48`) | `@firestore.transactional` read-check-write | `expiry_time` timestamp (a Firestore TTL policy configured by the operator; documented) |
+| `dynamodb` | item `{user_id (pk), doc, version, expiry_time}` through the native `DynamoDBDriver.table` handle (`driver/dynamodb.py:104`; driver rule 3); reads are `ConsistentRead` | `put_item` with `ConditionExpression = version = :v`, or from version 0 `attribute_not_exists(user_id) OR expiry_time <= :now` (an expired item TTL has not deleted yet is replaceable, deviation 28) | `expiry_time` epoch (the table's TTL attribute, as `DynamoDBDriver` names it, `:147-149`) |
+| `cosmosdb` | Table API entity `{PartitionKey: user_id, RowKey: "ledger", doc, expiry_time}` through the native `CosmosDBDriver.table_client` (`driver/cosmosdb.py:39`) | `update_entity(mode=REPLACE, etag=..., match_condition=MatchConditions.IfNotModified)`, or `create_entity` when absent; from version 0 an expired entity is replaced on its etag (deviation 28). `ResourceModifiedError` / `ResourceExistsError` → `False` | `expiry_time` checked on load (the Table API has no TTL; as the thread store, documented) |
+| `firestore` | document `{collection}/{user_id}` through the native `FirestoreDriver.collection` (`driver/firestore.py:48`) | read the snapshot, check the version, then `create` when absent or `update(option=Client.write_option(last_update_time=snapshot.update_time))`; `AlreadyExists` / `FailedPrecondition` → `False` (deviation 28) | `expiry_time` timestamp (a Firestore TTL policy configured by the operator; documented) |
 
 `SpendLedgerFactory.create(config: _CostLedgerConfig)` follows the thread-store builder shape. It covers
 `in_memory`, `redis` (`require_extra("redis")`), `valkey` (`valkey`), `dynamodb` (`aws`), `cosmosdb` (`azure`),
@@ -1389,9 +1415,10 @@ Construction order:
 4. `AttributorFactory`, `PricingSourceFactory`.
 5. The `SpendLedgerFactory` when needed.
 6. `SpendReader`, `BudgetPolicyFactory`, `UsageViewFactory`.
-7. `gateway.probe()` and the synchronous part of the startup sync (§11.4, §11.5). Both always run through `run_async_sync`
-   (`core/util/async_bridge.py`), which runs a coroutine to completion on a loop of its own and works whether or not
-   the caller is inside a loop. So a fatal answer raises from `get()` itself, and no task is tied to the loop that
+7. `gateway.probe()` and the synchronous part of the startup sync (§11.4, §11.5). Both run `asyncio.run` on a one-shot
+   worker thread that the caller joins, so they complete on a loop of their own whether or not the caller is inside a
+   loop. (`run_async_sync` cannot: it calls `run_until_complete` on the caller's loop, which raises while that loop
+   runs; deviation 30.) So a fatal answer raises from `get()` itself, and no task is tied to the loop that
    happened to call `get()` first (`iterate_async_sync` and `run_async_sync` use a loop per call). Availability
    failures hand over to the `ak-cost-budget-sync` backoff thread, which owns its own loop.
    - `get()` blocks for the probe and the synchronous part of the sync: about `D + 2` round trips, where `D` is the

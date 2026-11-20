@@ -29,6 +29,35 @@ _LAZY_EXPORTS = {
     "UsageReport": ".model",
     "UsageResult": ".model",
     "UsageWindow": ".model",
+    # attribution
+    "AttributionContext": ".attribution",
+    "Attributor": ".attribution",
+    "AttributorFactory": ".attribution",
+    "DefaultAttributor": ".attribution",
+    # budgets
+    "BudgetPolicy": ".budget",
+    "BudgetPolicyFactory": ".budget",
+    "NoBudgetPolicy": ".budget",
+    "SpendReader": ".budget",
+    "StaticBudgetPolicy": ".budget",
+    # native budgets and the manager
+    "CostManager": ".manager",
+    "NativeBudgetSync": ".manager",
+    # usage view
+    "DefaultUsageView": ".view",
+    "UsageView": ".view",
+    "UsageViewFactory": ".view",
+    # pricing
+    "PassthroughPricingSource": ".pricing",
+    "PricingSource": ".pricing",
+    "PricingSourceFactory": ".pricing",
+    "StaticPricingSource": ".pricing",
+    # ledger
+    "InMemorySpendLedger": ".ledger.in_memory",
+    "LedgerDocument": ".ledger.base",
+    "LedgerSpendFlow": ".ledger.flow",
+    "SpendLedger": ".ledger.base",
+    "SpendLedgerFactory": ".ledger.factory",
     # gateway
     "LLMGateway": ".gateway.base",
     "LLMGatewayFactory": ".gateway.factory",
@@ -45,6 +74,8 @@ _LAZY_EXPORTS = {
 __all__ = sorted(_LAZY_EXPORTS)
 
 if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves laziness at runtime
+    from .attribution import AttributionContext, Attributor, AttributorFactory, DefaultAttributor
+    from .budget import BudgetPolicy, BudgetPolicyFactory, NoBudgetPolicy, SpendReader, StaticBudgetPolicy
     from .errors import (
         CostError,
         LedgerBehindError,
@@ -56,6 +87,11 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     )
     from .gateway.base import LLMGateway
     from .gateway.factory import LLMGatewayFactory
+    from .ledger.base import LedgerDocument, SpendLedger
+    from .ledger.factory import SpendLedgerFactory
+    from .ledger.flow import LedgerSpendFlow
+    from .ledger.in_memory import InMemorySpendLedger
+    from .manager import CostManager, NativeBudgetSync
     from .model import (
         ANONYMOUS_USER_ID,
         SYSTEM_USER_ID,
@@ -76,6 +112,8 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
         UsageResult,
         UsageWindow,
     )
+    from .pricing import PassthroughPricingSource, PricingSource, PricingSourceFactory, StaticPricingSource
+    from .view import DefaultUsageView, UsageView, UsageViewFactory
 
 
 def __getattr__(name: str) -> Any:
