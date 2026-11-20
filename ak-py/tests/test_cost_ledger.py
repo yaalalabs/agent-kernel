@@ -462,3 +462,223 @@ class TestRedisSpendLedgerOnRedis(SpendLedgerContract):
 
     def test_contract_an_expired_document_is_replaced_from_scratch(self):
         pytest.skip("EX runs in real seconds; the fake clock cannot reach it")
+
+
+# LedgerSpendFlow (§12.3): settled catch-up into the ledger, the unsettled tail, the time limit and conflicts.
+
+from agentkernel.core.config import _CostBudgetsConfig, _CostPricingConfig
+from agentkernel.core.meter import BudgetDecision
+from agentkernel.cost import (
+    Attribution,
+    BudgetLimit,
+    GatewayCapabilities,
+    LedgerBehindError,
+    LedgerConflictError,
+    LedgerSpendFlow,
+    LLMGateway,
+    PassthroughPricingSource,
+    SpendReader,
+    StaticBudgetPolicy,
+    UsageWindow,
+)
+from agentkernel.cost.budget import UNVERIFIED_DENY_MESSAGE
+from agentkernel.cost.ledger.flow import CATCH_UP_BUDGET, SETTLE_LAG
+
+_FLOW_NOW = datetime(2026, 1, 28, 12, 0, tzinfo=timezone.utc)
+_SETTLE = _FLOW_NOW - SETTLE_LAG
+
+
+class _RowsGateway:
+    """fetch_usage_since over a list of rows, ``page`` at a time, with the exact bounds of LLMGateway._next_batch."""
+
+    name = "fake"
+    capabilities = GatewayCapabilities(usage_retrieval=True)
+
+    def __init__(self, rows: list, page: int = 3) -> None:
+        self.rows = rows
+        self.page = page
+        self.calls: list[tuple[SpendCursor | None, datetime]] = []
+
+    async def fetch_usage_since(self, user_id, cursor, until):
+        self.calls.append((cursor, until))
+        remaining = LLMGateway._next_batch(self.rows, cursor, until, complete=True)[0]
+        return LLMGateway._next_batch(remaining[: self.page], cursor, until, complete=len(remaining) <= self.page)
+
+
+class _Monotonic:
+    def __init__(self) -> None:
+        self.value = 0.0
+
+    def __call__(self) -> float:
+        return self.value
+
+
+def _flow(rows, *, page=3, periods=(BudgetPeriod.MONTHLY,)):
+    gateway = _RowsGateway(rows, page)
+    ledger = InMemorySpendLedger(periods, clock=lambda: _FLOW_NOW)
+    monotonic = _Monotonic()
+    return LedgerSpendFlow(gateway, ledger, periods, monotonic=monotonic), gateway, ledger, monotonic
+
+
+def _window(now=_FLOW_NOW, period=BudgetPeriod.MONTHLY):
+    return UsageWindow(start=period.start_of(now), end=now)
+
+
+def _requests(total) -> int:
+    return sum(spend.requests for spend in total.by_model.values())
+
+
+class TestLedgerSpendFlow:
+    @pytest.mark.asyncio
+    async def test_the_unsettled_tail_counts_but_is_not_stored(self):
+        rows = [_row("settled", _SETTLE - timedelta(minutes=50)), _row("at-settle", _SETTLE), _row("tail", _SETTLE + timedelta(minutes=5))]
+        flow, _, ledger, _ = _flow(rows)
+
+        total = await flow.read("u", BudgetPeriod.MONTHLY, _window())
+
+        assert _requests(total) == 3  # the row exactly at the settle line counts once
+        assert _requests(await ledger.read("u", BudgetPeriod.MONTHLY, _FLOW_NOW)) == 2
+        assert (await ledger.cursor("u")).timestamp <= _SETTLE
+
+    @pytest.mark.asyncio
+    async def test_the_unsettled_read_starts_at_the_settle_line(self):
+        flow, gateway, _, _ = _flow([_row("tail", _SETTLE + timedelta(minutes=1))])
+
+        await flow.read("u", BudgetPeriod.MONTHLY, _window())
+
+        ((cursor, until),) = [call for call in gateway.calls if call[1] == _FLOW_NOW]
+        assert cursor == SpendCursor(timestamp=_SETTLE, ids_at_timestamp=frozenset())
+
+    @pytest.mark.asyncio
+    async def test_catch_up_commits_batch_by_batch(self, monkeypatch):
+        rows = [_row(f"r{n}", _SETTLE - timedelta(minutes=60 - n)) for n in range(7)]
+        flow, _, ledger, _ = _flow(rows, page=3)
+        committed: list[SpendCursor] = []
+        original = ledger.add
+
+        async def spying(user_id, batch, expected, next_cursor):
+            ok = await original(user_id, batch, expected, next_cursor)
+            committed.append(await ledger.cursor(user_id))
+            return ok
+
+        monkeypatch.setattr(ledger, "add", spying)
+
+        total = await flow.read("u", BudgetPeriod.MONTHLY, _window())
+
+        assert [c.ids_at_timestamp for c in committed] == [frozenset({"r2"}), frozenset({"r5"}), frozenset({"r6"})]
+        assert _requests(total) == 7
+
+    @pytest.mark.asyncio
+    async def test_running_out_of_time_keeps_progress_and_the_next_check_resumes(self, monkeypatch):
+        rows = [_row(f"r{n}", _SETTLE - timedelta(minutes=60 - n)) for n in range(7)]
+        flow, gateway, ledger, monotonic = _flow(rows, page=3)
+        original = ledger.add
+
+        async def slow_add(*args):
+            ok = await original(*args)
+            monotonic.value += CATCH_UP_BUDGET + 1  # the first batch used up the time
+            return ok
+
+        monkeypatch.setattr(ledger, "add", slow_add)
+        with pytest.raises(LedgerBehindError) as caught:
+            await flow.read("u", BudgetPeriod.MONTHLY, _window())
+
+        stored = await ledger.cursor("u")
+        assert caught.value.cursor == stored and stored.ids_at_timestamp == frozenset({"r2"})
+        assert _requests(await ledger.read("u", BudgetPeriod.MONTHLY, _FLOW_NOW)) == 3
+
+        monkeypatch.setattr(ledger, "add", original)
+        gateway.calls.clear()
+        assert _requests(await flow.read("u", BudgetPeriod.MONTHLY, _window())) == 7
+        assert gateway.calls[0][0] == stored  # resumed from the committed cursor
+
+    @pytest.mark.asyncio
+    async def test_a_conflict_retries_from_the_winners_cursor_and_counts_once(self, monkeypatch):
+        rows = [_row(f"r{n}", _SETTLE - timedelta(minutes=30 - n)) for n in range(2)]
+        flow, _, ledger, _ = _flow(rows)
+        original = ledger.add
+        raced = []
+
+        async def raced_add(user_id, batch, expected, next_cursor):
+            if not raced:
+                raced.append(True)
+                await original(user_id, batch, expected, next_cursor)  # another process commits the same batch
+            return await original(user_id, batch, expected, next_cursor)
+
+        monkeypatch.setattr(ledger, "add", raced_add)
+
+        assert _requests(await flow.read("u", BudgetPeriod.MONTHLY, _window())) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_second_conflict_gives_up(self, monkeypatch):
+        flow, _, ledger, _ = _flow([_row("r1", _SETTLE - timedelta(minutes=5))])
+
+        attempts = []
+
+        async def always_lose(*args):
+            attempts.append(args)
+            return False
+
+        monkeypatch.setattr(ledger, "add", always_lose)
+        with pytest.raises(LedgerConflictError):
+            await flow.read("u", BudgetPeriod.MONTHLY, _window())
+        assert len(attempts) == 2  # the batch is retried once, then the check gives up
+
+    @pytest.mark.asyncio
+    async def test_after_an_idle_gap_reading_starts_at_the_period(self, monkeypatch):
+        old = SpendCursor(timestamp=datetime(2025, 11, 20, tzinfo=timezone.utc), ids_at_timestamp=frozenset({"old"}))
+        flow, gateway, ledger, _ = _flow([_row("jan", _SETTLE - timedelta(days=3))])
+        await ledger.add("u", [_row("old", old.timestamp)], None, old)
+        expected_cursors = []
+        original = ledger.add
+
+        async def spying(user_id, batch, expected, next_cursor):
+            expected_cursors.append(expected)
+            return await original(user_id, batch, expected, next_cursor)
+
+        monkeypatch.setattr(ledger, "add", spying)
+
+        total = await flow.read("u", BudgetPeriod.MONTHLY, _window())
+
+        assert gateway.calls[0][0] == SpendCursor(timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc), ids_at_timestamp=frozenset())
+        assert expected_cursors == [old]  # the compare-and-set still checks the stored cursor
+        assert _requests(total) == 1
+
+    @pytest.mark.asyncio
+    async def test_rows_before_the_period_do_not_count(self):
+        monday = datetime(2026, 1, 26, 0, 5, tzinfo=timezone.utc)  # settle is Sunday 23:55
+        rows = [
+            _row("last-week", monday - timedelta(hours=5)),
+            _row("tail-last-week", monday - timedelta(minutes=7)),
+            _row("tail-this-week", monday - timedelta(minutes=3)),
+        ]
+        flow, _, _, _ = _flow(rows, periods=(BudgetPeriod.WEEKLY,))
+
+        total = await flow.read("u", BudgetPeriod.WEEKLY, _window(monday, BudgetPeriod.WEEKLY))
+
+        assert _requests(total) == 1
+
+
+class TestLedgerSpendFlowThroughThePolicy:
+    @pytest.mark.asyncio
+    async def test_out_of_time_is_unverified_never_a_partial_allow(self, monkeypatch):
+        # 3 x 1 settled in the first batch is under the budget of 10; all 7 rows (23) are over it.
+        rows = [_row(f"r{n}", _SETTLE - timedelta(minutes=60 - n), provider_cost=Decimal(1 if n < 3 else 5)) for n in range(7)]
+        flow, gateway, ledger, monotonic = _flow(rows, page=3)
+        original = ledger.add
+
+        async def slow_add(*args):
+            ok = await original(*args)
+            monotonic.value += CATCH_UP_BUDGET + 1
+            return ok
+
+        monkeypatch.setattr(ledger, "add", slow_add)
+        gateway.capabilities = GatewayCapabilities(usage_retrieval=True)  # no windowed spend: the ledger path
+        policy = StaticBudgetPolicy(
+            _CostBudgetsConfig(default=BudgetLimit(amount=Decimal("10"))),
+            SpendReader(gateway, ledger_flow=flow),
+            PassthroughPricingSource(_CostPricingConfig()),
+            clock=lambda: _FLOW_NOW,
+        )
+
+        assert await policy.check(Attribution(user_id="u")) == BudgetDecision.deny(UNVERIFIED_DENY_MESSAGE)
