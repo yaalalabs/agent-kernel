@@ -23,7 +23,8 @@ from agentkernel.pipeline.envelope import ATTR_REALTIME_END
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
-from agentkernel.realtime.pool import RealtimeConnection, RealtimeConnectionPool
+from agentkernel.realtime.connection import RealtimeConnection
+from agentkernel.realtime.pool import RealtimeConnectionPool
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +32,7 @@ def _state(monkeypatch):
     async def send_inline(send, *args):
         return send(*args)
 
-    monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
+    monkeypatch.setattr("agentkernel.realtime.connection.asyncio.to_thread", send_inline)
     InMemoryTransport.reset()
     ThreadRunner.shutdown_event.clear()
     yield
@@ -78,10 +79,12 @@ async def test_a_call_from_caller_line_to_handoff_to_end_of_session(monkeypatch)
         "input_transcript",
         "audio_delta",
         "text_delta",
+        "message_end",
         "done",
         "agent_changed",
         "audio_delta",
         "text_delta",
+        "message_end",
         "done",
     ]
 

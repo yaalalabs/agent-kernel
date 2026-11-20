@@ -154,6 +154,10 @@ boundaries reads the full `event`. Frameworks without native token streaming (Cr
 declare `supports_streaming = False` and raise `NotImplementedError` from `stream()`; use the default
 synchronous mode (or `rest_sync` on AWS) with those frameworks.
 
+## Realtime Runners
+
+For `execution.mode: realtime`, an agent also has a **realtime runner** (`RealtimeRunner`): it wraps the framework's own live session (OpenAI Realtime or Google ADK Live) and carries audio and text to and from it (`connect`, `append_audio`, `send_text`, `disconnect`). The framework executes its own tools. With `trace.enabled`, the Module picks the configured tracer's traced realtime runner, as it picks the traced text runner, unless you pass your own `realtime_runner_cls`. See [Realtime calls in tracing](../advanced/traceability.md#realtime-calls).
+
 ## Execution Flow
 
 ```mermaid

@@ -3,10 +3,13 @@ from typing import Any
 
 import logfire
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
+from opentelemetry import trace
 
-from ...core import Session
+from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
-from ...framework.adk.adk import GoogleADKRunner
+from ...framework.adk.adk import GoogleADKRealtimeRunner, GoogleADKRunner
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
+from ..otel import OTelRealtimeCallSpan
 
 
 class LogfireADKRunner(GoogleADKRunner):
@@ -33,3 +36,14 @@ class LogfireADKRunner(GoogleADKRunner):
             span.set_attribute("input", result.prompt)
             span.set_attribute("output", str(result))
         return result
+
+
+class LogfireADKRealtimeRunner(TracedRealtimeRunner, GoogleADKRealtimeRunner):
+    """
+    The ADK realtime runner with one Logfire span over each call, tagged with the session id as this provider's ``run()`` span is.
+    """
+
+    SPAN_NAME = "Agent Kernel ADK realtime"
+
+    def _start_call_span(self, session: Session, agent: Agent) -> RealtimeCallSpan:
+        return OTelRealtimeCallSpan(trace.get_tracer("agentkernel.trace.logfire"), self.SPAN_NAME, {"session_id": session.id})

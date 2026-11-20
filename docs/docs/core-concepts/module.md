@@ -72,6 +72,8 @@ agent = ADKAgent(name="assistant", model="gemini-2.0-flash-exp", ...)
 GoogleADKModule([agent])
 ```
 
+`OpenAIModule` and `GoogleADKModule` also accept `realtime_runner_cls` for `execution.mode: realtime`. It defaults to the framework's realtime runner, or the configured tracer's traced one when `trace.enabled` is on. A class you pass is always used as is.
+
 ## Module Lifecycle
 
 ```mermaid

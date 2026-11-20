@@ -6,6 +6,7 @@ import threading
 import logfire
 
 from ...core import Runner
+from ...realtime.base import RealtimeRunner
 from ..base import BaseTrace
 from ..fetch import FetchedSpan, TraceQuery
 
@@ -109,6 +110,29 @@ class Logfire(BaseTrace):
         from .claude import LogfireClaudeRunner
 
         return LogfireClaudeRunner()
+
+    def openai_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the Logfire OpenAI realtime runner class.
+        """
+        from .openai import LogfireOpenAIRealtimeRunner
+
+        # The text runner installs this in its constructor; an app that passes its own runner skips that.
+        logfire.instrument_openai_agents()
+        return LogfireOpenAIRealtimeRunner
+
+    def adk_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the Logfire ADK realtime runner class.
+        """
+        from openinference.instrumentation.google_adk import GoogleADKInstrumentor
+
+        from .adk import LogfireADKRealtimeRunner
+
+        instrumentor = GoogleADKInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
+        return LogfireADKRealtimeRunner
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """

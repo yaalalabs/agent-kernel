@@ -8,9 +8,9 @@ from concurrent.futures import CancelledError
 import pytest
 
 from agentkernel import Agent, Runner, Session
-from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _OutputQueueConfig, _QueuesConfig, _RealtimeConfig
+from agentkernel.core.config import _ExecutionConfig, _GuardrailConfig, _InputQueueConfig, _OutputQueueConfig, _QueuesConfig, _RealtimeConfig
 from agentkernel.core.event import TextDelta
-from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, ExecutionMode, Principal, StreamChunk
+from agentkernel.core.model import AgentReplyText, AgentRequestText, AgentRequestVoice, BaseRunRequest, ExecutionMode, Principal, StreamChunk
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
@@ -19,7 +19,8 @@ from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 from agentkernel.realtime.base import RealtimeRunner
-from agentkernel.realtime.pool import RealtimeConnection, RealtimeConnectionPool
+from agentkernel.realtime.connection import RealtimeConnection
+from agentkernel.realtime.pool import RealtimeConnectionPool
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +28,7 @@ def _reset_pipeline_state(monkeypatch):
     async def send_inline(send, *args):
         return send(*args)
 
-    monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
+    monkeypatch.setattr("agentkernel.realtime.connection.asyncio.to_thread", send_inline)
     InMemoryTransport.reset()
     ThreadRunner.shutdown_event.clear()
     yield
@@ -472,11 +473,11 @@ class TestDispatchPrincipal:
         def publish_principal(self, principal):
             self.principal = principal
 
-        def append_audio(self, audio):
+        def append_audio(self, request):
             pass
 
-        def send_text(self, text):
-            self.texts.append(text)
+        def send_text(self, request):
+            self.texts.append(request.prompt)
 
     def _dispatch(self, monkeypatch, principal):
         from unittest.mock import MagicMock
@@ -736,6 +737,7 @@ class TestRealtimeRunnerReuse:
         from agentkernel.pipeline.envelope import QueueMessage
 
         class _Cfg:
+            guardrail = _GuardrailConfig()
             execution = _ExecutionConfig(mode=ExecutionMode.REALTIME, queues=None, realtime=_RealtimeConfig(playback_lead_ms=50))
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
@@ -775,7 +777,7 @@ class TestRealtimeResampling:
         conn.runner.input_sample_rate = 16000  # e.g. Gemini's input rate
 
         # 100 ms of edge-rate (24 kHz) audio; the pool must hand the adapter 16 kHz audio.
-        conn.append_audio(base64.b64encode(b"\x00\x00" * 2400).decode())
+        conn.append_audio(AgentRequestVoice(audio_data=base64.b64encode(b"\x00\x00" * 2400).decode(), name="clip"))
         for _ in range(50):  # the append is scheduled on the loop; let it run
             if conn.runner.audio:
                 break
@@ -873,7 +875,7 @@ class TestRealtimeBargeIn:
         await asyncio.sleep(0.1)
         conn._pacing_task.cancel()
 
-        assert _kinds(_drain_output(transport)) == ["agent_changed", "audio_delta", "done"]
+        assert _kinds(_drain_output(transport)) == ["agent_changed", "audio_delta", "message_end", "done"]
 
 
 class TestRealtimeAgentChanged:
@@ -897,7 +899,7 @@ class TestRealtimeAgentChanged:
         conn._pacing_task.cancel()
 
         messages = _drain_output(transport)
-        assert _kinds(messages) == ["agent_changed", "audio_delta", "done"]
+        assert _kinds(messages) == ["agent_changed", "audio_delta", "message_end", "done"]
         assert json.loads(messages[0].body)["event"] == {"type": "agent_changed", "agent": "supervisor", "agents": ["supervisor"]}
 
     @pytest.mark.asyncio
@@ -933,8 +935,18 @@ class TestRealtimeAgentChanged:
         conn._pacing_task.cancel()
 
         messages = _drain_output(transport)
-        assert _kinds(messages) == ["agent_changed", "audio_delta", "done", "agent_changed", "text_delta", "audio_delta", "done"]
-        handoff, transcript = json.loads(messages[3].body), json.loads(messages[4].body)
+        assert _kinds(messages) == [
+            "agent_changed",
+            "audio_delta",
+            "message_end",
+            "done",
+            "agent_changed",
+            "text_delta",
+            "audio_delta",
+            "message_end",
+            "done",
+        ]
+        handoff, transcript = json.loads(messages[4].body), json.loads(messages[5].body)
         assert handoff["event"] == {"type": "agent_changed", "agent": "billing", "previous_agent": "supervisor"}
         assert transcript["delta"] == "Billing here."
 
@@ -1237,6 +1249,18 @@ class TestRealtimeReconnectBackoff:
 
         assert "s1" not in pool._failures
 
+    def test_the_sweep_forgets_a_finished_close_so_an_ended_session_is_not_kept_forever(self, pool, clock):
+        chat_service = TestRealtimeEndSession._chat_service()
+        self._send(pool, chat_service)
+        conn = pool.get_connection("s1")
+        pool.end_session("s1")
+        assert pool._closing.get("s1") is conn  # kept while its close may still be running
+
+        conn.close_done.set()
+        pool._sweep(clock[0])
+
+        assert "s1" not in pool._closing
+
     def test_other_sessions_are_not_held_back(self, pool, clock):
         chat_service = TestRealtimeEndSession._chat_service("s2")
         pool._failures["s1"] = (1, clock[0] + 50)
@@ -1328,6 +1352,7 @@ class TestRealtimePermanentFailure:
         from agentkernel.pipeline.response_handler import ResponseHandler
 
         class _Cfg:
+            guardrail = _GuardrailConfig()
             execution = _ExecutionConfig(
                 mode=ExecutionMode.REALTIME,
                 queues=_QueuesConfig(type="in_memory", input=_InputQueueConfig(max_receive_count=3)),
@@ -1406,6 +1431,7 @@ class TestResponseHandlerRealtimeRouting:
         from agentkernel.pipeline.response_handler import ResponseHandler
 
         class _Cfg:
+            guardrail = _GuardrailConfig()
             execution = _ExecutionConfig(
                 mode=ExecutionMode.REALTIME,
                 queues=_QueuesConfig(type="in_memory", output=_OutputQueueConfig(max_receive_count=3)),
@@ -1432,6 +1458,7 @@ class TestBrokerRealtimeUserGate:
         from agentkernel.pipeline.envelope import QueueMessage
 
         class _Cfg:
+            guardrail = _GuardrailConfig()
             execution = _ExecutionConfig(mode=ExecutionMode.REALTIME, queues=None, realtime=_RealtimeConfig(playback_lead_ms=50))
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
@@ -1484,3 +1511,74 @@ class TestPoolLoop:
         finally:
             ThreadRunner.shutdown_event.set()
             thread.join(5)
+
+
+class _SlowCloseAdapter(_Adapter):
+    """An adapter whose disconnect waits for a gate, so a close can be held open."""
+
+    gate = threading.Event()
+    disconnecting = threading.Event()
+
+    async def disconnect(self):
+        _SlowCloseAdapter.disconnecting.set()
+        while not _SlowCloseAdapter.gate.is_set():
+            await asyncio.sleep(0.01)
+
+
+class TestCloseBarrier:
+    """CodeRabbit on #947: a call for a session must not load or publish while that session's old close is still running."""
+
+    @pytest.fixture
+    def pool(self, monkeypatch):
+        _SlowCloseAdapter.gate = threading.Event()
+        _SlowCloseAdapter.disconnecting = threading.Event()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        yield pool
+        _SlowCloseAdapter.gate.set()
+        ThreadRunner.shutdown_event.set()
+        thread.join(timeout=5)
+
+    @staticmethod
+    def _chat_service():
+        from unittest.mock import MagicMock
+
+        def prepare(session_id, agent):
+            return types.SimpleNamespace(
+                service=types.SimpleNamespace(
+                    agent=_Agent(realtime_runner_cls=_SlowCloseAdapter), runtime=Runtime(InMemorySessionStore()), session=Session(session_id)
+                )
+            )
+
+        chat_service = MagicMock()
+        chat_service.prepare_agent_handler.side_effect = prepare
+        return chat_service
+
+    @staticmethod
+    def _input():
+        return BaseRunRequest(prompt="", session_id="s1", requests=[AgentRequestText(prompt="hi")])
+
+    def test_a_new_call_loads_only_after_the_old_close_finished(self, pool):
+        chat_service = self._chat_service()
+        pool.dispatch(self._input(), "r1", None, {}, chat_service)
+        ender = threading.Thread(
+            target=pool.dispatch,
+            args=(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r2", None, {ATTR_REALTIME_END: "true"}, chat_service),
+        )
+        ender.start()
+        assert _SlowCloseAdapter.disconnecting.wait(3)
+
+        caller = threading.Thread(target=pool.dispatch, args=(self._input(), "r3", None, {}, chat_service))
+        caller.start()
+        time.sleep(0.3)
+        loaded_while_closing = chat_service.prepare_agent_handler.call_count
+
+        _SlowCloseAdapter.gate.set()
+        caller.join(5)
+        ender.join(12)
+
+        assert loaded_while_closing == 1  # only the first call: the new one is waiting for the old close
+        assert chat_service.prepare_agent_handler.call_count == 2
+        assert pool.get_connection("s1") is not None
