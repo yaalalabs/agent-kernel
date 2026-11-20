@@ -1,7 +1,7 @@
 ---
 name: ak-add-capabilities
 description: >
-  Add capabilities to an existing Agent Kernel project. This skill guides you through
+  Add capabilities to an existing Open Agent Kernel project. This skill guides you through
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
   A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support,
   scheduled tasks (deferred and recurring chat execution), the sandbox capability
@@ -23,7 +23,7 @@ metadata:
 
 # Add Capabilities
 
-Use this skill to enhance your Agent Kernel project with additional capabilities.
+Use this skill to enhance your Open Agent Kernel project with additional capabilities.
 
 ## Instructions for the Agent
 
@@ -31,7 +31,7 @@ When the user wants to add a capability, follow this workflow:
 
 ### Step 1: Identify the Project
 
-Check for an existing Agent Kernel project with `pyproject.toml` and agent definition file.
+Check for an existing OAK project with `pyproject.toml` and agent definition file.
 
 ### Step 2: Ask Which Capability
 
@@ -630,7 +630,7 @@ registry:
    `Module.describe(agent, description=..., version=...)`. The card is built from the agent's
    descriptor and never carries its instructions, so an undeclared description is empty (a warning
    at startup names the agent). Each agent's card is served at `/a2a/{agent}/.well-known/agent-card.json`
-   (all cards at `/a2a/catalog`). Agent Kernel serves A2A 1.0 only (`a2a-sdk` 1.2.3): callers need
+   (all cards at `/a2a/catalog`). OAK serves A2A 1.0 only (`a2a-sdk` 1.2.3): callers need
    an `a2a-sdk` 1.x client, built with `ClientFactory` (it sends the required `A2A-Version: 1.0`
    header). A reply labelled by the A2UI capability arrives as a data part.
 
@@ -805,11 +805,11 @@ module.pre_hook(agent, [RAGPreHook()])
 module.post_hook(agent, [DisclaimerPostHook()])
 ```
 
-**Framework-native run options:** Agent Kernel hooks wrap the whole run. For the framework's own
+**Framework-native run options:** OAK hooks wrap the whole run. For the framework's own
 per-run arguments and lifecycle hooks, declare them per agent with `module.run_options(agent,
 **options)`, chained like `pre_hook` / `post_hook`; repeated calls merge, the later call winning per
-key. Every keyword is one of the framework's native run arguments and Agent Kernel merges it into the
-call with the keys it owns written last. A native hook's callbacks run inside the Agent Kernel run,
+key. Every keyword is one of the framework's native run arguments and OAK merges it into the
+call with the keys it owns written last. A native hook's callbacks run inside the OAK run,
 so `Session.current()` resolves in them (keep per-run state in the session's volatile cache, not on
 the hook instance, which is shared by concurrent runs). This works in any execution mode, including
 `rest_sync`; the streaming hook below is the framework-agnostic path for streamed runs
@@ -856,14 +856,14 @@ module.run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
 | Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` on a streamed run, `message_type: delta`) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
 | Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped on a streamed run, `message_type: delta`, with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
 | Microsoft Agent Framework | `agent.run` (including `stream=True`); model settings nest inside `options` | native function-invocation configuration on the client | native middleware on the agent or client | `messages`, `session`, `stream` |
-| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
-| smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
+| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from OAK) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
+| smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from OAK) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
 | Claude Agent SDK | the run's `ClaudeAgentOptions` (any field; a name that is not a field is rejected) | `max_turns` (and `max_budget_usd`) | native `hooks` | `resume`, `session_id`, `continue_conversation`, `fork_session`, `resume_session_at`, `resume_drops_turn`, `session_store`, `session_store_flush`, `enable_file_checkpointing`, `include_partial_messages`, and the `ak` entry of `mcp_servers` |
 
 Worked demos: `examples/cli/<framework>-run-options` for each of the eight frameworks, and
 `examples/cli/openai-dynamic-run-options` for options computed per run.
 
-**Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.message_type: delta` is set (SSE under `execution.mode: rest_sync`, WebSocket chunks under `execution.mode: async`). Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
+**Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.message_type: delta` is set (SSE under `execution.mode: rest_sync`, WebSocket chunks under `execution.mode: async`). Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: OAK closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 
 ```python
 class RedactingPostHook(DisclaimerPostHook):
@@ -874,6 +874,8 @@ class RedactingPostHook(DisclaimerPostHook):
 ```
 
 To rewrite text that spans fragments, hold each `text_delta` by returning `None` while accumulating it in `session.get_volatile_cache()`, then return `[TextDelta(...), event]` at `message_end`. Accumulate in the volatile cache, never on `self` — one hook instance serves every concurrent request.
+
+**Realtime calls (optional):** with `execution.mode: realtime` the same hooks run on the call, registered with `module.pre_hook` / `module.post_hook` as usual. Typed text goes through `PreHook.on_run`. Each caller audio chunk (base64 PCM16 at 24 kHz) goes through the optional `PreHook.on_stream_input(self, session, agent, request)`: return the chunk or a changed one to pass it on, `None` to drop it, or a list to emit several (an `AgentRequestText` in the list is handled as typed text). Model output goes through `PostHook.on_stream_event`, and a `message_end` arrives before each turn's final `done`, which is where a hook that held pieces releases them. `StreamHalt` (or any other exception) in a post-hook ends the call. Keep per-call state in `session.get_volatile_cache()`; it is cleared when the call closes, not per turn (reset your own keys at `message_end` for per-turn state). What a hook keeps in the non-volatile cache is stored with the session after each finished turn and when the call ends normally (best effort: a failed write is logged and does not reach the caller, and a turn still being written when the process dies is lost), and with `trace.enabled` a call is traced as one span tagged with the session id. Limits to state to the user: a rewritten `text_delta` changes the caption, not the spoken audio; the built-in input guardrail checks typed text only, and the output guardrail runs on no streamed reply; a slow hook delays the audio behind it. Not a place to ship speech-to-text or text-to-speech: those are the user's own hook code.
 
 **Per-run framework context (optional):** hooks are the supported surface for the reserved
 `framework_context` session key — a framework-agnostic, picklable context/state dict that the runner
@@ -1417,7 +1419,7 @@ See `examples/api/schedule-openai`.
 **What it does:** Lets a run stop mid-way to ask a person something — approve this gated tool, answer
 this question — and resume from their decision minutes or hours later, possibly on another replica.
 There is **no `enabled` flag and no config block**: a pause happens when the framework decides one is
-needed, so it is declared where the framework declares it. Agent Kernel answers **HTTP 202** with
+needed, so it is declared where the framework declares it. OAK answers **HTTP 202** with
 `status: "PAUSED"` and the pending interruptions; the next request carries a `resume` block instead
 of a prompt.
 
@@ -1429,7 +1431,7 @@ rather than pretending.
 
 **Important:** the pause is written into the **session**, so a durable one needs a shared session
 backend. With `session.type: in_memory` the record lives in one process and the replica receiving the
-decision has never heard of the pause — Agent Kernel logs a warning the first time that happens.
+decision has never heard of the pause — OAK logs a warning the first time that happens.
 
 **Declaring it, per framework:**
 
@@ -1476,7 +1478,7 @@ curl -X POST http://localhost:8000/api/v1/chat -H "Content-Type: application/jso
 button** — no extra code and no config: a press becomes the same decision the `curl` above sends.
 Slack's Deny opens a short form for the reason. Say two things when you set that up: Slack needs
 **Interactivity & Shortcuts** turned on with the same Request URL as its event subscription, or the
-buttons do nothing; and anyone who can see the message can press, since Agent Kernel ships no
+buttons do nothing; and anyone who can see the message can press, since OAK ships no
 approver policy (the presser's id reaches the run as `acting_user_id`, for a `PreHook` to check).
 Every other platform gets the pause as readable text.
 
@@ -1484,7 +1486,7 @@ A decision takes `status` (`approved` | `denied` | `cancelled` — "nobody decid
 the model as a refusal), an optional `message` for the human's own words, and an optional `payload`
 for a structured answer. `run_id` is optional: the run resolves from the interruption ids.
 
-**What each framework can carry back differs, and Agent Kernel refuses rather than silently dropping.**
+**What each framework can carry back differs, and OAK refuses rather than silently dropping.**
 OpenAI takes no `payload` at all (an approval is a boolean); Pydantic AI takes one only as a JSON
 object on an approval, since it becomes the call's `override_args`; ADK refuses one on a confirmation
 and cannot tell `cancelled` from `denied` there. Point the user at the
@@ -1804,7 +1806,7 @@ With `aws_ssm`, the key `OPENAI_API_KEY` is read from the SSM parameter
 path segment. Create the parameters yourself as `SecureString`.
 
 With `kubernetes`, the key is the file `<mount_path>/<secret-name>/OPENAI_API_KEY`, found across every
-mounted Secret (the same key in two Secrets is an error). Data keys must be named exactly like the AK key
+mounted Secret (the same key in two Secrets is an error). Data keys must be named exactly like the OAK key
 (`OPENAI_API_KEY`). On the Helm chart, set `secretStore.enabled: true` and list the Secrets in
 `secretStore.secrets`; see `examples/k8s/openai-queue-mode`.
 
@@ -1834,11 +1836,11 @@ pytest suite. See `examples/cli/openai-secret` (env), `examples/aws-serverless/o
 #### A2UI
 
 Let an agent answer with an *interface* rather than prose. It replies with an [A2UI](https://a2ui.org/)
-document — JSON naming components your frontend already implements — and Agent Kernel labels it, so
+document — JSON naming components your frontend already implements — and OAK labels it, so
 the reply arrives as an object with `media_type` beside it instead of a string the client has to
 parse a second time.
 
-Two things make it work, and only the second is configuration. **Agent Kernel ships no component
+Two things make it work, and only the second is configuration. **OAK ships no component
 catalog**: one listing components your frontend cannot draw is worse than none, because the model
 emits them confidently and nothing renders.
 
@@ -1879,7 +1881,7 @@ expenses_agent = Agent(name="expenses", instructions=f"{YOUR_INSTRUCTIONS}\n\n{C
 4. Two limits worth knowing before you build on this. It does **not** reach a streamed run
    (`execution.message_type: delta`) — the hook runs on `Runtime.run`, and a warning says so on the first
    request. And it does **not** touch a reply from an agent you gave a framework `output_type`,
-   since that schema is yours and Agent Kernel has never seen it; write your own post-hook there.
+   since that schema is yours and OAK has never seen it; write your own post-hook there.
    See `examples/api/a2ui-openai` for a full demo including a small React renderer.
 
 ---

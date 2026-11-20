@@ -4,7 +4,7 @@ sidebar_position: 7
 
 # Secret Resolution
 
-Agent Kernel can **resolve secrets (API keys, passwords, tokens) from the environment, falling back to
+Open Agent Kernel (OAK) can **resolve secrets (API keys, passwords, tokens) from the environment, falling back to
 a managed store**. Application code asks `SecretManager` for a key by the same name the SDKs already read
 from the environment — `OPENAI_API_KEY`, `NEO4J_PASSWORD` — and the configured provider supplies it. The
 same code reads the key from an environment variable on a laptop, from AWS SSM Parameter Store on AWS, and from Kubernetes Secrets
@@ -156,7 +156,7 @@ standard library only).
 - **Symlinks** are followed, since the kubelet builds the mount from them, but a matching file that resolves
   outside `mount_path` (a symlinked directory or file pointing elsewhere) raises `SecretError` instead of being
   read. A permission error on `mount_path` or on a Secret directory is also a `SecretError`, not a miss.
-- **Key compatibility:** data keys must be named exactly like the AK key, i.e. match `^[A-Z][A-Z0-9_]*$`. A
+- **Key compatibility:** data keys must be named exactly like the OAK key, i.e. match `^[A-Z][A-Z0-9_]*$`. A
   differently named data key (for example `api-key`) is silently unreachable; there is no remapping. Create
   compatible keys with `kubectl create secret generic openai-credentials --from-literal=OPENAI_API_KEY=...`
   or `--from-env-file=.env`, or with an External Secrets Operator `target.template.data` that renames the

@@ -1,6 +1,6 @@
 # Instagram Business API Integration Example
 
-This example demonstrates how to create an Instagram Business Messaging integration with Agent Kernel using **Instagram API with Business Login for Instagram** (without Facebook Login).
+This example demonstrates how to create an Instagram Business Messaging integration with Open Agent Kernel using **Instagram API with Business Login for Instagram** (without Facebook Login).
 
 ## Overview
 
@@ -62,7 +62,7 @@ Install dependencies using:
 ./build.sh
 ```
 
-For local development with Agent Kernel source:
+For local development with OAK source:
 
 ```bash
 ./build.sh local
@@ -276,5 +276,5 @@ See deployment documentation for AWS and other platforms.
 
 - [Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login)
 - [Webhook Setup Guide](https://developers.facebook.com/docs/instagram-platform/webhooks)
-- [Agent Kernel Documentation](../../../docs/)
+- [OAK Documentation](../../../docs/)
 - [Instagram Integration Guide](../../../ak-py/src/agentkernel/integration/instagram/README.md)

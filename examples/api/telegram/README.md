@@ -1,6 +1,6 @@
 # Telegram Bot Integration Example
 
-This example demonstrates how to create a Telegram Bot integration with Agent Kernel.
+This example demonstrates how to create a Telegram Bot integration with Open Agent Kernel (OAK).
 
 ## Prerequisites
 
@@ -61,7 +61,7 @@ Install dependencies using:
 ./build.sh
 ```
 
-For local development with Agent Kernel source:
+For local development with OAK source:
 
 ```bash
 ./build.sh local
@@ -75,7 +75,7 @@ uv run server.py
 
 **Features:**
 
-- Uses Agent Kernel telegram handler with an OpenAI agent
+- Uses OAK telegram handler with an OpenAI agent
 - Built-in image and document analysis
 - Session memory for multi-turn conversations
 - Simple, straightforward setup
@@ -274,7 +274,7 @@ sales_agent = OpenAIAgent(
 OpenAIModule([support_agent, sales_agent])
 ```
 
-> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyze_attachments` tool is automatically attached to all agents by Agent Kernel at startup. You do not need to add it manually.
+> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyze_attachments` tool is automatically attached to all agents by OAK at startup. You do not need to add it manually.
 
 ### Send Inline Keyboards
 
@@ -335,4 +335,4 @@ await self._send_message(
 - [Telegram Bot API Documentation](https://core.telegram.org/bots/api)
 - [BotFather Commands](https://core.telegram.org/bots#botfather-commands)
 - [Telegram Bot Examples](https://core.telegram.org/bots/samples)
-- [Agent Kernel Documentation](../../../docs/)
+- [OAK Documentation](../../../docs/)

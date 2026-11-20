@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-messaging-integration
 description: >
-  Step-by-step guide for adding a new messaging platform integration to Agent Kernel.
+  Step-by-step guide for adding a new messaging platform integration to Open Agent Kernel (OAK).
   Use this skill when you need to add support for a new chat platform (beyond Slack,
     WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail). Covers writing the
   inbound/outbound adapter pair, hosting it, webhook verification, attachments, configuration,
@@ -14,7 +14,7 @@ metadata:
 
 # Adding a New Messaging Integration
 
-This guide walks through adding a new messaging platform integration to Agent Kernel. Use the WhatsApp adapter (`ak-py/src/agentkernel/integration/whatsapp/adapter.py`) as the canonical webhook reference, and Gmail (`integration/gmail/adapter.py`) as the polling one.
+This guide walks through adding a new messaging platform integration to Open Agent Kernel (OAK). Use the WhatsApp adapter (`ak-py/src/agentkernel/integration/whatsapp/adapter.py`) as the canonical webhook reference, and Gmail (`integration/gmail/adapter.py`) as the polling one.
 
 ## Architecture Overview
 
@@ -333,9 +333,9 @@ Add `docs/docs/integrations/<platform>.md` covering:
 - Webhook URL setup
 - The `multimodal.enabled` requirement if the platform accepts attachments
 
-Then update the landing page inventories in `docs/src/components/*/data.tsx`: add a tile to the **Channels & protocols** row in `IntegrationsMarquee/data.tsx` (role `Channel`, `href` to the new page, logo under `docs/static/img/integrations/` or a `react-icons/si` glyph); add `pick("<tile name>")` to the **Messaging channels** card in `ArchitectureOverview/data.tsx`; add the platform to the **Messaging Channels** card's `tags` and `description` under the Connect tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+Then update the landing page inventories under `docs/src/components/`: add an item to the **Channels & protocols** row of `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx` (role `Channel`, `href` to the new page, logo under `docs/static/img/integrations/` or a `react-icons/si` glyph); add `pick("<item name>")` to the **Messaging channels** card in `ArchitectureOverview/data.tsx`; add the platform to the list of channels in the Connect stage's `points` in `HomeSections/index.tsx` (`STAGES`). Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
-Then the features page: the `MESSAGING_PLATFORMS` list in `docs/src/pages/features.tsx` (logo, link to the new page). Grep `docs/src/pages/*.tsx`, `README.md`, and `docs/docs/intro.md` for the platform roll call ("Slack, WhatsApp, ...") and add the new name wherever the others are listed.
+Then the features page: the **Messaging channels** capability under Connect in `docs/src/pages/features.tsx` (`STAGES`): raise the count in its `summary` and add a `more` link to the new page. Grep `docs/src/pages/*.tsx`, `docs/src/components/FAQ/index.tsx`, `README.md`, and `docs/docs/intro.md` for the platform roll call ("Slack, WhatsApp, ...") and add the new name wherever the others are listed.
 
 ## Checklist
 
@@ -355,5 +355,5 @@ Then the features page: the `MESSAGING_PLATFORMS` list in `docs/src/pages/featur
 - [ ] Example in `examples/api/<platform>/` mounting through `IOHandler.run`
 - [ ] `IntegrationAdapterContract` subclass plus the per-platform test file
 - [ ] Documentation in `docs/docs/integrations/<platform>.md`
-- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Messaging channels card (`ArchitectureOverview/data.tsx`), Messaging Channels card tags (`FeatureExplorer/data.tsx`)
-- [ ] Platform inventories on `docs/src/pages/features.tsx` (`MESSAGING_PLATFORMS`) and in the README/intro roll calls
+- [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), `pick()` chip on the Messaging channels card (`ArchitectureOverview/data.tsx`), the channel list in the Connect stage's points (`HomeSections/index.tsx`)
+- [ ] The Messaging channels capability on `docs/src/pages/features.tsx` (count and `more` link) and the README/intro roll calls

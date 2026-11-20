@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
+import { useColorMode } from '@docusaurus/theme-common';
 import mermaid from 'mermaid';
 import elkLayouts from '@mermaid-js/layout-elk';
 import MermaidOriginal from '@theme-original/Mermaid';
@@ -43,10 +44,80 @@ if (ExecutionEnvironment.canUseDOM) {
 
 type Props = WrapperProps<typeof MermaidType>;
 
+/**
+ * The palette for diagrams on the light page. docusaurus.config.js holds the dark one, and the
+ * theme can pass only one set of variables to mermaid, so the light set travels with each
+ * diagram as an init directive (see `forColorMode`).
+ *
+ * Nodes that a diagram colours itself (`style X fill:..., color:...`) always set both the fill
+ * and the text colour, so they read on either background. These variables cover everything
+ * else: plain nodes, edges and their labels, groups, and the parts of sequence diagrams.
+ */
+const LIGHT_VARIABLES = {
+  darkMode: false,
+  background: '#FFFFFF',
+  textColor: '#02284F',
+  // nodes
+  primaryColor: '#EEF3FB',
+  primaryTextColor: '#02284F',
+  primaryBorderColor: '#3F598A',
+  mainBkg: '#EEF3FB',
+  nodeBorder: '#3F598A',
+  // edges + labels
+  lineColor: '#3F598A',
+  edgeLabelBackground: '#FFFFFF',
+  // subgraphs / clusters
+  clusterBkg: '#F6F8FC',
+  clusterBorder: '#B9C8E0',
+  titleColor: '#02284F',
+  // secondary/tertiary (misc fills)
+  secondaryColor: '#E1EAF7',
+  secondaryTextColor: '#02284F',
+  secondaryBorderColor: '#3F598A',
+  tertiaryColor: '#F6F8FC',
+  tertiaryTextColor: '#02284F',
+  tertiaryBorderColor: '#B9C8E0',
+  // sequence diagrams
+  actorBkg: '#EEF3FB',
+  actorBorder: '#3F598A',
+  actorTextColor: '#02284F',
+  actorLineColor: '#8FA1C2',
+  signalColor: '#3F598A',
+  signalTextColor: '#02284F',
+  labelBoxBkgColor: '#E1EAF7',
+  labelBoxBorderColor: '#3F598A',
+  labelTextColor: '#02284F',
+  loopTextColor: '#3F598A',
+  noteBkgColor: '#FFF0EA',
+  noteBorderColor: '#F2A98F',
+  noteTextColor: '#02284F',
+  activationBkgColor: '#E1EAF7',
+  activationBorderColor: '#3F598A',
+  sequenceNumberColor: '#FFFFFF',
+};
+
+const LIGHT_DIRECTIVE = `%%{init: ${JSON.stringify({ theme: 'base', themeVariables: LIGHT_VARIABLES })}}%%`;
+
+/**
+ * The diagram source for a colour mode. On the dark page it is unchanged. On the light page it
+ * gains the light palette as an init directive, placed after any front matter, which has to
+ * stay first.
+ */
+function forColorMode(source: string, colorMode: string): string {
+  if (colorMode !== 'light') return source;
+  const frontMatter = /^\s*---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/.exec(source);
+  if (!frontMatter) return `${LIGHT_DIRECTIVE}\n${source}`;
+  return `${frontMatter[0]}${LIGHT_DIRECTIVE}\n${source.slice(frontMatter[0].length)}`;
+}
+
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 8;
 const ZOOM_STEP = 1.2;
 const STAGE_PADDING = 48;
+// Below this stage width a diagram fitted to the screen is too small to read.
+const NARROW_STAGE = 600;
+// Room for the toolbar above a diagram that opens from its top edge.
+const TOOLBAR_CLEARANCE = 72;
 
 function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
@@ -76,12 +147,14 @@ function MermaidLightbox({
   onClose,
   ...props
 }: Props & { onClose: () => void }): ReactElement {
+  const { colorMode } = useColorMode();
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [fitScale, setFitScale] = useState(1);
+  const [fitOffset, setFitOffset] = useState({ x: 0, y: 0 });
   const fittedRef = useRef(false);
   const dragRef = useRef<{
     pointerId: number;
@@ -136,10 +209,30 @@ function MermaidLightbox({
         (stage.clientWidth - STAGE_PADDING) / width,
         (stage.clientHeight - STAGE_PADDING) / height,
       );
-      const initial = clampScale(Math.min(fit, 2));
+      // The canvas lays a diagram out at most 300 px wide, whatever its drawn size (the SVG has no
+      // width of its own in this box), so a scale of 1 is usually not the diagram's drawn size.
+      // `natural` is the scale that restores it: 1 for a diagram drawn narrower than that.
+      const drawn = canvas.querySelector('svg')?.viewBox?.baseVal?.width || width;
+      const natural = Math.max(1, drawn / width);
+      // A diagram that fits at its drawn size opens whole, as it does on a wide screen. One that
+      // only fits by shrinking is too small to read on a phone: it opens at up to twice the
+      // fitted size, never past its drawn size, from its top left corner, and the reader drags it.
+      const narrow = stage.clientWidth < NARROW_STAGE;
+      const shrunk = fit < natural;
+      const initial = clampScale(narrow && shrunk ? Math.min(fit * 2, natural) : Math.min(fit, 2));
+      const overX = (width * initial - stage.clientWidth) / 2;
+      const overY = (height * initial - stage.clientHeight) / 2;
+      const start = narrow
+        ? {
+            x: overX > 0 ? overX + STAGE_PADDING / 2 : 0,
+            y: overY > 0 ? overY + TOOLBAR_CLEARANCE : 0,
+          }
+        : { x: 0, y: 0 };
       fittedRef.current = true;
       setFitScale(initial);
+      setFitOffset(start);
       setScale(initial);
+      setOffset(start);
     });
     observer.observe(canvas);
     return () => observer.disconnect();
@@ -217,8 +310,8 @@ function MermaidLightbox({
   );
   const reset = useCallback(() => {
     setScale(fitScale);
-    setOffset({ x: 0, y: 0 });
-  }, [fitScale]);
+    setOffset(fitOffset);
+  }, [fitScale, fitOffset]);
 
   return createPortal(
     <div
@@ -281,7 +374,7 @@ function MermaidLightbox({
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
           }}
         >
-          <MermaidOriginal {...props} />
+          <MermaidOriginal {...props} value={forColorMode(props.value, colorMode)} />
         </div>
       </div>
       <div className={styles.hint}>Scroll to zoom, drag to pan</div>
@@ -291,6 +384,7 @@ function MermaidLightbox({
 }
 
 export default function MermaidWrapper(props: Props): ReactElement {
+  const { colorMode } = useColorMode();
   const [isOpen, setIsOpen] = useState(false);
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
@@ -298,7 +392,7 @@ export default function MermaidWrapper(props: Props): ReactElement {
   return (
     <>
       <div className={styles.wrapper}>
-        <MermaidOriginal {...props} />
+        <MermaidOriginal {...props} value={forColorMode(props.value, colorMode)} />
         <button
           type="button"
           className={styles.expandButton}

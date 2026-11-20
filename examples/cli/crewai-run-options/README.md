@@ -1,7 +1,7 @@
-# Agent Kernel: per-agent native run options (CrewAI)
+# Open Agent Kernel: per-agent native run options (CrewAI)
 
-This demo shows how to pass CrewAI's own **`Crew` options** to an agent through Agent Kernel: a
-`step_callback` that reports progress and a `max_rpm` throttle. Agent Kernel builds one `Crew` per run,
+This demo shows how to pass CrewAI's own **`Crew` options** to an agent through Open Agent Kernel (OAK): a
+`step_callback` that reports progress and a `max_rpm` throttle. OAK builds one `Crew` per run,
 so these cannot be set any other way. Both are declared once, at load time, with `Module.run_options`:
 
 ```python
@@ -15,7 +15,7 @@ CrewAIModule([weather_agent]).run_options(
 ## How it works
 
 1. **Declaration.** The keywords are the `Crew(...)` constructor's own arguments (`step_callback`,
-   `task_callback`, `max_rpm`, `planning`, ...). Agent Kernel copies them into the constructor and
+   `task_callback`, `max_rpm`, `planning`, ...). OAK copies them into the constructor and
    writes the keys it owns (`agents`, `tasks`, `memory`) last. `verbose=False` is a default you may
    override. `max_rpm` is a requests-per-minute rate limit, not a loop cap: the cap on iterations is
    `max_iter` on the native `Agent`, which you already own (shown on the constructor in `demo.py`).
@@ -39,7 +39,7 @@ Run stats: steps=2, max_rpm=30
 
 ## Progress paths
 
-CrewAI has no token stream in Agent Kernel (`supports_streaming` is `False`), so the native
+CrewAI has no token stream in OAK (`supports_streaming` is `False`), so the native
 `step_callback` / `task_callback` through run options is the progress path for this framework.
 
 ## Running

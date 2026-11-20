@@ -1,7 +1,7 @@
-# Agent Kernel running OpenAI Agent SDK Agents on Docker
+# Open Agent Kernel running OpenAI Agent SDK Agents on Docker
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK in a Docker container. Users
-may interact with agents via the Agent Kernel REST API.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK in a Docker container. Users
+may interact with agents via the OAK REST API.
 
 Install dependencies using:
 

@@ -1,6 +1,6 @@
-# Agent Kernel with AWS CloudWatch tracing
+# Open Agent Kernel with AWS CloudWatch tracing
 
-This package demonstrates Agent Kernel tracing agent execution to
+This package demonstrates Open Agent Kernel tracing agent execution to
 [Amazon CloudWatch](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search.html)
 over OpenTelemetry. The agents are the same OpenAI Agents SDK agents as [../openai](../openai) — tracing is
 transparent, so the only difference is `config.yaml`, which sets:

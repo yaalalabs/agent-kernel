@@ -12,14 +12,14 @@ content; they do not establish clinical safety or guarantee that a symptom repor
 | Output | `output.json` | NSFW Text |
 
 The custom input class is selected through `guardrail.input.type` in `../config.yaml`.
-The output path uses Agent Kernel's built-in OpenAI output guardrail. The separate
+The output path uses Open Agent Kernel's built-in OpenAI output guardrail. The separate
 `BlockUnsafeLanguageHook` checks final agent replies; direct PHM alerts bypass that hook.
 
 ## No PII detection
 
 `Contains PII` is disabled on both paths because registration and routing use phone numbers.
 Phone-pattern redaction runs at log-record creation through `../redaction.py`, including
-records sent to non-propagating Agent Kernel loggers and replacement handlers. It does
+records sent to non-propagating OAK loggers and replacement handlers. It does
 not rewrite database records, delivery destinations, tool results, or symptom excerpts.
 PHM tools separately omit stored routing fields and raw delivery errors from their results.
 

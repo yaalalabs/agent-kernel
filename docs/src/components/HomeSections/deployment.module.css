@@ -1,0 +1,118 @@
+/* Deployment: four target cards. Card, type and spacing come from the design system. */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ak-space-24);
+}
+
+.card {
+  height: 100%;
+  padding: var(--ak-space-24);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--ak-space-12);
+}
+
+.icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  font-size: 1.35rem;
+  color: var(--ak-fg);
+}
+
+.modes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.modes li {
+  position: relative;
+  padding-left: var(--ak-space-24);
+  font-size: var(--ak-type-small);
+  line-height: 1.5;
+  color: var(--ak-text);
+}
+
+.modes li::before {
+  content: '';
+  position: absolute;
+  top: 0.7em;
+  left: 0;
+  width: 0.75rem;
+  height: 1px;
+  background-color: var(--ak-primary);
+}
+
+/* The modules sit at the foot of the card, whatever the length of the list above */
+.modules {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-8);
+  margin-top: auto;
+  padding-top: var(--ak-space-16);
+  border-top: 1px solid var(--ak-border);
+}
+
+.module {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ak-space-8);
+  font-size: var(--ak-type-small);
+  font-weight: 600;
+  color: var(--ak-primary-text);
+  text-decoration: none;
+}
+
+.module:hover {
+  color: var(--ak-primary-text);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.module:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 3px;
+}
+
+/* Touch: an unseen box around the one-line link, so a finger can hit it */
+@media (pointer: coarse) {
+  .modules {
+    gap: var(--ak-space-16);
+  }
+
+  .module {
+    position: relative;
+  }
+
+  .module::before {
+    content: '';
+    position: absolute;
+    inset: -0.5rem 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

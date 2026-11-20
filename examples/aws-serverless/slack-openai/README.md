@@ -1,4 +1,4 @@
-# Agent Kernel Slack Integration on AWS Lambda
+# Open Agent Kernel Slack Integration on AWS Lambda
 
 This package deploys a Slack bot on AWS Lambda. Slack's Events API webhook reaches the
 request-handler Lambda, which verifies, acknowledges and enqueues each message; the agent runs
@@ -41,7 +41,7 @@ Slack --POST /api/v1/slack/events--> API Gateway --> Authorizer (bypass: method 
 
 ## Declare the integration in three places
 
-The three must agree, and a mismatch fails quietly from Agent Kernel's side:
+The three must agree, and a mismatch fails quietly from Open Agent Kernel's side:
 
 | Where | What | Symptom when it is missing |
 |---|---|---|
@@ -51,7 +51,7 @@ The three must agree, and a mismatch fails quietly from Agent Kernel's side:
 
 **The authorizer's cache must be off** (`result_ttl_in_seconds = 0`, set in `deploy/main.tf`). With
 a TTL, API Gateway answers a request that has no `Authorization` header with 401 before the
-authorizer runs, so the bypass never gets a say, and Agent Kernel never logs it. The cost is one
+authorizer runs, so the bypass never gets a say, and OAK never logs it. The cost is one
 authorizer call per request, chat included.
 
 ## Slack app setup

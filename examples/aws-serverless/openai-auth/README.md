@@ -1,6 +1,6 @@
-# Agent Kernel running OpenAI Agents SDK with Authentication in AWS Serverless (Lambda)
+# Open Agent Kernel running OpenAI Agents SDK with Authentication in AWS Serverless (Lambda)
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK with authentication support, running them in a serverless configuration using AWS Lambda.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK with authentication support, running them in a serverless configuration using AWS Lambda.
 
 ## Authentication
 
@@ -64,7 +64,7 @@ and send its `access_token` as the bearer token.
 
 This demo deploys the following AWS resources:
 
-- AWS Lambda function running the Agent Kernel implementation.
+- AWS Lambda function running the OAK implementation.
 - API Gateway endpoint for the Lambda function.
 - Redis Cluster: Session storage (shared with openai example)
 - VPC: Private networking for Lambda functions (shared with openai example)

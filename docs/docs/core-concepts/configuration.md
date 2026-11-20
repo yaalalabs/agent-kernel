@@ -4,7 +4,7 @@ sidebar_position: 7
 
 # Configuration
 
-Configure Agent Kernel via environment variables or configuration files. This sub module class 'AKConfig' is exported as 'Config'. Its unlikely that you will directly use this class in your code (i.e. need for Advanced usage).
+Configure Open Agent Kernel via environment variables or configuration files. This sub module class 'AKConfig' is exported as 'Config'. Its unlikely that you will directly use this class in your code (i.e. need for Advanced usage).
 
 :::tip
 For detailed information about session and memory management configuration, see:
@@ -15,7 +15,7 @@ For detailed information about session and memory management configuration, see:
 
 ## Configuration File
 
-Agent Kernel supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
+OAK supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
 
 :::note
 Test harness configuration (comparison mode, evaluator, llm models) is **not** part of `config.yaml`. It lives in a separate `test-config.yaml` file that is only loaded when running tests; see the [Test Configuration](#test-configuration) section below and [Testing](/docs/testing/overview). A legacy `test:` section in `config.yaml` is ignored.
@@ -362,8 +362,8 @@ logging:
   system:
     level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL
 ```
-> Logging is auto-configured when the configuration is first loaded, i.e., at the first `Config.get()` call, which every application entry point performs during startup. Merely importing the library does not read `config.yaml` or change logging. Once configuration loads, Agent Kernel may configure the Agent Kernel logger and the system/root logger and may add or change handlers/formatters.
-> Use `logging.ak.level` to control Agent Kernel's own logger verbosity, and `logging.system.level` only if you want Agent Kernel to affect the process-wide/root logger. If you do **not** want Agent Kernel to modify application-wide logging, avoid enabling root/system logger.
+> Logging is auto-configured when the configuration is first loaded, i.e., at the first `Config.get()` call, which every application entry point performs during startup. Merely importing the library does not read `config.yaml` or change logging. Once configuration loads, OAK may configure the OAK logger and the system/root logger and may add or change handlers/formatters.
+> Use `logging.ak.level` to control OAK's own logger verbosity, and `logging.system.level` only if you want OAK to affect the process-wide/root logger. If you do **not** want OAK to modify application-wide logging, avoid enabling root/system logger.
 
 ### JSON Configuration
 
@@ -977,7 +977,7 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 - `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik use a `GEval` metric; JEV asks one yes/no Noul question) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`), see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below, it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`), see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below, it does not require an Opik Cloud account, API key, or self-hosted server (OAK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
 
 ### Custom Test Configuration File Path
 
@@ -1388,7 +1388,7 @@ CloudWatch Transaction Search must be enabled in the account, and the agent's ro
 
 ## Validation and Error Handling
 
-Agent Kernel validates all configuration values at startup:
+OAK validates all configuration values at startup:
 
 - **Invalid session storage types** will raise validation errors
 - **Invalid port numbers** will be rejected

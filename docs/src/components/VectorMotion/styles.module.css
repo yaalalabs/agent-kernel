@@ -1,0 +1,77 @@
+/* Stage drawings: particles on rails. Two colours, both from the theme tokens in custom.css,
+   so the drawings follow the dark and the light colour mode. */
+
+.root {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  /* The colour behind the drawing, used to knock shapes out of the rails under them.
+     A host that sits on another surface can set --vm-surface to that surface's colour. */
+  --vm-knock: var(--vm-surface, var(--ak-bg));
+}
+
+.rail,
+.faint,
+.outline,
+.port,
+.accent,
+.accentKnock {
+  fill: none;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Ambient blue: rails, ports, outlines and dots */
+
+.rail {
+  stroke: rgba(var(--ak-blue-rgb), 0.5);
+}
+
+.faint {
+  stroke: rgba(var(--ak-blue-rgb), 0.32);
+}
+
+.outline {
+  stroke: var(--ak-blue);
+  fill: var(--vm-knock);
+}
+
+.port {
+  stroke: rgba(var(--ak-blue-rgb), 0.75);
+  fill: var(--vm-knock);
+}
+
+.dot {
+  fill: var(--ak-blue);
+}
+
+/* Accent orange: the one element that matters in each drawing */
+
+.accent {
+  stroke: var(--ak-primary);
+}
+
+.accentKnock {
+  stroke: var(--ak-primary);
+  fill: var(--vm-knock);
+}
+
+.dotAccent {
+  fill: var(--ak-primary);
+}
+
+/* All motion is SMIL and is paused from script when the drawing leaves the screen. This rule
+   gives the same behaviour to any CSS animation a drawing may use, and the one below it keeps
+   CSS animations out of the static frame. */
+
+.root[data-paused] * {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root * {
+    animation: none;
+  }
+}

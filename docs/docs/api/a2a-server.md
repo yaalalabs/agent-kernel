@@ -140,7 +140,7 @@ such a call is what authorization adds.
 
 ## Agent Capabilities
 
-Each exposed agent automatically publishes an A2A **agent card**. Agent Kernel builds the card from the
+Each exposed agent automatically publishes an A2A **agent card**. OAK builds the card from the
 agent's **descriptor**, the record the agent registry keeps for it, so every framework gets a card the same way.
 
 - **Name, description and version** are the descriptor's. The description is catalog text, never the agent's
@@ -195,14 +195,14 @@ Each agent is mounted under `/a2a/{agent}` with the standard A2A 1.0 REST routes
 | Route | Purpose |
 |-------|---------|
 | `POST /a2a/{agent}/message:send` | Send a message to the agent |
-| `POST /a2a/{agent}/message:stream` | Refused: Agent Kernel's cards declare `streaming: false`, so use `message:send` |
+| `POST /a2a/{agent}/message:stream` | Refused: Open Agent Kernel's cards declare `streaming: false`, so use `message:send` |
 | `GET /a2a/{agent}/tasks` | List tasks |
 | `GET /a2a/{agent}/tasks/{id}` | Get a task |
 | `POST /a2a/{agent}/tasks/{id}:cancel` | Cancel a task (unsupported: the executor implements neither cancellation nor streaming) |
 | `GET`/`POST /a2a/{agent}/tasks/{id}:subscribe` | Subscribe to task updates |
 | `GET /a2a/{agent}/extendedAgentCard` | Get the authenticated agent card (if supported) |
 
-Incoming A2A messages are executed by the agent runner through the queue pipeline, exactly like a REST chat request: hooks, guardrails, and session persistence all apply. The A2A `context_id` is the Agent Kernel session, so one conversation's messages are processed in order.
+Incoming A2A messages are executed by the agent runner through the queue pipeline, exactly like a REST chat request: hooks, guardrails, and session persistence all apply. The A2A `context_id` is the OAK session, so one conversation's messages are processed in order.
 
 **Replies:**
 
@@ -219,7 +219,7 @@ Incoming A2A messages are executed by the agent runner through the queue pipelin
 
 ### Migrating from A2A 0.3
 
-Agent Kernel serves A2A 1.0 only. A 0.3 client gets 404 on the old `/a2a/{agent}/v1/...` routes, and
+OAK serves A2A 1.0 only. A 0.3 client gets 404 on the old `/a2a/{agent}/v1/...` routes, and
 400 on the new ones (a request without `A2A-Version: 1.0` is read as 0.3). To upgrade a caller:
 
 - Use an `a2a-sdk` 1.x client, and build it with `ClientFactory` (pass
@@ -234,10 +234,10 @@ Agent Kernel serves A2A 1.0 only. A 0.3 client gets 404 on the old `/a2a/{agent}
 
 ```mermaid
 graph LR
-    A[Agent Kernel Agent 1] -->|A2A| B[Agent Kernel Agent 2]
+    A[OAK Agent 1] -->|A2A| B[OAK Agent 2]
     B -->|A2A| C[Third-Party Agent 3]
     C -->|A2A| A
     A -->|A2A| D[Third-Party Agent 4]
 
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```

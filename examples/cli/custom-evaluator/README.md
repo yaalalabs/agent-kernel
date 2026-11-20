@@ -1,6 +1,6 @@
-# Agent Kernel CLI testing with a custom (bring-your-own) evaluator
+# Open Agent Kernel CLI testing with a custom (bring-your-own) evaluator
 
-This package demos an OpenAI Agents SDK trivia agent running in Agent Kernel via the CLI, tested
+This package demos an OpenAI Agents SDK trivia agent running in Open Agent Kernel via the CLI, tested
 with a **custom `AKEvaluator`** instead of the built-in `deepeval` one. It shows the pluggable
 evaluator extension point described in
 [`docs/specs/555-pluggable-test-evaluators`](../../../docs/specs/555-pluggable-test-evaluators):
@@ -48,7 +48,7 @@ evaluator: custom_evaluator.TokenOverlapEvaluator
 ```
 
 which resolves against `custom_evaluator.py` next to this README, because pytest's default import
-mode puts the test file's own directory on `sys.path`. No AK extra beyond `test` (for `litellm`)
+mode puts the test file's own directory on `sys.path`. No OAK extra beyond `test` (for `litellm`)
 is required for a custom evaluator — the `deepeval` import lives entirely inside the built-in's
 own resolution branch.
 

@@ -10,7 +10,7 @@ This example shows how to use **Neo4j as a graph knowledge base** with an OpenAI
    `get_all_kb_descriptions`). Neo4j declares `query` and `writable` but not `search`, so none of
    `search_kb`, `fetch_kb` or `browse_kb` is emitted - each needs a registered backend declaring the
    operation behind it.
-4. How to run the demo through the Agent Kernel CLI.
+4. How to run the demo through the Open Agent Kernel CLI.
 
 > These have been implemneted in demo.py please refer that 
 

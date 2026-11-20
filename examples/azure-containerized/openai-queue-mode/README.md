@@ -1,6 +1,6 @@
-# Agent Kernel queue mode on Azure Container Apps with Service Bus
+# Open Agent Kernel queue mode on Azure Container Apps with Service Bus
 
-This demo runs OpenAI Agents SDK agents in Agent Kernel's two-process queue pipeline on Azure. An edge
+This demo runs OpenAI Agents SDK agents in Open Agent Kernel's two-process queue pipeline on Azure. An edge
 Container App takes REST calls behind API Management and puts each request on an Azure Service Bus queue.
 A second Container App, the agent runner, takes requests off that queue, runs the agent, and sends the
 reply back on an output queue. Agent runner replicas are added as the input queue grows.
@@ -36,7 +36,7 @@ namespace. Only `servicebus_contract_test.py` needs it; drop that resource if yo
 | `app_agent_runner.py` | Agent runner entry point (the module's `agent_runner_command`) |
 | `config.yaml` | Transport (`servicebus`), response store and session store types; the module injects the addresses |
 | `app_test.py` | Two `rest_sync` turns on one session through APIM |
-| `servicebus_contract_test.py` | Agent Kernel's queue transport contract against the deployed namespace |
+| `servicebus_contract_test.py` | OAK's queue transport contract against the deployed namespace |
 
 ## Prerequisites
 

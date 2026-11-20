@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Scheduled Tasks
 
-Agent Kernel can **defer and repeat chat execution**: a chat request that carries a `schedule` block is
+Open Agent Kernel (OAK) can **defer and repeat chat execution**: a chat request that carries a `schedule` block is
 not run — it is registered as a scheduled task and acknowledged with **HTTP 202**. When an occurrence is
 due, the configured provider delivers the stored prompt into the input queue as a plain chat request, and
 the normal execution path runs it.
@@ -80,6 +80,12 @@ if __name__ == "__main__":
 
 An app that mounts nothing still defers and still gets the agent tools — it just serves no
 `/api/v1/schedules` routes.
+
+On AWS Lambda the request handler is not FastAPI, so `ScheduleRESTRequestHandler` cannot be mounted.
+Serve the same routes with `Lambda.register` handlers that call `ScheduleManager` directly; the task id
+arrives as the `{task_id}` path parameter (see the
+[AWS serverless guide](../deployment/aws-serverless.md#scheduling-eventbridge-scheduler) and
+`examples/aws-serverless/schedule-openai`).
 
 Cron parsing needs the `cron` extra:
 
@@ -226,7 +232,7 @@ The record survives as the audit trail, so the response is the task with `"statu
 
 ## Agent Tools
 
-When the block is present, Agent Kernel injects five system tools and their guidance into the agent's
+When the block is present, OAK injects five system tools and their guidance into the agent's
 system prompt, so an agent can defer work when a user asks it to — agent authors never describe these
 tools themselves:
 
@@ -442,7 +448,9 @@ task at create/amend time and the provider substitutes the occurrence placeholde
   provisioning the schedule group, execution role and schedule table.
 - [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) —
   the AWS Lambda equivalent: request-handler, agent-runner and response-handler Lambdas with the
-  `eventbridge` provider and a DynamoDB store.
+  `eventbridge` provider and a DynamoDB store. The request handler serves the management routes on
+  the same paths (`GET /schedules`, `GET` / `PUT` / `DELETE /schedules/{task_id}`) through
+  `Lambda.register`.
 
 See the [AWS containerized](../deployment/aws-containerized.md#scheduling-eventbridge-scheduler) and
 [AWS serverless](../deployment/aws-serverless.md#scheduling-eventbridge-scheduler) deployment guides for

@@ -20,7 +20,7 @@ on and set its Request URL to the **same** URL as your event subscription — `/
 both. Skip this and the pause still renders, the buttons still appear, and pressing one does
 nothing.
 
-Anyone who can see the message can press the buttons. Agent Kernel ships no approver policy; see
+Anyone who can see the message can press the buttons. Open Agent Kernel (OAK) ships no approver policy; see
 [Human in the Loop](../../../docs/docs/advanced/human-in-the-loop.md) for enforcing one.
 
 ## Setup

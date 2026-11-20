@@ -1,6 +1,6 @@
-# Agent Kernel queue mode over Google Cloud Pub/Sub (OpenAI Agents SDK)
+# Open Agent Kernel queue mode over Google Cloud Pub/Sub (OpenAI Agents SDK)
 
-This demo runs Agent Kernel's chat execution pipeline
+This demo runs Open Agent Kernel's chat execution pipeline
 
 ```
 Request Handler → agent-input → Agent Runner → agent-output → Response Handler
@@ -91,7 +91,7 @@ python pubsub_tester.py down                     # stop everything, remove volum
 
 ## Provisioning: two postures
 
-This example sets `auto_provision: true`, so Agent Kernel creates both topics, their dead-letter
+This example sets `auto_provision: true`, so OAK creates both topics, their dead-letter
 topics (`agent-input-dlq`, `agent-output-dlq`), the subscriptions with message ordering and a
 dead-letter policy, and a subscription on each dead-letter topic. That is the emulator and dev
 posture. The first send creates the whole queue, not just the topic: Pub/Sub drops a message
@@ -123,7 +123,7 @@ skips itself when Docker or `OPENAI_API_KEY` is missing.
 - **Per-session order comes from ordering keys.** The session id is the message's ordering key, and
   the subscriptions have message ordering enabled. Pub/Sub can hand one consumer several messages
   of a session at once; the transport holds them and runs one at a time.
-- **Agent Kernel keeps the delivery bookkeeping.** Pub/Sub's delivery count is approximate and it
+- **OAK keeps the delivery bookkeeping.** Pub/Sub's delivery count is approximate and it
   does not deduplicate on publish, so exact receive counts, deduplication on `dedup_id`, and a memory
   of acknowledged messages live in a key store (Valkey here). On GCP, sessions usually live in
   Firestore, and the Redis response store holds it instead.

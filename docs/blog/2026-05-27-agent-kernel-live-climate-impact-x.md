@@ -1,7 +1,7 @@
 ---
 slug: /agent-kernel-live-at-climate-impact-x
 title: Agent Kernel Is Live at Climate Impact X
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, climate-impact-x, production, trade-surveillance, enterprise-ai]
 image: /img/blog/cix-banner.png
 description: Climate Impact X, a leading exchange for environmental products, is now live with Agent Kernel as part of its trade surveillance workflow.

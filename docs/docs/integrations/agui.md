@@ -4,7 +4,7 @@ sidebar_position: 8
 
 # AG-UI Protocol
 
-Agent Kernel can serve agents over **[AG-UI](https://github.com/ag-ui-protocol/ag-ui)**, an
+Open Agent Kernel (OAK) can serve agents over **[AG-UI](https://github.com/ag-ui-protocol/ag-ui)**, an
 event-based protocol for talking to a user-facing frontend. Where the standard chat routes return one
 reply, an AG-UI run streams the whole shape of the work: the answer as it arrives, the agent's
 reasoning, each tool call with its arguments and result, and a shared state object both sides read and
@@ -195,7 +195,7 @@ application, say so in the agent's instructions; the tools' own descriptions are
 
 ## Per-adapter fidelity
 
-Which AG-UI events a run produces depends on the framework adapter, not on the protocol. AK never
+Which AG-UI events a run produces depends on the framework adapter, not on the protocol. OAK never
 emits an event it cannot fully populate, so an adapter that reports no reasoning simply produces no
 thinking block.
 
@@ -212,13 +212,13 @@ thinking block.
 
 Reading the table:
 
-- **CrewAI and smolagents are not reachable over AG-UI.** Their Agent Kernel adapters leave
+- **CrewAI and smolagents are not reachable over AG-UI.** Their OAK adapters leave
   `Runner.stream()` raising and declare `supports_streaming = False`, so both discovery and the run
   routes exclude them: a `POST` to one returns a 400 naming the framework rather than a generic
-  error. Both SDKs support streaming; AK simply has not wired those APIs yet. That is a pending
+  error. Both SDKs support streaming; OAK simply has not wired those APIs yet. That is a pending
   adapter capability, not a permanent SDK limit.
 - **Reasoning is available on all five streaming adapters**, and only when the model actually produces
-  it. AK maps the model's reasoning *summary*, so a reasoning-capable model still emits nothing unless
+  it. OAK maps the model's reasoning *summary*, so a reasoning-capable model still emits nothing unless
   the summary is requested: on LangGraph that means `ChatOpenAI(..., reasoning={"effort": ...,
   "summary": "auto"})`, and the equivalent on other providers. An empty thinking block is far more
   often an unrequested summary than a missing capability.
@@ -227,7 +227,7 @@ Reading the table:
   is its own decision; the others have no equivalent signal. A client's step handling is therefore
   dead code for now, which is worth knowing before you build UI around it.
 - **Handoffs surface as tool calls**, because that is what they are in every framework that has them:
-  the OpenAI SDK lifts them into their own run items and AK maps them back onto `ToolCall*`; ADK's
+  the OpenAI SDK lifts them into their own run items and OAK maps them back onto `ToolCall*`; ADK's
   `TransferToAgentTool` is an ordinary function tool; Pydantic AI has no handoff primitive, so
   delegation is a tool calling another agent. LangGraph is the exception: it surfaces a handoff only
   when the application built it *as a tool*; a bare `Command(goto=...)` edge transition does not
@@ -235,17 +235,17 @@ Reading the table:
 
 ## Notes and limits
 
-- **`threadId` is Agent Kernel's `session_id`.** Conversation history is rebuilt from the session
+- **`threadId` is OAK's `session_id`.** Conversation history is rebuilt from the session
   store, so only the final `user` message in `messages` is read: there is no need to send the
   transcript, and any history you do send is ignored.
-- **Client-declared `tools` are ignored.** AK builds an agent's tool registry when the agent is
+- **Client-declared `tools` are ignored.** OAK builds an agent's tool registry when the agent is
   constructed, so a tool named per-request has nothing to bind to.
-- **Audio and video content is rejected with a 400.** AK has no equivalent request type, and mapping
+- **Audio and video content is rejected with a 400.** OAK has no equivalent request type, and mapping
   them onto the generic file type produces misleading model output. Images and documents are accepted,
   from an inline base64 `data` source or a `url` source.
 - **A structured payload maps onto AG-UI's `CustomEvent`.** `DataMessage`, the one stream event
   that carries an object rather than scalars, becomes a `CustomEvent` whose `name` is the media
-  type and whose `value` is the payload. Nothing in Agent Kernel emits one: a `PostHook` assembles
+  type and whose `value` is the payload. Nothing in OAK emits one: a `PostHook` assembles
   it from what it has accumulated and returns it alongside the closing event, which is what
   `on_stream_event`'s list form is for. Note the cost of that approach: a hook cannot know whether
   a message is UI or prose until the closing boundary, so it holds every delta back, and such an

@@ -16,19 +16,19 @@ Azure Functions supports **synchronous REST** execution (`AzureFunctions.handler
 graph LR
     A[User] --> B[API Management / Function App]
     B --> C[Azure Function]
-    C --> D[Agent Kernel Runtime]
+    C --> D[OAK Runtime]
     D --> E[Your Agent]
     C --> F[Azure Cache for Redis]
     C --> G[Azure Cosmos DB]
     
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ## Prerequisites
 
 - Azure CLI configured
 - Azure subscription with appropriate permissions
-- Agent Kernel with Azure extras: `uv add "agentkernel[azure]"`
+- Open Agent Kernel (OAK) with Azure extras: `uv add "agentkernel[azure]"`
 
 ## Deployment
 
@@ -171,8 +171,8 @@ graph TB
     
     F --> G[Cosmos DB]
     
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style G fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style G fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 **Key Features:**

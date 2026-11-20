@@ -1,7 +1,7 @@
 ---
 slug: /agent-kernel-execution-broker
 title: "Introducing the Agent Kernel Execution Broker: A Safe Place for AI Agents to Run Code"
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, sandbox, execution-broker, security, docker, e2b, daytona, aws, enterprise-ai, code-execution]
 image: /img/blog/execution-broker-banner.png
 ---

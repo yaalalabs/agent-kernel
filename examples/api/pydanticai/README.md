@@ -1,8 +1,8 @@
-# Agent Kernel running Pydantic AI Agents on a REST API
+# Open Agent Kernel running Pydantic AI Agents on a REST API
 
-This package contains a demo of Agent Kernel running agents built with Pydantic AI. Users can
-interact with agents via the Agent Kernel REST API. The example also demonstrates how to add a
-custom route to the Agent Kernel REST API, and how to add a custom middleware (pre-hook) to manage
+This package contains a demo of Open Agent Kernel running agents built with Pydantic AI. Users can
+interact with agents via the OAK REST API. The example also demonstrates how to add a
+custom route to the OAK REST API, and how to add a custom middleware (pre-hook) to manage
 additional context passed to the agent (RAG-style).
 
 Multi-agent routing uses **delegation-via-tool** (Pydantic AI has no `handoffs=` primitive): the

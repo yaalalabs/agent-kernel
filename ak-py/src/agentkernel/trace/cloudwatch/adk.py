@@ -3,10 +3,11 @@ from typing import Any
 
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 
-from ...core import Session
+from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
-from ...framework.adk.adk import GoogleADKRunner
-from .cloudwatch import INPUT_VALUE, OUTPUT_VALUE, CloudWatch
+from ...framework.adk.adk import GoogleADKRealtimeRunner, GoogleADKRunner
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
+from .cloudwatch import INPUT_VALUE, OUTPUT_VALUE, CloudWatch, CloudWatchRealtimeCallSpan
 
 
 class CloudWatchADKRunner(GoogleADKRunner):
@@ -35,3 +36,14 @@ class CloudWatchADKRunner(GoogleADKRunner):
             span.set_attribute(INPUT_VALUE, result.prompt)
             span.set_attribute(OUTPUT_VALUE, str(result))
         return result
+
+
+class CloudWatchADKRealtimeRunner(TracedRealtimeRunner, GoogleADKRealtimeRunner):
+    """
+    The ADK realtime runner with one CloudWatch span over each call, tagged with the session id as this provider's ``run()`` span is.
+    """
+
+    SPAN_NAME = "Agent Kernel ADK realtime"
+
+    def _start_call_span(self, session: Session, agent: Agent) -> RealtimeCallSpan:
+        return CloudWatchRealtimeCallSpan(self.SPAN_NAME, session.id)

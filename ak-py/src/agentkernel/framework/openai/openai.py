@@ -18,7 +18,6 @@ from openai.types.responses.response_text_delta_event import ResponseTextDeltaEv
 
 from ...core import Agent as BaseAgent
 from ...core import Module
-from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.config import AKConfig
@@ -52,6 +51,7 @@ from ...core.model import (
 )
 from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
+from ...realtime.base import RealtimeRunner as BaseRealtimeRunner
 from ...secret import SecretManager
 from ...trace import Trace
 
@@ -639,7 +639,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
     The wrapped agent must be a ``RealtimeAgent``; the SDK owns its tools, handoffs and guardrails.
     Run options: ``model`` and ``config`` reach ``RealtimeRunner(...)``, ``model_config`` reaches ``run(...)``.
-    Agent Kernel hooks and guardrails do not run on this path.
+    Agent Kernel hooks run on the call in the realtime pool, not in this adapter (see docs/specs/927-realtime-hooks).
     """
 
     RUNNER_OPTIONS: ClassVar[frozenset[str]] = frozenset({"model", "config"})
@@ -651,13 +651,10 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
     def __init__(self):
         super().__init__(FRAMEWORK)
+        self._log = logging.getLogger("ak.openai.realtime")
         self._session: RealtimeSession | None = None
-        self._callback: Callable | None = None
         self._listen_task: asyncio.Task | None = None
-        self._closing = False
         self._response_in_flight = False
-        self._speaker: str | None = None
-        self._roster: list[str] = []
 
     def team(self, agent: BaseAgent) -> list[str]:
         """Every agent reachable through ``handoffs``, the starting agent first."""
@@ -755,19 +752,18 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            _log.error(f"OpenAI realtime session error: {e}")
-            if not self._closing:
-                await self._callback("error", {"message": f"OpenAI realtime session error: {e}"})
+            await self._report_listen_failed(f"OpenAI realtime session error: {e}")
             return
-        if not self._closing:
-            # A clean end of the event stream means the native session closed, not that a turn finished.
-            await self._callback("error", {"message": "OpenAI realtime session ended"})
+        # A clean end of the event stream means the native session closed, not that a turn finished.
+        await self._report_listen_ended("OpenAI realtime session ended")
 
     async def _handle_event(self, event: Any) -> None:
         """Maps one SDK session event onto the pool's events."""
         kind = event.type
         if kind == "audio":
-            await self._callback("audio_delta", {"delta": base64.b64encode(event.audio.data).decode("utf-8"), "message_id": event.item_id})
+            await self._callback(
+                BaseRealtimeRunner.Event.AUDIO_DELTA, {"delta": base64.b64encode(event.audio.data).decode("utf-8"), "message_id": event.item_id}
+            )
         elif kind == "raw_model_event":
             await self._handle_model_event(event.data)
         elif kind == "handoff":
@@ -777,42 +773,35 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         elif kind == "audio_interrupted":
             await self._interrupted()
         elif kind == "guardrail_tripped":
-            _log.warning(f"Realtime output guardrail tripped: {event.message[:200]}")
+            self._log.warning(f"Realtime output guardrail tripped: {event.message[:200]}")
             await self._interrupted()
         elif kind == "tool_approval_required":
             await self._refuse_approval(event)
         elif kind == "error":
             # An error the session survives; one it cannot survive raises in _listen instead.
-            _log.warning(f"OpenAI realtime error: {event.error}")
+            self._log.warning(f"OpenAI realtime error: {event.error}")
 
     async def _handle_model_event(self, data: Any) -> None:
         kind = data.type
         if kind in ("transcript_delta", "output_text_delta"):
-            await self._callback("transcript_delta", {"delta": data.delta, "message_id": data.item_id})
+            await self._callback(BaseRealtimeRunner.Event.TRANSCRIPT_DELTA, {"delta": data.delta, "message_id": data.item_id})
+        elif kind == "input_audio_transcription_completed":
+            text = (data.transcript or "").strip()
+            if text:
+                await self._callback(BaseRealtimeRunner.Event.INPUT_TRANSCRIPT, {"text": text, "message_id": data.item_id})
         elif kind == "turn_started":
             self._response_in_flight = True
         elif kind == "turn_ended":
             self._response_in_flight = False
-            await self._callback("done", {"status": "completed"})
-
-    async def _speaker_changed(self, agent: str, previous: str | None = None) -> None:
-        """Reports a change of speaker once (the SDK names it on both handoff and agent_start), with the roster when the agent is new."""
-        if agent == self._speaker:
-            return
-        data: dict[str, Any] = {"agent": agent, "previous_agent": previous or self._speaker}
-        if agent not in self._roster:
-            self._roster.append(agent)
-            data["agents"] = list(self._roster)
-        self._speaker = agent
-        await self._callback("agent_changed", data)
+            await self._callback(BaseRealtimeRunner.Event.DONE, {"status": "completed"})
 
     async def _interrupted(self) -> None:
         """Reports ``interrupt`` while a response is in flight, else ``speech_started``: the SDK sends one event for both."""
         if self._response_in_flight:
             self._response_in_flight = False
-            await self._callback("interrupt", {})
+            await self._callback(BaseRealtimeRunner.Event.INTERRUPT, {})
         else:
-            await self._callback("speech_started", {})
+            await self._callback(BaseRealtimeRunner.Event.SPEECH_STARTED, {})
 
     async def _refuse_approval(self, event: Any) -> None:
         """Rejects a tool call that needs approval, so the model is not left waiting, and fails the connection."""
@@ -821,7 +810,8 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
             await self._session.reject_tool_call(event.call_id)
         finally:
             await self._callback(
-                "error", {"message": f"Tool '{name}' of agent '{event.agent.name}' needs approval, which a realtime session cannot get"}
+                BaseRealtimeRunner.Event.ERROR,
+                {"message": f"Tool '{name}' of agent '{event.agent.name}' needs approval, which a realtime session cannot get"},
             )
 
     async def append_audio(self, base64_audio: str) -> None:
@@ -938,16 +928,26 @@ class OpenAIModule(Module):
         Initializes an OpenAIModule instance.
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
-        :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
+        :param realtime_runner_cls: Optional realtime runner class for ``execution.mode: realtime``; defaults to the
+            OpenAI realtime runner, or the configured tracer's traced one when tracing is enabled.
         """
         super().__init__()
-        self.realtime_runner_cls = realtime_runner_cls or OpenAIRealtimeRunner
+        # A tracer is built only when a runner is left to choose, as before: a module given both runners never touches tracing.
+        needs_tracer = runner is None or realtime_runner_cls is None
+        tracer = Trace.get() if needs_tracer and AKConfig.get().trace.enabled else None
         if runner is not None:
             self.runner = runner
-        elif AKConfig.get().trace.enabled:
-            self.runner = Trace.get().openai()
+        elif tracer is not None:
+            self.runner = tracer.openai()
         else:
             self.runner = OpenAIRunner()
+        # After the text runner: its constructor installs the instrumentor; the realtime method then finds it installed.
+        if realtime_runner_cls is not None:
+            self.realtime_runner_cls = realtime_runner_cls
+        elif tracer is not None and (traced := tracer.openai_realtime()) is not None:
+            self.realtime_runner_cls = traced
+        else:
+            self.realtime_runner_cls = OpenAIRealtimeRunner
         self.load(agents)
 
     def _wrap(self, agent: Agent | RealtimeAgent, agents: list[Agent | RealtimeAgent]) -> BaseAgent:

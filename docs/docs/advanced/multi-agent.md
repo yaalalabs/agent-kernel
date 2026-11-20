@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Multi-Agent Systems
 
-Build collaborative agent systems with Agent Kernel.
+Build collaborative agent systems with Open Agent Kernel (OAK).
 
 ## Architecture Patterns
 
@@ -16,7 +16,7 @@ graph TB
     A --> C[Specialist 2]
     A --> D[Specialist 3]
     
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Peer-to-Peer Pattern
@@ -27,9 +27,9 @@ graph LR
     B <--> C[Agent 3]
     C <--> A
     
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style B fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
-    style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style B fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ### Pipeline Pattern
@@ -40,7 +40,7 @@ graph LR
     B --> C[Agent 3]
     C --> D[Agent 4]
     
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 Support and documentation to be available soon!

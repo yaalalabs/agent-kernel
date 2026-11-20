@@ -1,8 +1,8 @@
-# Agent Kernel running LangGraph Agents with Walled AI Guardrails configured
+# Open Agent Kernel running LangGraph Agents with Walled AI Guardrails configured
 
-This package contains a demo of Agent Kernel running agents built with LangGraph
+This package contains a demo of Open Agent Kernel running agents built with LangGraph
 with [Walled AI](https://walled.ai/) guardrails configured.
-Users can interact with agents via the Agent Kernel CLI.
+Users can interact with agents via the OAK CLI.
 
 Install dependencies using:
 
@@ -22,7 +22,7 @@ To run tests:
 
 ## Guardrail Configuration
 
-### 1. Update Agent Kernel Configuration
+### 1. Update OAK Configuration
 
 Set guardrail type to `walledai` in `config.yaml`:
 
@@ -151,5 +151,5 @@ export OPENAI_API_KEY=your-openai-api-key
 ## Additional Resources
 
 - [Walled AI Documentation](https://walled.ai/)
-- [Agent Kernel Documentation](https://github.com/yaalalabs/agent-kernel/blob/develop/ak-py/README.md)
+- [OAK Documentation](https://github.com/yaalalabs/agent-kernel/blob/develop/ak-py/README.md)
 

@@ -1,6 +1,6 @@
-# Contributing to Agent Kernel
+# Contributing to Open Agent Kernel
 
-Thank you for your interest in contributing to Agent Kernel! We welcome contributions from the community and are excited to have you here.
+Thank you for your interest in contributing to Open Agent Kernel (OAK)! We welcome contributions from the community and are excited to have you here.
 
 ## Table of Contents
 
@@ -18,10 +18,10 @@ This project and everyone participating in it is governed by our [Code of Conduc
 
 ## How to Contribute
 
-There are many ways to contribute to Agent Kernel:
+There are many ways to contribute to OAK:
 
-- **Agent Kernel core contributions**: Bug fixes, new features, performance improvements
-- **Agent Kernel integrations**: New integrations to Agent Kernel (Eg: A messaging platform integration)
+- **OAK core contributions**: Bug fixes, new features, performance improvements
+- **OAK integrations**: New integrations to OAK (Eg: A messaging platform integration)
 - **Documentation**: Improve existing docs, add examples, write tutorials
 - **Testing**: Write tests, report bugs, verify fixes
 - **Community support**: Help others in discussions and issues
@@ -129,7 +129,7 @@ When reporting bugs, please include:
 3. **Expected behavior**: What you expected to happen
 4. **Actual behavior**: What actually happened
 5. **Environment**:
-   - Agent Kernel version
+   - OAK version
    - Python version
    - Operating system
    - Framework being used (Langraph, OpenAI Agents, etc.)
@@ -167,4 +167,4 @@ If you have questions about contributing:
 - Check the [Developer Guide](DEVELOPER_GUIDE.md) for technical details
 - Reach out to us via our [Discord Server](https://discord.gg/snrPzb46uu)
 
-Thank you for contributing to Agent Kernel! 🎉
+Thank you for contributing to OAK! 🎉

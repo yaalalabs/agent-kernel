@@ -8,7 +8,7 @@ sidebar_position: 8
 a paragraph. The agent emits JSON describing components — a Card, a Text, a Button — and your client
 draws them with its own pre-approved widgets. The agent never sends HTML or JavaScript.
 
-Agent Kernel's part is small and deliberate: **it labels the payload and carries it intact.** It
+Open Agent Kernel's part is small and deliberate: **it labels the payload and carries it intact.** It
 ships no component catalog, parses nothing, and validates nothing.
 
 ## Turning it on
@@ -40,9 +40,9 @@ agent = Agent(
 )
 ```
 
-**Why Agent Kernel does not ship one.** A catalog has to match the components your frontend actually
+**Why OAK does not ship one.** A catalog has to match the components your frontend actually
 implements. One listing components your client cannot draw is worse than no catalog — the model will
-emit them confidently and nothing will render. Agent Kernel cannot know what your frontend can draw,
+emit them confidently and nothing will render. OAK cannot know what your frontend can draw,
 so the catalog is yours, and so is the prompt built from it.
 
 See [`examples/api/a2ui-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/a2ui-openai)
@@ -84,13 +84,13 @@ it has always carried when it is not, so nothing changes for a client that has n
 ## Limits worth knowing before you build on it
 
 **It does not reach a streamed run.** The hook runs on `Runtime.run`, and `Runtime.stream` never
-calls one — so with `execution.message_type: delta` the config block does nothing. Agent Kernel logs a
+calls one — so with `execution.message_type: delta` the config block does nothing. OAK logs a
 warning on the first request rather than leaving you to discover it. Labelling a streamed payload
 means writing an `on_stream_event` hook, which also means holding deltas back until the message
 ends.
 
 **It does not reach an `output_type` agent.** A reply that is already structured means you handed
-the framework a schema, whose shape — your union members, your discriminator — Agent Kernel has
+the framework a schema, whose shape — your union members, your discriminator — OAK has
 never seen. Such a reply is passed through untouched, so the config block and the `output_type`
 route cannot collide: one or the other owns the labelling, never both. On that route, write the
 post-hook yourself.

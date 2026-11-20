@@ -1,10 +1,10 @@
 # Overview
 
-Agent Kernel provides various built in integrations to connect your AI agents with external platforms and services. These integrations allow you to deploy your agents in real-world environments and interact with users through different channels.
+Open Agent Kernel (OAK) provides various built in integrations to connect your AI agents with external platforms and services. These integrations allow you to deploy your agents in real-world environments and interact with users through different channels.
 
 ## Execution Hooks
 
-Agent Kernel provides powerful execution hooks that let you customize agent behavior at runtime.
+OAK provides powerful execution hooks that let you customize agent behavior at runtime.
 
 - **[Execution Hooks](./hooks)** - Pre-execution and post-execution hooks for guardrails, RAG context injection, response moderation, and more. See the [detailed hooks documentation](./hooks) for complete guide with examples.
 
@@ -16,7 +16,7 @@ Agent Kernel provides powerful execution hooks that let you customize agent beha
 
 ## Realtime voice
 
-- **[LiveKit](./livekit)** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms with `execution.mode: realtime`. A stateful `LiveKitEdgeGateway`, hosted by `GatewayRunner`, receives user audio and text and delivers the model's streamed voice and transcript back to the room.
+- **[LiveKit](./livekit)** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms with `execution.mode: realtime`. `EdgeLifecycleRESTRequestHandler` hosts `LiveKitLifecycleAdapter`, which starts a stateful `LiveKitEdgeAdapter` per room from LiveKit's room webhooks; the edge receives user audio and text and delivers the model's streamed voice and transcript back to the room. Your pre-hooks and post-hooks run on the call too; see [Realtime calls](./hooks.md#realtime-hooks).
 
 ## Social media
 These are built on REST APIs and you can install custom integrations as well.
@@ -42,13 +42,13 @@ config:
 flowchart LR
     D["Integration"] --> I["Slack"] & J["WhatsApp"] & K["Messenger"] & M["Instagram"] & N["Telegram"] & O["Gmail"] & T["Teams"]
 
-    style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style K fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style N fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style O fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
-    style T fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style I fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style J fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style K fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style M fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style N fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style O fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
+    style T fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### How a messaging integration works
@@ -76,7 +76,7 @@ flowchart LR
 
     style IN fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
     style OUT fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
-    style AR fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#B1CDFF,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 Mount an integration with `IOHandler.run(...)`, which starts the queue topology alongside the

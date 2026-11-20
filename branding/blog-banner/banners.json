@@ -1,0 +1,92 @@
+[
+  {
+    "slug": "announcing-agent-kernel",
+    "post": "2025-10-23-announcing-agent-kernel.md",
+    "label": "Announcement",
+    "title": "The framework-agnostic",
+    "accent": "AI agent runtime",
+    "subtitle": "Develop, test and deploy AI agents across any framework and environment.",
+    "drawing": "build"
+  },
+  {
+    "slug": "observability-support",
+    "post": "2025-11-17-observability-support.md",
+    "label": "Observability",
+    "title": "Production-grade",
+    "accent": "observability",
+    "subtitle": "Tracing with Langfuse and OpenLLMetry, for insight into your AI agent systems.",
+    "drawing": "observe"
+  },
+  {
+    "slug": "messaging-platform-integrations",
+    "post": "2025-11-21-messaging-platform-integrations.md",
+    "label": "Integrations",
+    "title": "Connect",
+    "accent": "everywhere",
+    "subtitle": "Slack, WhatsApp and Messenger: deploy your AI agents where your users already are.",
+    "drawing": "connect"
+  },
+  {
+    "slug": "hooks-and-smart-memory",
+    "post": "2025-12-18-hooks-and-smart-memory.md",
+    "label": "Hooks and memory",
+    "title": "Execution hooks and",
+    "accent": "smart memory",
+    "subtitle": "Control over how your agents think, remember and respond.",
+    "drawing": "remember"
+  },
+  {
+    "slug": "guardrails-content-safety",
+    "post": "2026-01-13-guardrails-content-safety.md",
+    "label": "Guardrails",
+    "title": "Safe AI",
+    "accent": "at scale",
+    "subtitle": "Guardrails: enterprise-grade content safety for AI agents in production.",
+    "drawing": "guard"
+  },
+  {
+    "slug": "azure-multi-cloud",
+    "post": "2026-02-16-azure-multi-cloud.md",
+    "label": "Multi-cloud",
+    "title": "Azure support",
+    "accent": "is here",
+    "subtitle": "Write once. Deploy anywhere.",
+    "drawing": "scale"
+  },
+  {
+    "slug": "framework-agnostic-tools",
+    "post": "2026-02-18-framework-agnostic-tools.md",
+    "label": "Tools",
+    "title": "Write once,",
+    "accent": "run anywhere",
+    "subtitle": "Universal tools for AI agents: stop rewriting the same tools for different frameworks.",
+    "drawing": "build"
+  },
+  {
+    "slug": "agent-skills-cli",
+    "post": "2026-03-10-agent-skills-cli.md",
+    "label": "Agent skills",
+    "title": "Enterprise agents,",
+    "accent": "built for you",
+    "subtitle": "Tell your coding assistant what you want. Agent skills handle the rest.",
+    "drawing": "build"
+  },
+  {
+    "slug": "walledai-guardrails",
+    "post": "2026-03-10-walledai-guardrails.md",
+    "label": "Guardrails",
+    "title": "Walled AI guardrails",
+    "accent": "in practice",
+    "subtitle": "A practical safety and PII masking pipeline for agent input and output.",
+    "drawing": "guard"
+  },
+  {
+    "slug": "knowledge-bases",
+    "post": "2026-05-04-knowledge-bases-self-evolving-agents.md",
+    "label": "Knowledge bases",
+    "title": "The missing layer that lets",
+    "accent": "AI agents self-evolve",
+    "subtitle": "Knowledge bases, so an agent stops starting every conversation from zero.",
+    "drawing": "remember"
+  }
+]
