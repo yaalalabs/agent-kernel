@@ -497,6 +497,17 @@ class SpendLedgerContract:
         assert await ledger.load(_USER) is None
 
     @pytest.mark.asyncio
+    async def test_contract_an_expired_document_is_replaced_from_scratch(self, ledger, clock):
+        """A store that deletes expired documents late must still let a fresh document replace one."""
+        await ledger.add(_USER, [_row("old", _LEDGER_NOW)], None, self._cursor(_LEDGER_NOW, "old"))
+        clock.now = later = max(period.end_of(period.end_of(_LEDGER_NOW)) for period in BudgetPeriod)
+
+        assert await ledger.add(_USER, [_row("new", later)], None, self._cursor(later, "new")) is True
+
+        assert await ledger.cursor(_USER) == self._cursor(later, "new")
+        assert (await ledger.read(_USER, BudgetPeriod.MONTHLY, later)).by_model["openai/gpt-4o"].requests == 1
+
+    @pytest.mark.asyncio
     async def test_contract_a_row_in_another_currency_adds_nothing(self, ledger):
         euro = _row("r1", _LEDGER_NOW).model_copy(update={"currency": "EUR"})
 
