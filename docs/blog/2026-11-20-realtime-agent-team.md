@@ -19,7 +19,7 @@ That experience needs more than a model that can speak. Audio has to keep moving
 
 ## See It on a Real Call
 
-Here is a flight disruption desk built on this path. A traveller whose flight was cancelled talks to a concierge, a rebooking specialist and a care specialist by voice. The case board starts empty and fills in as the agents work: the booking once the concierge finds it, then the new flight, the meal voucher and the compensation claim. Watch the handoffs between the three agents, each one taking the call under its own name and voice. (This is a recording of a live call. The three agents are live Gemini voices; the caller's voice is synthetic.)
+Here is a flight disruption desk built on this path. A traveller whose flight was cancelled talks to a concierge, a rebooking specialist and a care specialist by voice. The case board starts empty and fills in as the agents work: the booking once the concierge finds it, then the new flight, the meal voucher and the compensation claim. Watch the handoffs between the three agents, each one taking the call under its own name and voice. (This is a recording of a live call, with the pauses where the caller was thinking shortened. The agents' response times are untouched. The three agents are live Gemini voices; the caller's voice is synthetic.)
 
 <video
   controls
