@@ -109,6 +109,12 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     `total_spend` sums observation rows. Header values go through `gateway_user_id` (a `langfuse-metadata` value that
     still holds a colon is quoted under `ak~`, so it reverses exactly), and only the 1 KiB per-value
     limit is checked, since four values cannot reach 8 KiB (§5.3).
+28. **Ledger backends with late expiry, and how each compares and sets.** DynamoDB TTL, Firestore TTL policies and
+    CosmosDB (no TTL) leave an expired document in place, which `load` reads as absent; a write from version 0 may
+    replace such a document, or the user's ledger would be stuck until the store deletes it. Firestore uses a write
+    conditioned on the snapshot's update time instead of a transaction. Redis and Valkey re-read the value, check its
+    version and pass those exact bytes to the driver's script. Every backend requires its own
+    `cost.budgets.ledger.<type>` block and runs I/O on a worker thread (§12.4).
 
 ## Design
 
@@ -1276,9 +1282,9 @@ Each backend stores the document as JSON (`LedgerDocument.model_dump_json()`).
 |---|---|---|---|
 | `in_memory` | class-level `dict[user_id, LedgerDocument]` behind a `threading.Lock` | version compare under the lock | `expires_at` checked on load |
 | `redis`, `valkey` (`_RedisLikeSpendLedger`) | key `{prefix}{user_id}` | **new driver method** `_RedisLikeDriver.compare_and_set(key, expected: bytes \| None, value: bytes, ttl: int) -> bool`. It is one Lua script (`EVAL`): `GET` equals expected (absent equals `nil`) → `SET ... EX ttl` and return 1, else return 0. The driver gains it beside `rpush_with_expiry` (`core/util/driver/redis_like.py:242`). It is generic, with no ledger knowledge (driver rule 2) | `EX` per write |
-| `dynamodb` | item `{user_id (pk), doc, version, expiry_time}` through the native `DynamoDBDriver.table` handle (`driver/dynamodb.py:104`; driver rule 3) | `put_item` with `ConditionExpression = attribute_not_exists(user_id) OR version = :v` | `expiry_time` epoch (the table's TTL attribute, as `DynamoDBDriver` names it, `:147-149`) |
-| `cosmosdb` | Table API entity `{PartitionKey: user_id, RowKey: "ledger", doc, expiry_time}` through the native `CosmosDBDriver.table_client` (`driver/cosmosdb.py:39`) | `update_entity(mode=REPLACE, etag=..., match_condition=MatchConditions.IfNotModified)`, or `create_entity` when absent. `ResourceModifiedError` / `ResourceExistsError` → `False` | `expiry_time` checked on load (the Table API has no TTL; as the thread store, documented) |
-| `firestore` | document `{collection}/{user_id}` through the native `FirestoreDriver.collection` (`driver/firestore.py:48`) | `@firestore.transactional` read-check-write | `expiry_time` timestamp (a Firestore TTL policy configured by the operator; documented) |
+| `dynamodb` | item `{user_id (pk), doc, version, expiry_time}` through the native `DynamoDBDriver.table` handle (`driver/dynamodb.py:104`; driver rule 3); reads are `ConsistentRead` | `put_item` with `ConditionExpression = version = :v`, or from version 0 `attribute_not_exists(user_id) OR expiry_time <= :now` (an expired item TTL has not deleted yet is replaceable, deviation 28) | `expiry_time` epoch (the table's TTL attribute, as `DynamoDBDriver` names it, `:147-149`) |
+| `cosmosdb` | Table API entity `{PartitionKey: user_id, RowKey: "ledger", doc, expiry_time}` through the native `CosmosDBDriver.table_client` (`driver/cosmosdb.py:39`) | `update_entity(mode=REPLACE, etag=..., match_condition=MatchConditions.IfNotModified)`, or `create_entity` when absent; from version 0 an expired entity is replaced on its etag (deviation 28). `ResourceModifiedError` / `ResourceExistsError` → `False` | `expiry_time` checked on load (the Table API has no TTL; as the thread store, documented) |
+| `firestore` | document `{collection}/{user_id}` through the native `FirestoreDriver.collection` (`driver/firestore.py:48`) | read the snapshot, check the version, then `create` when absent or `update(option=Client.write_option(last_update_time=snapshot.update_time))`; `AlreadyExists` / `FailedPrecondition` → `False` (deviation 28) | `expiry_time` timestamp (a Firestore TTL policy configured by the operator; documented) |
 
 `SpendLedgerFactory.create(config: _CostLedgerConfig)` follows the thread-store builder shape. It covers
 `in_memory`, `redis` (`require_extra("redis")`), `valkey` (`valkey`), `dynamodb` (`aws`), `cosmosdb` (`azure`),
