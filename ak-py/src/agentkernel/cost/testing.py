@@ -1,11 +1,14 @@
 """Public testing helpers for cost management backends. Imports pytest, so import it from test code only."""
 
+import copy
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
 
+from ..core.model import Principal
+from .attribution import AttributionContext, Attributor
 from .errors import UnsupportedCapabilityError, UsageRetrievalError
 from .gateway.base import LLMGateway
 from .model import Attribution, GatewayFilter, ModelUsage, SpendCursor, SpendTotal, UsageQuery, UsageWindow
@@ -246,3 +249,51 @@ class LLMGatewayContract:
 
         assert caught_up is True
         assert seen == [row.row_id for row in rows]
+
+
+_USER_PRINCIPAL = Principal(subject="user-123", provider="oidc", namespace="https://issuer.example")
+_CONTEXT = AttributionContext(principal=_USER_PRINCIPAL, agent_name="support", session_id="s-1", request_id="r-1")
+
+
+class AttributorContract:
+    """Conformance suite every Attributor subclasses. Override `attributor`.
+
+    Not prefixed ``Test`` so pytest does not collect it on its own.
+    """
+
+    @pytest.fixture
+    def attributor(self) -> Attributor:
+        """The attributor under contract; every subclass must override this fixture."""
+        raise NotImplementedError("subclasses must override the `attributor` fixture")
+
+    def test_contract_same_context_same_attribution(self, attributor):
+        assert attributor.resolve(_CONTEXT) == attributor.resolve(_CONTEXT)
+
+    def test_contract_session_data_never_changes_the_user(self, attributor):
+        other = AttributionContext(principal=_USER_PRINCIPAL, agent_name="billing", session_id="s-2", request_id="r-2")
+
+        assert attributor.resolve(other).user_id == attributor.resolve(_CONTEXT).user_id
+
+    def test_contract_the_acting_agent_never_becomes_the_user(self, attributor):
+        """The spoofing rule (§9): the run's principal carries the agent as ``actor``; the user comes from the subject."""
+        acting = AttributionContext(
+            principal=_USER_PRINCIPAL.with_actor(Principal(subject="support", kind="agent", provider="agent")),
+            agent_name="support",
+            session_id="s-1",
+            request_id="r-1",
+        )
+
+        assert attributor.resolve(acting).user_id == attributor.resolve(_CONTEXT).user_id
+
+    def test_contract_the_context_is_left_unchanged(self, attributor):
+        before = copy.deepcopy(_CONTEXT)
+
+        attributor.resolve(_CONTEXT)
+
+        assert _CONTEXT == before and _CONTEXT.principal == before.principal
+
+    def test_contract_session_and_request_are_the_runs(self, attributor):
+        attribution = attributor.resolve(_CONTEXT)
+
+        assert isinstance(attribution, Attribution)
+        assert (attribution.session_id, attribution.request_id) == ("s-1", "r-1")

@@ -29,6 +29,11 @@ _LAZY_EXPORTS = {
     "UsageReport": ".model",
     "UsageResult": ".model",
     "UsageWindow": ".model",
+    # attribution
+    "AttributionContext": ".attribution",
+    "Attributor": ".attribution",
+    "AttributorFactory": ".attribution",
+    "DefaultAttributor": ".attribution",
     # gateway
     "LLMGateway": ".gateway.base",
     "LLMGatewayFactory": ".gateway.factory",
@@ -45,6 +50,7 @@ _LAZY_EXPORTS = {
 __all__ = sorted(_LAZY_EXPORTS)
 
 if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves laziness at runtime
+    from .attribution import AttributionContext, Attributor, AttributorFactory, DefaultAttributor
     from .errors import (
         CostError,
         LedgerBehindError,
