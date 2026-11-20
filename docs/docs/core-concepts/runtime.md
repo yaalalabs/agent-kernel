@@ -66,6 +66,22 @@ async for chunk in runtime.stream(agent, session, requests):
         print(chunk.delta, end="")
 ```
 
+## A realtime call
+
+A realtime (voice) call does not go through `run()` or `stream()`: the framework's own live session (OpenAI Realtime, Google ADK Live) owns the conversation. The realtime connection pool still uses the same `Runtime` steps, so a call is one run that lasts as long as the call:
+
+| Step | `run()` / `stream()` | Realtime call |
+|---|---|---|
+| Current session and agent | `async with session` and the agent's own scoping | The connection sets both itself, around the connect and each hook, without the lock |
+| Publish the caller | `Runtime._publish` | `Runtime._publish`, for each input whose caller changed |
+| Hooks | `Runtime`'s hook methods | The same methods: typed text, caller audio chunks, every output event |
+| Store the session | After each successful run | After each finished turn and when the call ends normally; a failed call stores nothing more |
+| End the run | `session._unpublish_run()` and the volatile-cache clear, in `finally` | The same two calls, when the call closes |
+| Session lock | Held for the run | Not held: a call lasts minutes and would block every other run of the session |
+| Pause and resume (human in the loop) | Supported | Not supported |
+
+See [Realtime internals](../architecture/realtime-internals.md) and [Realtime calls in tracing](../advanced/traceability.md#realtime-calls).
+
 ## Singleton Pattern
 
 The Runtime uses a singleton pattern - there's only one instance:

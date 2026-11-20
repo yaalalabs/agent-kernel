@@ -393,10 +393,12 @@ def test_runners_subclass_their_framework_base_and_activate_instrumentation(reco
 
     tracer = CloudWatch()
     with patch.object(openai_mod, "OpenAIAgentsInstrumentor") as openai_instrumentor:
+        openai_instrumentor.return_value.is_instrumented_by_opentelemetry = False
         assert isinstance(tracer.openai(), OpenAIRunner)
     openai_instrumentor.return_value.instrument.assert_called_once()
 
     with patch.object(adk_mod, "GoogleADKInstrumentor") as adk_instrumentor:
+        adk_instrumentor.return_value.is_instrumented_by_opentelemetry = False
         assert isinstance(tracer.adk(), GoogleADKRunner)
     adk_instrumentor.return_value.instrument.assert_called_once()
 

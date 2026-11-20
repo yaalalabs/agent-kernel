@@ -183,7 +183,7 @@ See [Human in the Loop](../advanced/human-in-the-loop.md).
 
 ## Realtime voice
 
-With `execution.mode: realtime`, the entry agent is an `agents.realtime.RealtimeAgent`. The SDK's own `RealtimeSession` runs the tools and the `handoffs`; Agent Kernel carries the audio. `Module.run_options(agent, model_config={...})` sets the model and voice. A tool that needs approval is rejected. AK hooks run on the call; see [Realtime calls](../integrations/hooks.md#realtime-hooks) for what they can and cannot do. See [LiveKit Voice](../integrations/livekit.md).
+With `execution.mode: realtime`, the entry agent is an `agents.realtime.RealtimeAgent`. The SDK's own `RealtimeSession` runs the tools and the `handoffs`; Agent Kernel carries the audio. `Module.run_options(agent, model_config={...})` sets the model and voice. A tool that needs approval is rejected. AK hooks run on the call; see [Realtime calls](../integrations/hooks.md#realtime-hooks) for what they can and cannot do. The AK session is stored when a call ends normally, and with `trace.enabled` a call is one trace span tagged with the session id; the SDK's realtime session creates no model or tool spans of its own (see [Realtime Calls](../advanced/traceability.md#realtime-calls)). See [LiveKit Voice](../integrations/livekit.md).
 
 ## Features
 

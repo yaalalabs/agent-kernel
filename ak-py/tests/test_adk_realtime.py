@@ -31,6 +31,7 @@ from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.core.tool import ToolContext as AKToolContext
 from agentkernel.framework.adk.adk import GoogleADKAgent, GoogleADKModule, GoogleADKRealtimeRunner, GoogleADKRunner, GoogleADKToolBuilder
+from agentkernel.realtime.testing import RealtimeRunnerContract
 
 
 def team():
@@ -719,7 +720,7 @@ async def test_a_live_tool_sees_the_session_and_agent_the_pool_set(monkeypatch):
     """ADK runs its tools inside the run_live() generator, on the listener task the adapter starts while connecting."""
     from agentkernel.pipeline.transport.base import QueueTransportFactory
     from agentkernel.pipeline.transport.in_memory import InMemoryTransport
-    from agentkernel.realtime.pool import RealtimeConnection
+    from agentkernel.realtime.connection import RealtimeConnection
 
     seen = {}
 
@@ -760,3 +761,49 @@ async def test_a_live_tool_sees_the_session_and_agent_the_pool_set(monkeypatch):
     assert seen["session"] is session
     assert seen["agent"] is agent
     assert seen["tool_context"].session is session
+
+
+# -- the shared runner contract (agentkernel.realtime.testing) ---------------------------------------
+
+
+class TestGoogleADKRealtimeRunnerContract(RealtimeRunnerContract):
+    """The ADK adapter over the fake native run above."""
+
+    @pytest.fixture(autouse=True)
+    def _native_call(self, native):
+        with Runtime(InMemorySessionStore()):
+            yield
+
+    def make_runner(self):
+        return GoogleADKRealtimeRunner()
+
+    async def start_call(self, runner, callback):
+        coordinator, billing = team()
+        await runner.connect(Session("call"), GoogleADKModule([coordinator, billing]).get_agent("coordinator"), callback)
+
+    async def speak(self, runner):
+        run = NativeRun.latest
+        await run.events.put(audio_event("coordinator"))
+        await run.events.put(model_event("coordinator", partial=True, output_transcription=types.Transcription(text="Hi", finished=False)))
+        await run.events.put(model_event("coordinator", content=types.Content(parts=[types.Part(text="Hi")]), turn_complete=True))
+
+    async def fail_native_session(self, runner):
+        await NativeRun.latest.events.put(model_event("coordinator", error_code="MODEL_ERROR", error_message="The live request failed"))
+
+    async def start_invalid_call(self, runner, callback):
+        coordinator, billing = team()
+        owner = GoogleADKModule([coordinator, billing]).get_agent("coordinator")
+        owner.run_options["session_id"] = "mine"
+        await runner.connect(Session("call"), owner, callback)
+
+    async def start_failing_call(self, runner, callback):
+        class BrokenRunner:
+            def __init__(self, **kwargs):
+                raise RuntimeError("cannot build the ADK runner")
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr("agentkernel.framework.adk.adk.Runner", BrokenRunner)
+            await self.start_call(runner, callback)
+
+    def nothing_opened(self, runner):
+        return runner._queue is None and runner._runner is None and runner._listen_task is None

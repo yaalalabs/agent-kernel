@@ -20,7 +20,8 @@ from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 from agentkernel.realtime.base import RealtimeRunner
-from agentkernel.realtime.pool import RealtimeConnection, RealtimeConnectionPool
+from agentkernel.realtime.connection import RealtimeConnection
+from agentkernel.realtime.pool import RealtimeConnectionPool
 
 PCM_2S = base64.b64encode(b"\x00\x00" * 24000 * 2).decode()  # two seconds of edge-rate (24 kHz) audio
 
@@ -30,7 +31,7 @@ def _isolated(monkeypatch):
     async def send_inline(send, *args):
         return send(*args)
 
-    monkeypatch.setattr("agentkernel.realtime.pool.asyncio.to_thread", send_inline)
+    monkeypatch.setattr("agentkernel.realtime.connection.asyncio.to_thread", send_inline)
     # System hooks are cached per process; a test that wants some installs them itself.
     monkeypatch.setattr(Runtime, "_system_pre_hooks", [])
     monkeypatch.setattr(Runtime, "_system_post_hooks", [])

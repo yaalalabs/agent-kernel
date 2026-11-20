@@ -3,10 +3,11 @@ from typing import Any
 
 from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
 
-from ...core import Session
+from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
-from ...framework.openai.openai import OpenAIRunner
-from .cloudwatch import INPUT_VALUE, OUTPUT_VALUE, CloudWatch
+from ...framework.openai.openai import OpenAIRealtimeRunner, OpenAIRunner
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
+from .cloudwatch import INPUT_VALUE, OUTPUT_VALUE, CloudWatch, CloudWatchRealtimeCallSpan
 
 
 class CloudWatchOpenAIRunner(OpenAIRunner):
@@ -35,3 +36,14 @@ class CloudWatchOpenAIRunner(OpenAIRunner):
             span.set_attribute(INPUT_VALUE, result.prompt)
             span.set_attribute(OUTPUT_VALUE, str(result))
         return result
+
+
+class CloudWatchOpenAIRealtimeRunner(TracedRealtimeRunner, OpenAIRealtimeRunner):
+    """
+    The OpenAI realtime runner with one CloudWatch span over each call, tagged with the session id as this provider's ``run()`` span is.
+    """
+
+    SPAN_NAME = "Agent Kernel OpenAI realtime"
+
+    def _start_call_span(self, session: Session, agent: Agent) -> RealtimeCallSpan:
+        return CloudWatchRealtimeCallSpan(self.SPAN_NAME, session.id)

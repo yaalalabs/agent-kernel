@@ -49,9 +49,30 @@ The pool's output queue can hold audio before LiveKit plays it. Sending audio to
 
 The SDK runs the tools; the pool does not. Before the native session starts, the pool sets `ToolContext`, `Session.current()` and `Agent.current()` once for the call, and the SDK's own tasks inherit them, so a tool sees them as it does on the unary path. The session lock is not held, since a call is one long-lived session. AK system tools (multimodal, sandbox, schedule, knowledge base) and their prompt guidance are attached as in every other execution mode; an ADK `Workflow` root holds no tools, so they attach to its speaking agents, looked up by their own names for the `agents` allow-lists.
 
-A realtime session neither injects nor stores the AK session's `framework_context`, and the AK session is not saved when a call ends.
+A realtime session does not carry the AK session's `framework_context`. A finished turn (`done`, after its `MessageEnd` passed the post-hooks) stores a copy of the AK session: it is pickled on the pool loop, where every change to the session happens, then unpickled and written on a worker thread, in turn order. Each write waits for the one before it, so every turn is written in order, also behind a slow store. `RealtimeConnection.close()` stores the live session once more, after the adapter has disconnected and before the call's identity is unpublished and its volatile cache cleared: the order `Runtime.stream` uses. Writes run off the loop because it is shared by every call and a store is network I/O. A failed call (`_fail`, a failed connect) stores nothing more, so a halted or half-finished turn is never stored and the next call starts from the last finished turn.
 
 AK hooks run on a call as they do in a delta mode: typed text through `PreHook.on_run`, each caller audio chunk through the optional `PreHook.on_stream_input`, and every output event through `PostHook.on_stream_event`, followed by a `MessageEnd` before each `done`. See [Realtime calls](../integrations/hooks.md#realtime-hooks). The input guardrail checks typed text only, and the output guardrail does not run on a streamed reply; use the SDK's own live guardrails where supported. A tool needing human approval or confirmation cannot continue through this LiveKit edge because the room has no decision path; both adapters fail the connection when one is requested (an OpenAI tool with `needs_approval`, an ADK `FunctionTool` with `require_confirmation`) rather than approving it.
+
+## A realtime call vs a text run
+
+A call runs no `Runtime.run()` or `stream()`: the native SDK owns the loop. The pool still takes the same `Runtime` steps those methods take, so a step added there reaches a call too.
+
+| Step | `run()` / `stream()` | Realtime call |
+|---|---|---|
+| `Session.current()`, `Agent.current()` | `async with session` and the agent's own scoping | `RealtimeConnection._hook_context`, around connect and each hook call, without the lock |
+| Publish identity | `Runtime._publish` | `Runtime._publish`, when the caller changes (#603 §8.4) |
+| Pre- and post-hooks | `Runtime` hook loops | The same loops (`run_stream_input_hooks`, `run_stream_event_hooks`) |
+| Store the session | `sessions().store()` on a normal end | The same call on a worker thread, after each finished turn and once more at close |
+| Unpublish, clear the volatile cache | `session._unpublish_run()` and the volatile-cache clear, in `finally` | The same two calls, at close |
+| Trace span | The traced runner (`run()` only) | The traced realtime runner, one span per call |
+
+What still differs, and why:
+
+- **No session lock.** A call lasts minutes; holding the lock would block the session. None is needed: one call owns its session id while it lasts, so only that call uses the session. A new call for the same id waits for the previous call's close to finish first.
+- **No human-in-the-loop.** A live call cannot pause for an approval. Deferred.
+- **`ToolContext` has an empty request list.** Audio has no request list; the pool sets the context around connect.
+- **Identity is published per input, the session stored per finished turn and at the end.** One call has many turns.
+- **`stream()` has no AK span.** A gap in `stream()`, tracked separately.
 
 ## Connection lifetime
 
