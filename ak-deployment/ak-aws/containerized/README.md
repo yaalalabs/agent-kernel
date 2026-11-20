@@ -472,6 +472,17 @@ curl -X GET ".../chat?request_id=..."
 # Returns the stored response body directly, e.g.: {"...": "..."}
 ```
 
+### File Uploads
+
+Non-queue mode exposes `POST {agent_endpoint}-multipart` for file uploads. Queue mode does not expose it
+yet: the ECS queue-mode REST container still serves the older ECS handler, which has no upload route. It
+is added once ECS moves onto the shared queue pipeline (#870). From then on, queue-mode uploads need
+`multimodal.enabled: true` with a shared store (`storage_type: redis`, which `create_redis_cluster` can
+provide, or `dynamodb`, which holds files up to about 300 KB), with identical settings in both containers.
+
+API Gateway HTTP APIs cap a request body at 10 MB, multipart overhead included, so a file just under the
+default 10 MB `api.max_file_size` is refused at the gateway with a 413.
+
 ### WebSocket Mode (`async`)
 
 Creates a **WebSocket API Gateway** that proxies frames to the ECS ingress service over a

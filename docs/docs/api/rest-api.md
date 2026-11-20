@@ -410,6 +410,31 @@ A detailed example with tests are provided [here](https://github.com/yaalalabs/a
   - Better performance and lower memory usage
   - Direct file uploads from forms or file systems
 
+### Files on a queue transport
+
+On the queue pipeline with a broker transport (`sqs`, `kafka`, `nats`, `pubsub`, `servicebus`), a queue message is far smaller than a file. So the edge saves each base64 file or image to the multimodal attachment store and queues only its ID. The agent runner loads the file back by ID before the agent runs. Both `POST /api/v1/chat` and `POST /api/v1/chat-multipart` work this way.
+
+This needs multimodal support with a store that the edge and the agent runner share, with identical settings in both processes:
+
+```yaml
+multimodal:
+  enabled: true
+  storage_type: redis # or dynamodb
+  redis:
+    url: redis://my-redis:6379
+```
+
+With multimodal on, the agent receives a short description of each file and its ID, and can call the `analyze_attachments` tool for a closer look. The agent only handles text, so this works with every framework.
+
+A request that carries file bytes is refused with a 400, before anything is queued, when:
+
+- `multimodal.enabled` is false.
+- `multimodal.storage_type` keeps files in one process (`in_memory`, `session_cache`). `redis`, `dynamodb` and a custom store whose `shared` is `True` work. Text chats still work, and the edge logs a warning at startup.
+- A file is larger than `api.max_file_size`.
+- The store is `dynamodb` and a file is over about 300 KB: a DynamoDB item holds at most 400 KB. Use `redis` for large files. Files saved earlier in the same request are deleted.
+
+Files given as links (`http://`, `https://`, `s3://`) or plain-text `data:` URIs (no `;base64`) carry no stored bytes and pass through as they are. Saved files expire with the store's TTL (`multimodal.redis.ttl` or `multimodal.dynamodb.ttl`, 7 days by default), so the agent can look at them again in later turns. Each session keeps at most `multimodal.max_attachments` files; older ones are removed. The `in_memory` transport is unchanged: edge and runner share one process, so files stay in the message.
+
 ## Custom Routes
 
 OAK REST API allows the users to add custom routes to the existing REST server by two ways. This is a support functionality that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
@@ -468,9 +493,9 @@ if __name__ == "__main__":
 
 Set `execution.mode: rest_sync` and `execution.message_type: delta` in `config.yaml` (or `AK_EXECUTION__MODE=rest_sync` and `AK_EXECUTION__MESSAGE_TYPE=delta`) to enable streaming. With this combination, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required. Other combinations don't stream on the REST chat route: `rest_sync` and `rest_async` with `complete` answer with JSON, and `async` rejects it with a 400 that points to `/ws`.
 
-On the queue pipeline with a broker transport (`sqs`, `kafka`, `nats`, `pubsub`):
+On the queue pipeline with a broker transport (`sqs`, `kafka`, `nats`, `pubsub`, `servicebus`):
 
-- Only `POST /api/v1/chat` streams. `/api/v1/chat-multipart` is not registered, because of broker message-size limits.
+- Both `POST /api/v1/chat` and `POST /api/v1/chat-multipart` stream. Uploaded files are saved first and only their IDs are queued (see [Files on a queue transport](#files-on-a-queue-transport)).
 - SSE needs a shared response store that can hold chunks (Redis or Valkey). Otherwise startup fails with an error naming both fixes: such a store, or `async` with `message_type: delta`.
 
 `execution.mode: stream` was removed and now fails when the configuration loads; use `rest_sync` with `message_type: delta` for SSE.
