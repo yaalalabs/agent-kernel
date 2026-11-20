@@ -1,25 +1,34 @@
 ---
 slug: /realtime-agent-team
-title: "Your Voice Agent Can Bring in a Teammate"
+title: "Production-Ready Voice Agents: Many Specialists, One Conversation"
 authors: [pulindu]
 tags: [agent-kernel, realtime, livekit, voice-agents, multi-agent, openai-agents-sdk, google-adk]
 image: /img/blog/realtime-agent-team-cover.png
-description: "Open Agent Kernel (OAK) connects LiveKit audio to native OpenAI Agents SDK and Google ADK sessions, supports live agent handoffs, runs your hooks on the call, stores the session as the call goes, and traces each call."
+description: "Many AI voice agents can work one conversation as a team: specialists hand the call to each other, your own rules run on the call, and every call is saved and traced. Here is how Open Agent Kernel (OAK) makes that production-ready."
 ---
 
-# Your Voice Agent Can Bring in a Teammate
+# Production-Ready Voice Agents: Many Specialists, One Conversation
 
 ![A caller on a LiveKit support call, with an active agent, a specialist in the room, live captions, and call events.](/img/blog/realtime-agent-team-cover.png)
 
-**“I can help with that. Let me bring in our billing specialist.”** A voice agent can make that handoff without ending the call or asking the caller to start over. The specialist has a separate identity in the same LiveKit room and takes the next turn under their own name.
+**Some jobs are too big for one expert.** A cancelled flight needs someone to find the booking, someone to rebook it, and someone to arrange a meal, a hotel and compensation. On most phone lines that means being transferred, and explaining everything again each time.
 
-That experience needs more than a model that can speak. Audio has to keep moving, the right agent has to take the floor, and the caller must be able to interrupt. Open Agent Kernel (OAK) connects those pieces to native live sessions from the OpenAI Agents SDK and Google ADK.
+Voice agents can now work as a team. One agent answers and brings in the right specialist. The specialist picks up the same conversation, with no hang-up and no repeating yourself. Each one is an AI agent with its own role, its own tools and its own voice. The same pattern can fit any job that needs several specialists on one call, such as rebooking a flight, filing an insurance claim, onboarding a customer or resolving an IT ticket.
+
+Three things make voice agents production-ready:
+
+- **Many specialists:** a team of agents, each with a clear job.
+- **One conversation:** handoffs move the call from one specialist to the next without starting over.
+- **Guardrails and records:** your own rules run on the call, and every call is saved and traced.
+
+Making that feel natural takes more than a model that can speak. Audio has to keep moving, the right agent has to take the floor, and you have to be able to interrupt, just as you would with a person. Open Agent Kernel (OAK), an open-source platform for running AI agents, connects those pieces to live voice sessions from the OpenAI Agents SDK and Google ADK, two popular tools for building agents. This post shows how it works, in plain terms first and in code second.
 
 <!-- truncate -->
 
 ## See It on a Real Call
 
-Here is a flight disruption desk built on this path. A traveller whose flight was cancelled talks to a concierge, a rebooking specialist and a care specialist by voice. The case board starts empty and fills in as the agents work: the booking once the concierge finds it, then the new flight, the meal voucher and the compensation claim. Watch the handoffs between the three agents, each one taking the call under its own name and voice. (This is a recording of a live call. The three agents are live Gemini voices. The caller is a scripted, synthetic voice, and its pauses after each agent finishes were shortened; the agents' response times are untouched.)
+Here is one example, a flight disruption desk built on this path. A traveller whose flight was cancelled talks to a concierge, a rebooking specialist and a care specialist by voice. The case board starts empty and fills in as the agents work: the booking once the concierge finds it, then the new flight, the meal voucher and the compensation claim. Watch the handoffs between the three agents, each one taking the call under its own name and voice. (This is a recording of a live call. The three agents are live Gemini voices. The caller is a scripted, synthetic voice, and its pauses after each agent finishes were shortened; the agents' response times are untouched.)
+
 <video
   controls
   playsInline
@@ -30,8 +39,6 @@ Here is a flight disruption desk built on this path. A traveller whose flight wa
   A recording of a live flight disruption call: a caller whose flight was cancelled talks to a concierge, a rebooking specialist and a care specialist, hears each agent in its own voice, and watches the case board fill in as the agents work.
 </video>
 
-*Use case: a flight disruption desk built with OAK. A concierge, a rebooking specialist and a care and claims specialist take a cancelled-flight call, hand it to each other, and update the case board as they work.*
-
 ## A Voice Call Is an Active Stream
 
 A text chat is like email: the agent waits for a message, then sends back an answer. A voice call is like a phone call. Both sides can talk at once, and nobody waits for a turn to be sent. Microphone audio arrives in small chunks, the model streams audio and text back, and the caller may speak before the response is finished.
@@ -40,7 +47,7 @@ The LiveKit edge brings caller audio and room chat into OAK's realtime pipeline.
 
 ![The realtime path from caller audio through LiveKit, the OAK pipeline, and a native OpenAI or Google live session, with streamed output and call events returning to the app.](/img/blog/realtime-agent-team-architecture.png)
 
-## Let the Framework Choose the Next Speaker
+## Teams and Handoffs: Let the Framework Choose the Next Speaker
 
 OAK uses each framework's own live agent and handoff behavior. The OpenAI Agents SDK and Google ADK each run their own live session. Their native agents decide when to call a tool or transfer the conversation to another agent.
 
@@ -62,15 +69,14 @@ from agentkernel.integration.livekit import LiveKitLifecycleAdapter
 from agentkernel.pipeline import IOHandler
 
 if __name__ == "__main__":
-    # One edge per LiveKit room, started and stopped by LiveKit's own room webhooks.
     IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])
 ```
 
 Override `should_start(session_id)` on the lifecycle adapter to choose which rooms get an edge, and `opening_prompt` on the edge to change how a call opens.
 
-## Run Your Own Hooks on the Call
+## Guardrails: Put Your Own Rules on the Call
 
-A live call is not a black box. OAK runs the same hooks you use in other modes, in the process that serves the call. It provides the hook points; what a hook does is your code.
+A live call is not a black box. OAK runs the same hooks you use in other modes, in the process that serves the call, so you can put your own rules on what is said and heard. It provides the hook points; what a rule does is your code.
 
 - **Typed text** goes through `PreHook.on_run`. A hook can rewrite it, or stop it before the model sees it.
 - **Caller audio** goes through the optional `PreHook.on_stream_input`, one chunk at a time. A hook can pass a chunk on, change it, or drop it.
@@ -85,7 +91,7 @@ Two limits to know:
 - OAK's built-in input guardrail checks typed text only. Caller audio reaches the model unless a pre-hook handles it.
 - The built-in output guardrail does not run on a streamed reply, so write a post-hook for output you must control. A hook sits on the playback path, so a slow hook delays audio.
 
-## The Call Keeps Its Session and Its Trace
+## Ready for Production: The Call Keeps Its Session and Its Trace
 
 A call now follows the same run lifecycle as a text request:
 
@@ -107,11 +113,12 @@ A call now follows the same run lifecycle as a text request:
 4. Join a room. The agents join it as participants of their own.
 
 The [LiveKit voice examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/livekit-voice) include single-agent calls and multi-agent handoffs for OpenAI and Google ADK.
+
 ## The Bottom Line
 
-A voice agent that can only talk is a demo. A voice agent that can bring in a specialist, take an interruption, run your hooks and leave a trace is a service.
+A voice agent that can only talk is a demo. A team of voice agents that hand off the call, follow your rules, save the session and leave a trace can do real work.
 
-With OAK, a realtime agent can listen, speak, pause for an interruption, and hand the conversation to a specialist. Your hooks, session and traces come along, and the caller stays in the same room.
+With OAK, a team of realtime agents can listen, speak, pause for an interruption, and hand the conversation to the right specialist. Your hooks, session and traces come along, and the caller stays in the same room.
 
 Open Agent Kernel is open source under Apache 2.0.
 
