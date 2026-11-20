@@ -2,7 +2,6 @@ mcp:
   enabled: true
   port: 8000
   expose_agents: true
-  agents: ['*']
   stateless_http: true
 
 logging:
@@ -17,3 +16,8 @@ session:
     url: "redis://ak-openai-serverless-dev-examples-redis.rhjs7r.0001.use2.cache.amazonaws.com:6379"
 
     
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

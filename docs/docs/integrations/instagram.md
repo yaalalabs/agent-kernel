@@ -1,10 +1,10 @@
 # Instagram
 
-Deploy your Agent Kernel agents as Instagram Business bots that can respond to Direct Messages in real-time. This integration connects your AI agents directly to Instagram DMs, enabling natural conversations with users through one of the world's most popular social platforms.
+Deploy your Open Agent Kernel agents as Instagram Business bots that can respond to Direct Messages in real-time. This integration connects your AI agents directly to Instagram DMs, enabling natural conversations with users through one of the world's most popular social platforms.
 
 ## Overview
 
-The `InstagramInboundAdapter` provides a seamless bridge between your Agent Kernel agents and Instagram Messaging. When users send a Direct Message to your Instagram Professional account (Business or Creator), their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Instagram DMs.
+The `InstagramInboundAdapter` provides a seamless bridge between your OAK agents and Instagram Messaging. When users send a Direct Message to your Instagram Professional account (Business or Creator), their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Instagram DMs.
 
 **How it works:**
 
@@ -91,6 +91,8 @@ export AK_INSTAGRAM__ACCESS_TOKEN="IGAA..."  # Instagram User Access Token
 export AK_INSTAGRAM__APP_SECRET="your_app_secret"  # Optional but recommended
 export AK_INSTAGRAM__API_VERSION="v21.0"  # Optional, defaults to v21.0
 ```
+
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials). The keys they are read under are set by `instagram.access_token_key`, `verify_token_key` and `app_secret_key` in `config.yaml`, defaulting to the names above.
 
 ### 4. Set Up Your Webhook
 
@@ -422,7 +424,7 @@ This requires an **Instagram User Access Token** (starts with `IGAA...`), not a 
 
 For detailed troubleshooting information:
 
-Agent Kernel auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
+OAK auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
 
 **Using environment variables:**
 ```bash
@@ -582,5 +584,5 @@ If you encounter issues:
 1. Check the [troubleshooting section](#troubleshooting) above
 2. Enable debug logging to see detailed request/response information
 3. Review the Instagram Platform documentation
-4. Check the [Agent Kernel GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
+4. Check the [OAK GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
 5. Visit the [Meta Developer Community](https://developers.facebook.com/community/)

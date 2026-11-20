@@ -1,7 +1,0 @@
-logging:
-  ak:
-    level: DEBUG
-session:
-  type: cosmosdb
-  cosmosdb:
-    prefix: "ak:openai:example:"

@@ -1,9 +1,16 @@
 from agentkernel.api import RESTAPI
 from agentkernel.mcp import MCP
 from agentkernel.openai import OpenAIModule
+from agentkernel.secret import SecretManager
 from agentkernel.smolagents import SmolagentsModule
 from agents import Agent as OpenAIAgent
+from agents import set_default_openai_key
 from smolagents import LiteLLMModel, ToolCallingAgent
+
+# OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
+# handed to both SDKs in memory; it is never written back to os.environ.
+openai_key = SecretManager.current().get("OPENAI_API_KEY")
+set_default_openai_key(openai_key)
 
 general_agent = OpenAIAgent(
     name="general",
@@ -23,14 +30,18 @@ math_agent = OpenAIAgent(
 
 history_agent = ToolCallingAgent(
     tools=[],
-    model=LiteLLMModel(model_id="openai/gpt-4.1-mini"),
+    model=LiteLLMModel(model_id="openai/gpt-4.1-mini", api_key=openai_key),
     name="history",
     description="Specialist agent for history questions. You provide assistance with history queries. "
     "Give direct and correct answers. Answer the question only. Don't give any explanation",
 )
 
-OpenAIModule([general_agent, math_agent])
-SmolagentsModule([history_agent])
+# What each agent publishes about itself: its MCP tool description, its A2A card description and its
+# catalog entry. Declared here because an agent's instructions are never published.
+OpenAIModule([general_agent, math_agent]).describe(
+    general_agent, description="Answers general questions with short, clear answers."
+).describe(math_agent, description="Solves math problems.")
+SmolagentsModule([history_agent]).describe(history_agent, description="Answers questions about history.")
 
 mcp = MCP.get()
 

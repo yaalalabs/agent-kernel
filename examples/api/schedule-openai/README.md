@@ -1,6 +1,6 @@
-# Agent Kernel Scheduled Chats with OpenAI Agent SDK Agents on a REST API
+# Open Agent Kernel Scheduled Chats with OpenAI Agent SDK Agents on a REST API
 
-This package contains a demo of the Agent Kernel scheduling capability with an agent built using the
+This package contains a demo of the Open Agent Kernel scheduling capability with an agent built using the
 OpenAI Agents SDK. A chat request that carries a `schedule` block is not run — it is registered as a
 scheduled task and acknowledged with HTTP 202. When an occurrence is due, the provider delivers the
 stored prompt into the input queue as a plain chat request, and the normal execution path runs it.
@@ -30,7 +30,7 @@ provider for `oidc` (Auth0, Keycloak, Okta or any other OIDC issuer), `cognito`,
 `firebase`; [`examples/aws-serverless/openai-auth`](../../aws-serverless/openai-auth/README.md) shows
 an Auth0 block.
 
-The same capability is available to the agent itself: Agent Kernel injects the scheduling tools
+The same capability is available to the agent itself: OAK injects the scheduling tools
 (`create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`, `delete_schedule`) and
 their guidance into every agent's system prompt, so the assistant can defer work when a user asks
 it to — the agent authors never describe these tools in their own instructions.

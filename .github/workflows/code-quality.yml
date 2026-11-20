@@ -28,3 +28,9 @@ jobs:
 
       - name: Run lint checks
         run: make lint-check-all
+
+      # Here, not in test-reusable.yaml's script-tests: that job also runs from privileged triggers on a
+      # checkout_ref, which CodeQL flags (actions/cache-poisoning/poisonable-step); this workflow runs only on
+      # pull_request with a read-only token.
+      - name: Test the dependency update script
+        run: uv run --no-project --with "packaging==26.3" python -m unittest discover -s .github/scripts/tests -p "test_dependency_caps*.py"

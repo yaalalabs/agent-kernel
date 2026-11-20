@@ -1,12 +1,12 @@
-# Agent Kernel running OpenAI Agents SDK based agents in AWS ECS with AWS DynamoDB as agent memory
+# Open Agent Kernel running OpenAI Agents SDK based agents in AWS ECS with AWS DynamoDB as agent memory
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a containerized configuration on AWS ECS using AWS DynamoDB as agent memory.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a containerized configuration on AWS ECS using AWS DynamoDB as agent memory.
 
 ## Deployed Resources
 
 This demo deploys the following AWS resources:
 
-- Python application running the Agent Kernel implementation
+- Python application running the OAK implementation
 - ECS Fargate service running the containerized application
 - API Gateway endpoint for the ECS service
 - DynamoDB table for agent memory
@@ -32,10 +32,12 @@ The `deploy/deploy.sh` script builds the Docker image, pushes it to ECR, and the
 
 ## Deployment Steps
 
-1. Configure environment variables:
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
     ```
+    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the app reads the key from SSM at startup; no secret passes through Terraform.
 
 2. Update `deploy/terraform.tfvars` with your ECR repository details:
     ```hcl

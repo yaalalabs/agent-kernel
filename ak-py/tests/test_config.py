@@ -6,9 +6,17 @@ from pydantic import ValidationError
 
 from agentkernel.core.config import (
     AKConfig,
+    _A2AConfig,
+    _AGUIConfig,
     _ExecutionConfig,
     _IdentityConfig,
     _IdentityProviderConfig,
+    _MCPConfig,
+    _RegistryAgentOverlayConfig,
+    _RegistryConfig,
+    _RegistryDynamoDBConfig,
+    _RegistryRedisConfig,
+    _RegistryValkeyConfig,
     _ScheduleConfig,
     _SecretConfig,
     _StaticProviderConfig,
@@ -417,6 +425,77 @@ def test_queues_transport_yaml_and_env(tmp_path, monkeypatch):
     assert AKConfig.get().execution.queues.type == "kafka"
 
 
+def test_pubsub_block_absent_by_default(monkeypatch):
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    assert AKConfig.get().execution.queues.pubsub is None
+
+
+def test_pubsub_block_defaults_and_yaml(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  queues:\n" "    type: pubsub\n" "    pubsub:\n" "      project_id: my-project\n" "      auto_provision: true\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    pubsub = AKConfig.get().execution.queues.pubsub
+
+    assert AKConfig.get().execution.queues.type == "pubsub"
+    assert (pubsub.project_id, pubsub.auto_provision) == ("my-project", True)
+    assert (pubsub.input_topic, pubsub.input_subscription) == ("agent-input", "agent-input")
+    assert (pubsub.output_topic, pubsub.output_subscription) == ("agent-output", "agent-output")
+    assert (pubsub.dlq_suffix, pubsub.ack_wait, pubsub.request_timeout) == ("-dlq", 300.0, 10.0)
+
+
+def test_pubsub_block_from_env_beside_a_declared_type(tmp_path, monkeypatch):
+    """Terraform injects only coordinates; the application's config.yaml declares the type (#886)."""
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("execution:\n  queues:\n    type: pubsub\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__PROJECT_ID", "env-project")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__INPUT_TOPIC", "prod-agent-input")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__DLQ_SUFFIX", "-dead")
+
+    pubsub = AKConfig.get().execution.queues.pubsub
+
+    assert (pubsub.project_id, pubsub.input_topic, pubsub.dlq_suffix) == ("env-project", "prod-agent-input", "-dead")
+
+
+def test_injected_pubsub_coordinates_without_a_declared_type_fail_at_load(monkeypatch):
+    """A deployment cannot pick the transport for the application: the type stays mandatory."""
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__INPUT_TOPIC", "prod-agent-input")
+
+    with pytest.raises(ValidationError, match="execution.queues.type"):
+        AKConfig.get()
+
+
+def test_servicebus_queue_block_yaml_and_env(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  queues:\n" "    type: servicebus\n" "    servicebus:\n" "      ack_wait: 120\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    cfg = AKConfig.get()
+    assert cfg.execution.queues.type == "servicebus"
+    assert cfg.execution.queues.servicebus.ack_wait == 120
+    assert cfg.execution.queues.servicebus.connection_string is None
+
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__SERVICEBUS__ACK_WAIT", "30")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__SERVICEBUS__CONNECTION_STRING", "Endpoint=sb://localhost/;UseDevelopmentEmulator=true")
+    AKConfig._reset()
+    servicebus = AKConfig.get().execution.queues.servicebus
+    assert servicebus.ack_wait == 30
+    assert servicebus.connection_string == "Endpoint=sb://localhost/;UseDevelopmentEmulator=true"
+
+
+def test_queues_block_without_servicebus_leaves_it_unset(tmp_path, monkeypatch):
+    """Old YAML loads unchanged: the servicebus block is optional."""
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("execution:\n  queues:\n    type: sqs\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    assert AKConfig.get().execution.queues.servicebus is None
+
+
 def test_response_store_accepts_in_memory_type(tmp_path, monkeypatch):
     yaml_text = "execution:\n" "  response_store:\n" "    type: in_memory\n"
     cfg_path = tmp_path / "config.yaml"
@@ -632,3 +711,138 @@ class TestIdentityConfig:
         provider = _IdentityProviderConfig(issuer="https://issuer.example", audience="ak")
         assert (provider.claims.subject, provider.claims.groups) == ("sub", "groups")
         assert (provider.algorithms, provider.leeway, provider.required_claims) == (["RS256", "ES256"], 30, [])
+
+
+class TestRegistryConfig:
+    """The `registry` block (#603): absent by default (an in-memory registry), a backend selector with its
+    connection block, and the per-agent overlay of deployment-owned catalog fields."""
+
+    def test_absent_by_default(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        assert AKConfig.get().registry is None
+
+    def test_a_block_parses_from_yaml_with_its_backend_and_overlay(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "registry:\n"
+            "  type: redis\n"
+            "  redis:\n"
+            "    url: redis://cache:6379\n"
+            "  agents:\n"
+            "    support-triage:\n"
+            "      version: 1.2.0\n"
+            "      description: Triage support tickets\n"
+            "      owner: cx-platform\n"
+            "      tags: [support]\n"
+            "      visibility: internal\n"
+            "      surfaces: [rest, agui]\n"
+            "      identity:\n"
+            "        subject: svc-triage\n"
+        )
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        registry = AKConfig.get().registry
+
+        assert (registry.type, registry.redis.url) == ("redis", "redis://cache:6379")
+        overlay = registry.agents["support-triage"]
+        assert (overlay.version, overlay.description, overlay.owner) == ("1.2.0", "Triage support tickets", "cx-platform")
+        assert (overlay.tags, overlay.visibility, overlay.surfaces) == (["support"], "internal", ["rest", "agui"])
+        assert overlay.identity.subject == "svc-triage"
+
+    def test_a_bare_block_is_the_in_memory_registry_with_no_overlay(self):
+        registry = _RegistryConfig()
+
+        assert registry.type == "in_memory"
+        assert (registry.redis, registry.valkey, registry.dynamodb) == (None, None, None)
+        assert registry.agents == {}
+
+    def test_the_store_blocks_default_to_the_registry_prefix_and_table_and_never_expire(self):
+        # Unlike the session defaults these inherit from: a descriptor that expired would drop a running agent from the catalog.
+        assert (_RegistryRedisConfig().prefix, _RegistryRedisConfig().ttl) == ("ak:registry:", 0)
+        assert (_RegistryValkeyConfig().prefix, _RegistryValkeyConfig().ttl) == ("ak:registry:", 0)
+        assert (_RegistryDynamoDBConfig().table_name, _RegistryDynamoDBConfig().ttl) == ("ak-agent-registry", 0)
+
+    @pytest.mark.parametrize(
+        "block, model", [("redis", _RegistryRedisConfig), ("valkey", _RegistryValkeyConfig), ("dynamodb", _RegistryDynamoDBConfig)]
+    )
+    def test_a_store_block_refuses_a_ttl(self, block, model):
+        # Nothing registers a hosted agent again while its process runs, so an expiry would remove running agents
+        # from every listing. Refused at load rather than accepted and left to do that.
+        with pytest.raises(AKConfigError, match=f"registry.{block}.ttl is not supported"):
+            model.model_validate({"ttl": 3600})
+
+        assert model.model_validate({"ttl": 0}).ttl == 0
+
+    def test_a_ttl_set_through_the_environment_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_REGISTRY__TYPE", "redis")
+        monkeypatch.setenv("AK_REGISTRY__REDIS__TTL", "600")
+
+        with pytest.raises(AKConfigError, match="registry.redis.ttl is not supported"):
+            AKConfig.get()
+
+    def test_a_key_the_registry_block_does_not_take_is_rejected(self):
+        # `agent:` for `agents:` would otherwise drop every per-agent restriction beneath it without a word.
+        with pytest.raises(ValueError, match="agent"):
+            _RegistryConfig.model_validate({"agent": {"billing": {"surfaces": []}}})
+
+    def test_a_misspelt_registry_key_in_the_environment_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_REGISTRY__AGENT__BILLING__SURFACES", "[]")
+
+        with pytest.raises(ValueError, match="registry"):
+            AKConfig.get()
+
+    def test_an_overlay_entry_sets_nothing_by_default(self):
+        assert _RegistryAgentOverlayConfig().model_dump(exclude_none=True) == {}
+
+    def test_an_overlay_key_the_descriptor_does_not_take_is_rejected(self):
+        # A misspelt `surfaces` silently ignored would leave an agent on every surface.
+        with pytest.raises(ValueError, match="surface"):
+            _RegistryAgentOverlayConfig.model_validate({"surface": ["rest"]})
+
+    @pytest.mark.parametrize("field, value", [("visibility", "secret"), ("surfaces", ["grpc"])])
+    def test_an_overlay_value_outside_the_descriptors_choices_is_rejected(self, field, value):
+        with pytest.raises(ValueError, match=field):
+            _RegistryAgentOverlayConfig.model_validate({field: value})
+
+    def test_a_registry_env_var_materializes_the_block(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_REGISTRY__TYPE", "valkey")
+
+        assert AKConfig.get().registry.type == "valkey"
+
+
+class TestRemovedAgentLists:
+    """`a2a.agents`, `mcp.agents` and `agui.agents` are gone (#603): an agent's surfaces are part of its
+    descriptor. A configuration that still sets one fails at load with where the setting went, rather than
+    being ignored and leaving every agent on the surface."""
+
+    @pytest.mark.parametrize("block, model", [("a2a", _A2AConfig), ("mcp", _MCPConfig), ("agui", _AGUIConfig)])
+    def test_a_block_that_still_lists_agents_fails_with_the_migration_message(self, block, model):
+        with pytest.raises(AKConfigError, match=f"{block}.agents was removed: set registry.agents.<id>.surfaces instead"):
+            model.model_validate({"agents": ["triage"]})
+
+    @pytest.mark.parametrize("block, model", [("a2a", _A2AConfig), ("mcp", _MCPConfig), ("agui", _AGUIConfig)])
+    def test_the_blocks_no_longer_carry_an_agents_field(self, block, model):
+        assert "agents" not in model.model_fields
+
+    def test_a_yaml_file_that_still_sets_one_fails_at_load(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text("mcp:\n  enabled: true\n  agents: ['*']\n")
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        with pytest.raises(AKConfigError, match="mcp.agents was removed"):
+            AKConfig.get()
+
+    def test_an_environment_variable_that_still_sets_one_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_A2A__AGENTS", '["triage"]')
+
+        with pytest.raises(AKConfigError, match="a2a.agents was removed"):
+            AKConfig.get()
+
+    def test_the_tool_scoping_lists_under_agui_are_untouched(self):
+        agui = _AGUIConfig.model_validate({"state": {"enabled": True, "agents": ["a"]}, "client_context": {"agents": ["b"]}})
+
+        assert (agui.state.agents, agui.client_context.agents) == (["a"], ["b"])

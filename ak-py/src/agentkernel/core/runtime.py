@@ -34,6 +34,7 @@ from .model import (
 )
 from .multimodal import MultimodalPreHookFactory
 from .paused_run import PausedRun, PausedRunState
+from .registry import AgentRegistry, AgentRegistryFactory
 from .session import SessionStore
 
 # The provider of the agent principal Runtime attaches as the run principal's actor.
@@ -134,14 +135,15 @@ class Runtime:
                     Runtime._system_post_hooks = [OutputGuardrailFactory.get(), A2UIPostHookFactory.get()]
         return Runtime._system_post_hooks
 
-    def __init__(self, sessions: SessionStore):
+    def __init__(self, sessions: SessionStore, registry: AgentRegistry | None = None):
         """
         Initialize the Runtime.
 
         :param sessions: The session store instance is used to manage agent sessions.
+        :param registry: The registry the runtime keeps its agents in; one of its own is built when omitted.
         """
         self._log = logging.getLogger("ak.runtime")
-        self._agents = {}
+        self._registry = registry if registry is not None else AgentRegistryFactory.build()
         self._sessions = sessions
 
     @staticmethod
@@ -194,32 +196,39 @@ class Runtime:
         with self:
             return importlib.import_module(module)
 
+    @property
+    def registry(self) -> AgentRegistry:
+        """
+        Returns the registry the runtime keeps its agents and their descriptors in.
+        """
+        return self._registry
+
     def agents(self) -> dict[str, Agent]:
         """
-        Returns the list of registered agents.
-        :return: List of agents.
+        Returns the agents registered in this runtime, keyed by name.
+        :return: The registered agents by name.
         """
-        return self._agents
+        return self._registry.agents()
 
     def register(self, agent: Agent) -> None:
         """
-        Registers an agent in the runtime.
+        Registers an agent in the runtime under its descriptor. Registering an agent that is already registered
+        updates the registry with its current descriptor.
         :param agent: The agent to register.
+        :raises AgentRegistrationError: If a different agent is already registered under the same name.
         """
-        if not self._agents.get(agent.name):
-            self._log.debug(f"Registering agent '{agent.name}'")
-            self._agents[agent.name] = agent
-        else:
-            raise Exception(f"Agent with name '{agent.name}' is already registered.")
+        self._registry.register(agent.descriptor, agent)
+        self._log.debug(f"Registered agent '{agent.name}'")
 
     def deregister(self, agent: Agent) -> None:
         """
         Deregisters an agent from the runtime.
         :param agent: The agent to deregister.
         """
-        if self._agents.get(agent.name):
+        agent_id = agent.descriptor.id
+        if self._registry.get(agent_id) is not None:
             self._log.debug(f"Deregistering agent '{agent.name}'")
-            del self._agents[agent.name]
+            self._registry.deregister(agent_id)
         else:
             self._log.warning(f"Agent with name '{agent.name}' is not registered.")
 
@@ -352,8 +361,8 @@ class Runtime:
         :param principal: The principal the surface authenticated, or None for an anonymous run.
         :return: The published principal.
         """
-        # The agent subject becomes the descriptor's identity subject once the registry lands.
-        actor = Principal(kind="agent", subject=agent.name, provider=AGENT_PRINCIPAL_PROVIDER)
+        descriptor = agent.descriptor
+        actor = Principal(kind="agent", subject=descriptor.identity.subject or descriptor.id, provider=AGENT_PRINCIPAL_PROVIDER)
         principal = (principal or Principal.anonymous()).with_actor(actor)
         session._publish_run(principal, None)
         if not principal.is_anonymous:

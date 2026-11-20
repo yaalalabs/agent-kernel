@@ -40,9 +40,6 @@ class MockAgent(Agent):
     def get_description(self) -> str:
         return "Mock Agent"
 
-    def get_a2a_card(self) -> Any:
-        return "Mock A2A Card"
-
     def override_system_prompt(self, prompt: str) -> None:
         pass
 
@@ -57,7 +54,6 @@ def test_agent_init():
     assert agent.runner == runner
     assert repr(agent) == "Agent(test-agent)"
     assert agent.get_description() == "Mock Agent"
-    assert agent.get_a2a_card() == "Mock A2A Card"
 
 
 def test_agent_hooks():

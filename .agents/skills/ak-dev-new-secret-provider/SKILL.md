@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-secret-provider
 description: >
-  Step-by-step guide for adding a new built-in secret provider to Agent Kernel's secret-resolution
+  Step-by-step guide for adding a new built-in secret provider to Open Agent Kernel's secret-resolution
   capability (beyond env, aws_ssm and kubernetes). Use this skill when you need a new managed secret store
   (e.g. AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, HashiCorp Vault) addressable by a
   short `secret.provider.type` name. Covers the SecretProvider contract, addressing, factory
@@ -55,6 +55,12 @@ tested IAM wiring and docs. Otherwise, document the dotted-path route in
 - **Tolerate concurrent calls.** The manager calls the provider outside any lock, and concurrent
   cold reads may each call it. Create SDK clients lazily behind a lock (the double-checked
   `client` property in `aws_ssm.py`).
+- **`describe(key) -> Optional[str]`** names where the backend looks for `key` (`SSM parameter
+  /ak/<prefix>/<key>`, `a file named <KEY> in a Kubernetes Secret mounted under <path>`), which
+  `SecretManager.describe` folds into `SecretNotFoundError` and every consumer's missing-credential
+  error so the user is told what to create. Pure string work: no I/O, never raises. Return `None`
+  only when the backend reads nothing beyond the environment (`EnvSecretProvider`); the inherited
+  default (`the '<KEY>' entry in <ClassName>`) is the fallback. The contract suite checks it.
 - **Return values verbatim.** Don't strip whitespace or parse JSON, because values are flat
   strings. Treat an empty value as absent (`EnvSecretProvider` returns `os.environ.get(key) or None`).
 - **`create(cls, config: _SecretConfig)`** receives the **whole** `secret` block, not just
@@ -89,6 +95,9 @@ class VaultSecretProvider(SecretProvider):
     def get_secret(self, key: str) -> str | None:
         """:raises SecretError: If Vault failed for any reason other than not-found."""
         ...
+
+    def describe(self, key: str) -> Optional[str]:
+        return f"Vault secret {self._prefix}/{key.lower()}"
 ```
 
 Map exactly one backend error to `None` (the not-found code, like `ParameterNotFound` in
@@ -153,10 +162,11 @@ agent-executing tier and fails the render on an unusable value.
 If the backend is a cloud store the Terraform modules can grant, mirror `ssm_enabled` in
 `ak-deployment/ak-aws/{serverless,containerized}` (`variables.tf`, `state.tf`,
 `modules/*/main.tf`). Use one `bool` defaulting to `false`, keep every resource `count`-gated so
-the default plan is empty, and attach a read-only grant scoped to the prefix only to the tier that
-runs the agent (agent runner in queue mode, request handler / REST service otherwise — never the
-response or WS connection handler). Keep injecting `AK_SECRET__PREFIX` from the module's own `prefix` so the path and the grant
-can't drift. Never create secret values in Terraform.
+the default plan is empty, and attach a read-only grant scoped to the prefix to the same tiers
+`ssm_enabled` reaches (request handler / REST service, plus the agent runner and the serverless response
+handler in queue mode — never the WS connection handler). Keep injecting `AK_SECRET__PREFIX` from the module's own `prefix` so the path and the grant
+can't drift. Never create secret values in Terraform, placeholders included: the provider refreshes the
+real value into state.
 
 ### 7. Documentation
 
@@ -167,13 +177,13 @@ can't drift. Never create secret values in Terraform.
 - `ak-py/README.md`: the extra, if new.
 - The bundled `ak-cloud-deploy` skill (`ak-py/src/agentkernel/skills/ak-cloud-deploy/SKILL.md`), if
   you added a deployment flag.
-- Landing page inventories (`docs/src/components/*/data.tsx`): a tile in the **Cloud &
-  infrastructure** row of `IntegrationsMarquee/data.tsx` (role `Secrets`, `href` to the secrets
-  docs page, logo or `react-icons/si` glyph; a vendor already on the marquee for another role,
-  such as AWS Systems Manager, gets the new role appended to its `title` instead of a second tile),
-  and the store in the **Secret Resolution** card's `tags` and `description` under the Guard tab
-  in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in
-  `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+- Landing page inventories (`docs/src/components/HomeSections/`): an item in the **Cloud &
+  infrastructure** row of `INTEGRATION_ROWS` in `integrations.data.tsx` (role `Secrets`, `href` to
+  the secrets docs page, logo or `react-icons/si` glyph; a vendor already listed for another role,
+  such as AWS Systems Manager, gets the new role appended to its `title` instead of a second item),
+  and the store in the `summary` of the **Secret resolution** capability under Guard in
+  `docs/src/pages/features.tsx`, which names each provider. Logo sourcing and the build check are
+  in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
 ## Checklist
 
@@ -186,5 +196,5 @@ can't drift. Never create secret values in Terraform.
 - [ ] Factory tests (`tests/test_secret_factory.py`)
 - [ ] Terraform grant flag, if a cloud store (`ak-deployment/`)
 - [ ] Docs: `docs/docs/advanced/secrets.md`, architecture skill, `ak-py/README.md`
-- [ ] Landing page inventories: marquee tile or role (`IntegrationsMarquee/data.tsx`), Secret Resolution card tags (`FeatureExplorer/data.tsx`)
+- [ ] Landing page inventories: integration item or its `title` (`HomeSections/integrations.data.tsx`), the Secret resolution capability's summary (`docs/src/pages/features.tsx`)
 - [ ] `cd ak-py && uv run pytest tests/test_secret_*.py` and `make lint-check-all` clean

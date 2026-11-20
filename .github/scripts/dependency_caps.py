@@ -2,7 +2,8 @@
 """Dependency update for Agent Kernel, every two weeks (#659, #824). One class per command.
 
 A version line is the major for >= 1.0 and the minor for 0.x. A package never leaves its line, except
-for a security fix. Copilot only names the package behind a failure; this script holds it back.
+for a security fix or a repo package's declared bound (`Bounds`). Copilot only names the package behind a failure;
+this script holds it back.
 
 Run with:  uv run --no-project --with packaging python dependency_caps.py <command>
 """
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
@@ -300,7 +302,7 @@ class State:
     RUN_FILES = (
         "alerts.json", "alerts-error.json", "changes.json", "results.json", "held.json", "holds.json",
         "holds.jsonl", "failures.json", "reverted.json", "npm.json", PINS_FILE, NOT_DEPENDENCY_FILE,
-        "judge.json", JUDGE_FILE,
+        "judge.json", JUDGE_FILE, "bounds.json",
     )  # fmt: skip
 
     def __init__(self, directory: Path):
@@ -619,7 +621,7 @@ class LockGuard:
 
 
 class Checker:
-    """Lock and install check, the same for every manifest. Used by `update` and `hold`."""
+    """Lock, bounds and install check, the same for every manifest. Used by `update` and `hold`."""
 
     def __init__(self, repo: Repo, state: State, workers: int):
         self.repo = repo
@@ -627,6 +629,7 @@ class Checker:
         self.workers = workers
         self.snapshot = state.load("snapshot.json", {})
         self.alerts = Alerts(state)
+        self.bounds = Bounds(repo)
 
     def check(self, manifest: Manifest, upgrade: bool, hold: set[str], previous: list[dict]) -> dict:
         log = self.state.path(f"logs/{manifest.slug}.log")
@@ -639,7 +642,12 @@ class Checker:
         )
         held = {e["package"]: e for e in previous if e["package"] in hold}
         held.update({e["package"]: e for e in entries})
-        step = "uv lock"
+        step, bounded = "uv lock", []
+        if code == 0:
+            # Every re-lock above resolves the repo's packages from their PyPI release, so pull back after each one.
+            minimums = {n: v for n, v in self.alerts.patched_for(manifest).items() if n not in hold}
+            step = Bounds.STEP
+            code, bounded = self.bounds.pull_back(manifest, log, minimums)
         if code == 0:
             step = "uv sync"
             code = CommandRunner.run(manifest.sync_command(), manifest.directory, log)
@@ -649,11 +657,13 @@ class Checker:
             "step": step,
             "log": str(log),
             "held": list(held.values()),
+            "bounds": bounded,
         }
 
     def run(self, manifests: list[Manifest], upgrade: bool, holds: dict[str, set[str]]) -> int:
         results = self.state.load("results.json", {})
         held = self.state.load("held.json", {})
+        bounds = self.state.load(Bounds.FILE, {})
 
         def one(manifest: Manifest) -> dict:
             previous = held.get(manifest.relative, [])
@@ -664,6 +674,7 @@ class Checker:
             with ThreadPoolExecutor(max_workers=self.workers) as pool:
                 for result in pool.map(one, targets):
                     held[result["manifest"]] = result.pop("held")
+                    bounds[result["manifest"]] = result.pop("bounds")
                     results[result["manifest"]] = result
 
         batch(manifests)
@@ -673,6 +684,7 @@ class Checker:
             batch(retry)
         self.state.save("results.json", results)
         self.state.save("held.json", held)
+        self.state.save(Bounds.FILE, bounds)
         failing = sum(r["status"] == "fail" for r in results.values())
         print(f"checked {len(manifests)} manifests; {failing} failing")
         return 0
@@ -696,6 +708,253 @@ class Checker:
                 print(f"security fix blocked (unsatisfiable) in {manifest.relative}: {named}")
         self.state.save("changes.json", changes)
         return retry
+
+
+class Bounds:
+    """Every lock keeps each repo package's direct dependencies inside the bounds that package declares.
+
+    An example resolves `agentkernel` from PyPI, whose metadata is the last release, so a limit `cap` adds or a floor
+    `secure` raises in `ak-py/pyproject.toml` is invisible to its `uv lock`, and `LockGuard` measures version lines
+    from each lock's own base: a lock upgraded against the release drifts outside the bound, and only an install that
+    pairs the exported lock with the branch wheel notices (the chart smoke did, once #919 capped `deprecated` below
+    the 3.0.1 that 28 locks carried). `Checker` pulls each drift back after `LockGuard` and before the install check
+    (`pull_back`), so `update` and every `hold` re-check end inside the bounds. Command `bounds` lists the drifts.
+    """
+
+    FILE = "bounds.json"  # manifest -> one outcome per drifted package, from its last check
+    STEP = "uv lock (bounds)"
+    PULLED, RELEASE, KEPT = "pulled", "release", "kept"
+    ROOT = ({"virtual": "."}, {"editable": "."})  # a lock's own project; examples share names, so it bounds nothing
+
+    def __init__(self, repo: Repo):
+        self.repo = repo
+        # Project name -> (manifest, dependencies, extra -> requirements), read once: `cap` and `secure` already ran.
+        self.sources: dict[str, tuple[Manifest, list[Requirement], dict[str, list[Requirement]]]] = {}
+        for manifest in repo.manifests():
+            base, extras = self.declared(manifest)
+            if base or any(extras.values()):
+                self.sources.setdefault(manifest.project_name(), (manifest, base, extras))
+
+    @classmethod
+    def read_lock(cls, manifest: Manifest) -> tuple[dict[str, list[str]], dict[str, set[str]]]:
+        """(package -> every locked version, package -> every extra some locked package asks of it).
+
+        A marker split locks one package at two versions, so each is kept. The lock's own project is left out of the
+        versions (only its references count). The extras come from every reference in the lock (dependencies,
+        optional ones, dev groups): they are what an install of the lock pulls in.
+        """
+        versions: dict[str, list[str]] = {}
+        extras: dict[str, set[str]] = {}
+        for package in read_toml(manifest.lock).get("package", []) if manifest.lock.exists() else []:
+            if package.get("name") and parse_version(package.get("version")) and package.get("source") not in cls.ROOT:
+                versions.setdefault(canonicalize_name(package["name"]), []).append(package["version"])
+            groups = [
+                package.get("dependencies", []),
+                *package.get("optional-dependencies", {}).values(),
+                *package.get("dev-dependencies", {}).values(),
+            ]
+            for reference in (dep for group in groups for dep in group):
+                if reference.get("name"):
+                    extras.setdefault(canonicalize_name(reference["name"]), set()).update(reference.get("extra", []))
+        return versions, extras
+
+    @staticmethod
+    def declared(manifest: Manifest) -> tuple[list[Requirement], dict[str, list[Requirement]]]:
+        """(dependencies, extra -> its requirements): what a package ships in its wheel metadata. Dependency
+        groups are not installed with the wheel, so they bound nobody; a URL or unbounded requirement is skipped."""
+
+        def bounded(texts: list[str]) -> list[Requirement]:
+            found = []
+            for text in texts:
+                try:
+                    requirement = Requirement(text)
+                except InvalidRequirement:
+                    continue
+                if not requirement.url and str(requirement.specifier):
+                    found.append(requirement)
+            return found
+
+        project = manifest.data().get("project", {})
+        extras = {canonicalize_name(k): bounded(v) for k, v in project.get("optional-dependencies", {}).items()}
+        return bounded(project.get("dependencies", [])), extras
+
+    @staticmethod
+    def bounds_for(
+        base: list[Requirement], extras: dict[str, list[Requirement]], requested: set[str]
+    ) -> dict[str, SpecifierSet]:
+        """Package -> the specifier a lock that installs the source with the `requested` extras must meet: the
+        dependencies' and those extras' requirements together (an extra the lock does not install bounds nothing)."""
+        found: dict[str, SpecifierSet] = {}
+        for requirement in [
+            *base,
+            *(r for extra in sorted(requested) for r in extras.get(canonicalize_name(extra), [])),
+        ]:
+            name = canonicalize_name(requirement.name)
+            found[name] = found.get(name, SpecifierSet()) & requirement.specifier
+        return found
+
+    @staticmethod
+    def render(specifier: SpecifierSet) -> str:
+        """The specifier as a developer writes it, floors first and each clause once (`>=1.2,<2.0.0`)."""
+        return ",".join(sorted({str(s) for s in specifier}, key=lambda text: (text.startswith("<"), text)))
+
+    def violations(self, manifest: Manifest) -> list[dict]:
+        """Every version this lock holds outside the bound of a repo package it carries."""
+        versions, extras = self.read_lock(manifest)
+        found = []
+        for name, (source, base, by_extra) in sorted(self.sources.items()):
+            if source.relative == manifest.relative or name not in versions:
+                continue
+            for package, specifier in sorted(self.bounds_for(base, by_extra, extras.get(name, set())).items()):
+                for version in versions.get(package, []):
+                    if not specifier.contains(version, prereleases=True):
+                        found.append(
+                            {
+                                "manifest": manifest.relative,
+                                "package": package,
+                                "version": version,
+                                "requirement": self.render(specifier),
+                                "source": name,
+                            }
+                        )
+        return found
+
+    @staticmethod
+    def disjoint(first: str, second: str) -> bool:
+        """No version meets both specifiers. `!=` is ignored and an unreadable clause makes them overlap: either
+        way the drift fails its check rather than being excused."""
+        lows: list[tuple[Version, bool]] = []  # (version, inclusive)
+        highs: list[tuple[Version, bool]] = []
+        try:
+            for clause in SpecifierSet(first) & SpecifierSet(second):
+                operator, text = clause.operator, clause.version
+                if operator == "!=":
+                    continue
+                if text.endswith(".*") or operator == "~=":  # ==1.2.* is [1.2, 1.3); ~=1.89.2 is [1.89.2, 1.90)
+                    version = Version(text.removesuffix(".*"))
+                    prefix = version.release if text.endswith(".*") else version.release[:-1]
+                    lows.append((version, True))
+                    highs.append((Version(".".join(map(str, (*prefix[:-1], prefix[-1] + 1)))), False))
+                elif operator in {"==", "==="}:
+                    lows.append((Version(text), True))
+                    highs.append((Version(text), True))
+                elif operator in {">=", ">"}:
+                    lows.append((Version(text), operator == ">="))
+                else:
+                    highs.append((Version(text), operator == "<="))
+        except (InvalidVersion, IndexError):
+            return False
+        if not lows or not highs:
+            return False
+        low = max(lows, key=lambda bound: (bound[0], not bound[1]))  # the tighter floor: higher, then exclusive
+        high = min(highs, key=lambda bound: (bound[0], bound[1]))  # the tighter ceiling: lower, then exclusive
+        return low[0] > high[0] or (low[0] == high[0] and not (low[1] and high[1]))
+
+    @classmethod
+    def contradicted_by_release(cls, error: str, source: str, package: str, requirement: str) -> bool:
+        """uv's error says the release the lock resolves `source` from requires `package` outside `requirement`.
+
+        The lock resolves the source from PyPI, so a release that needs a version outside the branch's bound (the
+        branch raised a floor past the release's ceiling, as #919 did for `litellm`) cannot meet it until the next
+        release. uv writes it as "agentkernel[adk]>=0.9.5 depends on litellm>=1.89.2,<1.90.dev0" (`==0.9.5` in older
+        versions, "all versions of agentkernel[adk] depend on ..." when it groups them). The release's requirement is
+        read from that and must exclude the bound: that the release only depends on the package proves nothing.
+        """
+        text = " ".join(error.rpartition("No solution found")[2].split())
+        pattern = (
+            rf"\b{re.escape(source)}(?:\[[^\]]*\])?(?:[<>=!~]=?\S+)? depends? on {re.escape(package)}"
+            r"(?:\{[^}]*\})?(?P<spec>[<>=!~]\S*)?"
+        )
+        return any(
+            cls.disjoint(match["spec"].rstrip(",.;"), requirement)
+            for match in re.finditer(pattern, text, re.IGNORECASE)
+            if match["spec"]
+        )
+
+    @staticmethod
+    def conflict(package: str, before: dict[str, str], after: dict[str, str], minimums: dict[str, str]) -> str:
+        """Why the pull-back of `package` must not stand ('' when it may): it took another package up onto a new
+        version line (that needs its own PR, as in `update`), or any package below its security minimum."""
+        moved = [
+            f"{name} {before[name]} -> {version}"
+            for name, version in sorted(after.items())
+            if name != package and VersionLine.crosses(before.get(name), version)
+        ]
+        if moved:
+            return f"pulling it back takes {', '.join(moved)} onto a new version line"
+        undone = [
+            f"{name} {after[name]} (security minimum {minimum})"
+            for name, minimum in sorted(minimums.items())
+            if (old := parse_version(before.get(name)))
+            and (new := parse_version(after.get(name)))
+            and new < Version(minimum) <= old
+        ]
+        return f"pulling it back takes {', '.join(undone)} below a security fix" if undone else ""
+
+    @staticmethod
+    def note(log: Path, text: str) -> None:
+        with log.open("a", encoding="utf-8") as handle:
+            handle.write(f"\nbounds: {text}\n")
+
+    def pull_back(self, manifest: Manifest, log: Path, minimums: dict[str, str]) -> tuple[int, list[dict]]:
+        """Constrain each drifted package to its bound: `uv lock --upgrade-package "<package><bound>"`, one by one.
+
+        Returns (exit code, one outcome per drifted package): `pulled`; `release` when the release the lock resolves
+        requires a version outside the bound, which only the next release fixes; `kept` when the pull-back would take
+        another package up onto a new version line, or any package below its security minimum, so the lock before it
+        is put back. A re-lock that fails for another reason, or leaves the package outside, fails the check.
+        """
+        drifts: dict[tuple[str, str, str], list[str]] = {}
+        for drift in self.violations(manifest):
+            drifts.setdefault((drift["package"], drift["requirement"], drift["source"]), []).append(drift["version"])
+        outcomes = []
+        for (package, requirement, source), old in sorted(drifts.items()):
+            outcome = {
+                "package": package,
+                "old": sorted(old, key=Version),
+                "requirement": requirement,
+                "source": source,
+            }
+            text, before, start = manifest.lock.read_text(encoding="utf-8"), manifest.locked(), log.stat().st_size
+            command = ["uv", "lock", "--upgrade-package", f"{package}{requirement}"]
+            if code := CommandRunner.run(command, manifest.directory, log):
+                with log.open("rb") as handle:  # this attempt's output only
+                    handle.seek(start)
+                    error = handle.read().decode(errors="replace")
+                if not self.contradicted_by_release(error, source, package, requirement):
+                    return code, outcomes
+                self.note(log, f"{package}: the published {source} requires it outside {requirement}; not a failure")
+                outcomes.append({**outcome, "outcome": self.RELEASE})
+                continue
+            after = manifest.locked()
+            if reason := self.conflict(package, before, after, minimums):
+                manifest.lock.write_text(text, encoding="utf-8")
+                self.note(log, f"{package} stays outside {requirement}: {reason}")
+                outcomes.append({**outcome, "outcome": self.KEPT, "note": reason})
+                continue
+            if any(v["package"] == package for v in self.violations(manifest)):
+                self.note(log, f"{package} is still outside {requirement} after the re-lock")
+                return 1, outcomes
+            outcomes.append({**outcome, "outcome": self.PULLED, "new": after.get(package)})
+        return 0, outcomes
+
+    def run(self) -> int:
+        """Command `bounds`: list every drift, exit 1 if there is one. Changes nothing."""
+        found = [v for manifest in self.repo.manifests() for v in self.violations(manifest)]
+        for drift in found:
+            print(
+                f"{drift['manifest']}: {drift['package']} {drift['version']} is outside {drift['source']}'s {drift['requirement']}"
+            )
+        if not found:
+            print("every lock is inside the bounds this repo's packages declare")
+            return 0
+        names = ", ".join(sorted({d["source"] for d in found}))
+        print(
+            f"{len(found)} locked version(s) outside the bounds this repo's packages declare. The dependency update "
+            'pulls them back; by hand, `uv lock --upgrade-package "<package><requirement>"` in the folder. Where the '
+            f"release of {names} the lock resolves requires otherwise, only a new release fixes it."
+        )
+        return 1
 
 
 class Holds:
@@ -1322,6 +1581,26 @@ class Reporter:
             lines.append(f"- npm: security fixes only, where npm alerts exist. No alerts, not changed: {dirs}")
         return lines
 
+    def bounds_lines(self) -> tuple[list[str], list[str], list[str]]:
+        """(pulled back, waiting for a release, kept outside), grouped by package, from each manifest's last check."""
+        grouped: dict[tuple, set[str]] = {}
+        for relative, outcomes in self.state.load(Bounds.FILE, {}).items():
+            for o in [] if relative in self.reverted else outcomes:
+                key = (o["outcome"], o["package"], o["requirement"], o["source"], o.get("note", ""))
+                grouped.setdefault(key, set()).add(relative)
+        lines: dict[str, list[str]] = {Bounds.PULLED: [], Bounds.RELEASE: [], Bounds.KEPT: []}
+        for (outcome, p, spec, s, note), m in sorted(grouped.items()):
+            lines[outcome].append(
+                {
+                    Bounds.PULLED: f"- `{p}` pulled back inside `{s}`'s `{spec}`",
+                    Bounds.RELEASE: f"- `{p}`: the published `{s}` requires a version outside its branch bound `{spec}`; "
+                    f"the next `{s}` release fixes it",
+                    Bounds.KEPT: f"- `{p}` outside `{s}`'s `{spec}`: {note}",
+                }[outcome]
+                + f" ({len(m)} manifest(s))"
+            )
+        return lines[Bounds.PULLED], lines[Bounds.RELEASE], lines[Bounds.KEPT]
+
     def version_rows(self, changed_dirs: set[str]) -> tuple[list[str], int]:
         snapshot, rows, indirect = self.state.load("snapshot.json", {}), [], 0
         for manifest in self.repo.manifests():
@@ -1356,6 +1635,7 @@ class Reporter:
             f"- `{p}` kept at {v}, the lowest patched version (newer ones broke a check: {r}) ({len(m)} manifest(s))"
             for (p, v, r), m in sorted(pinned_groups.items())
         ]
+        pulled_back, waiting_release, kept = self.bounds_lines()
         rows, indirect = self.version_rows(changed_dirs)
         fixed, fixed_lines, still_open = self.alert_status()
         held_failed, held_line = self.held_lines()
@@ -1373,6 +1653,12 @@ class Reporter:
             *section("Security fixes kept at the lowest patched version", pinned),
             *section("Security fixes blocked (need a code change)", blocked),
             *section("Put back as before", put_back),
+            *section(
+                "Locks pulled back inside this repo's declared bounds (the release on PyPI has no such limit yet)",
+                pulled_back,
+            ),
+            *section("Locks outside this repo's declared bounds until the next release", waiting_release),
+            *section("Locks kept outside this repo's declared bounds (pulling them back breaks another rule)", kept),
             *section(
                 "Breaking upgrades held back (new major, or new minor for 0.x; each needs its own PR)", held_line[:80]
             ),
@@ -1590,6 +1876,7 @@ def main() -> int:
         "cap",
         "secure",
         "update",
+        "bounds",
         "failures",
         "hold",
         "finalize",
@@ -1627,6 +1914,7 @@ def main() -> int:
         "cap": lambda: Capper(repo.manifests(), state, repo.own_packages()).run(),
         "secure": lambda: Securer(repo.manifests(), state, repo.own_packages()).run(),
         "update": lambda: Checker(repo, state, args.workers).run(repo.manifests(), upgrade=True, holds={}),
+        "bounds": lambda: Bounds(repo).run(),
         "failures": lambda: Failures(repo, state, args.repo, args.run_id, split(args.jobs)).run(),
         "hold": lambda: Holds(repo, state, args.workers).run(),
         "finalize": lambda: Finalizer(repo, state).run(),

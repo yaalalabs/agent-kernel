@@ -10,18 +10,17 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.5"
+version = "0.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "deprecated" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/23/04a97afd1bfce8f69640c7052036eda1e324114538aa519d04308d5a4de3/agentkernel-0.9.5.tar.gz", hash = "sha256:43df6229bd23e2d43db5905ee75ff93564b3c5bd5645924de97217a77a237a9f", size = 673951, upload-time = "2026-10-09T06:37:29.487Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/ca/d90e1312f219a1abb46c9ec72050e0a259d2163724f05d44ded2fe949e9f/agentkernel-0.10.1.tar.gz", hash = "sha256:248d420a3d37c45090c6808b695b686a63a5a581e687156432cf0599bc19828b", size = 853158, upload-time = "2026-11-16T08:38:30.326Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/26/64bdbf4bedb1a0844ff8769d8aa91b237eaff9182a1656145aab789cb906/agentkernel-0.9.5-py3-none-any.whl", hash = "sha256:78a545e8d9652c8b2ade16003fb75ad5be5e1f2221df60a24320358956151ecc", size = 872753, upload-time = "2026-10-09T06:37:27.346Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/a2/300d3a4cd46d2a1953f901ae5fbfb477f600f74644d238c9853a7a27927c/agentkernel-0.10.1-py3-none-any.whl", hash = "sha256:48343062fdcbcdfe2de75ae191e050799cb49a08ad8d17a023a2e29bf3bf4dd9", size = 1078427, upload-time = "2026-11-16T08:38:27.88Z" },
 ]
 
 [package.optional-dependencies]
@@ -672,11 +671,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.9.5" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "api"], specifier = ">=0.10.1" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.10.1" },
     { name = "black", specifier = "==26.10.1" },
     { name = "isort", specifier = ">=5.0.0,<8.0.0" },
     { name = "mypy", specifier = ">=1.0.0,<2.0.0" },
@@ -949,18 +948,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7f/95/44596d1e9853756346b4f82f6d3fca9d3a35dc421f253b89382544fb40f1/deepeval-4.2.0.tar.gz", hash = "sha256:07840ef5bc6db3242866ffae0969cca7cafe4a8c3e4e19e3a508283053a0b968", size = 855681, upload-time = "2026-08-24T21:54:17.825Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/09/18975670bcabf2fca174621db1f95bee79c091de1df0b6395e02b1f491b5/deepeval-4.2.0-py3-none-any.whl", hash = "sha256:7e10ea7ffdbe5506fde9e981c76184134079b586ef6bfc78049cd78112083a0e", size = 1216872, upload-time = "2026-08-24T21:54:19.532Z" },
-]
-
-[[package]]
-name = "deprecated"
-version = "1.3.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "wrapt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/49/85/12f0a49a7c4ffb70572b6c2ef13c90c88fd190debda93b23f026b25f9634/deprecated-1.3.1.tar.gz", hash = "sha256:b1b50e0ff0c1fddaa5708a2c6b0a6588bb09b892825ab2b214ac9ea9d92a5223", size = 2932523, upload-time = "2025-10-30T08:19:02.757Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/d0/205d54408c08b13550c733c4b85429e7ead111c7f0014309637425520a9a/deprecated-1.3.1-py2.py3-none-any.whl", hash = "sha256:597bfef186b6f60181535a29fbe44865ce137a5079f295b479886c82729d5f3f", size = 11298, upload-time = "2025-10-30T08:19:00.758Z" },
 ]
 
 [[package]]

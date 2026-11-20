@@ -22,7 +22,7 @@ authenticates it, and sandboxed code runs as the authenticated user.
 
 1. A client calls `POST /api/v1/chat` with a prompt and an `auth_token` field.
 2. [`IdentitySeedPreHook`](identity.py) (registered on the agent in [`app.py`](app.py)) runs
-   before the agent: it reads the token (Agent Kernel delivers any extra request field to
+   before the agent: it reads the token (Open Agent Kernel delivers any extra request field to
    hooks), rejects a missing/invalid one, and on success looks the user up in
    `USER_DIRECTORY` (your IdP / IAM stand-in) and records the identity on the session.
 3. The agent runs and calls the sandbox tools.
@@ -49,7 +49,7 @@ demo provider gives **no isolation** — it's for demonstration only.)
 
 ## Fail-closed
 
-The `secure` profile sets `identity.mode: user`, so Agent Kernel enforces (worker-side,
+The `secure` profile sets `identity.mode: user`, so OAK enforces (worker-side,
 before any provider call) that both the provider supports user identity **and** a user-mode
 principal was actually resolved. A user-scoped request can never silently fall back to the
 agent identity — it is rejected instead. Here the pre-hook rejects unauthenticated requests

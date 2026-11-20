@@ -1,16 +1,16 @@
 # Telegram
 
-Deploy your Agent Kernel agents as Telegram bots that can respond to messages in real-time. This integration connects your AI agents directly to Telegram, enabling natural conversations with users through one of the world's most popular messaging platforms.
+Deploy your Open Agent Kernel agents as Telegram bots that can respond to messages in real-time. This integration connects your AI agents directly to Telegram, enabling natural conversations with users through one of the world's most popular messaging platforms.
 
 ## Overview
 
-The `TelegramInboundAdapter` provides a seamless bridge between your Agent Kernel agents and Telegram. When users message your bot, their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Telegram.
+The `TelegramInboundAdapter` provides a seamless bridge between your OAK agents and Telegram. When users message your bot, their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Telegram.
 
 ### How it works:
 
 1. User sends a message to your Telegram bot
 2. Telegram delivers the message to your webhook endpoint
-3. Agent Kernel verifies and processes the message
+3. OAK verifies and processes the message
 4. Visual feedback is sent (typing indicator, etc.)
 5. Agent generates a response and sends it back to the user
 
@@ -45,6 +45,8 @@ export AK_TELEGRAM__BOT_TOKEN="your_bot_token"
 export AK_TELEGRAM__WEBHOOK_SECRET="your_secure_random_string"  # Optional
 export OPENAI_API_KEY="your_openai_api_key"
 ```
+
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials). The keys they are read under are set by `telegram.bot_token_key` and `webhook_secret_key` in `config.yaml`, defaulting to the names above.
 ### Multimodal Configuration
 
 For image and document support, configure these environment variables:
@@ -117,6 +119,7 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 - **Multi-modal support** - Send and analyze images, PDFs, and document files alongside text
 - **Typing indicator** - Visual feedback while processing
 - **Inline keyboards** - Interactive button-based interactions
+- **Approvals in the chat** - A run that pauses for a human arrives with Approve and Deny buttons
 - **Markdown formatting** - Rich text formatting in responses
 - **Session management** - Per-chat conversation context with memory
 - **Automatic message splitting** - Long responses split to respect Telegram's 4096 character limit
@@ -137,13 +140,13 @@ The Telegram integration supports sending images and documents alongside text me
 
 1. User sends an image or document with optional text caption
 2. Telegram webhook delivers the message to your agent
-3. Agent Kernel downloads and processes the file
+3. OAK downloads and processes the file
 4. A brief description of the file is generated via LLM and the file is saved to the **session cache** (not sent raw to the agent)
 5. The description is injected into the user's message text so the agent understands what was attached
 6. When the agent needs to inspect the file in detail, it calls the `analyze_attachments` tool, which retrieves the file from the session cache
 7. Response is sent back through Telegram
 
-> **Note:** The `analyze_attachments` tool is automatically attached to your agent by Agent Kernel when `AK_MULTIMODAL__ENABLED=true`.
+> **Note:** The `analyze_attachments` tool is automatically attached to your agent by OAK when `AK_MULTIMODAL__ENABLED=true`.
 
 ### Example Scenarios
 
@@ -224,6 +227,9 @@ async def _send_message_with_keyboard(self, chat_id: int, text: str):
     await self._send_message(chat_id, text, reply_markup=reply_markup)
 ```
 
+Your `callback_data` is yours: OAK reads only presses prefixed `akhitl:` (see below) and
+hands every other callback query to the normal message path, exactly as before.
+
 ### Markdown Formatting
 
 ```python
@@ -233,6 +239,76 @@ await self._send_message(
     parse_mode="Markdown"
 )
 ```
+
+## Approving a Paused Run
+
+When an agent stops to ask a human — a gated tool, a confirmation — the pause is posted to the same
+chat with a keyboard under it:
+
+```
+⏸ Approval needed
+
+refund_order
+  order_id: A-10294
+
+This run is paused until someone approves it.
+
+[ ✓ Approve ]  [ ✗ Deny ]
+```
+
+**A pause holding several questions is sent as several messages**, one per question, each with the
+keyboard that answers it. A Telegram keyboard is attached to a message and always renders at its
+foot, so there is no way to put a row beside its question inside one message — and matching rows to
+paragraphs by eye is how the wrong refund gets approved. The opening and closing lines ride on the
+first and last question, so the common pause, which holds one question, is still one message.
+
+Nothing is configured for this. A press parses into exactly the decision a REST client would send
+and travels the same queue, so the agent cannot tell the two apart. See
+[Human in the Loop](../advanced/human-in-the-loop.md) for the full picture, including the one kind of question that gets no buttons: one asking for a value rather than a verdict.
+
+:::caution Anyone who can see the message can press it
+OAK ships no approver policy. Group membership is not an approval list — if it matters who
+decides, enforce it yourself: the presser's Telegram user id reaches the run as `acting_user_id`,
+and a `PreHook` is where you check it.
+:::
+
+:::note Telegram's 64-byte button budget
+A button carries `akhitl:<verb>:<interruption id>` in `callback_data`, which Telegram caps at **64
+bytes**. The interruption id is the agent framework's own, so OAK cannot shorten it. A
+question whose id does not fit renders with no keyboard, says so in its own message, and is logged
+with its byte count. Answer that one over another surface.
+:::
+
+:::note Some pauses arrive with no keyboard
+On Pydantic AI and Microsoft Agent Framework a resume has to answer every question at once. Those pauses arrive
+as **one** message holding every question, numbered, under a tally keyboard:
+
+```
+1. refund_order
+     order_id: A-10294
+2. refund_order
+     order_id: B-20571
+
+[ ● ✓ Approve 1 ] [ ✗ Deny 1 ]
+[ ✓ Approve 2 ]   [ ● ✗ Deny 2 ]
+[ Submit ]
+```
+
+A verb press only marks an answer — nothing is sent, and you can change your mind — and **Submit**
+sends the whole set as one decision. Submitting with a question still blank says so and sends
+nothing. The marks live in the keyboard itself, which Telegram hands back on every press, so
+nothing is stored between them. This is the one rendering that numbers, because a keyboard sits at
+the foot of the message rather than beside the question it answers.
+
+If such a pause also holds a question wanting a typed answer, there is no tally: no verb could
+answer that question, and the framework will not take the set without it. The questions arrive as
+text, with a note saying the pause has to be answered over another surface.
+:::
+
+The buttons stay on the message after a decision. Pressing the same one again is deduplicated and
+changes nothing; pressing one on a pause that has already been answered gets the usual error reply.
+A press is identified by who made it as well as by what it decides, so an approval policy that
+rejects one press does not deduplicate the authorized press that follows it.
 
 ## Supported Message Types
 
@@ -245,7 +321,7 @@ await self._send_message(
 
 For detailed troubleshooting information:
 
-Agent Kernel auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
+OAK auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
 
 **Using environment variables:**
 ```bash

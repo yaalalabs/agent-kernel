@@ -1,12 +1,14 @@
 ---
 slug: /guardrails-content-safety
 title: "Safe AI at Scale: Introducing Guardrails for Agent Kernel"
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, guardrails, content-safety, openai-guardrails, aws-bedrock, security, compliance, pii, moderation]
-image: /img/card.png
+image: /img/blog/guardrails-content-safety-banner.png
 ---
 
 # Safe AI at Scale: Introducing Guardrails for Agent Kernel
+
+![Safe AI at scale. Guardrails: enterprise-grade content safety for AI agents in production.](/img/blog/guardrails-content-safety-banner.png)
 
 Deploying AI agents in production comes with critical business risks: brand damage from inappropriate responses, regulatory penalties from data leaks, and customer trust erosion from security breaches. Today, we're announcing **Guardrails** for Agent Kernel - enterprise-grade content safety that protects your business while accelerating your AI initiatives.
 

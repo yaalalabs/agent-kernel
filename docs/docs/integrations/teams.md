@@ -4,18 +4,18 @@ sidebar_position: 6
 
 # Microsoft Teams
 
-Agent Kernel supports integration with Microsoft Teams via the Azure Bot Framework. This allows you to deploy agents that can communicate in 1:1 chats, group chats, and Teams channels, supporting text, images, and file attachments.
+Open Agent Kernel (OAK) supports integration with Microsoft Teams via the Azure Bot Framework. This allows you to deploy agents that can communicate in 1:1 chats, group chats, and Teams channels, supporting text, images, and file attachments.
 
 ## How It Works
 
-1.  **Azure Bot Service**: Acts as the bridge between the Teams client and your Agent Kernel server.
-2.  **Webhook**: Your Agent Kernel server exposes a `/teams/messages` endpoint that receives activities from Azure.
+1.  **Azure Bot Service**: Acts as the bridge between the Teams client and your OAK server.
+2.  **Webhook**: Your OAK server exposes a `/teams/messages` endpoint that receives activities from Azure.
 3.  **Agent Processing**: Incoming messages are routed to your configured Agent.
 4.  **Response**: The Agent's reply is sent back to the conversation via the Bot Framework Connector.
 
 ## Setup Guide
 
-Setting up a Teams bot involves three main parts: Azure, your Agent Kernel Server, and the Teams Developer Portal.
+Setting up a Teams bot involves three main parts: Azure, your OAK Server, and the Teams Developer Portal.
 
 ### 1. Azure App Registration
 
@@ -87,6 +87,8 @@ export AK_TEAMS__APP_PASSWORD="your-azure-client-secret"
 # Optional
 export AK_TEAMS__TENANT_ID="your-tenant-id"
 ```
+
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials). The key the client secret is read under is set by `teams.app_password_key` in `config.yaml`, defaulting to `AK_TEAMS__APP_PASSWORD`.
 
 Every key is settable either way: `teams.agent` is also `AK_TEAMS__AGENT`, and so on.
 

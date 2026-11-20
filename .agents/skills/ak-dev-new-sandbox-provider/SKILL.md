@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-sandbox-provider
 description: >
-  Step-by-step guide for adding a new sandbox provider to Agent Kernel.
+  Step-by-step guide for adding a new sandbox provider to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new code-execution backend for the sandbox
   capability (beyond local_subprocess, docker, kubernetes, e2b, daytona, and ec2_ssm). Covers implementing
   the Sandbox / SandboxProvider ABCs, declaring capabilities honestly, factory registration,
@@ -14,7 +14,7 @@ metadata:
 
 # Adding a New Sandbox Provider
 
-This guide walks through adding a new sandbox provider to Agent Kernel. Use the shipped
+This guide walks through adding a new sandbox provider to Open Agent Kernel (OAK). Use the shipped
 `local_subprocess` (`ak-py/src/agentkernel/sandbox/providers/local_subprocess.py`) and
 `docker` (`ak-py/src/agentkernel/sandbox/providers/docker.py`) implementations as reference.
 
@@ -310,16 +310,15 @@ including a profile that demonstrates enforced policy and sentinel-based determi
   tier and the extra), and to the "Installation" extras in `ak-py/README.md`.
 - If the provider supports `principal_user`, document its identity mapping (how `agent`/`user`
   mode resolves to backend credentials).
-- Landing page inventories (`docs/src/components/*/data.tsx`): a tile in the **Cloud &
-  infrastructure** row of `IntegrationsMarquee/data.tsx` (role `Sandbox`, `href` to the
-  provider's setup anchor in `docs/docs/advanced/sandbox.md`, logo or `react-icons/si` glyph),
-  and the provider in the **Sandboxed Execution** card's `tags` and `description` under the
-  Scale tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in
-  `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
-- Features page (`docs/src/pages/features.tsx`): the provider-name highlight on the Sandboxed
-  Code Execution card and the provider count in the sandbox entry of `FEATURE_PAGE_MAP`. Grep
-  `docs/src/pages/*.tsx`, `docs/docs/intro.md`, and `docs/src/components/SandboxFlowDiagram`
-  for the provider roll call and the count.
+- Landing page inventories (`docs/src/components/HomeSections/`): an item in the **Cloud &
+  infrastructure** row of `INTEGRATION_ROWS` in `integrations.data.tsx` (role `Sandbox`, `href`
+  to the provider's setup anchor in `docs/docs/advanced/sandbox.md`, logo or `react-icons/si`
+  glyph). Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site
+  Landing and Features Pages*.
+- Features page (`docs/src/pages/features.tsx`): the **Sandboxed code execution** capability
+  under Guard, whose first line of `points` gives the provider count and names. Grep
+  `docs/src/pages/*.tsx`, the root `README.md`, `docs/docs/intro.md`, and
+  `docs/src/components/SandboxFlowDiagram` (`PROVIDERS`) for the provider roll call and the count.
 
 ## Checklist
 
@@ -334,5 +333,5 @@ including a profile that demonstrates enforced policy and sentinel-based determi
 - [ ] Factory resolution test in `tests/test_sandbox.py`
 - [ ] Example profile in `examples/sandbox/`
 - [ ] Documentation: provider table row in `docs/docs/advanced/sandbox.md` + extra in `ak-py/README.md`
-- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), Sandboxed Execution card tags (`FeatureExplorer/data.tsx`)
-- [ ] Provider inventories on `docs/src/pages/features.tsx` (sandbox card highlight and `FEATURE_PAGE_MAP` count) and `SandboxFlowDiagram`
+- [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`)
+- [ ] Provider inventories on `docs/src/pages/features.tsx` (the Sandboxed code execution capability's count and names) and `SandboxFlowDiagram`

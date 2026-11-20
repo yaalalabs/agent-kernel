@@ -1,10 +1,10 @@
 # Messenger
 
-Deploy your Agent Kernel agents as Facebook Messenger bots that can respond to messages in real-time. This integration connects your AI agents directly to Facebook Messenger, enabling natural conversations with users through one of the world's most popular messaging platforms.
+Deploy your Open Agent Kernel agents as Facebook Messenger bots that can respond to messages in real-time. This integration connects your AI agents directly to Facebook Messenger, enabling natural conversations with users through one of the world's most popular messaging platforms.
 
 ## Overview
 
-The `MessengerInboundAdapter` provides a seamless bridge between your Agent Kernel agents and Facebook Messenger. When users message your Facebook Page, their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Messenger.
+The `MessengerInboundAdapter` provides a seamless bridge between your OAK agents and Facebook Messenger. When users message your Facebook Page, their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Messenger.
 
 **How it works:**
 
@@ -87,6 +87,8 @@ export AK_MESSENGER__APP_SECRET="your_app_secret"  # Optional but recommended
 export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v21.0
 ```
 
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials). The keys they are read under are set by `messenger.access_token_key`, `verify_token_key` and `app_secret_key` in `config.yaml`, defaulting to the names above.
+
 **Multimodal Configuration (for image and document support):**
 
 ```bash
@@ -159,7 +161,7 @@ if __name__ == "__main__":
     IOHandler.run(handlers=[WebhookRESTRequestHandler(MessengerInboundAdapter())])
 ```
 
-> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyze_attachments` tool is automatically attached to all agents by Agent Kernel at startup. You do not need to add it manually.
+> **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyze_attachments` tool is automatically attached to all agents by OAK at startup. You do not need to add it manually.
 
 #
 :::note Mounting
@@ -395,7 +397,7 @@ Automatically logged for monitoring and debugging purposes.
 
 For detailed troubleshooting information:
 
-Agent Kernel auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
+OAK auto-configures logging on import. To enable debug logging, use environment variables or configuration files:
 
 **Using environment variables:**
 ```bash
@@ -623,5 +625,5 @@ If you encounter issues:
 1. Check the [troubleshooting section](#troubleshooting) above
 2. Enable debug logging to see detailed request/response information
 3. Review the Facebook Messenger Platform documentation
-4. Check the [Agent Kernel GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
+4. Check the [OAK GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
 5. Visit the [Facebook Developer Community](https://developers.facebook.com/community/)

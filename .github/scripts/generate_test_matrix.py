@@ -10,13 +10,14 @@ import json
 import sys
 
 
-def generate_matrix_from_config(config_path: str, tier: str) -> tuple[dict, dict]:
+def generate_matrix_from_config(config_path: str, tier: str, cloud: str = 'all') -> tuple[dict, dict]:
     """
     Generate test matrix from configuration file.
     
     Args:
         config_path: Path to configuration file
         tier: Test tier ('nightly', 'weekly', or 'e2e')
+        cloud: 'all', or 'aws' / 'azure' / 'gcp' to keep only tests whose type starts with that cloud
     
     Returns:
         Tuple of (matrix dict, deployment_base dict or None)
@@ -31,6 +32,8 @@ def generate_matrix_from_config(config_path: str, tier: str) -> tuple[dict, dict
         tests = config['e2e']['tests']
     else:
         raise ValueError(f"Invalid tier: {tier}")
+    if cloud != 'all':
+        tests = [test for test in tests if test['type'].startswith(f'{cloud}-')]
     
     matrix_tests = []
     GCP_STAGGER_SECONDS = 90
@@ -77,9 +80,9 @@ def generate_nightly_matrix(config_path: str) -> tuple[dict, dict]:
     return generate_matrix_from_config(config_path, 'nightly')
 
 
-def generate_weekly_matrices(config_path: str) -> tuple[dict, dict]:
+def generate_weekly_matrices(config_path: str, cloud: str = 'all') -> tuple[dict, dict]:
     """Generate test matrices for weekly workflow."""
-    return generate_matrix_from_config(config_path, 'weekly')
+    return generate_matrix_from_config(config_path, 'weekly', cloud)
 
 
 def generate_e2e_matrix(config_path: str) -> dict:
@@ -99,6 +102,12 @@ def main():
     parser.add_argument(
         '--config',
         help='Path to configuration file'
+    )
+    parser.add_argument(
+        '--cloud',
+        choices=['all', 'aws', 'azure', 'gcp'],
+        default='all',
+        help='Weekly tier only: keep only one cloud\'s tests'
     )
     parser.add_argument(
         '--format',
@@ -137,7 +146,7 @@ def main():
                     print(json.dumps(deployment_base, indent=2))
         
         elif args.tier == 'weekly':
-            matrix, deployment_base = generate_weekly_matrices(args.config)
+            matrix, deployment_base = generate_weekly_matrices(args.config, args.cloud)
             if args.format == 'github':
                 print(f"matrix={json.dumps(matrix)}")
                 if deployment_base:

@@ -1,6 +1,6 @@
-# Agent Kernel Realtime Voice over NATS JetStream (LiveKit)
+# Open Agent Kernel Realtime Voice over NATS JetStream (LiveKit)
 
-This demo runs Agent Kernel's `REALTIME` execution pipeline for voice over WebRTC using LiveKit as the frontend gateway, powered by **NATS JetStream** as the backend message broker.
+This demo runs Open Agent Kernel's `REALTIME` execution pipeline for voice over WebRTC using LiveKit as the frontend gateway, powered by **NATS JetStream** as the backend message broker.
 
 ```
 LiveKit WebRTC → IOHandler → AGENT_REQUESTS → Agent Runner → AGENT_REPLIES → IOHandler → LiveKit WebRTC
@@ -21,7 +21,7 @@ Like Kafka, NATS routes messages using strict lanes called **Subjects**. This me
 - `OPENAI_API_KEY` exported
 - `AK_LIVEKIT__URL`, `AK_LIVEKIT__API_KEY`, and `AK_LIVEKIT__API_SECRET` exported (from your LiveKit Cloud dashboard)
 
-> Note: If you are actively developing Agent Kernel core features, compile your local changes first by running `cd ../../../../../ak-py && make build`, and then use `./build.sh local` in this folder instead of `./build.sh`.
+> Note: If you are actively developing OAK core features, compile your local changes first by running `cd ../../../../../ak-py && make build`, and then use `./build.sh local` in this folder instead of `./build.sh`.
 
 ## Quickstart
 
@@ -69,10 +69,10 @@ This safely deletes the NATS Docker container.
 
 ## Architecture Note: The Python Polling Limitation
 
-Unlike Kafka, the official `nats-py` Python client lacks a mechanism to instantly pull a message from *any* partition simultaneously. Instead, the Agent Kernel NATS Transport (`NatsTransportConsumer`) has to simulate this by using a Python `for` loop to manually check each partition one-by-one with a 50ms timeout.
+Unlike Kafka, the official `nats-py` Python client lacks a mechanism to instantly pull a message from *any* partition simultaneously. Instead, the OAK NATS Transport (`NatsTransportConsumer`) has to simulate this by using a Python `for` loop to manually check each partition one-by-one with a 50ms timeout.
 
 If you set `partitions: 32` in `config.yaml`, this Python loop introduces up to **1.6 seconds of artificial polling latency** as it sweeps across empty partitions looking for the next audio chunk. Because `REALTIME` voice requires streaming 20+ chunks per second, this latency completely starves the audio player, causing robotic stuttering.
 
 **The Local Fix:** For local testing, `config.yaml` is set to `partitions: 1`. With only 1 partition, the Python loop has zero sweep delay and fetches audio instantly, making the voice perfectly smooth.
 
-**The Production Fix:** Because of this specific Python library limitation, it is highly recommended to use **Kafka** or **AWS SQS** for heavy production `REALTIME` workloads in Agent Kernel. If you must use NATS in production, you should write your consumer in Go using the native NATS JetStream client, which does not suffer from this loop latency.
+**The Production Fix:** Because of this specific Python library limitation, it is highly recommended to use **Kafka** or **AWS SQS** for heavy production `REALTIME` workloads in OAK. If you must use NATS in production, you should write your consumer in Go using the native NATS JetStream client, which does not suffer from this loop latency.

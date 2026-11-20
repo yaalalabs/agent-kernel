@@ -31,7 +31,6 @@ from ...core import Agent as BaseAgent
 from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -928,7 +927,8 @@ class ClaudeAgentSpec:
     unchanged.
 
     name: str : the name Agent Kernel registers the agent under
-    description: str : what the main AK agent does, used for routing and its A2A card
+    description: str : what the main AK agent does, used for routing. Its A2A card takes its description from the
+        agent's descriptor instead, declared with `Module.describe`
     options: ClaudeAgentOptions : the SDK's options, passed to every run
     tools: list[SdkMcpTool] : in-process tools, from `ClaudeToolBuilder.bind` or the SDK's `@tool`
     """
@@ -1052,14 +1052,26 @@ class ClaudeAgent(BaseAgent):
         names = {t.name for t in self.agent.tools}
         self.agent.tools.extend(t for t in ClaudeToolBuilder.bind([tool]) if t.name not in names)
 
-    def get_a2a_card(self) -> Any:
+    def _native_description(self) -> str:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the spec's `description`. Unlike `get_description()`, it never falls back to the system prompt.
         """
-        from a2a.types import AgentSkill
+        return self.agent.description or ""
 
-        skills = [AgentSkill(id=t.name, name=t.name, description=t.description or "", tags=[]) for t in self.agent.tools]
-        return A2ACardBuilder.build(name=self.name, description=self.get_description(), skills=skills)
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names of the declared in-process tools, as declared (the SDK serves each as `mcp__ak__<name>`).
+
+        Not reported: Claude Code's built-in tools (file, shell, web), the tools of external MCP servers named in
+        the options, and the tools of subagents.
+        """
+        return [tool.name for tool in self.agent.tools]
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each declared tool by name.
+        """
+        return {tool.name: tool.description or "" for tool in self.agent.tools}
 
 
 class ClaudeModule(Module):

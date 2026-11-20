@@ -19,6 +19,20 @@ from typing import Any
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _env_only_secret_manager(monkeypatch):
+    """Serve every test an environment-only ``SecretManager``.
+
+    Framework consumers resolve their credentials through ``SecretManager.current()``, which
+    otherwise builds from ``AKConfig.get()`` — a mock in many tests — and keeps whatever provider
+    the first test configured for the rest of the run. Tests of the manager itself reset it in
+    their own fixture.
+    """
+    from agentkernel.secret import EnvSecretProvider, SecretManager
+
+    monkeypatch.setattr(SecretManager, "_instance", SecretManager(EnvSecretProvider(), cache_ttl=0))
+
+
 class FakeChromaCollection:
     def __init__(self) -> None:
         self.queries: list[tuple[list[str], int]] = []
@@ -175,3 +189,38 @@ def static_identity(monkeypatch):
     monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
     yield provider
     IdentityProviderFactory.reset()
+
+
+@pytest.fixture
+def descriptor_only_registry():
+    """The class of a registry that knows descriptors and hosts no agent (#603).
+
+    It stands in for a process over a shared registry store, which lists agents that run in another
+    process: ``descriptors()`` and ``descriptor(id)`` answer, ``get`` and ``agents`` find nothing, and
+    nothing registers into it. Build one with the descriptors it should know and hand it to ``Runtime``.
+    """
+    from agentkernel.core.registry import AgentRegistry
+
+    class DescriptorOnlyRegistry(AgentRegistry):
+        def __init__(self, descriptors):
+            self._descriptors = {descriptor.id: descriptor for descriptor in descriptors}
+
+        def register(self, descriptor, agent):  # pragma: no cover - nothing registers here
+            raise AssertionError("not registered into")
+
+        def deregister(self, id):  # pragma: no cover
+            raise AssertionError("not deregistered from")
+
+        def get(self, id):
+            return None
+
+        def descriptor(self, id):
+            return self._descriptors.get(id)
+
+        def agents(self):
+            return {}
+
+        def descriptors(self):
+            return list(self._descriptors.values())
+
+    return DescriptorOnlyRegistry

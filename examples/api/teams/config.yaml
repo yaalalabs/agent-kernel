@@ -1,5 +1,8 @@
 teams:
   agent: "general"
+  # Key the Teams client secret is read from through the secret manager when app_password is
+  # unset: the environment first, then the configured secret provider
+  app_password_key: AK_TEAMS__APP_PASSWORD
 
 logging:
   ak:

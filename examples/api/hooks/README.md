@@ -1,6 +1,6 @@
 # OpenAI Hooks Demo
 
-This example demonstrates the use of **pre-execution hooks** and **post-execution hooks** in Agent Kernel with OpenAI agents. It showcases three important hook patterns:
+This example demonstrates the use of **pre-execution hooks** and **post-execution hooks** in Open Agent Kernel (OAK) with OpenAI agents. It showcases three important hook patterns:
 
 1. **Guard Rail Hook** (Pre-hook) - Input validation and content filtering
 2. **RAG Hook** (Pre-hook) - Retrieval-Augmented Generation (context injection)
@@ -95,7 +95,7 @@ curl -X POST http://localhost:8000/api/v1/chat \
   }'
 ```
 
-Expected: Response includes context from the knowledge base about Agent Kernel, plus a disclaimer at the end.
+Expected: Response includes context from the knowledge base about OAK, plus a disclaimer at the end.
 
 #### Test Guard Rail Blocking
 ```bash
@@ -216,6 +216,6 @@ Each hook receives the prompt/response modified by the previous hook.
 
 ## Learn More
 
-- [Agent Kernel Documentation](https://docs.agent-kernel.io)
+- [OAK Documentation](https://docs.agent-kernel.io)
 - [Core Concepts: Hooks](https://docs.agent-kernel.io/core-concepts/hooks)
 - [OpenAI Integration](https://docs.agent-kernel.io/frameworks/openai)

@@ -1,6 +1,6 @@
 # Execution Hooks
 
-Execution hooks provide powerful extension points to customize and enhance agent behavior at runtime. Agent Kernel supports **pre-execution hooks** and **post-execution hooks** that allow you to modify prompts, inject context, validate inputs, and transform responses.
+Execution hooks provide powerful extension points to customize and enhance agent behavior at runtime. Open Agent Kernel (OAK) supports **pre-execution hooks** and **post-execution hooks** that allow you to modify prompts, inject context, validate inputs, and transform responses.
 
 :::tip Session & Memory Access
 Hooks have full access to the session object and auxiliary memory (volatile and non-volatile caches). This enables:
@@ -300,7 +300,7 @@ class CredentialBrake(PostHook):
         return "CredentialBrake"
 ```
 
-Agent Kernel then emits the closing event for any boundary the stream left open — so a client is not left with an unfinished message or tool call — followed by a single chunk carrying your reason as its `error` with `done: true`. The session is **not** stored, and a recorded thread keeps no assistant message, so a halted turn leaves no trace in conversation state. Because it acts on a fragment rather than a finished unit, halting costs no latency.
+OAK then emits the closing event for any boundary the stream left open — so a client is not left with an unfinished message or tool call — followed by a single chunk carrying your reason as its `error` with `done: true`. The session is **not** stored, and a recorded thread keeps no assistant message, so a halted turn leaves no trace in conversation state. Because it acts on a fragment rather than a finished unit, halting costs no latency.
 
 Treat a halted response as invalid rather than truncated: discard the partial rather than rendering it as a short answer. Any exception that is **not** `StreamHalt` propagates unchanged — a bug in a hook is a defect, not an orderly end of stream.
 
@@ -414,11 +414,11 @@ OpenAIModule([agent]).pre_hook(agent, [
 ])
 ```
 
-The `pre_hook()` and `post_hook()` methods can be chained for convenience, and work with any Agent Kernel module (OpenAI, LangGraph, CrewAI, etc.).
+The `pre_hook()` and `post_hook()` methods can be chained for convenience, and work with any OAK module (OpenAI, LangGraph, CrewAI, etc.).
 
 ### Framework-native hooks {#framework-native-hooks}
 
-Agent Kernel hooks wrap the whole run. For the framework's **own** lifecycle hooks (the OpenAI Agents
+OAK hooks wrap the whole run. For the framework's **own** lifecycle hooks (the OpenAI Agents
 SDK's `RunHooks`, LangChain callbacks, ADK plugins, Pydantic AI's `event_stream_handler`, CrewAI's
 `step_callback`), declare them through the same fluent API with
 [`run_options`](../core-concepts/module.md#native-run-options); they compose with `pre_hook` /
@@ -430,11 +430,11 @@ OpenAIModule([agent]).run_options(agent, hooks=ProgressHooks(), max_turns=25).po
 
 Some frameworks take their lifecycle hooks on the agent itself instead: Microsoft Agent Framework's
 chat, function and agent middleware (the `middleware=` argument of `Agent`), and smolagents'
-`step_callbacks`. Those need nothing from Agent Kernel, and `run_options` is for the run-time arguments
+`step_callbacks`. Those need nothing from OAK, and `run_options` is for the run-time arguments
 beside them (MAF's `options` and `function_invocation_kwargs`; see
 [`examples/cli/maf-run-options`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/maf-run-options)).
 
-A native hook's callbacks run inside the Agent Kernel run, so `Session.current()` resolves in them and
+A native hook's callbacks run inside the OAK run, so `Session.current()` resolves in them and
 a post-hook can read what they recorded in the session's volatile cache before it is cleared. Two
 paths report progress:
 

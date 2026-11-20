@@ -1,7 +1,7 @@
 ---
 name: ak-dev-write-spec
 description: >
-  Write the spec documents for a planned Agent Kernel change under
+  Write the spec documents for a planned Open Agent Kernel change under
   docs/specs/<issue-number>-<short-title>/ in three ordered stages: a concise point-form design
   spec (design.md) that a maintainer reviews first, then a detailed
   implementation spec (spec.md) once the design is approved, then a concise
@@ -18,7 +18,7 @@ metadata:
 
 # Write a Spec for a Planned Change
 
-Use this skill when asked to produce spec documents for Agent Kernel work before (or instead of) implementing it. A change is specified in **three documents, written in strict order**, all under `docs/specs/<issue-number>-<short-title>/`:
+Use this skill when asked to produce spec documents for Open Agent Kernel work before (or instead of) implementing it. A change is specified in **three documents, written in strict order**, all under `docs/specs/<issue-number>-<short-title>/`:
 
 | Stage | File | What it is | Written when |
 |---|---|---|---|
@@ -81,7 +81,7 @@ docs/specs/<issue-number>-<short-title>/
 
 ## Stage 1: `design.md` — the Design Spec
 
-`design.md` is read by an Agent Kernel expert to understand **what is changing and why** — in minutes, not an afternoon. It goes through multiple manual review cycles, so it is optimized for fast reading and per-point commenting: point form, hierarchical, complete.
+`design.md` is read by an OAK expert to understand **what is changing and why** — in minutes, not an afternoon. It goes through multiple manual review cycles, so it is optimized for fast reading and per-point commenting: point form, hierarchical, complete.
 
 ### Prepare
 

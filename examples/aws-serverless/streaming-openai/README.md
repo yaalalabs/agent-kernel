@@ -1,6 +1,6 @@
 ## AWS Serverless WebSocket Streaming + OpenAI Example
 
-This example deploys **Agent Kernel** on AWS using the `yaalalabs/ak-serverless/aws` Terraform module with **event streaming over WebSocket**.
+This example deploys **Open Agent Kernel (OAK)** on AWS using the `yaalalabs/ak-serverless/aws` Terraform module with **event streaming over WebSocket**.
 
 Instead of buffering the full agent response and sending it once (`async` with the default `complete` message type), `async` + `delta` forwards each stream event as a separate `STREAM_CHUNK` message through the WebSocket connection as soon as it is produced.
 
@@ -41,7 +41,7 @@ Project dependencies are declared in `pyproject.toml`:
 
 - `agentkernel[aws,openai,redis]>=0.8.1`
 
-### Agent Kernel runtime config
+### OAK runtime config
 
 `config.yaml` is bundled into each Lambda package/image. The critical setting is:
 
@@ -51,7 +51,7 @@ execution:
   message_type: delta
 ```
 
-This tells Agent Kernel to dispatch to `ServerlessStreamAgentRunner` and instructs the response handler to broadcast each chunk individually rather than storing a single final response.
+This tells OAK to dispatch to `ServerlessStreamAgentRunner` and instructs the response handler to broadcast each chunk individually rather than storing a single final response.
 
 Update the Redis URL to point at your cluster endpoint.
 
@@ -62,10 +62,18 @@ Terraform variables are declared in `deploy/variables.tf`:
 - `region`
 - `prefix`
 - `is_production`
-- `openai_api_key` (sensitive)
 - `demo_auth_token` (sensitive; the credential the `$connect` handshake accepts, see [Using the WebSocket API](#using-the-websocket-api))
 
 Provide values via `terraform.tfvars` (recommended) or via `-var` flags.
+
+The OpenAI key is not a Terraform variable: store it in SSM Parameter Store, where `<prefix>` is
+`prefix` in `deploy/terraform.tfvars`. The deployment sets `ssm_enabled = true` and `config.yaml` selects
+the `aws_ssm` secret provider, so the agent runner reads it from SSM at startup:
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+```
 
 ## Deploy
 

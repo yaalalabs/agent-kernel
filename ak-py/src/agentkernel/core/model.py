@@ -278,6 +278,9 @@ class AgentPausedReplyAny(AgentReplyAny):
     session_id: str : the session holding the record
     agent: str : the agent that paused, which also identifies the framework
     interruptions: list[PausedInterruption] : what the human has to decide
+    answer_together: bool : every interruption has to be decided in one resume. Set by the runners
+        whose framework refuses a partial answer, so a surface drawing controls can offer one
+        submit for the whole pause instead of a control per question that cannot work alone
 
     content is derived from the fields above and never set independently — a caller-supplied one is
     overwritten, so the two cannot drift. The opaque per-framework resume state is never on this
@@ -290,6 +293,7 @@ class AgentPausedReplyAny(AgentReplyAny):
     session_id: str
     agent: str
     interruptions: list[PausedInterruption]
+    answer_together: bool = False
 
     @model_validator(mode="after")
     def _derive_content(self) -> "AgentPausedReplyAny":
@@ -304,6 +308,7 @@ class AgentPausedReplyAny(AgentReplyAny):
             "session_id": self.session_id,
             "agent": self.agent,
             "interruptions": [interruption.model_dump(mode="json") for interruption in self.interruptions],
+            "answer_together": self.answer_together,
         }
         return self
 
@@ -595,6 +600,17 @@ class AgentDescriptor(BaseModel):
         """Whether the agent is served on ``surface`` (``rest``, ``a2a``, ``mcp`` or ``agui``)."""
         return True if self.surfaces is None else surface in self.surfaces
 
+    def catalog_entry(self) -> dict[str, Any]:
+        """The descriptor as a catalog publishes it: every field but ``identity``.
+
+        ``identity`` says how the agent authenticates itself (its subject, its client id, the name of
+        its secret). The registry stores it for the process that hosts the agent; a caller listing
+        agents has no use for it and no claim to it.
+
+        :return: The JSON-ready entry.
+        """
+        return self.model_dump(mode="json", exclude={"identity"})
+
 
 class SystemTool(BaseModel):
     name: str
@@ -717,6 +733,9 @@ class BaseRunRequest(BaseChatRequest):
     (including AgentRequestAttachmentRef entries, which files/images cannot express). Typed
     for the same reason as the scheduling fields: an extra would reach the agent as
     AgentRequestAny context.
+
+    requests, scheduled_task_id and scheduled_time are for internal producers only;
+    client-facing routes parse ChatRunRequest, which rejects them.
     """
 
     files: list[FileData] | None = None
@@ -725,6 +744,33 @@ class BaseRunRequest(BaseChatRequest):
     scheduled_task_id: str | None = None
     scheduled_time: str | None = None
     model_config = ConfigDict(extra="allow")
+
+
+class ChatRunRequest(BaseRunRequest):
+    """BaseRunRequest as a client sends it: rejects a value for the fields only internal producers set.
+
+    BaseRunRequest is also the queue message format, so the check cannot live there: the
+    runner parses every queued message, including producer-built ones, through it. The
+    fields are also dropped from its JSON schema, so the API docs do not advertise them.
+    A null value is accepted, since it means "not set" and a client generated from an
+    older schema may send one for every optional field.
+    """
+
+    INTERNAL_FIELDS: ClassVar[frozenset[str]] = frozenset({"requests", "scheduled_task_id", "scheduled_time"})
+
+    @staticmethod
+    def _hide_internal_fields(schema: dict[str, Any]) -> None:
+        for field in ChatRunRequest.INTERNAL_FIELDS:
+            schema.get("properties", {}).pop(field, None)
+
+    model_config = ConfigDict(extra="allow", json_schema_extra=_hide_internal_fields)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_internal_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict) and (sent := {key for key in cls.INTERNAL_FIELDS & data.keys() if data[key] is not None}):
+            raise ValueError(f"fields not accepted from clients: {sorted(sent)}")
+        return data
 
 
 USER_ID_NOT_A_FIELD = "user_id is not a request field; the acting user comes from the credential"
@@ -774,7 +820,7 @@ class BaseRequest(BaseModel):
                 return cls(request_id=request_id, route=route)
 
             if not isinstance(body, BaseRunRequest):
-                body = BaseRunRequest.model_validate(body)
+                body = ChatRunRequest.model_validate(body)
 
             return cls(request_id=request_id, route=route, body=body)
 

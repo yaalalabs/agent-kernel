@@ -9,7 +9,6 @@ from smolagents import tool as smol_tool
 
 from ...core import Agent as BaseAgent
 from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import StreamEvent
 from ...core.model import (
@@ -304,19 +303,34 @@ class SmolagentsAgent(BaseAgent):
             except Exception:
                 pass
 
-    def get_a2a_card(self):
+    def _native_description(self) -> str:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the native agent's `description`, the text smolagents gives a manager agent about this one. Never
+        the system prompt, which is what `get_description()` answers with.
         """
-        from a2a.types import AgentSkill
+        return getattr(self.agent, "description", None) or ""
 
-        skills = []
-        raw_tools = getattr(self.agent, "tools", [])
-        tools_list = raw_tools.values() if isinstance(raw_tools, dict) else raw_tools
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names the native agent holds its tools under, the framework's own `final_answer` included.
 
-        for tool in tools_list:
-            skills.append(AgentSkill(id=tool.name, name=tool.name, description=getattr(tool, "description", ""), tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.get_description(), skills=skills)
+        Not reported: the agent's managed agents, which the model can call like tools.
+        """
+        return list(self._named_tools())
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each native tool by name.
+        """
+        return {name: getattr(tool, "description", None) or "" for name, tool in self._named_tools().items()}
+
+    def _named_tools(self) -> dict[str, Any]:
+        """
+        Returns the native agent's tools by the name it calls them under. smolagents keys them by name; a list is
+        accepted too, for an agent object that holds one.
+        """
+        tools = getattr(self.agent, "tools", None) or {}
+        return dict(tools) if isinstance(tools, dict) else {tool.name: tool for tool in tools}
 
 
 class SmolagentsModule(Module):

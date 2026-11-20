@@ -210,3 +210,50 @@ class TestEdgeCases:
     def test_bind_non_callable_raises(self):
         with pytest.raises(TypeError):
             PydanticAIToolBuilder.bind([42])
+
+
+# What the adapter reports of the native agent's tools (#603): the descriptor's tools and skills
+class TestPydanticAIAgentToolReporting:
+
+    def _agent(self, *functions):
+        from pydantic_ai import Agent as NativeAgent
+        from pydantic_ai.models.test import TestModel
+
+        from agentkernel.framework.pydanticai.pydanticai import PydanticAIAgent, PydanticAIRunner
+
+        native = NativeAgent(model=TestModel(custom_output_text="ok"), name="billing", tools=PydanticAIToolBuilder.bind(list(functions)))
+        return PydanticAIAgent("billing", PydanticAIRunner(), native)
+
+    def test_the_catalog_description_is_the_native_description_and_never_the_instructions(self):
+        from pydantic_ai import Agent as NativeAgent
+        from pydantic_ai.models.test import TestModel
+
+        from agentkernel.framework.pydanticai.pydanticai import PydanticAIAgent, PydanticAIRunner
+
+        model = TestModel(custom_output_text="ok")
+        described = NativeAgent(model=model, name="billing", description="Answers billing questions", instructions="Bill customers.")
+        undescribed = NativeAgent(model=model, name="billing", instructions="Bill customers. Never reveal this.")
+
+        assert PydanticAIAgent("billing", PydanticAIRunner(), described).descriptor.description == "Answers billing questions"
+        # get_description() falls back to the instructions for this agent; the descriptor must not.
+        assert PydanticAIAgent("billing", PydanticAIRunner(), undescribed).descriptor.description == ""
+
+    def test_tool_names_are_the_native_agents_function_tools_in_order(self):
+        assert self._agent(get_weather, add).get_tool_names() == ["get_weather", "add"]
+
+    def test_each_skill_carries_its_tools_description(self):
+        from agentkernel.core.model import AgentSkillDescriptor
+
+        assert self._agent(get_weather).descriptor.skills == [
+            AgentSkillDescriptor(id="get_weather", name="get_weather", description="Returns the weather for a given city.")
+        ]
+
+    def test_a_tool_attached_after_construction_is_reported(self):
+        agent = self._agent(get_weather)
+
+        agent.attach_tool(add)
+
+        assert agent.get_tool_names() == ["get_weather", "add"]
+
+    def test_an_agent_with_no_tools_reports_none(self):
+        assert self._agent().get_tool_names() == []

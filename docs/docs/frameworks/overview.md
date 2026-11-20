@@ -4,13 +4,13 @@ sidebar_position: 1
 
 # Framework Integration Overview
 
-Agent Kernel supports multiple AI agent frameworks through a unified adapter pattern.
+Open Agent Kernel (OAK) supports multiple AI agent frameworks through a unified adapter pattern.
 
 ## Supported Frameworks
 
 ```mermaid
 graph LR
-    A[Agent Kernel] --> B[OpenAI Agents SDK]
+    A[OAK] --> B[OpenAI Agents SDK]
     A --> C[CrewAI]
     A --> D[LangGraph]
     A --> E[Google ADK]
@@ -19,7 +19,7 @@ graph LR
     A --> H[Claude Agent SDK]
     A --> M[Microsoft Agent Framework]
     
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ## Framework Comparison
@@ -37,7 +37,7 @@ graph LR
 
 ## Capability Matrix
 
-Not every Agent Kernel capability is available on every framework:
+Not every OAK capability is available on every framework:
 
 | Capability | OpenAI Agents | CrewAI | LangGraph | Google ADK | Smolagents | Pydantic AI | MAF | Claude Agent SDK |
 |------------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -118,7 +118,7 @@ Not every Agent Kernel capability is available on every framework:
 
 ## Migration Between Frameworks
 
-Agent Kernel makes it easy to migrate:
+OAK makes it easy to migrate:
 
 ```python
 # Original CrewAI implementation
@@ -140,7 +140,7 @@ Your execution code (CLI, API, deployment) remains unchanged!
 
 ## Portable Tool Functions
 
-Agent Kernel lets you write tool functions as plain Python and bind them to any framework using a `ToolBuilder`. The same tool works across all supported frameworks:
+OAK lets you write tool functions as plain Python and bind them to any framework using a `ToolBuilder`. The same tool works across all supported frameworks:
 
 ```python
 def get_weather(city: str) -> str:

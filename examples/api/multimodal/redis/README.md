@@ -1,12 +1,12 @@
-# Agent Kernel — Multimodal with Redis Attachment Storage on AWS Lambda
+# Open Agent Kernel — Multimodal with Redis Attachment Storage on AWS Lambda
 
-This example demonstrates how to use Agent Kernel's `RedisStorageDriver` to store and retrieve multimodal attachments (images, PDFs, etc.) in Redis — preventing session cache bloat.
+This example demonstrates how to use Open Agent Kernel's `RedisStorageDriver` to store and retrieve multimodal attachments (images, PDFs, etc.) in Redis — preventing session cache bloat.
 
 ## Deployed Resources
 
 This demo deploys the following AWS resources:
 
-- AWS Lambda function running the Agent Kernel implementation.
+- AWS Lambda function running the OAK implementation.
 - API Gateway endpoint for the Lambda function.
 - Redis (ElastiCache) cluster for multimodal attachment storage (set `create_redis_cluster = true` in `main.tf`, or configure an existing Redis URL in `config.yaml`).
 
@@ -17,10 +17,12 @@ This demo deploys the following AWS resources:
 
 ## Deployment Steps
 
-1. Configure environment variables:
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
     ```
+    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the app reads the key from SSM at startup; no secret passes through Terraform.
 
 2. Navigate to the deployment directory and run the deployment script:
     ```bash

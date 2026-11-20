@@ -1,7 +1,7 @@
 ---
 name: ak-dev-sync-skills-from-branch
 description: >
-  Sync Agent Kernel skills from branch changes before a feature or bugfix is merged.
+  Sync Open Agent Kernel skills from branch changes before a feature or bugfix is merged.
   Use this skill when implementation is ready and you need to inspect new commits plus
   uncommitted changes, then update developer skills under .agents and user skills under
   ak-py/src/agentkernel/skills to match the actual capability set.
@@ -13,7 +13,7 @@ metadata:
 
 # Sync Skills From Branch Changes
 
-Use this skill when a feature branch or bugfix branch is functionally ready and you need to align Agent Kernel's skills with what actually changed.
+Use this skill when a feature branch or bugfix branch is functionally ready and you need to align Open Agent Kernel's skills with what actually changed.
 
 This skill is for **skill maintenance driven by code diff**, not for implementing the feature itself.
 
@@ -189,6 +189,7 @@ When writing or updating skills:
 - include gotchas only when they are real and recurring
 - keep examples aligned with live examples in `examples/` or `ak-deployment/`
 - update evals when user skills change materially
+- write the product name by the rules in the *Naming and brand* section of `AGENTS.md`: "Open Agent Kernel" in titles and on first mention, "OAK" after that, identifiers and quoted product output unchanged
 
 ## Step 8: Validation Checklist
 

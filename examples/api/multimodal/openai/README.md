@@ -1,8 +1,8 @@
 # Multimodal Example — OpenAI SDK
 
-Demonstrates Agent Kernel's foundational multimodal (image/file) support using the native OpenAI Agent SDK.
+Demonstrates Open Agent Kernel's foundational multimodal (image/file) support using the native OpenAI Agent SDK.
 
-Agent Kernel seamlessly enables vision and document processing out-of-the-box by directly extending the underlying OpenAI toolset.
+OAK seamlessly enables vision and document processing out-of-the-box by directly extending the underlying OpenAI toolset.
 
 ## Running the Example
 

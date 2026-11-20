@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Local Deployment
 
-Run Agent Kernel locally for development and testing.
+Run Open Agent Kernel locally for development and testing.
 
 ## CLI Mode
 
@@ -79,7 +79,7 @@ curl -X POST http://localhost:8000/api/v1/chat \
 
 ### How it executes: the in-process queue pipeline
 
-`RESTAPI.run()` boots Agent Kernel's [queue execution
+`RESTAPI.run()` boots OAK's [queue execution
 pipeline](../architecture/overview#the-queue-execution-pipeline) with the default `in_memory`
 transport: all five pipeline components run as threads in this one process:
 
@@ -93,15 +93,15 @@ graph LR
     RSH --> RS[(in-memory<br/>response store)]
     RS -.->|reply| RH
 
-    style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RSH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RSH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 You get the production queue semantics locally: per-session FIFO ordering with parallel
 sessions, bounded retry with a permanent-failure error path, and request deduplication: with
 zero backing services, and the same wire responses as before. The same app moves to a durable
-broker (SQS on AWS; Kafka/NATS on-prem or Kubernetes via the
+broker (SQS on AWS; Pub/Sub on GCP; Kafka/NATS on-prem or Kubernetes via the
 [Helm chart](./onprem-kubernetes)) purely by configuration. See the
 [Queue Mode Guide](../advanced/queue-mode-guide#running-queue-mode-locally-in_memory) for the
 config knobs and

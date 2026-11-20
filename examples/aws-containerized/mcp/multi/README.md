@@ -1,13 +1,13 @@
-# Agent Kernel with MCP enabled on ECS
+# Open Agent Kernel with MCP enabled on ECS
 
-This project demonstrates how to deploy an **Agent Kernel** running containerized agents on **AWS ECS** with **MCP (Model Context Protocol)** enabled.
+This project demonstrates how to deploy an **Open Agent Kernel (OAK)** running containerized agents on **AWS ECS** with **MCP (Model Context Protocol)** enabled.
 Agents are exposed as MCP tools and can be accessed via both the **REST API** and the **MCP Client API**.
 
 ---
 
 ## Features
 
-* Containerized Agent Kernel running on AWS ECS
+* Containerized OAK running on AWS ECS
 * MCP server enabled and exposed via `/mcp` endpoint
 * Supports Smolagents and OpenAI Agent SDK agents
 * Agents automatically registered as MCP tools
@@ -60,13 +60,13 @@ module "containered_agents" {
   # Enable MCP server
   enable_mcp_server = true  # MCP endpoint => /<api_base_path>/<api_version>/mcp
 
-  # REST service (container build, networking, and runtime env vars)
+  # OPENAI_API_KEY is read from SSM (/ak/<prefix>/openai_api_key) via config.yaml's aws_ssm secret provider
+  ssm_enabled = true
+
+  # REST service (container build and networking)
   rest_service = {
     package_path   = "../dist"
     container_port = 8000
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 }
 ```
@@ -83,7 +83,6 @@ In addition to Terraform, MCP must be enabled at the application level using `co
 mcp:
   enabled: true
   expose_agents: true
-  agents: ['*']
   stateless_http: true  # recommended for load-balanced/recyclable ECS deployments
 ```
 
@@ -95,9 +94,13 @@ mcp:
 | ------------------ | ------------------------------------------------------------------------------------------------ |
 | `enabled`          | Enables the MCP server                                                                           |
 | `expose_agents`    | Automatically exposes agents as MCP tools                                                        |
-| `agents`           | List of agent names to expose (`'*'` = all agents)                                               |
 | `stateless_http`   | Stateless HTTP mode — each request is independent, no `Mcp-Session-Id` (default: `false`)        |
 
+
+Every agent becomes an MCP tool unless its descriptor says otherwise. To keep one off MCP, list the surfaces it
+should be on under `registry.agents.<agent>.surfaces` (for example `[rest]`). Each tool is described by the
+description the agent declares, which `server.py` sets with `Module.describe`; an agent's instructions are never
+published.
 
 > **Both Terraform (`enable_mcp_server = true`) and `config.yaml` MCP settings are required** for MCP to work correctly.
 
@@ -121,9 +124,9 @@ This endpoint supports MCP clients such as `fastmcp`.
 
 ---
 
-## Agent Kernel Overview
+## OAK Overview
 
-This package contains a demo of **Agent Kernel** running agents built with:
+This package contains a demo of **OAK** running agents built with:
 
 * Smolagents
 * OpenAI Agent SDK
@@ -163,6 +166,8 @@ mcp:
 ## Running the Server
 
 ```bash
+export OPENAI_API_KEY=<OPENAI_API_KEY>
+export AK_SECRET__PROVIDER__TYPE=env  # config.yaml reads secrets from SSM on AWS; use the environment locally
 python server.py
 ```
 

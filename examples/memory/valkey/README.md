@@ -1,11 +1,11 @@
-# Agent Kernel running OpenAI Agents SDK-based agents in AWS Lambda with Valkey as agent memory
+# Open Agent Kernel running OpenAI Agents SDK-based agents in AWS Lambda with Valkey as agent memory
 
-This package contains a demo of Agent Kernel running agents built with the OpenAI Agents SDK,
+This package contains a demo of Open Agent Kernel running agents built with the OpenAI Agents SDK,
 running them in a serverless configuration using AWS Lambda with [Valkey](https://valkey.io/) as
 agent memory (session storage).
 
 Valkey is the open-source, Linux Foundation-governed fork of Redis. It is wire-compatible with
-Redis and available on AWS ElastiCache as a native engine. Agent Kernel selects it with
+Redis and available on AWS ElastiCache as a native engine. OAK selects it with
 `session.type: valkey` (see `config.yaml`).
 
 ## Prerequisites
@@ -25,6 +25,7 @@ Redis and available on AWS ElastiCache as a native engine. Agent Kernel selects 
     ```bash
     ./build.sh
     export OPENAI_API_KEY=<OPENAI_API_KEY>
+    export AK_SECRET__PROVIDER__TYPE=env  # config.yaml reads secrets from SSM on AWS; use the environment locally
     ```
 
 3. Run the agent locally:
@@ -39,7 +40,7 @@ The session state (agent memory) is persisted in the local Valkey server between
 
 The AWS deployment provisions the following resources:
 
-- AWS Lambda function running the Agent Kernel implementation.
+- AWS Lambda function running the OAK implementation.
 - API Gateway endpoint for the Lambda function.
 - An ElastiCache for Valkey cluster (`create_valkey_cluster = true` in `deploy/main.tf`). The
   deployment injects the cluster endpoint as `AK_SESSION__VALKEY__URL`, overriding the URL in
@@ -48,10 +49,12 @@ The AWS deployment provisions the following resources:
 
 ## AWS Deployment Steps
 
-1. Configure environment variables:
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
     ```
+    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the app reads the key from SSM at startup; no secret passes through Terraform.
 
 2. Set the VPC and subnets to deploy into in `deploy/terraform.tfvars` (`vpc_id`,
    `private_subnet_ids`), and optionally `request_handler_security_group_id` to reuse an existing

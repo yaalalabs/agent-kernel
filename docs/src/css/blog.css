@@ -1,0 +1,260 @@
+/* =============================================================================
+   Blog post pages
+   A post is set in the site's own faces and scale: Archivo for text and headings,
+   JetBrains Mono for labels and code. The reading column is the prose measure,
+   on the page container, with the table of contents beside it on a wide screen.
+   Scoped by the classes Docusaurus puts on <html> for blog routes. The index and
+   the tag pages are styled next to their components under src/theme.
+   ============================================================================= */
+
+/* ── Layout: reading column and contents ── */
+
+.blog-post {
+  display: grid;
+  grid-template-columns: minmax(0, var(--ak-measure)) minmax(0, 16rem);
+  justify-content: space-between;
+  gap: var(--ak-space-64);
+  padding-block: var(--ak-space-64) var(--ak-space-96);
+}
+
+.blog-post__column {
+  min-width: 0;
+}
+
+.blog-post__topic {
+  margin: var(--ak-space-16) 0 var(--ak-space-12);
+}
+
+.blog-post__topic a,
+.blog-post__topic a:hover {
+  color: var(--ak-primary-text);
+  text-decoration: none;
+}
+
+.blog-post__topic a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* The contents stay in view beside the post */
+.blog-post__contents {
+  position: sticky;
+  top: calc(var(--ifm-navbar-height) + var(--ak-space-32));
+  align-self: start;
+  max-height: calc(100vh - var(--ifm-navbar-height) - var(--ak-space-64));
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.blog-post__contents > .ak-label {
+  margin-bottom: var(--ak-space-12);
+}
+
+/* The theme's list is sticky and boxed on docs pages: here the aside does that job */
+.blog-post__contents > div {
+  position: static;
+  max-height: none;
+  padding: 0;
+  overflow: visible;
+}
+
+.blog-post__contents .table-of-contents {
+  padding-left: var(--ak-space-16);
+  font-size: var(--ak-type-small);
+}
+
+@media (max-width: 1100px) {
+  .blog-post {
+    grid-template-columns: minmax(0, var(--ak-measure));
+    justify-content: start;
+    padding-block: var(--ak-space-48) var(--ak-space-64);
+  }
+
+  .blog-post__contents {
+    display: none;
+  }
+}
+
+/* ── Post header ── */
+
+html.blog-post-page article {
+  margin-bottom: var(--ak-space-48);
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+html.blog-post-page article header {
+  margin-bottom: var(--ak-space-32);
+  padding-bottom: var(--ak-space-24);
+  border-bottom: 1px solid var(--ak-border);
+}
+
+html.blog-post-page article header h1 {
+  margin: 0 0 var(--ak-space-16);
+  font-size: var(--ak-type-h2);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  color: var(--ak-fg);
+}
+
+html.blog-post-page article header time,
+html.blog-post-page article header [class*='readingTime'] {
+  font-size: var(--ak-type-small);
+  color: var(--ak-text-secondary);
+}
+
+html.blog-post-page article header .avatar__name,
+html.blog-post-page article header .avatar__name a {
+  font-size: var(--ak-type-small);
+  font-weight: 600;
+  color: var(--ak-fg);
+}
+
+/* A hairline keeps a dark avatar visible on the dark page */
+html.blog-post-page article header .avatar__photo {
+  border: 1px solid var(--ak-border);
+}
+
+html.blog-post-page article header .avatar__subtitle {
+  font-size: var(--ak-type-small);
+  color: var(--ak-text-secondary);
+}
+
+/* ── Article text ── */
+
+html.blog-post-page article .markdown {
+  font-size: 1.1875rem; /* 19 px: one step above the site's body size, for long reading */
+  line-height: 1.65;
+  color: var(--ak-text);
+  --ifm-paragraph-margin-bottom: 1.5rem;
+}
+
+html.blog-post-page article .markdown h1,
+html.blog-post-page article .markdown h2,
+html.blog-post-page article .markdown h3,
+html.blog-post-page article .markdown h4 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ak-fg);
+}
+
+html.blog-post-page article .markdown h1 {
+  font-size: var(--ak-type-h2) !important;
+}
+
+html.blog-post-page article .markdown h2 {
+  margin-top: var(--ak-space-48);
+  padding-bottom: 0;
+  border-bottom: 0;
+  font-size: var(--ak-type-h3) !important;
+  line-height: 1.2;
+}
+
+html.blog-post-page article .markdown h3 {
+  margin-top: var(--ak-space-32);
+  font-size: var(--ak-type-h4) !important;
+  line-height: 1.3;
+}
+
+/* Code and tables step down to the small size, so a code block fits the column */
+html.blog-post-page article .markdown .theme-code-block,
+html.blog-post-page article .markdown pre,
+html.blog-post-page article .markdown pre code,
+html.blog-post-page article .markdown table {
+  font-size: var(--ak-type-small);
+}
+
+html.blog-post-page article .markdown :not(pre) > code {
+  font-size: 0.875em;
+}
+
+html.blog-wrapper .markdown .theme-code-block {
+  margin: var(--ak-space-32) 0;
+  border-radius: var(--ak-radius-control);
+}
+
+html.blog-wrapper .markdown a {
+  border-bottom: 0;
+  color: var(--ak-primary-text);
+  text-decoration: underline;
+  text-decoration-color: rgba(var(--ak-primary-rgb), 0.4);
+  text-underline-offset: 3px;
+}
+
+html.blog-wrapper .markdown a:hover {
+  text-decoration-color: currentColor;
+}
+
+html.blog-wrapper .markdown blockquote {
+  margin: var(--ak-space-32) 0;
+  padding: 0 0 0 var(--ak-space-24);
+  border-left: 2px solid var(--ak-primary);
+  background: none;
+  color: var(--ak-text-secondary);
+}
+
+html.blog-wrapper .markdown img {
+  display: block;
+  max-width: 100%;
+  margin: var(--ak-space-32) auto;
+  border-radius: var(--ak-radius-control);
+}
+
+html.blog-wrapper .markdown .docusaurus-mermaid-container {
+  display: flex;
+  justify-content: center;
+  margin: var(--ak-space-32) 0;
+}
+
+/* ── Post footer: tags in the site's tag style ── */
+
+html.blog-post-page article footer ul[class*='tags_'] {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--ak-space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+html.blog-post-page article footer li[class*='tag_'] {
+  margin: 0;
+}
+
+html.blog-post-page article footer a[class*='tagRegular'] {
+  display: inline-flex;
+  align-items: center;
+  height: 1.75rem;
+  padding: 0 var(--ak-space-12);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  background: none;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  line-height: 1;
+  color: var(--ak-text-secondary);
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+html.blog-post-page article footer a[class*='tagRegular']:hover {
+  border-color: var(--ak-fg);
+  color: var(--ak-fg);
+  text-decoration: none;
+}
+
+
+/* ── Phone ── */
+
+@media (max-width: 768px) {
+  html.blog-post-page article header h1 {
+    font-size: var(--ak-type-h3);
+  }
+
+  html.blog-post-page article .markdown {
+    font-size: 1.0625rem;
+  }
+}

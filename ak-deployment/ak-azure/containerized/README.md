@@ -1,4 +1,4 @@
-# Agent Kernel - Azure Containerized Module
+# Open Agent Kernel - Azure Containerized Module
 
 A comprehensive Terraform module for deploying containerized applications on Azure using Container Apps, with API Management (APIM), and optional Redis or Cosmos DB integration.
 
@@ -12,6 +12,7 @@ This module provides a complete containerized deployment solution on Azure:
 - 💾 **State Management**: Optional Azure Managed Redis or Cosmos DB Table API for session/state persistence
 - 📊 **Application Insights**: Container logs, metrics, and distributed tracing
 - 🏗️ **Automated Build**: Docker image building and ACR management with private endpoints
+- 📨 **Queue Mode (optional)**: Azure Service Bus input/output queues with a KEDA-scaled agent runner app
 
 Perfect for microservices, web applications, APIs requiring persistent connections, and applications needing API management capabilities.
 
@@ -19,8 +20,23 @@ Perfect for microservices, web applications, APIs requiring persistent connectio
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
-| Azure Provider | >= 4.57.0, < 5.0.0 |
+| Terraform | >= 1.9.5, <= 1.16.7 |
+| Azure Provider | 5.11.0 |
+
+### Version pinning
+
+Providers are pinned to exact versions, so `terraform init` resolves the same, tested providers on every machine and a new upstream release cannot break a deploy until the pin is moved on purpose. To bump a version:
+
+1. Change the `version` in every file that declares the provider (or, for the Terraform CLI, the `<=` cap in `required_version`): `ak-azure/common/versions.tf`, `ak-azure/serverless/main.tf`, `ak-azure/containerized/main.tf` and each Azure example's `deploy/providers.tf`.
+2. Check the provider changelog for regressions in the resources these modules use, and avoid releases that are only days old.
+3. Run `terraform init -upgrade` and `terraform validate` in each example's `deploy/` directory, and commit the regenerated `.terraform.lock.hcl`.
+4. Run `terraform plan` against an existing stack (expect no replacements), deploy at least one example, then release the modules.
+
+Lock files: the examples (root configurations you run) commit `.terraform.lock.hcl`; the modules do not, because Terraform ignores a child module's lock file and the registry release does not publish it.
+
+**Upgrading from azurerm 4.x:** state written by azurerm 5.x cannot be read by 4.x, so the move is one-way. Run `terraform plan` before the first apply and check that it shows no replacements.
+
+**Known issue: API Management `405 Method Not Allowed`.** After `azurerm_api_management` is created, the provider fails with `retrieving tenant access properties ... 405 Method Not Allowed: Direct management API is disabled for this service`. Azure changed the API Management service, so every azurerm version up to and including 5.13.0 fails. The instance itself is healthy. It affects every SKU except `Consumption` and `V2`: `ak-azure/containerized` (`Developer_1`) and `ak-azure/serverless` with `is_production = true` (`Basic_1`). Non-production serverless (`Consumption_0`) is not affected. When the provider fix is released, move the azurerm pin to that version, and run `terraform untaint` on the API Management instance before the next apply, or Terraform will replace it.
 
 ## 🔌 Providers
 
@@ -245,6 +261,33 @@ module "container_app_cosmosdb" {
 - `AK_SESSION__COSMOSDB__TABLE_ENDPOINT`: Table API endpoint URL
 - `AK_SESSION__COSMOSDB__CONNECTION_STRING`: Connection string (stored as secret)
 
+### Queue Mode Configuration
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| `queue_mode` | Split into an edge app and a KEDA-scaled agent runner app over Azure Service Bus (requires `create_redis_cluster = true`) | `bool` | `false` | no |
+| `agent_runner_command` | Command the agent runner app starts in the shared image | `list(string)` | `["python", "app_agent_runner.py"]` | no |
+
+With `queue_mode = true` the module adds:
+- A Standard Service Bus namespace (`<prefix>-queues`, local auth off) with session-enabled, duplicate-detecting
+  `input` and `output` queues (lock 1 minute, max delivery count 4: one above Open Agent Kernel's default
+  `max_receive_count` of 3).
+- An agent runner Container App (`<prefix>-runner`, no ingress) running `agent_runner_command`, scaled by a KEDA
+  `azure-servicebus` rule on `input` (one replica per 5 waiting messages) that authenticates with the app's
+  system identity.
+- Managed identity roles at queue scope: edge sends to `input` and receives from `output`; runner owns `input`
+  (the KEDA scaler needs manage rights to read the queue length) and sends to `output`.
+
+Your `config.yaml` declares `execution.queues.type: servicebus` and `execution.response_store.type: redis`;
+the module injects only coordinates, into both apps:
+- `AK_EXECUTION__QUEUES__INPUT__URL` / `AK_EXECUTION__QUEUES__OUTPUT__URL`
+- `AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT` / `AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT` (`3`). Environment variables override `config.yaml`, so
+  a `max_receive_count` set there is ignored: it is pinned to stay one below the queues' max delivery count.
+- `AK_EXECUTION__RESPONSE_STORE__REDIS__URL` and `AK_SESSION__REDIS__URL`, both from the `redis-url` secret
+
+The image's default command is the edge (`IOHandler.run()`); the runner overrides it with `agent_runner_command`
+(`AgentRunner.run()`). WebSocket is not supported in Azure queue mode.
+
 ## 📤 Outputs
 
 | Name | Description | Example |
@@ -260,6 +303,11 @@ module "container_app_cosmosdb" {
 | `redis_url` | Redis connection URL (if enabled, sensitive) | `rediss://:password@hostname:10000` |
 | `cosmosdb_table_name` | Cosmos DB table name (if enabled) | `myapp-prod-api-session_store` |
 | `cosmosdb_endpoint` | Cosmos DB endpoint (if enabled, sensitive) | `https://myapp-prod-api-cosmos.table.cosmos.azure.com` |
+| `servicebus_namespace` | Service Bus namespace FQDN (queue mode only) | `myapp-prod-api-queues.servicebus.windows.net` |
+| `servicebus_namespace_id` | Service Bus namespace resource ID (queue mode only) | `/subscriptions/.../namespaces/myapp-prod-api-queues` |
+| `servicebus_input_queue` | Service Bus input queue name (queue mode only) | `input` |
+| `servicebus_output_queue` | Service Bus output queue name (queue mode only) | `output` |
+| `agent_runner_name` | Agent runner Container App name (queue mode only) | `myapp-prod-api-runner` |
 
 ## ✨ Features
 

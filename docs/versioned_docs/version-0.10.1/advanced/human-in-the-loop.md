@@ -1,0 +1,353 @@
+---
+sidebar_position: 4.5
+---
+
+# Human in the Loop
+
+Some things an agent proposes should not happen until a person says so. Open Agent Kernel (OAK) lets a run
+**pause**, hands the question back to your client, and continues from the answer — minutes or hours
+later, on whichever replica receives it.
+
+A pause is a normal outcome, not an error. The run stops cleanly, the client is told what is being
+asked, and nothing has happened yet.
+
+## Turning it on
+
+There is no `enabled` flag. A pause happens when the **framework** decides one is needed, so you
+declare it where the framework does:
+
+```python
+from agents import function_tool
+
+@function_tool(needs_approval=True)          # OpenAI Agents SDK
+def issue_refund(order_id: str) -> str:
+    ...
+```
+
+```python
+from langgraph.types import interrupt        # LangGraph
+
+def ask(state):
+    choice = interrupt({"question": "Which method?", "options": ["Card", "Credit"]})
+    ...
+```
+
+```python
+from agent_framework import tool
+
+@tool(approval_mode="always_require")        # Microsoft Agent Framework
+def issue_refund(order_id: str) -> str:
+    ...
+```
+
+```python
+from agentkernel.claude import ClaudeToolBuilder
+
+def issue_refund(order_id: str) -> str:                                # Claude Agent SDK: a plain function
+    ...
+
+tools = ClaudeToolBuilder.bind([issue_refund], needs_approval=True)
+```
+
+Six frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI**, **Google ADK**,
+**Microsoft Agent Framework** and the **Claude Agent SDK**. CrewAI and smolagents cannot, and say so
+rather than pretending — their runners report `supports_pause = False`.
+
+Two of them need one more line of setup, because the pause is part of the agent's own declaration
+rather than something OAK can switch on: Pydantic AI needs `DeferredToolRequests` among its
+`output_type`s, and Google ADK enables resumability on every run as a consequence of wrapping your
+agent in an `App`. Both are covered on the framework pages linked below.
+
+**The Claude Agent SDK pauses only a single tool call.** It is built on the SDK's `defer` permission
+decision, which Anthropic's docs state is honored only when the model makes one tool call in that
+turn; several at once fall through to the ordinary permission flow instead of pausing. See the
+[framework page](../frameworks/claude-agent-sdk.md#human-in-the-loop) for how to make an un-deferrable
+call fail safely rather than execute silently.
+
+## What a paused run looks like
+
+The request answers **HTTP 202** with a top-level discriminator, so a client branches on the outcome
+without parsing `result`:
+
+```json
+{
+  "status": "PAUSED",
+  "run_id": "9f2c…",
+  "agent": "support",
+  "interruptions": [
+    { "id": "call_abc123", "kind": "tool_call", "tool_name": "issue_refund",
+      "arguments": "{\"order_id\": \"ORD-1001\"}" }
+  ],
+  "session_id": "demo-1"
+}
+```
+
+`agent` is there because a resume must name the agent that paused — see
+[Answering it](#answering-it). `arguments` is there because nobody can approve a call they cannot
+see.
+
+`kind` says what is being asked:
+
+| `kind` | Meaning |
+|---|---|
+| `tool_call` | a gated tool wants permission |
+| `confirmation` | the framework is asking for a yes or no of its own |
+| `input_required` | the agent wants a **value** — a choice, or free text |
+
+## Answering it
+
+Send the decisions instead of a prompt. The request needs no `prompt` at all:
+
+```json
+{
+  "session_id": "demo-1",
+  "agent": "support",
+  "resume": { "decisions": [ { "id": "call_abc123", "status": "approved" } ] }
+}
+```
+
+A decision carries up to three things:
+
+| Field | For |
+|---|---|
+| `status` | `approved`, `denied` or `cancelled` |
+| `message` | the human's own words — a free-text answer, or the reason for a refusal |
+| `payload` | a structured answer: the option chosen, overridden arguments. **Any JSON value**, not just an object |
+
+`status` is required for `tool_call` and `confirmation`, and ignored for `input_required` — a
+question asking for a value has nothing to approve.
+
+**A failed resume keeps the pause.** If the framework call fails — a model timeout, a network
+blip — the record stays where it was, so sending the same decisions again picks up from the pause
+rather than from nothing. The reply you get is an ordinary error reply; the pause is still there.
+
+**A resume is refused when the agent has moved frameworks.** Deploys happen while a pause is
+outstanding. If the agent name still resolves but now runs on a different adapter, the stored state
+means nothing to it, so the resume is rejected naming both frameworks instead of answering from a
+fresh run. The same applies when the agent is no longer registered at all.
+
+### Why `cancelled` is not `denied`
+
+`denied` means a person said no. `cancelled` means **nobody decided** — a timeout, a closed tab, a
+shift ending. Only LangGraph carries that distinction natively; on the others OAK supplies
+wording that reads as *undecided* rather than refused, so the agent does not report a refusal that
+never happened.
+
+**One exception, and it is ADK's doing rather than a choice:** on an ADK *confirmation* the wording
+never reaches the model, because ADK consumes the response and writes its own for the original call.
+There `cancelled` is indistinguishable from `denied`. A `LongRunningFunctionTool` on ADK keeps the
+distinction; see the table below.
+
+A boolean would collapse the two, and the model would confidently tell your customer they were
+turned down.
+
+### What a refusal actually says to the model
+
+On OpenAI and Pydantic AI the refusal text **becomes the gated call's output** — there is no
+separate "this was rejected" flag the model sees. So OAK sends a framed sentence, and
+quotes your `message` inside it rather than in place of it:
+
+> A human reviewer refused this call, so it was not carried out. Do not run it again unchanged and
+> do not report it as done. If the reviewer gave a reason, you may propose a different call that
+> answers it. The reviewer's reason: not during business hours
+
+Neither half is cosmetic. With the framework's own default the OpenAI SDK says only "Tool execution
+was not approved", which a model reads as approval still *pending* — it replies by asking the human
+to confirm. With the bare reason and no frame, the model reads it as what the tool returned and
+reports the action as carried out. The refusal is scoped to *this* call so that a reason saying what
+the reviewer wants instead still leaves the agent free to propose it. Override
+`DENIED_DECISION_MESSAGE` and `DENIED_DECISION_REASON` on your runner if you want different wording.
+
+On OpenAI, an application that configured `RunConfig.tool_error_formatter` has already said how a
+refused call should read, so a denial carrying no reason of its own defers to it. A denial with a
+reason, and `cancelled` in every case, keep the wording above.
+
+### Answering one question at a time
+
+A pause can hold several interruptions. You may answer some now and the rest later — the remainder
+comes back as another paused reply with a fresh `run_id`. Pydantic AI and Microsoft Agent Framework are
+the exceptions: both need every pending call resolved together, and OAK refuses a partial
+resume **before** calling the framework, naming the ids you missed.
+
+## In conversation threads
+
+With [conversation threads](threads.md) enabled, a pause and the decision answering it are recorded
+as messages of their own, so reopening a thread shows what the agent asked and what the human
+decided — not just the turns either side of it. Both carry their payload as an object with a
+`media_type` of `application/json`: the pause is an `assistant` message holding `run_id`, `agent`
+and `interruptions`, and the decision is a `user` message holding the `resume` block that was sent,
+with the prompt beside it when the turn carried both. See
+[Message Content](threads.md#message-content) for the stored shape.
+
+Every recording surface stores the same message — the direct chat route, SSE, and both queue
+runners. Two details worth knowing: a streamed run that emits text and *then* pauses records only
+the pause, because the non-streaming path never had that text either; and a decision the runtime
+rejects (a stale interruption id, say) is still recorded, since the thread is written before the
+run, so it appears as a `user` message with no assistant message after it.
+
+## Durability: the one thing to get right
+
+A pause is written into the **session**, and the answer arrives later — after a restart, often on a
+different replica. OAK stores it under a framework-owned key (`ak.paused_runs`) in the
+session's non-volatile cache.
+
+```yaml
+session:
+  type: redis          # or valkey, dynamodb, cosmosdb, firestore
+  redis:
+    url: "redis://localhost:6379"
+```
+
+With `type: in_memory` the record lives in one process. That is fine for local development and
+**wrong for anything multi-replica**: the replica receiving the decision has never heard of the
+pause. OAK logs a `WARNING` the first time a pause is written that way, naming this exact
+problem.
+
+Three limits worth knowing, none of them hidden:
+
+- **Answer it soon or lose it.** Expiry rides the session store's own TTL. There is no separate
+  pause TTL.
+- **Clearing the non-volatile cache discards pending decisions.** That cache is application space;
+  the `ak.` prefix marks the key as framework-owned, but nothing stops an application clearing it.
+- **Two replicas writing a pause at the same moment can lose one.** Writing the record is a
+  read-modify-write over the session, and the session lock is per process. This is a property of the
+  non-volatile cache generally, not of pausing — but here the entry lost is a human's pending
+  decision.
+
+## What each framework can carry back
+
+The frameworks genuinely differ, and OAK does not paper over it. A rejection is raised
+where it can still reach you, rather than being flattened into "something went wrong".
+
+| | OpenAI | LangGraph | Pydantic AI | Google ADK | Microsoft Agent Framework | Claude Agent SDK |
+|---|---|---|---|---|---|---|
+| A structured `payload` | **rejected** | yes | on an approval, an **object** only | on a confirmation, **rejected** | **rejected** | on an approval, an **object** only |
+| A `prompt` beside a decision | **rejected** | yes | yes | **rejected** | **rejected** | **rejected** |
+| A second pause in one session | **appends** | replaces | replaces | replaces | replaces | replaces |
+| `cancelled` distinguishable from `denied` | yes | yes | yes | **no, on a confirmation** | **no** | yes |
+| Detects a stale resume | **no** | n/a — re-pauses | yes, refuses | no | yes, refuses | yes, refuses |
+
+Replacement stops at the framework boundary. One session can be shared by agents on different
+frameworks — you send the session id and name the agent per request — so a LangGraph question never
+discards an OpenAI approval someone is still about to give.
+
+**OpenAI cannot ask a question.** An approval is recorded as a boolean — `RunState.approve()` takes
+no value — so a gated tool can only be approved or denied. To offer a choice there, have the model
+**propose** one in the tool arguments; deny, and it proposes another. If you need a value, ask for
+it as an ordinary conversational turn rather than a gated tool.
+
+**A stale resume on OpenAI is not detected.** Pause, run an ordinary turn, then answer the old
+pause, and you get a confident answer computed as though the intervening turns never happened. Agent
+Kernel does not track this and neither does the SDK. Answer a pause before continuing the
+conversation.
+
+**LangGraph re-runs the interrupting node from the top** on resume. The first `interrupt()` then
+returns the stored answer instead of pausing again — so any side effect must sit *after* the
+questions, not before them. OAK also assigns its own checkpointer, overwriting one you
+supplied.
+
+**Pydantic AI's approval payload replaces the tool's arguments**, so it must be a JSON object;
+any other shape is refused rather than quietly ignored. On a **deferred** call the payload is the
+tool's return value and any shape passes through.
+
+**Google ADK cannot carry an answer on a confirmation.** ADK's confirmation holds a verdict and
+nothing else, so a payload is refused, and the "nobody decided" wording does not reach the model —
+`cancelled` therefore reads as `denied` there. Use a `LongRunningFunctionTool` when the question
+needs a value or the distinction matters.
+
+**Google ADK** enables `ResumabilityConfig(is_resumable=True)` on every run. Two consequences:
+a turn following a function response is routed back to the agent that made the call, which can
+change which agent handles the next turn in a multi-agent app; and ADK sessions grow, because that
+setting also gates agent-state event emission. ADK's own note applies too — a tool may run more than
+once when resuming.
+
+**The Claude Agent SDK replaces, and a pause always holds exactly one pending call** — `defer`
+resolves a single tool call at a time, so there is nothing to answer partially. Resuming replays the
+pending call through `resume=<session_id>`, which fires the same `PreToolUse` hook that deferred it;
+an `approved` decision's object payload becomes the tool's updated input, exactly like Pydantic AI's
+approval channel.
+
+**Microsoft Agent Framework can only approve or reject.** A MAF approval carries a verdict and nothing
+else, so a payload is refused, and both `denied` and `cancelled` reach the model as MAF's own "rejected by
+user" — the human's `message` has no channel there. A prompt beside the decisions is refused too: MAF would
+place it between the tool calls and their results, an order model APIs reject. A new prompt while a pause
+is outstanding is refused, naming the run to resume, because MAF would otherwise drop the pending calls.
+
+## Streaming
+
+With `execution.message_type: delta` a pause arrives as a `run_paused` event and the stream ends
+**normally** — never through `StreamChunk.error`. Any open boundary (a tool call, a message) is
+closed first, so a frontend does not render the gated call as work still in progress forever.
+
+## Over AG-UI
+
+A pause is the run's terminal outcome:
+
+```json
+{ "type": "RUN_FINISHED",
+  "outcome": { "type": "interrupt", "interrupts": [ { "id": "call_abc123", "reason": "tool_call" } ] } }
+```
+
+Resume with `RunAgentInput.resume`. Two protocol limits apply: `ResumeEntry.status` carries two
+values, so approve and deny are a boolean `payload`; and there is no field for a refusal's wording or
+for a prompt sent beside a decision. OAK does not invent a private encoding for either —
+use the REST surface when you need them. See [AG-UI Server](../api/agui-server.md).
+
+## From a messaging platform
+
+A run that pauses in a Slack or Telegram conversation is delivered with buttons on it, and pressing
+one continues the run. There is nothing to configure: a press parses into exactly the decision a
+REST client would send, travels the same queue as every other message from that conversation, and
+the agent cannot tell the two apart.
+
+| Platform | A pause arrives as |
+|---|---|
+| Slack | Block Kit buttons, one row per question. **Deny** opens a short form asking why, and the reason reaches the agent as the decision's `message` |
+| Telegram | An inline keyboard, one row per question |
+| WhatsApp, Messenger, Instagram, Teams, Gmail | Readable text naming what is being asked. Nothing to press — answer over another surface |
+
+Four things to know before you ship it:
+
+- **Anyone who can see the message can press.** OAK ships no approver policy: channel
+  membership is not an approval list. The presser's platform user id travels with the decision as
+  `acting_user_id`, so a `PreHook` is where you check it.
+- **The buttons offer approve and deny, not cancel.** `cancelled` means
+  [nobody decided](#why-cancelled-is-not-denied), and a button somebody pressed is not that. Add it
+  if your flow wants it, by subclassing the outbound adapter and setting `DECISIONS`. The words on
+  the buttons are a separate attribute, `DECISION_LABELS`, so you can rename them — or write them in
+  another language — without redeclaring which verbs exist. On Slack the labels travel to the review
+  form with the button, so the form says what the buttons said.
+- **An `input_required` question gets no buttons.** It wants a value, not a verdict, and a decision
+  verb would resume the run with no answer at all. The question is still shown, with a note where
+  its controls would have been, so you can answer it over another surface.
+- **Some frameworks only accept a whole pause answered at once.** Pydantic AI and Microsoft Agent
+  Framework refuse a resume that leaves any question unanswered, so a button per question could
+  never work there. Slack offers a single **Review all** button instead, opening a form with one
+  required choice per question and one submit. Telegram puts every question in one message under a
+  tally keyboard: a press marks an answer instead of sending it, and **Submit** sends the set.
+  Everywhere else, a press still answers one question on its own. If such a pause also holds an
+  `input_required` question, neither surface offers anything to press at all — the submission would
+  need a verdict for a question that wants a value, and the framework will not take the set without
+  it — so the message says the pause has to be answered elsewhere.
+- **The buttons stay after a decision.** Nothing is edited out: a resumed run's reply is
+  indistinguishable from a run a hook stopped, so editing on that guess could strip the controls
+  off a pause that is still open. Pressing the same button again is deduplicated and changes
+  nothing; pressing one on a pause that has already been answered gets the usual error reply. The
+  presser is part of that identity, so a press your approver policy rejects does not swallow the
+  authorized one that follows; two people answering at once means the second gets that error reply.
+
+Slack needs one switch the other platforms do not: **Interactivity & Shortcuts**, with its Request
+URL set to the same `/slack/events` URL as your event subscription. Without it the buttons render
+and the press goes nowhere. See [Slack](../integrations/slack.md) and
+[Telegram](../integrations/telegram.md).
+
+## A runnable example
+
+[`examples/api/slack/`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/slack)
+is the messaging version: a Pydantic AI agent with one gated tool, approved or denied from the
+channel — and, when a turn gates several calls, answered from the review form.
+
+[`examples/api/hitl/`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hitl) runs
+two agents side by side — an OpenAI one that can only be approved or denied, and a LangGraph one that
+asks a multiple-choice question and then a free-text one — with a small React console for answering
+them.

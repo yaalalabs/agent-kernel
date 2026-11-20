@@ -14,11 +14,6 @@ variable "is_production" {
   default     = false
 }
 
-variable "openai_api_key" {
-  description = "OpenAI API Key"
-  type        = string
-}
-
 variable "vpc_id" {
   description = "VPC ID for ECS deployment"
   type        = string

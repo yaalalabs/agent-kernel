@@ -1,15 +1,18 @@
 import logging
 from abc import ABC, abstractmethod
+from typing import Annotated, Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import ConfigDict
 
 from ..core import Config
 from ..core.chat_service import ChatService
-from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, BaseRunRequest, Principal
+from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, ChatRunRequest, Principal
+from ..core.registry import AgentDescriptorPage
 from ..core.runtime import Runtime
 from ..core.util.factory import AKConfigError
+from ..core.util.pagination import decode_cursor
 from ..identity.provider.factory import IdentityProviderFactory
 from ..identity.provider.request import BEARER_CHALLENGE
 
@@ -102,10 +105,26 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         self._max_file_size = Config.get().api.max_file_size
         self.chat_service = ChatService(rest_api_mode=True)
 
-    def list_agents(self):
-        return {"agents": list(Runtime.current().agents().keys())}
+    def list_agents(self, cursor: str | None = None, limit: int | None = None, tags: Annotated[list[str] | None, Query()] = None) -> dict[str, Any]:
+        """
+        The agent catalog: one page of the descriptors of the agents exposed on the REST surface, ordered by id.
+        Served from the registry, so it lists agents this process does not host. An entry is the agent's
+        descriptor without its `identity`, which is the agent's own and not a caller's to read.
+        :param cursor: The `next_cursor` of the page before; omitted for the first page.
+        :param limit: The page size, clamped to the shared maximum.
+        :param tags: Keep only the agents carrying every one of these tags (repeat the parameter for several).
+        :return: `{"agents": [<catalog entry>, ...], "next_cursor": <cursor or null>}`.
+        :raises HTTPException: 400 for a malformed cursor.
+        """
+        try:
+            # Before the registry is read: a malformed cursor is the caller's 400 whatever the store answers.
+            decode_cursor(cursor)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        exposed = [descriptor for descriptor in Runtime.current().registry.descriptors() if descriptor.exposed_on("rest")]
+        return AgentDescriptorPage.of(exposed, cursor=cursor, limit=limit, tags=tags).catalog()
 
-    async def run(self, body: BaseRunRequest, request: Request):
+    async def run(self, body: ChatRunRequest, request: Request):
         # The surface decides who is calling: a principal the client put in the body is overwritten
         # with the one the identity dependency RESTAPI installs put on the request (the anonymous
         # principal without an identity block). The default covers a router mounted on a bare app.

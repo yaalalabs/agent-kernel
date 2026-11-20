@@ -1,6 +1,6 @@
-# Agent Kernel — Claude per-run context example
+# Open Agent Kernel — Claude per-run context example
 
-This grocery assistant keeps a cart across turns using Agent Kernel's `framework_context`.
+This grocery assistant keeps a cart across turns using Open Agent Kernel's `framework_context`.
 Its Python tools read the current run's cart with `ToolContext.get().framework_context`.
 
 ## How it works
@@ -8,7 +8,7 @@ Its Python tools read the current run's cart with `ToolContext.get().framework_c
 1. `SeedCartContextPreHook` creates `{"cart": []}` before the first run.
 2. The Claude runner copies that dictionary for the run. The tools change the copy through
    `ToolContext.get().framework_context`.
-3. After a successful run, the runner saves the updated dictionary in the Agent Kernel session.
+3. After a successful run, the runner saves the updated dictionary in the OAK session.
 4. `AppendCartPostHook` reads the saved cart and adds a `Current cart:` line to the reply.
 
 For example, ask to add milk, then eggs, then ask what is in the cart. The third turn can still
@@ -30,7 +30,7 @@ Current cart: milk, eggs
 ```
 
 Claude's SDK tool handlers receive tool arguments, but no native run-context object. This example
-uses `ToolContext.framework_context` for Agent Kernel-bound Python tools. Claude's built-in tools and external
+uses `ToolContext.framework_context` for OAK-bound Python tools. Claude's built-in tools and external
 MCP servers cannot read it.
 
 ## Run

@@ -10,6 +10,7 @@ from .....core.model import ExecutionMode, ReplyMessageType
 from .....core.util.factory import AKConfigError
 from .....integration.adapter.webhook import WebhookRESTRequestHandler
 from .....pipeline.transport.base import QueueTransportFactory
+from .....secret import SecretManager
 from .event_translator import LambdaEventTranslator
 
 
@@ -156,5 +157,14 @@ class LambdaWebhookGuard:
             raise AKConfigError(
                 "LambdaWebhookHost refuses adapters that would accept deliveries they cannot authenticate "
                 f"(the authorizer's integration bypass leaves the adapter's check as the only one): "
-                f"{type(handler.adapter).__name__} needs {', '.join(missing)}"
+                f"{type(handler.adapter).__name__} needs {'; '.join(LambdaWebhookGuard._sources(setting) for setting in missing)}"
             )
+
+    @staticmethod
+    def _sources(setting: str) -> str:
+        """Every place an unset setting can be set: the AKConfig field, then the secret key its ``*_key`` field names."""
+        block, _, field = setting.partition(".")
+        key = getattr(getattr(AKConfig.get(), block, None), f"{field}_key", None) if field else None
+        if not isinstance(key, str) or not key:  # no configurable secret key: a bring-your-own adapter's own wording
+            return setting
+        return SecretManager.current().describe(key, setting)

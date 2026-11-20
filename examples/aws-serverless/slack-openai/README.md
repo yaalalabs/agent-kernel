@@ -1,4 +1,4 @@
-# Agent Kernel Slack Integration on AWS Lambda
+# Open Agent Kernel Slack Integration on AWS Lambda
 
 This package deploys a Slack bot on AWS Lambda. Slack's Events API webhook reaches the
 request-handler Lambda, which verifies, acknowledges and enqueues each message; the agent runs
@@ -41,7 +41,7 @@ Slack --POST /api/v1/slack/events--> API Gateway --> Authorizer (bypass: method 
 
 ## Declare the integration in three places
 
-The three must agree, and a mismatch fails quietly from Agent Kernel's side:
+The three must agree, and a mismatch fails quietly from Open Agent Kernel's side:
 
 | Where | What | Symptom when it is missing |
 |---|---|---|
@@ -51,7 +51,7 @@ The three must agree, and a mismatch fails quietly from Agent Kernel's side:
 
 **The authorizer's cache must be off** (`result_ttl_in_seconds = 0`, set in `deploy/main.tf`). With
 a TTL, API Gateway answers a request that has no `Authorization` header with 401 before the
-authorizer runs, so the bypass never gets a say, and Agent Kernel never logs it. The cost is one
+authorizer runs, so the bypass never gets a say, and OAK never logs it. The cost is one
 authorizer call per request, chat included.
 
 ## Slack app setup
@@ -82,9 +82,23 @@ itself.
 
 ## Deploy
 
-Create `deploy/terraform.tfvars` values (or `TF_VAR_*` variables) for `openai_api_key`,
-`slack_bot_token`, `slack_signing_secret`, `demo_auth_token`, `vpc_id` and `private_subnet_ids`,
-then:
+Store the three secrets in SSM Parameter Store, where `<prefix>` is `prefix` in
+`deploy/terraform.tfvars`:
+
+```bash
+for pair in "openai_api_key=$OPENAI_API_KEY" "slack_bot_token=$SLACK_BOT_TOKEN" "slack_signing_secret=$SLACK_SIGNING_SECRET"; do
+  aws ssm put-parameter --name "/ak/<prefix>/${pair%%=*}" --type SecureString --value "${pair#*=}" --overwrite
+done
+```
+
+The deployment sets `ssm_enabled = true`, which grants all three Lambdas `ssm:GetParameter` on
+`/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`; `config.yaml` selects the `aws_ssm` secret provider.
+The request handler resolves `SLACK_SIGNING_SECRET` (and `SLACK_BOT_TOKEN`) to verify and acknowledge each
+delivery, the agent runner resolves `OPENAI_API_KEY`, and the response handler resolves `SLACK_BOT_TOKEN`
+to reply. No secret passes through Terraform or sits in a Lambda's environment.
+
+Then create `deploy/terraform.tfvars` values (or `TF_VAR_*` variables) for `demo_auth_token`, `vpc_id`
+and `private_subnet_ids`, and deploy:
 
 ```bash
 cd deploy
@@ -95,7 +109,8 @@ cd deploy
 Docker must be running: the agent runner deploys as a container image.
 
 > Serving webhooks on Lambda needs an `agentkernel` and an `ak-serverless` module release that
-> include messaging-integration support (#760). Until those are published, deploy with
+> include messaging-integration support (#760) and SSM access for the request and response handlers
+> (#858). Until those are published, deploy with
 > `./deploy.sh local` and point the module `source` at `../../../../ak-deployment/ak-aws/serverless`.
 
 ## Cold starts and Slack's 3 seconds

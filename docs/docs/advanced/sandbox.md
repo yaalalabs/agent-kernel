@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Sandbox
 
-Agent Kernel's **sandbox capability** gives agents a first-class, permission-bounded way to
+Open Agent Kernel's **sandbox capability** gives agents a first-class, permission-bounded way to
 **execute code and shell commands, work in a persistent workspace, and read/write files** in
 an isolated environment. When enabled, agents automatically gain a set of sandbox tools and
 the usage guidance is injected into their system prompt, so your agent code stays free of
@@ -29,14 +29,14 @@ flows, session lifecycle, error hierarchy), see
 
 Key design points:
 
-- **Self-describing.** With `sandbox.enabled: true`, Agent Kernel attaches the sandbox tools
+- **Self-describing.** With `sandbox.enabled: true`, OAK attaches the sandbox tools
   to agents and injects their usage into the system prompt. Your agent's own instructions
   never need to mention the sandbox.
 - **Config-driven.** Everything — provider, isolation, lifetime, permissions, identity — is
   chosen in `config.yaml` through **workload profiles**. No code changes to switch backends.
 - **Pluggable and honest.** Providers are selected by short name or a dotted path to your own
   `SandboxProvider` subclass. Each provider **declares the capabilities it actually supports**
-  (isolation tier, shell, files, policy enforcement, user identity); Agent Kernel never
+  (isolation tier, shell, files, policy enforcement, user identity); OAK never
   pretends two backends are interchangeable on security grounds.
 - **Fail closed.** A permission or identity requirement a provider cannot honor is **rejected**
   under `strict` mode, never silently downgraded.
@@ -134,7 +134,7 @@ sandbox:
 
 | Scope | Lifetime | Use for |
 |---|---|---|
-| `per_session` (default) | One sandbox per AK session; workspace persists across turns. | Multi-step work, notebooks, iterative coding. |
+| `per_session` (default) | One sandbox per OAK session; workspace persists across turns. | Multi-step work, notebooks, iterative coding. |
 | `per_call` | A fresh sandbox per execution, torn down immediately after. | One-off, stateless computations. |
 | `per_runtime` | A single shared sandbox per profile, process-wide. | Shared warm environments (executions serialized; no pooling in v1). |
 
@@ -146,7 +146,7 @@ for the profile's default session. Session ids are **system-assigned** — the a
 ones with `new_sandbox_session` (optionally naming them) and finds earlier ones with
 `list_sandbox_sessions`, rather than inventing ids.
 
-Sessions belonging to one AK session are namespace-isolated: they live in that session's
+Sessions belonging to one OAK session are namespace-isolated: they live in that session's
 non-volatile cache, so one conversation can never address another's sandboxes. (`per_runtime`
 is the deliberate exception — a single shared entry per profile in process memory.)
 
@@ -257,7 +257,7 @@ worker logs a one-time warning per provider and profile pointing at the misconfi
 check runs before anything reaches the sandbox: in the broker worker, which is authoritative,
 and again agent-side before the request is submitted.
 
-**Permissions gate Agent Kernel's sandbox operations, not the environment.** `run_command`, or a
+**Permissions gate OAK's sandbox operations, not the environment.** `run_command`, or a
 `subprocess` call inside `run_code`, can still reach any interpreter or installer the image
 contains, and with network egress an agent can provision its own tooling (for example
 `pip install playwright` through `run_command`). Hard containment comes from the provider's
@@ -572,7 +572,7 @@ sandbox:
   e2b:
     template: code-interpreter-v1  # E2B template; must ship the code-interpreter Jupyter server
     # languages: [python, javascript]  # E2B kernels run_code may use; default [python]
-    # api_key_env: E2B_API_KEY  # env variable holding the API key
+    # api_key_env: E2B_API_KEY  # key holding the API key: the environment, then the configured secret provider
   broker:
     flavor: thread
 ```
@@ -597,7 +597,7 @@ sandbox:
     #   node: [node, -e]
     #   node: [node, -e]            # only if the image ships node
     # target: us                    # Daytona target/region; omitted = SDK default
-    # api_key_env: DAYTONA_API_KEY  # env variable holding the API key
+    # api_key_env: DAYTONA_API_KEY  # key holding the API key: the environment, then the configured secret provider
   broker:
     flavor: thread
 ```
@@ -626,7 +626,7 @@ Install with `uv add "agentkernel[kubernetes]"`.
 **RBAC is the boundary, never command parsing.** What sandboxed code may do against the
 cluster is decided by the ServiceAccount assigned to sandbox pods and enforced by the API
 server: bind it to `view` for read-only kubectl, or to nothing for pure compute. A
-"read-only command filter" is not a boundary and Agent Kernel never implements one. The
+"read-only command filter" is not a boundary and OAK never implements one. The
 calling process (the broker worker, or the agent process on in-process flavors) needs
 pod-lifecycle verbs plus both `create` and `get` on `pods/exec` (WebSocket exec is a GET);
 the ak-k8s chart's `sandboxWorker.rbac` renders exactly this.
@@ -666,7 +666,7 @@ own. In user-identity mode the provider assumes the principal's `role_arn` and, 
 ### Bring your own provider
 
 Any dotted path to a `SandboxProvider` subclass works as a `type`, so you can plug in a backend
-Agent Kernel doesn't ship. For attach-only backends (an environment you own that the framework
+OAK doesn't ship. For attach-only backends (an environment you own that the framework
 should connect to but never create or dispose), subclass `AttachedEnvironmentProvider` instead:
 it fixes the non-ownership lifecycle (`create` binds to the configured `attach_to`, `destroy`
 is a no-op) so you implement only `attach`, returning an `AttachedEnvironment` handle (the `Sandbox`
@@ -712,7 +712,7 @@ The **broker** decouples the agent from execution. It is chosen with `sandbox.br
 |---|---|---|
 | `thread` (default) | A dedicated daemon thread + event loop in the agent process. | CLI and REST deployments. |
 | `embedded` | Inline in the caller's event loop (always synchronous). | Simple/co-located execution and tests. |
-| `queue` | A separate worker fleet (`QueueBrokerWorker`), decoupled by any queue transport (`in_memory`, `sqs`, `kafka`, `nats`). | Executions longer than the agent runtime allows, cluster-side worker tiers, Lambda/ECS agents with a remote worker. |
+| `queue` | A separate worker fleet (`QueueBrokerWorker`), decoupled by any queue transport (`in_memory`, `sqs`, `kafka`, `nats`, `pubsub`). | Executions longer than the agent runtime allows, cluster-side worker tiers, Lambda/ECS agents with a remote worker. |
 
 `wait_timeout` (default `60` s) bounds how long a synchronous call waits before the execution is
 **promoted** to a background task (thread flavor): `run_code`/`run_command` then return
@@ -742,9 +742,9 @@ recorded; side-effectful commands are therefore not exactly-once. Size the trans
 visibility window (NATS `ack_wait`, the SQS visibility timeout) above the sandbox provisioning
 time plus your largest effective timeout (`policy.timeout`, or `package_install.timeout` for
 installs) plus the worker's 10-second backstop, or a still-running execution is redelivered and
-runs twice. On the `in_memory` and `nats` transports, whose window is AK config, the worker warns
+runs twice. On the `in_memory` and `nats` transports, whose window is OAK config, the worker warns
 at startup for each profile that does not fit (counting `kubernetes.create_timeout` as
-provisioning); the SQS visibility timeout lives outside AK config and is not checked. Once a
+provisioning); the SQS visibility timeout lives outside OAK config and is not checked. Once a
 completion has been queued, a response-store outage only retries the persist, never the
 execution. The worker also sweeps managed sandboxes idle past their profile's `idle_timeout`
 when the response store supports key scans (all four built-ins do).

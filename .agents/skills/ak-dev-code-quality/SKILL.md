@@ -3,7 +3,7 @@ name: ak-dev-code-quality
 description: >
   Code quality standards, formatting, Python style rules (classes over script-style
   functions, configuration-field rules), commit conventions, and PR workflow for
-  Agent Kernel development. Use this skill when making contributions, formatting
+  Open Agent Kernel development. Use this skill when making contributions, formatting
   code, writing commit messages, or preparing pull requests.
 license: Apache-2.0
 metadata:
@@ -15,7 +15,7 @@ metadata:
 
 ## Code Formatting
 
-Agent Kernel uses `black` for formatting, `isort` for import sorting, and `ruff` for the typing rules only
+Open Agent Kernel (OAK) uses `black` for formatting, `isort` for import sorting, and `ruff` for the typing rules only
 (pyupgrade `UP006`/`UP007`/`UP035`/`UP045`; see Type annotations below).
 
 ### Auto-format
@@ -33,7 +33,17 @@ make lint-all
 ```bash
 make lint-check       # ak-py only
 make lint-check-all   # ak-py + examples
+make lock-bounds-check  # every uv.lock against the bounds ak-py/pyproject.toml declares (a report, not a gate)
 ```
+
+`lock-bounds-check` runs `.github/scripts/dependency_caps.py bounds`: an example resolves `agentkernel`
+from PyPI, whose metadata is the last release, so a bound added to `ak-py/pyproject.toml` is invisible to the
+example's `uv lock`, and only an install that pairs the exported lock with the branch wheel notices (the chart
+smoke, `examples/k8s/openai-queue-mode/deploy/package.sh`, for `agentkernel`'s base dependencies). A drift it
+reports is pulled back with `uv lock --upgrade-package "<package><requirement>"` in that example's folder, unless
+the release itself requires otherwise (a floor raised past what the release allows), which only the next release
+settles. It is not part of `lint-check-all` for that reason; the dependency update workflow pulls the locks back
+on every lock check.
 
 ### Auto-format a remote branch (CI)
 
@@ -283,10 +293,10 @@ Feature logic is written as classes, not as procedural module-level functions. T
 
 ### Logger Hierarchy
 
-- **AK Logger** (`"ak"`): Parent logger for all Agent Kernel components
+- **OAK Logger** (`"ak"`): Parent logger for all OAK components
   - Child loggers like `"ak.api"`, `"ak.runtime"`, etc. inherit from this
-  - Propagation is disabled at the AK level to prevent logs from bubbling to the root
-  - Use `logging.getLogger("ak.<module>")` for Agent Kernel components
+  - Propagation is disabled at the OAK level to prevent logs from bubbling to the root
+  - Use `logging.getLogger("ak.<module>")` for OAK components
 
 ### Log Levels
 

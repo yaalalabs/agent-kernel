@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from .event import StreamEvent
 from .hooks import PostHook, PreHook
-from .model import AgentReply, AgentRequest, Principal, ResumeDecision, SessionOwner, ToolFilter
+from .model import AgentDescriptor, AgentReply, AgentRequest, AgentSkillDescriptor, Principal, ResumeDecision, SessionOwner, ToolFilter
 from .util.key_value_cache import KeyValueCache
 from .util.picklable import first_unpicklable_entry
 
@@ -25,6 +25,7 @@ if TYPE_CHECKING:  # pragma: no cover: typing only; avoids a base <-> realtime i
     from .realtime import RealtimeRunner
 
 _log = logging.getLogger("ak.core.runner")
+_agent_log = logging.getLogger("ak.core.agent")
 
 # Volatile-cache keys under which Runtime publishes the run's identity. Private to this module: the
 # Session accessors below are the only spellings, and the ``ak.`` prefix makes the keys read-only
@@ -352,6 +353,31 @@ class Runner(ABC):
     "nobody decided" apart from "refused". Override per runner if a framework needs different
     phrasing."""
 
+    DENIED_DECISION_MESSAGE: str = (
+        "A human reviewer refused this call, so it was not carried out. Do not run it again "
+        "unchanged and do not report it as done. If the reviewer gave a reason, you may propose a "
+        "different call that answers it."
+    )
+    """What the model is told when a human denies a paused run. The frameworks' own defaults do not
+    serve: the OpenAI SDK says only "not approved", which a model reads as approval still pending."""
+
+    DENIED_DECISION_REASON: str = "{refusal} The reviewer's reason: {reason}"
+    """How a human's own words are framed. They are quoted inside the refusal rather than standing
+    in for it, because a framework substitutes this text for the tool call's output: on their own
+    they read as what the tool returned, and the model reports the action as carried out."""
+
+    def _rejection_text(self, decision: ResumeDecision) -> str:
+        """What a refused tool call reports back to the model.
+
+        :param decision: The human's decision, denied or cancelled.
+        :return: The text to hand the framework in place of the call's output.
+        """
+        if decision.status == "cancelled":
+            return self.CANCELLED_DECISION_MESSAGE
+        if decision.message:
+            return self.DENIED_DECISION_REASON.format(refusal=self.DENIED_DECISION_MESSAGE, reason=decision.message)
+        return self.DENIED_DECISION_MESSAGE
+
     def __init__(self, name: str):
         """
         Initializes a Runner instance.
@@ -593,6 +619,9 @@ class Agent(ABC):
     so a bring-your-own Agent reserves nothing.
     """
 
+    _warned_card_builders: ClassVar[set[type]] = set()
+    """The adapter classes already told that their `get_a2a_card` is no longer called, so each is told once."""
+
     @classmethod
     def current(cls) -> "Agent | None":
         """
@@ -616,6 +645,9 @@ class Agent(ABC):
         self._post_hooks: list[PostHook] = []
         self._run_options: dict[str, Any] = {}
         self._run_options_factory: RunOptionsFactory | None = None
+        # Built on first read, not here: an adapter assigns its native agent and attaches the
+        # system tools after this constructor returns, and the descriptor lists the agent's tools.
+        self._descriptor: AgentDescriptor | None = None
 
     def __repr__(self) -> str:
         """
@@ -683,6 +715,116 @@ class Agent(ABC):
     def run_options_factory(self, factory: RunOptionsFactory | None) -> None:
         self._run_options_factory = factory
 
+    @property
+    def descriptor(self) -> AgentDescriptor:
+        """
+        Returns the agent's descriptor: its catalog entry, which the registry stores and the surfaces read.
+        Built once, on first read, from what the adapter knows of the native agent; `Module.describe` then
+        declares what only the application knows (tags, visibility, and the catalog text where the native
+        agent carries none or a better one is wanted). Read-only: a descriptor changes through
+        `Module.describe`, which also updates the registry.
+        """
+        if self._descriptor is None:
+            self._descriptor = self._build_descriptor()
+        return self._descriptor
+
+    def _set_descriptor(self, descriptor: AgentDescriptor) -> None:
+        """
+        Replaces the agent's descriptor. The caller registers the agent again so the registry holds the same one.
+        :param descriptor: The descriptor to carry from now on.
+        """
+        self._descriptor = descriptor
+
+    def _build_descriptor(self) -> AgentDescriptor:
+        """
+        Builds the descriptor from what the agent itself knows: its name as id and name, the description its
+        framework keeps for it apart from its instructions (`_native_description`), the tools it reports
+        (each once), one skill per tool carrying the tool's description, and its runner's name and streaming
+        support. `get_description()` is never the source: for most frameworks it is the agent's instructions.
+        :return: The agent's own descriptor, before `Module.describe` is applied.
+        """
+        self._warn_if_it_builds_its_own_card()
+        tools = list(dict.fromkeys(self.get_tool_names()))
+        descriptions = self._tool_descriptions()
+        native_description = self._native_description()
+        return AgentDescriptor(
+            id=self.name,
+            name=self.name,
+            # Only text: a native agent that is a test double answers any attribute with an object of its own.
+            description=native_description.strip() if isinstance(native_description, str) else "",
+            tools=tools,
+            skills=[AgentSkillDescriptor(id=tool, name=tool, description=descriptions.get(tool) or "") for tool in tools],
+            runner=self.runner.name,
+            supports_streaming=self.runner.supports_streaming,
+        )
+
+    def _warn_if_it_builds_its_own_card(self) -> None:
+        """
+        Warns, once per class, about an adapter that still defines the removed `get_a2a_card`.
+
+        The method was the adapter contract's way to publish an A2A card. Cards are built from the descriptor
+        now, so an adapter written against the old contract still loads while its hand-built card is silently
+        replaced by one built from whatever its descriptor carries.
+        """
+        adapter = type(self)
+        if adapter in Agent._warned_card_builders or not callable(getattr(adapter, "get_a2a_card", None)):
+            return
+        Agent._warned_card_builders.add(adapter)
+        _agent_log.warning(
+            f"{adapter.__name__}.get_a2a_card is no longer called: an agent's A2A card is built from its descriptor. "
+            "Report the agent's tools through get_tool_names() and _tool_descriptions(), declare its catalog text with "
+            "Module.describe or registry.agents.<id>, and remove the method."
+        )
+
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names of the tools declared on the native agent, as an authorization policy names them.
+
+        Declared, not discovered: an adapter reads the tools its native agent object holds when the agent is
+        loaded, under the names the application declared them by, and performs no I/O to find more. A prefix or
+        rename the application puts on a toolset is part of that name; a prefix the adapter itself adds to serve
+        a tool is not (the Claude adapter serves `lookup` as `mcp__ak__lookup` and reports `lookup`, mapping
+        between the two where it gates the call). What only exists at
+        run time is therefore not reported: the tools of a remote MCP server or of a toolset resolved per run,
+        the tools of an agent this one hands off to, and tools nested in a sub-workflow or sub-graph the
+        adapter does not walk. Each adapter's own docstring names what it leaves out.
+
+        The base implementation reports none; each framework adapter reports its native agent's tools.
+        :return: The tool names.
+        """
+        return []
+
+    def _native_description(self) -> str:
+        """
+        Returns the description the native framework keeps for the agent, where it defines one that is separate
+        from the agent's instructions: text written to tell other agents and people what the agent does.
+
+        It seeds the descriptor's `description`, which the catalog, an A2A card and an MCP tool publish, so it
+        is the default until `Module.describe` or `registry.agents.<id>.description` declares another (an empty
+        one withholds it). An adapter returns such a field as it is and never falls back to the instructions,
+        the system prompt, a goal or a backstory: those are not written for publication. The base
+        implementation reports none, which is right for a framework that has no such field.
+        :return: The native description, or an empty string.
+        """
+        return ""
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the native description of each tool the agent reports, by tool name; a tool with none is left out
+        or given an empty one. The descriptor's skills take their descriptions from here. The base implementation
+        reports none; each framework adapter implements it beside `get_tool_names`, from the same native tools.
+        :return: The tool descriptions by tool name.
+        """
+        return {}
+
+    def ungated_tool_names(self) -> list[str]:
+        """
+        Returns the names of the tools the agent can call that Agent Kernel cannot gate at call time.
+        The base implementation reports none.
+        :return: The ungated tool names.
+        """
+        return []
+
     async def resolve_run_options(self, session: Session, requests: list[AgentRequest]) -> dict[str, Any]:
         """
         Returns the run options for one run: a copy of the static `run_options` with the factory's result, when a
@@ -737,12 +879,17 @@ class Agent(ABC):
             # Restore the previous agent, even on error, so nested activations don't clobber it.
             Agent.current_agent.reset(token)
 
-    @abstractmethod
     def get_description(self) -> str:
         """
-        Returns the description of the agent.
+        Returns the native agent's own description or instructions.
+
+        Agent Kernel does not read it: what a surface publishes about an agent is its descriptor's description
+        (`_native_description`, then `Module.describe`, then `registry.agents.<id>.description`), never this,
+        which for most frameworks is, or falls back to, the system prompt. Every built-in adapter implements it
+        for the applications that call it; a new adapter may leave the default.
+        :return: The description, empty unless the adapter provides one.
         """
-        pass
+        return ""
 
     @abstractmethod
     def override_system_prompt(self, prompt: str) -> None:
@@ -763,13 +910,6 @@ class Agent(ABC):
         :param tool: The tool to attach.
         """
         raise NotImplementedError()
-
-    @abstractmethod
-    def get_a2a_card(self) -> Any:
-        """
-        Returns the A2A AgentCard associated with the agent.
-        """
-        pass
 
     def _setup_system_prompt(self) -> None:
         """

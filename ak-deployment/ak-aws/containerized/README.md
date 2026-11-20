@@ -1,6 +1,6 @@
 # AWS Containerized Deployment
 
-Scalable, production-ready deployment of Agent Kernel on AWS using ECS Fargate with optional queue-based processing and auto-scaling.
+Scalable, production-ready deployment of Open Agent Kernel (OAK) on AWS using ECS Fargate with optional queue-based processing and auto-scaling.
 
 ## 📋 Table of Contents
 
@@ -16,7 +16,7 @@ Scalable, production-ready deployment of Agent Kernel on AWS using ECS Fargate w
 
 ## Overview
 
-This deployment uses AWS ECS Fargate to run containerized Agent Kernel applications with:
+This deployment uses AWS ECS Fargate to run containerized OAK applications with:
 
 - ✅ **Automatic scaling** based on queue depth
 - ✅ **Async processing** with SQS queues
@@ -367,7 +367,7 @@ time.
 | Variable | Description | Type | Default | Required |
 |---|---|---|---|---|
 | `enable_scheduling` | Create the EventBridge Scheduler schedule group and the execution role Scheduler assumes to deliver triggers to the Input Queue, grant both ECS task roles `scheduler:*Schedule` + `iam:PassRole` on them, and inject their coordinates. **Requires `queue_mode = true`.** | `bool` | `false` | no |
-| `ssm_enabled` | Grant the ECS task role that runs the agent (the agent runner when `queue_mode = true`, otherwise the REST service) `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>`. The capability is enabled by the application declaring `secret.provider.type: aws_ssm` in `config.yaml`, which then resolves a key such as `OPENAI_API_KEY` from `/ak/<prefix>/openai_api_key` whenever the environment variable of that name is unset or empty. **Terraform does not create the parameters**: create them yourself as `SecureString` (AWS-managed `alias/aws/ssm` key). | `bool` | `false` | no |
+| `ssm_enabled` | Grant the ECS task roles that resolve framework credentials (the REST service, which runs the agent when `queue_mode = false` and verifies messaging-integration webhooks and delivers their replies, and, when `queue_mode = true`, the agent runner) `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>`. The capability is enabled by the application declaring `secret.provider.type: aws_ssm` in `config.yaml`, which then resolves a key such as `OPENAI_API_KEY` from `/ak/<prefix>/openai_api_key` whenever the environment variable of that name is unset or empty. **Terraform does not create the parameters**: create them yourself as `SecureString` (AWS-managed `alias/aws/ssm` key). | `bool` | `false` | no |
 | `create_dynamodb_schedule_table` | Create the DynamoDB schedule store table (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) and inject its generated name as `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` | `bool` | `false` | no |
 
 ```hcl
@@ -408,7 +408,7 @@ create_dynamodb_schedule_table = true
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `execution_mode` | Execution mode: `rest_sync` (client waits on the same HTTP connection), `rest_async` (client polls a separate GET endpoint; requires `queue_mode = true`), `async` (WebSocket only; `message_type` picks one message per reply or one per chunk), or `realtime` (persistent model sockets behind a stateful edge such as the LiveKit gateway). `stream` was removed and fails at `terraform plan`: use `async` with `message_type = "delta"`. | `string` | `"rest_sync"` | no |
-| `message_type` | Reply delivery: `complete` (whole reply) or `delta` (one message per chunk). `null` leaves Agent Kernel's default (`delta` for `realtime`, `complete` otherwise). Injected as `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and the agent runner whenever non-null, in every mode, so the two containers always agree. For chunked replies use `delta` with `async` (WebSocket chunks): in queue mode `ECSIOHandler` refuses `rest_sync` + `delta` at startup (its REST container has no SSE route), and Agent Kernel rejects `rest_async` + `delta` and `realtime` + `complete` at config load. Terraform validates the value only; Agent Kernel checks the combination at startup. | `string` | `null` | no |
+| `message_type` | Reply delivery: `complete` (whole reply) or `delta` (one message per chunk). `null` leaves OAK's default (`delta` for `realtime`, `complete` otherwise). Injected as `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and the agent runner whenever non-null, in every mode, so the two containers always agree. For chunked replies use `delta` with `async` (WebSocket chunks): in queue mode `ECSIOHandler` refuses `rest_sync` + `delta` at startup (its REST container has no SSE route), and OAK rejects `rest_async` + `delta` and `realtime` + `complete` at config load. Terraform validates the value only; OAK checks the combination at startup. | `string` | `null` | no |
 
 ### Non-Queue Mode (Default)
 

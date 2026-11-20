@@ -4,7 +4,7 @@ sidebar_position: 7
 
 # Configuration
 
-Configure Agent Kernel via environment variables or configuration files. This sub module class 'AKConfig' is exported as 'Config'. Its unlikely that you will directly use this class in your code (i.e. need for Advanced usage).
+Configure Open Agent Kernel via environment variables or configuration files. This sub module class 'AKConfig' is exported as 'Config'. Its unlikely that you will directly use this class in your code (i.e. need for Advanced usage).
 
 :::tip
 For detailed information about session and memory management configuration, see:
@@ -15,7 +15,7 @@ For detailed information about session and memory management configuration, see:
 
 ## Configuration File
 
-Agent Kernel supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
+OAK supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
 
 :::note
 Test harness configuration (comparison mode, evaluator, llm models) is **not** part of `config.yaml`. It lives in a separate `test-config.yaml` file that is only loaded when running tests; see the [Test Configuration](#test-configuration) section below and [Testing](/docs/testing/overview). A legacy `test:` section in `config.yaml` is ignored.
@@ -54,11 +54,10 @@ api:
     agents: true
 
 # Agent-to-Agent communication
+# Every agent is served unless its descriptor's surfaces leave a2a out (see the registry block below).
 a2a:
   enabled: true
   url: http://localhost:8000/a2a
-  agents:
-    - "*"  # Enable for all agents
   task_store_type: redis
 
 # Model Context Protocol
@@ -66,9 +65,7 @@ a2a:
 # Full endpoint: http://{api.host}:{api.port}/mcp - use api.port to change the port.
 mcp:
   enabled: true
-  expose_agents: true
-  agents:
-    - "*"  # Expose all agents as MCP tools
+  expose_agents: true  # Every agent becomes a tool unless its descriptor's surfaces leave mcp out
   url: "http://localhost:8000/mcp"  # Public URL of the endpoint, named by the OAuth resource metadata (default: http://localhost:8000/mcp)
   stateless_http: false  # Run in stateless HTTP mode (default: false)
 
@@ -84,7 +81,7 @@ execution:
   mode: rest_sync  # Execution mode: rest_sync, rest_async, async (WebSocket), or realtime. Unset runs as rest_sync
   message_type: complete  # Reply delivery: complete (one whole reply) or delta (one message per chunk). Unset: delta for realtime, complete otherwise
   queues:
-    type: sqs  # Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
+    type: sqs  # Queue transport: in_memory | sqs | kafka | nats | pubsub | servicebus, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
@@ -93,6 +90,16 @@ execution:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
       no_of_consumers: 2  # Containerized deployments only - consumer threads polling the output queue (default: 2, ignored by serverless)
+    # pubsub:  # Google Cloud Pub/Sub (type: pubsub, `pubsub` extra). The GCP modules inject these as AK_EXECUTION__QUEUES__PUBSUB__*
+    #   project_id: my-project  # Unset uses the Application Default Credentials project
+    #   input_topic: agent-input  # Topic carrying chat requests
+    #   input_subscription: agent-input  # Subscription the agent runner pulls (ordering enabled)
+    #   output_topic: agent-output  # Topic carrying agent replies
+    #   output_subscription: agent-output  # Subscription the response handler pulls (ordering enabled)
+    #   dlq_suffix: "-dlq"  # Dead-letter topic suffix: permanently failed messages are copied there
+    #   ack_wait: 300  # Seconds a pulled message stays leased before redelivery: exceed your longest turn
+    #   request_timeout: 10  # Seconds to wait for a Pub/Sub call
+    #   auto_provision: false  # Create missing topics/subscriptions at startup (emulator and dev only)
   response_store:
     type: redis  # Response store type: redis, valkey, or dynamodb (required for rest_sync and rest_async modes)
     retry_count: 5  # Number of retry attempts for response store reads
@@ -115,8 +122,8 @@ multimodal:
   storage_type: in_memory  # in_memory | redis | dynamodb | session_cache
   max_attachments: 20
   description_max_length: 200
-  description_model: gpt-4o  # Vision LLM for brief attachment descriptions
-  analysis_model: gpt-4o  # Vision LLM for the analyze_attachments tool
+  description_model: gpt-6-luna  # Vision LLM for brief attachment descriptions
+  analysis_model: gpt-6-luna  # Vision LLM for the analyze_attachments tool
   redis:
     url: "redis://localhost:6379"
     ttl: 604800
@@ -131,7 +138,7 @@ multimodal:
 thread:
   type: in_memory  # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
   naming:
-    model: gpt-4o-mini  # LLM used to auto-name threads (requires the thread extra)
+    model: gpt-6-luna  # LLM used to auto-name threads (requires the thread extra)
     max_length: 80
   redis:
     url: "redis://localhost:6379"
@@ -236,39 +243,76 @@ identity:
     claims: []  # claim paths whose string or list values are also looked up in mapping; only groups by default,
                 # since a user sets many of their own claims (a display name, a username, an email)
 
+# Agent registry (optional - without this block agent descriptors live in the memory of the process that
+# loads the agents, and an agent is on every surface unless its code narrows them with Module.describe.
+# See "Agent Registry" below)
+registry:
+  type: in_memory  # in_memory | redis | valkey | dynamodb, or a dotted path to an AgentRegistry subclass
+  redis:  # required when type is redis; descriptors do not expire, so a ttl here is refused at startup
+    url: redis://localhost:6379
+    prefix: "ak:registry:"
+  valkey:  # required when type is valkey
+    url: valkey://localhost:6379
+    prefix: "ak:registry:"
+  dynamodb:  # required when type is dynamodb; partition key agent_id (S), no sort key
+    table_name: ak-agent-registry
+  agents:  # catalog fields set per agent id, over what the agent's code declares
+    support-triage:
+      description: Triage support tickets  # catalog text: the A2A card and the MCP tool carry it
+      version: "1.2.0"  # quoted: YAML reads 1.2 or 2 as a number, which is refused
+      owner: cx-platform
+      tags: [support]
+      visibility: internal  # private | internal | public; recorded, not enforced yet (see below)
+      surfaces: [rest, agui]  # rest | a2a | mcp | agui; [] = none; omitted = what the code declared (every surface by default)
+
 # Messaging platform integrations
 slack:
   agent: ""  # Default agent for Slack
   agent_acknowledgement: ""  # Acknowledgement message
+  bot_token: ""  # Bot token
+  bot_token_key: "SLACK_BOT_TOKEN"  # Secret key used when bot_token is empty
+  signing_secret: ""  # Signing secret for request verification
+  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key used when signing_secret is empty
 
 whatsapp:
   agent: ""  # Default agent for WhatsApp
   agent_acknowledgement: ""  # Acknowledgement message
   verify_token: ""  # Webhook verify token
+  verify_token_key: "AK_WHATSAPP__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""  # Business API access token
+  access_token_key: "AK_WHATSAPP__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""  # App secret for signature verification
+  app_secret_key: "AK_WHATSAPP__APP_SECRET"  # Secret key used when app_secret is empty
   phone_number_id: ""  # Business phone number ID
   api_version: "v24.0"  # API version
 
 messenger:
   agent: ""  # Default agent for Facebook Messenger
   verify_token: ""  # Webhook verify token
+  verify_token_key: "AK_MESSENGER__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""  # Page access token
+  access_token_key: "AK_MESSENGER__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""  # App secret for signature verification
+  app_secret_key: "AK_MESSENGER__APP_SECRET"  # Secret key used when app_secret is empty
   api_version: "v24.0"  # Graph API version
 
 instagram:
   agent: ""  # Default agent for Instagram
   verify_token: ""  # Webhook verify token
+  verify_token_key: "AK_INSTAGRAM__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""  # Business access token
+  access_token_key: "AK_INSTAGRAM__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""  # App secret for signature verification
+  app_secret_key: "AK_INSTAGRAM__APP_SECRET"  # Secret key used when app_secret is empty
   instagram_account_id: ""  # Business Account ID (IGSID)
   api_version: "v21.0"  # Graph API version
 
 telegram:
   agent: ""  # Default agent for Telegram
   bot_token: ""  # Bot token from BotFather
+  bot_token_key: "AK_TELEGRAM__BOT_TOKEN"  # Secret key used when bot_token is empty
   webhook_secret: ""  # Optional webhook security token
+  webhook_secret_key: "AK_TELEGRAM__WEBHOOK_SECRET"  # Secret key used when webhook_secret is empty
   api_version: "bot"  # Bot API version prefix
 
 teams:
@@ -276,6 +320,7 @@ teams:
   agent_acknowledgement: ""  # Message sent when a Teams message is received
   app_id: ""  # Azure Bot / Entra ID application (client) ID
   app_password: ""  # Azure Bot / Entra ID application client secret
+  app_password_key: "AK_TEAMS__APP_PASSWORD"  # Secret key used when app_password is empty
   tenant_id: ""  # Bot app registration's own tenant; empty for a multi-tenant bot
 
 # A2UI labelling (optional - off unless `enabled` is true)
@@ -293,7 +338,7 @@ guardrail:
     type: openai  # Guardrail provider: openai, bedrock, or walledai
     pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
-    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    model: gpt-6-luna  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
@@ -303,7 +348,7 @@ guardrail:
     type: openai  # Guardrail provider: openai, bedrock, or walledai
     pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
-    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    model: gpt-6-luna  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
@@ -317,8 +362,8 @@ logging:
   system:
     level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL
 ```
-> Logging is auto-configured when the configuration is first loaded, i.e., at the first `Config.get()` call, which every application entry point performs during startup. Merely importing the library does not read `config.yaml` or change logging. Once configuration loads, Agent Kernel may configure the Agent Kernel logger and the system/root logger and may add or change handlers/formatters.
-> Use `logging.ak.level` to control Agent Kernel's own logger verbosity, and `logging.system.level` only if you want Agent Kernel to affect the process-wide/root logger. If you do **not** want Agent Kernel to modify application-wide logging, avoid enabling root/system logger.
+> Logging is auto-configured when the configuration is first loaded, i.e., at the first `Config.get()` call, which every application entry point performs during startup. Merely importing the library does not read `config.yaml` or change logging. Once configuration loads, OAK may configure the OAK logger and the system/root logger and may add or change handlers/formatters.
+> Use `logging.ak.level` to control OAK's own logger verbosity, and `logging.system.level` only if you want OAK to affect the process-wide/root logger. If you do **not** want OAK to modify application-wide logging, avoid enabling root/system logger.
 
 ### JSON Configuration
 
@@ -363,13 +408,11 @@ Alternatively, use `config.json`:
   "a2a": {
     "enabled": true,
     "url": "http://localhost:8000/a2a",
-    "agents": ["*"],
     "task_store_type": "redis"
   },
   "mcp": {
     "enabled": true,
     "expose_agents": true,
-    "agents": ["*"],
     "url": "http://localhost:8000/mcp",
     "stateless_http": false
   },
@@ -461,13 +504,13 @@ Alternatively, use `config.json`:
     "input": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": ""
     },
     "output": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": ""
     }
   },
@@ -565,9 +608,11 @@ export AK_API__ENABLED_ROUTES__AGENTS=true  # Enable agent routes (default: true
 # Enable A2A functionality
 export AK_A2A__ENABLED=true  # default: false
 export AK_A2A__URL=http://localhost:8000/a2a  # default: http://localhost:8000/a2a
-export AK_A2A__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
 export AK_A2A__TASK_STORE_TYPE=redis  # Options: 'in_memory', 'redis' (default: 'in_memory')
 ```
+
+Which agents A2A serves is set per agent, not here: see [Agent Registry](#agent-registry). `AK_A2A__AGENTS` was
+removed, and setting it stops the application at startup.
 
 ### Model Context Protocol (MCP) Server
 
@@ -575,11 +620,13 @@ export AK_A2A__TASK_STORE_TYPE=redis  # Options: 'in_memory', 'redis' (default: 
 # Enable MCP functionality
 export AK_MCP__ENABLED=true  # default: false
 export AK_MCP__EXPOSE_AGENTS=true  # Expose agents as MCP tools (default: false)
-export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
 export AK_MCP__URL=https://agents.example.com/mcp  # Public URL of the MCP endpoint (default: http://localhost:8000/mcp)
 export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Session-Id (default: false)
 # Note: MCP is always served at /mcp on the main API server. Use AK_API__PORT to change the port.
 ```
+
+Which agents become MCP tools is set per agent, not here: see [Agent Registry](#agent-registry). `AK_MCP__AGENTS` was
+removed, and setting it stops the application at startup.
 
 ### Secret Resolution
 
@@ -607,6 +654,105 @@ export AK_IDENTITY__PROVIDER__ENTRA__TENANT_ID=<tenant-id>  # entra only
 export AK_IDENTITY__PROVIDER__FIREBASE__PROJECT_ID=<project-id>  # firebase only
 ```
 
+### Agent Registry
+
+Every agent has a **descriptor**: its id, name, version, description, tags, the tools it reports and the surfaces
+it is served on. The agent registry keeps the descriptors, and the agent catalog (`GET /api/v1/agents`), A2A cards,
+MCP agent tools and the AG-UI listing are all built from them.
+
+```bash
+export AK_REGISTRY__TYPE=redis  # Options: 'in_memory', 'redis', 'valkey', 'dynamodb', or a dotted path to an AgentRegistry subclass (default: 'in_memory')
+export AK_REGISTRY__REDIS__URL=redis://localhost:6379  # redis only (the valkey block takes the same keys)
+export AK_REGISTRY__REDIS__PREFIX=ak:registry:  # default: 'ak:registry:'
+export AK_REGISTRY__DYNAMODB__TABLE_NAME=ak-agent-registry  # dynamodb only; partition key agent_id (S), no sort key
+export AK_REGISTRY__AGENTS__BILLING__SURFACES='["rest"]'  # a per-agent field; the id arrives lowercased (see below)
+```
+
+- **Backend.** Without a `registry` block, or with `type: in_memory`, descriptors live in the process that loads the
+  agents. A store-backed type (`redis`, `valkey`, `dynamodb`) shares them, so a process that only accepts requests
+  (the IO process of a split deployment) can list agents that run in another process and serve them over the queue.
+  It shares what is known about an agent, not the agent: a handler that runs agents in its own process still needs
+  the agent loaded there. A store type needs its connection block; the same extras as the session store apply
+  (`agentkernel[redis]`, `[valkey]`, `[aws]`). A key the `registry` block does not take is a startup error.
+- **Descriptors do not expire.** A descriptor is written when its agent is loaded and never again while the process
+  runs, so a `ttl` would remove running agents from every listing; one set under a store block is refused at
+  startup. Nothing removes a descriptor when a process exits either. After a deployment that renames or removes an
+  agent, delete its record from the store: on Redis or Valkey the key `<prefix>agent:<id>` and the member `<id>` of
+  the set `<prefix>index:all`, on DynamoDB the item whose `agent_id` is the id.
+- **Per-agent fields.** `registry.agents.<id>` sets `description`, `version`, `owner`, `tags`, `visibility`,
+  `surfaces` and `identity` for one agent, over what the code declares. The same fields can be declared in code with
+  `Module.describe(agent, description=..., surfaces=[...])`; where both set a field, the configuration wins, and
+  a field left out here keeps what the code declared (inside `identity` too: naming only its `subject` keeps a
+  `client_id` the code set). An unknown key under an agent is a startup error, so a misspelt `surfaces` cannot
+  silently leave an agent exposed.
+  Each process applies its own `registry.agents` block to what it reads from the registry, so a restriction set in
+  the configuration of the process that serves a surface holds there for agents another process hosts. Where
+  processes are configured differently, each serves an agent as its own configuration describes it. Set through
+  the environment, an id arrives lowercased (`AK_REGISTRY__AGENTS__Billing__SURFACES` reads as `billing`), so an
+  entry also applies to the agent whose id differs from its key only in case, unless another entry names that agent
+  exactly. A registry passed to `Runtime(sessions, registry=...)` in code is used as given, without these fields.
+- **Surfaces.** `surfaces` lists where the agent is served: `rest`, `a2a`, `mcp`, `agui`. An agent that declares
+  none, in code or here, is on every surface; `[]` puts it on none. `a2a`, `mcp` and `agui` decide whether the
+  agent can be reached on that protocol at all. `rest` decides whether the agent is listed in the catalog
+  (`GET /api/v1/agents`); a chat request that names the agent is still served. This replaces the `a2a.agents`,
+  `mcp.agents` and `agui.agents` lists. Those lists named the agents a surface served, where `surfaces` is set per
+  agent, so removing a list is not enough to keep what it did: give every agent the list left out a `surfaces`
+  value without that surface. There is no allow-list any more: an agent added later with no `surfaces` is on
+  every surface, so set it for each new agent that should not be.
+- **Visibility.** `visibility` (`private`, `internal`, `public`) is recorded on the descriptor and published in the
+  catalog. It is not enforced yet: until authorization ships, every agent listed on a surface is listed to every
+  caller, and the catalog route answers a caller with no credential. `surfaces` is what keeps an agent off a
+  listing today.
+- **Description.** The description is catalog text for people and other agents. It is what an A2A card and an
+  MCP tool publish; an agent's instructions are never published. Left undeclared, it is the description the
+  agent's framework keeps for it, where it has one apart from the instructions
+  ([which field per framework](./module.md#describing-an-agent)); setting `description: ""` here keeps that
+  native text off every surface.
+
+#### Bring your own registry
+
+`registry.type` also takes a dotted path to a subclass of `AgentRegistry` (`from agentkernel import AgentRegistry`),
+which is built with no arguments, so it reads its own settings. A registry keeps two things under an agent id: the
+agent object, which exists only in the process that loaded it, and its descriptor, which other processes may read.
+
+| Method | Answers for |
+|---|---|
+| `register(descriptor, agent)`, `deregister(id)` | this process; `register` raises `AgentRegistrationError` when this process already hosts a different agent under the id, and replaces the descriptor when it is the same agent |
+| `get(id)`, `agents()` | the agents this process hosts |
+| `descriptor(id)`, `descriptors()` | every agent the registry knows, whichever process hosts it |
+| `is_empty()`, `list(...)`, `clear()` | provided by the base class; override `is_empty` when the store can answer it without reading every record |
+
+A registry over a store other processes share can subclass `StoreBackedAgentRegistry`
+(`agentkernel.identity.registry.base`), which keeps the hosted agents and leaves four store operations to implement:
+`_put`, `_remove`, `descriptor` and `descriptors`. Run the conformance suite against it:
+
+```python
+from uuid import uuid4
+
+import pytest
+from agentkernel.identity.registry.testing import AgentRegistryContract
+
+
+class TestMyRegistry(AgentRegistryContract):
+    @pytest.fixture
+    def namespace(self):
+        # Every case starts from an empty registry, so each test gets a store, table or key prefix of its own.
+        name = f"registry-test-{uuid4().hex}"
+        yield name
+        MyRegistry(namespace=name).drop()  # whatever removes that test's records from your store
+
+    @pytest.fixture
+    def registry(self, namespace):
+        return MyRegistry(namespace=namespace)
+
+    @pytest.fixture
+    def peer(self, namespace):  # a second instance over the same store; omit for a registry that shares nothing
+        return MyRegistry(namespace=namespace)
+```
+
+The factory builds your class with no arguments, so give test-only parameters such as `namespace` a default
+that reads your own settings.
+
 ### Test Configuration {#test-configuration-env-vars}
 
 These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration; see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. `AK_TEST__MODE` accepts the renamed `score`/`llm`/`fallback` values, and `AK_TEST__JUDGE__*` was renamed to `AK_TEST__LLM__*`:
@@ -619,7 +765,7 @@ export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: '
 export AK_TEST__EVALUATOR=deepeval  # default: 'deepeval'
 
 # Llm configuration (for LLM-based evaluation)
-export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__MODEL=gpt-6-luna  # LLM model (default: gpt-6-luna)
 export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```
@@ -709,7 +855,7 @@ export AK_GUARDRAIL__INPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walled
 export AK_GUARDRAIL__INPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific input guardrail configuration
-export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__INPUT__MODEL=gpt-6-luna  # LLM model for validation (default: gpt-6-luna)
 export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json  # Path to guardrail config file
 
 # Bedrock-specific input guardrail configuration
@@ -725,7 +871,7 @@ export AK_GUARDRAIL__OUTPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walle
 export AK_GUARDRAIL__OUTPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific output guardrail configuration
-export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-6-luna  # LLM model for validation (default: gpt-6-luna)
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path to guardrail config file
 
 # Bedrock-specific output guardrail configuration
@@ -817,7 +963,7 @@ Create `test-config.yaml` in the directory you run your tests from:
 mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallback)
 evaluator: deepeval  # Built-in evaluator short name, or a dotted path to your own AKEvaluator subclass (default: deepeval)
 llm:
-  model: gpt-4o-mini  # LLM model for llm evaluation (default: gpt-4o-mini)
+  model: gpt-6-luna  # LLM model for llm evaluation (default: gpt-6-luna)
   provider: openai  # LLM provider for llm evaluation (default: openai)
   embedding_model: text-embedding-3-small  # Embedding model, unconsumed by any built-in v1 metric (default: text-embedding-3-small)
 ```
@@ -831,7 +977,7 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 - `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik use a `GEval` metric; JEV asks one yes/no Noul question) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`), see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below, it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`), see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below, it does not require an Opik Cloud account, API key, or self-hosted server (OAK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
 
 ### Custom Test Configuration File Path
 
@@ -853,7 +999,7 @@ export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: '
 export AK_TEST__EVALUATOR=deepeval  # Built-in short name, or a dotted path (default: 'deepeval')
 
 # Llm configuration (for LLM-based evaluation)
-export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__MODEL=gpt-6-luna  # LLM model (default: gpt-6-luna)
 export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```
@@ -913,8 +1059,6 @@ api:
 a2a:
   enabled: false                # Enable A2A functionality
   url: "http://localhost:8000/a2a"  # A2A endpoint URL
-  agents:                       # List of agents to enable for A2A
-    - "*"                       # "*" enables all agents
   task_store_type: "in_memory"  # Task storage: 'in_memory' or 'redis'
 
 # Model Context Protocol
@@ -923,8 +1067,6 @@ a2a:
 mcp:
   enabled: false                # Enable MCP functionality
   expose_agents: false          # Expose agents as MCP tools
-  agents:                       # List of agents to expose as MCP tools
-    - "*"                       # "*" exposes all agents
   url: "http://localhost:8000/mcp"  # Public URL clients reach the endpoint at (behind a proxy, the public one). With an
                                 # OpenID-family identity provider it is the resource the RFC 9728 metadata names
   stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
@@ -933,35 +1075,50 @@ mcp:
 slack:
   agent: ""                     # Default agent for Slack interactions
   agent_acknowledgement: ""     # Acknowledgement message when message received
+  bot_token: ""                 # Slack bot token
+  bot_token_key: "SLACK_BOT_TOKEN"  # Secret key used when bot_token is empty
+  signing_secret: ""            # Slack signing secret for request verification
+  signing_secret_key: "SLACK_SIGNING_SECRET"  # Secret key used when signing_secret is empty
 
 whatsapp:
   agent: ""                     # Default agent for WhatsApp interactions
   agent_acknowledgement: ""     # Acknowledgement message when message received
   verify_token: ""              # WhatsApp webhook verify token
+  verify_token_key: "AK_WHATSAPP__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""              # WhatsApp Business API access token
+  access_token_key: "AK_WHATSAPP__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""                # WhatsApp app secret for signature verification
+  app_secret_key: "AK_WHATSAPP__APP_SECRET"  # Secret key used when app_secret is empty
   phone_number_id: ""           # WhatsApp Business phone number ID
   api_version: "v24.0"          # WhatsApp API version
 
 messenger:
   agent: ""                     # Default agent for Facebook Messenger interactions
   verify_token: ""              # Facebook Messenger webhook verify token
+  verify_token_key: "AK_MESSENGER__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""              # Facebook Page access token
+  access_token_key: "AK_MESSENGER__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""                # Facebook app secret for signature verification
+  app_secret_key: "AK_MESSENGER__APP_SECRET"  # Secret key used when app_secret is empty
   api_version: "v24.0"          # Facebook Graph API version
 
 instagram:
   agent: ""                     # Default agent for Instagram interactions
   verify_token: ""              # Instagram webhook verify token
+  verify_token_key: "AK_INSTAGRAM__VERIFY_TOKEN"  # Secret key used when verify_token is empty
   access_token: ""              # Instagram Business access token
+  access_token_key: "AK_INSTAGRAM__ACCESS_TOKEN"  # Secret key used when access_token is empty
   app_secret: ""                # Instagram app secret for signature verification
+  app_secret_key: "AK_INSTAGRAM__APP_SECRET"  # Secret key used when app_secret is empty
   instagram_account_id: ""      # Instagram Business Account ID (IGSID)
   api_version: "v21.0"          # Instagram Graph API version
 
 telegram:
   agent: ""                     # Default agent for Telegram interactions
   bot_token: ""                 # Telegram bot token from BotFather
+  bot_token_key: "AK_TELEGRAM__BOT_TOKEN"  # Secret key used when bot_token is empty
   webhook_secret: ""            # Optional secret token for webhook security
+  webhook_secret_key: "AK_TELEGRAM__WEBHOOK_SECRET"  # Secret key used when webhook_secret is empty
   api_version: "bot"            # Telegram Bot API version prefix
 
 teams:
@@ -969,6 +1126,7 @@ teams:
   agent_acknowledgement: ""     # Message sent as an acknowledgement when a Teams message is received
   app_id: ""                    # Azure Bot / Entra ID application (client) ID
   app_password: ""              # Azure Bot / Entra ID application client secret
+  app_password_key: "AK_TEAMS__APP_PASSWORD"  # Secret key used when app_password is empty
   tenant_id: ""                 # Entra ID tenant that owns the bot's app registration. Required
                                 # only for a single-tenant registration; empty for a multi-tenant
                                 # bot. Also the fallback tenant for the app-only token used to
@@ -985,13 +1143,13 @@ guardrail:
     enabled: false              # Enable input guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
-    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    model: "gpt-6-luna"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
   output:                       # Output guardrail configuration
     enabled: false              # Enable output guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
-    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    model: "gpt-6-luna"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
 
 # Execution configuration (for AWS serverless and containerized deployments)
@@ -999,7 +1157,7 @@ execution:
   mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'async', or 'realtime'
   message_type: "complete"      # Reply delivery: 'complete' or 'delta' (unset: delta for realtime, complete otherwise)
   queues:                       # Queue transport + coordinates for queue-based execution
-    type: "sqs"                 # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
+    type: "sqs"                 # in_memory | sqs | kafka | nats | pubsub | servicebus, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed
@@ -1143,8 +1301,10 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 # Enable Model Context Protocol
 export AK_MCP__ENABLED=true
 export AK_MCP__EXPOSE_AGENTS=true
-export AK_MCP__AGENTS="my-agent,another-agent"  # Specific agents
 ```
+
+Every agent becomes a tool. To leave one out, list the surfaces it should be on under
+`registry.agents.<id>.surfaces` (see [Agent Registry](#agent-registry)).
 
 ### Observability / Tracing Setup
 
@@ -1228,7 +1388,7 @@ CloudWatch Transaction Search must be enabled in the account, and the agent's ro
 
 ## Validation and Error Handling
 
-Agent Kernel validates all configuration values at startup:
+OAK validates all configuration values at startup:
 
 - **Invalid session storage types** will raise validation errors
 - **Invalid port numbers** will be rejected

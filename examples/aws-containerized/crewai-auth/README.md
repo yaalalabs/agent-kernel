@@ -1,6 +1,6 @@
-# Agent Kernel running CrewAI based agents with Authentication in AWS Containered (ECS)
+# Open Agent Kernel running CrewAI based agents with Authentication in AWS Containered (ECS)
 
-This package contains a demo of Agent Kernel running agents built with CrewAI with authentication, running them in a containered configuration using AWS ECS.
+This package contains a demo of Open Agent Kernel running agents built with CrewAI with authentication, running them in a containered configuration using AWS ECS.
 
 ## Authentication
 
@@ -31,7 +31,7 @@ spells out an Auth0 block, and the same block works here unchanged.
 
 This demo deploys the following AWS resources:
 
-- AWS ECS running the Agent Kernel implementation.
+- AWS ECS running the OAK implementation.
 - API Gateway endpoint for the ECS service.
 
 ## Prerequisites
@@ -41,11 +41,13 @@ This demo deploys the following AWS resources:
 
 ## Deployment Steps
 
-1. Configure environment variables:
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
     export TF_VAR_demo_auth_token=<any secret string: the bearer token clients send>
     ```
+    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the app reads the key from SSM at startup; no secret passes through Terraform.
 
 2. Navigate to the deployment directory and run the deployment script:
     ```bash

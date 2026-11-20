@@ -1,10 +1,10 @@
 # Gmail Integration
 
-Deploy your Agent Kernel agents as Gmail bots that automatically read and reply to emails using AI. This integration connects your agents directly to Gmail, enabling intelligent email automation for support, sales, and more.
+Deploy your Open Agent Kernel agents as Gmail bots that automatically read and reply to emails using AI. This integration connects your agents directly to Gmail, enabling intelligent email automation for support, sales, and more.
 
 ## Overview
 
-The `GmailInboundAdapter`/`GmailOutboundAdapter` pair bridges Agent Kernel and Gmail. `PollerRunner` hosts the inbound adapter, which polls for new mail and enqueues each message; the agent runs behind the queue and the outbound adapter sends the reply. The integration handles OAuth2 authentication, polling, message parsing, and reply threading.
+The `GmailInboundAdapter`/`GmailOutboundAdapter` pair bridges OAK and Gmail. `PollerRunner` hosts the inbound adapter, which polls for new mail and enqueues each message; the agent runs behind the queue and the outbound adapter sends the reply. The integration handles OAuth2 authentication, polling, message parsing, and reply threading.
 
 ### How it works:
 
@@ -71,6 +71,8 @@ export AK_MULTIMODAL__MAX_ATTACHMENTS=20        # Keep last N files in session (
 export AK_CLIENT_NAME="Your Name"                 # Name for signatures
 export AK_GMAIL_SIGN_OFF="Best regards"           # Sign-off format
 ```
+
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials). The keys they are read under are set by `gmail.client_id_key` and `client_secret_key` in `config.yaml`, defaulting to the names above; `gmail.client_id` and `client_secret`, when set, are used first.
 
 **Note:** You do NOT need to provide a credentials.json file. The handler will use these environment variables directly for authentication.
 

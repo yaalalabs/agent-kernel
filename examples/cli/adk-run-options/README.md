@@ -1,7 +1,7 @@
-# Agent Kernel: per-agent native run options (Google ADK)
+# Open Agent Kernel: per-agent native run options (Google ADK)
 
-This demo shows how to pass Google ADK's own **per-run options** to an agent through Agent Kernel: a
-`plugins` list that reports progress and a `RunConfig` with `max_llm_calls`. Agent Kernel constructs
+This demo shows how to pass Google ADK's own **per-run options** to an agent through Open Agent Kernel (OAK): a
+`plugins` list that reports progress and a `RunConfig` with `max_llm_calls`. OAK constructs
 the ADK `Runner` per run, so a plugin cannot be attached any other way. Both are declared once, at load
 time, with `Module.run_options`:
 
@@ -17,7 +17,7 @@ GoogleADKModule([weather_agent]).run_options(
 
 1. **Two destinations.** `plugins`, `memory_service`, `artifact_service`, `credential_service` and
    `plugin_close_timeout` go to the per-run `Runner(...)` constructor; `run_config` goes to
-   `run_async`. Agent Kernel splits them for you and writes the keys it owns (`agent`, `app_name`,
+   `run_async`. OAK splits them for you and writes the keys it owns (`agent`, `app_name`,
    `session_service`, `user_id`, `session_id`, `new_message`, ...) last.
 2. **Stream mode.** The adapter's stream mapping depends on ADK's partial (SSE) events, so in
    `execution.message_type: delta` your `RunConfig` is copied with `streaming_mode=SSE`. One warning is
@@ -44,7 +44,7 @@ Run stats: llm_calls=2, tool_calls=1, max_llm_calls=20
 
 | Path | Mode | What you get |
 |---|---|---|
-| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
+| OAK stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
 | Native plugins through run options (this demo) | any mode, including `rest_sync` | ADK's full plugin surface: run, agent, model and tool callbacks |
 
 Per-agent callbacks (`before_model_callback=` on the `Agent` itself) were always reachable; plugins are

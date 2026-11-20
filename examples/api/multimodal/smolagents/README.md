@@ -1,8 +1,8 @@
 # Multimodal Example - smolagents
 
-Demonstrates Agent Kernel multimodal (image/file) support using HuggingFace smolagents.
+Demonstrates Open Agent Kernel multimodal (image/file) support using HuggingFace smolagents.
 
-This example runs a smolagents agent behind Agent Kernel REST API and supports sending
+This example runs a smolagents agent behind OAK REST API and supports sending
 images/files in chat requests.
 
 ## Running the Example
