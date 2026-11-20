@@ -51,7 +51,7 @@ ak-py/src/agentkernel/
 │   ├── authz/
 │   │   ├── base.py         # Authorizer ABC, Decision, AuthorizerCapabilities
 │   │   ├── factory.py      # AuthorizerFactory
-│   │   ├── static.py       # StaticAuthorizer, GrantTable, SubjectMatcher
+│   │   ├── static.py       # StaticAuthorizer, GrantTable, ToolPolicyTable, SubjectMatcher
 │   │   ├── gate.py         # AccessGate
 │   │   └── testing.py      # AuthorizerContract
 │   ├── registry/
@@ -927,40 +927,68 @@ class Authorizer(ABC):
     async def visible_agents(self, principal, candidates: list[str]) -> list[str]     # default: those with a level
 ```
 
-**`StaticAuthorizer`** (`authz/static.py`), constructed with `grants`, `tools` and a
-`descriptor_lookup: Callable[[], list[AgentDescriptor]]` (the gate passes
-`registry.descriptors`), its only dependency for `tag:` and tier defaults:
+`Decision` and `AuthorizerCapabilities` are frozen models: the class-level `capabilities` is one
+object every instance of a backend shares.
 
-- `GrantTable` normalizes each grant at construction: `subjects` and `agents` coerced from a bare
-  string to a one-element list; `level` parsed into `AccessLevel`; an unknown subject form or an
-  empty list is `AKConfigError` naming the grant index.
+**`StaticAuthorizer`** (`authz/static.py`), constructed with `grants`, `tools`, a
+`descriptor_lookup: Callable[[], list[AgentDescriptor]]` and an optional `system_tiers:
+Callable[[str], Mapping[str, AccessLevel]]`, its only dependencies, for `tag:` and for tier
+defaults. The factory supplies both (below); the authorizer reads no configuration and keeps no
+copy of the registry:
+
+- `GrantTable` normalizes each grant at construction. An entry is a `_GrantConfig` or the mapping
+  one is built from, so the block's own models are taken as they are and a hand-built policy
+  (a test, a wrapper) is validated the same way: `subjects` and `agents` coerced from a bare
+  string to a one-element list, `level` parsed into `AccessLevel`. An entry that does not
+  validate, an unknown subject form, an empty list, an empty agent entry or a bare `tag:` is
+  `AKConfigError` naming `authorization.grants[<index>]`.
 - `SubjectMatcher.matches(form: str, principal) -> bool`: `*` always; `authenticated` when not
   anonymous (messaging senders included, design 5); `provider:<name>` when `principal.provider ==
   name`, or when `name` ends with `:` and `principal.provider.startswith(name)`; `user:<subject>`
   on `principal.subject` unless `principal.is_shared_channel` (design 5: an edge sender's subject
-  is a platform id, never matched by a user grant); `group:<name>` on `groups`; `role:<name>` on
-  `roles`.
-- Agent entries: an id, `*`, or `tag:<name>` resolved at evaluation time against
+  is a platform id, never matched by a user grant) or the principal is anonymous (its subject is
+  the placeholder `anonymous`, which a real user of that name must not share); `group:<name>` on
+  `groups`; `role:<name>` on `roles`. `SubjectMatcher.is_valid(form)` is the grammar check the
+  table uses.
+- Agent entries: an id (matched exactly), `*`, or `tag:<name>` resolved at evaluation time against
   `descriptor_lookup()` (every descriptor whose `tags` contains the name; none matches nothing).
+  The lookup is a registry listing, which over a shared registry is a blocking store read, so it
+  runs through `asyncio.to_thread`, and only for a principal one of whose grants selects by tag:
+  a policy without `tag:` entries never reads the registry.
 - `agent_level`: the maximum `level` over grants where any subject matches and any agent entry
   matches `agent_id`; `None` when none.
+- `ToolPolicyTable` holds the `tools` block by agent, each entry a `_ToolPolicyConfig` or the
+  mapping one is built from. A second policy for an agent is `AKConfigError` naming
+  `authorization.tools[<index>]`: which allow-list would apply is not guessed at.
 - Tool tier for `(agent_id, tool)`: the `tiers` entry of the `tools` block for that agent, else the
-  tier of the `SystemTool` with that name on the hosted agent (passed in by the gate as
-  `system_tiers: dict[str, AccessLevel]`), else `READ`.
+  tier `system_tiers(agent_id)` gives the name (the tier the `SystemTool` of that name attached to
+  that agent declares, asked per agent so an application tool that shares a system tool's name on
+  another agent is not tiered by it), else `READ`.
 - `check_tool`: `Decision(False, f"Tool '{tool}' is denied for agent '{agent_id}'")` when in
   `deny`; `Decision(False, f"Tool '{tool}' is not in the allow-list of agent '{agent_id}'")` when
-  `allow` is set and the tool is absent; `Decision(False, f"Tool '{tool}' requires level {tier};
-  the current principal has {level or 'none'}")` when `agent_level` is `None` or below the tier;
-  else `Decision(True)`.
+  `allow` is set and the tool is absent (an empty `allow` offers nothing); `Decision(False,
+  f"Tool '{tool}' requires level {tier}; the current principal has {level or 'none'}")` when
+  `agent_level` is `None` or below the tier; else `Decision(True)`. The deny list and the
+  allow-list are decided first and without the level, so the reason is the same whoever asks.
+- `filter_tools` and `visible_agents` are overridden to resolve the level, the declared tiers and
+  the tags once for the whole list, where the base class asks per tool and per candidate.
 - With the `authorization` block present and `grants == []`, every `agent_level` is `None` and
   one startup warning names the empty block.
 
-**`AuthorizerFactory`** (`authz/factory.py`): `create(authorization_config, descriptor_lookup)`;
-`get()` returns the process-wide authorizer or `None` without the block; `reset()`. Branches:
-`static`; `casbin` (`require_extra("casbin", ...)`, first engine after static, Q11), `openfga`,
-`cedar`, `authzen`: each a named branch that raises `AKConfigError(f"authorization.type: {name}
-is not shipped yet; use a dotted path")` until its adapter lands; a dotted path to an
-`Authorizer` subclass receives the whole block; else `AKConfigError`.
+**`AuthorizerFactory`** (`authz/factory.py`): `create(authorization_config, descriptor_lookup,
+system_tiers=None)`; `get()` returns the process-wide authorizer or `None` without the block;
+`reset()`. `get()` is where the two lookups are wired, not the gate: `descriptor_lookup` is
+`Runtime.current().registry.descriptors`, resolved when a decision asks (so the shared authorizer
+follows a context-managed runtime), and `system_tiers` is `{tool.name: tool.tier for tool in
+SystemToolFactory.get_all(agent_id)}`, the factory an agent's system tools are attached from, so
+it answers for an agent the process does not host as long as both read the same configuration.
+Branches, the type matched whatever its case: `static`; `casbin` (first engine after static, Q11;
+its `require_extra("casbin", ...)` arrives with the adapter), `openfga`, `cedar`, `authzen`: each
+a reserved name that raises `AKConfigError(f"authorization.type: {name} is not shipped yet; use a
+dotted path")` until its adapter lands; a dotted path to an `Authorizer` subclass is built with
+the whole block and neither lookup, since it owns its policy; else `AKConfigError`.
+`agentkernel.identity` exports `Authorizer`, `AuthorizerCapabilities`, `Decision`,
+`AuthorizerFactory` and `StaticAuthorizer`, lazily.
 
 **`AccessGate`** (`authz/gate.py`):
 
@@ -990,8 +1018,10 @@ class AccessGate:
   `PermissionError(f"Principal '{principal.subject}' holds no level on agent '{agent_id}'")`
   (403).
 - `visible`: `agent_level is not None`, or `visibility == "public"`, or `"internal"` and the
-  principal is not anonymous. `visible_agents`: over `registry.descriptors()`, using
-  `authorizer.visible_agents` when `capabilities.lists_resources` else the candidate walk.
+  principal is not anonymous. `visible_agents`: `authorizer.visible_agents` over the ids of
+  `registry.descriptors()`. The base implementation is the candidate walk; the static backend
+  resolves its tags once for the whole list, and a backend declaring
+  `capabilities.lists_resources` answers natively.
 - `tool_filter`: `names = agent.get_tool_names()`; `allowed = filter_tools(principal, id,
   names)`; reasons from `check_tool` for the rest; `level` from `agent_level`. One `ToolFilter`
   per run, published by `Runtime`.
@@ -1013,7 +1043,12 @@ class AccessGate:
 **`AuthorizerContract`** (`authz/testing.py`): level resolution across the six subject forms,
 highest level wins, `*` and `tag:` agent entries, tier gating, `allow`/`deny` precedence,
 anonymous handling, `provider:` prefix matching, and `visible_agents` equivalence with the
-candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
+candidate walk; `StaticAuthorizer` subclasses it, and every later engine must. The suite states
+one policy in the static backend's terms (`GRANTS`, `TOOLS`, over the agents in `DESCRIPTORS`)
+and a set of principals, and asserts what each may do; a subclass overrides the `authorizer`
+fixture with a backend holding that policy, which an engine loads in its own language. Reason
+texts are the static backend's own and are not part of the contract; that a refusal carries one
+is.
 
 ### 8. Surfaces and services
 
@@ -1597,13 +1632,13 @@ class _IdentityConfig(BaseModel):
     role_mapper: Optional[_RoleMapperConfig] = None
     credentials: Optional[_CredentialsConfig] = None
 
-class _GrantConfig(BaseModel):
+class _GrantConfig(BaseModel):                          # extra="forbid"
     subjects: list[str]; agents: list[str]; level: AccessLevel
     # before validator coerces a bare string in subjects/agents to a one-element list
-class _ToolPolicyConfig(BaseModel):
+class _ToolPolicyConfig(BaseModel):                     # extra="forbid"
     agent: str; tiers: dict[str, AccessLevel] = {}; allow: Optional[list[str]] = None; deny: list[str] = []
-class _AuthorizationConfig(BaseModel):
-    type: str = Field(default="static", description="static | casbin | openfga | cedar | authzen | dotted path to an Authorizer")
+class _AuthorizationConfig(BaseModel):                  # extra="allow"; after validator below
+    type: str = Field(default="static", description="static | dotted path to an Authorizer; casbin, openfga, cedar, authzen reserved")
     grants: list[_GrantConfig] = []; tools: list[_ToolPolicyConfig] = []
 
 class _RegistryStoreConfig(BaseModel):        # mixin: STORE names the block; a field validator on `ttl`
@@ -1651,6 +1686,15 @@ class AKConfig(...):
   registry cannot honour it: nothing registers a hosted agent again, so an expiry would remove
   running agents from every listing (section 6; design refinement 11). The field stays, at 0,
   because a defaults-only subclass cannot drop it.
+- The authorization models refuse unknown keys for the registry's reason. `_GrantConfig` and
+  `_ToolPolicyConfig` are `extra="forbid"`: a misspelt `deny`, `allow` or `tiers` silently ignored
+  would leave a tool more reachable than the configuration reads. `_AuthorizationConfig` is
+  `extra="allow"`, since a bring-your-own authorizer (a dotted-path `type`) reads the settings of
+  its own from `model_extra`, with an after validator that raises `AKConfigError` naming
+  `authorization.<key>` for any unknown key when the type is not a dotted path: `tool:` written
+  for `tools:` would otherwise drop every tier and deny list beneath it. The subject grammar is
+  not checked here but when the authorizer is built (`GrantTable`, section 7), which names the
+  grant by its index.
 - Every new field carries a `description`; defaults keep every existing YAML and `AK_*` variable
   valid except the three removed lists, which fail with the message above by design.
 - Field readers: see design section 9's table; this spec adds `identity.provider.cognito|entra|
@@ -1815,6 +1859,9 @@ for the two caches and the framework context; public exports other than those na
 | Agent exposed as an MCP tool with no description | `MCP._build` | one warning per agent at build; the tool carries the neutral `UNDESCRIBED_TOOL_TEXT` |
 | A2A, or MCP agent tools, enabled while no known agent is exposed on the surface | `A2A._build`, `MCP._build` | one warning at build naming `registry.agents.<id>.surfaces`; the surface serves nothing |
 | Policy naming an unknown tool on a hosted agent; LangGraph/smolagents ungated tools | `AccessGate.validate_configuration` | `AKConfigError` at `Module.load` / `get_router()` |
+| A key the `authorization` block, a grant or a tool policy does not take | the config model | `AKConfigError` naming `authorization.<key>` for the block (unless `type` is a dotted path); a validation error at load for a grant or a policy |
+| A grant or tool policy that cannot be used (unknown subject form, empty `subjects` or `agents`, bare `tag:`, a second policy for an agent) | `GrantTable`, `ToolPolicyTable` | `AKConfigError` naming `authorization.grants[<index>]` or `authorization.tools[<index>]`, when the authorizer is built |
+| `authorization.type` naming an engine that is not shipped, an unknown short name, or a dotted path that is not an `Authorizer` | `AuthorizerFactory.create` | `AKConfigError` |
 | Removed config lists present | `_A2AConfig`/`_MCPConfig`/`_AGUIConfig` validators | `AKConfigError` naming `registry.agents.<id>.surfaces` |
 | Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; `deregister` raises and keeps the agent hosted, so a retry removes the record; at mount, `A2A._build`, `MCP._build` and the `agui.default_agent` check raise and the process does not start (cards and tools built from an unread registry would stay empty until a restart), while `IOHandler._warn_if_no_agents` only logs that it could not check; per request, the catalog route, `ensure_agent_available` for an agent hosted elsewhere and AG-UI's resolution raise, which the surface answers 500 |
 | `ttl` set on a registry store block, or a key the `registry` block does not take | the config model | `AKConfigError` naming `registry.<store>.ttl`; a validation error at load |
@@ -1879,8 +1926,20 @@ New files under `ak-py/tests/`:
   reading one item or the index alone); `Module.describe` refusing the reported fields and
   leaving the descriptor as it was when the registry refuses the registration; one warning per
   class that still defines `get_a2a_card`.
-- `test_authorizer_static.py`: `AuthorizerContract` subclassed; grant normalization errors; the
-  empty-grants warning; tier defaults from system tools.
+- `test_authorizer_static.py`: `AuthorizerContract` subclassed twice (the policy handed over as
+  mappings, and read through an `authorization` block and the factory); the base class's two
+  list defaults; `SubjectMatcher` form by form (the shared-channel and anonymous exclusions of
+  `user:`, the `provider:` prefix); grant normalization errors, each naming the grant's index;
+  the static backend's corners (a tag resolved when asked, no registry read without a tag
+  grant, one read per question and per listing, the read off the event loop); the three reason
+  strings and deny and allow decided before the level; one policy per agent; tier defaults from
+  system tools (per agent, overridden by a `tiers` entry); the empty-grants warning; the factory
+  (reserved names, dotted path with the whole block, `get()` built once, following the current
+  runtime's registry and reading system tool tiers); the lazy exports.
+- `test_config.py` (`TestAuthorizationConfig`): the block absent by default, parsed from YAML and
+  from `AK_AUTHORIZATION__*`, a bare string coerced, levels and tiers outside the three refused,
+  unknown keys refused under a grant, a tool policy and (for the static type) the block, and a
+  bring-your-own type keeping its own settings.
 - `test_access_gate.py`: visibility rules, 403 versus 404, `tool_filter` composition, `tag:`
   resolution, `authorize_session` (no owner, anonymous refused on an owned session, a
   shared-channel owner admitting its platform scope and refusing a REST caller, namespace

@@ -1,11 +1,12 @@
-"""Identity for Agent Kernel: who a request acts as, and the roles that follow from it.
+"""Identity for Agent Kernel: who a request acts as, the roles that follow from it, and what it may do.
 
 Names resolve lazily through the PEP 562 ``__getattr__`` below, the ``agentkernel.knowledgebase``
 pattern, so that ``import agentkernel.identity`` costs one module import and pulls no optional SDK:
 the OIDC family's JWT and HTTP dependencies (the ``auth`` extra) load only when a provider needs them.
 
-The contract suites live in ``agentkernel.identity.provider.testing`` and are imported explicitly
-from test code (they depend on pytest), so they are deliberately not re-exported.
+The contract suites live in ``agentkernel.identity.provider.testing`` and
+``agentkernel.identity.authz.testing`` and are imported explicitly from test code (they depend on
+pytest), so they are deliberately not re-exported.
 """
 
 import importlib
@@ -28,12 +29,20 @@ _LAZY_EXPORTS = {
     "MappingRoleMapper": ".provider.roles",
     "MappedIdentityProvider": ".provider.roles",
     "RoleMapperFactory": ".provider.roles",
+    "Authorizer": ".authz.base",
+    "AuthorizerCapabilities": ".authz.base",
+    "Decision": ".authz.base",
+    "AuthorizerFactory": ".authz.factory",
+    "StaticAuthorizer": ".authz.static",
 }
 
 __all__ = sorted(_LAZY_EXPORTS)
 
 # Not executed at runtime (preserves laziness); lets type checkers and IDEs resolve the names.
 if TYPE_CHECKING:
+    from .authz.base import Authorizer, AuthorizerCapabilities, Decision
+    from .authz.factory import AuthorizerFactory
+    from .authz.static import StaticAuthorizer
     from .errors import AuthenticationError
     from .provider.base import IdentityProvider, RequestContext
     from .provider.cognito import CognitoIdentityProvider

@@ -86,6 +86,7 @@ def _install_schedule_cfg(monkeypatch, schedule, multimodal_agents=None) -> None
         sandbox = None
         identity = None
         registry = None
+        authorization = None
 
     _Cfg.schedule = schedule
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))

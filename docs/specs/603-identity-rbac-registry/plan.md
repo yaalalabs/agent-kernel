@@ -737,18 +737,28 @@ the spec section it changes.
 
 - **Goal:** an `authorization` block parses and the static authorizer answers every decision;
   nothing consults it yet.
-- **Files:** `core/config.py`, `identity/authz/base.py`, `identity/authz/factory.py`,
-  `identity/authz/static.py`, `identity/authz/testing.py`.
+- **Files:** `core/config.py`, `identity/__init__.py` (the lazy exports), `identity/authz/base.py`,
+  `identity/authz/factory.py`, `identity/authz/static.py`, `identity/authz/testing.py`.
 - **Steps:**
-  1. `_AuthorizationConfig`, `_GrantConfig`, `_ToolPolicyConfig`;
-     `AKConfig.authorization: Optional = None` (spec Config changes).
+  1. `_AuthorizationConfig`, `_GrantConfig`, `_ToolPolicyConfig`, each refusing a key it does not
+     take (the block itself only for a built-in type, so a bring-your-own authorizer keeps its
+     own settings); `AKConfig.authorization: Optional = None` (spec Config changes).
   2. `Decision`, `AuthorizerCapabilities`, the `Authorizer` ABC (spec 7).
-  3. `StaticAuthorizer` with `GrantTable` and `SubjectMatcher` (the six subject forms,
-     `tag:<name>`, `tiers`/`allow`/`deny`), the reason strings (spec 7).
-  4. `AuthorizerFactory` with the reserved engine names raising `AKConfigError`;
-     `AuthorizerContract` (spec 7).
+  3. `StaticAuthorizer` with `GrantTable`, `ToolPolicyTable` and `SubjectMatcher` (the six
+     subject forms, `tag:<name>`, `tiers`/`allow`/`deny`), the reason strings (spec 7).
+  4. `AuthorizerFactory` with the reserved engine names raising `AKConfigError`, its `get()`
+     wiring the two lookups the static backend takes (the current runtime's registry, the tiers
+     the system tools of an agent declare); `AuthorizerContract` (spec 7).
 - **Verify:** new `tests/test_authorizer_static.py`; `test_config` authorization cases; the
   `FakeCfg` stubs gain `authorization = None`.
+- **As built (2026-11-19):** settled along the way and written into spec 7 and the config
+  section: the system tool tiers reach the static backend as a per-agent lookup handed over by
+  the factory, not by the gate; `user:` never matches the anonymous principal; a `tag:` entry
+  reads the registry only for a principal one of whose grants selects by tag, off the event
+  loop, and once per question or listing; a second tool policy for one agent is refused. The
+  gate of iteration 18 takes its authorizer from `AuthorizerFactory.get()` and lists through
+  `authorizer.visible_agents`. No user documentation yet: the block does nothing until the gate
+  consults it.
 
 ### Iteration 17a: An unknown agent answers 404
 
@@ -796,8 +806,8 @@ the caller to a check that already knows the surface.
 - **Files:** `core/model.py`, `core/service.py`, `core/chat_service.py`, `api/handler.py`,
   `pipeline/request_handler.py`, `pipeline/ws/handler.py`,
   `integration/thread/thread_chat.py`, `schedule/manager.py`, and the deployment entry points
-  that set the principal on a chat body (the Lambda routers, the ECS WebSocket API, the Azure
-  handler).
+  that set the principal on a chat body (the Lambda routers and the ECS WebSocket API; the Azure
+  Functions handler this list named was removed by #984).
 - **Steps:**
   1. `BaseChatRequest.surface: Optional[AgentSurface] = None`: the surface a request entered
      by. Set by the entry point where it sets `principal`, overwritten when a client sends one

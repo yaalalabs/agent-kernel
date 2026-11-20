@@ -31,7 +31,7 @@ metadata:
 2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and Claude Agent SDK) implements `Agent`, `Runner`, and `Module` subclasses that wrap native framework objects, plus a `*ToolBuilder` that binds plain Python functions to the framework's native tool type (for Claude, `ClaudeToolBuilder` produces SDK MCP tools). The Claude Agent SDK has no named agent object, so its adapter wraps a thin `ClaudeAgentSpec` (name, description, native `ClaudeAgentOptions`, tools) instead.
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
 4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore). Session stores also provide the WebSocket gateway's `WSConnectionStore` on their backend via `SessionStore.get_connection_store()` (spec #495 §9): the ABC lives beside `SessionStore` in `core/session/base.py`, and each store file carries (or explicitly declines) its implementation, encapsulating its database operations over the shared drivers: `InMemoryWSConnectionStore` (`in_memory.py`, process-wide class-level state), `RedisLikeWSConnectionStore` (`core/session/redis_like.py`, client-library-agnostic; constructed by the redis/valkey stores with their own drivers), `DynamoDBWSConnectionStore` (`dynamodb.py`, over an existing table named by `session.connection_store.table_name`, same schema as the AWS adapters' connections table); cosmosdb/firestore raise actionably, as does the base default (so pre-method BYO stores keep working until a WS mode is enabled). The Kafka and Pub/Sub transports' retry/dedup bookkeeping keeps its own factory in `pipeline/transport/bookkeeping.py`: a Redis/Valkey session store (Q5), else a Redis/Valkey `execution.response_store` (#886, since GCP sessions usually live in Firestore), else process-local with a warning. It also remembers acknowledged messages (`mark_acked`/`was_acked`), which Pub/Sub can redeliver.
-5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, identity providers and role mappers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider, identity provider and role mapper, integration outbound adapter) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
+5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, identity providers and role mappers, authorizers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider, identity provider and role mapper, authorizer, integration outbound adapter) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core`, `api` and the core-only `secret` package; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
 7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, `nats`, `pubsub`, `servicebus`) and process topology selected by configuration.
 
@@ -278,9 +278,9 @@ Pydantic-based configuration:
 - **Auto-initialized** at import time via `AKConfig._set()`
 - **Config sources** (priority order): environment variables (`AK_` prefix) → config file (YAML/JSON, default `config.yaml`) → defaults
 - **Override path**: Set `AK_CONFIG_PATH_OVERRIDE` env var
-- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `a2ui`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `okf`, `trace`, `guardrail`, `sandbox`, `secret`, `identity`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
+- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `a2ui`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `okf`, `trace`, `guardrail`, `sandbox`, `secret`, `identity`, `authorization`, `registry`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
 - **`execution` mode and message type** (#641): `execution.mode` is the invocation (`rest_sync` | `rest_async` | `async` | `realtime`; unset runs as `rest_sync`) and `execution.message_type` how much of the reply each message carries (`complete` | `delta`; unset resolves to `delta` for realtime, `complete` otherwise). `_ExecutionConfig._check_message_type` rejects `rest_async` + `delta` and `realtime` + `complete` with `AKConfigError`, and the `before` validator `_reject_legacy_stream` fails the removed `mode: stream` with `STREAM_MIGRATION_MESSAGE` (Pydantic re-raises a non-`ValueError` unchanged, so `AKConfig.get()` raises `AKConfigError` itself). Call sites read only the four properties, never `message_type` or `mode == ASYNC` to mean WebSocket: `resolved_message_type`; `is_websocket` (`mode == ASYNC`); `is_delta` (delta and **not** realtime — realtime resolves to `DELTA` but has its own runner and delivery, so a voice turn never reaches `StreamAgentRunner`); `is_sse` (`is_delta and not is_websocket`, i.e. `rest_sync` + `delta`). Comparisons that mean one specific mode (`REST_SYNC`/`REST_ASYNC` routes, `REALTIME` runner selection) stay as they are. Rules that depend on the transport, store or host are startup checks in the entry point that owns them, not config validation
-- **Optional (capability-gating) sections**: `thread`, `schedule`, `okf` and `identity` are `Optional`: the presence of the block is the enabled-check, so they have no default value (`IdentityProviderFactory.get()` is `None` without an `identity` block, which every surface reads as "everyone is anonymous"; see Identity and Access)
+- **Optional (capability-gating) sections**: `thread`, `schedule`, `okf`, `identity`, `authorization` and `registry` are `Optional`: the presence of the block is the enabled-check, so they have no default value (`IdentityProviderFactory.get()` is `None` without an `identity` block, which every surface reads as "everyone is anonymous", and `AuthorizerFactory.get()` is `None` without an `authorization` block; see Identity and Access)
 
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
 
@@ -847,9 +847,12 @@ cache for the life of the process. The weekly CI seeds the parameters before the
 Who a request acts as (#603, spec set `docs/specs/603-identity-rbac-registry/`). Phases A to C
 are in the tree: the identity contract, the providers, every surface establishing the
 principal, and the agent registry (`core/registry.py`, `identity/registry/`; see Runtime).
-Authorization and access levels, the framework tool gates and the
-credentials capability are later phases and not implemented yet (`Principal.credential_ref`,
-`ToolContext.access_level` and `Session.get_tool_filter()` exist and are inert). Authentication is
+Phase D has started: the authorizer contract, the static backend and its factory are in
+`identity/authz/` (the Authorization bullet below), and **nothing consults them yet**, so an
+`authorization` block parses and restricts nothing until the access gate lands. The framework tool
+gates and the credentials capability are later phases and not implemented yet
+(`Principal.credential_ref`, `ToolContext.access_level` and `Session.get_tool_filter()` exist and
+are inert). Authentication is
 configuration: one identity provider per deployment, named by the `identity` block, and no
 handler or entry point takes a validator or authoriser argument any more (`agentkernel.auth` is
 deleted).
@@ -1024,16 +1027,51 @@ deleted).
   `GCPAuthorizer` is deleted: the GCP examples authenticate at the API Gateway.
   Sync handlers reach the async authenticator through `run_async_sync`
   (`core/util/async_bridge.py`).
-- **Contract suites** (`identity/provider/testing.py`, imported from test code only):
+- **Authorization** (`identity/authz/`, #603 phase D; not consulted by any run or surface yet).
+  `Authorizer` (`base.py`) is the ABC: `async agent_level(principal, agent_id) -> AccessLevel |
+  None` and `async check_tool(principal, agent_id, tool) -> Decision` (`allowed`, `reason`) are
+  abstract; `filter_tools` and `visible_agents` default to asking those per tool and per candidate,
+  and `capabilities` (`AuthorizerCapabilities.lists_resources`) says a backend lists agents
+  natively. An authorizer decides from the principal it is handed and stores nothing about it.
+  `StaticAuthorizer` (`static.py`) evaluates the block's own policy. A grant is `subjects`,
+  `agents`, `level`, applying to every pair it names (`GrantTable`, which raises `AKConfigError`
+  naming `authorization.grants[<index>]` for an entry it cannot use); the level held is the
+  highest over the matching grants, and there are no negative grants. `SubjectMatcher` is the
+  subject grammar: `*`, `authenticated`, `user:<subject>` (never a `messaging:` / `realtime:`
+  sender, never the anonymous principal), `group:<name>`, `role:<name>`, `provider:<name>` (a
+  name ending in `:` matches by prefix). An agent entry is an id, `*`, or `tag:<name>`, resolved
+  against the registry's descriptors **when the question is asked**: only for a principal one of
+  whose grants selects by tag, once per question or listing, and through `asyncio.to_thread`,
+  since over a shared registry the listing is a blocking store read. Tools: `ToolPolicyTable`
+  holds one policy per agent (`tiers`, `allow`, `deny`; a second policy for an agent is an
+  `AKConfigError`); a tool is offered when it is not denied, is in the allow-list when there is
+  one, and its tier is at or below the level; the tier is the policy's entry, else the tier the
+  `SystemTool` of that name on that agent declares, else `read`. The deny list and the allow-list
+  are decided before the level, so their reason is the same whoever asks. The static backend
+  takes two lookups and reads no configuration: `descriptor_lookup` and `system_tiers` (agent id
+  to tool name to tier). `AuthorizerFactory` (`factory.py`) is the `core/util/factory.py` shape:
+  `create(authorization_config, descriptor_lookup, system_tiers=None)` resolves `static`, refuses
+  the reserved engine names (`casbin`, `openfga`, `cedar`, `authzen`: "not shipped yet; use a
+  dotted path"), and builds a dotted-path `Authorizer` subclass with the whole block (its own
+  settings in `model_extra`); `get()` is the process-wide, lock-guarded instance, `None` without
+  the block, wired to the current runtime's registry (resolved when asked, so it follows a
+  context-managed runtime) and to `SystemToolFactory.get_all(agent_id)` for the declared tiers;
+  `reset()` for tests. The config models refuse a key they do not take (`_GrantConfig` and
+  `_ToolPolicyConfig` always, `_AuthorizationConfig` unless the type is a dotted path), because a
+  misspelt `deny` or `tools` would leave a tool more reachable than the configuration reads.
+- **Contract suites** (imported from test code only): `identity/provider/testing.py` has
   `IdentityProviderContract` (fixtures `provider`, `valid_credential` as `(credential, expected
-  fields)`, `invalid_credentials`) and `RoleMapperContract` (`mapper`, `cases`); the
-  `static_identity` fixture in `tests/conftest.py` installs a recording static provider on
-  `IdentityProviderFactory.get`.
+  fields)`, `invalid_credentials`) and `RoleMapperContract` (`mapper`, `cases`);
+  `identity/authz/testing.py` has `AuthorizerContract`, which states one policy (`GRANTS`, `TOOLS`,
+  over `DESCRIPTORS`) and a set of principals and asserts what each may do, so a new backend
+  overrides the `authorizer` fixture with one holding that policy. The `static_identity` fixture
+  in `tests/conftest.py` installs a recording static provider on `IdentityProviderFactory.get`.
 - **Exports**: `agentkernel.identity` resolves lazily (PEP 562): `IdentityProvider`,
   `RequestContext`, `AuthenticationError`, `IdentityProviderFactory`, `RequestAuthenticator`,
   `StaticIdentityProvider`, `OIDCIdentityProvider`, `JWKSCache`, `CognitoIdentityProvider`,
   `EntraIdentityProvider`, `FirebaseIdentityProvider`, `RoleMapper`, `MappingRoleMapper`,
-  `MappedIdentityProvider`, `RoleMapperFactory`.
+  `MappedIdentityProvider`, `RoleMapperFactory`, `Authorizer`, `AuthorizerCapabilities`,
+  `Decision`, `AuthorizerFactory`, `StaticAuthorizer`.
 
 ### Configuration (`_IdentityConfig` in `config.py`)
 
@@ -1065,6 +1103,16 @@ identity:                      # optional: absent means every request is anonymo
     pass_through: null
     mapping: {ops: [admin]}    # group name, or a value of a listed claim -> roles
     claims: []                 # claim paths looked up beside the groups; only groups by default
+authorization:                 # optional: absent means nothing is restricted (not enforced yet, see above)
+  type: static                 # static, or a dotted path to an Authorizer
+  grants:                      # subjects and agents take one entry or a list
+    - {subjects: role:admin, agents: "*", level: admin}
+    - {subjects: [group:support, authenticated], agents: [support-triage, tag:frontline], level: read}
+  tools:                       # one entry per agent
+    - agent: support-triage
+      tiers: {create_ticket: write, refund: admin}   # unlisted: the system tool's own tier, else read
+      allow: null              # when set, the only tools offered
+      deny: [delete_ticket]    # refused at every level
 ```
 
 Auth0, Keycloak and Okta are `oidc` blocks (the one above is an Auth0 tenant: the issuer with its
@@ -1516,8 +1564,10 @@ ak-py/src/agentkernel/
 │   └── providers/           # env, aws_ssm, kubernetes
 ├── cli/                     # CLI interface
 │   └── cli.py               # Interactive CLI
-├── identity/                # Identity (#603): who a request acts as
+├── identity/                # Identity (#603): who a request acts as, and what it may do
 │   ├── errors.py            # AuthenticationError
+│   ├── authz/               # Authorizer ABC + Decision (base.py), AuthorizerFactory, StaticAuthorizer with
+│   │                        #   GrantTable/ToolPolicyTable/SubjectMatcher (static.py), testing.py (AuthorizerContract)
 │   ├── registry/            # Store-backed agent registries: base.py (StoreBackedAgentRegistry), redis_like.py,
 │   │                        #   redis.py, valkey.py, dynamodb.py, testing.py (AgentRegistryContract)
 │   └── provider/            # IdentityProvider ABC + RequestContext (base.py), RequestAuthenticator (request.py),

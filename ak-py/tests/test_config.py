@@ -8,7 +8,9 @@ from agentkernel.core.config import (
     AKConfig,
     _A2AConfig,
     _AGUIConfig,
+    _AuthorizationConfig,
     _ExecutionConfig,
+    _GrantConfig,
     _IdentityConfig,
     _IdentityProviderConfig,
     _MCPConfig,
@@ -22,8 +24,9 @@ from agentkernel.core.config import (
     _StaticProviderConfig,
     _ThreadStoreConfig,
     _ThreadValkeyConfig,
+    _ToolPolicyConfig,
 )
-from agentkernel.core.model import ExecutionMode, ReplyMessageType
+from agentkernel.core.model import AccessLevel, ExecutionMode, ReplyMessageType
 from agentkernel.core.util.factory import AKConfigError
 
 
@@ -811,6 +814,107 @@ class TestRegistryConfig:
         monkeypatch.setenv("AK_REGISTRY__TYPE", "valkey")
 
         assert AKConfig.get().registry.type == "valkey"
+
+
+class TestAuthorizationConfig:
+    """The `authorization` block (#603): absent by default (nothing is restricted), and when present the static
+    backend's policy: grants binding subjects to agents at a level, and a per-agent tool policy."""
+
+    def test_absent_by_default(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        assert AKConfig.get().authorization is None
+
+    def test_a_block_parses_from_yaml_with_its_grants_and_tool_policies(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "authorization:\n"
+            "  type: static\n"
+            "  grants:\n"
+            '    - {subjects: role:admin, agents: "*", level: admin}\n'
+            "    - {subjects: [group:support, role:cx-lead], agents: [support-triage, faq], level: write}\n"
+            "    - {subjects: authenticated, agents: tag:support, level: read}\n"
+            "  tools:\n"
+            "    - agent: support-triage\n"
+            "      tiers: {lookup_ticket: read, create_ticket: write, refund: admin}\n"
+            "      allow: [lookup_ticket, create_ticket, refund]\n"
+            "      deny: [delete_ticket]\n"
+        )
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        authorization = AKConfig.get().authorization
+
+        assert authorization.type == "static"
+        assert [(grant.subjects, grant.agents, grant.level) for grant in authorization.grants] == [
+            (["role:admin"], ["*"], AccessLevel.ADMIN),
+            (["group:support", "role:cx-lead"], ["support-triage", "faq"], AccessLevel.WRITE),
+            (["authenticated"], ["tag:support"], AccessLevel.READ),
+        ]
+        [policy] = authorization.tools
+        assert policy.agent == "support-triage"
+        assert policy.tiers == {"lookup_ticket": AccessLevel.READ, "create_ticket": AccessLevel.WRITE, "refund": AccessLevel.ADMIN}
+        assert (policy.allow, policy.deny) == (["lookup_ticket", "create_ticket", "refund"], ["delete_ticket"])
+
+    def test_a_bare_block_is_the_static_backend_with_no_policy(self):
+        authorization = _AuthorizationConfig()
+
+        assert (authorization.type, authorization.grants, authorization.tools) == ("static", [], [])
+
+    def test_a_grant_takes_one_subject_or_agent_as_a_bare_string(self):
+        grant = _GrantConfig.model_validate({"subjects": "group:support", "agents": "faq", "level": "read"})
+
+        assert (grant.subjects, grant.agents) == (["group:support"], ["faq"])
+
+    def test_a_grant_level_outside_the_three_tiers_is_rejected(self):
+        with pytest.raises(ValueError, match="level"):
+            _GrantConfig.model_validate({"subjects": "*", "agents": "faq", "level": "owner"})
+
+    def test_a_grant_key_the_model_does_not_take_is_rejected(self):
+        # `agent:` for `agents:` must fail where it is written, not leave a grant that names no agent.
+        with pytest.raises(ValueError, match="agent"):
+            _GrantConfig.model_validate({"subjects": "*", "agent": "faq", "agents": "faq", "level": "read"})
+
+    def test_a_tool_policy_restricts_nothing_until_it_says_so(self):
+        policy = _ToolPolicyConfig(agent="support-triage")
+
+        # No allow-list (None) is every tool; an empty one would be none of them.
+        assert (policy.tiers, policy.allow, policy.deny) == ({}, None, [])
+
+    def test_a_tool_policy_key_the_model_does_not_take_is_rejected(self):
+        # A misspelt `deny` silently ignored would leave the tool callable.
+        with pytest.raises(ValueError, match="denied"):
+            _ToolPolicyConfig.model_validate({"agent": "support-triage", "denied": ["delete_ticket"]})
+
+    def test_a_tool_tier_outside_the_three_tiers_is_rejected(self):
+        with pytest.raises(ValueError, match="tiers"):
+            _ToolPolicyConfig.model_validate({"agent": "support-triage", "tiers": {"refund": "owner"}})
+
+    @pytest.mark.parametrize("key", ["tool", "grant"])
+    def test_a_misspelt_block_key_is_rejected_for_the_static_backend(self, key):
+        # `tool:` for `tools:` would otherwise drop every tier and deny list beneath it without a word.
+        with pytest.raises(AKConfigError, match=f"authorization.{key}"):
+            _AuthorizationConfig.model_validate({"type": "static", key: []})
+
+    def test_a_bring_your_own_authorizer_keeps_the_settings_of_its_own(self):
+        authorization = _AuthorizationConfig.model_validate({"type": "acme.authz.PolicyServer", "endpoint": "https://pdp.acme.test"})
+
+        assert authorization.model_extra == {"endpoint": "https://pdp.acme.test"}
+
+    def test_an_authorization_env_var_materializes_the_block(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_AUTHORIZATION__TYPE", "static")
+
+        authorization = AKConfig.get().authorization
+
+        # Present with no grants: every agent is then denied, which is what the static backend warns about.
+        assert (authorization.type, authorization.grants) == ("static", [])
+
+    def test_grants_set_through_the_environment_are_parsed(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_AUTHORIZATION__GRANTS", '[{"subjects": "*", "agents": ["faq"], "level": "read"}]')
+
+        [grant] = AKConfig.get().authorization.grants
+
+        assert (grant.subjects, grant.agents, grant.level) == (["*"], ["faq"], AccessLevel.READ)
 
 
 class TestRemovedAgentLists:

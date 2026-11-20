@@ -81,6 +81,7 @@ def _use_config(
 
     _Cfg.identity = identity
     _Cfg.registry = None
+    _Cfg.authorization = None
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
     return _Cfg

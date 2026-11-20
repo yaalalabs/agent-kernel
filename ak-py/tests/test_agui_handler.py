@@ -159,6 +159,7 @@ def _install_cfg(monkeypatch, agui_cfg, registry_cfg=None):
         agui = agui_cfg
         identity = None
         registry = registry_cfg
+        authorization = None
         multimodal = None
         sandbox = None
         guardrail = _GuardrailConfig()
