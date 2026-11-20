@@ -833,7 +833,9 @@ class PydanticAIAgent(BaseAgent):
             return self.agent.description
         try:
             instructions = getattr(self.agent, "_instructions", None) or []
-            return " ".join(i for i in instructions if isinstance(i, str))
+            # Newer pydantic-ai wraps each instruction in a SourcedInstruction; older ones keep plain strings.
+            texts = (getattr(i, "instruction", i) for i in instructions)
+            return " ".join(t for t in texts if isinstance(t, str))
         except Exception:
             return ""
 

@@ -29,11 +29,14 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 CALVER_MIN_MAJOR = 2000  # a first version part this high is a date (2026.10.1), not a major
+# Beta packages (0.63b1) that move with their family's 1.x API every release: a new 0.x minor is not a new line.
+LOCKSTEP_BETA_PREFIXES = ("opentelemetry-",)
 UPPER_OPERATORS = {"<", "<=", "~=", "==", "==="}
 TIMEOUT_SECONDS = 1800
 DEPENDENCY_FILES = re.compile(r"(^|/)(pyproject\.toml|uv\.lock|package\.json|package-lock\.json)$")
 NOT_DEPENDENCY_FILE = "not_dependency.jsonl"  # Copilot: failures with no dependency cause
 PINS_FILE = "pins.json"  # manifest -> {package: version}: held at its security minimum, not at develop's version
+LIFTS_FILE = "lifted.json"  # manifest -> one outcome per alerted package `LockGuard.lift` tried
 JUDGE_FILE = "judge.jsonl"  # Copilot, after round 2: flaky, dependency or unsure for each unexplained failure
 
 PROMPT = """\
@@ -179,9 +182,11 @@ class VersionLine:
         return (version.major,) if version.major else (0, version.minor)
 
     @classmethod
-    def crosses(cls, old: str | None, new: str | None) -> bool:
+    def crosses(cls, old: str | None, new: str | None, name: str | None = None) -> bool:
         before, after = parse_version(old), parse_version(new)
         if before is None or after is None or after <= before or before.major >= CALVER_MIN_MAJOR:
+            return False
+        if name and name.startswith(LOCKSTEP_BETA_PREFIXES) and before.is_prerelease and after.is_prerelease:
             return False
         return cls.of(before) != cls.of(after)
 
@@ -302,7 +307,7 @@ class State:
     RUN_FILES = (
         "alerts.json", "alerts-error.json", "changes.json", "results.json", "held.json", "holds.json",
         "holds.jsonl", "failures.json", "reverted.json", "npm.json", PINS_FILE, NOT_DEPENDENCY_FILE,
-        "judge.json", JUDGE_FILE, "bounds.json",
+        "judge.json", JUDGE_FILE, "bounds.json", LIFTS_FILE,
     )  # fmt: skip
 
     def __init__(self, directory: Path):
@@ -551,12 +556,15 @@ class LockGuard:
         base_lock: str | None,
         security: set[str],
         pins: dict[str, str] | None = None,
+        minimums: dict[str, str] | None = None,
     ):
         self.manifest = manifest
         self.before = before
         self.base_lock = base_lock
         self.security = security
         self.pins = {n: v for n, v in (pins or {}).items() if n in before}
+        self.minimums = minimums or {}
+        self.lifts: list[dict] = []  # one outcome per alerted package `lift` tried: "lifted" or "blocked"
 
     def run(self, log: Path, upgrade: bool, hold: set[str]) -> tuple[int, list[dict]]:
         """Return (exit code, one entry per held package that wanted to move)."""
@@ -570,7 +578,7 @@ class LockGuard:
             crossing = {
                 n
                 for n, v in current.items()
-                if n in self.before and n not in self.security and VersionLine.crosses(self.before[n], v)
+                if n in self.before and n not in self.security and VersionLine.crosses(self.before[n], v, n)
             }
             moved_anyway = {n for n in held if current.get(n) != self.pins.get(n, self.before[n])}
             new = (crossing | pending | self.pullers(moved_anyway)) - held
@@ -581,17 +589,100 @@ class LockGuard:
             if code := self.relock(held, log):
                 return code, []
             current = self.manifest.locked()
+        self.lift(log, hold)
+        current = self.manifest.locked()
         return 0, [
             {
                 "package": n,
                 "old": self.before[n],
                 "wanted": wanted.get(n),
                 "now": current.get(n),
-                "crosses": VersionLine.crosses(self.before[n], wanted.get(n)),
+                "crosses": VersionLine.crosses(self.before[n], wanted.get(n), n),
             }
             for n in sorted(held)
             if wanted.get(n) != self.before[n]
         ]
+
+    def lift(self, log: Path, hold: set[str]) -> None:
+        """Reach each alerted package's patched version, even when uv must move other packages to another version
+        line for it (filelock 4.2.1 needs tiktoken 0.12 -> 0.14). The move stands unless it would break a rule
+        that matters more: a package Copilot held back moves, a pre-release comes in, or another alerted package
+        goes below its own patched version. Then the lock is put back and the reason is kept for the report."""
+        protected = {n for n in hold | set(self.pins) if n in self.before}
+        for name, minimum in sorted(self.minimums.items()):
+            current = self.manifest.locked()
+            locked = parse_version(current.get(name))
+            if locked is None or locked >= Version(minimum):
+                continue
+            text, start = self.manifest.lock.read_text(encoding="utf-8"), log.stat().st_size
+            command = ["uv", "lock", "--upgrade-package", f"{name}>={minimum}"]
+            if CommandRunner.run(command, self.manifest.directory, log):
+                with log.open("rb") as handle:  # this attempt's output only
+                    handle.seek(start)
+                    error = handle.read().decode(errors="replace")
+                reason = self.solver_reason(error)
+            else:
+                after = self.manifest.locked()
+                moved = {n: (current.get(n), v) for n, v in after.items() if current.get(n) != v}
+                reason = self.lift_conflict(name, minimum, moved, after, protected)
+            if reason:
+                self.manifest.lock.write_text(text, encoding="utf-8")
+                self.lifts.append({"package": name, "minimum": minimum, "outcome": "blocked", "reason": reason})
+                continue
+            crossing = [
+                f"{n} {old} -> {new}"
+                for n, (old, new) in sorted(moved.items())
+                if n != name and VersionLine.crosses(old, new, n)
+            ]
+            self.lifts.append(
+                {"package": name, "minimum": minimum, "outcome": "lifted", "new": after.get(name), "moves": crossing}
+            )
+
+    @staticmethod
+    def solver_reason(error: str) -> str:
+        """The last thing uv says cannot be used ("logfire>=4.31.0,<5.0.0 cannot be used"): the requirement at the
+        end of its chain, which a reader can act on; the chain before it is long."""
+        text = " ".join(error.split())
+        ends = re.findall(r"we can conclude that (\S+) cannot be used", text)
+        if ends:
+            return f"uv found no solution: {ends[-1]} cannot be used with it"
+        first = next((line.strip() for line in error.splitlines() if "Because" in line), "")
+        return (f"uv found no solution: {first}" if first else "uv found no solution")[:200]
+
+    def lift_conflict(
+        self,
+        name: str,
+        minimum: str,
+        moved: dict[str, tuple[str | None, str]],
+        after: dict[str, str],
+        protected: set[str],
+    ) -> str:
+        """Why the lift of `name` must not stand ('' when it may)."""
+        if (parse_version(after.get(name)) or Version("0")) < Version(minimum):
+            return f"uv left it below {minimum}"
+        held = sorted(n for n in moved if n in protected and n != name)
+        if held:
+            return f"it would move {', '.join(held)}, which a failed check held back"
+        # Only a package that was not on a pre-release already: 0.63b1 -> 0.66b2 stays on its beta track.
+        young = sorted(
+            n
+            for n, (old, new) in moved.items()
+            if (parse_version(new) or Version("0")).is_prerelease
+            and not (parse_version(old) or Version("0")).is_prerelease
+        )
+        if young:
+            return f"it needs a pre-release of {', '.join(young)}"
+        # Only a fix this lift undoes: a package already below its minimum (its own fix blocked) is not its fault.
+        undone = sorted(
+            n
+            for n, other in self.minimums.items()
+            if n != name
+            and n in moved
+            and (old := parse_version(moved[n][0])) is not None
+            and (new := parse_version(moved[n][1])) is not None
+            and new < Version(other) <= old
+        )
+        return f"it takes {', '.join(undone)} below a security fix" if undone else ""
 
     def relock(self, held: set[str], log: Path) -> int:
         """Start again from the base lock; everything moves except held packages. Pinned ones go to their pin."""
@@ -635,11 +726,11 @@ class Checker:
         log = self.state.path(f"logs/{manifest.slug}.log")
         log.write_text("")
         base_lock = self.repo.show(self.state.commit, manifest.lock_relative)
-        security = set(self.alerts.patched_for(manifest)) - hold
+        minimums = {n: v for n, v in self.alerts.patched_for(manifest).items() if n not in hold}
+        security = set(minimums)
         pins = self.state.load(PINS_FILE, {}).get(manifest.relative, {})
-        code, entries = LockGuard(manifest, self.snapshot.get(manifest.relative, {}), base_lock, security, pins).run(
-            log, upgrade, hold
-        )
+        guard = LockGuard(manifest, self.snapshot.get(manifest.relative, {}), base_lock, security, pins, minimums)
+        code, entries = guard.run(log, upgrade, hold)
         held = {e["package"]: e for e in previous if e["package"] in hold}
         held.update({e["package"]: e for e in entries})
         step, bounded = "uv lock", []
@@ -658,12 +749,14 @@ class Checker:
             "log": str(log),
             "held": list(held.values()),
             "bounds": bounded,
+            "lifts": guard.lifts,
         }
 
     def run(self, manifests: list[Manifest], upgrade: bool, holds: dict[str, set[str]]) -> int:
         results = self.state.load("results.json", {})
         held = self.state.load("held.json", {})
         bounds = self.state.load(Bounds.FILE, {})
+        lifts = self.state.load(LIFTS_FILE, {})
 
         def one(manifest: Manifest) -> dict:
             previous = held.get(manifest.relative, [])
@@ -675,6 +768,7 @@ class Checker:
                 for result in pool.map(one, targets):
                     held[result["manifest"]] = result.pop("held")
                     bounds[result["manifest"]] = result.pop("bounds")
+                    lifts[result["manifest"]] = result.pop("lifts")
                     results[result["manifest"]] = result
 
         batch(manifests)
@@ -685,6 +779,7 @@ class Checker:
         self.state.save("results.json", results)
         self.state.save("held.json", held)
         self.state.save(Bounds.FILE, bounds)
+        self.state.save(LIFTS_FILE, lifts)
         failing = sum(r["status"] == "fail" for r in results.values())
         print(f"checked {len(manifests)} manifests; {failing} failing")
         return 0
@@ -702,12 +797,23 @@ class Checker:
             first = next((line.strip() for line in error.splitlines() if "Because" in line), "")[:200]
             for package in named:
                 reason = f"no version satisfies the security minimum with the other requirements (uv lock: {first})"
-                changes = Holds.block(self.repo, self.state, manifest, package, reason, changes)
+                release = self.blocking_release(error, package)
+                changes = Holds.block(self.repo, self.state, manifest, package, reason, changes, release)
             if named:
                 retry.append(manifest)
                 print(f"security fix blocked (unsatisfiable) in {manifest.relative}: {named}")
         self.state.save("changes.json", changes)
         return retry
+
+    def blocking_release(self, error: str, package: str) -> str | None:
+        """The repo package whose published release caps `package` below the fix ("agentkernel[adk]>=0.10.1 depends on
+        pydantic-ai-slim>=2.13.0,<2.14"): only its next release lifts the cap, so no code change here helps."""
+        text = " ".join(error.split())
+        for own in sorted(self.repo.own_packages()):
+            pattern = rf"\b{re.escape(own)}(?:\[[^\]]*\])?\S* depends? on {re.escape(package)}\b"
+            if re.search(pattern, text, re.IGNORECASE):
+                return own
+        return None
 
 
 class Bounds:
@@ -878,7 +984,7 @@ class Bounds:
         moved = [
             f"{name} {before[name]} -> {version}"
             for name, version in sorted(after.items())
-            if name != package and VersionLine.crosses(before.get(name), version)
+            if name != package and VersionLine.crosses(before.get(name), version, name)
         ]
         if moved:
             return f"pulling it back takes {', '.join(moved)} onto a new version line"
@@ -989,7 +1095,13 @@ class Holds:
 
     @staticmethod
     def block(
-        repo: Repo, state: State, manifest: Manifest, package: str, reason: str, changes: list[dict]
+        repo: Repo,
+        state: State,
+        manifest: Manifest,
+        package: str,
+        reason: str,
+        changes: list[dict],
+        release: str | None = None,
     ) -> list[dict]:
         """Record a security fix as blocked and put back the line before `secure` (with its cap, if any)."""
 
@@ -1006,7 +1118,8 @@ class Holds:
                     text = replace_requirement(text, current, originals[min(index, len(originals) - 1)])
             manifest.pyproject.write_text(text, encoding="utf-8")
         kept = [c for c in changes if not (pair(c) and c["kind"] == "security")]
-        return [*kept, {"kind": "blocked", "manifest": manifest.relative, "package": package, "note": reason}]
+        blocked = {"kind": "blocked", "manifest": manifest.relative, "package": package, "note": reason}
+        return [*kept, {**blocked, "release": release} if release else blocked]
 
     @staticmethod
     def narrow(manifest: Manifest, package: str, minimum: str) -> None:
@@ -1470,8 +1583,20 @@ class Reporter:
 
     def alert_status(self) -> tuple[int, list[str], list[str]]:
         """(fixed count, fixed lines grouped by package, still-open lines grouped by package and reason)."""
-        blocked = {(c["manifest"], c["package"]): c["note"] for c in self.changes if c["kind"] == "blocked"}
+        blocked = {(c["manifest"], c["package"]): c for c in self.changes if c["kind"] == "blocked"}
         holds = self.state.load("holds.json", {})
+        blocked_lifts = {
+            (relative, o["package"]): o["reason"]
+            for relative, outcomes in self.state.load(LIFTS_FILE, {}).items()
+            for o in outcomes
+            if o["outcome"] == "blocked"
+        }
+        released = {
+            (relative, o["package"]): o["source"]
+            for relative, outcomes in self.state.load(Bounds.FILE, {}).items()
+            for o in outcomes
+            if o["outcome"] == Bounds.RELEASE
+        }
         npm = {r["dir"]: r for r in self.state.load("npm.json", [])}
         fixed, done, still = 0, {}, {}
         for alert in Alerts(self.state).items:
@@ -1483,7 +1608,9 @@ class Reporter:
             directory = str(Path(path).parent)
             relative = str(Path(directory) / "pyproject.toml")
             reason = None
-            if alert["ecosystem"] == "npm":
+            if not (self.repo.root / path).exists():
+                reason = "the manifest is no longer in the repo; dismiss this alert on GitHub"
+            elif alert["ecosystem"] == "npm":
                 result = npm.get(directory)
                 if not (result and result["status"] == "fixed" and result["remaining"] == 0):
                     reason = "npm: needs a breaking upgrade, or the fix broke the build"
@@ -1492,12 +1619,22 @@ class Reporter:
             elif patched is None:
                 reason = "no patch released"
             elif not self.safe(relative, name, patched, path.endswith("pyproject.toml")):
-                if (relative, name) in blocked:
-                    reason = f"security fix blocked, needs a code change: {blocked[(relative, name)]}"
+                if (relative, name) in blocked and blocked[(relative, name)].get("release"):
+                    source = blocked[(relative, name)]["release"]
+                    reason = f"waits for the next `{source}` release: the published `{source}` caps it below the fix"
+                elif (relative, name) in blocked:
+                    reason = f"security fix blocked, needs a code change: {blocked[(relative, name)]['note']}"
+                elif (relative, name) in released:
+                    source = released[(relative, name)]
+                    reason = (
+                        f"waits for the next `{source}` release: the published `{source}` requires an older version"
+                    )
                 elif name in holds.get(relative, {}):
                     reason = f"held back because a check failed: {holds[relative][name]}"
                 elif relative in self.reverted:
                     reason = "manifest failed its checks and was put back"
+                elif (relative, name) in blocked_lifts:
+                    reason = f"held back by another package's requirement: {blocked_lifts[(relative, name)]}"
                 else:
                     reason = "held back by another package's requirement"
             if reason is None:
@@ -1562,10 +1699,25 @@ class Reporter:
         ]
         line_lines = [
             f"- `{p}` {min(i['old'])} -> {max(i['wanted']) if i['wanted'] else 'kept'} ({len(i['manifests'])} "
-            f"manifest(s){'' if i['crosses'] else '; needs another held-back package'})"
+            f"manifest(s)"
+            f"{'; a downgrade' if i['wanted'] and max(i['wanted']) < min(i['old']) else ''}"
+            f"{'' if i['crosses'] else '; needs another held-back package'})"
             for p, i in sorted(line.items())
         ]
         return failed_lines, line_lines
+
+    def lift_lines(self) -> list[str]:
+        """Packages that moved to another version line so an alerted package could reach its patched version."""
+        grouped: dict[tuple, set[str]] = {}
+        for relative, outcomes in self.state.load(LIFTS_FILE, {}).items():
+            for o in [] if relative in self.reverted else outcomes:
+                if o["outcome"] == "lifted" and o["moves"]:
+                    key = (o["package"], o["minimum"], tuple(o["moves"]))
+                    grouped.setdefault(key, set()).add(relative)
+        return [
+            f"- {', '.join(moves)}: needed for the `{p}` {minimum} security fix ({len(m)} manifest(s))"
+            for (p, minimum, moves), m in sorted(grouped.items())
+        ]
 
     def not_covered(self) -> list[str]:
         grouped: dict[tuple[str, str], set[str]] = {}
@@ -1611,7 +1763,8 @@ class Reporter:
                 if before.get(name) in (None, version):
                     continue
                 if name in direct:
-                    rows.append(f"| {name} | {manifest.relative} | {before[name]} -> {version} |")
+                    down = " (downgrade)" if Version(version) < Version(before[name]) else ""
+                    rows.append(f"| {name} | {manifest.relative} | {before[name]} -> {version}{down} |")
                 else:
                     indirect += 1
         return rows, indirect
@@ -1622,10 +1775,18 @@ class Reporter:
         live = [c for c in self.changes if c["manifest"] not in self.reverted]
         caps, secured = sum(c["kind"] == "cap" for c in live), sum(c["kind"] == "security" for c in live)
         grouped: dict[tuple[str, str], set[str]] = {}
+        waiting: dict[tuple[str, str], set[str]] = {}
         for change in self.changes:
             if change["kind"] == "blocked":
-                grouped.setdefault((change["package"], change["note"]), set()).add(change["manifest"])
+                group = waiting if change.get("release") else grouped
+                key = (change["package"], change.get("release") or change["note"])
+                group.setdefault(key, set()).add(change["manifest"])
         blocked = [f"- `{p}`: {note} ({len(m)} manifest(s))" for (p, note), m in sorted(grouped.items())]
+        blocked_release = [
+            f"- `{p}`: the published `{source}` caps it below the fix; the next `{source}` release fixes it "
+            f"({len(m)} manifest(s))"
+            for (p, source), m in sorted(waiting.items())
+        ]
         reasons, pinned_groups = self.state.load("holds.json", {}), {}
         for relative, packages in self.state.load(PINS_FILE, {}).items():
             for package, version in ([] if relative in self.reverted else packages.items()):
@@ -1649,9 +1810,13 @@ class Reporter:
 
         notes = [
             *section("Security fixes (Dependabot alerts fixed, by package)", fixed_lines[:120]),
+            *section(
+                "Moved to a new version line for a security fix (each needed by one alert)", self.lift_lines()[:80]
+            ),
             *section("Held back because a check failed", held_failed),
             *section("Security fixes kept at the lowest patched version", pinned),
             *section("Security fixes blocked (need a code change)", blocked),
+            *section("Security fixes waiting for the next release of this repo's package", blocked_release),
             *section("Put back as before", put_back),
             *section(
                 "Locks pulled back inside this repo's declared bounds (the release on PyPI has no such limit yet)",

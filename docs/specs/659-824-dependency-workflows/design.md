@@ -58,7 +58,9 @@ flowchart TD
 - A **version line** is the major for `1.x` and up, and the minor for `0.x`. No package leaves its line, direct or
   indirect, except to reach a security fix or a repo package's declared bound (the drifted package itself, up to a
   raised floor, or down with what uv moves along; never another package up). Each held-back upgrade is listed
-  ("needs its own PR").
+  ("needs its own PR"). Reaching a security fix includes the packages uv must move with it (`filelock` 4.2.1 needs
+  `tiktoken` 0.12 -> 0.14); each such move is listed with the fix it serves. OpenTelemetry's beta packages
+  (`0.63b1` -> `0.66b2`) move with their 1.x API every release, so a new 0.x minor there is not a new line.
 - When uv moves a held package anyway (an upgraded package needs its new line), the package that pulls it is held
   too. Example: `openai-agents` 0.24 needs `openai` 3, so both stay.
 
