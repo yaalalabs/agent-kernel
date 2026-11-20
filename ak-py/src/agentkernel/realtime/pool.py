@@ -1,474 +1,33 @@
 import asyncio
-import base64
 import json
 import logging
 import threading
 import time
-import uuid
 from collections.abc import Mapping
 from concurrent.futures import Future
-from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from ..core.base import Agent as BaseAgent
 from ..core.base import Session
 from ..core.config import AKConfig
-from ..core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, TextDelta
-from ..core.model import Principal, StreamChunk
+from ..core.model import StreamChunk
 from ..core.runtime import Runtime
-from ..core.tool import ToolContext
 from ..pipeline.envelope import (
-    ATTR_INTEGRATION,
     ATTR_REALTIME,
     ATTR_REALTIME_END,
     ATTR_REQUEST_ID,
     ATTR_USER_ID,
-    REPLY_CONTEXT_PREFIX,
     QueueMessage,
     QueueName,
 )
 from ..pipeline.integration_delivery import IntegrationDelivery
 from ..pipeline.thread_runner import ThreadRunner
 from ..pipeline.transport.base import QueueTransport, QueueTransportFactory
-from .audio import EDGE_SAMPLE_RATE, PCM16Resampler
-from .base import RealtimeRunner as BaseRealtimeRunner
+from .connection import RealtimeConnection
 
 if TYPE_CHECKING:  # typing only; the runners pass these in
     from ..core.chat_service import ChatService
     from ..core.model import BaseRunRequest
-
-
-class RealtimeConnection:
-    """One call's native realtime session, and the paced route its output takes to the output queue.
-
-    Wraps the framework's ``RealtimeRunner`` (``self.runner``). Created and driven by
-    :class:`RealtimeConnectionPool`; nothing else builds one.
-
-    Semantics, in order:
-
-    1. ``connect()`` runs on the pool loop. It queues the initial speaker and team first, so they reach the
-       edge ahead of any model output, then opens the native session with ``ToolContext``,
-       ``Session.current()`` and ``Agent.current()`` set (the SDK's own tool tasks inherit them; the session
-       lock is not held, since a call would block every other run of the session). Once open the state is
-       ``OPEN``, the ``[REALTIME CALL START]`` line is logged and the pacing task starts.
-    2. Caller input arrives from consumer threads. ``append_audio`` and ``send_text`` schedule the send on the
-       pool loop and wait, bounded by ``SEND_TIMEOUT_SECONDS``, so the input is normally acked once the model has it.
-       A send that fails or times out is logged and the input is still acked: the caller's audio keeps flowing,
-       and one lost chunk or message does not fail the call.
-    3. The runner reports events through ``handle_framework_event``. Audio, ``transcript_delta``, ``done``,
-       ``agent_changed`` and ``input_transcript`` all ride one queue (``_output_queue``), so a control event
-       cannot overtake the audio it belongs to. The pacing loop drains it, emitting audio at playback rate.
-    4. A barge-in (``interrupt``, or ``speech_started`` while paced audio is still queued) drops unheard
-       audio and transcript deltas but keeps control events and ``input_transcript``.
-    5. An ``error`` event, or an event the contract does not list, fails the connection: the edge gets one
-       terminal error chunk, the state moves to ``CLOSING`` and ``close()`` runs in the background.
-    6. ``mark_closed()`` is how the pool (or a failure) says "this connection is dead": the state moves to
-       ``CLOSING`` and the pool evicts it on the next lookup. The native session is still open until
-       ``close()`` runs.
-    7. ``close()`` claims the connection (state ``CLOSED``), cancels a connect still in flight, stops pacing,
-       disconnects the runner and unpublishes the principal. A second call returns at once, so shutdown,
-       eviction and failure can all close one connection. Logs ``[REALTIME CALL END]`` when it finishes.
-    """
-
-    # What each lifecycle state means, and who moves it:
-    #   CONNECTING  built by the pool; the native session is not open yet.
-    #   OPEN        connect() finished; the pacing task is running.
-    #   CLOSING     mark_closed() was called: dead to the pool, but close() has not started.
-    #   CLOSED      close() has taken the connection over (running or finished). Never left.
-    class _State(Enum):
-        CONNECTING = "connecting"
-        OPEN = "open"
-        CLOSING = "closing"
-        CLOSED = "closed"
-
-    _log = logging.getLogger("ak.realtime.connection")
-
-    # Bound on a consumer thread's wait for a model send to complete before the input is acked.
-    SEND_TIMEOUT_SECONDS = 10.0
-    # Output backlog the pacing loop may hold. Audio arrives faster than it plays, so this must be deep enough
-    # for a long model turn; a full queue makes the runner's callback wait, which is the back-pressure.
-    OUTPUT_QUEUE_MAXSIZE = 1024
-
-    # Close tasks started by ``close_in_background``: the loop keeps only a weak reference to a task.
-    _close_tasks: ClassVar[set[asyncio.Task]] = set()
-
-    def __init__(
-        self,
-        session_id: str,
-        agent: BaseAgent,
-        runtime: Runtime,
-        session: Session,
-        loop: asyncio.AbstractEventLoop,
-        *,
-        transport: QueueTransport,
-        playback_lead_ms: int,
-    ):
-        """
-        :param session_id: The AK session id, also the output queue group.
-        :param agent: The agent the call starts with; it names the runner class (``realtime_runner_cls``).
-        :param runtime: The runtime the call's identity is published on.
-        :param session: The AK session the call is bound to.
-        :param loop: The pool's event loop, which every native-session call runs on.
-        :param transport: Where output chunks are sent (the output queue). Built once by the pool.
-        :param playback_lead_ms: How much audio the edge holds ahead of playback. Built once by the pool.
-        """
-        self.session_id = session_id
-        self.agent = agent
-        self.runtime = runtime
-        self.session = session
-        self.loop = loop
-        self._transport = transport
-        self._playback_lead_ms = playback_lead_ms
-
-        self.request_id: str | None = None
-        self.user_id: str | None = None
-        self.integration: str | None = None
-        self.reply_context: dict = {}
-        # The principal of the last input dispatched here, published on the session for the tool
-        # calls the native session makes in reply (spec #603, section 8.4). None runs them anonymous.
-        self.principal: Principal | None = None
-        self._principal_published = False
-        # Lifecycle. Moved from consumer threads (mark_closed) and from the loop (connect, close), so
-        # every move happens under the lock.
-        self._state = RealtimeConnection._State.CONNECTING
-        self._state_lock = threading.Lock()
-        # Why the connection closed, for the [REALTIME CALL END] line. The first reason given wins.
-        self._close_reason: str | None = None
-        # A session that produced output restarts the reconnect back-off count when it fails.
-        self.produced_output = False
-        self._output_queue: asyncio.Queue = asyncio.Queue(maxsize=self.OUTPUT_QUEUE_MAXSIZE)
-        # Audio not yet emitted: while it is non-zero, the user starting to speak is a barge-in.
-        self._queued_audio = 0
-        self._pacing_task: asyncio.Task | None = None
-        self._startup_task: asyncio.Task | None = None
-        # The edge was already sent this connection's terminal error, so a failed start must not send a second.
-        self.failure_reported = False
-        self.last_activity_at: float = time.time()
-
-        if not getattr(self.agent, "realtime_runner_cls", None):
-            raise ValueError(f"Agent {self.agent.name} has no realtime_runner_cls configured")
-
-        self.runner: "BaseRealtimeRunner" = self.agent.realtime_runner_cls()
-
-    # -- lifecycle ----------------------------------------------------------------------------------------
-
-    @property
-    def closed(self) -> bool:
-        """True once the connection is dead: the pool evicts it and the next input reconnects. Read-only; see :meth:`mark_closed`."""
-        return self._state in (RealtimeConnection._State.CLOSING, RealtimeConnection._State.CLOSED)
-
-    def mark_closed(self, reason: str = "closed") -> None:
-        """Mark the connection dead without closing it: ``closed`` turns True and the pool evicts it.
-
-        Thread-safe. Idempotent, and a no-op once ``close()`` has taken the connection over. The native
-        session stays open until ``close()`` runs; every caller that marks a connection closed also
-        arranges that.
-
-        :param reason: Why, for the ``[REALTIME CALL END]`` line. The first reason given wins.
-        """
-        with self._state_lock:
-            if self._state is not RealtimeConnection._State.CLOSED:
-                self._state = RealtimeConnection._State.CLOSING
-            if self._close_reason is None:
-                self._close_reason = reason
-
-    async def connect(self) -> None:
-        """Connect the runner and start pacing; the initial speaker and team are queued ahead of any output."""
-        self._startup_task = asyncio.current_task()
-        try:
-            await self._connect()
-        finally:
-            self._startup_task = None
-
-    async def _connect(self) -> None:
-        if self.closed:
-            return
-        speaker = self.runner.initial_speaker(self.agent)
-        if speaker is not None:
-            await self._output_queue.put((BaseRealtimeRunner.Event.AGENT_CHANGED, {"agent": speaker, "agents": self.runner.team(self.agent)}))
-        # Set once here: the SDK's tool tasks are created inside connect() and inherit these contextvars.
-        # The session lock is not taken; holding it for a whole call would block every other run of the session.
-        tool_context = ToolContext(self.runtime, self.agent, self.session, []).set()
-        session_token = Session.current_session.set(self.session)
-        try:
-            with self.agent._activate():
-                await self.runner.connect(self.session, self.agent, self.handle_framework_event)
-        finally:
-            Session.current_session.reset(session_token)
-            tool_context.reset()
-        if self.closed:
-            # end_session() may have closed this connection while the native session was still opening:
-            # close what it opened now, and leave no pacing task behind for a connection nobody reads.
-            if self._state is not RealtimeConnection._State.CLOSED:
-                await self.close()
-            return
-        self._pacing_task = asyncio.create_task(self._pacing_loop())
-        with self._state_lock:
-            # Not OPEN if another thread marked it closed since the check above: that mark must stand.
-            opened = self._state is RealtimeConnection._State.CONNECTING
-            if opened:
-                self._state = RealtimeConnection._State.OPEN
-        if opened:
-            self._log.info(f"[REALTIME CALL START] session_id={self.session_id} agent={self.agent.name}")
-
-    async def close(self) -> None:
-        """Stop pacing and disconnect the runner; a second call returns at once."""
-        with self._state_lock:
-            if self._state is RealtimeConnection._State.CLOSED:
-                return
-            self._state = RealtimeConnection._State.CLOSED
-            if self._close_reason is None:
-                self._close_reason = "closed"
-        try:
-            startup = self._startup_task
-            if startup is not None and startup is not asyncio.current_task() and not startup.done():
-                startup.cancel()
-                [result] = await asyncio.gather(startup, return_exceptions=True)
-                if isinstance(result, Exception):
-                    self._log.error(f"Realtime session {self.session_id}: startup failed while closing: {result}")
-            if self._pacing_task:
-                self._pacing_task.cancel()
-                self._pacing_task = None
-            await self.runner.disconnect()
-            if self._principal_published:
-                self.session._unpublish_run()
-        finally:
-            self._log.info(f"[REALTIME CALL END] session_id={self.session_id} reason={self._close_reason}")
-
-    def close_in_background(self, loop: asyncio.AbstractEventLoop) -> None:
-        """Schedule :meth:`close` on ``loop``; the task is held in ``_close_tasks`` since the loop keeps only a weak reference."""
-        task = loop.create_task(self.close())
-        RealtimeConnection._close_tasks.add(task)
-        task.add_done_callback(self._close_finished)
-
-    def _close_finished(self, task: "asyncio.Task") -> None:
-        RealtimeConnection._close_tasks.discard(task)
-        if not task.cancelled() and task.exception() is not None:
-            self._log.error(f"Realtime session {self.session_id}: failed to close: {task.exception()}")
-
-    async def _fail(self, message: str) -> None:
-        """Send the edge one terminal error chunk, mark the connection closed and close the runner."""
-        self._log.error(f"Realtime session {self.session_id} failed: {message}")
-        self.mark_closed("native session failed")
-        if self._pacing_task:
-            self._pacing_task.cancel()
-            self._pacing_task = None
-        try:
-            await self._emit(StreamChunk(error=message, done=True))
-            # Only once the chunk is on the queue, so a failed send leaves the fallback in ``fail_to_connect`` available.
-            self.failure_reported = True
-        finally:
-            # Called from inside the runner's listener, which cannot await its own shutdown.
-            self.close_in_background(asyncio.get_running_loop())
-
-    async def fail_to_connect(self, error: BaseException) -> None:
-        """Send the edge one terminal error chunk for a failed connect, then close what it opened.
-
-        :param error: What the connect raised (a timeout included).
-        """
-        self._log.error(f"Realtime session {self.session_id} could not start: {error!r}")
-        try:
-            await self._emit(StreamChunk(error=f"Realtime session could not start: {str(error) or type(error).__name__}", done=True))
-        except Exception:
-            self._log.exception(f"Realtime session {self.session_id}: could not report its failed start")
-        finally:
-            await self.close()
-
-    # -- identity and delivery context --------------------------------------------------------------------
-
-    def publish_principal(self, principal: Principal | None) -> None:
-        """Publish the principal of the input just dispatched, for the tool calls the model makes in reply.
-
-        The framework's native session runs its own tools (#810), with no ``Runtime.run`` around a
-        call, so the identity ``Runtime`` publishes for a turn is published on the session here, where
-        ``ToolContext.principal`` and ``session.get_principal()`` read it, and the session's owner is
-        recorded as on a turn (spec #603, section 8.4). It runs on the connection's loop, ahead of the
-        input's audio or text, and only a changed principal is republished, since every audio chunk
-        is an input.
-
-        :param principal: The input's principal, or None when it named nobody (anonymous).
-        """
-        if self._principal_published and principal == self.principal:
-            return
-        self.principal = principal
-        self._principal_published = True
-        self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal)
-
-    def update_delivery_context(self, request_id: str | None, user_id: str | None, integration: str | None, reply_context: dict) -> None:
-        """Record where this connection's output goes, for text input as well as audio.
-
-        Called by ``RealtimeConnectionPool.dispatch`` before every input (voice or text), and once when the connection is created,
-        so the output the model produces in reply is stamped with the latest return address.
-
-        :param request_id: The request id stamped on the output chunks.
-        :param user_id: The WebSocket routing marker the output is stamped with, if any (not an identity).
-        :param integration: The messaging integration the output is delivered through, if any.
-        :param reply_context: The integration's reply context (already stripped of its ``reply_`` prefix).
-        """
-        self.request_id = request_id
-        self.user_id = user_id
-        self.integration = integration
-        self.reply_context = reply_context
-
-    # -- input: edge -> model -----------------------------------------------------------------------------
-
-    def append_audio(self, audio_data: str) -> None:
-        """Thread-safe: convert edge-rate audio to the model's input rate, then schedule the append."""
-        self.last_activity_at = time.time()
-        pcm16 = PCM16Resampler.resample(base64.b64decode(audio_data), EDGE_SAMPLE_RATE, self.runner.input_sample_rate)
-        converted = base64.b64encode(pcm16).decode("utf-8")
-        self._dispatch_send(self.runner.append_audio(converted), "append_audio")
-
-    def send_text(self, text: str) -> None:
-        """Thread-safe: schedule text send on the pool's event loop."""
-        self.last_activity_at = time.time()
-        self._dispatch_send(self.runner.send_text(text), "send_text")
-
-    def _dispatch_send(self, coro, action: str) -> None:
-        """Run a send on the pool loop, blocking (bounded by ``SEND_TIMEOUT_SECONDS``) so the input is normally acked once the model has it.
-
-        A failed or timed-out send is logged and not raised, so the input is still acked. On the pool loop itself the send is
-        scheduled instead, and a failure is logged.
-        """
-        try:
-            running = asyncio.get_running_loop()
-        except RuntimeError:
-            running = None
-
-        if running is self.loop:
-            task = self.loop.create_task(coro)
-            task.add_done_callback(lambda t: self._log_send_failure(t, action))
-            return
-
-        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
-        try:
-            future.result(timeout=self.SEND_TIMEOUT_SECONDS)
-        except Exception:
-            self._log.exception(f"Realtime session {self.session_id}: failed to {action}")
-
-    def _log_send_failure(self, task: "asyncio.Task", action: str) -> None:
-        if not task.cancelled() and task.exception() is not None:
-            self._log.error(f"Realtime session {self.session_id}: failed to {action}: {task.exception()}")
-
-    # -- output: model -> edge ----------------------------------------------------------------------------
-
-    async def handle_framework_event(self, event_type: str, data: dict) -> None:
-        """Queue one runner event behind the audio it belongs to; an unknown event fails the connection.
-
-        ``speech_started`` is a barge-in only while paced audio is still queued.
-
-        :param event_type: One of the :class:`RealtimeRunner.Event` names (a plain string with the same value works).
-        :param data: The event's payload.
-        """
-        Event = BaseRealtimeRunner.Event
-        if self.closed:
-            return
-        self.last_activity_at = time.time()
-        if event_type in (Event.AUDIO_DELTA, Event.TRANSCRIPT_DELTA, Event.DONE):
-            self.produced_output = True
-        if event_type == Event.AUDIO_DELTA:
-            self._queued_audio += 1
-            await self._output_queue.put((Event.AUDIO_DELTA, data))
-        elif event_type == Event.INTERRUPT:
-            await self._interrupt(data)
-        elif event_type == Event.SPEECH_STARTED:
-            if self._queued_audio > 0:
-                await self._interrupt(data)
-        elif event_type in (Event.DONE, Event.TRANSCRIPT_DELTA, Event.AGENT_CHANGED, Event.INPUT_TRANSCRIPT):
-            await self._output_queue.put((event_type, data))
-        elif event_type == Event.ERROR:
-            await self._fail(data.get("message") or "realtime session error")
-        elif event_type == "tool_call":
-            # Not an Event member: the contract has no such event. Kept for its own message, because a runner
-            # written for the old contract (the pool ran its tools) fails here and the cause should be obvious.
-            await self._fail(
-                f"Realtime runner {type(self.runner).__name__} reported a tool_call, which the realtime pool no longer runs: "
-                "the framework's native session executes its own tools"
-            )
-        else:
-            await self._fail(f"Realtime runner {type(self.runner).__name__} reported an unknown event '{event_type}'")
-
-    async def _interrupt(self, data: dict) -> None:
-        """Drop unheard audio and its transcript, then queue the interrupt ahead of the kept control events.
-
-        Control events are kept: the edge resets its interrupted state on ``done``, and a handoff still holds.
-        """
-        Event = BaseRealtimeRunner.Event
-        kept = []
-        while True:
-            try:
-                item = self._output_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-            if item[0] not in (Event.AUDIO_DELTA, Event.TRANSCRIPT_DELTA):
-                kept.append(item)
-        self._queued_audio = 0
-        await self._output_queue.put((Event.INTERRUPT, data))
-        for item in kept:
-            await self._output_queue.put(item)
-
-    async def _pacing_loop(self) -> None:
-        """Emit queued audio at playback rate; other events follow the audio queued before them."""
-        Event = BaseRealtimeRunner.Event
-        item_start_time = 0.0
-        audio_played_ms = 0.0
-        while True:
-            try:
-                event_type, data = await self._output_queue.get()
-                if event_type == Event.TRANSCRIPT_DELTA:
-                    message_id = data.get("message_id") or ""
-                    await self._emit(StreamChunk(event=TextDelta(message_id=message_id, content=data["delta"]), delta=data["delta"]))
-                    continue
-                if event_type == Event.INPUT_TRANSCRIPT:
-                    await self._emit(StreamChunk(event=InputTranscript(message_id=data.get("message_id") or uuid.uuid4().hex, content=data["text"])))
-                    continue
-                if event_type != Event.AUDIO_DELTA:
-                    if event_type == Event.DONE:
-                        await self._emit(StreamChunk(done=True))
-                    elif event_type == Event.INTERRUPT:
-                        await self._emit(StreamChunk(event=Interrupt()))
-                    elif event_type == Event.AGENT_CHANGED:
-                        await self._emit(
-                            StreamChunk(event=AgentChanged(agent=data["agent"], previous_agent=data.get("previous_agent"), agents=data.get("agents")))
-                        )
-                    # A new pacing window, so a gap before the next audio is not paid back as a burst.
-                    audio_played_ms = 0.0
-                    continue
-
-                self._queued_audio = max(0, self._queued_audio - 1)
-                if audio_played_ms == 0.0:
-                    item_start_time = time.time()
-
-                pcm16 = PCM16Resampler.resample(base64.b64decode(data["delta"]), self.runner.output_sample_rate, EDGE_SAMPLE_RATE)
-                message_id = data.get("message_id") or ""
-                await self._emit(StreamChunk(event=AudioDelta(message_id=message_id, content=base64.b64encode(pcm16).decode("utf-8"))))
-
-                duration_ms = (len(pcm16) / 2) / (EDGE_SAMPLE_RATE / 1000.0)
-                audio_played_ms += duration_ms
-
-                elapsed_ms = (time.time() - item_start_time) * 1000.0
-                sleep_ms = (audio_played_ms - self._playback_lead_ms) - elapsed_ms
-                if sleep_ms > 0:
-                    await asyncio.sleep(sleep_ms / 1000.0)
-
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                self._log.exception("Error in realtime pacing loop")
-
-    async def _emit(self, chunk: StreamChunk) -> None:
-        """Send a realtime output chunk to the output queue with the current delivery context."""
-        attributes = {ATTR_REQUEST_ID: self.request_id or "unknown", ATTR_REALTIME: "true"}
-        if self.user_id:
-            attributes[ATTR_USER_ID] = self.user_id
-        if self.integration:
-            attributes[ATTR_INTEGRATION] = self.integration
-        for key, value in (self.reply_context or {}).items():
-            attributes[f"{REPLY_CONTEXT_PREFIX}{key}"] = value
-
-        body = json.dumps(chunk.model_dump(exclude_none=True, mode="json"))
-        message = QueueMessage(body=body, attributes=attributes, group_id=self.session_id, dedup_id=str(uuid.uuid4()))
-        await asyncio.to_thread(self._transport.send, QueueName.OUTPUT, message)
 
 
 class RealtimeConnectionPool:
@@ -480,7 +39,8 @@ class RealtimeConnectionPool:
 
     Semantics, in order:
 
-    1. ``initialize()`` returns the one process-wide pool. ``get_task()`` hands its loop to a ``ThreadRunner``
+    1. ``initialize()`` returns the one process-wide pool, and warns once per realtime agent when the input
+       guardrail is on (it checks typed text only, never caller audio). ``get_task()`` hands its loop to a ``ThreadRunner``
        task (``realtime-pool``); ``start()`` runs that loop until the process shuts down.
     2. ``dispatch()`` is the one path both realtime runners (pipeline and ECS) take, on a consumer thread, per
        input message. During shutdown the input is dropped. A message carrying ``ATTR_REALTIME_END`` ends the
@@ -496,7 +56,10 @@ class RealtimeConnectionPool:
        RECONNECT_BASE_SECONDS * 2 ** (failures - 1))`` seconds, and input arriving meanwhile is dropped. A
        connection that had produced output restarts the count at one.
     5. ``end_session()`` closes the session's connection at once, because its edge ended. It forgets the
-       session's failure record and does not block the session id: later input opens a new connection.
+       session's failure record and does not block the session id: later input opens a new connection. A
+       connection taken out of the pool (by eviction, failure or end) stays in ``_closing`` until its close has
+       finished, and a new call for the session waits for it (``_wait_for_close``, bounded by
+       ``CLOSE_WAIT_SECONDS``) before it loads the session.
     6. Idle sweep: every ``SWEEP_INTERVAL_SECONDS`` the loop thread evicts and closes connections idle for more
        than ``IDLE_TIMEOUT_SECONDS``, and forgets failure records older than ``FAILURE_RECORD_TTL_SECONDS``.
     7. Shutdown: ``ThreadRunner.shutdown_event`` wakes the loop. ``start()`` then stops accepting connections,
@@ -511,6 +74,9 @@ class RealtimeConnectionPool:
     # How long a failure record (the back-off count) is kept after its retry time. Equal to the idle timeout today,
     # but a separate knob: a record that outlives its retry time only matters if the session reconnects within it.
     FAILURE_RECORD_TTL_SECONDS = 300.0
+    # How long a new call for a session waits for that session's previous close to finish before it goes on without it.
+    # Long enough for a slow store write and a disconnect, short enough that a stuck close does not hold the caller.
+    CLOSE_WAIT_SECONDS = 15.0
     # How often idle connections and stale failure records are swept.
     SWEEP_INTERVAL_SECONDS = 5.0
     # At shutdown, how long work still on the pool loop may finish before it is cancelled.
@@ -538,6 +104,7 @@ class RealtimeConnectionPool:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls()
+                cls._instance._warn_unchecked_audio()
             return cls._instance
 
     @classmethod
@@ -562,12 +129,25 @@ class RealtimeConnectionPool:
         self._connections: dict[str, RealtimeConnection] = {}
         # Per session: (consecutive failures, retry-at time).
         self._failures: dict[str, tuple[int, float]] = {}
+        # Per session: the connection that was taken out of the pool and is still closing. A new call waits for it.
+        self._closing: dict[str, RealtimeConnection] = {}
         self._conn_lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._loop_ready = threading.Event()
         self._stopping = threading.Event()
         # Set on the pool's loop when the process starts shutting down, so the loop wakes at once instead of polling.
         self._shutdown_wake: asyncio.Event | None = None
+
+    def _warn_unchecked_audio(self) -> None:
+        """Warn once per realtime agent when the input guardrail is on: it checks typed text only, never caller audio."""
+        if not AKConfig.get().guardrail.input.enabled:
+            return
+        for name, agent in Runtime.current().agents().items():
+            if getattr(agent, "realtime_runner_cls", None):
+                self._log.warning(
+                    f"Agent '{name}': guardrail.input is enabled, but on a realtime call it checks typed text only. "
+                    "Caller audio reaches the model unchecked unless a pre-hook turns it into text."
+                )
 
     # -- loop thread: start, sweep, shutdown --------------------------------------------------------------
 
@@ -623,10 +203,13 @@ class RealtimeConnectionPool:
                 self._sweep(time.time())
 
     def _sweep(self, now: float) -> None:
-        """Forget stale failure records and evict connections idle for longer than ``IDLE_TIMEOUT_SECONDS``."""
+        """Forget stale failure records and finished closes, and evict connections idle for longer than ``IDLE_TIMEOUT_SECONDS``."""
         with self._conn_lock:
             for session_id in [sid for sid, (_, retry_at) in self._failures.items() if now - retry_at >= self.FAILURE_RECORD_TTL_SECONDS]:
                 del self._failures[session_id]
+            # A finished close needs no waiting: a session that never reconnects must not keep its connection for good.
+            for session_id in [sid for sid, conn in self._closing.items() if conn.close_done.is_set()]:
+                del self._closing[session_id]
         # Closed and removed under one lock, so a lookup cannot count the eviction as a failure.
         idle: list[tuple[str, RealtimeConnection]] = []
         with self._conn_lock:
@@ -634,6 +217,7 @@ class RealtimeConnectionPool:
                 if not conn.closed and (now - conn.last_activity_at) > self.IDLE_TIMEOUT_SECONDS:
                     conn.mark_closed("idle")
                     del self._connections[session_id]
+                    self._closing[session_id] = conn
                     idle.append((session_id, conn))
 
         for session_id, conn in idle:
@@ -674,12 +258,34 @@ class RealtimeConnectionPool:
             if conn is not None and conn.closed:
                 del self._connections[session_id]
                 self._note_failure(session_id, conn)
+                self._closing[session_id] = conn
                 stale = conn
                 conn = None
         # During shutdown the pool closes every connection itself.
         if stale is not None and self._loop and not self._loop.is_closed() and not self._stopping.is_set():
             asyncio.run_coroutine_threadsafe(stale.close(), self._loop)
         return conn
+
+    def _wait_for_close(self, session_id: str) -> None:
+        """Wait (bounded) until the session's previous connection has finished closing.
+
+        A connection that is still closing has not stored the session or cleared its run state yet. A new call that
+        loaded the session or published its principal now would read old data, and the old close would then wipe
+        the new call's principal and cache.
+
+        :param session_id: The session a new call is about to start for.
+        """
+        with self._conn_lock:
+            closing = self._closing.get(session_id)
+        if closing is None or self._stopping.is_set():
+            return
+        if not closing.close_done.wait(self.CLOSE_WAIT_SECONDS):
+            self._log.warning(
+                f"Realtime session {session_id}: the previous call is still closing after {self.CLOSE_WAIT_SECONDS:.0f}s; starting anyway"
+            )
+        with self._conn_lock:
+            if self._closing.get(session_id) is closing:
+                del self._closing[session_id]
 
     def get_or_create(
         self,
@@ -754,6 +360,7 @@ class RealtimeConnectionPool:
             self._failures.pop(session_id, None)
             if conn is not None:
                 conn.mark_closed("ended by its edge")
+                self._closing[session_id] = conn
         if conn is not None and self._loop and not self._loop.is_closed() and not self._stopping.is_set():
             future = asyncio.run_coroutine_threadsafe(conn.close(), self._loop)
             try:
@@ -810,6 +417,8 @@ class RealtimeConnectionPool:
             self._log.debug(f"Realtime session {body.session_id}: native session failed moments ago, dropping input until the retry time")
             return
         if conn is None:
+            # Before the load: the session the previous call stored must be the one this call starts from.
+            self._wait_for_close(body.session_id)
             handler = chat_service.prepare_agent_handler(body.session_id, body.agent)
             conn = self.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session, **delivery)
 
@@ -817,9 +426,9 @@ class RealtimeConnectionPool:
         conn.publish_principal(body.principal)
         for request in body.requests:
             if getattr(request, "type", None) == "voice":
-                conn.append_audio(request.audio_data)
+                conn.append_audio(request)
             elif getattr(request, "type", None) == "text":
-                conn.send_text(request.prompt)
+                conn.send_text(request)
 
     @staticmethod
     def send_permanent_failure(

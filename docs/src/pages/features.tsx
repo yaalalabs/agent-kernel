@@ -828,6 +828,7 @@ function CoreFeatures() {
         "Post-hooks: moderation, disclaimers, analytics",
         "Hook chaining and composition",
         "Early termination with custom responses",
+        "Runs on realtime voice calls too",
       ],
       link: "/docs/integrations/hooks",
     },

@@ -282,6 +282,19 @@
       ]
     },
     {
+      "id": "cap-hooks-realtime",
+      "name": "Add a hook to a realtime voice call",
+      "input": "I have a realtime voice agent. Add a pre-hook that lowers the caller's audio volume and a post-hook that logs the spoken captions",
+      "expected_outputs": [
+        "on_stream_input",
+        "AgentRequestVoice",
+        "on_stream_event",
+        "text_delta",
+        "module.pre_hook(",
+        "module.post_hook("
+      ]
+    },
+    {
       "id": "cap-run-options",
       "name": "Pass framework-native run options",
       "input": "Raise the OpenAI Agents SDK turn limit for my agent and report progress from the SDK's RunHooks",

@@ -16,7 +16,7 @@ Agent Kernel provides powerful execution hooks that let you customize agent beha
 
 ## Realtime voice
 
-- **[LiveKit](./livekit)** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms with `execution.mode: realtime`. `EdgeLifecycleRESTRequestHandler` hosts `LiveKitLifecycleAdapter`, which starts a stateful `LiveKitEdgeAdapter` per room from LiveKit's room webhooks; the edge receives user audio and text and delivers the model's streamed voice and transcript back to the room.
+- **[LiveKit](./livekit)** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms with `execution.mode: realtime`. `EdgeLifecycleRESTRequestHandler` hosts `LiveKitLifecycleAdapter`, which starts a stateful `LiveKitEdgeAdapter` per room from LiveKit's room webhooks; the edge receives user audio and text and delivers the model's streamed voice and transcript back to the room. Your pre-hooks and post-hooks run on the call too; see [Realtime calls](./hooks.md#realtime-hooks).
 
 ## Social media
 These are built on REST APIs and you can install custom integrations as well.

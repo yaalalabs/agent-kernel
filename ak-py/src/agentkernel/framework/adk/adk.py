@@ -928,7 +928,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
 
     ADK owns the conversation: its tools, transfers and workflows. The root is an ``LlmAgent`` or a ``Workflow``.
     Run options: ``run_config`` reaches ``run_live()``; the Runner constructor options reach the ``Runner``/``App``.
-    Agent Kernel hooks and guardrails do not run on this path.
+    Agent Kernel hooks run on the call in the realtime pool, not in this adapter (see docs/specs/927-realtime-hooks).
     """
 
     input_sample_rate = 16000
@@ -1219,13 +1219,22 @@ class GoogleADKModule(Module):
             class to override. Only the pipeline (in REALTIME mode) ever instantiates it.
         """
         super().__init__()
-        self.realtime_runner_cls = realtime_runner_cls or GoogleADKRealtimeRunner
+        # A tracer is built only when a runner is left to choose, as before: a module given both runners never touches tracing.
+        needs_tracer = runner is None or realtime_runner_cls is None
+        tracer = Trace.get() if needs_tracer and AKConfig.get().trace.enabled else None
         if runner is not None:
             self.runner = runner
-        elif AKConfig.get().trace.enabled:
-            self.runner = Trace.get().adk()
+        elif tracer is not None:
+            self.runner = tracer.adk()
         else:
             self.runner = GoogleADKRunner()
+        # After the text runner: its constructor installs the instrumentor; the realtime method then finds it installed.
+        if realtime_runner_cls is not None:
+            self.realtime_runner_cls = realtime_runner_cls
+        elif tracer is not None and (traced := tracer.adk_realtime()) is not None:
+            self.realtime_runner_cls = traced
+        else:
+            self.realtime_runner_cls = GoogleADKRealtimeRunner
         self.load(agents)
 
     def _wrap(self, agent: BaseAgent | Workflow, agents: list[BaseAgent | Workflow]) -> AKBaseAgent:
