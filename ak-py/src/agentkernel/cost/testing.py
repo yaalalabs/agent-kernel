@@ -8,12 +8,14 @@ from decimal import Decimal
 
 import pytest
 
+from ..core.meter import BudgetDecision
 from ..core.model import Principal
 from .attribution import AttributionContext, Attributor
+from .budget import DEFAULT_DENY_MESSAGE, UNVERIFIED_DENY_MESSAGE, BudgetPolicy
 from .errors import UnsupportedCapabilityError, UsageRetrievalError
 from .gateway.base import LLMGateway
 from .ledger.base import SpendLedger
-from .model import Attribution, BudgetPeriod, GatewayFilter, ModelUsage, SpendCursor, SpendTotal, UsageQuery, UsageWindow
+from .model import SYSTEM_USER_ID, Attribution, BudgetLimit, BudgetPeriod, GatewayFilter, ModelUsage, SpendCursor, SpendTotal, UsageQuery, UsageWindow
 from .pricing import PricingSource
 
 _USER = "contract-user"
@@ -514,3 +516,70 @@ class SpendLedgerContract:
         with pytest.raises(UsageRetrievalError):
             await ledger.add(_USER, [euro], None, self._cursor(_LEDGER_NOW, "r1"))
         assert await ledger.load(_USER) is None
+
+
+class BudgetPolicyContract:
+    """Conformance suite every BudgetPolicy subclasses. Override `make_policy`, `spend` and `reads`.
+
+    Not prefixed ``Test`` so pytest does not collect it on its own.
+    """
+
+    def make_policy(self, limit: BudgetLimit, on_error: str) -> BudgetPolicy:
+        """A policy whose budget for every user is ``limit``; every subclass must override this."""
+        raise NotImplementedError("subclasses must override `make_policy`")
+
+    def spend(self, policy: BudgetPolicy, result: Decimal | Exception) -> None:
+        """Make the policy's next spend read bill ``result``, or raise it; every subclass must override this."""
+        raise NotImplementedError("subclasses must override `spend`")
+
+    def reads(self, policy: BudgetPolicy) -> int:
+        """How many spend reads the policy made; every subclass must override this."""
+        raise NotImplementedError("subclasses must override `reads`")
+
+    @staticmethod
+    def _limit(**overrides) -> BudgetLimit:
+        return BudgetLimit(**({"amount": Decimal("10")} | overrides))
+
+    @pytest.mark.asyncio
+    async def test_contract_under_the_budget_is_allowed(self):
+        policy = self.make_policy(self._limit(), "block")
+        self.spend(policy, Decimal("9.99"))
+
+        assert await policy.check(Attribution(user_id="alice")) == BudgetDecision.allow()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("spent", [Decimal("10"), Decimal("12.5")])
+    async def test_contract_at_or_over_the_budget_is_denied(self, spent):
+        policy = self.make_policy(self._limit(), "block")
+        self.spend(policy, spent)
+        custom = self.make_policy(self._limit(message="Monthly limit reached."), "block")
+        self.spend(custom, spent)
+
+        assert await policy.check(Attribution(user_id="alice")) == BudgetDecision.deny(DEFAULT_DENY_MESSAGE)
+        assert await custom.check(Attribution(user_id="alice")) == BudgetDecision.deny("Monthly limit reached.")
+
+    @pytest.mark.asyncio
+    async def test_contract_a_warn_budget_warns_naming_the_user(self):
+        policy = self.make_policy(self._limit(action="warn"), "block")
+        self.spend(policy, Decimal("11"))
+
+        decision = await policy.check(Attribution(user_id="alice"))
+
+        assert decision.kind == "warn" and "alice" in (decision.message or "")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("user_id", [None, SYSTEM_USER_ID])
+    async def test_contract_unattributed_and_system_calls_are_allowed_unread(self, user_id):
+        policy = self.make_policy(self._limit(), "block")
+        self.spend(policy, Decimal("1000"))
+
+        assert await policy.check(Attribution(user_id=user_id)) == BudgetDecision.allow()
+        assert self.reads(policy) == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("on_error", "expected"), [("block", BudgetDecision.deny(UNVERIFIED_DENY_MESSAGE)), ("allow", BudgetDecision.allow())])
+    async def test_contract_a_failed_read_follows_on_error(self, on_error, expected):
+        policy = self.make_policy(self._limit(), on_error)
+        self.spend(policy, UsageRetrievalError("gateway down", gateway="fake"))
+
+        assert await policy.check(Attribution(user_id="alice")) == expected

@@ -34,6 +34,12 @@ _LAZY_EXPORTS = {
     "Attributor": ".attribution",
     "AttributorFactory": ".attribution",
     "DefaultAttributor": ".attribution",
+    # budgets
+    "BudgetPolicy": ".budget",
+    "BudgetPolicyFactory": ".budget",
+    "NoBudgetPolicy": ".budget",
+    "SpendReader": ".budget",
+    "StaticBudgetPolicy": ".budget",
     # pricing
     "PassthroughPricingSource": ".pricing",
     "PricingSource": ".pricing",
@@ -61,6 +67,7 @@ __all__ = sorted(_LAZY_EXPORTS)
 
 if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves laziness at runtime
     from .attribution import AttributionContext, Attributor, AttributorFactory, DefaultAttributor
+    from .budget import BudgetPolicy, BudgetPolicyFactory, NoBudgetPolicy, SpendReader, StaticBudgetPolicy
     from .errors import (
         CostError,
         LedgerBehindError,
