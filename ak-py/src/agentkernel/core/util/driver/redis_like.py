@@ -12,6 +12,23 @@ from typing import Any
 
 from .base import BaseDriver
 
+# Compare-and-set in one round trip: KEYS[1] is set to ARGV[3] only when its current value is ARGV[2] (ARGV[1] == "1")
+# or it is absent (ARGV[1] == "0"); ARGV[4] > 0 adds an expiry in seconds. Returns 1 when set, 0 otherwise.
+_COMPARE_AND_SET = """
+local current = redis.call('GET', KEYS[1])
+if ARGV[1] == '1' then
+  if current ~= ARGV[2] then return 0 end
+elseif current then
+  return 0
+end
+if tonumber(ARGV[4]) > 0 then
+  redis.call('SET', KEYS[1], ARGV[3], 'EX', ARGV[4])
+else
+  redis.call('SET', KEYS[1], ARGV[3])
+end
+return 1
+"""
+
 
 class _RedisLikeDriver(BaseDriver):
     """
@@ -260,6 +277,20 @@ class _RedisLikeDriver(BaseDriver):
         pipeline.rpush(key, value)
         pipeline.expire(name=key, time=ttl)
         pipeline.execute()
+
+    def compare_and_set(self, key: str, expected: bytes | None, value: bytes, ttl: int) -> bool:
+        """
+        Sets ``key`` to ``value`` only if it still holds ``expected``, atomically (one Lua script).
+
+        :param key: The key.
+        :param expected: The value the caller last read, or None when the key must not exist yet.
+        :param value: The new value.
+        :param ttl: Expiry in seconds for the new value; non-positive sets no expiry.
+        :return: Whether the value was set; False means another writer changed the key first.
+        """
+        self._log.debug(f"CAS {key}")
+        expects_value = "1" if expected is not None else "0"
+        return bool(self.client.eval(_COMPARE_AND_SET, 1, key, expects_value, expected or b"", value, ttl))
 
     def lpop(self, key: str) -> str | None:
         """

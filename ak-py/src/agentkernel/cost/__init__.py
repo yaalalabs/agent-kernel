@@ -39,6 +39,11 @@ _LAZY_EXPORTS = {
     "PricingSource": ".pricing",
     "PricingSourceFactory": ".pricing",
     "StaticPricingSource": ".pricing",
+    # ledger
+    "InMemorySpendLedger": ".ledger.in_memory",
+    "LedgerDocument": ".ledger.base",
+    "SpendLedger": ".ledger.base",
+    "SpendLedgerFactory": ".ledger.factory",
     # gateway
     "LLMGateway": ".gateway.base",
     "LLMGatewayFactory": ".gateway.factory",
@@ -67,6 +72,9 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     )
     from .gateway.base import LLMGateway
     from .gateway.factory import LLMGatewayFactory
+    from .ledger.base import LedgerDocument, SpendLedger
+    from .ledger.factory import SpendLedgerFactory
+    from .ledger.in_memory import InMemorySpendLedger
     from .model import (
         ANONYMOUS_USER_ID,
         SYSTEM_USER_ID,

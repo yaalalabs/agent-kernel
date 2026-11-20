@@ -2,6 +2,7 @@
 
 import decimal
 import json
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +12,7 @@ from botocore.exceptions import ClientError
 from agentkernel.core.util.driver import base as driver_base
 from agentkernel.core.util.driver import dynamodb as dynamodb_module
 from agentkernel.core.util.driver import redis as redis_driver_module
+from agentkernel.core.util.driver import redis_like as redis_like_module
 from agentkernel.core.util.driver import s3 as s3_module
 from agentkernel.core.util.driver.dynamodb import DynamoDBDriver
 from agentkernel.core.util.driver.redis import RedisDriver
@@ -303,6 +305,21 @@ class TestRedisCommandSurface:
         driver._client.rpush.assert_called_once_with("k", "v")
         driver._client.pipeline.assert_not_called()
 
+    @pytest.mark.parametrize(("expected", "flag", "sent"), [(b"old", "1", b"old"), (None, "0", b"")])
+    def test_compare_and_set_is_one_script_call(self, expected, flag, sent):
+        driver = _driver(ttl=604800)  # the configured ttl is ignored: the caller passes its own
+        driver._client.eval.return_value = 1
+
+        assert driver.compare_and_set("k", expected, b"new", 30) is True
+
+        driver._client.eval.assert_called_once_with(redis_like_module._COMPARE_AND_SET, 1, "k", flag, sent, b"new", 30)
+
+    def test_compare_and_set_reports_a_lost_race(self):
+        driver = _driver()
+        driver._client.eval.return_value = 0
+
+        assert driver.compare_and_set("k", b"old", b"new", 0) is False
+
     def test_key_applies_prefix(self):
         driver = _driver(prefix="ak:test:")
         assert driver.key("s1:meta") == "ak:test:s1:meta"
@@ -566,3 +583,38 @@ class TestS3Driver:
 
         # Ordering guarantees belong to the consuming store, not the driver.
         assert self._driver(client).list_keys() == ["z", "a"]
+
+
+@pytest.mark.skipif(not os.environ.get("AK_TEST_REDIS_URL"), reason="set AK_TEST_REDIS_URL to run against a real Redis")
+class TestCompareAndSetOnRedis:
+    """The Lua script itself, on a real server (a MagicMock client cannot check it)."""
+
+    @pytest.fixture
+    def driver(self):
+        driver = RedisDriver(url=os.environ["AK_TEST_REDIS_URL"], prefix="ak:test:cas:")
+        driver.client.delete("ak:test:cas:k")
+        yield driver
+        driver.client.delete("ak:test:cas:k")
+
+    def test_creates_only_when_absent(self, driver):
+        assert driver.compare_and_set("ak:test:cas:k", None, b"v1", 0) is True
+        assert driver.compare_and_set("ak:test:cas:k", None, b"v2", 0) is False
+        assert driver.client.get("ak:test:cas:k") == b"v1"
+
+    def test_swaps_only_on_a_match(self, driver):
+        driver.client.set("ak:test:cas:k", b"v1")
+
+        assert driver.compare_and_set("ak:test:cas:k", b"stale", b"v2", 0) is False
+        assert driver.compare_and_set("ak:test:cas:k", b"v1", b"v2", 0) is True
+        assert driver.client.get("ak:test:cas:k") == b"v2"
+
+    def test_expecting_a_value_on_a_missing_key_fails(self, driver):
+        assert driver.compare_and_set("ak:test:cas:k", b"v1", b"v2", 0) is False
+        assert driver.client.get("ak:test:cas:k") is None
+
+    def test_ttl(self, driver):
+        driver.compare_and_set("ak:test:cas:k", None, b"v1", 0)
+        assert driver.client.ttl("ak:test:cas:k") == -1  # no expiry
+
+        driver.compare_and_set("ak:test:cas:k", b"v1", b"v2", 60)
+        assert 0 < driver.client.ttl("ak:test:cas:k") <= 60

@@ -1,5 +1,6 @@
 """Public testing helpers for cost management backends. Imports pytest, so import it from test code only."""
 
+import asyncio
 import copy
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
@@ -11,7 +12,8 @@ from ..core.model import Principal
 from .attribution import AttributionContext, Attributor
 from .errors import UnsupportedCapabilityError, UsageRetrievalError
 from .gateway.base import LLMGateway
-from .model import Attribution, GatewayFilter, ModelUsage, SpendCursor, SpendTotal, UsageQuery, UsageWindow
+from .ledger.base import SpendLedger
+from .model import Attribution, BudgetPeriod, GatewayFilter, ModelUsage, SpendCursor, SpendTotal, UsageQuery, UsageWindow
 from .pricing import PricingSource
 
 _USER = "contract-user"
@@ -352,3 +354,152 @@ class PricingSourceContract:
 
     def test_contract_bills_at_cost_is_declared(self, source):
         assert isinstance(source.bills_at_cost, bool)
+
+
+class LedgerClock:
+    """A settable UTC clock for spend-ledger tests: pass it as the ledger's ``clock`` and set ``now``."""
+
+    def __init__(self, now: datetime) -> None:
+        self.now = now
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+_LEDGER_NOW = datetime(2026, 1, 28, 12, 0, tzinfo=timezone.utc)  # a Wednesday
+
+
+class SpendLedgerContract:
+    """Conformance suite every SpendLedger subclasses. Override `ledger`, building it with every ``BudgetPeriod``,
+    ``ttl=0`` and ``clock=clock``.
+
+    A backend whose store expires keys by itself (Redis ``EX``, DynamoDB TTL) overrides
+    ``test_contract_an_expired_document_is_gone`` with its own check. Not prefixed ``Test`` so pytest does not collect
+    it on its own.
+    """
+
+    @pytest.fixture
+    def clock(self) -> LedgerClock:
+        return LedgerClock(_LEDGER_NOW)
+
+    @pytest.fixture
+    def ledger(self, clock) -> SpendLedger:
+        """The ledger under contract; every subclass must override this fixture."""
+        raise NotImplementedError("subclasses must override the `ledger` fixture")
+
+    @staticmethod
+    def _cursor(at: datetime, *ids: str) -> SpendCursor:
+        return SpendCursor(timestamp=at, ids_at_timestamp=frozenset(ids))
+
+    @pytest.mark.asyncio
+    async def test_contract_a_missing_user_has_nothing(self, ledger):
+        assert await ledger.load("nobody") is None
+        assert await ledger.cursor("nobody") is None
+        assert (await ledger.read("nobody", BudgetPeriod.MONTHLY, _LEDGER_NOW)).by_model == {}
+
+    @pytest.mark.asyncio
+    async def test_contract_added_rows_read_back_per_period(self, ledger):
+        rows = [_row("r1", _LEDGER_NOW, cached_input_tokens=3), _row("r2", _LEDGER_NOW, model="gpt-4o-mini", provider_cost=None)]
+
+        assert await ledger.add(_USER, rows, None, self._cursor(_LEDGER_NOW, "r1", "r2")) is True
+
+        expected = SpendTotal.from_rows(rows, "USD")
+        for period in BudgetPeriod:
+            assert await ledger.read(_USER, period, _LEDGER_NOW) == expected
+        assert await ledger.cursor(_USER) == self._cursor(_LEDGER_NOW, "r1", "r2")
+
+    @pytest.mark.asyncio
+    async def test_contract_rows_bucket_at_utc_period_edges(self, ledger):
+        # The clock stays at Wednesday 28 Jan, so Tuesday's day bucket is still retained (current and previous day).
+        day_end = datetime(2026, 1, 27, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        rows = [
+            _row("day-end", day_end),
+            _row("day-start", day_end + timedelta(microseconds=1)),  # Wednesday 00:00
+            _row("month-end", datetime(2026, 1, 31, 12, tzinfo=timezone.utc)),  # Saturday
+            _row("sunday", datetime(2026, 2, 1, 12, tzinfo=timezone.utc)),  # 1st of the month
+            _row("monday", datetime(2026, 2, 2, 0, tzinfo=timezone.utc)),
+        ]
+        await ledger.add(_USER, rows, None, self._cursor(rows[-1].timestamp, "monday"))
+
+        async def requests(period: BudgetPeriod, at: datetime) -> int:
+            return sum(spend.requests for spend in (await ledger.read(_USER, period, at)).by_model.values())
+
+        assert await requests(BudgetPeriod.DAILY, day_end) == 1
+        assert await requests(BudgetPeriod.DAILY, day_end + timedelta(microseconds=1)) == 1
+        assert await requests(BudgetPeriod.WEEKLY, datetime(2026, 2, 1, tzinfo=timezone.utc)) == 4  # Mon 26 Jan - Sun 1 Feb
+        assert await requests(BudgetPeriod.WEEKLY, datetime(2026, 2, 2, tzinfo=timezone.utc)) == 1
+        assert await requests(BudgetPeriod.MONTHLY, datetime(2026, 1, 15, tzinfo=timezone.utc)) == 3
+        assert await requests(BudgetPeriod.MONTHLY, datetime(2026, 2, 15, tzinfo=timezone.utc)) == 2
+
+    @pytest.mark.asyncio
+    async def test_contract_a_stale_cursor_adds_nothing(self, ledger):
+        first = self._cursor(_LEDGER_NOW, "r1")
+        await ledger.add(_USER, [_row("r1", _LEDGER_NOW)], None, first)
+
+        assert await ledger.add(_USER, [_row("r2", _LEDGER_NOW)], None, self._cursor(_LEDGER_NOW, "r2")) is False
+
+        assert await ledger.cursor(_USER) == first
+        assert (await ledger.read(_USER, BudgetPeriod.DAILY, _LEDGER_NOW)).by_model["openai/gpt-4o"].requests == 1
+
+    @pytest.mark.asyncio
+    async def test_contract_two_concurrent_adds_from_one_cursor_count_once(self, ledger):
+        rows = [_row("r1", _LEDGER_NOW), _row("r2", _LEDGER_NOW)]
+        cursor = self._cursor(_LEDGER_NOW, "r1", "r2")
+
+        results = await asyncio.gather(ledger.add(_USER, rows, None, cursor), ledger.add(_USER, rows, None, cursor))
+
+        assert sorted(results) == [False, True]
+        assert (await ledger.read(_USER, BudgetPeriod.DAILY, _LEDGER_NOW)).by_model["openai/gpt-4o"].requests == 2
+
+    @pytest.mark.asyncio
+    async def test_contract_compare_and_set_refuses_a_stale_version(self, ledger):
+        await ledger.add(_USER, [_row("r1", _LEDGER_NOW)], None, self._cursor(_LEDGER_NOW, "r1"))
+        stored = await ledger.load(_USER)
+        assert stored is not None
+        changed = stored.model_copy(update={"cursor": None, "version": stored.version + 1})
+
+        assert await ledger.compare_and_set(_USER, stored.version - 1, changed, _LEDGER_NOW + timedelta(days=1)) is False
+        assert await ledger.load(_USER) == stored
+
+    @pytest.mark.asyncio
+    async def test_contract_buckets_older_than_the_previous_period_are_pruned(self, ledger, clock):
+        await ledger.add(_USER, [_row("jan", _LEDGER_NOW)], None, self._cursor(_LEDGER_NOW, "jan"))
+        clock.now = later = datetime(2026, 2, 5, 12, tzinfo=timezone.utc)  # the document lives until 1 March
+
+        assert await ledger.add(_USER, [_row("feb", later)], self._cursor(_LEDGER_NOW, "jan"), self._cursor(later, "feb"))
+
+        doc = await ledger.load(_USER)
+        assert doc is not None
+        jan_28 = f"|{_LEDGER_NOW.replace(hour=0).isoformat()}|"
+        assert not [key for key in doc.buckets if key.startswith("daily") and jan_28 in key]  # two days ago: gone
+        assert [key for key in doc.buckets if key.startswith("weekly") and "2026-01-26" in key]  # the previous week: kept
+        assert [key for key in doc.buckets if key.startswith("monthly") and "2026-01-01" in key]  # the previous month: kept
+
+    @pytest.mark.asyncio
+    async def test_contract_expiry_outlives_every_period_by_one(self, ledger, monkeypatch):
+        seen: list[datetime] = []
+        original = ledger.compare_and_set
+
+        async def recording(user_id, expected_version, doc, expires_at):
+            seen.append(expires_at)
+            return await original(user_id, expected_version, doc, expires_at)
+
+        monkeypatch.setattr(ledger, "compare_and_set", recording)
+        await ledger.add(_USER, [_row("r1", _LEDGER_NOW)], None, self._cursor(_LEDGER_NOW, "r1"))
+
+        assert seen == [max(period.end_of(period.end_of(_LEDGER_NOW)) for period in BudgetPeriod)]
+
+    @pytest.mark.asyncio
+    async def test_contract_an_expired_document_is_gone(self, ledger, clock):
+        await ledger.add(_USER, [_row("r1", _LEDGER_NOW)], None, self._cursor(_LEDGER_NOW, "r1"))
+        clock.now = max(period.end_of(period.end_of(_LEDGER_NOW)) for period in BudgetPeriod)
+
+        assert await ledger.load(_USER) is None
+
+    @pytest.mark.asyncio
+    async def test_contract_a_row_in_another_currency_adds_nothing(self, ledger):
+        euro = _row("r1", _LEDGER_NOW).model_copy(update={"currency": "EUR"})
+
+        with pytest.raises(UsageRetrievalError):
+            await ledger.add(_USER, [euro], None, self._cursor(_LEDGER_NOW, "r1"))
+        assert await ledger.load(_USER) is None
