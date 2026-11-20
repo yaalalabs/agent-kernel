@@ -115,6 +115,10 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     conditioned on the snapshot's update time instead of a transaction. Redis and Valkey re-read the value, check its
     version and pass those exact bytes to the driver's script. Every backend requires its own
     `cost.budgets.ledger.<type>` block and runs I/O on a worker thread (§12.4).
+29. **Ledger read edges.** The unsettled read drops a row at exactly the settle line, which the catch-up already
+    committed, so it is not counted twice. The catch-up never reads before the start of the longest period in force:
+    an older stored cursor (an idle user) would otherwise replay rows no current budget can count, and could exhaust
+    `CATCH_UP_BUDGET` for nothing. Two conflicts in one read raise `LedgerConflictError` (§12.3).
 
 ## Design
 
@@ -1261,7 +1265,11 @@ total = (await ledger.read(uid, period, period.start_of(now))).merge(
     ledger, after a restart) is denied for a bounded number of runs, until the ledger catches up. Documented.
 - The cursor never passes `settle`, because `fetch_usage_since` stops there.
 - The unsettled read always starts at the settle line, never at an old cursor, so it covers at most `SETTLE_LAG` of
-  the user's rows.
+  the user's rows. It keeps only rows strictly after `settle`: a row at exactly the settle line was committed by the
+  catch-up, and an empty-id cursor at `settle` would return it again (deviation 29).
+- The catch-up reads from the stored cursor, or from the start of the longest period in force when the stored cursor
+  is older (a user back after an idle gap). `add` still receives the stored cursor as the expected one
+  (deviation 29).
   - `read_all` follows batches until `caught_up`, under the same deadline.
   - Unsettled rows are re-read on every check and never stored.
   - A `UsageTruncatedError` there applies `on_error`.
