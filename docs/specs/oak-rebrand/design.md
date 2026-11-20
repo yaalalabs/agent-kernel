@@ -242,7 +242,10 @@ Findings and proposals are in [research/blog-audit.md](research/blog-audit.md).
   - This is the one public exception to the former-name rule (Open questions, Former-name note).
   - Reason: an assistant trained on older content knows the project by that name, and the blog titles listed in the same file still carry it.
 - In the full text every link is absolute, and fenced code is unchanged.
-- The files are not linked from a page and are not listed in the sitemap.
+- People are told the files exist, in three places: a link in the footer, a short section on the Agent Skills docs page (current docs and the `0.10.1` snapshot), and a comment in `robots.txt`.
+  - no button or banner: the audience is narrow, and the primary action stays "Quick start"
+  - no hidden text for crawlers
+- The files are not listed in the sitemap.
 
 ### Contributor guidance
 
@@ -262,6 +265,7 @@ Findings and proposals are in [research/blog-audit.md](research/blog-audit.md).
   - the rename
   - the recoloured diagram `style` lines (the same 29 pages as `docs/docs`)
   - `whats-new.md` with its sidebar entry, and the introduction tip that links to it
+  - the section of the Agent Skills page that points to the llms.txt files
   - the repaired sequence diagram in `advanced/threads.md`
 - No doc version older than `0.10.1` changes.
 - The production docs build passes with broken links failing the build.

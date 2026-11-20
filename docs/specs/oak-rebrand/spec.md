@@ -632,6 +632,16 @@ plugin on every build. No dependency is added.
   run it: the docs are built only on a push to `develop`.
 - The files exist only in a build. `npm start` does not serve them.
 
+**Pointers to the files**
+
+- Footer, Docs column: `{ label: 'llms.txt', href: 'pathname:///llms.txt' }`. The `pathname://` form
+  renders a plain link to the file. A `to:` link would fail the build, because `/llms.txt` is not a route.
+- `docs/docs/agent-skills.md` and its `0.10.1` copy: a section, "Giving Your Assistant the Docs", with
+  the two addresses, when to use which, and a warning that the full text is large. The links are
+  absolute, so they read the same in `llms-full.txt`.
+- `docs/static/robots.txt`: three comment lines that name the format and the two addresses. They are for
+  a person reading the file: no crawler is known to act on them.
+
 ### Consumer changes
 
 Asset references, as they are in the tree:
@@ -720,7 +730,8 @@ script runs the text helpers' tests (`node --test plugins/llms-txt/text.test.js`
 10. Blog posts show a named writer in place of the shared team author, and every post has a banner.
     Blog URLs, slugs, dates and tags do not change. Intentional.
 11. The site serves two new public addresses, `/llms.txt` and `/llms-full.txt`. Intentional. No existing
-    address changes, and neither file is linked from a page or listed in the sitemap.
+    address changes. The footer of every page links to `/llms.txt`, and the Agent Skills docs page says
+    how to use both files. Neither is listed in the sitemap.
 
 **Non-changes:** the Python package and its behaviour, API titles, span names, log text, config keys,
 environment variables, documentation URLs and slugs, the rest of the sidebar structure, the 20 older doc

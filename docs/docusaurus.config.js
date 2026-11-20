@@ -483,6 +483,9 @@ const config = {
               { label: 'Use Cases', to: '/use-cases' },
               { label: 'Architecture', to: '/docs/architecture/overview' },
               { label: 'API Reference', to: '/docs/api/rest-api' },
+              // The docs index for AI assistants. It is a file, not a route, so it takes the
+              // `pathname://` form: a plain link that the broken-link check leaves alone.
+              { label: 'llms.txt', href: 'pathname:///llms.txt' },
             ],
           },
           {
