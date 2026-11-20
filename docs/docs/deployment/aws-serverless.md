@@ -1292,13 +1292,7 @@ from agentkernel.schedule import ScheduleManager
 @Lambda.register("/schedules/{task_id}", method="GET")
 def get_schedule(event, context):
     task_id = event["pathParameters"]["task_id"]
-    principal = Lambda.principal(event)  # the caller the API Gateway authorizer established
-    if principal.is_anonymous:
-        return 401, {"error": "Authentication required"}
-    try:
-        task = ScheduleManager.get().get_task(task_id, user_id=principal.subject)
-    except PermissionError as e:
-        return 403, {"error": str(e)}
+    task = ScheduleManager.get().get_task(task_id)
     return task.model_dump(mode="json") if task else (404, {"error": f"Unknown scheduled task {task_id}"})
 ```
 
@@ -1311,8 +1305,8 @@ gateway_endpoints = [
 ]
 ```
 
-These are the containerized routes, path for path. They need an API Gateway authorizer: the handler
-takes the owner from `Lambda.principal(event)`; a request never names one.
+These are the containerized routes, path for path. Without an authorizer they are open; resolve the
+owner from the caller's token rather than trusting a client-supplied `user_id`.
 [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai)
 implements all four with ownership checks and error mapping.
 
@@ -1356,37 +1350,6 @@ over SSM.
 For the full example see [examples/aws-serverless/openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai),
 and for the application side (resolution order, caching, rotation) see the
 [Secret Resolution guide](../advanced/secrets.md).
-
-## Conversation threads
-
-[Conversation threads](../advanced/threads.md) run on Lambda in queue mode (`queue_mode = true`, REST
-modes, `message_type: complete`). Wrap `ThreadRequestHandler` in a `LambdaThreadHost` at module scope in
-the request-handler Lambda and register `GET /threads` and `GET /threads/{session_id}` (a path parameter,
-see [Path and query parameters](#path-and-query-parameters)) to its `list_threads` and `get_thread`.
-Creating the host takes over the chat route's enqueue step: it records the user message and marks the
-request, and the agent-runner Lambda records the reply.
-
-```python
-from agentkernel.aws import Lambda, LambdaThreadHost
-from agentkernel.thread import ThreadRequestHandler
-
-threads = LambdaThreadHost(ThreadRequestHandler())
-Lambda.register("/threads", method="GET")(threads.list_threads)
-Lambda.register("/threads/{session_id}", method="GET")(threads.get_thread)
-
-handler = Lambda.handler
-```
-
-- Add both routes to `gateway_endpoints`; the principal the API Gateway authorizer established scopes
-  them to the caller, and chat without one is a 401.
-- `ThreadRequestHandler()` requires an `identity` block: give the request-handler Lambda the same
-  `identity` config and credential secrets as the authorizer.
-- Set `create_dynamodb_thread_table = true`: the table is wired into both Lambdas. Give both Lambdas the
-  same `thread` block, with a shared store (`in_memory` is refused at cold start).
-
-See [Threads on AWS Lambda](../advanced/threads.md#threads-on-aws-lambda) for the rules and
-[`examples/aws-serverless/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/thread-openai)
-for a deployable stack.
 
 ## Messaging integrations
 
