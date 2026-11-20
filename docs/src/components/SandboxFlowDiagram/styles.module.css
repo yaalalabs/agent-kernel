@@ -1,66 +1,36 @@
-/* Sandbox execution flow diagram — panel styling aligned with AgentKernelRuntimeFlowDiagram */
-
-@keyframes sbFadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.97);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes sbBrokerGlow {
-
-  0%,
-  100% {
-    border-color: rgba(255, 181, 71, 0.45);
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.06),
-      0 8px 28px rgba(255, 181, 71, 0.14);
-  }
-
-  50% {
-    border-color: rgba(255, 181, 71, 0.75);
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
-      0 10px 40px rgba(255, 181, 71, 0.32);
-  }
-}
+/* Sandbox execution flow diagram. Every node is visible without script: there is no entrance effect. */
 
 .panel {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 0.75rem;
-  background: rgba(10, 12, 22, 0.52);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.2);
+  border-radius: var(--ak-radius-card);
+  background: rgba(var(--ak-bg-rgb), 0.52);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   overflow: hidden;
   transition: border-color 300ms ease;
 }
 
 .panel:hover {
-  border-color: rgba(255, 255, 255, 0.35);
+  border-color: rgba(var(--ak-fg-rgb), 0.35);
 }
 
 .scrollHint {
   display: none;
   margin: 0;
   padding: 0.625rem 1rem;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(var(--ak-fg-rgb), 0.45);
+  border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.1);
 }
 
 .wrap {
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  scrollbar-color: rgba(var(--ak-fg-rgb), 0.25) transparent;
   padding: 2rem 1.5rem 1.75rem;
 }
 
@@ -80,28 +50,22 @@
 /* ── Nodes ─────────────────────────────────────────────────────────────── */
 
 .node {
-  opacity: 0;
   text-align: center;
-}
-
-.panelVisible .node {
-  animation: sbFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
 }
 
 .nodeTitle {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--ak-fg);
   line-height: 1.25;
 }
 
 .nodeSub {
   margin: 0.3rem 0 0;
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--ak-fg-rgb), 0.55);
 }
 
 /* ── Stacked cards (one card in front, ghost copies behind) ────────────── */
@@ -116,9 +80,9 @@
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(11, 13, 22, 0.9);
+  border-radius: var(--ak-radius-card);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.18);
+  background: rgba(var(--ak-bg-rgb), 0.9);
   z-index: -1;
 }
 
@@ -128,7 +92,7 @@
 
 .stack::after {
   transform: translate(12px, 12px);
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(var(--ak-fg-rgb), 0.1);
 }
 
 /* front card paints above the ghosts, so their borders never cut content */
@@ -139,8 +103,8 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  border-radius: 0.75rem;
-  background: #0b0d16;
+  border-radius: var(--ak-radius-card);
+  background: var(--ak-bg-alt);
 }
 
 .agentStack {
@@ -151,17 +115,17 @@
   max-width: 26rem;
   padding: 0.9rem 1.5rem 1rem;
   gap: 0.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.3);
 }
 
 .agentChip {
-  font-size: 0.6rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
-  color: rgba(0, 221, 255, 0.85);
-  border: 1px solid rgba(0, 221, 255, 0.35);
+  color: rgba(var(--ak-primary-rgb), 0.85);
+  border: 1px solid rgba(var(--ak-primary-rgb), 0.35);
   border-radius: 4px;
   padding: 0.1rem 0.45rem;
   line-height: 1.5;
@@ -170,14 +134,14 @@
 
 .chipNode {
   padding: 0.55rem 1.15rem;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 221, 255, 0.35);
-  background: rgba(0, 221, 255, 0.06);
+  border-radius: var(--ak-radius-control);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.35);
+  background: rgba(var(--ak-blue-rgb), 0.06);
 }
 
 .chipNode .nodeTitle {
-  font-size: 0.85rem;
-  color: #00ddff;
+  font-size: 0.875rem;
+  color: var(--ak-blue);
 }
 
 /* Session pill with the security policy hanging off to the right */
@@ -203,29 +167,29 @@
 
 .sessionNode {
   padding: 0.5rem 1.15rem;
-  border-radius: 999px;
-  border: 1px dashed rgba(0, 221, 255, 0.4);
-  background: rgba(10, 12, 22, 0.8);
+  border-radius: var(--ak-radius-control);
+  border: 1px dashed rgba(var(--ak-blue-rgb), 0.4);
+  background: rgba(var(--ak-bg-rgb), 0.8);
 }
 
 .sessionNode .nodeTitle {
   font-family: var(--ifm-font-family-monospace, monospace);
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   font-weight: 600;
-  color: rgba(0, 221, 255, 0.9);
+  color: rgba(var(--ak-primary-rgb), 0.9);
 }
 
 .policyNode {
   position: relative;
   padding: 0.65rem 1rem;
-  border-radius: 0.6rem;
-  border: 1px solid rgba(142, 93, 255, 0.5);
-  background: rgba(142, 93, 255, 0.08);
+  border-radius: var(--ak-radius-control);
+  border: 1px solid rgba(var(--ak-sky-rgb), 0.5);
+  background: rgba(var(--ak-sky-rgb), 0.08);
 }
 
 .policyNode .nodeTitle {
-  font-size: 0.85rem;
-  color: rgba(196, 170, 255, 1);
+  font-size: 0.875rem;
+  color: var(--ak-sky);
 }
 
 .policyNode::before {
@@ -236,25 +200,18 @@
   width: 2.5rem;
   height: 1px;
   background: linear-gradient(90deg,
-      rgba(0, 221, 255, 0.35),
-      rgba(142, 93, 255, 0.55));
+      rgba(var(--ak-blue-rgb), 0.35),
+      rgba(var(--ak-sky-rgb), 0.55));
 }
 
 .brokerNode {
   min-width: 24rem;
   padding: 1rem 2rem 1.05rem;
-  border-radius: 0.85rem;
-  border: 1px solid rgba(255, 181, 71, 0.55);
+  border-radius: var(--ak-radius-card);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.55);
   background: linear-gradient(180deg,
-      rgba(255, 181, 71, 0.14) 0%,
-      rgba(255, 181, 71, 0.03) 100%);
-}
-
-.panelVisible .brokerNode {
-  animation:
-    sbFadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both,
-    sbBrokerGlow 3.5s ease-in-out infinite;
-  animation-delay: var(--node-delay, 0ms), 1.2s;
+      rgba(var(--ak-blue-rgb), 0.14) 0%,
+      rgba(var(--ak-blue-rgb), 0.03) 100%);
 }
 
 .brokerRow {
@@ -268,7 +225,7 @@
   width: 2.5rem;
   height: 2.5rem;
   flex-shrink: 0;
-  filter: drop-shadow(0 0 10px rgba(0, 221, 255, 0.45));
+  filter: none;
 }
 
 .brokerText {
@@ -280,11 +237,11 @@
 
 .brokerEyebrow {
   margin: 0;
-  font-size: 0.62rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #ffb547;
+  color: var(--ak-primary-text);
   line-height: 1.4;
 }
 
@@ -292,14 +249,14 @@
   margin: 0;
   font-size: 1.25rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--ak-fg);
   letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
 .brokerNode .nodeSub {
   margin-top: 0.45rem;
-  color: rgba(255, 214, 156, 0.65);
+  color: rgba(var(--ak-blue-rgb), 0.65);
 }
 
 /* ── Connectors ────────────────────────────────────────────────────────── */
@@ -309,14 +266,8 @@
   height: 1.6rem;
   flex-shrink: 0;
   background: linear-gradient(180deg,
-      rgba(0, 221, 255, 0.5),
-      rgba(0, 221, 255, 0.25));
-  opacity: 0;
-}
-
-.panelVisible .stem {
-  animation: sbFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
+      rgba(var(--ak-blue-rgb), 0.5),
+      rgba(var(--ak-blue-rgb), 0.25));
 }
 
 /* ── Broker flavor lanes (in-process beside queue-decoupled) ──────────── */
@@ -337,7 +288,7 @@
   right: 25%;
   bottom: 0;
   height: 1px;
-  background: rgba(0, 221, 255, 0.3);
+  background: rgba(var(--ak-blue-rgb), 0.3);
 }
 
 .laneCol {
@@ -356,7 +307,7 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: rgba(0, 221, 255, 0.3);
+  background: rgba(var(--ak-blue-rgb), 0.3);
 }
 
 .laneCol:first-child::before {
@@ -376,14 +327,14 @@
   width: 1px;
   height: 1.6rem;
   background: linear-gradient(180deg,
-      rgba(0, 221, 255, 0.3),
-      rgba(0, 221, 255, 0.45));
+      rgba(var(--ak-blue-rgb), 0.3),
+      rgba(var(--ak-blue-rgb), 0.45));
 }
 
 .laneNode {
   width: 100%;
   padding: 0.7rem 0.9rem 0.8rem;
-  border-radius: 0.6rem;
+  border-radius: var(--ak-radius-control);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -392,28 +343,28 @@
 
 .laneInProcess {
   max-width: 17rem;
-  border: 1px solid rgba(0, 221, 255, 0.28);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.28);
+  background: rgba(var(--ak-fg-rgb), 0.04);
 }
 
 .laneQueue {
   max-width: 27rem;
-  border: 1px solid rgba(255, 181, 71, 0.45);
-  background: rgba(255, 181, 71, 0.05);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.45);
+  background: rgba(var(--ak-blue-rgb), 0.05);
 }
 
 .laneEyebrow {
   margin: 0 0 0.2rem;
-  font-size: 0.6rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--ak-fg-rgb), 0.5);
   line-height: 1.4;
 }
 
 .laneQueue .laneEyebrow {
-  color: #ffb547;
+  color: var(--ak-primary-text);
 }
 
 .laneNode .nodeSub {
@@ -431,26 +382,26 @@
 
 .chainBox {
   font-family: var(--ifm-font-family-monospace, monospace);
-  font-size: 0.68rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(0, 221, 255, 0.35);
+  color: rgba(var(--ak-fg-rgb), 0.85);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.35);
   border-radius: 4px;
   padding: 0.15rem 0.5rem;
   line-height: 1.5;
 }
 
 .chainBoxWorker {
-  color: #ffd69c;
-  border-color: rgba(255, 181, 71, 0.6);
-  background: rgba(255, 181, 71, 0.08);
+  color: var(--ak-blue);
+  border-color: rgba(var(--ak-blue-rgb), 0.6);
+  background: rgba(var(--ak-blue-rgb), 0.08);
 }
 
 .chainReturn .chainBox {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--ak-fg-rgb), 0.6);
   border-style: dashed;
-  border-color: rgba(0, 221, 255, 0.25);
+  border-color: rgba(var(--ak-blue-rgb), 0.25);
 }
 
 .chainLink {
@@ -458,7 +409,7 @@
   width: 1.6rem;
   height: 1px;
   flex-shrink: 0;
-  background: rgba(0, 221, 255, 0.5);
+  background: rgba(var(--ak-primary-rgb), 0.5);
 }
 
 /* arrowhead on the receiving end */
@@ -469,22 +420,22 @@
   right: -1px;
   border-top: 3.5px solid transparent;
   border-bottom: 3.5px solid transparent;
-  border-left: 5px solid rgba(0, 221, 255, 0.8);
+  border-left: 5px solid rgba(var(--ak-primary-rgb), 0.8);
 }
 
 .chainLinkBack::after {
   right: auto;
   left: -1px;
   border-left: none;
-  border-right: 5px solid rgba(0, 221, 255, 0.8);
+  border-right: 5px solid rgba(var(--ak-primary-rgb), 0.8);
 }
 
 .chainReturn .chainLink {
-  background: rgba(0, 221, 255, 0.3);
+  background: rgba(var(--ak-primary-rgb), 0.3);
 }
 
 .chainReturn .chainLink::after {
-  border-right-color: rgba(0, 221, 255, 0.5);
+  border-right-color: rgba(var(--ak-primary-rgb), 0.5);
 }
 
 /* vertical drop from each lane card to the bottom bus; grows so both reach it */
@@ -493,14 +444,8 @@
   min-height: 1.4rem;
   width: 1px;
   background: linear-gradient(180deg,
-      rgba(0, 221, 255, 0.45),
-      rgba(0, 221, 255, 0.3));
-  opacity: 0;
-}
-
-.panelVisible .laneDrop {
-  animation: sbFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
+      rgba(var(--ak-blue-rgb), 0.45),
+      rgba(var(--ak-blue-rgb), 0.3));
 }
 
 /* ── Provider fan-out ──────────────────────────────────────────────────── */
@@ -527,7 +472,7 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: rgba(0, 221, 255, 0.3);
+  background: rgba(var(--ak-blue-rgb), 0.3);
 }
 
 .providerCol:first-child::before {
@@ -547,16 +492,16 @@
   width: 1px;
   height: 1.6rem;
   background: linear-gradient(180deg,
-      rgba(0, 221, 255, 0.3),
-      rgba(0, 221, 255, 0.45));
+      rgba(var(--ak-blue-rgb), 0.3),
+      rgba(var(--ak-blue-rgb), 0.45));
 }
 
 .providerNode {
   width: 100%;
   padding: 0.75rem 0.6rem;
-  border-radius: 0.6rem;
-  border: 1px solid rgba(0, 221, 255, 0.28);
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--ak-radius-control);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.28);
+  background: rgba(var(--ak-fg-rgb), 0.04);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -569,11 +514,15 @@
 }
 
 .providerNodeLink:hover {
-  transform: translateY(-2px);
-  border-color: rgba(0, 221, 255, 0.6);
-  background: rgba(0, 221, 255, 0.08);
-  box-shadow: 0 4px 16px rgba(0, 221, 255, 0.2);
+  border-color: rgba(var(--ak-primary-rgb), 0.6);
+  background: rgba(var(--ak-primary-rgb), 0.08);
+  box-shadow: none;
   text-decoration: none;
+}
+
+.providerNodeLink:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 2px;
 }
 
 .providerIcon {
@@ -581,7 +530,7 @@
   align-items: center;
   justify-content: center;
   font-size: 1.3rem;
-  color: #ffffff;
+  color: var(--ak-fg);
   margin-bottom: 0.1rem;
 }
 
@@ -598,27 +547,27 @@
 
 .providerName {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-weight: 700;
-  color: #00ddff;
+  color: var(--ak-blue);
   line-height: 1.3;
 }
 
 .providerSub {
   margin: 0;
-  font-size: 0.68rem;
+  font-size: 0.875rem;
   line-height: 1.35;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--ak-fg-rgb), 0.5);
 }
 
 .providerChip {
-  font-size: 0.58rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
-  color: rgba(196, 170, 255, 1);
-  border: 1px solid rgba(142, 93, 255, 0.5);
+  color: var(--ak-sky);
+  border: 1px solid rgba(var(--ak-sky-rgb), 0.5);
   border-radius: 4px;
   padding: 0.1rem 0.4rem;
   line-height: 1.5;
@@ -629,14 +578,8 @@
   height: 1.4rem;
   flex-shrink: 0;
   background: linear-gradient(180deg,
-      rgba(0, 221, 255, 0.4),
-      rgba(255, 255, 255, 0.2));
-  opacity: 0;
-}
-
-.panelVisible .colStem {
-  animation: sbFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
+      rgba(var(--ak-blue-rgb), 0.4),
+      rgba(var(--ak-fg-rgb), 0.2));
 }
 
 /* ── Sandbox stacks ────────────────────────────────────────────────────── */
@@ -648,32 +591,32 @@
 
 .sandboxStack::before,
 .sandboxStack::after {
-  border-radius: 0.6rem;
+  border-radius: var(--ak-radius-control);
 }
 
 .sandboxNode {
   width: 100%;
   padding: 0.6rem 0.5rem 0.65rem;
-  border-radius: 0.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: var(--ak-radius-control);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.25);
   gap: 0.35rem;
 }
 
 .sandboxName {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--ak-fg-rgb), 0.9);
   line-height: 1.3;
 }
 
 .tierChip {
   font-family: var(--ifm-font-family-monospace, monospace);
-  font-size: 0.62rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   white-space: nowrap;
-  color: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: rgba(var(--ak-fg-rgb), 0.6);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.25);
   border-radius: 4px;
   padding: 0.1rem 0.45rem;
   line-height: 1.5;
@@ -684,23 +627,17 @@
 .footer {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(var(--ak-fg-rgb), 0.1);
 }
 
 .footerCard {
   padding: 1rem 1.125rem 1.125rem;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  opacity: 0;
+  border-right: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   transition: background-color 250ms ease;
 }
 
-.panelVisible .footerCard {
-  animation: sbFadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--node-delay, 0ms);
-}
-
 .footerCard:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--ak-fg-rgb), 0.03);
 }
 
 .footerCard:last-child {
@@ -711,31 +648,18 @@
   margin: 0 0 0.35rem;
   font-size: 0.875rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--ak-fg);
   line-height: 1.3;
 }
 
 .footerDesc {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--ak-fg-rgb), 0.55);
 }
 
-/* ── Motion / responsive ───────────────────────────────────────────────── */
-
-@media (prefers-reduced-motion: reduce) {
-
-  .node,
-  .stem,
-  .colStem,
-  .laneDrop,
-  .footerCard {
-    opacity: 1;
-    transform: none;
-    animation: none !important;
-  }
-}
+/* ── Responsive ────────────────────────────────────────────────────────── */
 
 @media (max-width: 996px) {
   .scrollHint {
@@ -752,7 +676,7 @@
 
   .footerCard:nth-child(1),
   .footerCard:nth-child(2) {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   }
 }
 
@@ -767,7 +691,7 @@
 
   .footerCard {
     border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   }
 
   .footerCard:last-child {

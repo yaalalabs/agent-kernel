@@ -45,7 +45,7 @@ These are hard requirements. Any implementation that violates them is incorrect.
 
 ### Agents
 
-Build five Agent Kernel agents using the OpenAI module, with `mathru_triage` as the
+Build five Open Agent Kernel agents using the OpenAI module, with `mathru_triage` as the
 entry point and the rest reachable by handoff.
 
 - `mathru_triage` — entry agent. Detects intent and hands off. Handles greetings and
@@ -134,7 +134,7 @@ Escalation delivery itself is an internal function in `escalation.py`, called by
   Rely on this for per-mother conversation continuity; do not build a parallel session
   mechanism.
 - Persist mother records and escalations in tool-owned `store.py` using standard-library
-  SQLite, with foreign keys enabled on each connection. This is separate from Agent Kernel's
+  SQLite, with foreign keys enabled on each connection. This is separate from OAK's
   session backend. Sessions stay `in_memory`; SQLite is not a session backend.
 - A mother must not need to re-register or restate her EDD in later conversations.
 

@@ -8,7 +8,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Agent Kernel',
+  title: 'Open Agent Kernel',
   tagline: 'The Operating System for Scalable & Compliant Enterprise AI Agents.',
   favicon: 'img/favicon.ico',
   url: 'https://kernel.yaala.ai',
@@ -21,7 +21,6 @@ const config = {
 
   clientModules: [
     './src/clientModules/ensureGtagGlobal.ts',
-    './src/clientModules/scrollReveal.ts',
   ],
 
   onBrokenLinks: 'throw',
@@ -67,28 +66,28 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'keywords',
-        content: 'agent kernel, AI agent framework, AI agent runtime, AI agent deployment, AI agent platform, agentic AI development, multi-cloud AI agents, framework-agnostic AI, deploy AI agents, how to build AI agents, how to deploy AI agents to AWS, how to deploy AI agents to Azure, AI agent development platform open source, build AI agents with Python, LangGraph vs OpenAI agents vs CrewAI, AI agent Slack integration, WhatsApp AI bot, production AI agent deployment, AI agent testing framework, AI agent session management, AI agent guardrails, AI agent safety, agent-to-agent communication, MCP protocol, model context protocol, AI agent observability, AI agent tracing, agentkernel, Yaala Labs, LangGraph runtime, OpenAI Agents SDK deployment, Google ADK deployment, CrewAI deployment, serverless AI agents, containerized AI agents, multi-agent systems, AI agent orchestration, enterprise AI agents, Python AI agents, open source AI agent platform',
+        content: 'open agent kernel, OAK, agent kernel, AI agent framework, AI agent runtime, AI agent deployment, AI agent platform, agentic AI development, multi-cloud AI agents, framework-agnostic AI, deploy AI agents, how to build AI agents, how to deploy AI agents to AWS, how to deploy AI agents to Azure, AI agent development platform open source, build AI agents with Python, LangGraph vs OpenAI agents vs CrewAI, AI agent Slack integration, WhatsApp AI bot, production AI agent deployment, AI agent testing framework, AI agent session management, AI agent guardrails, AI agent safety, agent-to-agent communication, MCP protocol, model context protocol, AI agent observability, AI agent tracing, agentkernel, LangGraph runtime, OpenAI Agents SDK deployment, Google ADK deployment, CrewAI deployment, serverless AI agents, containerized AI agents, multi-agent systems, AI agent orchestration, enterprise AI agents, Python AI agents, open source AI agent platform',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         name: 'author',
-        content: 'Yaala Labs',
+        content: 'Open Agent Kernel',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         property: 'og:title',
-        content: 'Agent Kernel - The Operating System for Scalable & Compliant Enterprise AI Agents',
+        content: 'Open Agent Kernel (OAK) - The Operating System for Scalable & Compliant Enterprise AI Agents',
       },
     },
     {
       tagName: 'meta',
       attributes: {
         property: 'og:description',
-        content: 'Agent Kernel is the open-source operating system for building and deploying scalable, compliant enterprise AI agents. Works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents) and runs agents from multiple frameworks together in a single runtime. Deploys to AWS, Azure, or GCP with full Terraform modules and zero platform code, plus the LiveKit voice integration, built-in messaging, memory, knowledge bases, guardrails, and observability.',
+        content: 'Open Agent Kernel (OAK) is the open-source operating system for building and deploying scalable, compliant enterprise AI agents. Works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents) and runs agents from multiple frameworks together in a single runtime. Deploys to AWS, Azure, or GCP with full Terraform modules and zero platform code, plus the LiveKit voice integration, built-in messaging, memory, knowledge bases, guardrails, and observability.',
       },
     },
     {
@@ -109,7 +108,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:site_name',
-        content: 'Agent Kernel by Yaala Labs',
+        content: 'Open Agent Kernel',
       },
     },
     {
@@ -123,7 +122,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         name: 'twitter:title',
-        content: 'Agent Kernel - The Operating System for Scalable & Compliant Enterprise AI Agents',
+        content: 'Open Agent Kernel (OAK) - The Operating System for Scalable & Compliant Enterprise AI Agents',
       },
     },
     {
@@ -157,15 +156,8 @@ const config = {
     {
       tagName: 'meta',
       attributes: {
-        name: 'company',
-        content: 'Yaala Labs',
-      },
-    },
-    {
-      tagName: 'meta',
-      attributes: {
         name: 'publisher',
-        content: 'Yaala Labs',
+        content: 'Open Agent Kernel',
       },
     },
     {
@@ -184,9 +176,10 @@ const config = {
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'SoftwareApplication',
-        name: 'Agent Kernel',
+        name: 'Open Agent Kernel',
+        alternateName: ['OAK', 'Agent Kernel'],
         applicationCategory: 'DeveloperApplication',
-        description: 'Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy production AI agents with any major framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents) and run multiple frameworks simultaneously in a single runtime. Connect agents to LiveKit rooms for realtime voice. Deploy to AWS, Azure, or GCP with full Terraform modules.',
+        description: 'Open Agent Kernel (OAK) is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy production AI agents with any major framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents) and run multiple frameworks simultaneously in a single runtime. Connect agents to LiveKit rooms for realtime voice. Deploy to AWS, Azure, or GCP with full Terraform modules.',
         operatingSystem: 'Linux, macOS, Windows',
         offers: {
           '@type': 'Offer',
@@ -195,11 +188,11 @@ const config = {
         },
         author: {
           '@type': 'Organization',
-          name: 'Yaala Labs',
-          url: 'https://www.yaalalabs.com',
+          name: 'Open Agent Kernel',
+          url: 'https://kernel.yaala.ai',
         },
         url: 'https://kernel.yaala.ai',
-        keywords: 'Agent Kernel, agentkernel, agent os, agent operating system, agent runtime, enterprise agents, agent deployment, compliant agents, scalable production agents, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
+        keywords: 'Open Agent Kernel, OAK, Agent Kernel, agentkernel, agent os, agent operating system, agent runtime, enterprise agents, agent deployment, compliant agents, scalable production agents, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
         featureList: [
           'Framework-neutral runtime: OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents',
           'Realtime voice through the LiveKit integration for OpenAI Agents SDK and Google ADK agents',
@@ -225,8 +218,8 @@ const config = {
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'WebSite',
-        name: 'Agent Kernel',
-        alternateName: 'Agent Kernel by Yaala Labs',
+        name: 'Open Agent Kernel',
+        alternateName: ['OAK', 'Agent Kernel'],
         url: 'https://kernel.yaala.ai/',
       }),
     },
@@ -275,13 +268,14 @@ const config = {
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'Organization',
-        name: 'Yaala Labs',
-        url: 'https://www.yaalalabs.com',
+        name: 'Open Agent Kernel',
+        alternateName: 'OAK',
+        url: 'https://kernel.yaala.ai',
         logo: 'https://kernel.yaala.ai/img/logo.svg',
         sameAs: [
           'https://github.com/yaalalabs/agent-kernel',
         ],
-        description: 'Yaala Labs is a technology company that builds next-generation cloud-native marketplace and capital markets infrastructure for both traditional and digital assets. Creator and maintainer of Agent Kernel, the open-source operating system for scalable, compliant enterprise AI agents.',
+        description: 'Open Agent Kernel (OAK) is the open-source operating system for scalable, compliant enterprise AI agents.',
       }),
     },
   ],
@@ -297,6 +291,11 @@ const config = {
       onBrokenMarkdownLinks: 'warn',
     },
   },
+  plugins: [
+    // Writes /llms.txt and /llms-full.txt for AI assistants, from the released docs (plugins/llms-txt)
+    './plugins/llms-txt',
+  ],
+
   themes: [
     '@docusaurus/theme-mermaid',
     [
@@ -325,9 +324,9 @@ const config = {
         },
         blog: {
           routeBasePath: 'blog',
-          blogTitle: 'Agent Kernel Blog',
+          blogTitle: 'Open Agent Kernel Blog',
           blogDescription:
-            'Product announcements, engineering deep dives, and stories from the Agent Kernel team.',
+            'Product announcements, engineering deep dives, and stories from the Open Agent Kernel team.',
           // All posts render on one landing page so topic filtering works client-side.
           postsPerPage: 'ALL',
           blogSidebarCount: 0,
@@ -344,7 +343,7 @@ const config = {
           onUntruncatedBlogPosts: 'warn',
         },
         theme: {
-          customCss: ['./src/css/custom.css', './src/css/blog-medium.css'],
+          customCss: ['./src/css/custom.css', './src/css/blog.css'],
         },
         gtag: {
           trackingID: 'G-TFXXDHX2H5',
@@ -420,7 +419,7 @@ const config = {
       metadata: [
         {
           name: 'description',
-          content: 'Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP. Built-in messaging integrations, session and memory management, knowledge bases, testing framework, guardrails, and observability.',
+          content: 'Open Agent Kernel (OAK) is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP. Built-in messaging integrations, session and memory management, knowledge bases, testing framework, guardrails, and observability.',
         },
         {
           property: 'og:image',
@@ -436,8 +435,9 @@ const config = {
         hideOnScroll: true,
         title: '',
         logo: {
-          alt: 'Agent Kernel Logo',
-          src: 'img/branding/agent-kernel-icon-horizontal-color-dark-bg.svg',
+          alt: 'Open Agent Kernel logo',
+          src: 'img/branding/open-agent-kernel-color.svg',
+          srcDark: 'img/branding/open-agent-kernel-white-orange.svg',
         },
         items: [
           { to: '/features', label: 'Features', position: 'left' },
@@ -462,6 +462,12 @@ const config = {
             dropdownItemsAfter: [],
             className: 'navbar-version-dropdown',
           },
+          {
+            to: '/docs/quick-start',
+            label: 'Quick start',
+            position: 'right',
+            className: 'ak-btn ak-btn--primary ak-btn--small navbar-cta',
+          },
 
 
         ],
@@ -477,6 +483,9 @@ const config = {
               { label: 'Use Cases', to: '/use-cases' },
               { label: 'Architecture', to: '/docs/architecture/overview' },
               { label: 'API Reference', to: '/docs/api/rest-api' },
+              // The docs index for AI assistants. It is a file, not a route, so it takes the
+              // `pathname://` form: a plain link that the broken-link check leaves alone.
+              { label: 'llms.txt', href: 'pathname:///llms.txt' },
             ],
           },
           {
@@ -509,15 +518,17 @@ const config = {
       prism: {
         theme: prismThemes.oneLight,
         darkTheme: prismThemes.oneDark,
-        additionalLanguages: ['python', 'bash', 'json', 'yaml'],
+        additionalLanguages: ['python', 'bash', 'json', 'yaml', 'hcl'],
       },
       colorMode: {
-        defaultMode: 'dark',
-        disableSwitch: true,
+        // Light is the default. Visitors can switch to the dark mode from the navbar, and the choice is remembered.
+        defaultMode: 'light',
+        disableSwitch: false,
         respectPrefersColorScheme: false,
       },
       mermaid: {
-        // The site is dark-only; both entries point at the customized base theme.
+        // Both entries use the customised base theme. The variables below are the dark palette;
+        // on the light page src/theme/Mermaid sends the light palette with each diagram.
         theme: { light: 'base', dark: 'base' },
         options: {
           fontFamily: 'Archivo, sans-serif',
@@ -532,41 +543,41 @@ const config = {
           sequence: { mirrorActors: false },
           themeVariables: {
             darkMode: true,
-            background: '#010002',
+            background: '#011428',
             fontFamily: 'Archivo, sans-serif',
             fontSize: '15px',
             // nodes
-            primaryColor: '#0d1f3c',
-            primaryTextColor: '#eaf6ff',
-            primaryBorderColor: '#2e6f8f',
+            primaryColor: '#02284F',
+            primaryTextColor: '#EAF3F8',
+            primaryBorderColor: '#3F598A',
             // edges + labels
-            lineColor: '#6db8cc',
-            edgeLabelBackground: '#081226',
+            lineColor: '#ABCEE1',
+            edgeLabelBackground: '#011C37',
             // subgraphs / clusters
-            clusterBkg: '#05101f',
-            clusterBorder: '#1d3a5f',
-            titleColor: '#9fdcec',
+            clusterBkg: '#011C37',
+            clusterBorder: '#173964',
+            titleColor: '#B1CDFF',
             // secondary/tertiary (misc fills)
-            secondaryColor: '#12294a',
-            tertiaryColor: '#081226',
-            tertiaryTextColor: '#cfe8f2',
+            secondaryColor: '#0D315A',
+            tertiaryColor: '#011C37',
+            tertiaryTextColor: '#EAF3F8',
             // sequence diagrams
-            actorBkg: '#0d1f3c',
-            actorBorder: '#2e6f8f',
-            actorTextColor: '#eaf6ff',
-            actorLineColor: '#3a5a7a',
-            signalColor: '#8fd4e6',
-            signalTextColor: '#d7eef7',
-            labelBoxBkgColor: '#12294a',
-            labelBoxBorderColor: '#2e6f8f',
-            labelTextColor: '#eaf6ff',
-            loopTextColor: '#9fdcec',
-            noteBkgColor: '#1a2b4a',
-            noteBorderColor: '#31527f',
-            noteTextColor: '#dcecf7',
-            activationBkgColor: '#12294a',
-            activationBorderColor: '#2e6f8f',
-            sequenceNumberColor: '#010002',
+            actorBkg: '#02284F',
+            actorBorder: '#3F598A',
+            actorTextColor: '#EAF3F8',
+            actorLineColor: '#3F598A',
+            signalColor: '#ABCEE1',
+            signalTextColor: '#EAF3F8',
+            labelBoxBkgColor: '#0D315A',
+            labelBoxBorderColor: '#3F598A',
+            labelTextColor: '#EAF3F8',
+            loopTextColor: '#B1CDFF',
+            noteBkgColor: '#0D315A',
+            noteBorderColor: '#173964',
+            noteTextColor: '#EAF3F8',
+            activationBkgColor: '#0D315A',
+            activationBorderColor: '#3F598A',
+            sequenceNumberColor: '#011428',
           },
         },
       }

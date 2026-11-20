@@ -1,6 +1,6 @@
-# Agent Kernel Scalable OpenAI Agents with AWS Serverless Architecture
+# Open Agent Kernel Scalable OpenAI Agents with AWS Serverless Architecture
 
-This package demonstrates a scalable Agent Kernel implementation running OpenAI Agents SDK on AWS serverless infrastructure with queue-based processing.
+This package demonstrates a scalable Open Agent Kernel implementation running OpenAI Agents SDK on AWS serverless infrastructure with queue-based processing.
 
 ## Architecture Overview
 

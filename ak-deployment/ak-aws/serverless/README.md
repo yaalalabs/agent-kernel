@@ -1,4 +1,4 @@
-# Agent Kernel - AWS Serverless Module
+# Open Agent Kernel - AWS Serverless Module
 
 A comprehensive Terraform module for deploying serverless applications on AWS, combining Lambda functions with API Gateway to create production-ready RESTful APIs and WebSocket APIs.
 
@@ -451,7 +451,7 @@ module "serverless_api_auth" {
 | `enable_api_gateway` | Enable API Gateway and request handler Lambda (can only be false when queue_mode is true) | `bool` | `true` | no |
 | `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
 | `execution_mode` | Execution mode: `rest_sync` (default), `rest_async` (queue mode only), or `async` (WebSocket). `async` creates a WebSocket API and requires `ws_connection_handler.package_path`. Cannot be `rest_async` when `queue_mode = false`. `stream` was removed and fails at `terraform plan`: use `async` with `message_type = "delta"`. | `string` | `"rest_sync"` | no |
-| `message_type` | Reply delivery, injected as `AK_EXECUTION__MESSAGE_TYPE`: `complete` (whole reply in one message) or `delta` (one message per chunk). `null` leaves Agent Kernel's default (`complete`). With `async`, `complete` pushes one `CHAT_RESPONSE` and `delta` pushes one `STREAM_CHUNK` per chunk, ending with `done: true`. On Lambda, use `delta` only with `async`: `rest_sync` + `delta` is refused at REST router init (the Lambda REST router does not stream), `rest_async` + `delta` fails at config load, and `LambdaWebhookHost` refuses `delta`. Terraform validates the value only; Agent Kernel checks the combination at startup. | `string` | `null` | no |
+| `message_type` | Reply delivery, injected as `AK_EXECUTION__MESSAGE_TYPE`: `complete` (whole reply in one message) or `delta` (one message per chunk). `null` leaves Open Agent Kernel's default (`complete`). With `async`, `complete` pushes one `CHAT_RESPONSE` and `delta` pushes one `STREAM_CHUNK` per chunk, ending with `done: true`. On Lambda, use `delta` only with `async`: `rest_sync` + `delta` is refused at REST router init (the Lambda REST router does not stream), `rest_async` + `delta` fails at config load, and `LambdaWebhookHost` refuses `delta`. Terraform validates the value only; OAK checks the combination at startup. | `string` | `null` | no |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
 | `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
 | `timeout` | Lambda function timeout in seconds (max 900) | `number` | `45` | no |
@@ -860,12 +860,12 @@ The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
 
 ### 💾 Multi-Storage Support
 
-The module supports the current Agent Kernel storage wiring for both session state and response persistence.
+The module supports the current OAK storage wiring for both session state and response persistence.
 
 **Available storage options**:
 - Redis session memory via `create_redis_cluster`
 - Redis response storage via `create_redis_response_store`
-- Redis multimodal memory via `create_redis_cluster` and environmental variables *(more details in Agent Kernel Docs in Multimodal section)*
+- Redis multimodal memory via `create_redis_cluster` and environmental variables *(more details in OAK Docs in Multimodal section)*
 - Valkey session memory via `create_valkey_cluster` (also requires `session.type: valkey` in `config.yaml`)
 - Valkey response storage via `create_valkey_response_store` (also requires `execution.response_store.type: valkey` in `config.yaml`)
 - DynamoDB session memory via `create_dynamodb_memory_table`

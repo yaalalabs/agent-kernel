@@ -1,437 +1,402 @@
-import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import React from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
+import clsx from 'clsx';
+import PageHero from '@site/src/components/ui/PageHero';
+import SectionHeader from '@site/src/components/ui/SectionHeader';
+import Reveal from '@site/src/components/ui/Reveal';
+import { ClosingPanel } from '@site/src/components/HomeSections';
 import styles from './use-cases.module.css';
-import indexStyles from './index.module.css';
-import UseCaseJourneyMap from '../components/UseCaseJourneyMap';
-import HeroAnimation from '../components/HeroAnimation';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
-import {
-  MdBusiness,
-  MdAutoAwesome,
-  MdRocketLaunch,
-  MdGroup,
-  MdCheck,
-  MdSwapHoriz,
-  MdCloud,
-  MdCode,
-  MdSecurity,
-  MdMessage,
-  MdSpeed,
-  MdNetworkCheck,
-} from 'react-icons/md';
-import { FaGithub, FaLock } from 'react-icons/fa';
-import PlantParticlesBackground from '../components/PlantParticlesBackground';
 
-gsap.registerPlugin(ScrollTrigger);
+/* The page answers "who uses OAK, and for what". Each entry leads somewhere concrete: a write-up,
+   a project in the repository, or a guide with a working example. What the runtime can do is the
+   Features page's job, and is not repeated here. */
 
-type ParticleBackgroundHandle = {
-  triggerScatterOut: () => void;
-  triggerScatterIn: () => void;
-  triggerReverseScatterIn: () => void;
-  triggerScatterFloat: () => void;
-  triggerFloatReform: () => void;
+const REPO = 'https://github.com/yaalalabs/agent-kernel/tree/develop';
+
+type PageLink = { label: string; to: string };
+
+/* ── Projects built on OAK ── */
+
+type Project = {
+  status: string;
+  title: string;
+  summary: string;
+  /** The parts of OAK the project relies on, as its own write-up lists them. */
+  uses: string[];
+  links: PageLink[];
+  /** A caveat the project states about itself. */
+  note?: string;
 };
 
-/* ─── Hero ──────────────────────────────────────────────────────────────── */
-
-/** Render the introductory hero for the use cases page. */
-function Hero() {
-  return (
-    <HeroAnimation
-      badge="Use Cases"
-      title="Who Is Agent Kernel Built For?"
-      subtitle="Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code."
-    />
-  );
-}
-
-/* ─── Segments data ─────────────────────────────────────────────────────── */
-
-const segments = [
+const PROJECTS: Project[] = [
   {
-    id: 'software-services',
-    icon: <MdBusiness />,
-    accent: 'cyan',
-    title: 'Established Software Companies',
-    subtitle: 'Services / Dev Houses',
-    profile: 'Development houses and IT services firms with existing clients who are asking for AI-powered solutions. They have developers on staff but lack AI agent platform expertise.',
-    diagramLeft: { label: 'Client AI Request', desc: 'Existing clients asking for agents' },
-    diagramRight: { label: 'Shipped in Weeks', desc: 'Production agents, on time' },
-    painPoints: [
-      'Need to stand up AI agent capabilities quickly without a 6-month R&D cycle',
-      'Building the platform layer (deployment, session management, integrations) from scratch is expensive',
-      'Every project reinvents the same infrastructure — zero leverage across clients',
-      'Hard to demo capabilities rapidly without working integrations',
+    status: 'In production',
+    title: 'Trade surveillance at Climate Impact X',
+    summary:
+      'Climate Impact X, an exchange for environmental products such as carbon credits, runs an agentic workflow on OAK inside its trade surveillance. Agents review potential issues beyond what rule-based alerts catch, and hand investigators structured context.',
+    uses: [
+      'Multi-agent orchestration',
+      'Serverless deployment',
+      'Durable session state',
+      'Guardrails',
+      'Tracing',
+      'Behaviour tests',
     ],
-    valueProps: [
-      'Jump-start agentic AI service offerings with a production-ready platform',
-      'Focus developer time on client-specific agent logic, not infrastructure',
-      'Deliver multi-cloud solutions (AWS, Azure, GCP) from day one',
-      'Battle-tested runtime reduces project risk vs. building from scratch',
-      'Built-in integrations (Slack, WhatsApp, etc.) enable rapid demos and delivery',
-    ],
-    keyMessage: '"Ship AI agent solutions to your clients in weeks, not months. Agent Kernel handles the platform — you focus on the intelligence."',
-    cta: '/docs',
-    ctaLabel: 'Get Started →',
+    links: [{ label: 'Read the story', to: '/blog/agent-kernel-live-at-climate-impact-x' }],
   },
   {
-    id: 'software-products',
-    icon: <MdAutoAwesome />,
-    accent: 'violet',
-    title: 'Software Companies Enhancing Products',
-    subtitle: 'SaaS / Enterprise Software',
-    profile: 'Product companies with existing SaaS or enterprise software who want to embed conversational AI, intelligent automation, or agent-driven workflows into their products.',
-    diagramLeft: { label: 'Existing SaaS', desc: 'Your current product' },
-    diagramRight: { label: 'AI-Enhanced Product', desc: 'Agents embedded, zero lock-in' },
-    painPoints: [
-      'Need to add AI agent capabilities without massive re-architecture',
-      "Framework lock-in is a real risk — the AI landscape changes fast, and picking the wrong framework today could mean expensive rewrites tomorrow",
-      'Compliance and enterprise requirements demand guardrails, observability, and fault tolerance',
-      'Customer cloud strategies span AWS, Azure, and GCP — vendor lock-in is unacceptable',
-    ],
-    valueProps: [
-      'Embed AI agents into existing products with minimal disruption',
-      'Framework-agnostic design eliminates lock-in — swap frameworks without touching product code',
-      'Run agents from multiple frameworks side by side in a single runtime',
-      'REST API mode drops into existing architectures seamlessly',
-      'Pluggable session backends integrate with existing database infrastructure',
-      'Enterprise features (guardrails, observability, fault tolerance) meet compliance requirements',
-    ],
-    keyMessage: '"Future-proof your product\'s AI capabilities. Add intelligent agents today, switch frameworks tomorrow — your platform code never changes."',
-    cta: '/docs',
-    ctaLabel: 'Get Started →',
+    status: 'Prototype',
+    title: 'Mathru, a maternal health companion',
+    summary:
+      'A WhatsApp agent for expectant mothers and the midwife assigned to them. Mothers register, ask about clinic visits and report symptoms, and a severe report is escalated to the midwife with its context.',
+    uses: ['WhatsApp', 'Multi-agent handoffs', 'Session memory', 'Guardrails', 'Post-execution hooks'],
+    links: [{ label: 'Browse the project', to: `${REPO}/use-cases/mathru-phm-companion` }],
+    note: 'A competition prototype, not a clinical tool.',
   },
   {
-    id: 'ai-startups',
-    icon: <MdRocketLaunch />,
-    accent: 'cyan',
-    title: 'AI Startups',
-    subtitle: 'Early to Growth Stage',
-    profile: 'Early to growth-stage startups building AI-native products. Small engineering teams that need to move fast and can\'t afford to build platform infrastructure.',
-    diagramLeft: { label: 'MVP Idea', desc: 'Prototype stage, lean team' },
-    diagramRight: { label: 'Production in Days', desc: 'Multi-cloud, fully deployed' },
-    painPoints: [
-      'Engineering bandwidth is the scarcest resource — every hour on infrastructure is an hour not spent on core AI',
-      "Can't afford platform engineering before finding product-market fit",
-      'Need to reach users on popular messaging platforms (Slack, WhatsApp, etc.) quickly',
-      'Must scale from MVP to multi-AZ production without rewrites',
+    status: 'Sample project',
+    title: 'Waste sorting assistant',
+    summary:
+      "A single agent that recommends how to dispose of an item under the user's local recycling rules. It was generated from a written spec by a coding assistant that follows the OAK agent skills.",
+    uses: ['OpenAI Agents SDK', 'Tools', 'Session memory', 'AWS Lambda', 'DynamoDB'],
+    links: [
+      { label: 'Browse the project', to: `${REPO}/use-cases/waste-sorting-assistant` },
+      { label: 'How it was built', to: `${REPO}/use-cases/README.md` },
     ],
-    valueProps: [
-      'Go from prototype to production deployment in days',
-      'Open-source and free — no licensing costs eating into runway',
-      'Full deployment infrastructure (Terraform, Docker) out of the box',
-      'Built-in integrations let you reach users on Slack, WhatsApp, Instagram from day one',
-      'Scales from single Lambda functions to multi-AZ container clusters as you grow',
-      'Multi-cloud from the start — never locked into one provider',
-    ],
-    keyMessage: '"Your AI startup\'s unfair advantage. Go from idea to production-deployed, multi-cloud AI agents in days — not quarters. Save your engineering bandwidth for what makes you unique."',
-    cta: '/docs/quick-start',
-    ctaLabel: 'Quick Start →',
-  },
-  {
-    id: 'domain-experts',
-    icon: <MdGroup />,
-    accent: 'violet',
-    title: 'Domain Experts',
-    subtitle: 'Finance, Healthcare, Legal, Education…',
-    profile: 'Subject matter experts or small teams with deep domain knowledge who want to build AI products but lack (or want to minimize) expensive software engineering overhead.',
-    diagramLeft: { label: 'Domain Knowledge', desc: 'Your expertise and use case' },
-    diagramRight: { label: 'AI Product', desc: 'Deployed without a DevOps team' },
-    painPoints: [
-      'Know what they want their AI agent to do — but building the software platform around it requires expensive engineering',
-      "APIs, cloud deployments, database integrations, messaging connectors — require a fulltime DevOps team they can't afford",
-      'Vendor lock-in with expensive proprietary platforms erodes product margins',
-      'No standard way to validate that agent behavior matches domain requirements',
-    ],
-    valueProps: [
-      'Dramatically reduces the "software engineering surface area" — define agent logic, Agent Kernel handles everything else',
-      'Simple Python-based agent definition accessible to technical domain experts',
-      'Pre-built deployment to AWS, Azure, and GCP — no DevOps expertise required',
-      'Built-in messaging integrations mean products can reach end-users through familiar channels immediately',
-      'Testing framework lets domain experts validate agent behavior with simple test scenarios',
-      'Open-source means no vendor lock-in and no surprise pricing',
-    ],
-    keyMessage: '"You bring the expertise. Agent Kernel brings the platform. Build production-grade AI products without a fulltime engineering team."',
-    cta: '/docs',
-    ctaLabel: 'Get Started →',
   },
 ];
 
-/* ─── Segment Modal ─────────────────────────────────────────────────────── */
+/* ── Scenarios: a need, the path a request takes, a guide and an example ── */
 
-function SegmentModal({ segment, onClose }: { segment: typeof segments[0]; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
+type RecipeNode = { label: string; yours?: boolean };
 
+type Scenario = {
+  title: string;
+  need: string;
+  /** The path of a request, left to right. One node is the part you write. */
+  recipe: RecipeNode[];
+  guide: PageLink;
+  /** A folder in the repository, relative to its root. */
+  example: string;
+};
+
+const SCENARIOS: Scenario[] = [
+  {
+    title: 'A support assistant where people already talk',
+    need: 'Answer customers or colleagues in Slack, Teams, WhatsApp, Telegram, Messenger, Instagram or Gmail, with the conversation remembered between messages.',
+    recipe: [{ label: 'Slack' }, { label: 'Channel adapter' }, { label: 'Session' }, { label: 'Your agent', yours: true }],
+    guide: { label: 'Slack guide', to: '/docs/integrations/slack' },
+    example: 'examples/api/slack',
+  },
+  {
+    title: 'An assistant that answers from your own data',
+    need: 'Ground replies in documents, graphs and SQL sources, without writing a connector for each store.',
+    recipe: [
+      { label: 'Your agent', yours: true },
+      { label: 'Knowledge tools' },
+      { label: 'ChromaDB · Neo4j · SQL' },
+    ],
+    guide: { label: 'Knowledge bases', to: '/docs/advanced/knowledge-bases' },
+    example: 'examples/cli/knowledgebase/openai',
+  },
+  {
+    title: 'A copilot inside your product',
+    need: "Stream an agent's text, tool calls and state into your own frontend over AG-UI.",
+    recipe: [{ label: 'Your frontend' }, { label: 'AG-UI server' }, { label: 'Your agent', yours: true }],
+    guide: { label: 'AG-UI server', to: '/docs/api/agui-server' },
+    example: 'examples/api/agui',
+  },
+  {
+    title: 'An agent that waits for a person',
+    need: 'Some actions should not happen until someone approves them. The run pauses, and continues when the answer arrives.',
+    recipe: [
+      { label: 'Your agent', yours: true },
+      { label: 'Pause' },
+      { label: 'A person decides' },
+      { label: 'Resume' },
+    ],
+    guide: { label: 'Human in the loop', to: '/docs/advanced/human-in-the-loop' },
+    example: 'examples/api/hitl',
+  },
+  {
+    title: 'An agent that writes and runs code',
+    need: 'Let an agent run code, shell commands and file operations in an isolated sandbox, not on your host.',
+    recipe: [
+      { label: 'Your agent', yours: true },
+      { label: 'Sandbox tools' },
+      { label: 'Execution Broker' },
+      { label: 'Sandbox' },
+    ],
+    guide: { label: 'Sandbox guide', to: '/docs/advanced/sandbox' },
+    example: 'examples/sandbox/basic',
+  },
+  {
+    title: 'Work that runs on a schedule',
+    need: 'Daily reports, reminders and follow-ups: register a chat to run later, or again and again.',
+    recipe: [
+      { label: 'Chat with a schedule' },
+      { label: 'Task store' },
+      { label: 'Input queue' },
+      { label: 'Your agent', yours: true },
+    ],
+    guide: { label: 'Scheduled tasks', to: '/docs/advanced/scheduling' },
+    example: 'examples/api/schedule-openai',
+  },
+  {
+    title: 'A voice agent',
+    need: 'Talk to an agent in a LiveKit room, with audio streamed in both directions.',
+    recipe: [
+      { label: 'LiveKit room' },
+      { label: 'Edge gateway' },
+      { label: 'Realtime runner' },
+      { label: 'Your agent', yours: true },
+    ],
+    guide: { label: 'LiveKit voice', to: '/docs/integrations/livekit' },
+    example: 'examples/api/livekit-voice',
+  },
+  {
+    title: 'An agent that other agents and tools can call',
+    need: 'Publish an agent as an MCP tool or an A2A peer, so assistants and other agents can use it.',
+    recipe: [{ label: 'MCP client · A2A agent' }, { label: 'MCP · A2A server' }, { label: 'Your agent', yours: true }],
+    guide: { label: 'MCP server', to: '/docs/api/mcp-server' },
+    example: 'examples/api/mcp',
+  },
+  {
+    title: 'One deployment, several frameworks',
+    need: 'Keep the agent one team wrote in CrewAI beside the one another team wrote with the OpenAI Agents SDK.',
+    recipe: [{ label: 'One API' }, { label: 'OAK runtime' }, { label: 'Agents in any framework', yours: true }],
+    guide: { label: 'Multi-framework guide', to: '/docs/frameworks/multi-framework' },
+    example: 'examples/cli/multi',
+  },
+  {
+    title: 'A service that holds up under load',
+    need: 'Put queues between ingress and the agents, so each side scales on its own.',
+    recipe: [
+      { label: 'Request handler' },
+      { label: 'Input queue' },
+      { label: 'Agent runner', yours: true },
+      { label: 'Output queue' },
+      { label: 'Response handler' },
+    ],
+    guide: { label: 'Queue mode guide', to: '/docs/advanced/queue-mode-guide' },
+    example: 'examples/k8s/openai-queue-mode',
+  },
+];
+
+/* ── Teams OAK fits ── */
+
+type Team = {
+  kind: string;
+  title: string;
+  profile: string;
+  /** What the runtime takes on for this kind of team. */
+  gains: string[];
+  start: PageLink;
+};
+
+const TEAMS: Team[] = [
+  {
+    kind: 'Services and development houses',
+    title: 'Teams that build agents for clients',
+    profile: 'Developers are on staff and clients are asking for agents, but every project starts from the same missing platform.',
+    gains: [
+      'One runtime to reuse across client projects',
+      'AWS, Azure, Google Cloud or Kubernetes, to match each client',
+      'Channel integrations ready for the first demo',
+    ],
+    start: { label: 'See every feature', to: '/features' },
+  },
+  {
+    kind: 'SaaS and enterprise software',
+    title: 'Product teams adding agents to an existing product',
+    profile: 'The product exists and the architecture is settled. Agents have to fit in without a rewrite, and without tying the product to one framework.',
+    gains: [
+      'A REST API that drops into an existing architecture',
+      'Session stores on the databases you already run',
+      'Guardrails, tracing and fault tolerance for enterprise reviews',
+    ],
+    start: { label: 'Read the REST API guide', to: '/docs/api/rest-api' },
+  },
+  {
+    kind: 'Early to growth stage',
+    title: 'AI startups',
+    profile: 'A small team building an AI-native product, with no engineering time to spend on infrastructure before the product has found its market.',
+    gains: [
+      'Open source under Apache 2.0, with no licence cost',
+      'Terraform modules and container images out of the box',
+      'The same code from one Lambda function to a multi-AZ cluster',
+    ],
+    start: { label: 'Start with the quick start', to: '/docs/quick-start' },
+  },
+  {
+    kind: 'Finance, healthcare, legal, education',
+    title: 'Domain experts',
+    profile: 'People who know what the agent should do, and want as little software engineering as possible between that knowledge and a working product.',
+    gains: [
+      'Agents defined in plain Python',
+      'A coding assistant can scaffold the project from a written spec',
+      'Tests that check agent behaviour against expected answers',
+    ],
+    start: { label: 'Build with agent skills', to: '/docs/agent-skills' },
+  },
+];
+
+/* ── What you would otherwise build ── */
+
+const WITHOUT: { label: string; detail: string }[] = [
+  { label: 'Platform engineering', detail: 'Base infrastructure for an agent service' },
+  { label: 'Framework setup', detail: 'Choose, configure, scaffold' },
+  { label: 'Cloud configuration', detail: 'Regions, roles, networking' },
+  { label: 'Session management', detail: 'Authentication, state, tokens' },
+  { label: 'Integrations', detail: 'APIs, queues, data sources' },
+  { label: 'Testing setup', detail: 'Harnesses, CI, coverage' },
+  { label: 'Deploy pipeline', detail: 'Build, push, release gates' },
+];
+
+const WITH_OAK: { label: string; detail: string }[] = [
+  { label: 'Write your agent logic', detail: 'What the agent does, in the framework you chose' },
+  { label: 'Deploy', detail: 'Pick a target in configuration' },
+];
+
+function ProjectLinks({ links }: { links: PageLink[] }): JSX.Element {
   return (
-    <div
-      className={styles.modalOverlay}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={segment.title}
-    >
-      <div className={styles.modalContainer} onClick={e => e.stopPropagation()}>
-        <button className={styles.modalClose} onClick={onClose} aria-label="Close">×</button>
-
-        {/* Header */}
-        <div className={styles.modalHeader}>
-          <div className={`${styles.segmentIconWrapper} ${styles[`iconAccent_${segment.accent}`]}`}>
-            {segment.icon}
-          </div>
-          <div>
-            <h2 className={styles.modalTitle}>{segment.title}</h2>
-            <p className={styles.modalSubtitle}>{segment.subtitle}</p>
-          </div>
-        </div>
-
-        {/* Diagram */}
-        <div className={styles.modalDiagram}>
-          <div className={styles.diagramStep}>
-            <div className={styles.diagramStepLabel}>{segment.diagramLeft.label}</div>
-            <div className={styles.diagramStepDesc}>{segment.diagramLeft.desc}</div>
-          </div>
-          <div className={styles.diagramArrow}>→</div>
-          <div className={`${styles.diagramStep} ${styles.diagramStepCenter}`}>
-            <img
-              src="/img/branding/agent-kernel-icon-color.svg"
-              alt="Agent Kernel"
-              className={styles.diagramStepIcon}
-            />
-            <div className={styles.diagramStepLabel}>Agent Kernel</div>
-            <div className={styles.diagramStepDesc}>Runtime · Deploy · Integrate</div>
-          </div>
-          <div className={styles.diagramArrow}>→</div>
-          <div className={styles.diagramStep}>
-            <div className={styles.diagramStepLabel}>{segment.diagramRight.label}</div>
-            <div className={styles.diagramStepDesc}>{segment.diagramRight.desc}</div>
-          </div>
-        </div>
-
-        {/* Profile */}
-        <p className={styles.segmentProfile}>{segment.profile}</p>
-
-        {/* Pain points + value props */}
-        <div className={styles.segmentBody}>
-          <div className={styles.segmentColumn}>
-            <h4 className={styles.segmentColumnTitle}>Pain Points</h4>
-            <ul className={styles.painList}>
-              {segment.painPoints.map((p, j) => (
-                <li key={j}>
-                  <span className={styles.painIcon}>✕</span>
-                  {p}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className={styles.segmentColumn}>
-            <h4 className={styles.segmentColumnTitle}>Agent Kernel Value</h4>
-            <ul className={styles.valueList}>
-              {segment.valueProps.map((v, j) => (
-                <li key={j}>
-                  <MdCheck className={styles.valueIcon} />
-                  {v}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Quote */}
-        <div className={`${styles.segmentQuote} ${styles[`accent_${segment.accent}`]}`}>
-          <blockquote>{segment.keyMessage}</blockquote>
-        </div>
-
-        {/* CTA */}
-        <Link
-          to={segment.cta}
-          className={`button button--primary ${styles[`ctaAccent_${segment.accent}`]}`}
-          onClick={onClose}
-        >
-          {segment.ctaLabel}
+    <div className={styles.projectLinks}>
+      {links.map((link) => (
+        <Link key={link.to} to={link.to} className="ak-link">
+          {link.label}
         </Link>
+      ))}
+    </div>
+  );
+}
+
+function Projects(): JSX.Element {
+  const [lead, ...others] = PROJECTS;
+
+  return (
+    <section className="ak-section" aria-labelledby="built-with-oak">
+      <div className="ak-container">
+        <SectionHeader
+          index="01"
+          label="Built with OAK"
+          title="Projects you can read"
+          lead="One runs in production, and two are in the repository with their specs and code."
+          id="built-with-oak"
+        />
+        <ul className={styles.projects}>
+          {/* The production project leads: its story on the left, what OAK provided on the right */}
+          <li className={clsx('ak-card', styles.project, styles.projectLead)}>
+            <div className={styles.projectCopy}>
+              <p className={clsx('ak-tag', styles.status, styles.statusLive)}>{lead.status}</p>
+              <h3 className="ak-h3">{lead.title}</h3>
+              <p className="ak-body">{lead.summary}</p>
+              <ProjectLinks links={lead.links} />
+            </div>
+            <div className={styles.projectProvided}>
+              <p className="ak-label">What OAK provided</p>
+              <ul className={styles.gains}>
+                {lead.uses.map((use) => (
+                  <li key={use}>{use}</li>
+                ))}
+              </ul>
+            </div>
+          </li>
+          {others.map((project) => (
+            <li key={project.title} className={clsx('ak-card', styles.project)}>
+              <p className={clsx('ak-tag', styles.status)}>{project.status}</p>
+              <h3 className="ak-h4">{project.title}</h3>
+              <p className="ak-body">{project.summary}</p>
+              {project.note && <p className="ak-small">{project.note}</p>}
+              <ul className={clsx('ak-tag-row', styles.uses)} aria-label="Parts of OAK it uses">
+                {project.uses.map((use) => (
+                  <li key={use} className="ak-tag">
+                    {use}
+                  </li>
+                ))}
+              </ul>
+              <ProjectLinks links={project.links} />
+            </li>
+          ))}
+        </ul>
       </div>
-    </div>
+    </section>
   );
 }
 
-
-const ORBIT_CARDS = [
-  {
-    icon: <MdSwapHoriz />,
-    color: '#00DDFF',
-    title: 'Framework-Neutral',
-    desc: 'The only runtime that lets you bring in and swap between agents written with OpenAI Agents, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK with near-zero code change - and run all of them simultaneously in a single runtime.',
-  },
-  {
-    icon: <MdCloud />,
-    color: '#00DDFF',
-    title: 'Multi-Cloud Native',
-    desc: 'Same agent code deploys to AWS, Azure, GCP, or your own Kubernetes cluster out of the box. No other AI agent runtime offers this out of the box.',
-  },
-  {
-    icon: <MdSpeed />,
-    color: '#00DDFF',
-    title: 'Full Lifecycle',
-    desc: 'Build → Test → Deploy → Monitor. One tool that takes you from a Python script to a multi-AZ production cluster.',
-  },
-  {
-    icon: <MdCode />,
-    color: '#00DDFF',
-    title: 'Lightweight',
-    desc: 'A thin adapter layer, not a heavy abstraction. Bring your existing agent code and wrap it in minutes, not days.',
-  },
-  {
-    icon: <MdSecurity />,
-    color: '#00DDFF',
-    title: 'Production-Ready',
-    desc: 'Fault tolerance, guardrails, observability, and session management built in from day one - not bolted on later.',
-  },
-  {
-    icon: <MdMessage />,
-    color: '#00DDFF',
-    title: 'Built-in Messaging',
-    desc: 'Slack, WhatsApp, Instagram, Telegram, Messenger, and Gmail integrations, plus realtime voice through LiveKit for OpenAI Agents SDK and Google ADK agents.',
-  },
-  {
-    icon: <FaLock />,
-    color: '#00DDFF',
-    title: 'Open-Source',
-    desc: 'No usage fees, no proprietary lock-in. Community-driven with full codebase access - fork it, extend it, contribute back.',
-  },
-  {
-    icon: <MdNetworkCheck />,
-    color: '#00DDFF',
-    title: 'Protocol Support',
-    desc: 'MCP and A2A server modes for future-proof agent architectures and full ecosystem compatibility out of the box.',
-  },
-];
-
-function IconCell({ color, children }: { color: string; children: React.ReactNode }) {
+function Scenarios(): JSX.Element {
   return (
-    <div
-      className={styles.iconCell}
-      style={{ '--icon-color': color } as React.CSSProperties}
-      aria-hidden="true"
-    >
-      {children}
-    </div>
+    <section className={clsx('ak-section', 'ak-section--raised')} aria-labelledby="scenarios">
+      <div className="ak-container">
+        <SectionHeader
+          index="02"
+          label="Scenarios"
+          title="Start from what you need to build"
+          lead="Each scenario shows the path a request takes, with the part you write marked. The guide explains it, and the example runs."
+          id="scenarios"
+        />
+        <ol className={styles.scenarios}>
+          {SCENARIOS.map((scenario, position) => (
+            <Reveal as="li" key={scenario.title} className={styles.scenario}>
+              <span className={styles.scenarioIndex} aria-hidden="true">
+                {String(position + 1).padStart(2, '0')}
+              </span>
+              <div className={styles.scenarioCopy}>
+                <h3 className="ak-h3">{scenario.title}</h3>
+                <p className="ak-body">{scenario.need}</p>
+                <div className={styles.scenarioLinks}>
+                  <Link to={scenario.guide.to} className="ak-link">
+                    {scenario.guide.label}
+                  </Link>
+                  <Link to={`${REPO}/${scenario.example}`} className={styles.exampleLink}>
+                    Example on GitHub
+                  </Link>
+                </div>
+              </div>
+              <ol className={styles.recipe} aria-label="The path of a request">
+                {scenario.recipe.map((node) => (
+                  <li key={node.label} className={clsx(styles.recipeNode, node.yours && styles.recipeNodeYours)}>
+                    <span>{node.label}</span>
+                  </li>
+                ))}
+              </ol>
+            </Reveal>
+          ))}
+        </ol>
+        <p className={styles.scenariosMore}>
+          <Link to="/docs/examples/overview" className="ak-link">
+            Browse every example
+          </Link>
+        </p>
+      </div>
+    </section>
   );
 }
 
-const REAL_WORLD_USE_CASES = [
-  {
-    title: 'Agentic AI Assisted Market Surveillance',
-    description:
-      'A scalable surveillance system for monitor real-time order and trade feeds of a carbon credit market. Agent Kernel enables, AI agents to monitor orders and flag potential/suspicious trades which violate regulations.',
-    link: '/blog/agent-kernel-live-at-climate-impact-x',
-  },
-  {
-    title: 'AI First SDLC',
-    description:
-      'A team of Agents looking at various artifacts at each phase of the SDLC and orchestrate humans to unblock for a smooth transition. Can overcome the speedbumps created by the weakest links (i.e., humans) in the SDLC chain.',
-    link: '#',
-  },
-  {
-    title: 'Troubleshooter Agent',
-    description:
-      'A system troubleshooter (L1 to L3) which can give a comprehensive issue analysis, root-cause determination and resolution of a complex, distributed trading system. Responds to a system alert by looking at application logs, resource and related metrics. AI agent is able to improve the issue resolution time 20x.',
-    link: '#',
-  },
-];
-
-function RealWorldUseCases() {
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useLayoutEffect(() => {
-    const section = sectionRef.current;
-    if (!section) return;
-
-    const reducedMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    const header = section.querySelector(`.${styles.realWorldSectionHeader}`);
-    const grid = section.querySelector(`.${styles.featuresGrid}`);
-    const cells = Array.from(
-      section.querySelectorAll(`.${styles.featureGridCell}`),
-    );
-
-    if (!header || !grid || !cells.length) return;
-
-    if (reducedMotion) {
-      gsap.set([header, grid, cells], { opacity: 1, y: 0, scale: 1 });
-      return;
-    }
-
-    gsap.set(header, { opacity: 0, y: 24 });
-    gsap.set(grid, { opacity: 0, y: 20 });
-    gsap.set(cells, { opacity: 0, y: 28, scale: 0.98 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: section,
-        start: 'top 88%',
-        toggleActions: 'play none none reverse',
-      },
-    });
-
-    tl.to(header, { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' })
-      .to(
-        grid,
-        { opacity: 1, y: 0, duration: 0.38, ease: 'power2.out' },
-        '-=0.1',
-      )
-      .to(
-        cells,
-        { opacity: 1, y: 0, scale: 1, duration: 0.42, stagger: 0.04, ease: 'power2.out' },
-        '-=0.14',
-      );
-
-    return () => {
-      tl.scrollTrigger?.kill();
-      tl.kill();
-    };
-  }, []);
-
+function Teams(): JSX.Element {
   return (
-    <section className={styles.realWorldSection} ref={sectionRef}>
-      {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
-
-      <div className="container">
-        <div className={styles.realWorldSectionHeader}>
-          <div className={styles.Badge}>
-            <span className={styles.badgeStar}>✦</span>
-            Use Cases
-          </div>
-          <h2 className={styles.realWorldSectionTitle}>Real World Use Cases</h2>
-        </div>
-        <ul className={styles.featuresGrid}>
-          {REAL_WORLD_USE_CASES.map((useCase, i) => (
-            <li key={useCase.title} className={styles.featureGridCell}>
-              <Link to={useCase.link} className={styles.featureCard}>
-                <div className={styles.featureCardHeader}>
-                  <span className={styles.featureIndex}>
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                </div>
-                <div className={styles.featureCardBody}>
-                  <h3 className={styles.featureTitle}>{useCase.title}</h3>
-                  <p className={styles.featureDescription}>{useCase.description}</p>
-                </div>
-                <div className={styles.featureCardFooter}>
-                  <span className={styles.featureLink}>Read More</span>
-                </div>
+    <section className="ak-section" aria-labelledby="teams">
+      <div className="ak-container">
+        <SectionHeader
+          index="03"
+          label="Who it is for"
+          title="Four kinds of team"
+          lead="OAK is the same runtime for each of them. What changes is the part of the work it removes."
+          id="teams"
+        />
+        <ul className={styles.teams}>
+          {TEAMS.map((team) => (
+            <li key={team.title} className={clsx('ak-card', styles.team)}>
+              <p className="ak-label">{team.kind}</p>
+              <h3 className="ak-h4">{team.title}</h3>
+              <p className="ak-body">{team.profile}</p>
+              <ul className={styles.gains}>
+                {team.gains.map((gain) => (
+                  <li key={gain}>{gain}</li>
+                ))}
+              </ul>
+              <Link to={team.start.to} className={clsx('ak-link', styles.teamStart)}>
+                {team.start.label}
               </Link>
             </li>
           ))}
@@ -441,101 +406,43 @@ function RealWorldUseCases() {
   );
 }
 
-function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<ParticleBackgroundHandle | null> }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const hubRef = useRef<HTMLDivElement>(null);
-  const observerStateRef = useRef(false);
-
-
-
-  useEffect(() => {
-    if (!backgroundRef.current || !containerRef.current) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !observerStateRef.current) {
-          observerStateRef.current = true;
-          backgroundRef.current?.triggerScatterOut();
-        } else if (!entry.isIntersecting && observerStateRef.current) {
-          observerStateRef.current = false;
-          backgroundRef.current?.triggerScatterIn();
-        }
-      },
-      { threshold: 0.0 },
-    );
-
-    observer.observe(containerRef.current);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [backgroundRef]);
-
-  useEffect(() => {
-    const hub = containerRef.current?.querySelector(`.${styles.orbitHub}`);
-    const hubImg = containerRef.current?.querySelector(`.${styles.orbitHubIcon}`);
-    const cards = containerRef.current?.querySelectorAll(`.${styles.orbitCard}`);
-    if (!containerRef.current || !hub || !hubImg || !cards?.length) return;
-
-    // set initial state for cards only (leave hub/video static)
-    gsap.set(Array.from(cards), { opacity: 0, scale: 0.88 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: containerRef.current,
-        start: 'top 75%',
-        // ensure enter/leave both play and reverse so hub image reverses too
-        toggleActions: 'play reverse play reverse',
-      },
-    });
-
-    // Reveal cards sequentially; keep hub (video) static — no hub animation
-    tl.to(cards, { opacity: 1, scale: 1, duration: 0.4, stagger: 0.20, ease: 'back.out(1.2)' });
-  }, []);
-
+function WhatYouSkip(): JSX.Element {
   return (
-    <section className={styles.diffSection}>
-      {/* Top border + gradient glow */}
-      <div className={styles.shortTopGlow} />
-
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <div className={styles.Badge}>
-            <span className={styles.badgeStar}>✦</span>
-            Trust
+    <section className={clsx('ak-section', 'ak-section--raised')} aria-labelledby="what-you-skip">
+      <div className="ak-container">
+        <SectionHeader
+          index="04"
+          label="What you skip"
+          title="Seven workstreams, or two"
+          lead="Most of the work in a production agent is the platform around it. With that platform already built, the list on the right is what is left."
+          id="what-you-skip"
+        />
+        <div className={styles.compare}>
+          <div className={styles.track}>
+            <p className="ak-label">Building the platform yourself</p>
+            <ol className={styles.steps}>
+              {WITHOUT.map((step) => (
+                <li key={step.label} className={styles.step}>
+                  <span className={styles.stepLabel}>{step.label}</span>
+                  <span className={styles.stepDetail}>{step.detail}</span>
+                </li>
+              ))}
+            </ol>
           </div>
-          <h2 className={styles.sectionTitle}>Why Teams Choose Agent Kernel</h2>
-          <p className={styles.sectionSubtitle}>
-            What makes Agent Kernel different from rolling your own or using other platforms.
-          </p>
-        </div>
-
-        <div ref={containerRef} className={styles.orbitScene}>
-          {/* 8 surrounding cards */}
-          {ORBIT_CARDS.map((card, i) => (
-            <div
-              key={i}
-              className={`${styles.orbitCard} ${styles[`orbitPos${i}`]}`}
-              style={{ '--card-color': card.color } as React.CSSProperties}
-            >
-              <IconCell color={card.color}>{card.icon}</IconCell>
-              <h3 className={styles.bentoTitle}>{card.title}</h3>
-              <p className={styles.bentoDesc}>{card.desc}</p>
-            </div>
-          ))}
-
-          {/* Central hub */}
-          <div ref={hubRef} className={styles.orbitHub}>
-            <video
-              src="/video/hero.mp4"
-              aria-label="Agent Kernel"
-              className={styles.orbitHubIcon}
-              autoPlay
-              loop
-              muted
-              playsInline
-              preload="metadata"
-            />
+          <div className={clsx(styles.track, styles.trackWith)}>
+            <p className="ak-label">With OAK</p>
+            <ol className={styles.steps}>
+              {WITH_OAK.map((step) => (
+                <li key={step.label} className={styles.step}>
+                  <span className={styles.stepLabel}>{step.label}</span>
+                  <span className={styles.stepDetail}>{step.detail}</span>
+                </li>
+              ))}
+            </ol>
+            <p className={styles.trackNote}>
+              The runtime covers the rest of the left-hand list.{' '}
+              <Link to="/features">See how, capability by capability</Link>.
+            </p>
           </div>
         </div>
       </div>
@@ -543,88 +450,34 @@ function Differentiators({ backgroundRef }: { backgroundRef: React.RefObject<Par
   );
 }
 
-interface CommunityProps {
-  sectionRef?: React.Ref<HTMLElement>;
-}
-
-function Community({ sectionRef }: CommunityProps) {
-  return (
-    <section ref={sectionRef} className={indexStyles.ctaSection}>
-      <div className="container">
-        <div className={indexStyles.ctaContent}>
-          <h2 className={indexStyles.ctaTitle}>
-            Ready to Ship Your
-            <br />
-            First <span className={indexStyles.ctaTitleGradient}>Agent</span>?
-          </h2>
-          <p className={indexStyles.ctaSubtitle}>
-            Free, open-source, Apache 2.0. No licensing costs, no vendor
-            lock-in. Join hundreds of developers building production AI agents
-            with Agent Kernel.
-          </p>
-          <div className={indexStyles.ctaButtons}>
-            <Link
-              className={`button button--primary button--lg ${indexStyles.heroBtnSecondary}`}
-              to="/docs"
-            >
-              Get Started
-            </Link>
-            <Link
-              className={indexStyles.heroBtnLink}
-              to="https://github.com/yaalalabs/agent-kernel"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View On GitHub
-            </Link>
-          </div>
-
-          <div className={indexStyles.ctaImageWrapper}>
-            <img src="/img/cta-bg.png" alt="Agent Kernel" className={indexStyles.ctaImage} />
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Page Export ───────────────────────────────────────────────────────── */
-
-export default function UseCases() {
-  const [activeSegment, setActiveSegment] = useState<typeof segments[0] | null>(null);
-  const backgroundRef = useRef<ParticleBackgroundHandle | null>(null);
-
-  useEffect(() => {
-    const footer = document.querySelector('footer');
-    if (footer) {
-      footer.style.position = 'relative';
-      footer.style.zIndex = '10';
-    }
-  }, []);
-
+export default function UseCases(): JSX.Element {
   return (
     <Layout
-      title="Use Cases"
-      description="Who is Agent Kernel built for? Explore use cases for software companies, AI startups, domain experts, and product teams building production AI agents.">
-
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto', overflow: 'hidden' }}>
-        <div className={styles.rightGlowGradientHero} />
-        <Hero />
-      </div>
-
-      <div style={{ height: '100vh' }} />
-
-      {/* Content that scroll over the hero section */}
-      <main style={{ position: 'relative', zIndex: 10, backgroundColor: '#010002' }}>
-        <UseCaseJourneyMap />
-        <RealWorldUseCases />
-        <Differentiators backgroundRef={backgroundRef} />
-        <Community />
+      title="Use cases"
+      description="What teams build with Open Agent Kernel: a production deployment, projects in the repository, ten common scenarios with a guide and a working example for each, and the kinds of team OAK fits."
+    >
+      <main>
+        <PageHero
+          label="Use cases"
+          title="What teams build with OAK"
+          lead="A production deployment, two projects you can read end to end, and ten scenarios that each come with a guide and a working example."
+          actions={
+            <>
+              <Link to="/docs/examples/overview" className="ak-btn ak-btn--secondary">
+                Browse the examples
+              </Link>
+              <Link to="/features" className="ak-link">
+                See every feature
+              </Link>
+            </>
+          }
+        />
+        <Projects />
+        <Scenarios />
+        <Teams />
+        <WhatYouSkip />
       </main>
-
-      {activeSegment && (
-        <SegmentModal segment={activeSegment} onClose={() => setActiveSegment(null)} />
-      )}
+      <ClosingPanel />
     </Layout>
   );
 }

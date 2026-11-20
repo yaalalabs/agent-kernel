@@ -3,12 +3,12 @@
 This example shows one Claude Agent SDK tool call pausing for a human decision. `issue_refund` is
 a demo tool: it logs when it runs and **does not move money**. It is bound with
 `needs_approval=True`, so the first request should return a paused reply before the tool runs.
-The app explicitly uses Agent Kernel's direct REST handler, the same one used by
+The app explicitly uses Open Agent Kernel's direct REST handler, the same one used by
 `examples/api/hitl`, so a resume request needs no prompt.
 
 ## Run
 
-Set Claude credentials, then install this branch's Agent Kernel package and start the API:
+Set Claude credentials, then install this branch's OAK package and start the API:
 
 ```bash
 export ANTHROPIC_API_KEY=...
@@ -18,7 +18,7 @@ uv run app.py
 ```
 
 Run the commands from the repository root. You can also use a configured Bedrock, Vertex, or
-Foundry provider instead of an Anthropic API key. Use `./build.sh` for a published Agent Kernel
+Foundry provider instead of an Anthropic API key. Use `./build.sh` for a published OAK
 version that includes this Claude adapter.
 
 ## Try an approval

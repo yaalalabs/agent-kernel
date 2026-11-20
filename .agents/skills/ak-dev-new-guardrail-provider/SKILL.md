@@ -1,7 +1,7 @@
 ---
 name: ak-dev-new-guardrail-provider
 description: >
-  Step-by-step guide for adding a new guardrail provider to Agent Kernel.
+  Step-by-step guide for adding a new guardrail provider to Open Agent Kernel (OAK).
   Use this skill when you need to integrate a new content safety or guardrail
   service (beyond OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI). Covers implementing
   input/output guardrails, factory registration, configuration, and testing.
@@ -13,7 +13,7 @@ metadata:
 
 # Adding a New Guardrail Provider
 
-This guide walks through adding a new guardrail provider to Agent Kernel. Use the existing OpenAI (`ak-py/src/agentkernel/guardrail/openai.py`), Bedrock (`ak-py/src/agentkernel/guardrail/bedrock.py`), and Walled AI (`ak-py/src/agentkernel/guardrail/walledai.py`) implementations as reference.
+This guide walks through adding a new guardrail provider to Open Agent Kernel (OAK). Use the existing OpenAI (`ak-py/src/agentkernel/guardrail/openai.py`), Bedrock (`ak-py/src/agentkernel/guardrail/bedrock.py`), and Walled AI (`ak-py/src/agentkernel/guardrail/walledai.py`) implementations as reference.
 
 ## Existing Providers
 
@@ -25,13 +25,14 @@ This guide walks through adding a new guardrail provider to Agent Kernel. Use th
 
 ## Architecture Overview
 
-Agent Kernel's guardrail system uses the hook mechanism:
+OAK's guardrail system uses the hook mechanism:
 
 - **Input guardrails** subclass the no-op `InputGuardrail` class in `guardrail/guardrail.py` (itself a `PreHook`) — they inspect incoming requests and can halt execution by returning an `AgentReply` instead of passing through
 - **Output guardrails** subclass the no-op `OutputGuardrail` class (itself a `PostHook`) — they inspect agent replies and can modify or replace the response
 - **`BaseGuardrailUtil`** (also in `guardrail/guardrail.py`) provides shared text-extraction helpers and is mixed into concrete guardrail classes
 - **Factories** in `guardrail.py` select the appropriate provider based on `AKConfig.guardrail` configuration; unknown types raise an exception, and the no-op classes are returned only when guardrails are disabled
 - Guardrails are registered as **system hooks** in `Runtime`, meaning they apply to all agents automatically
+- Both classes implement `on_run` only, so they run where a whole message goes through `on_run`. A streamed reply (SSE, WebSocket `delta`, realtime) goes through `on_stream_event` instead, which they do not override, so the **output guardrail does not run on a streamed reply**; on a realtime call the **input guardrail checks typed text only**, never caller audio (#927). A new provider inherits both limits
 
 ## Step-by-Step
 
@@ -290,9 +291,9 @@ Create `examples/cli/guardrail/<provider>/` with:
 
 Add guardrail provider docs to `docs/docs/advanced/guardrails.md` or create `docs/docs/advanced/guardrails-<provider>.md`.
 
-Then update the landing page inventories in `docs/src/components/*/data.tsx`: add a tile to the **Observability, safety & testing** row in `IntegrationsMarquee/data.tsx` (role `Guardrail`, `href` to the provider's docs page, logo or `react-icons/si` glyph), and add the provider to the **Content Guardrails** card's `tags` and `description` under the Guard tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+Then update the landing page inventories under `docs/src/components/HomeSections/`: add an item to the **Observability, safety & testing** row of `INTEGRATION_ROWS` in `integrations.data.tsx` (role `Guardrail`, `href` to the provider's docs page, logo or `react-icons/si` glyph), and add the provider to the Guard stage's guardrails point in `index.tsx` (`STAGES`). Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
-Then check the docs-site features page (`docs/src/pages/features.tsx`): the Problem section's `rows` name the built-in guardrail providers in a `with:` cell ("OpenAI and Bedrock guardrails built in"); add the new provider wherever the existing ones are listed (grep `docs/src/pages/*.tsx` for "Bedrock").
+Then check the docs-site features page (`docs/src/pages/features.tsx`): the **Guardrails** capability under Guard links to each provider's page in `more`; add a link to the new page, and add the new provider wherever the existing ones are listed (grep `docs/src/pages/*.tsx` and the root `README.md` for "Bedrock").
 
 ## Checklist
 
@@ -303,4 +304,4 @@ Then check the docs-site features page (`docs/src/pages/features.tsx`): the Prob
 - [ ] Unit tests added to `ak-py/tests/test_guardrail.py`
 - [ ] Example in `examples/cli/guardrail/<provider>/`
 - [ ] Documentation in `docs/docs/advanced/guardrails*.md`
-- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), Content Guardrails card tags (`FeatureExplorer/data.tsx`); features page `with:` cells
+- [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), the Guard stage's guardrails point (`HomeSections/index.tsx`); the Guardrails capability's `more` links on the features page

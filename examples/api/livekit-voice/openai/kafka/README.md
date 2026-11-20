@@ -1,6 +1,6 @@
-# Agent Kernel Realtime Voice over Kafka (LiveKit)
+# Open Agent Kernel Realtime Voice over Kafka (LiveKit)
 
-This demo runs Agent Kernel's `REALTIME` execution pipeline for voice over WebRTC, using LiveKit as the frontend gateway and a Kafka broker to connect the pipeline.
+This demo runs Open Agent Kernel's `REALTIME` execution pipeline for voice over WebRTC, using LiveKit as the frontend gateway and a Kafka broker to connect the pipeline.
 
 ```
 LiveKit WebRTC → IOHandler → agent-input → Agent Runner → agent-output → IOHandler → LiveKit WebRTC
@@ -14,7 +14,7 @@ Because Kafka is a high-performance broker transport, the pipeline is split acro
 - `OPENAI_API_KEY` exported
 - `AK_LIVEKIT__URL`, `AK_LIVEKIT__API_KEY`, and `AK_LIVEKIT__API_SECRET` exported (from your LiveKit Cloud dashboard)
 
-> Note: If you are actively developing Agent Kernel core features (like `RealtimeAgentRunner`), compile your local changes first by running `cd ../../../../../ak-py && make build`, and then use `./build.sh local` in this folder instead of `./build.sh`.
+> Note: If you are actively developing OAK core features (like `RealtimeAgentRunner`), compile your local changes first by running `cd ../../../../../ak-py && make build`, and then use `./build.sh local` in this folder instead of `./build.sh`.
 
 ## Quickstart
 
@@ -39,7 +39,7 @@ export OPENAI_API_KEY="sk-..."
 python app.py runner
 ```
 
-### 3. Start the LiveKit Gateway (Terminal 3)
+### 3. Start the LiveKit Edge (Terminal 3)
 In a third terminal window, start the "Front Door". The `IOHandler` connects to LiveKit, catches user audio via WebRTC, and throws it onto the Kafka bullet train.
 ```bash
 export AK_LIVEKIT__URL="wss://your-project.livekit.cloud"
@@ -52,7 +52,7 @@ python app.py io
 
 ## Testing it Live
 
-Once all three terminals are running, open your LiveKit Sandbox dashboard or custom frontend. Connect to `room_01`. 
+Once all three terminals are running, open your LiveKit Sandbox dashboard or custom frontend. Point LiveKit's webhook at the server (see the parent README), then join a room, for example `call_01`. Each room is its own call. 
 When you speak, Terminal 3 grabs the audio, passes it to Terminal 2 via Kafka, OpenAI processes the speech, and the AI's voice is instantly streamed back to your headset!
 
 ## Clean Up

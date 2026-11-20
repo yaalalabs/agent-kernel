@@ -1,9 +1,9 @@
-# Agent Kernel running OpenAI Agent SDK Agents with Structured Output on a REST API
+# Open Agent Kernel running OpenAI Agent SDK Agents with Structured Output on a REST API
 
-This package contains a demo of Agent Kernel running an agent built with OpenAI Agents SDK that
-produces structured output, exposed via the Agent Kernel REST API. The agent is configured with
+This package contains a demo of Open Agent Kernel running an agent built with OpenAI Agents SDK that
+produces structured output, exposed via the OAK REST API. The agent is configured with
 `Agent(output_type=ContactCard)`, so the framework returns a Pydantic instance instead of plain
-text. Agent Kernel detects this and wraps the result in an `AgentReplyAny` whose `content` field
+text. OAK detects this and wraps the result in an `AgentReplyAny` whose `content` field
 carries the structured output as a dict.
 
 The example also demonstrates a post-execution hook (`NormalizeContactPostHook`) operating on the

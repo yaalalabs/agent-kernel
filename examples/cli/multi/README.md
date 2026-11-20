@@ -1,7 +1,7 @@
-# Agent Kernel running CrewAI and OpenAI Agent SDK Agents
+# Open Agent Kernel running CrewAI and OpenAI Agent SDK Agents
 
-This package contains a demo of Agent Kernel running agents built with CrewAI and OpenAI Agents SDK
-within a single runtime. Users may interact with agents via the Agent Kernel CLI.
+This package contains a demo of Open Agent Kernel running agents built with CrewAI and OpenAI Agents SDK
+within a single runtime. Users may interact with agents via the OAK CLI.
 
 Note that a single session can interact with agents from different frameworks. However agents from
 different frameworks cannot communicate with each other and therefore cannot collaborate on tasks.

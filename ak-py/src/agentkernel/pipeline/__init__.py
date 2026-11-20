@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 _LAZY_EXPORTS = {
     "AgentRunner": ".agent_runner",
+    "RealtimeAgentRunner": ".agent_runner",
     "StreamAgentRunner": ".agent_runner",
     "ConsumerLoop": ".consumer",
     "QueueMessage": ".envelope",
@@ -40,7 +41,7 @@ _LAZY_EXPORTS = {
 __all__ = sorted(_LAZY_EXPORTS)
 
 if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves laziness at runtime
-    from .agent_runner import AgentRunner, StreamAgentRunner
+    from .agent_runner import AgentRunner, RealtimeAgentRunner, StreamAgentRunner
     from .consumer import ConsumerLoop
     from .envelope import QueueMessage, QueueName
     from .io_handler import IOHandler

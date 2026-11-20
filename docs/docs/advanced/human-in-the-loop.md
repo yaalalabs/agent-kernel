@@ -4,7 +4,7 @@ sidebar_position: 4.5
 
 # Human in the Loop
 
-Some things an agent proposes should not happen until a person says so. Agent Kernel lets a run
+Some things an agent proposes should not happen until a person says so. Open Agent Kernel (OAK) lets a run
 **pause**, hands the question back to your client, and continues from the answer — minutes or hours
 later, on whichever replica receives it.
 
@@ -54,7 +54,7 @@ Six frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI**,
 rather than pretending — their runners report `supports_pause = False`.
 
 Two of them need one more line of setup, because the pause is part of the agent's own declaration
-rather than something Agent Kernel can switch on: Pydantic AI needs `DeferredToolRequests` among its
+rather than something OAK can switch on: Pydantic AI needs `DeferredToolRequests` among its
 `output_type`s, and Google ADK enables resumability on every run as a consequence of wrapping your
 agent in an `App`. Both are covered on the framework pages linked below.
 
@@ -129,7 +129,7 @@ fresh run. The same applies when the agent is no longer registered at all.
 ### Why `cancelled` is not `denied`
 
 `denied` means a person said no. `cancelled` means **nobody decided** — a timeout, a closed tab, a
-shift ending. Only LangGraph carries that distinction natively; on the others Agent Kernel supplies
+shift ending. Only LangGraph carries that distinction natively; on the others OAK supplies
 wording that reads as *undecided* rather than refused, so the agent does not report a refusal that
 never happened.
 
@@ -144,7 +144,7 @@ turned down.
 ### What a refusal actually says to the model
 
 On OpenAI and Pydantic AI the refusal text **becomes the gated call's output** — there is no
-separate "this was rejected" flag the model sees. So Agent Kernel sends a framed sentence, and
+separate "this was rejected" flag the model sees. So OAK sends a framed sentence, and
 quotes your `message` inside it rather than in place of it:
 
 > A human reviewer refused this call, so it was not carried out. Do not run it again unchanged and
@@ -166,7 +166,7 @@ reason, and `cancelled` in every case, keep the wording above.
 
 A pause can hold several interruptions. You may answer some now and the rest later — the remainder
 comes back as another paused reply with a fresh `run_id`. Pydantic AI and Microsoft Agent Framework are
-the exceptions: both need every pending call resolved together, and Agent Kernel refuses a partial
+the exceptions: both need every pending call resolved together, and OAK refuses a partial
 resume **before** calling the framework, naming the ids you missed.
 
 ## In conversation threads
@@ -188,7 +188,7 @@ run, so it appears as a `user` message with no assistant message after it.
 ## Durability: the one thing to get right
 
 A pause is written into the **session**, and the answer arrives later — after a restart, often on a
-different replica. Agent Kernel stores it under a framework-owned key (`ak.paused_runs`) in the
+different replica. OAK stores it under a framework-owned key (`ak.paused_runs`) in the
 session's non-volatile cache.
 
 ```yaml
@@ -200,7 +200,7 @@ session:
 
 With `type: in_memory` the record lives in one process. That is fine for local development and
 **wrong for anything multi-replica**: the replica receiving the decision has never heard of the
-pause. Agent Kernel logs a `WARNING` the first time a pause is written that way, naming this exact
+pause. OAK logs a `WARNING` the first time a pause is written that way, naming this exact
 problem.
 
 Three limits worth knowing, none of them hidden:
@@ -216,7 +216,7 @@ Three limits worth knowing, none of them hidden:
 
 ## What each framework can carry back
 
-The frameworks genuinely differ, and Agent Kernel does not paper over it. A rejection is raised
+The frameworks genuinely differ, and OAK does not paper over it. A rejection is raised
 where it can still reach you, rather than being flattened into "something went wrong".
 
 | | OpenAI | LangGraph | Pydantic AI | Google ADK | Microsoft Agent Framework | Claude Agent SDK |
@@ -243,7 +243,7 @@ conversation.
 
 **LangGraph re-runs the interrupting node from the top** on resume. The first `interrupt()` then
 returns the stored answer instead of pausing again — so any side effect must sit *after* the
-questions, not before them. Agent Kernel also assigns its own checkpointer, overwriting one you
+questions, not before them. OAK also assigns its own checkpointer, overwriting one you
 supplied.
 
 **Pydantic AI's approval payload replaces the tool's arguments**, so it must be a JSON object;
@@ -290,7 +290,7 @@ A pause is the run's terminal outcome:
 
 Resume with `RunAgentInput.resume`. Two protocol limits apply: `ResumeEntry.status` carries two
 values, so approve and deny are a boolean `payload`; and there is no field for a refusal's wording or
-for a prompt sent beside a decision. Agent Kernel does not invent a private encoding for either —
+for a prompt sent beside a decision. OAK does not invent a private encoding for either —
 use the REST surface when you need them. See [AG-UI Server](../api/agui-server.md).
 
 ## From a messaging platform
@@ -308,7 +308,7 @@ the agent cannot tell the two apart.
 
 Four things to know before you ship it:
 
-- **Anyone who can see the message can press.** Agent Kernel ships no approver policy: channel
+- **Anyone who can see the message can press.** OAK ships no approver policy: channel
   membership is not an approval list. The presser's platform user id travels with the decision as
   `acting_user_id`, so a `PreHook` is where you check it.
 - **The buttons offer approve and deny, not cancel.** `cancelled` means

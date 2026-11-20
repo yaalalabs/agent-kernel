@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Choosing a Memory Backend
 
-Agent Kernel has **two different kinds of memory**, and they solve different problems:
+Open Agent Kernel (OAK) has **two different kinds of memory**, and they solve different problems:
 
 | You need to remember... | Use | Lifetime |
 |---|---|---|
@@ -21,7 +21,7 @@ Use `in_memory` for your very first run. Move to Redis when you want the convers
 
 ## Session store comparison
 
-A **session store** holds conversation history and framework state. Agent Kernel selects one from `session.type`; you never construct it yourself.
+A **session store** holds conversation history and framework state. OAK selects one from `session.type`; you never construct it yourself.
 
 | Backend | `session.type` | Where it runs | Survives restart | Shared by processes | Extra to install | Best for |
 |---|---|---|---|---|---|---|
@@ -97,6 +97,15 @@ python memory_demo.py   # read: hello from the first process
 The second run reads the value from Redis. With `session.type: in_memory` it would print `wrote:` both times, because each process starts with an empty store.
 
 In a real application you do not write this code: configuring `session.type` is enough, because `Runtime` and the framework adapters create and use the store for you. The script exists only so you can verify your configuration.
+
+### Realtime calls
+
+A realtime call stores its session **after each finished turn and when it ends normally**, so the backend decides what survives the call:
+
+- **`in_memory`**: enough for a single process. A restart loses the session owner, hook state and (for Google ADK) the conversation.
+- **A durable store** (`redis`, `valkey`, `dynamodb`, ...): needed when a text chat in another process continues the same session after the call, or when the session must outlive a runner restart.
+- The write runs off the audio loop, so a slower store does not delay audio.
+- OpenAI keeps its conversation inside its own live session. No backend restores it after the call, so a new call on OpenAI starts fresh. Google ADK's conversation is stored with the session, and a new call on the same session id replays it to the model.
 
 ## Session memory vs. knowledge bases
 
@@ -191,7 +200,7 @@ For a complete walkthrough, see the [Knowledge Bases guide](../advanced/knowledg
 | Firestore documents never expire | No TTL policy | Add a TTL policy on `expiry_time` |
 | Configuration seems ignored | Wrong working directory | Run where `config.yaml` lives, or set `AK_CONFIG_PATH_OVERRIDE` |
 
-Agent Kernel logs `Building '<type>' session store` when it builds the store, which is the quickest
+OAK logs `Building '<type>' session store` when it builds the store, which is the quickest
 way to confirm which backend is active.
 
 ## Next steps

@@ -1,6 +1,6 @@
 # Execution Hooks
 
-Execution hooks provide powerful extension points to customize and enhance agent behavior at runtime. Agent Kernel supports **pre-execution hooks** and **post-execution hooks** that allow you to modify prompts, inject context, validate inputs, and transform responses.
+Execution hooks provide powerful extension points to customize and enhance agent behavior at runtime. Open Agent Kernel (OAK) supports **pre-execution hooks** and **post-execution hooks** that allow you to modify prompts, inject context, validate inputs, and transform responses.
 
 :::tip Session & Memory Access
 Hooks have full access to the session object and auxiliary memory (volatile and non-volatile caches). This enables:
@@ -300,7 +300,7 @@ class CredentialBrake(PostHook):
         return "CredentialBrake"
 ```
 
-Agent Kernel then emits the closing event for any boundary the stream left open — so a client is not left with an unfinished message or tool call — followed by a single chunk carrying your reason as its `error` with `done: true`. The session is **not** stored, and a recorded thread keeps no assistant message, so a halted turn leaves no trace in conversation state. Because it acts on a fragment rather than a finished unit, halting costs no latency.
+OAK then emits the closing event for any boundary the stream left open — so a client is not left with an unfinished message or tool call — followed by a single chunk carrying your reason as its `error` with `done: true`. The session is **not** stored, and a recorded thread keeps no assistant message, so a halted turn leaves no trace in conversation state. Because it acts on a fragment rather than a finished unit, halting costs no latency.
 
 Treat a halted response as invalid rather than truncated: discard the partial rather than rendering it as a short answer. Any exception that is **not** `StreamHalt` propagates unchanged — a bug in a hook is a defect, not an orderly end of stream.
 
@@ -322,6 +322,38 @@ Adapters emit `ToolCall*` events after the framework has already made the call. 
 A hook that still defines `on_stream_chunk` will not raise — the method is simply never called, and its filtering silently stops applying. Check for it when upgrading.
 
 **Use Cases:** redacting tool arguments and results, PII masking over assembled text, profanity filtering, hiding reasoning traces from clients, refusing a response outright, streaming analytics.
+
+### Which hook method runs in which mode {#hooks-per-mode}
+
+A hook method follows the shape of the message: a whole message goes to `on_run`, a message that arrives in pieces goes to `on_stream_event`.
+
+| Mode | Pre-hook | Post-hook |
+| --- | --- | --- |
+| `rest_sync`, `rest_async`, `async` with `message_type: complete` | `on_run`, once per turn | `on_run`, on the whole reply |
+| `rest_sync` (SSE) and `async` with `message_type: delta` | `on_run`, once per turn | `on_stream_event`, on each event. `on_run` is **not** called |
+| `realtime` | `on_run` on typed text; `on_stream_input` on each caller audio chunk | `on_stream_event`, on each output event. `on_run` is **not** called |
+
+The built-in output guardrail implements `on_run` only, so it does not run on a streamed reply in any mode.
+
+### Realtime calls {#realtime-hooks}
+
+On a realtime call the same hooks run in the process that serves the call, after the input queue and before the output queue. Open Agent Kernel provides the hook points; what a hook does is your code.
+
+- **Typed text** goes through `on_run` like any request, agent hooks first, then the system hooks. A hook that returns an `AgentReply` stops the message: nothing reaches the model and the edge receives one error chunk with the reply text. The call continues.
+- **Caller audio** goes through the optional `PreHook.on_stream_input`, once per chunk. The chunk is base64 PCM16 at 24 kHz. Return the chunk (or a changed one) to pass it on, `None` to drop it, or a list to emit several. A list ends the chain for that chunk; `AgentRequestVoice` items go to the model, and `AgentRequestText` items are handled as typed text. A hook that raises drops the chunk, and the first failure of a call is logged at `ERROR`.
+- **Model output** goes through `on_stream_event`, one call per event (`AudioDelta`, `TextDelta`, `InputTranscript`, `Interrupt`, `AgentChanged`), with the rules in [Streaming Hooks](#streaming-hooks-on_stream_event). `StreamHalt`, or any other exception, ends the call: the edge receives one error chunk and the next input reconnects.
+- **Turn end:** when the model's turn finishes, the hooks receive a `MessageEnd` before the final `done`, so a hook that held pieces can release them there. Its `message_id` is the last output event's id, which is not one id per turn on every framework. A call sends no `MessageStart`.
+- **`requests`** is the last text turn sent to the model, or an empty list when none was sent yet.
+- **State:** `Session.current()` and `Agent.current()` are set around every hook call. One hook instance serves every call, so keep state in `session.get_volatile_cache()`; it is cleared when the call closes, not per turn: a hook that wants per-turn state resets its own keys at `MessageEnd`. The session lock is not held. What a hook keeps in the non-volatile cache is stored with the session after each finished turn and when the call ends normally.
+
+What a hook can not do:
+
+- A hook on the caller's audio sees audio, not words. The model hears the audio that passes the pre-hooks, and `InputTranscript` is the model's own transcript, which arrives after it heard the audio.
+- `TextDelta` and `AudioDelta` are separate events. Rewriting one does not change the other.
+- Audio that has already played cannot be taken back.
+- A hook runs on the playback path, so a slow hook delays the audio and every event behind it. Open Agent Kernel sets no time limit.
+- A hook that holds audio and releases it at the turn end, when the caller barges in during that release: the interrupt reaches the edge after the turn's `done`, so the LiveKit edge keeps its interrupted state until the next `done` and drops that next turn's caption once.
+- The input guardrail checks typed text only. Open Agent Kernel logs one startup warning per realtime agent when `guardrail.input.enabled` is on.
 
 ## Implementing Hooks
 
@@ -414,11 +446,11 @@ OpenAIModule([agent]).pre_hook(agent, [
 ])
 ```
 
-The `pre_hook()` and `post_hook()` methods can be chained for convenience, and work with any Agent Kernel module (OpenAI, LangGraph, CrewAI, etc.).
+The `pre_hook()` and `post_hook()` methods can be chained for convenience, and work with any OAK module (OpenAI, LangGraph, CrewAI, etc.).
 
 ### Framework-native hooks {#framework-native-hooks}
 
-Agent Kernel hooks wrap the whole run. For the framework's **own** lifecycle hooks (the OpenAI Agents
+OAK hooks wrap the whole run. For the framework's **own** lifecycle hooks (the OpenAI Agents
 SDK's `RunHooks`, LangChain callbacks, ADK plugins, Pydantic AI's `event_stream_handler`, CrewAI's
 `step_callback`), declare them through the same fluent API with
 [`run_options`](../core-concepts/module.md#native-run-options); they compose with `pre_hook` /
@@ -430,11 +462,11 @@ OpenAIModule([agent]).run_options(agent, hooks=ProgressHooks(), max_turns=25).po
 
 Some frameworks take their lifecycle hooks on the agent itself instead: Microsoft Agent Framework's
 chat, function and agent middleware (the `middleware=` argument of `Agent`), and smolagents'
-`step_callbacks`. Those need nothing from Agent Kernel, and `run_options` is for the run-time arguments
+`step_callbacks`. Those need nothing from OAK, and `run_options` is for the run-time arguments
 beside them (MAF's `options` and `function_invocation_kwargs`; see
 [`examples/cli/maf-run-options`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/maf-run-options)).
 
-A native hook's callbacks run inside the Agent Kernel run, so `Session.current()` resolves in them and
+A native hook's callbacks run inside the OAK run, so `Session.current()` resolves in them and
 a post-hook can read what they recorded in the session's volatile cache before it is cleared. Two
 paths report progress:
 

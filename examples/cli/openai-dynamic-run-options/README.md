@@ -1,4 +1,4 @@
-# Agent Kernel: per-run computed native run options (OpenAI Agents SDK)
+# Open Agent Kernel: per-run computed native run options (OpenAI Agents SDK)
 
 This demo shows the callable form of `Module.run_options`: a **factory** that computes the OpenAI Agents
 SDK's per-run options on every run, declared in the same call as the static keywords it complements. The
@@ -23,13 +23,13 @@ OpenAIModule([weather_agent]).run_options(
 ## How it works
 
 1. **The factory contract.** The positional argument before the keywords is a callable
-   `(agent, session, requests) -> mapping`, sync or async. Agent Kernel calls it exactly once per run, after
+   `(agent, session, requests) -> mapping`, sync or async. Open Agent Kernel (OAK) calls it exactly once per run, after
    the pre-hooks (so it sees the request list the run will actually use) and before the native call.
    `ToolContext.get()`, `Session.current()` and `Agent.current()` resolve inside it (on Google ADK the tool
    context does not exist yet at that point, so `ToolContext.get()` raises there).
 2. **Merge order.** The result is validated against the adapter's reserved keys, then merged over the static
    keywords at the top level: a key the factory returns wins, a key it does not name keeps its static value,
-   and a dict-valued option it returns replaces the static one wholesale. Agent Kernel then writes the keys
+   and a dict-valued option it returns replaces the static one wholesale. OAK then writes the keys
    it owns (`session`, `context`) last, as for static options.
 3. **One shared instance.** The factory is one object shared by every concurrent run of the agent. Keep
    per-run state in the session, not on the factory: this demo counts its runs and records the effective

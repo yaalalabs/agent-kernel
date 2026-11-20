@@ -1,7 +1,7 @@
 ---
 name: ak-build
 description: >
-  Add tools, agents, and handoffs to an existing Agent Kernel project. This skill guides
+  Add tools, agents, and handoffs to an existing Open Agent Kernel project. This skill guides
   you through reading the current project, understanding its framework and structure,
   then making context-aware additions — new tools, new agents, agent-to-agent handoffs,
   and Module wiring. The workhorse skill for iterative agent development.
@@ -13,7 +13,7 @@ metadata:
 
 # Build: Add Tools & Agents
 
-Use this skill to add new tools, agents, or handoffs to an existing Agent Kernel project.
+Use this skill to add new tools, agents, or handoffs to an existing Open Agent Kernel project.
 
 ## Instructions for the Agent
 
@@ -225,7 +225,7 @@ support_agent = Agent(
 )
 ```
 
-> **Gotcha (CrewAI):** Use `role=` as the agent identifier — Agent Kernel maps `agent.role` to the agent name. Setting `verbose=False` keeps output clean.
+> **Gotcha (CrewAI):** Use `role=` as the agent identifier — OAK maps `agent.role` to the agent name. Setting `verbose=False` keeps output clean.
 
 **Google ADK:**
 ```python
@@ -294,7 +294,7 @@ support_agent = ClaudeAgentSpec(
 
 > **Gotcha (Claude Agent SDK):** Match the existing agents' `tools=[]` / `setting_sources=[]` / `permission_mode` / `verbatim_prompts=True` lockdown; the SDK's defaults give the model Bash and file tools on the host. Tools bound with `ClaudeToolBuilder.bind([...])` are approved automatically; bind sensitive tools with `needs_approval=True` instead, so each call pauses for a human decision.
 
-> **Gotcha (Pydantic AI):** Always pass `name=` (AK registers by name eagerly; Pydantic AI otherwise infers it lazily at first run) **and** `description=`: it is the default for what an A2A card, an MCP agent tool and the agent catalog say about the agent (the instructions are never published), replaced by a description declared with `Module.describe(agent, description=...)` or `registry.agents.<id>.description`. The provider key for the model string (e.g. `OPENAI_API_KEY`) must be set at import time: Pydantic AI resolves the provider at construction.
+> **Gotcha (Pydantic AI):** Always pass `name=` (OAK registers by name eagerly; Pydantic AI otherwise infers it lazily at first run) **and** `description=`: it is the default for what an A2A card, an MCP agent tool and the agent catalog say about the agent (the instructions are never published), replaced by a description declared with `Module.describe(agent, description=...)` or `registry.agents.<id>.description`. The provider key for the model string (e.g. `OPENAI_API_KEY`) must be set at import time: Pydantic AI resolves the provider at construction.
 
 **Microsoft Agent Framework:**
 ```python
@@ -311,7 +311,7 @@ support_agent = Agent(
 )
 ```
 
-> **Gotcha (Microsoft Agent Framework):** Always pass `name=` — `MAFModule` raises `ValueError` for an unnamed agent because AK registers agents by name immediately.
+> **Gotcha (Microsoft Agent Framework):** Always pass `name=` — `MAFModule` raises `ValueError` for an unnamed agent because OAK registers agents by name immediately.
 
 #### 4b. Register with the Module
 
@@ -349,7 +349,7 @@ class OrderStatus(BaseModel):
 | Pydantic AI | `Agent(..., output_type=OrderStatus)` |
 | Claude Agent SDK | `ClaudeAgentOptions(..., output_format={"type": "json_schema", "schema": OrderStatus.model_json_schema()})` |
 
-> **Gotcha (CrewAI):** CrewAI puts the output schema on the `Task`, not the `Agent` — and Agent Kernel builds the task internally per run, so the schema is passed to the `CrewAIModule` constructor keyed by agent role.
+> **Gotcha (CrewAI):** CrewAI puts the output schema on the `Task`, not the `Agent` — and OAK builds the task internally per run, so the schema is passed to the `CrewAIModule` constructor keyed by agent role.
 
 ---
 
@@ -435,7 +435,7 @@ triage_agent = ToolCallingAgent(
 **Claude Agent SDK:**
 
 Add the new agent as a native `AgentDefinition` in the triage agent's `ClaudeAgentOptions.agents`. The triage agent
-delegates to it through its `Agent` tool, and Agent Kernel serves any bound tool from the triage agent's session:
+delegates to it through its `Agent` tool, and OAK serves any bound tool from the triage agent's session:
 
 ```python
 from agentkernel.claude import ClaudeAgentSpec
@@ -556,10 +556,10 @@ curl -X POST http://localhost:8000/run \
 |--------|---------|
 | **ToolContext access** | Always use `ToolContext.get()` inside the tool function body. Never pass context as a function parameter. |
 | **LangGraph `name=`** | Always pass `name=` to `create_react_agent()`. Without it, the supervisor cannot route to the agent. |
-| **CrewAI `role=`** | Use `role=` as the agent identifier, not `name=`. Agent Kernel reads `agent.role` as the agent name. |
+| **CrewAI `role=`** | Use `role=` as the agent identifier, not `name=`. OAK reads `agent.role` as the agent name. |
 | **CrewAI `verbose=`** | Set `verbose=False` on agents to prevent noisy console output. |
 | **CrewAI conversation history** | CrewAI runner keeps its own per-session transcript (last 20 lines) prepended to each task description, independent of the Memory feature. If `Memory.remember()` fails (e.g. no embedder configured), the runner logs a warning and continues instead of failing the run. |
-| **CrewAI structured output** | Configured on the module, not the agent: `CrewAIModule([agent], output_pydantic={"<role>": Model})`. The native `crewai.Agent` rejects an `output_pydantic` attribute (it belongs to the `Task`, which Agent Kernel builds per run). |
+| **CrewAI structured output** | Configured on the module, not the agent: `CrewAIModule([agent], output_pydantic={"<role>": Model})`. The native `crewai.Agent` rejects an `output_pydantic` attribute (it belongs to the `Task`, which OAK builds per run). |
 | **Google ADK `LiteLlm`** | Wrap the model string: `LiteLlm(model="openai/gpt-4o-mini")`. A bare string won't work. |
 | **Env var nesting** | Use `__` (double underscore) as the nested delimiter: `AK_REDIS__URL`, `AK_WHATSAPP__ACCESS_TOKEN`. |
 | **Single Module** | Only one Module instance per framework. Add new agents to the existing Module's agent list. |

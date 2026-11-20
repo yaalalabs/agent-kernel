@@ -1,6 +1,6 @@
-# Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (queue mode, scalable)
+# Open Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (queue mode, scalable)
 
-This package demonstrates Agent Kernel's queue-based, scalable containerized architecture
+This package demonstrates Open Agent Kernel's queue-based, scalable containerized architecture
 exposed over a **WebSocket API**, combining:
 
 - `openai-websocket` (direct WebSocket mode) — see that example for the auth/wire-protocol basics

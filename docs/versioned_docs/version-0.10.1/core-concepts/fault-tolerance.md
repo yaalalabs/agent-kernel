@@ -4,11 +4,11 @@ sidebar_position: 7
 
 # Fault Tolerance
 
-Agent Kernel provides comprehensive fault tolerance capabilities to ensure your AI agents remain available and resilient in production environments. The platform implements multiple layers of fault tolerance across different deployment modes.
+Open Agent Kernel (OAK) provides comprehensive fault tolerance capabilities to ensure your AI agents remain available and resilient in production environments. The platform implements multiple layers of fault tolerance across different deployment modes.
 
 ## Overview
 
-Fault tolerance in Agent Kernel encompasses:
+Fault tolerance in OAK encompasses:
 - **Infrastructure-level resilience** - Automatic recovery from hardware and system failures
 - **Application-level recovery** - Graceful handling of application errors and crashes
 - **State persistence** - Preservation of conversation state across failures
@@ -26,8 +26,8 @@ graph TB
     G --> C
     F -->|Permanent Error| H[Error Response]
     
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style C fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Deployment-Specific Fault Tolerance
@@ -112,7 +112,7 @@ Limited fault tolerance suitable for development:
 
 ## Session State Resilience
 
-Conversation state is critical for agent continuity. Agent Kernel supports multiple storage backends with different resilience profiles.
+Conversation state is critical for agent continuity. OAK supports multiple storage backends with different resilience profiles.
 
 :::tip
 For detailed information about session storage backends and configuration, see the [Session Management](/docs/core-concepts/session) documentation.
@@ -164,7 +164,7 @@ Not recommended for production - state lost on restart.
 
 ## Health Checks
 
-Agent Kernel provides built-in health endpoints for monitoring:
+OAK provides built-in health endpoints for monitoring:
 
 ### Health Endpoint
 ```http
@@ -262,7 +262,7 @@ Not provided with the terraform module. User has to implement the backup feature
 
 ## Summary
 
-Agent Kernel's fault tolerance capabilities ensure your AI agents remain available and resilient:
+OAK's fault tolerance capabilities ensure your AI agents remain available and resilient:
 
 - **ECS/Fargate**: Highly configurable, multi-AZ, auto-scaling, minimal cold starts
 - **Lambda**: Fully managed, auto-scaling, built-in retry, serverless

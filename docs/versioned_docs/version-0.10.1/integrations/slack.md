@@ -1,6 +1,6 @@
 # Slack
 
-The Slack integration allows you to deploy Agent Kernel agents as Slack bots that can respond to mentions and direct messages within Slack workspaces. This integration uses the Slack Events HTTP API to provide real-time conversational AI capabilities.
+The Slack integration allows you to deploy Open Agent Kernel agents as Slack bots that can respond to mentions and direct messages within Slack workspaces. This integration uses the Slack Events HTTP API to provide real-time conversational AI capabilities.
 
 ## Overview
 
@@ -182,7 +182,7 @@ and travels the same queue, so the agent cannot tell the two apart. See
 [Human in the Loop](../advanced/human-in-the-loop.md) for the full picture, including the one kind of question that gets no buttons: one asking for a value rather than a verdict.
 
 :::caution Anyone who can see the message can press it
-Agent Kernel ships no approver policy. Channel membership is not an approval list — if it matters
+OAK ships no approver policy. Channel membership is not an approval list — if it matters
 who decides, enforce it yourself: the presser's Slack user id reaches the run as `acting_user_id`,
 and a `PreHook` is where you check it.
 :::

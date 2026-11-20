@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug or unexpected behavior in Agent Kernel
+about: Report a bug or unexpected behavior in Open Agent Kernel
 title: '[BUG] '
 labels: bug
 assignees: amithad
@@ -21,7 +21,7 @@ A clear and concise description of what you expected to happen.
 What actually happened.
 
 ## Environment
-- Agent Kernel Version:
+- Open Agent Kernel Version:
 - Python Version:
 - Operating System:
 - Additional context (dependencies, configurations):

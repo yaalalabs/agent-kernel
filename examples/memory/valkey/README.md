@@ -1,11 +1,11 @@
-# Agent Kernel running OpenAI Agents SDK-based agents in AWS Lambda with Valkey as agent memory
+# Open Agent Kernel running OpenAI Agents SDK-based agents in AWS Lambda with Valkey as agent memory
 
-This package contains a demo of Agent Kernel running agents built with the OpenAI Agents SDK,
+This package contains a demo of Open Agent Kernel running agents built with the OpenAI Agents SDK,
 running them in a serverless configuration using AWS Lambda with [Valkey](https://valkey.io/) as
 agent memory (session storage).
 
 Valkey is the open-source, Linux Foundation-governed fork of Redis. It is wire-compatible with
-Redis and available on AWS ElastiCache as a native engine. Agent Kernel selects it with
+Redis and available on AWS ElastiCache as a native engine. OAK selects it with
 `session.type: valkey` (see `config.yaml`).
 
 ## Prerequisites
@@ -40,7 +40,7 @@ The session state (agent memory) is persisted in the local Valkey server between
 
 The AWS deployment provisions the following resources:
 
-- AWS Lambda function running the Agent Kernel implementation.
+- AWS Lambda function running the OAK implementation.
 - API Gateway endpoint for the Lambda function.
 - An ElastiCache for Valkey cluster (`create_valkey_cluster = true` in `deploy/main.tf`). The
   deployment injects the cluster endpoint as `AK_SESSION__VALKEY__URL`, overriding the URL in

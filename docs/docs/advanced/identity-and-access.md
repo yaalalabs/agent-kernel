@@ -4,7 +4,7 @@ sidebar_position: 7.5
 
 # Identity and Access
 
-Agent Kernel **authenticates every request through one configured identity provider and establishes a
+Open Agent Kernel (OAK) **authenticates every request through one configured identity provider and establishes a
 `Principal` for the run**. The provider is configuration, not code: an `identity` block names it (an
 OpenID Connect issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft Entra ID, Firebase, a
 static credential map, or your own class), and every surface the agent is reached through (REST,
@@ -274,7 +274,7 @@ the surface knows them. `agentkernel.identity.provider.testing.IdentityProviderC
 
 ### Role mapper
 
-Providers assert groups and claims; the `role_mapper` turns them into Agent Kernel roles, replacing
+Providers assert groups and claims; the `role_mapper` turns them into OAK roles, replacing
 any a `static` entry listed. The built-in `mapping` type looks every group name up in `mapping` and
 appends the roles found. A claim is looked up only when its path is listed in `claims`, and then its
 string value (or each string item of a list) is looked up the same way. Only groups are looked up by

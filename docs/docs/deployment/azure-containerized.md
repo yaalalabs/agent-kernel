@@ -7,7 +7,7 @@ sidebar_position: 6
 Deploy agents to Azure Container Apps for consistent, low-latency execution.
 
 :::note Supported execution modes
-Container Apps runs Agent Kernel's built-in REST server (`RESTAPI.run`), so it supports synchronous JSON REST **and SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
+Container Apps runs Open Agent Kernel's built-in REST server (`RESTAPI.run`), so it supports synchronous JSON REST **and SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
 :::
 
 ## Architecture
@@ -20,14 +20,14 @@ graph TB
     C --> E[Container App Replica 2]
     C --> F[Container App Replica N]
     
-    D --> G[Agent Kernel]
+    D --> G[OAK]
     E --> G
     F --> G
     
     G --> H[Azure Cache for Redis]
     G --> I[Cosmos DB]
     
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ## Prerequisites
@@ -35,11 +35,11 @@ graph TB
 - Docker installed
 - Azure CLI configured
 - Azure Container Registry (ACR) created
-- Agent Kernel with Azure extras
+- OAK with Azure extras
 
 ## Deployment
 
-Refer to [example Azure Container Apps implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/openai-cosmos) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) for Container Apps deployment.
+Refer to [example Azure Container Apps implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/openai-cosmos) which leverages OAK's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) for Container Apps deployment.
 
 The module is provider-agnostic: it does not configure the `azurerm` provider itself, so your root `main.tf` must configure it and pass it into the module explicitly:
 
@@ -92,8 +92,8 @@ graph TB
     F --> H
     G --> H
     
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style H fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style H fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 **Benefits:**
@@ -326,7 +326,7 @@ Use Azure Monitor Container Insights:
 
 ## Health Checks
 
-Agent Kernel provides a health endpoint:
+OAK provides a health endpoint:
 
 ```python
 # Automatically available at /health
@@ -335,7 +335,7 @@ Agent Kernel provides a health endpoint:
 
 ## Application Endpoints
 
-Users can expose their own API endpoints alongside the Agent Kernel endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/crewai).
+Users can expose their own API endpoints alongside the OAK endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/crewai).
 
 ## Best Practices
 

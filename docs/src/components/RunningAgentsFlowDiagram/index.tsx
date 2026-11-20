@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import styles from './styles.module.css';
-
-gsap.registerPlugin(ScrollTrigger);
 
 type NodeKind = 'api' | 'message' | 'memory' | 'runner' | 'external';
 
@@ -16,15 +12,15 @@ type FlowNode = {
 };
 
 const FLOW_NODES: FlowNode[] = [
-  { id: 'api', label: 'REST API', kind: 'api', color: '#f472b6' },
-  { id: 'input', label: 'Input Message', kind: 'message', color: '#60a5fa' },
-  { id: 'runner', label: 'Agent Logic Runner', subtitle: '(REST Server / Container / Lambda etc)', kind: 'runner', color: '#c084fc' },
-  { id: 'memory', label: 'Agent Memory', kind: 'memory', color: '#f472b6' },
-  { id: 'llm', label: 'LLM', kind: 'external', color: '#facc15' },
-  { id: 'knowledge', label: 'Knowledge Graph', kind: 'external', color: '#facc15' },
-  { id: 'dataSources', label: 'Other Data Sources', kind: 'external', color: '#facc15' },
-  { id: 'otherApis', label: 'Other APIs', kind: 'external', color: '#facc15' },
-  { id: 'output', label: 'Output Message', kind: 'message', color: '#60a5fa' },
+  { id: 'api', label: 'REST API', kind: 'api', color: 'var(--ak-sky)' },
+  { id: 'input', label: 'Input Message', kind: 'message', color: 'var(--ak-blue)' },
+  { id: 'runner', label: 'Agent Logic Runner', subtitle: '(REST Server / Container / Lambda etc)', kind: 'runner', color: 'var(--ak-blue)' },
+  { id: 'memory', label: 'Agent Memory', kind: 'memory', color: 'var(--ak-sky)' },
+  { id: 'llm', label: 'LLM', kind: 'external', color: 'var(--ak-sky)' },
+  { id: 'knowledge', label: 'Knowledge Graph', kind: 'external', color: 'var(--ak-sky)' },
+  { id: 'dataSources', label: 'Other Data Sources', kind: 'external', color: 'var(--ak-sky)' },
+  { id: 'otherApis', label: 'Other APIs', kind: 'external', color: 'var(--ak-sky)' },
+  { id: 'output', label: 'Output Message', kind: 'message', color: 'var(--ak-blue)' },
 ];
 
 const EXTERNAL_IDS = ['llm', 'knowledge', 'dataSources', 'otherApis'];
@@ -97,7 +93,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
       data-flow-node={node.id}
       data-kind={node.kind}
       className={`${styles.flowNode} ${kindClass}`}
-      style={{ '--node-color': node.color ?? '#00d5be' } as React.CSSProperties}
+      style={{ '--node-color': node.color ?? 'var(--ak-blue)' } as React.CSSProperties}
     >
       <span className={styles.flowNodeLabel}>
         {node.label}
@@ -126,7 +122,7 @@ export default function RunningAgentsFlowDiagram() {
     svg.innerHTML = `
       <defs>
         <marker id="raArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(255,255,255,0.65)" />
+          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(var(--ak-fg-rgb), 0.65)" />
         </marker>
       </defs>`;
 
@@ -160,12 +156,12 @@ export default function RunningAgentsFlowDiagram() {
       basePath.setAttribute('d', pointsToPath(trimmed));
       basePath.setAttribute('fill', 'none');
       if (dashed) {
-        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.15)');
+        basePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.15)');
         basePath.setAttribute('stroke-width', '1.5');
         basePath.setAttribute('stroke-dasharray', '5 5');
         basePath.setAttribute('class', styles.dashedFlow);
       } else {
-        basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
+        basePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.2)');
         basePath.setAttribute('stroke-width', '2');
       }
       svg.appendChild(basePath);
@@ -174,7 +170,7 @@ export default function RunningAgentsFlowDiagram() {
         const pulsePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         pulsePath.setAttribute('d', pointsToPath(trimmed));
         pulsePath.setAttribute('fill', 'none');
-        pulsePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.7)');
+        pulsePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.7)');
         pulsePath.setAttribute('stroke-width', '2');
         pulsePath.setAttribute('class', styles.pulseFlow);
         pulsePath.setAttribute('marker-end', 'url(#raArrow)');
@@ -260,35 +256,6 @@ export default function RunningAgentsFlowDiagram() {
     };
   }, [drawLines]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const nodes = container.querySelectorAll(`.${styles.flowNode}`);
-    const tween = gsap.fromTo(
-      nodes,
-      { opacity: 0, y: 16 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.5,
-        stagger: 0.05,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: container,
-          start: 'top 82%',
-          once: true,
-        },
-        onComplete: drawLines,
-        clearProps: 'transform',
-      }
-    );
-
-    return () => {
-      tween.scrollTrigger?.kill();
-      tween.kill();
-    };
-  }, [drawLines]);
 
   const getNode = (id: string) => FLOW_NODES.find((n) => n.id === id)!;
 

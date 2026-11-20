@@ -1,6 +1,6 @@
 # LiveKit Voice Integration
 
-LiveKit is a realtime voice integration for OpenAI Agents SDK and Google ADK agents. The `LiveKitEdgeGateway` joins a LiveKit room, sends the user's audio and chat text to the agent, and plays the model's streamed audio and transcript back to the room through Agent Kernel's realtime execution pipeline.
+LiveKit is a realtime voice integration for OpenAI Agents SDK and Google ADK agents. The `LiveKitEdgeGateway` joins a LiveKit room, sends the user's audio and chat text to the agent, and plays the model's streamed audio and transcript back to the room through Open Agent Kernel's realtime execution pipeline.
 
 ## Overview
 
@@ -15,7 +15,7 @@ Only OpenAI Agents SDK and Google ADK agents can run in realtime mode. They are 
 
 1. A user joins the LiveKit room and starts speaking.
 2. The `LiveKitEdgeGateway` batches the microphone audio (see `input_batch_ms`) and puts it on the input queue. Chat text from the room's data channel goes the same way.
-3. The Agent Runner hands each chunk to the `RealtimeConnectionPool`, which keeps one native SDK live session per AK session.
+3. The Agent Runner hands each chunk to the `RealtimeConnectionPool`, which keeps one native SDK live session per OAK session.
 4. The model's audio and transcript are paced at playback speed and put on the output queue.
 5. The Response Handler passes each chunk to the gateway, which plays the audio into the room and publishes the transcript as a chat message when the turn ends.
 
@@ -25,7 +25,7 @@ For the architecture behind these steps, including multi-agent handoffs, see [Re
 
 - **Realtime voice**: two-way streaming audio between the room and the model.
 - **Barge-in**: when the user talks over the model, the model's response is cancelled and the gateway clears the audio it has buffered.
-- **Tools**: the tools declared on the native agent run through the OpenAI Agents SDK or Google ADK, with the Agent Kernel context and system tools available as in other modes.
+- **Tools**: the tools declared on the native agent run through the OpenAI Agents SDK or Google ADK, with the OAK context and system tools available as in other modes.
 - **Multi-agent handoffs**: a supervisor hands the call to a specialist and back with the framework's own handoffs, and every agent appears in the room as its own participant. See [Multi-agent handoffs](#multi-agent-handoffs).
 
 ## Configuration Steps
@@ -96,7 +96,7 @@ AgentRunner.run()
 Run the Agent Runner as a single replica: its connection pool is local to the process. Run one IOHandler process that hosts the gateway for every room, because replies are routed to the gateway registered in that process.
 
 :::note Execution Mode
-LiveKit requires the Agent Kernel execution mode to be set to `realtime`. Standard async/sync text modes will not work. Ensure you have `execution.mode: realtime` set in your `config.yaml`.
+LiveKit requires the OAK execution mode to be set to `realtime`. Standard async/sync text modes will not work. Ensure you have `execution.mode: realtime` set in your `config.yaml`.
 :::
 
 ### Realtime pacing and audio batching
@@ -126,7 +126,7 @@ latency at the start of each response.
 
 ### Tools and framework context
 
-Declare realtime tools on the native `RealtimeAgent` or ADK `LlmAgent`. The SDK calls them and returns their results. Inside a tool, `ToolContext.get()`, `Session.current()` and `Agent.current()` work as they do in other execution modes: the pool sets them once when the call opens, and the SDK's own tasks inherit them. The session lock is not held while a tool runs, because a call is one long-lived session. Agent Kernel system tools (multimodal, sandbox, schedule, knowledge base) and their prompt guidance are attached as in other modes. An ADK `Workflow` root holds no tools of its own, so they attach to its speaking agents, each looked up by its own name for the `agents` allow-lists. A realtime session does not carry the AK session's `framework_context`: the native session lives for the whole call, and the AK session is not written back when it ends.
+Declare realtime tools on the native `RealtimeAgent` or ADK `LlmAgent`. The SDK calls them and returns their results. Inside a tool, `ToolContext.get()`, `Session.current()` and `Agent.current()` work as they do in other execution modes: the pool sets them once when the call opens, and the SDK's own tasks inherit them. The session lock is not held while a tool runs, because a call is one long-lived session. OAK system tools (multimodal, sandbox, schedule, knowledge base) and their prompt guidance are attached as in other modes. An ADK `Workflow` root holds no tools of its own, so they attach to its speaking agents, each looked up by its own name for the `agents` allow-lists. A realtime session does not carry the OAK session's `framework_context`: the native session lives for the whole call, and the OAK session is not written back when it ends.
 
 ## Multi-agent handoffs
 
@@ -185,10 +185,10 @@ Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architecture
 
 ## Limitations
 
-- **AK hooks and guardrails** do not automatically run on native realtime turns. Use native SDK live features where supported.
+- **OAK hooks and guardrails** do not automatically run on native realtime turns. Use native SDK live features where supported.
 - **Human approval** has no decision path in this LiveKit edge. Approval-requiring OpenAI tools and ADK confirmation requests fail the connection clearly.
-- **No session lock around tools.** The SDK runs the tools; AK sets the tool context when the call opens but does not hold the session lock while a tool runs.
-- **One room per gateway**: each `LiveKitEdgeGateway` joins one room, and the room uses one AK session. Many gateways can run in one process, one per room.
-- **Connection lifetime**: a failed or expired native session is closed. A later input can start a fresh session; AK does not replay the old transcript.
+- **No session lock around tools.** The SDK runs the tools; OAK sets the tool context when the call opens but does not hold the session lock while a tool runs.
+- **One room per gateway**: each `LiveKitEdgeGateway` joins one room, and the room uses one OAK session. Many gateways can run in one process, one per room.
+- **Connection lifetime**: a failed or expired native session is closed. A later input can start a fresh session; OAK does not replay the old transcript.
 - **One LiveKit connection per agent**: with handoffs, every listed agent is a participant, and LiveKit bills connection minutes for each.
 - **Single replicas**: one Agent Runner replica and one IOHandler process, as described above.

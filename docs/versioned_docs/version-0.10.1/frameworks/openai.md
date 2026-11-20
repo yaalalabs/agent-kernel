@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # OpenAI Agents SDK
 
-Integrate OpenAI's official Agents SDK with Agent Kernel.
+Integrate OpenAI's official Agents SDK with Open Agent Kernel (OAK).
 
 ## Installation
 
@@ -84,7 +84,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 
 ## Structured Output
 
-Configure structured output with the OpenAI Agents SDK's `output_type` parameter. Agent Kernel detects the structured result and returns an `AgentReplyAny` whose `content` is the result as a dict; no re-parsing of text needed:
+Configure structured output with the OpenAI Agents SDK's `output_type` parameter. OAK detects the structured result and returns an `AgentReplyAny` whose `content` is the result as a dict; no re-parsing of text needed:
 
 ```python
 from agents import Agent as OpenAIAgent
@@ -137,7 +137,7 @@ OpenAIModule([agent]).run_options(
 ```
 
 Reserved (raise `ValueError` at declaration): `starting_agent`, `input`, `session` (the
-`OpenAISession` on the Agent Kernel session), `context` (the framework context above), and
+`OpenAISession` on the OAK session), `context` (the framework context above), and
 `conversation_id`, `previous_response_id`, `auto_previous_response_id`, which the SDK rejects
 alongside the session the runner always passes.
 
@@ -160,7 +160,7 @@ def issue_refund(order_id: str) -> str: ...
 tools = OpenAIToolBuilder.bind([issue_refund], needs_approval=True)
 ```
 
-The run pauses before the tool executes and Agent Kernel returns a paused reply. Two limits are
+The run pauses before the tool executes and OAK returns a paused reply. Two limits are
 specific to this adapter, and both are reported rather than silently worked around:
 
 - **A structured answer is refused.** An approval is recorded as a boolean — `RunState.approve()`
@@ -183,7 +183,7 @@ See [Human in the Loop](../advanced/human-in-the-loop.md).
 
 ## Realtime voice
 
-With `execution.mode: realtime`, the entry agent is an `agents.realtime.RealtimeAgent`. The SDK's own `RealtimeSession` runs the tools and the `handoffs`; Agent Kernel carries the audio. `Module.run_options(agent, model_config={...})` sets the model and voice. A tool that needs approval is rejected, and AK hooks and guardrails do not run on this path. See [LiveKit Voice](../integrations/livekit.md).
+With `execution.mode: realtime`, the entry agent is an `agents.realtime.RealtimeAgent`. The SDK's own `RealtimeSession` runs the tools and the `handoffs`; OAK carries the audio. `Module.run_options(agent, model_config={...})` sets the model and voice. A tool that needs approval is rejected, and OAK hooks and guardrails do not run on this path. See [LiveKit Voice](../integrations/livekit.md).
 
 ## Features
 

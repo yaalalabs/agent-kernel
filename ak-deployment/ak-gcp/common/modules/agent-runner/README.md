@@ -1,6 +1,6 @@
 # Agent Runner Module
 
-The agent tier of Agent Kernel queue mode on GCP: a private Cloud Run **service** that Pub/Sub
+The agent tier of Open Agent Kernel queue mode on GCP: a private Cloud Run **service** that Pub/Sub
 pushes each request to. Its entry point calls `agentkernel.gcp.CloudRunAgentRunner.run()`, which
 runs the agents and publishes the reply to the output topic. Cloud Run scales it on those pushes,
 down to zero.

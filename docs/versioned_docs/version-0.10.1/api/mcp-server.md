@@ -38,7 +38,7 @@ Agents are automatically exposed as MCP tools if you set `mcp.expose_agents` to 
 
 An agent tool call always goes through the [queue pipeline](../advanced/queue-mode-guide.md), like a
 REST chat request: it is put on the input queue, the agent runner executes it, and the reply is read
-back from the response store. The tool's `session_id` argument is the Agent Kernel session.
+back from the response store. The tool's `session_id` argument is the Open Agent Kernel session.
 
 | How the app starts | MCP with `expose_agents: true` |
 |---|---|

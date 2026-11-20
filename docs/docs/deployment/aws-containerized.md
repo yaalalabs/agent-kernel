@@ -31,14 +31,14 @@ graph TB
     C --> E[Fargate Task 2]
     C --> F[Fargate Task N]
 
-    D --> G["Agent Kernel<br/>RESTAPI + ChatService + Runtime"]
+    D --> G["OAK<br/>RESTAPI + ChatService + Runtime"]
     E --> G
     F --> G
 
     G --> H[(Redis / Valkey<br/>ElastiCache)]
     G --> I[(DynamoDB)]
 
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 **Entrypoint (`app.py`)**:
@@ -60,11 +60,11 @@ if __name__ == "__main__":
 - Docker installed
 - AWS CLI configured
 - ECR repository created
-- Agent Kernel with AWS extras
+- Open Agent Kernel (OAK) with AWS extras
 
 ## Deployment
 
-Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
+Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai) which leverages OAK's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
 
 The module is provider-agnostic: it does not configure the `aws`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
 
@@ -116,8 +116,8 @@ graph LR
 
     G <--> S[(Session Store)]
 
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style G fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Multi-Threading Design
@@ -153,8 +153,8 @@ graph TB
     OC2 --> RS
     RS -.->|poll for request_id| T1
 
-    style T1 fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style T1 fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RS fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 - Each `sqs-consumer-*` thread runs an independent blocking long-poll loop (`poll → process → delete`), checking a shared `ThreadRunner.shutdown_event` between iterations.
@@ -368,7 +368,7 @@ graph TB
     G --> H[/Output Queue/]
     H -->|"push via PostToConnection"| C
 
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Connection Lifecycle and Wire Protocol
@@ -488,8 +488,8 @@ graph TB
     F --> H
     G --> H
     
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style H fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style H fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 **Benefits:**
@@ -676,7 +676,7 @@ Use CloudWatch Container Insights:
 
 ## Health Checks
 
-Agent Kernel provides a health endpoint:
+OAK provides a health endpoint:
 
 ```python
 # Automatically available at /health
@@ -685,7 +685,7 @@ Agent Kernel provides a health endpoint:
 
 ## Application Endpoints
 
-Users can expose their own API endpoints alongside the Agent Kernel endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai).
+Users can expose their own API endpoints alongside the OAK endpoints without having to do any custom implementation. Refer to [example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai).
 
 ## Authentication
 

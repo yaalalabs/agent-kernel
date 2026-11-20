@@ -1,0 +1,79 @@
+/* Announcement: one quiet line above the hero */
+
+.bar {
+  border-bottom: 1px solid var(--ak-border);
+  background-color: var(--ak-bg-alt);
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  gap: var(--ak-space-16);
+  min-height: 3rem;
+  padding-block: var(--ak-space-8);
+}
+
+.tag {
+  flex: none;
+  border-color: var(--ak-primary);
+  color: var(--ak-primary-text);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--ak-type-small);
+  line-height: 1.45;
+  color: var(--ak-text-secondary);
+}
+
+.text strong {
+  font-weight: 600;
+  color: var(--ak-fg);
+}
+
+.link {
+  flex: none;
+  font-size: var(--ak-type-small);
+}
+
+/* A phone gets the headline alone, on one line. The whole bar is the link: its arrow stays at
+   the end and its words are kept for assistive technology. */
+@media (max-width: 720px) {
+  .inner {
+    position: relative;
+    gap: var(--ak-space-12);
+  }
+
+  .text {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .detail {
+    display: none;
+  }
+
+  .linkText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .inner .link {
+    position: static;
+    gap: 0;
+    font-size: var(--ak-type-body);
+  }
+
+  .inner .link::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+}

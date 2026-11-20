@@ -9,15 +9,15 @@ import pytest
 from agentkernel.core.base import Session
 from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _QueuesConfig
 from agentkernel.core.model import ExecutionMode
-from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.deployment.aws.containerized.akagentrunner import ECSAgentRunner, ECSRealtimeAgentRunner, ECSStreamAgentRunner
 from agentkernel.pipeline.envelope import QueueName
-from agentkernel.pipeline.realtime_pool import RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+from agentkernel.realtime.base import RealtimeRunner
+from agentkernel.realtime.pool import RealtimeConnectionPool
 
 
 def _make_record(requests, session_id: str = "room_01"):
@@ -101,8 +101,10 @@ def test_process_message_routes_text_and_audio_requests():
         )
     )
 
-    conn.send_text.assert_called_once_with("hello")
-    conn.append_audio.assert_called_once_with("AAA=")
+    [(text,)] = [call.args for call in conn.send_text.call_args_list]
+    [(voice,)] = [call.args for call in conn.append_audio.call_args_list]
+    assert text.prompt == "hello"
+    assert voice.audio_data == "AAA="
 
 
 def test_process_message_reuses_existing_connection_without_loading_agent():
@@ -169,7 +171,9 @@ def test_consumer_loop_starts_real_pool_processes_requests_and_closes_connection
 
     session = Session("room_01")
     # The pool activates the agent for the call, as it does a real one (Agent._activate).
-    agent = SimpleNamespace(name="general", realtime_runner_cls=_RecordingRealtimeRunner, _activate=contextlib.nullcontext)
+    agent = SimpleNamespace(
+        name="general", realtime_runner_cls=_RecordingRealtimeRunner, _activate=contextlib.nullcontext, pre_hooks=[], post_hooks=[]
+    )
     service = SimpleNamespace(agent=agent, runtime=Runtime(InMemorySessionStore()), session=session)
     chat_service = MagicMock()
     chat_service.prepare_agent_handler.return_value = SimpleNamespace(service=service)
@@ -208,10 +212,10 @@ def test_consumer_loop_starts_real_pool_processes_requests_and_closes_connection
         first, second = connections
         assert first is second
         assert first.session is session
-        assert first.adapter.connect_count == 1
-        assert first.adapter.audio == ["AAA="]
-        assert first.adapter.texts == ["hello"]
-        assert first.adapter.disconnected
+        assert first.runner.connect_count == 1
+        assert first.runner.audio == ["AAA="]
+        assert first.runner.texts == ["hello"]
+        assert first.runner.disconnected
         assert first.closed
         assert pool.get_connection("room_01") is None
         chat_service.prepare_agent_handler.assert_called_once_with("room_01", "general")

@@ -1,13 +1,14 @@
 import logging
 from typing import Any
 
-from langfuse import Langfuse, propagate_attributes
+from langfuse import Langfuse, get_client, propagate_attributes
 from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 
-from ...core import Session
+from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
-from ...framework.adk.adk import GoogleADKRunner
-from .langfuse import LangFuse
+from ...framework.adk.adk import GoogleADKRealtimeRunner, GoogleADKRunner
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
+from .langfuse import LangFuse, LangFuseRealtimeCallSpan
 
 
 class LangFuseADKRunner(GoogleADKRunner):
@@ -43,3 +44,14 @@ class LangFuseADKRunner(GoogleADKRunner):
             LangFuse.flush_on_lambda(self._client)
 
         return result
+
+
+class LangFuseADKRealtimeRunner(TracedRealtimeRunner, GoogleADKRealtimeRunner):
+    """
+    The ADK realtime runner with one LangFuse span over each call, tagged with the session id as this provider's ``run()`` span is.
+    """
+
+    SPAN_NAME = "Agent Kernel ADK realtime"
+
+    def _start_call_span(self, session: Session, agent: Agent) -> RealtimeCallSpan:
+        return LangFuseRealtimeCallSpan(get_client(), self.SPAN_NAME, session.id)

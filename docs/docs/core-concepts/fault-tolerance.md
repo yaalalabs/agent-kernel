@@ -4,11 +4,11 @@ sidebar_position: 7
 
 # Fault Tolerance
 
-Agent Kernel provides comprehensive fault tolerance capabilities to ensure your AI agents remain available and resilient in production environments. The platform implements multiple layers of fault tolerance across different deployment modes.
+Open Agent Kernel (OAK) provides comprehensive fault tolerance capabilities to ensure your AI agents remain available and resilient in production environments. The platform implements multiple layers of fault tolerance across different deployment modes.
 
 ## Overview
 
-Fault tolerance in Agent Kernel encompasses:
+Fault tolerance in OAK encompasses:
 - **Infrastructure-level resilience** - Automatic recovery from hardware and system failures
 - **Application-level recovery** - Graceful handling of application errors and crashes
 - **State persistence** - Preservation of conversation state across failures
@@ -26,8 +26,8 @@ graph TB
     G --> C
     F -->|Permanent Error| H[Error Response]
     
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style C fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Deployment-Specific Fault Tolerance
@@ -112,7 +112,7 @@ Limited fault tolerance suitable for development:
 
 ## Session State Resilience
 
-Conversation state is critical for agent continuity. Agent Kernel supports multiple storage backends with different resilience profiles.
+Conversation state is critical for agent continuity. OAK supports multiple storage backends with different resilience profiles.
 
 :::tip
 For detailed information about session storage backends and configuration, see the [Session Management](/docs/core-concepts/session) documentation.
@@ -164,7 +164,7 @@ Not recommended for production - state lost on restart.
 
 ## Health Checks
 
-Agent Kernel provides built-in health endpoints for monitoring:
+OAK provides built-in health endpoints for monitoring:
 
 ### Health Endpoint
 ```http
@@ -204,6 +204,20 @@ In queue-backed deployments, retries are message-driven and fully configurable:
 LLM-call retry policies (exponential backoff, etc.) are handled by the underlying agent frameworks and LLM SDKs; configure them on the framework side.
 
 
+## Realtime Calls
+
+A realtime deployment runs **one Agent Runner replica**: the connection pool lives in that process, so a crash ends every live call at once. What a caller and the session see:
+
+| What happens | Caller | Session stored | Trace span |
+|---|---|---|---|
+| Native session error (bad setting, quota) | One error message | Nothing more (turns finished before it are kept) | Marked failed |
+| Repeated failures | Input dropped, retry after 1, 2, 4 ... up to 30 s | Nothing more | Marked failed |
+| Caller leaves or the room ends | Call closes at once | Yes | Ends normally |
+| No activity for 300 s | Call evicted | Yes | Ends normally |
+| Graceful shutdown | Calls closed | Yes | Ends normally |
+| Runner crash mid-call | Call drops; the next input starts a fresh session | Turns finished before the crash are kept in a durable store (`in_memory` keeps nothing); the turn in progress is lost | Never ended |
+| Caller rejoins quickly | The new call waits up to 15 s for the old one to finish saving | Starts from the saved session | New span |
+
 ## Monitoring and Alerting
 
 ### CloudWatch Metrics (AWS)
@@ -212,6 +226,7 @@ Standard Lambda/ECS metrics (invocations, errors, duration, task counts) are ava
 
 - SQS queue metrics (`ApproximateNumberOfMessages`, message age) for the input/output queues and DLQs
 - The custom `Custom/ECS/BacklogPerTask` metric published by the scaling Lambda in ECS queue mode; alarm on it to catch sustained backlog growth
+- With `trace.enabled`, each realtime call is one span (`Agent Kernel OpenAI realtime` or `Agent Kernel ADK realtime`) and a failed call is marked as an error, so you can alert on it. See [Realtime calls in tracing](../advanced/traceability.md#realtime-calls)
 
 ## Testing Fault Tolerance
 
@@ -262,7 +277,7 @@ Not provided with the terraform module. User has to implement the backup feature
 
 ## Summary
 
-Agent Kernel's fault tolerance capabilities ensure your AI agents remain available and resilient:
+OAK's fault tolerance capabilities ensure your AI agents remain available and resilient:
 
 - **ECS/Fargate**: Highly configurable, multi-AZ, auto-scaling, minimal cold starts
 - **Lambda**: Fully managed, auto-scaling, built-in retry, serverless

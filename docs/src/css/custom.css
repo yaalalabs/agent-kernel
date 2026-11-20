@@ -1,135 +1,648 @@
 /* =============================================================================
-   Agent Kernel Design System — Dark Technical Premium
-   Brand Colors: Cyan (#00DDFF) + Magenta (#F200FF) on Deep Black (#0D001A)
+   Open Agent Kernel Design System
+   Brand colours: Tiger Flame Orange (#FF5E32) as the accent, Prussian Blue
+   (#02284F) as the base, with Dusk Blue, Pale Sky and Baby Blue Ice in support.
+   Palette and usage rules: branding/README.md
    Fonts: Archivo (body) + JetBrains Mono (code)
+
+   Two colour modes share one set of token names. Components use the tokens and
+   never a literal, so a mode is only a different set of values:
+     dark  (default)  navy surfaces, light text
+     light            white surfaces, Prussian Blue text
    ============================================================================= */
 
 /* Google Fonts loaded asynchronously in docusaurus.config.js */
 
 :root {
-  /* Brand Palette */
-  --ak-bg: #010002;
-  --ak-surface: #010002;
-  --ak-surface-raised: #081226;
-  --ak-surface-overlay: #081226;
-  --ak-border: #081226;
-  --ak-border-accent: rgba(0, 221, 255, 0.35);
+  /* Brand palette (fixed, from the brand guide; the same in both modes) */
+  --ak-orange: #FF5E32;
+  --ak-prussian: #02284F;
+  --ak-dusk: #3F598A;
+  --ak-ice: #B1CDFF;
+  --ak-pale-sky: #ABCEE1;
 
-  /* Accent Colors - Vibrant Particle Theme */
-  --ak-blue: #00DDFF;
-  --ak-blue-light: #40E8FF;
-  --ak-blue-dark: #00AADE;
-  --ak-blue-glow: rgba(0, 221, 255, 0.2);
-  --ak-purple: #F200FF;
-  --ak-purple-light: #FF66FF;
-  --ak-purple-glow: rgba(242, 0, 255, 0.2);
-  --ak-gradient: linear-gradient(135deg, #00DDFF 0%, #F200FF 100%);
-  --ak-gradient-subtle: linear-gradient(135deg, rgba(0, 221, 255, 0.12) 0%, rgba(242, 0, 255, 0.12) 100%);
+  /* Accent fills: the same in both modes */
+  --ak-primary: #FF5E32;
+  --ak-primary-light: #FF8260;
+  --ak-primary-dark: #FF4613;
+  --ak-primary-soft: #F58A5E;
+  --ak-primary-glow: rgba(255, 94, 50, 0.2);
+  --ak-primary-rgb: 255, 94, 50;
+  --ak-primary-soft-rgb: 245, 138, 94;
+  --ak-on-primary: #011428;   /* text on orange fills */
+  --ak-border-accent: rgba(255, 94, 50, 0.35);
+  --ak-gradient: linear-gradient(135deg, #FF5E32 0%, #F58A5E 100%);
+  --ak-gradient-subtle: linear-gradient(135deg, rgba(255, 94, 50, 0.12) 0%, rgba(177, 205, 255, 0.12) 100%);
+  --ak-gradient-ice: linear-gradient(135deg, #B1CDFF 0%, #3F598A 100%);
+  --ak-gradient-sky: radial-gradient(ellipse at 50% 0%, #ABCEE1 0%, #3F598A 75%);
 
-  /* Text */
-  --ak-text: #E8E4F0;
-  --ak-text-secondary: #9A91B8;
-  --ak-text-muted: #6B5F85;
-
-  /* Semantic (aligned with secondary palette) */
+  /* Semantic */
   --ak-green: #26A64D;
   --ak-red: #DB4444;
   --ak-warning: #F7A544;
   --ak-aws: #FF9900;
   --ak-azure: #0078D4;
 
-  /* Docusaurus primary (brand cyan) */
-  --ifm-color-primary: #00DDFF;
-  --ifm-color-primary-dark: #00AADE;
-  --ifm-color-primary-darker: #0090C0;
-  --ifm-color-primary-darkest: #007AA3;
-  --ifm-color-primary-light: #40E8FF;
-  --ifm-color-primary-lighter: #80F0FF;
-  --ifm-color-primary-lightest: #C0F8FF;
-
-  /* Docusaurus layout */
-  --ifm-background-color: #010002;
-  --ifm-background-surface-color: #071026;
-  --ifm-navbar-background-color: #010002;
-  --ifm-footer-background-color: #010002;
-
   --ifm-code-font-size: 94%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 221, 255, 0.15);
 
   /* Typography */
   --ifm-font-family-base: 'Archivo', sans-serif;
   --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   --ifm-heading-font-weight: 700;
-  --ifm-font-color-base: #E8E4F0;
-  --ifm-font-color-secondary: #9A91B8;
 
   /* Layout */
   --ifm-global-radius: 0.5rem;
-  --ifm-navbar-shadow: 0 1px 0 0 #081226;
-  --ifm-toc-border-color: #081226;
+}
+
+/* ── Dark mode (default). `.footer` and `.ak-dark` pin a subtree to these values,
+      so the footer and dark feature bands stay navy in the light mode too.
+      `.ak-dark-surface` also paints the background (see below). ── */
+:root,
+[data-theme='dark'],
+.footer,
+.ak-dark,
+.ak-dark-surface {
+  /* Surfaces (derived steps of Prussian Blue) */
+  --ak-bg: #011428;
+  --ak-bg-alt: #011C37;
+  --ak-surface: #011428;
+  --ak-surface-raised: #02284F;
+  --ak-surface-overlay: #0D315A;
+  --ak-border: #173964;
+
+  /* Foreground: strong text, and the tint used for hairlines and glass fills */
+  --ak-fg: #FFFFFF;
+  --ak-fg-rgb: 255, 255, 255;
+
+  /* Text */
+  --ak-text: #EAF3F8;
+  --ak-text-secondary: #ABCEE1;
+  --ak-text-muted: #798BAD;
+  --ak-primary-text: #FF5E32;   /* orange used as text or as a thin line */
+
+  /* Ambient: borders, glows, diagram strokes, particles */
+  --ak-blue: #B1CDFF;
+  --ak-blue-light: #ABCEE1;
+  --ak-blue-dark: #3F598A;
+  --ak-blue-glow: rgba(177, 205, 255, 0.2);
+  --ak-sky: #ABCEE1;
+
+  /* Channel triplets, for rgba(var(--ak-*-rgb), alpha) */
+  --ak-blue-rgb: 177, 205, 255;
+  --ak-sky-rgb: 171, 206, 225;
+  --ak-dusk-rgb: 63, 89, 138;
+  --ak-prussian-rgb: 2, 40, 79;
+  --ak-bg-rgb: 1, 20, 40;
+
+  --ak-gradient-blue: linear-gradient(225deg, #011C37 0%, #02284F 45%, #3F598A 100%);
+  --ak-shadow-rgb: 0, 0, 0;
+  --ak-scrim-rgb: 0, 0, 0;   /* translucent fills that darken a surface */
+  --ak-mono-filter: brightness(0) invert(1);   /* single-colour logos render white */
+}
+
+:root,
+[data-theme='dark'] {
+  /* Docusaurus primary (brand orange) */
+  --ifm-color-primary: #FF5E32;
+  --ifm-color-primary-dark: #FF4613;
+  --ifm-color-primary-darker: #FF3A04;
+  --ifm-color-primary-darkest: #D52E00;
+  --ifm-color-primary-light: #FF7651;
+  --ifm-color-primary-lighter: #FF8260;
+  --ifm-color-primary-lightest: #FFA68E;
+
+  /* Docusaurus layout */
+  --ifm-background-color: #011428;
+  --ifm-background-surface-color: #02284F;
+  --ifm-navbar-background-color: #011428;
+  --ifm-footer-background-color: #011428;
+  --ifm-font-color-base: #EAF3F8;
+  --ifm-font-color-secondary: #ABCEE1;
+  --ifm-navbar-shadow: 0 1px 0 0 #173964;
+  --ifm-toc-border-color: #173964;
+  --docusaurus-highlighted-code-line-bg: rgba(177, 205, 255, 0.15);
+}
+
+/* ── Light mode ── */
+[data-theme='light'] {
+  /* Surfaces: white, with cool steps tinted toward Pale Sky */
+  --ak-bg: #FFFFFF;
+  --ak-bg-alt: #F5F8FC;
+  --ak-surface: #FFFFFF;
+  --ak-surface-raised: #F1F5FA;
+  --ak-surface-overlay: #E7EEF7;
+  --ak-border: #D3DEEC;
+
+  --ak-fg: #02284F;
+  --ak-fg-rgb: 2, 40, 79;
+
+  /* Text: Prussian Blue, with Dusk Blue steps */
+  --ak-text: #02284F;
+  --ak-text-secondary: #3F598A;
+  --ak-text-muted: #5D7199;
+  --ak-primary-text: #D23F17;   /* the orange darkened to 4.6:1 on white */
+
+  /* Ambient: the blues darken so lines and icons stay visible on white */
+  --ak-blue: #3F598A;
+  --ak-blue-light: #5E7AAE;
+  --ak-blue-dark: #02284F;
+  --ak-blue-glow: rgba(63, 89, 138, 0.16);
+  --ak-sky: #5E7AAE;
+
+  --ak-blue-rgb: 63, 89, 138;
+  --ak-sky-rgb: 94, 122, 174;
+  --ak-dusk-rgb: 63, 89, 138;
+  --ak-prussian-rgb: 241, 245, 250;
+  --ak-bg-rgb: 255, 255, 255;
+
+  --ak-gradient-blue: linear-gradient(225deg, #FFFFFF 0%, #EEF4FB 45%, #DCE8F6 100%);
+  --ak-shadow-rgb: 2, 40, 79;
+  --ak-scrim-rgb: 214, 225, 240;   /* the same fills tint a white surface instead */
+  --ak-mono-filter: brightness(0) invert(0.14);   /* single-colour logos render near-black */
+
+  /* Docusaurus primary: the darkened orange, so links meet AA on white */
+  --ifm-color-primary: #D23F17;
+  --ifm-color-primary-dark: #BD3915;
+  --ifm-color-primary-darker: #B23614;
+  --ifm-color-primary-darkest: #932C10;
+  --ifm-color-primary-light: #E5481D;
+  --ifm-color-primary-lighter: #E7532A;
+  --ifm-color-primary-lightest: #EC7453;
+
+  --ifm-background-color: #FFFFFF;
+  --ifm-background-surface-color: #F5F8FC;
+  --ifm-navbar-background-color: #FFFFFF;
+  --ifm-footer-background-color: #011428;
+  --ifm-font-color-base: #02284F;
+  --ifm-font-color-secondary: #3F598A;
+  --ifm-navbar-shadow: 0 1px 0 0 #D3DEEC;
+  --ifm-toc-border-color: #D3DEEC;
+  --docusaurus-highlighted-code-line-bg: rgba(63, 89, 138, 0.14);
+}
+
+/* A whole surface pinned to the dark mode: it paints its own background and resets the
+   Infima text and link colours, which would otherwise inherit the light values. */
+.ak-dark-surface {
+  background-color: var(--ak-bg);
+  color: var(--ak-text);
+  --ifm-font-color-base: #EAF3F8;
+  --ifm-font-color-secondary: #ABCEE1;
+  --ifm-heading-color: #EAF3F8;
+  --ifm-background-color: #011428;
+  --ifm-background-surface-color: #02284F;
+  --ifm-color-primary: #FF5E32;
+  --ifm-color-primary-dark: #FF4613;
+  --ifm-color-primary-darker: #FF3A04;
+  --ifm-color-primary-darkest: #D52E00;
+  --ifm-color-primary-light: #FF7651;
+  --ifm-color-primary-lighter: #FF8260;
+  --ifm-color-primary-lightest: #FFA68E;
+  --ifm-link-color: #FF5E32;
 }
 
 html,
-html[data-theme='dark'] {
-  background-color: #010002 !important;
+html[data-theme='dark'],
+html[data-theme='light'] {
+  background-color: var(--ak-bg) !important;
 }
 
 html[data-theme='dark'] body,
+html[data-theme='light'] body,
 body {
-  background-color: #010002 !important;
+  background-color: var(--ak-bg) !important;
 }
 
-/* Dark mode (same palette — site is dark-first) */
-[data-theme='dark'] {
-  --ifm-color-primary: #00DDFF;
-  --ifm-color-primary-dark: #00AADE;
-  --ifm-color-primary-darker: #0090C0;
-  --ifm-color-primary-darkest: #007AA3;
-  --ifm-color-primary-light: #40E8FF;
-  --ifm-color-primary-lighter: #80F0FF;
-  --ifm-color-primary-lightest: #C0F8FF;
-
-  --ifm-background-color: #010002;
-  --ifm-background-surface-color: #071026;
-  --ifm-navbar-background-color: #010002;
-  --ifm-footer-background-color: #010002;
-
-  --ifm-font-color-base: #dfe1f0;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 221, 255, 0.15);
+/* Doc and blog containers follow the page background in both modes */
+.docMainContainer_TBSr,
+.docsWrapper_hBAB,
+.theme-doc-sidebar-container {
+  background-color: var(--ak-bg);
 }
 
-/* Dark theme doc/blog containers */
-[data-theme='dark'] .docMainContainer_TBSr {
-  background-color: #010002;
+.docItemContainer_Djhp {
+  background-color: var(--ak-bg);
+  border-color: var(--ak-border);
 }
 
-[data-theme='dark'] .docsWrapper_hBAB {
-  background-color: #010002;
+/* =============================================================================
+   Design system: foundations
+   One type scale, one spacing scale, one container, two radii. Sizes are fluid
+   between a 390 px and a 1440 px viewport. Starting values and the reasoning are
+   in docs/specs/oak-rebrand/research/design-audit.md.
+   ============================================================================= */
+
+:root {
+  /* Type scale */
+  --ak-type-display: clamp(2.75rem, 1.729rem + 4.19vw, 5.5rem);    /* 44 to 88 px: hero headline only */
+  --ak-type-h1: clamp(2.375rem, 1.771rem + 2.476vw, 4rem);         /* 38 to 64 px */
+  --ak-type-h2: clamp(2rem, 1.536rem + 1.905vw, 3.25rem);          /* 32 to 52 px */
+  --ak-type-h3: clamp(1.5rem, 1.361rem + 0.571vw, 1.875rem);       /* 24 to 30 px */
+  --ak-type-h4: clamp(1.25rem, 1.204rem + 0.19vw, 1.375rem);       /* 20 to 22 px */
+  --ak-type-lead: clamp(1.125rem, 1.055rem + 0.286vw, 1.3125rem);  /* 18 to 21 px */
+  --ak-type-body: clamp(1.0625rem, 1.039rem + 0.095vw, 1.125rem);  /* 17 to 18 px */
+  --ak-type-small: 0.9375rem;                                      /* 15 px */
+  --ak-type-label: 0.8125rem;                                      /* 13 px, monospace only */
+
+  /* Spacing scale, named by pixel value */
+  --ak-space-4: 0.25rem;
+  --ak-space-8: 0.5rem;
+  --ak-space-12: 0.75rem;
+  --ak-space-16: 1rem;
+  --ak-space-24: 1.5rem;
+  --ak-space-32: 2rem;
+  --ak-space-48: 3rem;
+  --ak-space-64: 4rem;
+  --ak-space-96: 6rem;
+  --ak-space-128: 8rem;
+  --ak-space-160: 10rem;
+
+  /* Layout */
+  --ak-container: 80rem;                                            /* 1280 px */
+  --ak-gutter: clamp(1.5rem, 0.9rem + 2.5vw, 3rem);
+  --ak-section-pad: clamp(4rem, 2.514rem + 6.1vw, 8rem);            /* 64 to 128 px */
+  --ak-measure: 45rem;                                              /* 720 px, for prose */
+
+  /* Corner radii: two, and no others */
+  --ak-radius-control: 8px;
+  --ak-radius-card: 16px;
+
+  --ifm-navbar-height: 4.5rem;                                      /* 72 px */
 }
 
-[data-theme='dark'] .theme-doc-sidebar-container {
-  background-color: #010002;
+.ak-container {
+  width: 100%;
+  max-width: calc(var(--ak-container) + 2 * var(--ak-gutter));
+  margin-inline: auto;
+  padding-inline: var(--ak-gutter);
 }
 
-[data-theme='dark'] .docItemContainer_Djhp {
-  background-color: #010002;
-  border-color: #081226;
+.ak-section {
+  padding-block: var(--ak-section-pad);
 }
 
-/* Light mode fallback — keep it clean */
-[data-theme='light'] {
-  --ifm-color-primary: #0099BB;
-  --ifm-color-primary-dark: #0085A5;
-  --ifm-color-primary-darker: #007090;
-  --ifm-color-primary-darkest: #005F7A;
-  --ifm-color-primary-light: #00AADE;
-  --ifm-color-primary-lighter: #40C8E8;
-  --ifm-color-primary-lightest: #80E0F0;
+/* Headings: weight 600, a solid colour, never a gradient */
+.ak-display,
+.ak-h1,
+.ak-h2,
+.ak-h3,
+.ak-h4 {
+  margin: 0;
+  font-family: var(--ifm-font-family-base);
+  font-weight: 600;
+  color: var(--ak-fg);
+  text-wrap: balance;
+}
 
-  --ifm-background-color: #ffffff;
-  --ifm-background-surface-color: #f8fafc;
-  --ifm-navbar-background-color: #ffffff;
-  --ifm-footer-background-color: #010002;
+.ak-display {
+  font-size: var(--ak-type-display);
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+.ak-h1 {
+  font-size: var(--ak-type-h1);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.ak-h2 {
+  font-size: var(--ak-type-h2);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+}
+
+.ak-h3 {
+  font-size: var(--ak-type-h3);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.ak-h4 {
+  font-size: var(--ak-type-h4);
+  line-height: 1.3;
+}
+
+.ak-lead,
+.ak-body,
+.ak-small {
+  margin: 0;
+  font-weight: 400;
+}
+
+.ak-lead {
+  max-width: 40rem;
+  font-size: var(--ak-type-lead);
+  line-height: 1.5;
+  color: var(--ak-text-secondary);
+}
+
+.ak-body {
+  font-size: var(--ak-type-body);
+  line-height: 1.6;
+  color: var(--ak-text-secondary);
+}
+
+.ak-small {
+  font-size: var(--ak-type-small);
+  line-height: 1.5;
+  color: var(--ak-text-muted);
+}
+
+/* Section label: the only text set below 14 px, and always in the monospace face */
+.ak-label {
+  margin: 0;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ak-text-muted);
+}
+
+.ak-label__index {
+  margin-right: 0.75em;
+  color: var(--ak-primary-text);
+}
+
+.ak-accent-text {
+  color: var(--ak-primary-text);
+}
+
+/* Buttons: rectangular, three kinds. One primary button per view. */
+.ak-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 3.25rem;
+  padding: 0 1.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--ak-radius-control);
+  font-family: var(--ifm-font-family-base);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.ak-btn:hover {
+  text-decoration: none;
+}
+
+.ak-btn--primary,
+.ak-btn--primary:hover {
+  color: var(--ak-on-primary);
+}
+
+.ak-btn--primary {
+  background-color: var(--ak-primary);
+}
+
+.ak-btn--primary:hover {
+  background-color: var(--ak-primary-light);
+}
+
+.ak-btn--secondary,
+.ak-btn--secondary:hover {
+  color: var(--ak-fg);
+}
+
+.ak-btn--secondary {
+  background-color: transparent;
+  border-color: rgba(var(--ak-fg-rgb), 0.28);
+}
+
+.ak-btn--secondary:hover {
+  border-color: var(--ak-fg);
+}
+
+.ak-btn--small {
+  height: 2.5rem;
+  padding: 0 1rem;
+  font-size: var(--ak-type-small);
+}
+
+/* Tertiary action: a text link with an arrow */
+.ak-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-weight: 600;
+  color: var(--ak-primary-text);
+  text-decoration: none;
+}
+
+.ak-link::after {
+  content: '\2192';
+  transition: transform 0.15s ease;
+}
+
+.ak-link:hover {
+  color: var(--ak-primary-text);
+  text-decoration: none;
+}
+
+.ak-link:hover::after {
+  transform: translateX(3px);
+}
+
+.ak-btn:focus-visible,
+.ak-link:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 3px;
+}
+
+/* =============================================================================
+   Design system: components
+   Flat surfaces: a solid fill with a hairline border, or no fill and a rule.
+   No gradients, glows, blur or shadows.
+   ============================================================================= */
+
+/* Section header: numbered label, heading, lead. Left aligned. */
+.ak-section-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-24);
+  margin-bottom: var(--ak-space-64);
+}
+
+.ak-section-header .ak-lead {
+  max-width: var(--ak-measure);
+}
+
+/* A section on the raised surface, to separate it from its neighbours without a glow */
+.ak-section--raised {
+  background-color: var(--ak-bg-alt);
+  border-block: 1px solid var(--ak-border);
+}
+
+.ak-rule {
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--ak-border);
+}
+
+.ak-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-16);
+  padding: var(--ak-space-32);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-card);
+  background-color: var(--ak-bg-alt);
+}
+
+/* Tags are labels, not actions: outlined, monospace, never clickable */
+.ak-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 1.75rem;
+  padding: 0 var(--ak-space-12);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  line-height: 1;
+  color: var(--ak-text-secondary);
+  white-space: nowrap;
+}
+
+.ak-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ak-space-8);
+}
+
+/* Page hero: the header of every page below the home page (components/ui/PageHero.tsx) */
+.ak-page-hero {
+  padding-block: var(--ak-space-96) var(--ak-space-64);
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.ak-page-hero__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ak-space-48);
+  align-items: center;
+}
+
+.ak-page-hero--with-art .ak-page-hero__inner {
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+}
+
+.ak-page-hero__copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-24);
+  max-width: 52rem;
+}
+
+/* The way back: a text link with the arrow in front */
+.ak-page-hero__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: var(--ak-space-8);
+  font-size: var(--ak-type-small);
+  font-weight: 600;
+  color: var(--ak-text-secondary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.ak-page-hero__back::before {
+  content: '\2190';
+  transition: transform 0.15s ease;
+}
+
+.ak-page-hero__back:hover {
+  color: var(--ak-fg);
+  text-decoration: none;
+}
+
+.ak-page-hero__back:hover::before {
+  transform: translateX(-3px);
+}
+
+.ak-page-hero__back:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 3px;
+}
+
+.ak-page-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ak-space-16) var(--ak-space-24);
+  margin-top: var(--ak-space-8);
+}
+
+.ak-page-hero__art {
+  min-width: 0;
+}
+
+.ak-page-hero__art > svg {
+  max-height: 26rem;
+}
+
+@media (max-width: 996px) {
+  .ak-page-hero {
+    padding-block: var(--ak-space-64) var(--ak-space-48);
+  }
+
+  .ak-page-hero--with-art .ak-page-hero__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ak-page-hero__art {
+    max-width: 30rem;
+  }
+}
+
+/* The scroll-to-top button hands focus to the main content, which is not itself a control:
+   it takes the focus without drawing a ring around the whole page. */
+main[tabindex='-1']:focus {
+  outline: none;
+}
+
+/* Reveal: the one entrance effect (components/ui/Reveal.tsx). The waiting class is only ever
+   set by script, on content below the fold, so nothing is hidden without it. */
+.ak-reveal--waiting {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.ak-reveal--shown {
+  animation: ak-reveal-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) var(--ak-reveal-delay, 0ms) both;
+}
+
+@keyframes ak-reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), print {
+  .ak-reveal--waiting {
+    opacity: 1;
+    transform: none;
+  }
+
+  .ak-reveal--shown {
+    animation: none;
+  }
 }
 
 /* =============================================================================
@@ -183,24 +696,14 @@ section {
   }
 }
 
-/* Docs and blog — article remounts on every client-side navigation */
-article {
-  animation: pageFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-/* Scroll reveal — applied by clientModules/scrollReveal.js */
-.scroll-reveal {
-  opacity: 0;
-  transform: translateY(24px);
-  transition:
-    opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-}
-
-.scroll-reveal.scroll-reveal-visible {
-  opacity: 1;
-  transform: translateY(0);
+/* A docs page or a blog post fades up when it is opened. It is scoped to those two, so it
+   does not fight Reveal on cards that happen to be articles, and it is off for visitors who
+   ask for reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .theme-doc-markdown,
+  html.blog-post-page main article {
+    animation: pageFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
 }
 
 /* =============================================================================
@@ -208,11 +711,9 @@ article {
    ============================================================================= */
 
 .navbar {
-  background-color: #010002;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  height: 60px;
-  padding: 0 2rem;
+  background-color: var(--ak-bg);
+  height: var(--ifm-navbar-height);
+  padding: 0 var(--ak-gutter);
   z-index: 100 !important;
 }
 
@@ -220,37 +721,39 @@ article {
   .navbar {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background-color: #010002;
+    background-color: var(--ak-bg);
   }
 }
 
 [data-theme='light'] .navbar {
-  background-color: rgba(255, 255, 255, 0.95);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background-color: var(--ak-bg);
+  border-bottom: 1px solid var(--ak-border);
 }
 
 .navbar__title {
   font-weight: 700;
   letter-spacing: -0.02em;
   font-size: 1rem;
-  color: #ffffff;
+  color: var(--ak-fg);
 }
 
 .navbar__logo {
-  height: 3rem;
+  height: 3.25rem;
 }
 
 /* Nav links */
 .navbar__link {
   font-weight: 500;
-  font-size: 0.88rem;
-  color: rgba(255, 255, 255, 0.75);
+  font-size: 1rem;
+  /* A two-word link stays on one line when the bar is at its narrowest */
+  white-space: nowrap;
+  color: rgba(var(--ak-fg-rgb), 0.75);
   transition: color 0.15s ease;
 }
 
 .navbar__link:hover,
 .navbar__link--active {
-  color: #ffffff;
+  color: var(--ak-fg);
   background: none;
 }
 
@@ -259,10 +762,10 @@ article {
 .navbar__search-button,
 [class*="searchButton"] {
   background: #ffffff !important;
-  color: #0a0d15 !important;
+  color: var(--ak-bg-alt) !important;
   border-radius: 9999px !important;
   border: none !important;
-  font-size: 0.82rem !important;
+  font-size: var(--ak-type-small) !important;
   font-weight: 600 !important;
   padding: 0.4rem 1.1rem !important;
   display: flex !important;
@@ -287,39 +790,26 @@ article {
   opacity: 1;
 }
 
-/* Center Navbar Links on Desktop */
+/* Navbar layout on desktop: logo, then the links, with the tools and the primary action on the
+   right. The links follow the logo instead of being centred, so they can never collide with the
+   right-hand group when it grows (the version menu appears on docs pages). */
 @media (min-width: 1200px) {
   .navbar__inner {
-    position: relative;
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
+    align-items: center;
     width: 100%;
+    max-width: calc(var(--ak-container) + 2 * var(--ak-gutter));
+    margin-inline: auto;
+    padding-inline: var(--ak-gutter);
   }
 
   .navbar__brand {
-    position: absolute;
-    left: 2rem;
-    top: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
+    margin-right: var(--ak-space-48);
   }
 
   .navbar__inner > .navbar__items:first-child {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    margin-right: 0 !important;
-  }
-
-  .navbar__items--right {
-    position: absolute;
-    right: 2rem;
-    top: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    margin-left: 0 !important;
+    gap: var(--ak-space-8);
   }
 }
 
@@ -328,8 +818,8 @@ article {
    ============================================================================= */
 
 .footer {
-  background-color: #010002;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background-color: var(--ak-bg);
+  border-top: 1px solid rgba(var(--ak-fg-rgb), 0.08);
   padding: 3.5rem 0 0;
 }
 
@@ -365,14 +855,13 @@ article {
 }
 
 .footer__brand-logo {
-  height: 90px;
+  height: 56px;
   width: auto;
-  margin-top: -15px;
 }
 
 .footer__brand-tagline {
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 0.8rem;
+  color: rgba(var(--ak-fg-rgb), 0.45);
+  font-size: var(--ak-type-small);
   line-height: 1.6;
   margin: 0;
 }
@@ -397,15 +886,14 @@ article {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background-color: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.55);
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.24);
+  background-color: rgba(var(--ak-blue-rgb), 0.06);
+  color: var(--ak-blue);
   text-decoration: none;
-  transition: border-color 0.18s ease, color 0.18s ease,
-    background-color 0.18s ease, transform 0.18s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
 }
 
 .footer__social-icon {
@@ -423,15 +911,15 @@ article {
 }
 
 .footer__social-link:hover {
-  border-color: rgba(255, 255, 255, 0.5);
-  color: #ffffff;
-  background-color: rgba(255, 255, 255, 0.08);
+  border-color: var(--ak-primary);
+  color: var(--ak-primary-text);
+  background-color: rgba(var(--ak-primary-rgb), 0.12);
   text-decoration: none;
   transform: translateY(-1px);
 }
 
 .footer__social-link:focus-visible {
-  outline: 2px solid var(--ak-blue, #00d4ff);
+  outline: 2px solid var(--ak-primary);
   outline-offset: 2px;
 }
 
@@ -444,8 +932,8 @@ article {
 }
 
 .footer__member-label {
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 0.7rem;
+  color: rgba(var(--ak-fg-rgb), 0.35);
+  font-size: var(--ak-type-label);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -517,8 +1005,8 @@ article {
 }
 
 .footer__title {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.75rem;
+  color: rgba(var(--ak-fg-rgb), 0.9);
+  font-size: var(--ak-type-label);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -526,14 +1014,14 @@ article {
 }
 
 .footer__link-item {
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 0.875rem;
+  color: rgba(var(--ak-fg-rgb), 0.45);
+  font-size: var(--ak-type-small);
   transition: color 0.15s ease;
   text-decoration: none;
 }
 
 .footer__link-item:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--ak-fg-rgb), 0.9);
   text-decoration: none;
 }
 
@@ -545,12 +1033,12 @@ article {
   justify-content: space-between;
   gap: 1rem;
   padding: 1.25rem 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(var(--ak-fg-rgb), 0.08);
 }
 
 .footer__copyright {
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 0.8rem;
+  color: rgba(var(--ak-fg-rgb), 0.3);
+  font-size: var(--ak-type-small);
   margin: 0;
   padding: 0;
   border-top: none;
@@ -558,28 +1046,9 @@ article {
 
 /* Docusaurus wraps copyright text in a div — target it */
 .footer__copyright>* {
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 0.8rem;
+  color: rgba(var(--ak-fg-rgb), 0.3);
+  font-size: var(--ak-type-small);
   margin: 0;
-}
-
-.footer__legal-links {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-}
-
-.footer__legal-link {
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 0.8rem;
-  text-decoration: none;
-  transition: color 0.15s ease;
-  white-space: nowrap;
-}
-
-.footer__legal-link:hover {
-  color: rgba(255, 255, 255, 0.7);
-  text-decoration: none;
 }
 
 /* ── Responsive ──────────────────────────────────────────────── */
@@ -614,50 +1083,14 @@ article {
   }
 }
 
+/* Small screens keep the page's left edge: the brand block, then the link columns two abreast */
 @media (max-width: 768px) {
   .footer__inner {
-    padding: 0 1.5rem;
+    padding: 0 var(--ak-gutter);
   }
 
   .footer__brand {
-    align-items: center;
-    text-align: center;
     margin-right: 0;
-  }
-
-  .footer__social-links {
-    justify-content: center;
-  }
-
-  .footer__member-of {
-    align-items: center;
-  }
-
-  .footer__member-badges {
-    justify-content: center;
-  }
-
-  .footer__links-grid .footer__links {
-    justify-content: center;
-  }
-
-  .footer__links-grid .footer__col {
-    text-align: center;
-  }
-
-  .footer__items {
-    align-items: center;
-  }
-
-  .footer__bottom {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 0.75rem;
-  }
-
-  .footer__legal-links {
-    justify-content: center;
   }
 }
 
@@ -666,37 +1099,24 @@ article {
     padding: 2.5rem 0 0;
   }
 
-  .footer__inner {
-    padding: 0 1.25rem;
-  }
-
   .footer__top {
     padding-bottom: 2rem;
   }
 
   .footer__links-grid .footer__links {
-    flex-direction: column;
-    gap: 1.75rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem 1.5rem;
   }
 
   .footer__links-grid .footer__col {
     flex: unset;
+    min-width: 0;
     width: 100%;
   }
 
   .footer__title {
     margin-bottom: 0.625rem;
-  }
-
-  .footer__legal-links {
-    flex-wrap: wrap;
-    gap: 0.75rem 1rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .footer__inner {
-    padding: 0 1rem;
   }
 }
 
@@ -705,8 +1125,8 @@ article {
    ============================================================================= */
 
 .button--primary {
-  background: var(--ak-blue);
-  color: #05060b;
+  background: var(--ak-primary);
+  color: var(--ak-bg);
   font-weight: 600;
   border: none;
   transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
@@ -714,26 +1134,26 @@ article {
 }
 
 .button--primary:hover {
-  background: var(--ak-blue-light);
-  color: #05060b;
+  background: var(--ak-primary-light);
+  color: var(--ak-bg);
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(0, 221, 255, 0.3);
-  box-shadow: 0 4px 20px rgba(0, 221, 255, 0.3);
+  box-shadow: 0 4px 20px rgba(var(--ak-primary-rgb), 0.3);
+  box-shadow: 0 4px 20px rgba(var(--ak-primary-rgb), 0.3);
 }
 
 .button--secondary {
   background: transparent;
   border: 1px solid var(--ak-border-accent);
-  color: var(--ak-blue);
+  color: var(--ak-primary-text);
   font-weight: 600;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
   letter-spacing: -0.01em;
 }
 
 .button--secondary:hover {
-  background: var(--ak-blue-glow);
-  border-color: var(--ak-blue);
-  color: var(--ak-blue);
+  background: var(--ak-primary-glow);
+  border-color: var(--ak-primary);
+  color: var(--ak-primary-text);
   transform: translateY(-1px);
 }
 
@@ -743,7 +1163,7 @@ article {
 
 .prism-code {
   border-radius: 0.5rem;
-  background: #010002 !important;
+  background: var(--ak-bg) !important;
   border: 1px solid var(--ak-border);
 }
 
@@ -756,8 +1176,8 @@ article {
 }
 
 code {
-  background: rgba(0, 221, 255, 0.1);
-  border: 1px solid rgba(0, 221, 255, 0.2);
+  background: rgba(var(--ak-blue-rgb), 0.1);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.2);
   border-radius: 0.25rem;
   color: var(--ak-blue-light);
   font-size: 0.875em;
@@ -766,9 +1186,9 @@ code {
 }
 
 [data-theme='light'] code {
-  background: rgba(0, 153, 187, 0.07);
-  border-color: rgba(0, 153, 187, 0.15);
-  color: #0085A5;
+  background: rgba(var(--ak-primary-rgb), 0.07);
+  border-color: rgba(var(--ak-primary-rgb), 0.15);
+  color: var(--ak-primary-dark);
 }
 
 /* =============================================================================
@@ -781,20 +1201,20 @@ code {
 
 .menu__link {
   border-radius: 0.375rem;
-  color: #ffffff !important;
-  font-size: 0.9rem;
+  color: var(--ak-fg) !important;
+  font-size: var(--ak-type-small);
   font-weight: 500;
   transition: color 0.15s ease, background 0.15s ease;
 }
 
 .menu__link:hover {
-  color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--ak-fg) !important;
+  background: rgba(var(--ak-fg-rgb), 0.04);
 }
 
 .menu__link--active,
 .menu__link--active:hover {
-  color: var(--ak-blue) !important;
+  color: var(--ak-primary-text) !important;
   background: transparent !important;
   font-weight: 600;
   border-left: none !important;
@@ -802,7 +1222,7 @@ code {
 }
 
 .menu__list-item-collapsible:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--ak-fg-rgb), 0.04);
 }
 
 /* Table of Contents (TOC) Links */
@@ -811,18 +1231,18 @@ code {
 }
 
 .table-of-contents__link {
-  color: #ffffff !important;
+  color: var(--ak-fg) !important;
   transition: color 0.15s ease;
 }
 
 .table-of-contents__link:hover {
-  color: #ffffff !important;
+  color: var(--ak-fg) !important;
   text-decoration: none;
 }
 
 .table-of-contents__link--active,
 .table-of-contents__link--active:hover {
-  color: var(--ak-blue) !important;
+  color: var(--ak-primary-text) !important;
   font-weight: 600;
 }
 
@@ -841,22 +1261,22 @@ code {
 }
 
 .breadcrumbs__link {
-  color: rgba(255, 255, 255, 0.7) !important;
+  color: rgba(var(--ak-fg-rgb), 0.7) !important;
   opacity: 1 !important;
   text-transform: uppercase !important;
-  font-size: 0.72rem !important;
+  font-size: var(--ak-type-small) !important;
   letter-spacing: 0.08em !important;
   font-weight: 600 !important;
 }
 
 .breadcrumbs__link:hover {
-  color: #ffffff !important;
+  color: var(--ak-fg) !important;
   opacity: 1 !important;
   text-decoration: none;
 }
 
 .breadcrumbs__item--active .breadcrumbs__link {
-  color: var(--ak-blue) !important;
+  color: var(--ak-primary-text) !important;
   opacity: 1 !important;
 }
 
@@ -864,14 +1284,14 @@ code {
 .theme-doc-version-badge {
   background: transparent !important;
   background-color: transparent !important;
-  color: var(--ak-blue) !important;
-  border: 1px solid rgba(0, 221, 255, 0.3) !important;
+  color: var(--ak-primary-text) !important;
+  border: 1px solid rgba(var(--ak-primary-rgb), 0.3) !important;
   font-weight: 600 !important;
 }
 
 /* Document main heading horizontal line divider */
 .theme-doc-markdown h1:first-of-type {
-  border-bottom: 1.5px solid rgba(255, 255, 255, 0.15) !important;
+  border-bottom: 1.5px solid rgba(var(--ak-fg-rgb), 0.15) !important;
   padding-bottom: 0.3rem !important;
   margin-bottom: 1.75rem !important;
 }
@@ -886,11 +1306,14 @@ code {
    Mermaid Diagrams
    ============================================================================= */
 
+/* Diagrams follow the colour mode: a white plate with the light palette on the light page
+   (src/theme/Mermaid sends that palette with each diagram), the dark plate and the palette
+   in docusaurus.config.js on the dark one. */
 .docusaurus-mermaid-container {
-  border-radius: 0.625rem;
+  border-radius: var(--ak-radius-card);
   border: 1px solid var(--ak-border);
-  padding: 1rem;
-  background: var(--ak-surface);
+  padding: 1.25rem 1rem;
+  background-color: var(--ak-bg);
   overflow: hidden;
   margin: 1.25rem 0;
 }
@@ -925,8 +1348,8 @@ code {
 
   /* Style Left Sidebar Section as a separate floating card */
   .theme-doc-sidebar-container {
-    background-color: #020203 !important;
-    border: 1.5px solid rgba(255, 255, 255, 0.15) !important;
+    background-color: var(--ak-bg) !important;
+    border: 1.5px solid rgba(var(--ak-fg-rgb), 0.15) !important;
     border-radius: 1rem !important;
     padding-left: 0.45rem !important;
     padding-right: 3.5rem !important;
@@ -938,15 +1361,15 @@ code {
   }
 
   .theme-doc-sidebar-container:hover {
-    border-color: rgba(0, 221, 255, 0.55) !important;
-    box-shadow: 0 8px 32px rgba(0, 221, 255, 0.08), 0 4px 30px rgba(0, 0, 0, 0.8) !important;
+    border-color: rgba(var(--ak-primary-rgb), 0.55) !important;
+    box-shadow: 0 8px 32px rgba(var(--ak-primary-rgb), 0.08), 0 4px 30px rgba(var(--ak-shadow-rgb), 0.8) !important;
   }
 
   /* Style Right Table of Contents Section as a separate card */
   .theme-doc-toc-desktop {
     border-left: none !important;
-    background-color: #020203 !important;
-    border: 1.5px solid rgba(255, 255, 255, 0.15) !important;
+    background-color: var(--ak-bg) !important;
+    border: 1.5px solid rgba(var(--ak-fg-rgb), 0.15) !important;
     border-radius: 1rem !important;
     padding: 1.5rem !important;
     margin: 1.5rem 1.5rem 1.5rem 0 !important;
@@ -957,12 +1380,12 @@ code {
     transition: all 0.25s ease;
     overflow-y: auto;
     scrollbar-width: thin !important;
-    scrollbar-color: rgba(255, 255, 255, 0.15) transparent !important;
+    scrollbar-color: rgba(var(--ak-fg-rgb), 0.15) transparent !important;
   }
 
   .theme-doc-toc-desktop:hover {
-    border-color: rgba(0, 221, 255, 0.55) !important;
-    box-shadow: 0 8px 32px rgba(0, 221, 255, 0.08), 0 4px 30px rgba(0, 0, 0, 0.8) !important;
+    border-color: rgba(var(--ak-primary-rgb), 0.55) !important;
+    box-shadow: 0 8px 32px rgba(var(--ak-primary-rgb), 0.08), 0 4px 30px rgba(var(--ak-shadow-rgb), 0.8) !important;
   }
 
   .theme-doc-toc-desktop::-webkit-scrollbar {
@@ -976,12 +1399,12 @@ code {
   }
 
   .theme-doc-toc-desktop::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15) !important;
+    background: rgba(var(--ak-fg-rgb), 0.15) !important;
     border-radius: 9999px !important;
   }
 
   .theme-doc-toc-desktop::-webkit-scrollbar-thumb:hover {
-    background: var(--ak-blue) !important;
+    background: var(--ak-primary) !important;
   }
 
   .theme-doc-toc-desktop::-webkit-scrollbar-button {
@@ -994,8 +1417,7 @@ code {
   padding: 1rem;
 }
 
-/* Blog styling lives in blog-medium.css (Medium-style reading experience,
-   scoped to blog routes via html.blog-wrapper). */
+/* Blog post styling lives in blog.css, scoped to blog routes via html.blog-wrapper. */
 
 /* =============================================================================
    Doc Content
@@ -1018,14 +1440,14 @@ article {
 }
 
 .markdown a {
-  color: var(--ak-blue);
+  color: var(--ak-primary-text);
   text-decoration: none;
   border-bottom: 1px solid transparent;
   transition: border-color 0.15s ease;
 }
 
 .markdown a:hover {
-  border-bottom-color: var(--ak-blue);
+  border-bottom-color: var(--ak-primary);
 }
 
 /* Admonitions */
@@ -1036,8 +1458,8 @@ article {
 }
 
 .alert--info {
-  border-color: rgba(0, 221, 255, 0.35);
-  background: rgba(0, 221, 255, 0.08);
+  border-color: rgba(var(--ak-blue-rgb), 0.35);
+  background: rgba(var(--ak-blue-rgb), 0.08);
 }
 
 .alert--success {
@@ -1053,76 +1475,63 @@ article {
 /* Table of Contents */
 .table-of-contents__link {
   color: var(--ak-text-muted);
-  font-size: 0.85rem;
+  font-size: var(--ak-type-small);
   transition: color 0.15s ease;
 }
 
 .table-of-contents__link:hover,
 .table-of-contents__link--active {
-  color: var(--ak-blue);
+  color: var(--ak-primary-text);
 }
 
-/* Pagination - styled like Read More glass pill buttons */
+/* Previous and next page links, on docs and blog pages: two flat cards */
 .pagination-nav {
-  margin-top: 0.5rem !important;
+  gap: var(--ak-space-16);
+  margin-top: var(--ak-space-32);
 }
 
 .pagination-nav__link {
-  position: relative !important;
-  display: inline-flex !important;
-  flex-direction: column !important;
-  justify-content: center !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-  color: rgba(255, 255, 255, 0.9) !important;
-  border-radius: 9999px !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 4px 15px rgba(0, 0, 0, 0.2) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  text-decoration: none !important;
-  backdrop-filter: blur(12px) !important;
-  padding: 0.6rem 1.6rem !important;
-  width: fit-content !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-}
-
-.pagination-nav__link--prev {
-  align-items: flex-start !important;
-  justify-self: flex-start !important;
-}
-
-.pagination-nav__link--next {
-  align-items: flex-end !important;
-  text-align: right !important;
-  grid-column: 2 !important;
-  justify-self: flex-end !important;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-4);
+  height: 100%;
+  min-width: 0;
+  padding: var(--ak-space-16) var(--ak-space-24);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  background: none;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
 }
 
 .pagination-nav__link:hover {
-  background: #ffffff !important;
-  border-color: #ffffff !important;
-  color: #000000 !important;
-  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4) !important;
-  text-decoration: none !important;
+  border-color: var(--ak-fg);
+  text-decoration: none;
+}
+
+.pagination-nav__link:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 2px;
+}
+
+.pagination-nav__link--next {
+  grid-column: 2;
+  text-align: right;
 }
 
 .pagination-nav__sublabel {
-  display: none !important;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ak-text-muted);
 }
 
 .pagination-nav__label {
-  color: #ffffff !important;
-  font-size: 0.95rem !important;
-  font-weight: 600 !important;
-  transition: color 0.3s ease !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  width: 100% !important;
-}
-
-.pagination-nav__link:hover .pagination-nav__label {
-  color: #000000 !important;
+  font-size: var(--ak-type-body);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ak-fg);
 }
 
 /* =============================================================================
@@ -1182,33 +1591,27 @@ article {
 
 /* "Edit this page" premium button styling */
 .theme-edit-this-page {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-  color: rgba(255, 255, 255, 0.9) !important;
-  font-size: 0.85rem !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.03em !important;
-  padding: 0.6rem 1.6rem !important;
-  border-radius: 9999px !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 4px 15px rgba(0, 0, 0, 0.2) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  text-decoration: none !important;
-  backdrop-filter: blur(12px) !important;
-  width: fit-content !important;
-  gap: 0.5rem !important;
-  margin-top: 0 !important;
-  margin-left: 0.5rem !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  margin-top: 0;
+  margin-left: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.28);
+  border-radius: var(--ak-radius-control);
+  background: none;
+  font-size: var(--ak-type-small);
+  font-weight: 600;
+  color: var(--ak-fg);
+  text-decoration: none;
+  transition: border-color 0.15s ease;
 }
 
 .theme-edit-this-page:hover {
-  background: #ffffff !important;
-  border-color: #ffffff !important;
-  color: #000000 !important;
-  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4) !important;
-  text-decoration: none !important;
+  border-color: var(--ak-fg);
+  color: var(--ak-fg);
+  text-decoration: none;
 }
 
 /* Align edit button and metadata with content boundaries */
@@ -1224,20 +1627,18 @@ article {
   margin-bottom: 2.5rem !important;
 }
 
-/* Blog back button styling lives in blog-medium.css. */
-
-/* Navbar Version Dropdown Matte Badge Style */
-.navbar-version-dropdown {
+/* Navbar Version Dropdown Matte Badge Style (the bar only: in the phone menu it is a plain row) */
+.navbar__inner .navbar-version-dropdown {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(var(--ak-fg-rgb), 0.05) !important;
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.12) !important;
   border-radius: 9999px !important;
   padding: 0.35rem 0.85rem !important;
-  font-size: 0.82rem !important;
+  font-size: var(--ak-type-small) !important;
   font-weight: 600 !important;
-  color: #ffffff !important;
+  color: var(--ak-fg) !important;
   height: 30px !important;
   line-height: 1 !important;
   transition: all 0.25s ease !important;
@@ -1246,30 +1647,197 @@ article {
   margin-right: 0.75rem;
 }
 
-.navbar-version-dropdown:hover {
-  background: rgba(0, 221, 255, 0.08) !important;
-  border-color: rgba(0, 221, 255, 0.35) !important;
-  color: var(--ak-blue) !important;
+.navbar__inner .navbar-version-dropdown:hover {
+  background: rgba(var(--ak-primary-rgb), 0.08) !important;
+  border-color: rgba(var(--ak-primary-rgb), 0.35) !important;
+  color: var(--ak-primary-text) !important;
   text-decoration: none !important;
 }
 
 /* Caret alignment inside the version badge */
-.navbar-version-dropdown::after {
+.navbar__inner .navbar-version-dropdown::after {
   margin-left: 0.35rem !important;
   vertical-align: middle !important;
   transition: transform 0.25s ease !important;
 }
 
-.navbar-version-dropdown:hover::after {
+.navbar__inner .navbar-version-dropdown:hover::after {
   transform: translateY(1px);
 }
 
 /* Increase z-index of the version dropdown menu to float on top of the sticky timeline progress bar */
-.navbar-version-dropdown ~ .dropdown__menu {
+.navbar__inner .navbar-version-dropdown ~ .dropdown__menu {
   z-index: 200 !important;
 }
 
 /* Hide default Docusaurus back-to-top button in favor of our custom ScrollToTopButton */
 .theme-back-to-top-button {
   display: none !important;
-}
+}
+
+/* Navbar: the one primary action sits at the far right, after the mode switch and search */
+.navbar__inner .navbar-cta {
+  order: 10;
+  margin-left: var(--ak-space-16);
+  color: var(--ak-on-primary);
+}
+
+.navbar__inner .navbar-cta:hover {
+  color: var(--ak-on-primary);
+}
+
+/* On a small screen the bar gives the action's place to the menu button. The action stays in
+   the menu, so these rules are scoped to the bar: the menu is inside .navbar too. */
+@media (max-width: 996px) {
+  .navbar__inner .navbar-cta {
+    display: none;
+  }
+}
+
+/* The version menu only means something on docs pages: off them, neither the bar nor the
+   phone menu shows it (in the menu the label and its expand button go together). */
+html:not(.plugin-docs) .navbar-version-dropdown {
+  display: none !important;
+}
+
+html:not(.plugin-docs) .navbar-sidebar .menu__list-item:has(> .menu__list-item-collapsible > .navbar-version-dropdown) {
+  display: none;
+}
+
+/* ── The phone menu ── */
+
+/* Rows a finger can hit, at the body size */
+.navbar-sidebar .menu__link {
+  min-height: 2.75rem;
+  align-items: center;
+  font-size: var(--ak-type-body);
+}
+
+.navbar-sidebar__close {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-right: -0.75rem;
+}
+
+/* GitHub is an icon in the bar. In the menu it has room for its name. */
+.navbar-sidebar .header-github-link {
+  display: flex;
+  gap: var(--ak-space-12);
+  padding: var(--ifm-menu-link-padding-vertical) var(--ifm-menu-link-padding-horizontal);
+  opacity: 1;
+}
+
+.navbar-sidebar .header-github-link::after {
+  content: 'GitHub';
+}
+
+/* The primary action closes the list, as a full-width button */
+.navbar-sidebar .menu__list-item:has(> .navbar-cta) {
+  margin-top: var(--ak-space-16);
+}
+
+.navbar-sidebar .menu__link.navbar-cta,
+.navbar-sidebar .menu__link.navbar-cta:hover {
+  display: flex;
+  justify-content: center;
+  min-height: 3rem;
+  font-weight: 600;
+  color: var(--ak-on-primary) !important;
+  background-color: var(--ak-primary);
+}
+
+/* ── Small screens: a shorter bar, and a menu button a finger can hit ── */
+@media (max-width: 996px) {
+  :root {
+    --ifm-navbar-height: 3.5rem; /* 56 px */
+  }
+
+  .navbar__logo {
+    height: 2.5rem;
+  }
+
+  .navbar__toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin: 0 var(--ak-space-4, 0.25rem) 0 -0.4375rem;
+  }
+
+  /* Docs and plain pages start on the site gutter, like every other page. On a docs page the
+     page container gives the gutter, so the wrappers inside it add nothing of their own. */
+  .plugin-docs main > .container,
+  main.container {
+    padding-inline: var(--ak-gutter);
+  }
+
+  .plugin-docs [class*='docItemContainer'],
+  .plugin-docs article,
+  main.container article {
+    padding-inline: 0;
+  }
+}
+
+/* ── Touch: text links and footer links get a 44 px target without moving the layout ── */
+@media (pointer: coarse) {
+  .ak-link,
+  .ak-page-hero__back {
+    position: relative;
+  }
+
+  /* An unseen box around the link, on the pseudo-element its arrow does not use */
+  .ak-link::before,
+  .ak-page-hero__back::after {
+    content: '';
+    position: absolute;
+    inset: -0.5625rem 0;
+  }
+
+  .footer__items {
+    gap: 0;
+  }
+
+  .footer__link-item {
+    display: inline-block;
+    padding-block: 0.45rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .navbar {
+    padding: 0;
+  }
+}
+
+/* =============================================================================
+   Design system: docs chrome
+   The sidebar and the table of contents are plain columns separated from the
+   content by a hairline, not boxed panels that glow on hover.
+   ============================================================================= */
+
+.theme-doc-sidebar-container,
+.theme-doc-sidebar-container:hover,
+.theme-doc-toc-desktop,
+.theme-doc-toc-desktop:hover {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--ak-border) !important;
+}
+
+.theme-doc-toc-desktop {
+  border-left: 1px solid var(--ak-border) !important;
+}
+
+/* Light mode elevation: on white, a card lifts with one soft shadow instead of a border. */
+[data-theme='light'] .ak-card {
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(var(--ak-shadow-rgb), 0.06), 0 10px 28px rgba(var(--ak-shadow-rgb), 0.07);
+}
+

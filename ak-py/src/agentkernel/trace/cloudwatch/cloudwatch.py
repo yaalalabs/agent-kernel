@@ -17,8 +17,10 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from ...core import Runner, Session
 from ...core.util.factory import AKConfigError
+from ...realtime.base import RealtimeRunner
 from ..base import BaseTrace
 from ..fetch import FetchedSpan, TraceQuery
+from ..otel import OTelRealtimeCallSpan
 from .sigv4 import SigV4Session
 
 """
@@ -42,6 +44,40 @@ class SessionSpanProcessor(SpanProcessor):
         session_id = baggage.get_baggage(SESSION_ID, parent_context)
         if session_id is not None:
             span.set_attribute(SESSION_ID, session_id)
+
+    @staticmethod
+    @contextmanager
+    def tagged(session_id: str) -> Iterator[None]:
+        """
+        Sets the ``session.id`` baggage entry for the block, so every span started in it is stamped by this processor.
+        The one place the entry is set: a run's span and a realtime call's span both use it.
+        :param session_id: The session the spans belong to.
+        """
+        token = context.attach(baggage.set_baggage(SESSION_ID, session_id))
+        try:
+            yield
+        finally:
+            context.detach(token)
+
+
+class CloudWatchRealtimeCallSpan(OTelRealtimeCallSpan):
+    """
+    A realtime call's span carrying ``session.id`` as an attribute and as baggage, as :meth:`CloudWatch.span` does, so
+    ``SessionSpanProcessor`` stamps it onto the spans the framework instrumentors emit during the call.
+    """
+
+    def __init__(self, name: str, session_id: str):
+        """
+        :param name: The span name.
+        :param session_id: The session the call belongs to.
+        """
+        super().__init__(trace_api.get_tracer("agentkernel.trace.cloudwatch"), name, {SESSION_ID: session_id})
+        self._session_id = session_id
+
+    @contextmanager
+    def _tagged(self) -> Iterator[None]:
+        with SessionSpanProcessor.tagged(self._session_id):
+            yield
 
 
 class CloudWatch(BaseTrace):
@@ -88,12 +124,11 @@ class CloudWatch(BaseTrace):
         :param name: The span name.
         :param session: The session the agent runs in.
         """
-        token = context.attach(baggage.set_baggage(SESSION_ID, session.id))
         try:
-            with self._tracer.start_as_current_span(name, attributes={SESSION_ID: session.id}) as span:
-                yield span
+            with SessionSpanProcessor.tagged(session.id):
+                with self._tracer.start_as_current_span(name, attributes={SESSION_ID: session.id}) as span:
+                    yield span
         finally:
-            context.detach(token)
             if self._flush_after_run:
                 self._flush()
 
@@ -218,6 +253,32 @@ class CloudWatch(BaseTrace):
         from .claude import CloudWatchClaudeRunner
 
         return CloudWatchClaudeRunner(self)
+
+    def openai_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the CloudWatch OpenAI realtime runner class.
+        """
+        from openinference.instrumentation.openai_agents import OpenAIAgentsInstrumentor
+
+        from .openai import CloudWatchOpenAIRealtimeRunner
+
+        instrumentor = OpenAIAgentsInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
+        return CloudWatchOpenAIRealtimeRunner
+
+    def adk_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the CloudWatch ADK realtime runner class.
+        """
+        from openinference.instrumentation.google_adk import GoogleADKInstrumentor
+
+        from .adk import CloudWatchADKRealtimeRunner
+
+        instrumentor = GoogleADKInstrumentor()
+        if not instrumentor.is_instrumented_by_opentelemetry:
+            instrumentor.instrument()
+        return CloudWatchADKRealtimeRunner
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """

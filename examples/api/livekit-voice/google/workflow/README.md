@@ -1,4 +1,4 @@
-# Agent Kernel Realtime Voice Workflow (Google ADK)
+# Open Agent Kernel Realtime Voice Workflow (Google ADK)
 
 This example shows one voice conversation that follows **a fixed order of steps**, written as a **Google ADK `Workflow`**, over LiveKit, powered by **Gemini Live**.
 
@@ -23,13 +23,13 @@ booking_flow = Workflow(
 
 Each speaking node declares `mode="task"`. A task node talks to the caller until it has what it needs, then calls ADK's own `finish_task` tool, and the next edge starts the next node. A node left without a mode runs outside the live connection, and ADK raises no error, so the caller would hear nothing from it. Always set the mode.
 
-The workflow itself is a container and does not speak. Only the workflow is registered with Agent Kernel. It uses the `in_memory` queue transport, so the LiveKit gateway and the agent runner run as threads in a single Python process.
+The workflow itself is a container and does not speak. Only the workflow is registered with Open Agent Kernel. It uses the `in_memory` queue transport, so the LiveKit edge and the agent runner run as threads in a single Python process.
 
 ## What you see in the room
 
 When the call starts, the room shows `agent-intake`, `agent-scheduler` and `agent-confirmer` as participants of their own. The workflow does not speak, so the room hears about each node when ADK first names it as the speaker. Only the node that has the call is heard; the others stay muted.
 
-Each agent participant needs a token of its own, so the gateway needs `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET`.
+Each agent participant needs a token of its own, so the edge needs `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET`.
 
 ## Quickstart
 
@@ -48,7 +48,7 @@ export AK_LIVEKIT__API_SECRET="..."
 uv run server.py
 ```
 
-Connect to `room_01` in your LiveKit Sandbox dashboard and speak.
+Point LiveKit's webhook at the server (see the parent README), then join a room, for example `call_01`, in your LiveKit Sandbox dashboard and speak. Each room is its own call.
 
 ### 3. Try a conversation
 
@@ -62,5 +62,5 @@ Connect to `room_01` in your LiveKit Sandbox dashboard and speak.
 - **One path only.** ADK cannot feed two live nodes from one queue at once, so keep the live nodes in a single line. ADK does not support `ParallelAgent` or `LoopAgent` in live mode.
 - **Each speaking node needs `mode="task"` or `mode="chat"`.** Without one the node does not run on the live connection.
 - **One agent speaks at a time.** Each step is a separate Gemini Live connection; ADK opens it, and the caller hears a short gap between steps.
-- **Tools run in ADK.** Agent Kernel system tools attach to each speaking node when enabled, by the node's own name. A tool that requires confirmation fails the connection, because a realtime session has no decision path.
+- **Tools run in ADK.** OAK system tools attach to each speaking node when enabled, by the node's own name. A tool that requires confirmation fails the connection, because a realtime session has no decision path.
 - **No enforced turn limit.** A step ends when the model calls `finish_task`. If a model never does, that step goes on.

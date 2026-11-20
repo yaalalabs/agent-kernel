@@ -4,7 +4,7 @@ sidebar_position: 3.1
 
 # OpenAI Guardrails
 
-OpenAI Guardrails provide comprehensive content safety validation for Agent Kernel using the `openai-guardrails` library. This integration enables you to validate both user inputs and agent outputs against configurable safety policies.
+OpenAI Guardrails provide comprehensive content safety validation for Open Agent Kernel using the `openai-guardrails` library. This integration enables you to validate both user inputs and agent outputs against configurable safety policies.
 
 ## Overview
 
@@ -194,7 +194,7 @@ Create JSON configuration files that define your guardrail rules. You can use th
 }
 ```
 
-### Step 2: Configure Agent Kernel
+### Step 2: Configure OAK
 
 The `model` fields inside the guardrail JSON configure each LLM-based check
 independently. The input and output models below configure the outer validation
@@ -564,7 +564,7 @@ uv add openai-guardrails
 
 1. **Use pre-flight checks first**: Faster and cheaper (PII, Moderation)
 2. **Adjust confidence thresholds**: Higher thresholds = fewer false positives but may miss edge cases
-3. **Choose appropriate models**: `gpt-6-luna` matches the Agent Kernel default; evaluate cost and accuracy for your checks
+3. **Choose appropriate models**: `gpt-6-luna` matches the OAK default; evaluate cost and accuracy for your checks
 4. **Separate input/output configs**: Different rules for each direction
 
 ### Optimization Tips
