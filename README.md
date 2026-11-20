@@ -6,7 +6,7 @@
   </picture>
 </p>
 
-<h3 align="center">The operating system for enterprise AI agents</h3>
+<h3 align="center">The Operating System For Enterprise AI Agents</h3>
 
 <p align="center">
   Open Agent Kernel (OAK) is the open-source runtime for scalable, compliant AI agents. Build agents in the framework you already use, and OAK runs them on AWS, Azure, GCP or Kubernetes, with sessions, guardrails, identity, tracing and messaging channels supplied by the platform.

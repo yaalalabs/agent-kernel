@@ -135,11 +135,6 @@ export default function FooterLayout({
           <div className="footer__copyright">
             {copyright}
           </div>
-          <div className="footer__legal-links">
-            <a href="/privacy-policy" className="footer__legal-link">Privacy Policy</a>
-            <a href="/terms-of-use" className="footer__legal-link">Terms of Use</a>
-            <a href="/cookie-policy" className="footer__legal-link">Cookie Policy</a>
-          </div>
         </div>
       </div>
     </footer>

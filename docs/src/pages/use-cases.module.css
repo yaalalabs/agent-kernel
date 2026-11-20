@@ -132,6 +132,19 @@
   outline-offset: 3px;
 }
 
+/* Touch: an unseen box around the one-line link, so a finger can hit it */
+@media (pointer: coarse) {
+  .exampleLink {
+    position: relative;
+  }
+
+  .exampleLink::before {
+    content: '';
+    position: absolute;
+    inset: -0.5625rem 0;
+  }
+}
+
 .scenariosMore {
   margin: var(--ak-space-48) 0 0;
 }

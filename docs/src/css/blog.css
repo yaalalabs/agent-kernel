@@ -250,11 +250,15 @@ html.blog-post-page article footer a[class*='tagRegular']:hover {
 /* ── Phone ── */
 
 @media (max-width: 768px) {
-  html.blog-post-page article header h1 {
-    font-size: var(--ak-type-h3);
-  }
-
   html.blog-post-page article .markdown {
     font-size: 1.0625rem;
+  }
+}
+
+/* ── Touch: tags a finger can hit ── */
+
+@media (pointer: coarse) {
+  html.blog-post-page article footer a[class*='tagRegular'] {
+    height: 2.25rem;
   }
 }

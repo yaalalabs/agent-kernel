@@ -315,6 +315,12 @@
   }
 
   .closing {
-    padding: var(--ak-space-32);
+    padding: var(--ak-space-32) var(--ak-space-32) 9.5rem;
+  }
+
+  /* The copy fills the width here, so the wave keeps to the foot of the panel, under the buttons */
+  .closingWave {
+    inset: auto 0 0;
+    height: 9rem;
   }
 }

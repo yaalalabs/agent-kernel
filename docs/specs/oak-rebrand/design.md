@@ -268,7 +268,7 @@ Findings and proposals are in [research/blog-audit.md](research/blog-audit.md).
 - **Former-name note.** Resolved on 2026-11-19: no public page carries a note about the former name. The
   root README had one and it was removed; the docs introduction never had one. `AGENTS.md` keeps one
   sentence, because the naming rules for contributors refer to the old name.
-- **New copy.** The hero headline ("The operating system for enterprise AI agents"), the blog heading and
+- **New copy.** The hero headline ("The Operating System For Enterprise AI Agents", capitalised word by word at the maintainer's request), the blog heading and
   the persona page titles and leads are new wording. They need the maintainer's read.
 - **Trust figures.** No real figures exist yet. The row ships with marks only.
 - **Skill evals.** `ak-init/evals/evals.json` (12 occurrences) and `ak-add-integration/evals/evals.json` (1) keep the old name as test prompts. Leave as is?

@@ -442,15 +442,25 @@ specified here.
 
 **Pinned integrations section: `HomeSections/Integrations.tsx`**
 
-- Data: `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx`, 76 integrations, each with a `name`,
-  a `role`, and a logo (an icon component, or an image with an optional `mono` flag).
+- Data: `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx`, 82 integrations, each with a `name`,
+  a `role`, and a logo (an icon component, or an image with an optional `mono` flag). Every provider
+  `type` the runtime ships has an item, except the `in_memory` defaults. Names are unique, because the
+  architecture diagram picks chips by name.
 - Grouping: `GROUPS` has six groups named after the six stages. A group has titled sets, and a set lists
   the roles it shows. An integration whose role no set names is not dropped: it appears in a "More" set
   at the end of the last group.
 - Every group, with every integration name, is in the server-rendered page.
-- The section pins only where the pinned frame is sure to fit: `(min-width: 997px) and (min-height:
-  700px) and (prefers-reduced-motion: no-preference)`. Everywhere else, and without script, the six groups
-  are stacked one after another.
+- The section pins where the window is roomy enough, `(min-width: 997px) and (min-height: 700px) and
+  (prefers-reduced-motion: no-preference)`, and the tallest group is measured to fit the pinned frame.
+  The pinned layout is applied on trial and measured before the browser paints; the pinned behaviour
+  starts only once the measurement has passed. Where it fails (about 1000 by 700), the six groups are
+  stacked one after another, and the trial is repeated when a resize comes to rest. Short or narrow
+  windows set the groups a little closer, so that 1280 by 720 and 1024 by 768 still pin.
+- Under 997 px the six groups fold: a group's heading opens and closes its integrations, groups open
+  independently, and the first starts open. The stylesheet folds them before script runs. Closed groups
+  are hidden with `hidden="until-found"`, so find-in-page still reaches them. Nothing is folded without
+  script (a `noscript` rule) or in print.
+- With reduced motion on a wide screen, and without script, the six groups are stacked one after another.
 - While pinned:
   - the section is one screen plus 45vh for each group tall (`--steps` is the number of groups) and its
     frame is sticky; the scroll position inside the section picks the group in view
@@ -480,7 +490,9 @@ export type LevelStackProps = {
 - The drawing is decorative (`aria-hidden`); the rows beside it carry the text and the links.
 - On the home page (`Levels`) the drawing and three rows are one control: a row lights its layer, and a
   layer lights its row. Until the visitor points at something, the light walks down the stack every
-  2.8 seconds while the section is on screen. With reduced motion it does not walk.
+  2.8 seconds while the section is on screen. With reduced motion it does not walk. Under 997 px, where
+  the drawing sits above the rows and the two are never in view together, it does not walk either: the
+  drawing is still, no row is singled out, and all three rows are at full strength.
 - Each row links to its persona page. The section registers its `levels` anchor with
   `useBrokenLinks().collectAnchor`, because the persona pages link back to it.
 - Each persona page header shows the same drawing with its own layer lit.
@@ -722,12 +734,16 @@ No Python file changes, so the `ak-py` test suite is not part of this change. St
    - the logo is the right lockup, orange appears only in accent roles, no cyan or magenta remains, and
      text contrast holds on both surface levels
    - a docs page with a flowchart, a sequence diagram and a diagram with front matter reads in both modes
-   - at 390 px the integrations section is stacked, and all 76 integration names are in the page source
+   - at 390 px the integrations section is folded with the first group open, each heading opens and closes
+     its group, and all 82 integration names are in the page source
 8. **Motion and fallbacks.**
    - with `prefers-reduced-motion: reduce`: the hero shows the plain mark, the integrations section is
      stacked, the stage drawings and the level stack are still, and no content is hidden
-   - with JavaScript off: every section of the home page is visible
-   - in print preview: no content is hidden
+   - with JavaScript off: every section of the home page is visible, and at 390 px no integration group
+     is folded
+   - in print preview, from a phone-width window and from a pinned desktop window: no content is hidden,
+     and all six integration groups show their integrations (a printed page is narrower than the fold
+     breakpoint, so this is where a folded group would go missing)
 9. **Keyboard.** On the home, features, use-cases and one persona page every control is reachable and
    shows a focus ring, including the group list of the integrations section and the blog topic filter.
 10. **Punctuation.** No added line contains a dash character that its removed counterpart did not.

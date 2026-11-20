@@ -52,6 +52,16 @@ const FloatingChatbot: React.FC = () => {
     window.dispatchEvent(new Event(isOpen ? 'chatbot:open' : 'chatbot:close'));
   }, [isOpen]);
 
+  // On a phone the panel fills the screen, so the page behind it should not scroll.
+  useEffect(() => {
+    if (!isOpen || !window.matchMedia('(max-width: 768px)').matches) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isOpen]);
+
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
@@ -185,7 +195,7 @@ const FloatingChatbot: React.FC = () => {
             </div>
             <div className={styles.headerActions}>
               <button
-                className={styles.iconButton}
+                className={`${styles.iconButton} ${styles.expandButton}`}
                 onClick={toggleMaximize}
                 aria-label={isMaximized ? 'Minimize chat' : 'Expand chat'}
                 title={isMaximized ? 'Minimize' : 'Expand'}

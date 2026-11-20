@@ -38,15 +38,42 @@
   font-size: var(--ak-type-small);
 }
 
+/* A phone gets the headline alone, on one line. The whole bar is the link: its arrow stays at
+   the end and its words are kept for assistive technology. */
 @media (max-width: 720px) {
   .inner {
-    flex-wrap: wrap;
-    gap: var(--ak-space-8) var(--ak-space-12);
-    padding-block: var(--ak-space-12);
+    position: relative;
+    gap: var(--ak-space-12);
   }
 
   .text {
-    flex-basis: 100%;
-    order: 3;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .detail {
+    display: none;
+  }
+
+  .linkText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .inner .link {
+    position: static;
+    gap: 0;
+    font-size: var(--ak-type-body);
+  }
+
+  .inner .link::before {
+    content: '';
+    position: absolute;
+    inset: 0;
   }
 }

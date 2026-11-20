@@ -178,13 +178,22 @@ When you write or update documentation, READMEs, skills or website copy:
   Running text is 15 px or larger; the only smaller sizes are the 13 px monospace label and 14 px for
   labels inside diagrams. Surfaces are flat (no gradient fills, glass blur, glows or drop shadows),
   with two exceptions: cards lift with one soft shadow in the light mode, and floating layers (the
-  chat launcher and its panel) carry a shadow. Headings are in sentence case. Content is never hidden
+  chat launcher and its panel) carry a shadow. Headings are in sentence case, except the home hero
+  headline, which capitalises every word. Content is never hidden
   without script, with reduced motion, in print, or when it is already on screen at load. Pages below
   the home page start with `PageHero` and end with `ClosingPanel`; the only entrance effect is
   `Reveal`, which fades content below the fold up once. Interface icons are Tabler outline icons
   (`react-icons/tb`) and brand marks are Simple Icons (`react-icons/si`). Moving illustrations use the
   line-art vocabulary in `docs/src/components/VectorMotion/`. The full rules are in
   [branding/README.md](branding/README.md#website-design-system).
+- **Small screens.** Check new UI at 390 px with touch emulation, in both modes. The page never scrolls
+  sideways: wide content (code, tables, tab rows) scrolls inside its own box. Touch targets are 44 px:
+  size controls to it, and give a one-line text link its target from an unseen box under
+  `@media (pointer: coarse)`, as `.ak-link` does, so the layout does not move. Anything named only on
+  hover needs its name written out under `@media (hover: none)`. A bar that sticks under the navbar
+  follows it when it slides away (`html:has(.navbar[class*='navbarHidden'])`, as in `StepTimeline`).
+  Form fields are 16 px or larger, or Safari zooms the page. Under 996 px the navbar is 56 px and
+  anything scoped to `.navbar` also matches the phone menu, so scope bar-only rules to `.navbar__inner`.
 
 ## Conventions
 

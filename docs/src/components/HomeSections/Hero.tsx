@@ -5,11 +5,8 @@ import { TbCheck, TbCopy } from 'react-icons/tb';
 import ParticleLogo from '@site/src/components/ParticleLogo';
 import styles from './hero.module.css';
 
-// The two ways to install, as the installation guide gives them.
-const INSTALLERS = [
-  { id: 'pip', command: 'pip install agentkernel' },
-  { id: 'uv', command: 'uv add agentkernel' },
-] as const;
+// The install line, as the installation guide gives it for uv.
+const INSTALL_COMMAND = 'uv add agentkernel';
 
 /* ─── Hero ────────────────────────────────────────────────────────────────
    One column of copy, with the mark built from particles behind and to the
@@ -18,12 +15,11 @@ const INSTALLERS = [
 
 export function Hero(): JSX.Element {
   const [copied, setCopied] = useState(false);
-  const [installer, setInstaller] = useState<(typeof INSTALLERS)[number]>(INSTALLERS[0]);
 
   const handleCopy = async () => {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return;
     try {
-      await navigator.clipboard.writeText(installer.command);
+      await navigator.clipboard.writeText(INSTALL_COMMAND);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -39,7 +35,7 @@ export function Hero(): JSX.Element {
           <div className={styles.heading}>
             <p className="ak-label">Open-source agent runtime</p>
             <h1 className="ak-display">
-              The operating system for enterprise <span className="ak-accent-text">AI agents</span>
+              The Operating System For Enterprise <span className="ak-accent-text">AI Agents</span>
             </h1>
             <p className="ak-lead">
               Open Agent Kernel (OAK) is the open-source runtime for scalable, compliant agents. Build in the
@@ -62,27 +58,11 @@ export function Hero(): JSX.Element {
           </div>
 
           <div className={styles.install}>
-            <div className={styles.installers} role="group" aria-label="Package manager">
-              {INSTALLERS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className={clsx(styles.installer, option.id === installer.id && styles.installerActive)}
-                  aria-pressed={option.id === installer.id}
-                  onClick={() => {
-                    setInstaller(option);
-                    setCopied(false);
-                  }}
-                >
-                  {option.id}
-                </button>
-              ))}
-            </div>
             <code className={styles.command}>
               <span className={styles.prompt} aria-hidden="true">
                 $
               </span>
-              {installer.command}
+              {INSTALL_COMMAND}
             </code>
             <button
               type="button"

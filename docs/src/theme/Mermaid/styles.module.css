@@ -39,9 +39,13 @@
   color: var(--ak-fg);
 }
 
-/* Touch devices have no hover: keep the button visible. */
+/* Touch devices have no hover: keep the button visible, at a size a finger can hit. */
 @media (hover: none) {
   .expandButton {
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
     opacity: 1;
   }
 
@@ -58,7 +62,8 @@
   z-index: 11000;
   display: flex;
   flex-direction: column;
-  background: rgba(var(--ak-bg-rgb), 0.94);
+  /* Solid: the page behind must not show through the diagram */
+  background: var(--ak-bg);
   backdrop-filter: none;
 }
 
@@ -97,6 +102,13 @@
 .toolbarButton:hover {
   background: rgba(var(--ak-fg-rgb), 0.12);
   color: var(--ak-fg);
+}
+
+@media (hover: none) {
+  .toolbarButton {
+    min-width: 2.75rem;
+    height: 2.75rem;
+  }
 }
 
 .resetButton {

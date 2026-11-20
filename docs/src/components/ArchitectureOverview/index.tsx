@@ -35,6 +35,11 @@ function Card({ card, side, order }: { card: ArchCard; side: 'in' | 'out'; order
   return (
     <div className={styles.card}>
       <h3 className={styles.cardTitle}>{card.title}</h3>
+      {/* The chips are logos, named on hover. A touch screen has no hover, so there the names are
+          written out once, in chip order. Each chip already carries its name for a screen reader. */}
+      <p className={styles.names} aria-hidden="true">
+        {card.chips.map((chip) => chip.name).join(', ')}
+      </p>
       <div className={styles.chipRow}>
         {card.chips.map((chip) => (
           <ChipLink key={chip.name} chip={chip} />

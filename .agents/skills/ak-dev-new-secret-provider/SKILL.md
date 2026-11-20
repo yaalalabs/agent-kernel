@@ -179,8 +179,9 @@ real value into state.
   you added a deployment flag.
 - Landing page inventories (`docs/src/components/HomeSections/`): an item in the **Cloud &
   infrastructure** row of `INTEGRATION_ROWS` in `integrations.data.tsx` (role `Secrets`, `href` to
-  the secrets docs page, logo or `react-icons/si` glyph; a vendor already listed for another role,
-  such as AWS Systems Manager, gets the new role appended to its `title` instead of a second item),
+  the secrets docs page, logo or `react-icons/si` glyph; every provider `type` the runtime ships is
+  listed, `env` included, and a vendor already listed for another role gets a second item under a
+  name of its own, as `Kubernetes Secrets` stands beside the `Kubernetes` deployment chip),
   and the store in the `summary` of the **Secret resolution** capability under Guard in
   `docs/src/pages/features.tsx`, which names each provider. Logo sourcing and the build check are
   in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
@@ -196,5 +197,5 @@ real value into state.
 - [ ] Factory tests (`tests/test_secret_factory.py`)
 - [ ] Terraform grant flag, if a cloud store (`ak-deployment/`)
 - [ ] Docs: `docs/docs/advanced/secrets.md`, architecture skill, `ak-py/README.md`
-- [ ] Landing page inventories: integration item or its `title` (`HomeSections/integrations.data.tsx`), the Secret resolution capability's summary (`docs/src/pages/features.tsx`)
+- [ ] Landing page inventories: an integration item with role `Secrets` under a name no other item uses (`HomeSections/integrations.data.tsx`), the Secret resolution capability's summary (`docs/src/pages/features.tsx`)
 - [ ] `cd ak-py && uv run pytest tests/test_secret_*.py` and `make lint-check-all` clean

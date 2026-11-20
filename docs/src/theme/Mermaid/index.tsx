@@ -114,6 +114,10 @@ const MIN_SCALE = 0.25;
 const MAX_SCALE = 8;
 const ZOOM_STEP = 1.2;
 const STAGE_PADDING = 48;
+// Below this stage width a diagram fitted to the screen is too small to read.
+const NARROW_STAGE = 600;
+// Room for the toolbar above a diagram that opens from its top edge.
+const TOOLBAR_CLEARANCE = 72;
 
 function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
@@ -150,6 +154,7 @@ function MermaidLightbox({
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [fitScale, setFitScale] = useState(1);
+  const [fitOffset, setFitOffset] = useState({ x: 0, y: 0 });
   const fittedRef = useRef(false);
   const dragRef = useRef<{
     pointerId: number;
@@ -204,10 +209,30 @@ function MermaidLightbox({
         (stage.clientWidth - STAGE_PADDING) / width,
         (stage.clientHeight - STAGE_PADDING) / height,
       );
-      const initial = clampScale(Math.min(fit, 2));
+      // The canvas lays a diagram out at most 300 px wide, whatever its drawn size (the SVG has no
+      // width of its own in this box), so a scale of 1 is usually not the diagram's drawn size.
+      // `natural` is the scale that restores it: 1 for a diagram drawn narrower than that.
+      const drawn = canvas.querySelector('svg')?.viewBox?.baseVal?.width || width;
+      const natural = Math.max(1, drawn / width);
+      // A diagram that fits at its drawn size opens whole, as it does on a wide screen. One that
+      // only fits by shrinking is too small to read on a phone: it opens at up to twice the
+      // fitted size, never past its drawn size, from its top left corner, and the reader drags it.
+      const narrow = stage.clientWidth < NARROW_STAGE;
+      const shrunk = fit < natural;
+      const initial = clampScale(narrow && shrunk ? Math.min(fit * 2, natural) : Math.min(fit, 2));
+      const overX = (width * initial - stage.clientWidth) / 2;
+      const overY = (height * initial - stage.clientHeight) / 2;
+      const start = narrow
+        ? {
+            x: overX > 0 ? overX + STAGE_PADDING / 2 : 0,
+            y: overY > 0 ? overY + TOOLBAR_CLEARANCE : 0,
+          }
+        : { x: 0, y: 0 };
       fittedRef.current = true;
       setFitScale(initial);
+      setFitOffset(start);
       setScale(initial);
+      setOffset(start);
     });
     observer.observe(canvas);
     return () => observer.disconnect();
@@ -285,8 +310,8 @@ function MermaidLightbox({
   );
   const reset = useCallback(() => {
     setScale(fitScale);
-    setOffset({ x: 0, y: 0 });
-  }, [fitScale]);
+    setOffset(fitOffset);
+  }, [fitScale, fitOffset]);
 
   return createPortal(
     <div

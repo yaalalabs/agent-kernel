@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import useIsomorphicLayoutEffect from '@docusaurus/useIsomorphicLayoutEffect';
 import Link from '@docusaurus/Link';
 import clsx from 'clsx';
+import { TbChevronDown } from 'react-icons/tb';
 import SectionHeader from '@site/src/components/ui/SectionHeader';
 import Floor from '@site/src/components/DotField/Floor';
 import { INTEGRATION_ROWS, type IntegrationItem } from './integrations.data';
@@ -13,11 +14,17 @@ import styles from './integrations.module.css';
    step brings the next stage and its integrations forward. The list of
    stages on the left shows where the reader is and is also a control.
 
-   Everything is in the page from the first render: without script, on small
-   screens, on short windows and with reduced motion, the six groups are
-   simply stacked. The data file is the one the marquee uses, so there is one
-   list to maintain, and an integration whose role is not mapped below still
-   appears, under "More" in the last group. */
+   Everything is in the page from the first render: without script, on short
+   windows and with reduced motion, the six groups are simply stacked.
+
+   On a small screen the six groups would run to more than five screens, so
+   they fold: each group's heading opens and closes its integrations, and the
+   first group starts open. The stylesheet folds them before script runs, and
+   a noscript rule unfolds them where script never will.
+
+   The data file is the one the marquee uses, so there is one list to
+   maintain, and an integration whose role is not mapped below still appears,
+   under "More" in the last group. */
 
 type IntegrationSet = { title: string; roles: string[] };
 type Group = {
@@ -126,8 +133,10 @@ const PANELS: Panel[] = GROUPS.map((group, index) => {
   };
 });
 
-// The section pins only where the pinned frame is sure to fit.
+// The section pins only where the pinned frame is likely to fit. Whether it does is then measured.
 const PIN_QUERY = '(min-width: 997px) and (min-height: 700px) and (prefers-reduced-motion: no-preference)';
+// Below this width the groups fold (the same breakpoint as the stylesheet).
+const FOLD_QUERY = '(max-width: 996px)';
 
 function Logo({ item }: { item: IntegrationItem }): JSX.Element {
   return (
@@ -140,18 +149,62 @@ function Logo({ item }: { item: IntegrationItem }): JSX.Element {
 export function Integrations(): JSX.Element {
   const section = useRef<HTMLElement>(null);
   const frame = useRef<HTMLDivElement>(null);
+  const aside = useRef<HTMLDivElement>(null);
   const panels = useRef<HTMLDivElement>(null);
   const panelNodes = useRef<Array<HTMLDivElement | null>>([]);
-  const [pinned, setPinned] = useState(false);
+  const setNodes = useRef<Array<HTMLDivElement | null>>([]);
+  // The section pins where the window is roomy enough (PIN_QUERY) and the tallest group fits
+  // the pinned frame. The second depends on how the chips wrap, so it is measured: the pinned
+  // layout is applied first, on trial (`laidOut`), and the pinned behaviour (`pinned`: the scroll
+  // steps, the floor, the re-scroll) starts only once the measurement has passed. The trial and
+  // its verdict are both committed before the browser paints, and nothing that belongs to the
+  // pinned state runs for a layout that turns out not to fit.
+  const [roomy, setRoomy] = useState(false);
+  const [fit, setFit] = useState<'untested' | 'yes' | 'no'>('untested');
+  const laidOut = roomy && fit !== 'no';
+  const pinned = roomy && fit === 'yes';
   const [active, setActive] = useState(0);
+  const [folded, setFolded] = useState(false);
+  // Which groups are open while folded. The first one, to begin with.
+  const [open, setOpen] = useState<boolean[]>(() => PANELS.map((_, index) => index === 0));
 
   useEffect(() => {
-    const query = window.matchMedia(PIN_QUERY);
-    const update = () => setPinned(query.matches);
+    const pin = window.matchMedia(PIN_QUERY);
+    const fold = window.matchMedia(FOLD_QUERY);
+    const update = () => {
+      setRoomy(pin.matches);
+      setFit('untested');
+      setFolded(fold.matches);
+    };
     update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
+    pin.addEventListener('change', update);
+    fold.addEventListener('change', update);
+    return () => {
+      pin.removeEventListener('change', update);
+      fold.removeEventListener('change', update);
+    };
   }, []);
+
+  const toggle = (index: number) => setOpen((current) => current.map((value, at) => (at === index ? !value : value)));
+
+  // While folded, a closed group is hidden "until found", like the pinned panels below:
+  // find-in-page still searches it, and a match opens it.
+  useIsomorphicLayoutEffect(() => {
+    const searchable = 'onbeforematch' in document.documentElement;
+    setNodes.current.forEach((sets, index) => {
+      if (!sets) return;
+      if (!folded || open[index]) sets.removeAttribute('hidden');
+      else sets.setAttribute('hidden', searchable ? 'until-found' : '');
+    });
+  }, [folded, open]);
+
+  useEffect(() => {
+    if (!folded) return undefined;
+    const nodes = setNodes.current;
+    const handlers = nodes.map((_, index) => () => setOpen((current) => current.map((value, at) => value || at === index)));
+    nodes.forEach((sets, index) => sets?.addEventListener('beforematch', handlers[index]));
+    return () => nodes.forEach((sets, index) => sets?.removeEventListener('beforematch', handlers[index]));
+  }, [folded]);
 
   // While pinned, the scroll position inside the section picks the stage.
   useEffect(() => {
@@ -227,10 +280,11 @@ export function Integrations(): JSX.Element {
   }, [pinned, goTo]);
 
   // The frame keeps the height of the tallest group, so it does not jump between stages.
+  // The same measurement gives the verdict on the trial layout.
   useIsomorphicLayoutEffect(() => {
     const holder = panels.current;
     if (!holder) return undefined;
-    if (!pinned) {
+    if (!laidOut) {
       holder.style.removeProperty('min-height');
       return undefined;
     }
@@ -244,24 +298,49 @@ export function Integrations(): JSX.Element {
         if (value !== null) panel.setAttribute('hidden', value);
       });
       holder.style.minHeight = `${tallest}px`;
+      // The frame is one screen tall. If the tallest group, or the list beside it, needs more,
+      // pinning would cut it off at both ends: the section goes back to the plain stacked list.
+      const room = frame.current?.clientHeight ?? Number.POSITIVE_INFINITY;
+      const needed = Math.max(tallest, aside.current?.offsetHeight ?? 0);
+      setFit(needed > room ? 'no' : 'yes');
     };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [pinned]);
+  }, [laidOut]);
+
+  // A window that was too short for the pinned frame may fit it after a resize. The layout is
+  // put on trial again once the resize has come to rest, not on every event of the drag.
+  useEffect(() => {
+    if (!roomy || fit !== 'no') return undefined;
+    let timer = 0;
+    const retry = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setFit('untested'), 200);
+    };
+    window.addEventListener('resize', retry);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', retry);
+    };
+  }, [roomy, fit]);
 
   return (
     <section
       ref={section}
       id="integrations"
-      className={clsx(styles.section, pinned && styles.pinned)}
+      className={clsx(styles.section, laidOut && styles.pinned)}
       style={{ '--steps': PANELS.length } as React.CSSProperties}
     >
+      {/* Without script nothing can open a folded group, so nothing is folded */}
+      <noscript>
+        <style>{`.${styles.sets} { display: flex !important; }`}</style>
+      </noscript>
       <div ref={frame} className={styles.frame}>
         {/* A floor of dots along the bottom edge; a ripple crosses it when the stage changes */}
         {pinned && <Floor stage={active} className={styles.floor} />}
         <div className={clsx('ak-container', styles.layout)}>
-          <div className={styles.aside}>
+          <div ref={aside} className={styles.aside}>
             <SectionHeader
               index="03"
               label="Works with"
@@ -305,14 +384,38 @@ export function Integrations(): JSX.Element {
                     panelNodes.current[index] = node;
                   }}
                   id={`integrations-panel-${panel.id}`}
-                  className={clsx(styles.panel, index === active && styles.panelActive)}
+                  className={clsx(styles.panel, index === active && styles.panelActive, open[index] && styles.panelOpen)}
                 >
                   <p className={clsx('ak-label', styles.panelLabel)}>
                     <span className="ak-label__index">{String(index + 1).padStart(2, '0')}</span>
                     {panel.name}
                   </p>
-                  <h3 className="ak-h3">{panel.title}</h3>
-                  <div className={styles.sets}>
+                  <h3 className="ak-h3">
+                    {folded ? (
+                      <button
+                        type="button"
+                        className={styles.fold}
+                        aria-expanded={open[index]}
+                        aria-controls={`integrations-sets-${panel.id}`}
+                        onClick={() => toggle(index)}
+                      >
+                        {panel.title}
+                        <span className={styles.foldMeta} aria-hidden="true">
+                          {panel.count}
+                          <TbChevronDown className={styles.foldIcon} />
+                        </span>
+                      </button>
+                    ) : (
+                      panel.title
+                    )}
+                  </h3>
+                  <div
+                    ref={(node) => {
+                      setNodes.current[index] = node;
+                    }}
+                    id={`integrations-sets-${panel.id}`}
+                    className={styles.sets}
+                  >
                     {panel.sets.map((set) => (
                       <div key={set.title} className={styles.set}>
                         <p className={clsx('ak-label', styles.setTitle)}>

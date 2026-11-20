@@ -72,6 +72,21 @@
   color: var(--ak-fg);
 }
 
+/* The members by name, for screens with no hover to show a chip's title */
+.names {
+  display: none;
+  margin: var(--ak-space-4) 0 0;
+  font-size: var(--ak-type-small);
+  line-height: 1.45;
+  color: var(--ak-text-secondary);
+}
+
+@media (hover: none) {
+  .names {
+    display: block;
+  }
+}
+
 .chipRow {
   display: flex;
   flex-wrap: wrap;

@@ -498,6 +498,28 @@
     z-index: 10060;
   }
 
+  /* On a phone the launcher is the mark alone, so it covers as little of the page as it can.
+     The button keeps its name for assistive technology. */
+  .chatButton {
+    width: 3rem;
+    height: 3rem;
+    padding: 0;
+  }
+
+  .chatButtonLabel {
+    display: none;
+  }
+
+  /* The panel already fills the screen */
+  .expandButton {
+    display: none;
+  }
+
+  /* Safari zooms the page when a field under 16 px takes focus */
+  .chatInput {
+    font-size: 1rem;
+  }
+
   .chatWindow,
   .chatWindow.maximized {
     inset: 0;
@@ -510,7 +532,22 @@
   }
 
   .chatInputContainer {
-    padding-right: 5rem;
+    padding-right: 4.5rem;
+  }
+}
+
+/* The launcher does not float over the open phone menu */
+:global(html:has(.navbar-sidebar--show)) .chatButtonContainer {
+  display: none;
+}
+
+/* While the cookie banner is waiting for an answer, the launcher stays out of its way: below
+   this width the two share the bottom edge, and the launcher would cover the banner's buttons.
+   Only the unopened launcher steps aside. Once the chat is open the same button is its close
+   control, and a window resized with the chat open must not lose it. */
+@media (max-width: 1200px) {
+  :global(html[data-ak-consent='pending']) .chatButtonContainer:not(:has(.chatButtonOpen)) {
+    display: none;
   }
 }
 

@@ -56,6 +56,19 @@
   text-underline-offset: 0.2em;
 }
 
+/* Touch: an unseen box around the one-line link, so a finger can hit it */
+@media (pointer: coarse) {
+  .topic {
+    position: relative;
+  }
+
+  .topic::before {
+    content: '';
+    position: absolute;
+    inset: -0.75rem 0;
+  }
+}
+
 .title a,
 .title a:hover {
   color: inherit;

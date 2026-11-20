@@ -745,6 +745,8 @@ section {
 .navbar__link {
   font-weight: 500;
   font-size: 1rem;
+  /* A two-word link stays on one line when the bar is at its narrowest */
+  white-space: nowrap;
   color: rgba(var(--ak-fg-rgb), 0.75);
   transition: color 0.15s ease;
 }
@@ -1049,25 +1051,6 @@ section {
   margin: 0;
 }
 
-.footer__legal-links {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-}
-
-.footer__legal-link {
-  color: rgba(var(--ak-fg-rgb), 0.3);
-  font-size: var(--ak-type-small);
-  text-decoration: none;
-  transition: color 0.15s ease;
-  white-space: nowrap;
-}
-
-.footer__legal-link:hover {
-  color: rgba(var(--ak-fg-rgb), 0.7);
-  text-decoration: none;
-}
-
 /* ── Responsive ──────────────────────────────────────────────── */
 
 @media (max-width: 996px) {
@@ -1100,50 +1083,14 @@ section {
   }
 }
 
+/* Small screens keep the page's left edge: the brand block, then the link columns two abreast */
 @media (max-width: 768px) {
   .footer__inner {
-    padding: 0 1.5rem;
+    padding: 0 var(--ak-gutter);
   }
 
   .footer__brand {
-    align-items: center;
-    text-align: center;
     margin-right: 0;
-  }
-
-  .footer__social-links {
-    justify-content: center;
-  }
-
-  .footer__member-of {
-    align-items: center;
-  }
-
-  .footer__member-badges {
-    justify-content: center;
-  }
-
-  .footer__links-grid .footer__links {
-    justify-content: center;
-  }
-
-  .footer__links-grid .footer__col {
-    text-align: center;
-  }
-
-  .footer__items {
-    align-items: center;
-  }
-
-  .footer__bottom {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 0.75rem;
-  }
-
-  .footer__legal-links {
-    justify-content: center;
   }
 }
 
@@ -1152,37 +1099,24 @@ section {
     padding: 2.5rem 0 0;
   }
 
-  .footer__inner {
-    padding: 0 1.25rem;
-  }
-
   .footer__top {
     padding-bottom: 2rem;
   }
 
   .footer__links-grid .footer__links {
-    flex-direction: column;
-    gap: 1.75rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem 1.5rem;
   }
 
   .footer__links-grid .footer__col {
     flex: unset;
+    min-width: 0;
     width: 100%;
   }
 
   .footer__title {
     margin-bottom: 0.625rem;
-  }
-
-  .footer__legal-links {
-    flex-wrap: wrap;
-    gap: 0.75rem 1rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .footer__inner {
-    padding: 0 1rem;
   }
 }
 
@@ -1693,8 +1627,8 @@ article {
   margin-bottom: 2.5rem !important;
 }
 
-/* Navbar Version Dropdown Matte Badge Style */
-.navbar-version-dropdown {
+/* Navbar Version Dropdown Matte Badge Style (the bar only: in the phone menu it is a plain row) */
+.navbar__inner .navbar-version-dropdown {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -1713,7 +1647,7 @@ article {
   margin-right: 0.75rem;
 }
 
-.navbar-version-dropdown:hover {
+.navbar__inner .navbar-version-dropdown:hover {
   background: rgba(var(--ak-primary-rgb), 0.08) !important;
   border-color: rgba(var(--ak-primary-rgb), 0.35) !important;
   color: var(--ak-primary-text) !important;
@@ -1721,18 +1655,18 @@ article {
 }
 
 /* Caret alignment inside the version badge */
-.navbar-version-dropdown::after {
+.navbar__inner .navbar-version-dropdown::after {
   margin-left: 0.35rem !important;
   vertical-align: middle !important;
   transition: transform 0.25s ease !important;
 }
 
-.navbar-version-dropdown:hover::after {
+.navbar__inner .navbar-version-dropdown:hover::after {
   transform: translateY(1px);
 }
 
 /* Increase z-index of the version dropdown menu to float on top of the sticky timeline progress bar */
-.navbar-version-dropdown ~ .dropdown__menu {
+.navbar__inner .navbar-version-dropdown ~ .dropdown__menu {
   z-index: 200 !important;
 }
 
@@ -1742,25 +1676,133 @@ article {
 }
 
 /* Navbar: the one primary action sits at the far right, after the mode switch and search */
-.navbar .navbar-cta {
+.navbar__inner .navbar-cta {
   order: 10;
   margin-left: var(--ak-space-16);
   color: var(--ak-on-primary);
 }
 
-.navbar .navbar-cta:hover {
+.navbar__inner .navbar-cta:hover {
   color: var(--ak-on-primary);
 }
 
+/* On a small screen the bar gives the action's place to the menu button. The action stays in
+   the menu, so these rules are scoped to the bar: the menu is inside .navbar too. */
 @media (max-width: 996px) {
-  .navbar .navbar-cta {
+  .navbar__inner .navbar-cta {
     display: none;
   }
 }
 
-/* The version menu only means something on docs pages */
+/* The version menu only means something on docs pages: off them, neither the bar nor the
+   phone menu shows it (in the menu the label and its expand button go together). */
 html:not(.plugin-docs) .navbar-version-dropdown {
   display: none !important;
+}
+
+html:not(.plugin-docs) .navbar-sidebar .menu__list-item:has(> .menu__list-item-collapsible > .navbar-version-dropdown) {
+  display: none;
+}
+
+/* ── The phone menu ── */
+
+/* Rows a finger can hit, at the body size */
+.navbar-sidebar .menu__link {
+  min-height: 2.75rem;
+  align-items: center;
+  font-size: var(--ak-type-body);
+}
+
+.navbar-sidebar__close {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-right: -0.75rem;
+}
+
+/* GitHub is an icon in the bar. In the menu it has room for its name. */
+.navbar-sidebar .header-github-link {
+  display: flex;
+  gap: var(--ak-space-12);
+  padding: var(--ifm-menu-link-padding-vertical) var(--ifm-menu-link-padding-horizontal);
+  opacity: 1;
+}
+
+.navbar-sidebar .header-github-link::after {
+  content: 'GitHub';
+}
+
+/* The primary action closes the list, as a full-width button */
+.navbar-sidebar .menu__list-item:has(> .navbar-cta) {
+  margin-top: var(--ak-space-16);
+}
+
+.navbar-sidebar .menu__link.navbar-cta,
+.navbar-sidebar .menu__link.navbar-cta:hover {
+  display: flex;
+  justify-content: center;
+  min-height: 3rem;
+  font-weight: 600;
+  color: var(--ak-on-primary) !important;
+  background-color: var(--ak-primary);
+}
+
+/* ── Small screens: a shorter bar, and a menu button a finger can hit ── */
+@media (max-width: 996px) {
+  :root {
+    --ifm-navbar-height: 3.5rem; /* 56 px */
+  }
+
+  .navbar__logo {
+    height: 2.5rem;
+  }
+
+  .navbar__toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin: 0 var(--ak-space-4, 0.25rem) 0 -0.4375rem;
+  }
+
+  /* Docs and plain pages start on the site gutter, like every other page. On a docs page the
+     page container gives the gutter, so the wrappers inside it add nothing of their own. */
+  .plugin-docs main > .container,
+  main.container {
+    padding-inline: var(--ak-gutter);
+  }
+
+  .plugin-docs [class*='docItemContainer'],
+  .plugin-docs article,
+  main.container article {
+    padding-inline: 0;
+  }
+}
+
+/* ── Touch: text links and footer links get a 44 px target without moving the layout ── */
+@media (pointer: coarse) {
+  .ak-link,
+  .ak-page-hero__back {
+    position: relative;
+  }
+
+  /* An unseen box around the link, on the pseudo-element its arrow does not use */
+  .ak-link::before,
+  .ak-page-hero__back::after {
+    content: '';
+    position: absolute;
+    inset: -0.5625rem 0;
+  }
+
+  .footer__items {
+    gap: 0;
+  }
+
+  .footer__link-item {
+    display: inline-block;
+    padding-block: 0.45rem;
+  }
 }
 
 @media (min-width: 1200px) {

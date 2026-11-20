@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import useBrokenLinks from '@docusaurus/useBrokenLinks';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
@@ -415,10 +415,25 @@ function useStageInView(): StageId {
 }
 
 function StageIndex({ current }: { current: StageId }): JSX.Element {
+  const list = useRef<HTMLOListElement>(null);
+
+  // On a small screen the index is one row that scrolls sideways: keep the current stage in it.
+  // The row is moved directly, so the page itself never scrolls.
+  useEffect(() => {
+    const row = list.current;
+    const link = row?.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!row || !link || row.scrollWidth <= row.clientWidth) return;
+    const left = link.offsetLeft - row.offsetLeft;
+    if (left < row.scrollLeft || left + link.offsetWidth > row.scrollLeft + row.clientWidth) {
+      const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      row.scrollTo({ left: Math.max(0, left - 16), behavior: still ? 'auto' : 'smooth' });
+    }
+  }, [current]);
+
   return (
     <nav className={styles.index} aria-label="Stages on this page">
       <p className="ak-label">On this page</p>
-      <ol className={styles.indexList}>
+      <ol ref={list} className={styles.indexList}>
         {STAGES.map((stage, position) => (
           <li key={stage.id}>
             <a

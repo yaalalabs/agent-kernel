@@ -31,15 +31,6 @@ const TARGETS: Target[] = [
     ],
   },
   {
-    icon: <FaMicrosoft />,
-    name: 'Microsoft Azure',
-    description: 'Container Apps with Cosmos DB session storage.',
-    modes: ['Azure Container Apps (containerized)', 'Queue mode over Azure Service Bus'],
-    modules: [
-      { kind: 'terraform', name: 'Azure containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
-    ],
-  },
-  {
     icon: <SiGooglecloud />,
     name: 'Google Cloud',
     description: 'Cloud Run serverless or containerized deployments with Firestore session storage.',
@@ -47,6 +38,22 @@ const TARGETS: Target[] = [
     modules: [
       { kind: 'terraform', name: 'GCP serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/google' },
       { kind: 'terraform', name: 'GCP containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/google' },
+    ],
+  },
+  {
+    icon: <FaMicrosoft />,
+    name: 'Microsoft Azure',
+    description: 'Container Apps serverless or containerized deployments with Cosmos DB session storage.',
+    modes: [
+      'Container Apps (serverless)',
+      'Container Apps (containerized)',
+      'Queue mode over Service Bus',
+    ],
+    // One module serves both: the serverless variant is the same Container Apps deployment with
+    // `container_min_replicas = 0`.
+    modules: [
+      { kind: 'terraform', name: 'Azure serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
+      { kind: 'terraform', name: 'Azure containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
     ],
   },
   {
@@ -73,7 +80,7 @@ export function Deployment(): JSX.Element {
           index="04"
           label="Deployment"
           title="Deploy anywhere"
-          lead="Run the same agent code on AWS, Azure, GCP or your own Kubernetes cluster. Terraform modules and a Helm chart are included."
+          lead="Run the same agent code on AWS, GCP, Azure or your own Kubernetes cluster. Terraform modules and a Helm chart are included."
         />
 
         <div className={styles.grid}>
@@ -93,7 +100,7 @@ export function Deployment(): JSX.Element {
               </ul>
               <div className={styles.modules}>
                 {target.modules.map((module) => (
-                  <Link key={module.url} to={module.url} className={styles.module} target="_blank" rel="noopener noreferrer">
+                  <Link key={module.name} to={module.url} className={styles.module} target="_blank" rel="noopener noreferrer">
                     {module.kind === 'helm' ? <SiHelm aria-hidden="true" /> : <SiTerraform aria-hidden="true" />}
                     <span>{module.name}</span>
                   </Link>

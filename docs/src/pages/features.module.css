@@ -220,10 +220,30 @@
     padding-top: var(--ak-space-48);
   }
 
-  /* The index turns into one row that scrolls sideways */
+  /* The index turns into one row that scrolls sideways, and stays under the navigation bar
+     while the stages are read: the page is some twenty screens long on a phone. */
   .index {
-    position: static;
+    top: var(--ifm-navbar-height);
+    z-index: 10;
     min-width: 0;
+    margin-inline: calc(-1 * var(--ak-gutter));
+    padding-inline: var(--ak-gutter);
+    background-color: var(--ak-bg);
+    transition: top 0.2s ease;
+  }
+
+  /* The navigation bar slides away when the page is scrolled down: the row takes its place. */
+  :global(html:has(.navbar[class*='navbarHidden'])) .index {
+    top: 0;
+  }
+
+  /* The numbered row says what it is */
+  .index > :global(.ak-label) {
+    display: none;
+  }
+
+  .stage {
+    scroll-margin-top: calc(var(--ifm-navbar-height) + var(--ak-space-64));
   }
 
   .indexList {

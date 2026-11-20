@@ -82,6 +82,8 @@
   padding: 1.25rem 1.5rem;
   background: transparent;
   border: none;
+  /* A button takes the browser's control font unless told otherwise */
+  font: inherit;
   text-align: left;
   cursor: pointer;
   display: flex;
