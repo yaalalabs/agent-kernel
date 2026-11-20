@@ -40,6 +40,8 @@ _LAZY_EXPORTS = {
     "NoBudgetPolicy": ".budget",
     "SpendReader": ".budget",
     "StaticBudgetPolicy": ".budget",
+    # native budgets
+    "NativeBudgetSync": ".manager",
     # pricing
     "PassthroughPricingSource": ".pricing",
     "PricingSource": ".pricing",
@@ -84,6 +86,7 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     from .ledger.factory import SpendLedgerFactory
     from .ledger.flow import LedgerSpendFlow
     from .ledger.in_memory import InMemorySpendLedger
+    from .manager import NativeBudgetSync
     from .model import (
         ANONYMOUS_USER_ID,
         SYSTEM_USER_ID,

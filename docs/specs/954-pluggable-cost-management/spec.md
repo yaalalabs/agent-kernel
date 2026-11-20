@@ -119,6 +119,10 @@ Found while detailing, and decided by the requester on 2026-11-17. `design.md` i
     committed, so it is not counted twice. The catch-up never reads before the start of the longest period in force:
     an older stored cursor (an idle user) would otherwise replay rows no current budget can count, and could exhaust
     `CATCH_UP_BUDGET` for nothing. Two conflicts in one read raise `LedgerConflictError` (§12.3).
+30. **Native budget sync runs on its own loop, and lazy upserts wait for the definitions.** `run_async_sync` raises
+    inside a running loop, and the first `CostManager.get()` can come from a run in the serving loop, so the startup
+    sync runs `asyncio.run` on a one-shot thread the caller joins. `ensure` makes no call until the budget definitions
+    are on the gateway, because linking a user to a budget row that does not exist yet only fails (§11.4, §15).
 
 ## Design
 
@@ -1133,7 +1137,8 @@ The default budget is synced lazily (deviation 6):
 
 - In `StaticBudgetPolicy.check`, a user with no `users` entry, when the default is native-eligible, goes through
   `NativeBudgetSync.ensure(uid, default)`.
-- `ensure` returns `False` with no I/O when the default is not native-eligible.
+- `ensure` returns `False` with no I/O when the default is not native-eligible, or before the startup sync has written
+  the budget definitions (the default's row may not exist yet; deviation 30).
 - If `uid` is in the process-local `synced: set[str]`, the call returns `True` at once.
 - Otherwise it calls `gateway.sync_budgets({uid: default})`. The default's budget row was written at startup, so this
   is only the customer upsert. On success it adds `uid` to the set.
@@ -1153,7 +1158,8 @@ The default budget is synced lazily (deviation 6):
   thread, which runs `asyncio.run` in its own loop (the `JWKSCache` loop-agnostic pattern) and retries with
   exponential backoff from 1 s to a 300 s cap until it succeeds.
 - Until it succeeds, `covers()` is false for those users, so they get the fallback check.
-- The backoff thread is named `ak-cost-budget-sync`. It stops at process exit.
+- The backoff thread is named `ak-cost-budget-sync`. It is a daemon, stopping at process exit, and
+  `NativeBudgetSync.close()` stops it at its next wait. A retry resumes after the last chunk of users written.
 
 Removed users are never deleted from the gateway. Documented.
 
@@ -1403,9 +1409,10 @@ Construction order:
 4. `AttributorFactory`, `PricingSourceFactory`.
 5. The `SpendLedgerFactory` when needed.
 6. `SpendReader`, `BudgetPolicyFactory`, `UsageViewFactory`.
-7. `gateway.probe()` and the synchronous part of the startup sync (§11.4, §11.5). Both always run through `run_async_sync`
-   (`core/util/async_bridge.py`), which runs a coroutine to completion on a loop of its own and works whether or not
-   the caller is inside a loop. So a fatal answer raises from `get()` itself, and no task is tied to the loop that
+7. `gateway.probe()` and the synchronous part of the startup sync (§11.4, §11.5). Both run `asyncio.run` on a one-shot
+   worker thread that the caller joins, so they complete on a loop of their own whether or not the caller is inside a
+   loop. (`run_async_sync` cannot: it calls `run_until_complete` on the caller's loop, which raises while that loop
+   runs; deviation 30.) So a fatal answer raises from `get()` itself, and no task is tied to the loop that
    happened to call `get()` first (`iterate_async_sync` and `run_async_sync` use a loop per call). Availability
    failures hand over to the `ak-cost-budget-sync` backoff thread, which owns its own loop.
    - `get()` blocks for the probe and the synchronous part of the sync: about `D + 2` round trips, where `D` is the

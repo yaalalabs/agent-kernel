@@ -17,6 +17,7 @@ from .pricing import PricingSource
 
 if TYPE_CHECKING:
     from ..core.config import _CostBudgetsConfig
+    from .manager import NativeBudgetSync
 
 DEFAULT_DENY_MESSAGE = "Your usage budget for this period has been reached."
 UNVERIFIED_DENY_MESSAGE = "Your usage budget could not be verified. Please try again later."
@@ -83,11 +84,16 @@ class BudgetPolicy(ABC):
         reader: SpendReader,
         pricing: PricingSource,
         *,
+        native: "NativeBudgetSync | None" = None,
         clock: Callable[[], datetime] = _utc_now,
     ) -> None:
+        """
+        :param native: Puts budgets on a gateway that enforces them itself; those users skip the spend read.
+        """
         self.config = config
         self._reader = reader
         self._pricing = pricing
+        self._native = native
         self._clock = clock
 
     @abstractmethod
@@ -120,6 +126,14 @@ class StaticBudgetPolicy(BudgetPolicy):
         limit = self.limit_for(user_id)
         if limit is None:
             return BudgetDecision.allow()
+        if self._native is not None:
+            # The gateway refuses this user's calls over budget itself (§11.4): the default budget is put on a user
+            # lazily; a users entry was written at startup.
+            on_default = self.config is not None and user_id not in self.config.users
+            if on_default and await self._native.ensure(user_id, limit):
+                return BudgetDecision.allow()
+            if self._native.covers(user_id):
+                return BudgetDecision.allow()
         now = self._clock()
         window = UsageWindow(start=limit.period.start_of(now), end=now)
         try:
@@ -151,22 +165,24 @@ class BudgetPolicyFactory:
     _log = logging.getLogger("ak.cost.budget")
 
     @staticmethod
-    def create(config: "_CostBudgetsConfig | None", reader: SpendReader, pricing: PricingSource) -> BudgetPolicy:
+    def create(
+        config: "_CostBudgetsConfig | None", reader: SpendReader, pricing: PricingSource, native: "NativeBudgetSync | None" = None
+    ) -> BudgetPolicy:
         """Build the policy ``cost.budgets.policy.type`` names; no budgets block means no budgets.
 
         :raises AKConfigError: If the type is neither static, none nor a dotted path to a BudgetPolicy subclass.
         """
         if config is None:
-            return NoBudgetPolicy(config, reader, pricing)
+            return NoBudgetPolicy(config, reader, pricing, native=native)
         policy_type = config.policy.type
         BudgetPolicyFactory._log.info(f"Building '{policy_type}' budget policy")
         key = policy_type.lower()
         if key == "static":
-            return StaticBudgetPolicy(config, reader, pricing)
+            return StaticBudgetPolicy(config, reader, pricing, native=native)
         if key == "none":
-            return NoBudgetPolicy(config, reader, pricing)
+            return NoBudgetPolicy(config, reader, pricing, native=native)
         if "." not in key:
             raise AKConfigError(
                 f"unknown cost.budgets.policy.type '{policy_type}'; expected static, none or a dotted path to a BudgetPolicy subclass"
             )
-        return resolve_dotted(policy_type, base=BudgetPolicy)(config, reader, pricing)
+        return resolve_dotted(policy_type, base=BudgetPolicy)(config, reader, pricing, native=native)
