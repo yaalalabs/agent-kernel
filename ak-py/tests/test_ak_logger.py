@@ -1,10 +1,14 @@
+import io
 import logging
+import re
+from collections.abc import Callable
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agentkernel.core.config import AKConfig
-from agentkernel.core.logger import AKLogger
+from agentkernel.core.logger import TRACE, AKLogger, TraceLine, TraceStage
 
 
 @pytest.fixture(autouse=True)
@@ -403,3 +407,73 @@ class TestGlobalLoggingSideEffects:
 
             # Should have called config.get() twice
             assert mock_config_get.call_count == 2
+
+
+def _ak_output(level: str, log: Callable[[logging.Logger], None]) -> str:
+    """Configure the ak logger at ``level``, run ``log`` on a child logger, return what the handler wrote."""
+    AKLogger.set_ak_log_level(level)
+    stream = io.StringIO()
+    logging.getLogger("ak").handlers[0].setStream(stream)
+    log(logging.getLogger("ak.test.trace"))
+    return stream.getvalue()
+
+
+class TestTrace:
+    """TRACE level, line format and TraceLine.parse."""
+
+    def test_trace_level_registered_and_resolvable(self):
+        assert TRACE == 5
+        assert logging.getLevelName(TRACE) == "TRACE"
+        assert AKLogger.resolve_level("trace") == TRACE
+
+    def test_trace_written_at_trace_level(self):
+        out = _ak_output("TRACE", lambda log: log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, "r1"))
+        assert " - ak.test.trace - TRACE - [AGENT_START] request_id=r1" in out
+
+    def test_trace_filtered_at_debug(self):
+        out = _ak_output("DEBUG", lambda log: log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, "r1"))
+        assert out == ""
+
+    def test_timestamp_is_utc_iso_with_millis(self):
+        out = _ak_output("INFO", lambda log: log.info("hello"))
+        match = re.match(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) - ", out)
+        assert match
+        assert abs((datetime.now(UTC) - datetime.fromisoformat(match.group(1))).total_seconds()) < 60
+
+    def test_parse_round_trip(self):
+        message = 'said "hi" and left'
+        out = _ak_output(
+            "TRACE",
+            lambda log: log.log(TRACE, '[%s] request_id=%s message="%s"', TraceStage.AGENT_DONE, "r-2", message),
+        )
+        line = TraceLine.parse(out)
+        assert line is not None
+        assert line.stage is TraceStage.AGENT_DONE
+        assert line.request_id == "r-2"
+        assert line.message == message
+        assert line.timestamp.tzinfo is not None
+        assert line.timestamp.isoformat(timespec="milliseconds").replace("+00:00", "Z") == out[:24]
+
+    def test_parse_without_message(self):
+        line = TraceLine.parse("2026-10-21T08:15:12.345Z - ak.pipeline - TRACE - [INPUT_ENQUEUED] request_id=abc")
+        assert line == TraceLine(datetime(2026, 10, 21, 8, 15, 12, 345000, tzinfo=UTC), TraceStage.INPUT_ENQUEUED, "abc", None)
+
+    def test_parse_tolerates_prefix(self):
+        line = TraceLine.parse("2026-10-21T08:15:13.000Z\tabc-123\t2026-10-21T08:15:12.345Z - ak.x - TRACE - [AGENT_START] request_id=r")
+        assert line is not None
+        assert line.stage is TraceStage.AGENT_START
+        assert line.timestamp == datetime(2026, 10, 21, 8, 15, 12, 345000, tzinfo=UTC)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "",
+            "garbage",
+            "2026-10-21T08:15:12.345Z - ak.x - INFO - Agent done: request_id=r",
+            "2026-10-21T08:15:12.345Z - ak.x - TRACE - [NOT_A_STAGE] request_id=r",
+            "2026-10-21T08:15:12.345Z - ak.x - TRACE - no stage here",
+            "2026-13-45T08:15:12.345Z - ak.x - TRACE - [AGENT_START] request_id=r",
+        ],
+    )
+    def test_parse_returns_none_for_non_trace_lines(self, text):
+        assert TraceLine.parse(text) is None

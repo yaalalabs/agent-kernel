@@ -846,3 +846,16 @@ class TestRemovedAgentLists:
         agui = _AGUIConfig.model_validate({"state": {"enabled": True, "agents": ["a"]}, "client_context": {"agents": ["b"]}})
 
         assert (agui.state.agents, agui.client_context.agents) == (["a"], ["b"])
+
+
+@pytest.mark.parametrize("section", ["AK", "SYSTEM"])
+def test_logging_level_trace_accepted(monkeypatch, section):
+    monkeypatch.setenv(f"AK_LOGGING__{section}__LEVEL", "TRACE")
+    cfg = AKConfig()
+    assert getattr(cfg.logging, section.lower()).level == "TRACE"
+
+
+def test_logging_level_unknown_rejected(monkeypatch):
+    monkeypatch.setenv("AK_LOGGING__AK__LEVEL", "VERBOSE")
+    with pytest.raises(ValidationError):
+        AKConfig()
