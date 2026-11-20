@@ -154,10 +154,15 @@ export function Integrations(): JSX.Element {
   const panelNodes = useRef<Array<HTMLDivElement | null>>([]);
   const setNodes = useRef<Array<HTMLDivElement | null>>([]);
   // The section pins where the window is roomy enough (PIN_QUERY) and the tallest group fits
-  // the pinned frame. The second is measured, because it depends on how the chips wrap.
+  // the pinned frame. The second depends on how the chips wrap, so it is measured: the pinned
+  // layout is applied first, on trial (`laidOut`), and the pinned behaviour (`pinned`: the scroll
+  // steps, the floor, the re-scroll) starts only once the measurement has passed. The trial and
+  // its verdict are both committed before the browser paints, and nothing that belongs to the
+  // pinned state runs for a layout that turns out not to fit.
   const [roomy, setRoomy] = useState(false);
-  const [fits, setFits] = useState(true);
-  const pinned = roomy && fits;
+  const [fit, setFit] = useState<'untested' | 'yes' | 'no'>('untested');
+  const laidOut = roomy && fit !== 'no';
+  const pinned = roomy && fit === 'yes';
   const [active, setActive] = useState(0);
   const [folded, setFolded] = useState(false);
   // Which groups are open while folded. The first one, to begin with.
@@ -168,7 +173,7 @@ export function Integrations(): JSX.Element {
     const fold = window.matchMedia(FOLD_QUERY);
     const update = () => {
       setRoomy(pin.matches);
-      setFits(true);
+      setFit('untested');
       setFolded(fold.matches);
     };
     update();
@@ -275,10 +280,11 @@ export function Integrations(): JSX.Element {
   }, [pinned, goTo]);
 
   // The frame keeps the height of the tallest group, so it does not jump between stages.
+  // The same measurement gives the verdict on the trial layout.
   useIsomorphicLayoutEffect(() => {
     const holder = panels.current;
     if (!holder) return undefined;
-    if (!pinned) {
+    if (!laidOut) {
       holder.style.removeProperty('min-height');
       return undefined;
     }
@@ -296,26 +302,34 @@ export function Integrations(): JSX.Element {
       // pinning would cut it off at both ends: the section goes back to the plain stacked list.
       const room = frame.current?.clientHeight ?? Number.POSITIVE_INFINITY;
       const needed = Math.max(tallest, aside.current?.offsetHeight ?? 0);
-      if (needed > room) setFits(false);
+      setFit(needed > room ? 'no' : 'yes');
     };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [pinned]);
+  }, [laidOut]);
 
-  // A window that was too short for the pinned frame may fit it after a resize: try again then.
+  // A window that was too short for the pinned frame may fit it after a resize. The layout is
+  // put on trial again once the resize has come to rest, not on every event of the drag.
   useEffect(() => {
-    if (!roomy || fits) return undefined;
-    const retry = () => setFits(true);
+    if (!roomy || fit !== 'no') return undefined;
+    let timer = 0;
+    const retry = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setFit('untested'), 200);
+    };
     window.addEventListener('resize', retry);
-    return () => window.removeEventListener('resize', retry);
-  }, [roomy, fits]);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', retry);
+    };
+  }, [roomy, fit]);
 
   return (
     <section
       ref={section}
       id="integrations"
-      className={clsx(styles.section, pinned && styles.pinned)}
+      className={clsx(styles.section, laidOut && styles.pinned)}
       style={{ '--steps': PANELS.length } as React.CSSProperties}
     >
       {/* Without script nothing can open a folded group, so nothing is folded */}

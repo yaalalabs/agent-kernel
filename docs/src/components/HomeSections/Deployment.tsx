@@ -43,9 +43,16 @@ const TARGETS: Target[] = [
   {
     icon: <FaMicrosoft />,
     name: 'Microsoft Azure',
-    description: 'Container Apps with Cosmos DB session storage.',
-    modes: ['Azure Container Apps (containerized)', 'Queue mode over Azure Service Bus'],
+    description: 'Container Apps serverless or containerized deployments with Cosmos DB session storage.',
+    modes: [
+      'Container Apps (serverless)',
+      'Container Apps (containerized)',
+      'Queue mode over Service Bus',
+    ],
+    // One module serves both: the serverless variant is the same Container Apps deployment with
+    // `container_min_replicas = 0`.
     modules: [
+      { kind: 'terraform', name: 'Azure serverless', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
       { kind: 'terraform', name: 'Azure containerized', url: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm' },
     ],
   },
@@ -93,7 +100,7 @@ export function Deployment(): JSX.Element {
               </ul>
               <div className={styles.modules}>
                 {target.modules.map((module) => (
-                  <Link key={module.url} to={module.url} className={styles.module} target="_blank" rel="noopener noreferrer">
+                  <Link key={module.name} to={module.url} className={styles.module} target="_blank" rel="noopener noreferrer">
                     {module.kind === 'helm' ? <SiHelm aria-hidden="true" /> : <SiTerraform aria-hidden="true" />}
                     <span>{module.name}</span>
                   </Link>

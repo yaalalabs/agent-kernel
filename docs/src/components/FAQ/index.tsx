@@ -79,7 +79,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: "deployment-options",
     question: "What deployment options are available?",
     answer:
-      "There are several options depending on your setup. You can go serverless with AWS Lambda or Google Cloud Run. You can run containers on Amazon ECS, Azure Container Apps, Cloud Run or any Kubernetes cluster. You can use our Terraform modules for a full multi-cloud deployment. Or you can run a hybrid setup with some parts local and some in the cloud. Pick what works best for your architecture.",
+      "There are several options depending on your setup. You can go serverless with AWS Lambda, Google Cloud Run or Azure Container Apps scaled to zero. You can run containers on Amazon ECS, Azure Container Apps, Cloud Run or any Kubernetes cluster. You can use our Terraform modules for a full multi-cloud deployment. Or you can run a hybrid setup with some parts local and some in the cloud. Pick what works best for your architecture.",
   },
 ];
 

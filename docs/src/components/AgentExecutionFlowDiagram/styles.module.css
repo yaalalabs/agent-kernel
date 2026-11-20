@@ -262,7 +262,6 @@
 
   /* The two parallel steps share a tinted band, named once */
   .parallelCol {
-    position: relative;
     gap: 0;
     margin: var(--ak-space-8) calc(-1 * var(--ak-space-12));
     padding: var(--ak-space-8) var(--ak-space-12);
@@ -270,11 +269,11 @@
     background-color: rgba(var(--ak-fg-rgb), 0.04);
   }
 
+  /* In the flow, on a row of its own above the two steps and in line with their text, so it
+     cannot run into a step name on a narrow screen */
   .parallelLabel {
     display: block;
-    position: absolute;
-    top: var(--ak-space-12);
-    right: var(--ak-space-12);
+    margin: var(--ak-space-4) 0 0 calc(2.5rem + var(--ak-space-16));
     font-family: var(--ifm-font-family-monospace);
     font-size: var(--ak-type-label);
     letter-spacing: 0.08em;

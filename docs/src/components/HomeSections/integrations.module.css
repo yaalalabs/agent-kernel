@@ -418,3 +418,54 @@
     transform: none;
   }
 }
+
+/* ── Print: every group and every integration, whatever is folded or pinned on screen ──
+   A printed page is narrower than the fold breakpoint, so these rules undo the folded state by
+   class and by attribute, and lay a pinned section out as the plain list. */
+@media print {
+  .pinned {
+    height: auto;
+    padding-block: var(--ak-section-pad);
+  }
+
+  .pinned .frame {
+    position: static;
+    display: block;
+    height: auto;
+  }
+
+  .pinned .layout {
+    display: block;
+  }
+
+  .pinned .steps,
+  .floor,
+  .foldMeta {
+    display: none;
+  }
+
+  .pinned .panels {
+    display: block;
+    min-height: 0 !important;
+  }
+
+  .pinned .panel,
+  .pinned .panel[hidden] {
+    display: block !important;
+    padding-block: var(--ak-space-24);
+    animation: none;
+    content-visibility: visible !important;
+  }
+
+  .pinned .panelActive .chips li {
+    animation: none;
+  }
+
+  .panel .sets,
+  .panel:not(.panelOpen) .sets,
+  .panel:not(.panelOpen) .sets[hidden] {
+    display: flex !important;
+    margin-top: var(--ak-space-16);
+    content-visibility: visible !important;
+  }
+}

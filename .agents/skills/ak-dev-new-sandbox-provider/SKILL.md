@@ -313,8 +313,11 @@ including a profile that demonstrates enforced policy and sentinel-based determi
 - Landing page inventories (`docs/src/components/HomeSections/`): an item in the **Cloud &
   infrastructure** row of `INTEGRATION_ROWS` in `integrations.data.tsx` (role `Sandbox`, `href`
   to the provider's setup anchor in `docs/docs/advanced/sandbox.md`, logo or `react-icons/si`
-  glyph). Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site
-  Landing and Features Pages*.
+  glyph). Every provider `type` the runtime ships is listed, `local_subprocess` included, and a
+  vendor already listed for another role gets a second item under a name of its own (`Kubernetes
+  pods` beside the `Kubernetes` deployment chip, `Amazon EC2` beside AWS Systems Manager). Logo
+  sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and
+  Features Pages*.
 - Features page (`docs/src/pages/features.tsx`): the **Sandboxed code execution** capability
   under Guard, whose first line of `points` gives the provider count and names. Grep
   `docs/src/pages/*.tsx`, the root `README.md`, `docs/docs/intro.md`, and

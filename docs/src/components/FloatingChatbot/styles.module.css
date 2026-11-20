@@ -542,9 +542,11 @@
 }
 
 /* While the cookie banner is waiting for an answer, the launcher stays out of its way: below
-   this width the two share the bottom edge, and the launcher would cover the banner's buttons. */
+   this width the two share the bottom edge, and the launcher would cover the banner's buttons.
+   Only the unopened launcher steps aside. Once the chat is open the same button is its close
+   control, and a window resized with the chat open must not lose it. */
 @media (max-width: 1200px) {
-  :global(html[data-ak-consent='pending']) .chatButtonContainer {
+  :global(html[data-ak-consent='pending']) .chatButtonContainer:not(:has(.chatButtonOpen)) {
     display: none;
   }
 }

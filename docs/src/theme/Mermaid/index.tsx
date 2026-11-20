@@ -209,10 +209,17 @@ function MermaidLightbox({
         (stage.clientWidth - STAGE_PADDING) / width,
         (stage.clientHeight - STAGE_PADDING) / height,
       );
-      // On a phone the fitted diagram is still too small to read. It opens at twice that size,
-      // from its top left corner, and the reader drags it: the labels are legible at once.
+      // The canvas lays a diagram out at most 300 px wide, whatever its drawn size (the SVG has no
+      // width of its own in this box), so a scale of 1 is usually not the diagram's drawn size.
+      // `natural` is the scale that restores it: 1 for a diagram drawn narrower than that.
+      const drawn = canvas.querySelector('svg')?.viewBox?.baseVal?.width || width;
+      const natural = Math.max(1, drawn / width);
+      // A diagram that fits at its drawn size opens whole, as it does on a wide screen. One that
+      // only fits by shrinking is too small to read on a phone: it opens at up to twice the
+      // fitted size, never past its drawn size, from its top left corner, and the reader drags it.
       const narrow = stage.clientWidth < NARROW_STAGE;
-      const initial = clampScale(narrow ? fit * 2 : Math.min(fit, 2));
+      const shrunk = fit < natural;
+      const initial = clampScale(narrow && shrunk ? Math.min(fit * 2, natural) : Math.min(fit, 2));
       const overX = (width * initial - stage.clientWidth) / 2;
       const overY = (height * initial - stage.clientHeight) / 2;
       const start = narrow

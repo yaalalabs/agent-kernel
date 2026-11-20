@@ -231,13 +231,13 @@ Order of work for [spec.md](spec.md). Each iteration leaves the site building.
   3. The hero headline capitalises every word, on the site and in the root README.
   4. The hero install line is `uv add agentkernel` alone.
   5. Google Cloud comes before Azure in the deployment tiles.
-- **Verify:** the pinned section at 1440 by 900, 1280 by 720 and 1024 by 768, and the stacked list at 1000 by 700; Testing step 6.
+  6. The Azure tile offers the serverless variant: Container Apps scaled to zero, through the same Terraform module as the containerized one.
+  7. Review fixes: the pinned layout is measured on trial before any pinned behaviour starts; print shows every integration group; the "In parallel" label has its own row; an open chat keeps its close control while the cookie banner waits; the features index does not animate with reduced motion; a diagram opens larger on a phone only when it was shrunk to fit.
+- **Verify:** the pinned section at 1440 by 900, 1280 by 720 and 1024 by 768, and the stacked list at 1000 by 700; Testing steps 6 and 8.
 
 ## Known gaps
 
-- Phones were checked in Chrome's emulation only: no real device, Safari on iOS or Android Chrome.
-
-- Not checked: Safari and Firefox; the WebGL hero on a low-power device; class and state diagrams in the light palette.
+- Not checked: Safari and Firefox; a real phone or Android Chrome (phones were checked in Chrome's emulation only); the WebGL hero on a low-power device; class and state diagrams in the light palette.
 - Eight integration logos stay as PNG because neither icon set has a mark for them (Google ADK, Bedrock, Daytona, E2B, Langfuse, LiteLLM, OpenLLMetry, TypeSafe).
 - Post bodies, and the headlines baked into the older banners, still say "Agent Kernel" (design, Open questions).
 - The hero headline, the blog heading and the persona page titles and leads are new copy and need the maintainer's read.

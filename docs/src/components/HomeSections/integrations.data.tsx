@@ -134,7 +134,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "AWS Lambda", role: "Serverless", href: "/docs/deployment/aws-serverless", icon: <FaAws /> },
       { name: "Amazon ECS Fargate", role: "Containers", href: "/docs/deployment/aws-containerized", icon: <FaAws /> },
       { name: "Amazon API Gateway", role: "Gateway", href: "/docs/deployment/aws-serverless", icon: <FaAws /> },
-      { name: "Azure Container Apps", role: "Containers", href: "/docs/deployment/azure-containerized", icon: <VscAzure /> },
+      { name: "Azure Container Apps", role: "Serverless & containers", href: "/docs/deployment/azure-containerized", icon: <VscAzure /> },
       { name: "Azure API Management", role: "Gateway", href: "/docs/deployment/azure-containerized", icon: <VscAzure /> },
       { name: "Google Cloud Run", role: "Serverless & containers", href: "/docs/deployment/gcp-serverless", icon: <SiGooglecloud /> },
       { name: "GCP API Gateway", role: "Gateway", href: "/docs/deployment/gcp-serverless", icon: <SiGooglecloud /> },

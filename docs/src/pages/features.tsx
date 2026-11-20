@@ -425,7 +425,8 @@ function StageIndex({ current }: { current: StageId }): JSX.Element {
     if (!row || !link || row.scrollWidth <= row.clientWidth) return;
     const left = link.offsetLeft - row.offsetLeft;
     if (left < row.scrollLeft || left + link.offsetWidth > row.scrollLeft + row.clientWidth) {
-      row.scrollTo({ left: Math.max(0, left - 16), behavior: 'smooth' });
+      const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      row.scrollTo({ left: Math.max(0, left - 16), behavior: still ? 'auto' : 'smooth' });
     }
   }, [current]);
 
