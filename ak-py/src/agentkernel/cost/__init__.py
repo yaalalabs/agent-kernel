@@ -34,6 +34,11 @@ _LAZY_EXPORTS = {
     "Attributor": ".attribution",
     "AttributorFactory": ".attribution",
     "DefaultAttributor": ".attribution",
+    # pricing
+    "PassthroughPricingSource": ".pricing",
+    "PricingSource": ".pricing",
+    "PricingSourceFactory": ".pricing",
+    "StaticPricingSource": ".pricing",
     # gateway
     "LLMGateway": ".gateway.base",
     "LLMGatewayFactory": ".gateway.factory",
@@ -82,6 +87,7 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
         UsageResult,
         UsageWindow,
     )
+    from .pricing import PassthroughPricingSource, PricingSource, PricingSourceFactory, StaticPricingSource
 
 
 def __getattr__(name: str) -> Any:

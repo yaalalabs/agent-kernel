@@ -12,6 +12,7 @@ from .attribution import AttributionContext, Attributor
 from .errors import UnsupportedCapabilityError, UsageRetrievalError
 from .gateway.base import LLMGateway
 from .model import Attribution, GatewayFilter, ModelUsage, SpendCursor, SpendTotal, UsageQuery, UsageWindow
+from .pricing import PricingSource
 
 _USER = "contract-user"
 _T0 = datetime(2026, 1, 5, 12, 0, 0, tzinfo=timezone.utc)
@@ -297,3 +298,57 @@ class AttributorContract:
 
         assert isinstance(attribution, Attribution)
         assert (attribution.session_id, attribution.request_id) == ("s-1", "r-1")
+
+
+class PricingSourceContract:
+    """Conformance suite every PricingSource subclasses. Override `source`, and set `rated_model` when the source
+    prices some model from its token counts (the cases about rates skip without one).
+
+    Not prefixed ``Test`` so pytest does not collect it on its own.
+    """
+
+    rated_model: str | None = None
+
+    @pytest.fixture
+    def source(self) -> PricingSource:
+        """The pricing source under contract; every subclass must override this fixture."""
+        raise NotImplementedError("subclasses must override the `source` fixture")
+
+    def _usage(self, row_id: str, model: str, *, input_tokens, cached, output, cost) -> ModelUsage:
+        return _row(row_id, _T0, model=model, cached_input_tokens=cached, provider_cost=cost).model_copy(
+            update={"input_tokens": input_tokens, "output_tokens": output}
+        )
+
+    def test_contract_unknown_in_unknown_out(self, source):
+        unknown = self._usage("r0", self.rated_model or "unrated-model", input_tokens=None, cached=None, output=None, cost=None)
+
+        assert source.bill(unknown) is None
+
+    def test_contract_a_cached_token_is_charged_once(self, source):
+        if self.rated_model is None:
+            pytest.skip("the source prices no model from token counts")
+        model = self.rated_model
+
+        def bill(input_tokens, cached):
+            return source.bill(self._usage("r", model, input_tokens=input_tokens, cached=cached, output=0, cost=None))
+
+        assert bill(1000, 400) == bill(600, 0) + bill(400, 400)
+
+    def test_contract_bill_total_equals_the_sum_of_row_bills(self, source):
+        rows = [
+            self._usage("u1", "unrated-model", input_tokens=10, cached=None, output=5, cost=Decimal("0.0021")),
+            self._usage("u2", "unrated-model", input_tokens=None, cached=None, output=None, cost=Decimal("0.5")),
+            self._usage("u3", "unrated-model", input_tokens=7, cached=None, output=1, cost=None),  # unpriced
+        ]
+        if self.rated_model is not None:
+            rows += [
+                self._usage("r1", self.rated_model, input_tokens=1200, cached=300, output=450, cost=None),
+                self._usage("r2", self.rated_model, input_tokens=80, cached=None, output=None, cost=Decimal("9")),
+                self._usage("r3", self.rated_model, input_tokens=None, cached=None, output=None, cost=None),
+            ]
+        bills = [source.bill(row) for row in rows]
+
+        assert source.bill_total(SpendTotal.from_rows(rows, "USD")) == sum((b for b in bills if b is not None), Decimal(0))
+
+    def test_contract_bills_at_cost_is_declared(self, source):
+        assert isinstance(source.bills_at_cost, bool)
