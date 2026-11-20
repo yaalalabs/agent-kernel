@@ -205,6 +205,3 @@ The docs UI uses `gsap` for client-side animations. `gsap` is distributed under 
 - [Mermaid Documentation](https://mermaid.js.org/)
 - [OAK GitHub](https://github.com/yaalalabs/agent-kernel)
 
----
-
-**Built with ❤️ by [Yaala Labs](https://www.yaalalabs.com/)**

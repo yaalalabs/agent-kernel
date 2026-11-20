@@ -636,9 +636,9 @@ No `AKConfig`, YAML or environment variable changes.
 |---|---|---|
 | `11` | `title` | `'Open Agent Kernel'` |
 | `70` | `keywords` | `open agent kernel, OAK` added in front; `agent kernel` kept |
-| `111` | `og:site_name` | `'Open Agent Kernel by Yaala Labs'` |
+| `111` | `og:site_name` | `'Open Agent Kernel'` (first `'Open Agent Kernel by Yaala Labs'`; the company name left the metadata in iteration 22) |
 | `187`, `228` | JSON-LD `name` | `'Open Agent Kernel'` |
-| `229` | JSON-LD `alternateName` | `['OAK', 'Agent Kernel', 'Open Agent Kernel by Yaala Labs']` |
+| `229` | JSON-LD `alternateName` | `['OAK', 'Agent Kernel']` |
 | `328` | `blogTitle` | `'Open Agent Kernel Blog'` |
 | `439` | navbar logo `alt` | `'Open Agent Kernel logo'` |
 

@@ -235,6 +235,19 @@ Order of work for [spec.md](spec.md). Each iteration leaves the site building.
   7. Review fixes: the pinned layout is measured on trial before any pinned behaviour starts; print shows every integration group; the "In parallel" label has its own row; an open chat keeps its close control while the cookie banner waits; the features index does not animate with reduced motion; a diagram opens larger on a phone only when it was shrunk to fit.
 - **Verify:** the pinned section at 1440 by 900, 1280 by 720 and 1024 by 768, and the stacked list at 1000 by 700; Testing steps 6 and 8.
 
+## Iteration 22: Company name
+
+- **Goal:** "Yaala Labs" is named only in legal text.
+- **Files:** `docs/docusaurus.config.js`, `docs/docs/intro.md` and its `0.10.1` copy, `docs/README.md`, `use-cases/mathru-phm-companion/README.md`, `ak-py/pyproject.toml`, `AGENTS.md`
+- **Steps:**
+  1. Site metadata: the author, publisher and site name are "Open Agent Kernel"; the `company` tag and the name in both keyword lists go; the structured data describes the project, not the company.
+  2. The "Built with ... by Yaala Labs" sign-off leaves the docs introduction (current and `0.10.1`) and the docs README; one use-case README drops "by Yaala Labs".
+  3. The package author in `ak-py/pyproject.toml` is "Open Agent Kernel", with the same contact address.
+  4. Two unused company logo images are deleted from `docs/static/img`.
+  5. The rule is added to *Naming and brand* in `AGENTS.md`.
+- **Kept, by the maintainer's decision:** the footer copyright line, the 20 older doc versions and published blog posts; and, as legal text or identifiers, the policy pages, `NOTICE`, README copyright lines, the `yaalalabs` organisation and registry names, `kernel.yaala.ai` and the email addresses.
+- **Verify:** no "Yaala Labs" in the built home page outside the footer copyright; Testing step 6.
+
 ## Known gaps
 
 - Not checked: Safari and Firefox; a real phone or Android Chrome (phones were checked in Chrome's emulation only); the WebGL hero on a low-power device; class and state diagrams in the light palette.
