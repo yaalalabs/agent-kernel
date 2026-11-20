@@ -620,7 +620,10 @@ plugin on every build. No dependency is added.
 - `/llms-full.txt`: the markdown of the same pages in the same order, each under a `Source:` line with
   its address. Front matter and MDX import lines are removed. Every relative link is made absolute: a
   link to a markdown file becomes the address of that page, and any other path is resolved from the
-  page's own address. Fenced code is left exactly as written. A fenced block ends as it does in
+  page's own address. A link to a place on the same page (`#section`) becomes that page's address
+  with the fragment, because in a file of many pages it no longer says which page it means. The
+  definition of a reference-style link (`[label]: target`) is rewritten the same way as an inline
+  link. Fenced code is left exactly as written. A fenced block ends as it does in
   CommonMark, on a marker of the same character at least as long as the opening one with nothing after
   it, so a page that shows a markdown file inside four backticks keeps that file's own code blocks as code.
 - Text taken from pages is put into the template with function replacers, so `$&` and the like in a

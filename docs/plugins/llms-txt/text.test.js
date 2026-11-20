@@ -100,10 +100,41 @@ test('openingOf reads past a blog post title, banner and truncate marker', () =>
   assert.equal(openingOf('# Only a title'), '');
 });
 
-test('rewriteLinks resolves relative targets and leaves the rest', () => {
-  const line = 'A [doc](../api/rest-api#run "Title"), an ![image](/img/x.png), [out](https://e.com), [mail](mailto:a@b.c) and [here](#top).';
+test('rewriteLinks resolves relative targets and leaves complete ones', () => {
+  const line = 'A [doc](../api/rest-api#run "Title"), an ![image](/img/x.png), [out](https://e.com) and [mail](mailto:a@b.c).';
   assert.equal(
     rewriteLinks(line, (target) => `https://site${target.replace('..', '')}`),
-    'A [doc](https://site/api/rest-api#run "Title"), an ![image](https://site/img/x.png), [out](https://e.com), [mail](mailto:a@b.c) and [here](#top).',
+    'A [doc](https://site/api/rest-api#run "Title"), an ![image](https://site/img/x.png), [out](https://e.com) and [mail](mailto:a@b.c).',
+  );
+});
+
+test('rewriteLinks gives a link to a place on the same page that page\'s address', () => {
+  assert.equal(
+    rewriteLinks('See [Test Configuration](#test-configuration).', (target) => new URL(target, 'https://site/docs/configuration').href),
+    'See [Test Configuration](https://site/docs/configuration#test-configuration).',
+  );
+});
+
+test('rewriteLinks resolves reference definitions, and nothing that only looks like one', () => {
+  const page = [
+    'Read [the guide][install] and [the API][api].',
+    '',
+    '[install]: ./installation.md "Install"',
+    '[api]: ../api/rest-api',
+    '[out]: https://e.com/page',
+    '[^1]: ./a-footnote.md is text, not a target',
+    '[INFO]: started',
+  ].join('\n');
+  assert.equal(
+    rewriteLinks(page, (target) => `ABS(${target})`),
+    [
+      'Read [the guide][install] and [the API][api].',
+      '',
+      '[install]: ABS(./installation.md) "Install"',
+      '[api]: ABS(../api/rest-api)',
+      '[out]: https://e.com/page',
+      '[^1]: ./a-footnote.md is text, not a target',
+      '[INFO]: started',
+    ].join('\n'),
   );
 });

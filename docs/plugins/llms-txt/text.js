@@ -116,17 +116,29 @@ function openingOf(body) {
   return prose ? prose.join(' ') : '';
 }
 
+// A target that is already complete: it has a scheme (https:, mailto:) or is written in angle brackets.
+const COMPLETE = /^(?:[a-z][a-z0-9+.-]*:|<)/i;
+// A reference definition, `[label]: target`. A footnote, `[^1]: text`, is not one.
+const DEFINITION = /^( {0,3}\[(?!\^)[^\]]+\]:\s*)(\S+)(.*)$/;
+// What a relative target looks like, so that a line such as "[INFO]: started" is not taken for a definition.
+const RELATIVE = /^(?:\.{1,2}\/|\/|#)|\.mdx?(?:#.*)?$/;
+
 /**
- * Rewrites the targets of markdown links and images outside code, through `resolve`.
- * Absolute links, mail links and in-page anchors are left alone.
+ * Rewrites the targets of markdown links and images outside code, through `resolve`: inline links
+ * and images, and the definitions of reference-style links. A link to a place on the same page
+ * (`#section`) goes through `resolve` too, because in a file of many pages it no longer says which
+ * page it means. Targets that are already complete are left alone.
  */
 function rewriteLinks(markdown, resolve) {
-  return outsideCode(markdown, (line) =>
-    line.replace(/\]\(([^)\s]+)(\s+"[^"]*")?\)/g, (whole, target, title = '') => {
-      if (/^(?:[a-z][a-z0-9+.-]*:|#|<)/i.test(target)) return whole;
-      return `](${resolve(target)}${title})`;
-    }),
-  );
+  return outsideCode(markdown, (line) => {
+    const definition = line.match(DEFINITION);
+    if (definition && !COMPLETE.test(definition[2]) && RELATIVE.test(definition[2])) {
+      return `${definition[1]}${resolve(definition[2])}${definition[3]}`;
+    }
+    return line.replace(/\]\(([^)\s]+)(\s+"[^"]*")?\)/g, (whole, target, title = '') =>
+      COMPLETE.test(target) ? whole : `](${resolve(target)}${title})`,
+    );
+  });
 }
 
 module.exports = { oneSentence, outsideCode, bodyOf, openingOf, rewriteLinks };
