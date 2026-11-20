@@ -257,6 +257,7 @@ Order of work for [spec.md](spec.md). Each iteration leaves the site building.
   2. Write the summary in `template.md`.
   3. Tell contributors which part is hand-written: `AGENTS.md` and the docs sync skill.
   4. Review fixes: blog posts are described from their own opening, not the banner's alt text; a fenced block closes as in CommonMark; template values go in through function replacers; the helpers get tests.
+  5. Point people to the files: a footer link, a section on the Agent Skills page (current docs and `0.10.1`), and a comment in `robots.txt`.
 - **Verify:** Testing step 11.
 
 ## Known gaps

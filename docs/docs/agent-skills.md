@@ -56,6 +56,23 @@ ak skill update --assistant claude
 
 Once installed, skills are automatically discovered by the corresponding coding agent.
 
+## Giving Your Assistant the Docs
+
+Skills tell a coding assistant how to do a task. To let it look things up as well, point it at the docs. The site publishes them in the [llms.txt](https://llmstxt.org) format, which is written for AI assistants:
+
+| File | What it holds | Use it when |
+|------|---------------|-------------|
+| [`llms.txt`](https://kernel.yaala.ai/llms.txt) | A summary of OAK and a link to every docs page, with one line on each | The assistant can open links: it reads the index and fetches the pages it needs |
+| [`llms-full.txt`](https://kernel.yaala.ai/llms-full.txt) | Every docs page in one file | The assistant cannot browse, or you want the whole docs in one upload |
+
+Paste the address into a chat, or add it as a docs source where your tool supports that:
+
+```text
+https://kernel.yaala.ai/llms.txt
+```
+
+`llms-full.txt` is large (over 1 MB), more than many assistants can read in one message, so upload it as a file or give it to a tool that indexes documents. Both files describe the latest release and are rebuilt with the site.
+
 ## Available User Skills
 
 These skills are bundled with the `agentkernel` PyPI package and help you build agent projects:

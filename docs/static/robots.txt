@@ -8,6 +8,10 @@ Allow: /
 # Sitemap location
 Sitemap: https://kernel.yaala.ai/sitemap.xml
 
+# For AI assistants: an index of the docs and their full text, in the llms.txt format (https://llmstxt.org)
+# https://kernel.yaala.ai/llms.txt
+# https://kernel.yaala.ai/llms-full.txt
+
 # Allow AI crawlers (GPT, Claude, etc.)
 User-agent: GPTBot
 Allow: /
