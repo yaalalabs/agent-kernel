@@ -15,8 +15,21 @@ from .budget import DEFAULT_DENY_MESSAGE, UNVERIFIED_DENY_MESSAGE, BudgetPolicy
 from .errors import UnsupportedCapabilityError, UsageRetrievalError
 from .gateway.base import LLMGateway
 from .ledger.base import SpendLedger
-from .model import SYSTEM_USER_ID, Attribution, BudgetLimit, BudgetPeriod, GatewayFilter, ModelUsage, SpendCursor, SpendTotal, UsageQuery, UsageWindow
+from .model import (
+    SYSTEM_USER_ID,
+    Attribution,
+    BudgetLimit,
+    BudgetPeriod,
+    GatewayFilter,
+    ModelUsage,
+    SpendCursor,
+    SpendTotal,
+    UsageQuery,
+    UsageReport,
+    UsageWindow,
+)
 from .pricing import PricingSource
+from .view import UsageView
 
 _USER = "contract-user"
 _T0 = datetime(2026, 1, 5, 12, 0, 0, tzinfo=timezone.utc)
@@ -583,3 +596,38 @@ class BudgetPolicyContract:
         self.spend(policy, UsageRetrievalError("gateway down", gateway="fake"))
 
         assert await policy.check(Attribution(user_id="alice")) == expected
+
+
+class UsageViewContract:
+    """Conformance suite every UsageView subclasses. Override `view` and `principal`; the principal's attributed id is
+    the user the view has usage for.
+
+    Not prefixed ``Test`` so pytest does not collect it on its own.
+    """
+
+    @pytest.fixture
+    def view(self) -> UsageView:
+        """The view under contract; every subclass must override this fixture."""
+        raise NotImplementedError("subclasses must override the `view` fixture")
+
+    @pytest.fixture
+    def principal(self) -> Principal:
+        """A principal whose attributed id is ``own_user_id``; every subclass must override this fixture."""
+        raise NotImplementedError("subclasses must override the `principal` fixture")
+
+    own_user_id: str = _USER
+
+    def _query(self, user_id: str) -> UsageQuery:
+        return UsageQuery(user_id=user_id, start=_T0 - timedelta(days=1), end=_T0 + timedelta(days=1))
+
+    @pytest.mark.asyncio
+    async def test_contract_the_report_keeps_the_envelope(self, view, principal):
+        report = await view.report(self._query(self.own_user_id), principal)
+
+        assert UsageReport.ENVELOPE_KEYS <= set(report.model_dump())
+        assert report.user_id == self.own_user_id
+
+    @pytest.mark.asyncio
+    async def test_contract_another_users_usage_is_refused(self, view, principal):
+        with pytest.raises(PermissionError):
+            await view.report(self._query(f"{self.own_user_id}-other"), principal)

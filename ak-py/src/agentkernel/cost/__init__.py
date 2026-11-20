@@ -40,8 +40,13 @@ _LAZY_EXPORTS = {
     "NoBudgetPolicy": ".budget",
     "SpendReader": ".budget",
     "StaticBudgetPolicy": ".budget",
-    # native budgets
+    # native budgets and the manager
+    "CostManager": ".manager",
     "NativeBudgetSync": ".manager",
+    # usage view
+    "DefaultUsageView": ".view",
+    "UsageView": ".view",
+    "UsageViewFactory": ".view",
     # pricing
     "PassthroughPricingSource": ".pricing",
     "PricingSource": ".pricing",
@@ -86,7 +91,7 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     from .ledger.factory import SpendLedgerFactory
     from .ledger.flow import LedgerSpendFlow
     from .ledger.in_memory import InMemorySpendLedger
-    from .manager import NativeBudgetSync
+    from .manager import CostManager, NativeBudgetSync
     from .model import (
         ANONYMOUS_USER_ID,
         SYSTEM_USER_ID,
@@ -108,6 +113,7 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
         UsageWindow,
     )
     from .pricing import PassthroughPricingSource, PricingSource, PricingSourceFactory, StaticPricingSource
+    from .view import DefaultUsageView, UsageView, UsageViewFactory
 
 
 def __getattr__(name: str) -> Any:

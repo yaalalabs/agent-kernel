@@ -35,14 +35,16 @@ class SpendReader:
 
     _log = logging.getLogger("ak.cost.budget")
 
-    def __init__(self, gateway: LLMGateway, *, ledger_flow: Any = None) -> None:
+    def __init__(self, gateway: LLMGateway, *, ledger_flow: Any = None, ready: Callable[[], bool] | None = None) -> None:
         """
         :param gateway: The configured gateway.
         :param ledger_flow: Reads ledger spend for gateways without ``windowed_spend``; its ``read(user_id, period,
             window)`` returns a ``SpendTotal``.
+        :param ready: False until the gateway has answered its startup probe; reads fail until then (§11.5).
         """
         self._gateway = gateway
         self._ledger_flow = ledger_flow
+        self._ready = ready
         self._warned_unpriced: set[tuple[str, str]] = set()
         self._warned_lock = threading.Lock()
 
@@ -51,6 +53,8 @@ class SpendReader:
         :raises UsageRetrievalError: If the spend is in another currency than the limit, or the read failed.
         :raises UnsupportedCapabilityError: If the gateway has no windowed spend and there is no ledger.
         """
+        if self._ready is not None and not self._ready():
+            raise UsageRetrievalError("the gateway has not answered its startup probe yet", gateway=self._gateway.name)
         if self._gateway.capabilities.windowed_spend:
             total = await self._gateway.total_spend(user_id, window)
         elif self._ledger_flow is not None:
