@@ -273,7 +273,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Azure login
-        if: matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        if: matrix.type == 'azure-containerized'
         uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -300,12 +300,12 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Setup Terraform
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
       - name: Inject dependencies
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         run: python3 scripts/deploy/inject_dependencies.py
 
       - name: Stagger GCP deploy start

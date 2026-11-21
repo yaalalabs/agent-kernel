@@ -1,6 +1,6 @@
 # Facebook Messenger Integration Example
 
-This example demonstrates how to create a Facebook Messenger Platform integration with Agent Kernel.
+This example demonstrates how to create a Facebook Messenger Platform integration with Open Agent Kernel (OAK).
 
 ## Prerequisites
 
@@ -57,7 +57,7 @@ Install dependencies using:
 ./build.sh
 ```
 
-For local development with Agent Kernel source:
+For local development with OAK source:
 
 ```bash
 ./build.sh local
@@ -276,7 +276,7 @@ Extend this example with:
 - [Send API Reference](https://developers.facebook.com/docs/messenger-platform/reference/send-api)
 - [Webhook Reference](https://developers.facebook.com/docs/messenger-platform/webhooks)
 - [Platform Policy](https://developers.facebook.com/docs/messenger-platform/policy-overview)
-- [Agent Kernel Documentation](../../../docs/)
+- [OAK Documentation](../../../docs/)
 - [Facebook Messenger Integration Guide](../../../ak-py/src/agentkernel/integration/messenger/README.md)
 
 ## Support
@@ -285,4 +285,4 @@ For issues and questions:
 - Check the [troubleshooting section](#troubleshooting)
 - Review server logs for detailed error messages
 - Consult Facebook Developer Community
-- Review Agent Kernel documentation
+- Review OAK documentation

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from typing import Any
+from urllib.parse import urlsplit
 
 from .base import BaseDriver
 
@@ -24,6 +25,8 @@ class _RedisLikeDriver(BaseDriver):
     part of the driver contract for consumers whose data operations exceed the
     generic surface.
     """
+
+    _UNPARSEABLE_LOCATION = "<unparseable connection URL>"
 
     # subclasses set these
     _backend_name: str = "RedisLike"
@@ -92,12 +95,35 @@ class _RedisLikeDriver(BaseDriver):
         """Connects using the configured URL, with retries on the backend's error class."""
 
         def connect():
-            self._log.debug("Connecting to %s using URL %s", self._backend_name, self._url)
+            self._log.debug("Connecting to %s at %s", self._backend_name, self._location(self._url))
             client = self._from_url(self._url, decode_responses=self._decode_responses, socket_connect_timeout=5)
             client.ping()
             return client
 
         self._client = self._connect_with_retries(connect, self._error_class)
+
+    @staticmethod
+    def _location(url: str) -> str:
+        """
+        Returns where a connection URL points, for a log line: the URL without its user, password and query.
+
+        A URL may carry the password (``redis://user:password@host``, or ``?password=`` on a socket URL), and
+        the client is handed the URL as configured, so only what is logged leaves them out. A value that does
+        not parse as a URL with a scheme and a host is never echoed: it fails on the first connection attempt,
+        so the log line would be its only trace, and it may be a credential-bearing URL with a typo in it.
+
+        :param url: The connection URL as configured.
+        :return: The scheme, host, port and path, or a fixed placeholder when the value has no scheme or no
+            host (a ``unix://`` socket URL has a path in place of a host).
+        """
+        try:
+            parts = urlsplit(url)
+            host = parts.netloc.rpartition("@")[2]
+        except ValueError:
+            return _RedisLikeDriver._UNPARSEABLE_LOCATION
+        if not parts.scheme or (not host and not (parts.scheme == "unix" and parts.path)):
+            return _RedisLikeDriver._UNPARSEABLE_LOCATION
+        return f"{parts.scheme}://{host}{parts.path}"
 
     def key(self, suffix: str) -> str:
         """

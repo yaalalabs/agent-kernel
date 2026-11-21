@@ -1,2146 +1,581 @@
-import React, {
-  useId,
-  useState,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-} from "react";
-import Link from "@docusaurus/Link";
-import Layout from "@theme/Layout";
-import styles from "./features.module.css";
-import indexStyles from "./index.module.css";
-import {
-  MdMemory,
-  MdSwapHoriz,
-  MdCloud,
-  MdSpeed,
-  MdSecurity,
-  MdVisibility,
-  MdCode,
-  MdNetworkCheck,
-  MdTerminal,
-  MdBugReport,
-  MdTimer,
-  MdSettings,
-  MdHealthAndSafety,
-  MdCheck,
-  MdClose,
-  MdMenuBook,
-  MdExtension,
-  MdHub,
-  MdDashboardCustomize,
-  MdMessage,
-  MdCloudUpload,
-  MdFactCheck,
-  MdVerifiedUser,
-} from "react-icons/md";
-import {
-  FaSlack,
-  FaWhatsapp,
-  FaInstagram,
-  FaTelegram,
-  FaGithub,
-  FaMicrosoft,
-} from "react-icons/fa";
-import {
-  SiClaude,
-  SiGmail,
-  SiGooglegemini,
-  SiLangchain,
-  SiHuggingface,
-} from "react-icons/si";
-import { FaFacebookMessenger } from "react-icons/fa6";
-import { TbBrandTeams } from "react-icons/tb";
-import PlantParticlesBackground from "../components/PlantParticlesBackground";
-import AgentKernelRuntimeFlowDiagram from "../components/AgentKernelRuntimeFlowDiagram";
-import SandboxFlowDiagram from "../components/SandboxFlowDiagram";
-import HeroAnimation from "../components/HeroAnimation";
-import gsap from "gsap";
-import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
+import React, { useEffect, useRef, useState } from 'react';
+import useBrokenLinks from '@docusaurus/useBrokenLinks';
+import Link from '@docusaurus/Link';
+import Layout from '@theme/Layout';
+import clsx from 'clsx';
+import PageHero from '@site/src/components/ui/PageHero';
+import SectionHeader from '@site/src/components/ui/SectionHeader';
+import Reveal from '@site/src/components/ui/Reveal';
+import { ClosingPanel } from '@site/src/components/HomeSections';
+import { StageMotion, type Stage as StageId } from '@site/src/components/VectorMotion';
+import SandboxFlowDiagram from '@site/src/components/SandboxFlowDiagram';
+import styles from './features.module.css';
 
-gsap.registerPlugin(ScrollTrigger);
+/* The page is a reference: every capability of the runtime, grouped by the six stages the home
+   page introduces, each with the guide to read next. The home page says what a stage is for;
+   this page lists what is in it. A capability appears once, under the stage it belongs to. */
 
-/** Stable fragment ids for in-page navigation (diagram + deep links). */
-const FEATURE_ANCHORS = {
-  problem: "features-problem",
-  core: "features-core",
-  sandbox: "features-sandbox",
-  frameworks: "features-frameworks",
-  testing: "features-testing",
-  messaging: "features-messaging",
-  protocols: "features-protocols",
-  cta: "features-cta",
-} as const;
+type DocLink = { label: string; to: string };
 
-type FeatureAnchorKey = keyof typeof FEATURE_ANCHORS;
-
-const FEATURE_PAGE_MAP: {
-  anchor: FeatureAnchorKey;
-  number: string;
+type Capability = {
   title: string;
-  hint: string;
-}[] = [
-    {
-      anchor: "problem",
-      number: "01",
-      title: "The Problem",
-      hint: "What Agent Kernel solves",
-    },
-    {
-      anchor: "core",
-      number: "02",
-      title: "Core Capabilities",
-      hint: "Runtime, memory, hooks, and more",
-    },
-    {
-      anchor: "sandbox",
-      number: "03",
-      title: "Sandboxed Execution",
-      hint: "Execution Broker, queue workers, six providers",
-    },
-    {
-      anchor: "frameworks",
-      number: "04",
-      title: "Framework Support",
-      hint: "One runtime, any framework",
-    },
-    {
-      anchor: "testing",
-      number: "05",
-      title: "Testing",
-      hint: "CLI, pytest, pluggable evaluators",
-    },
-    {
-      anchor: "messaging",
-      number: "06",
-      title: "Messaging",
-      hint: "Slack, WhatsApp, and more",
-    },
-    {
-      anchor: "protocols",
-      number: "07",
-      title: "Protocol Support",
-      hint: "MCP and A2A out of the box",
-    },
-  ];
+  summary: string;
+  /** What is included: short phrases, four at most. */
+  points?: string[];
+  /** The guide to read next. */
+  guide: DocLink;
+  /** Further pages on the same capability, listed by name. */
+  more?: DocLink[];
+};
 
-function scrollToFeaturesSection(anchor: FeatureAnchorKey) {
-  const id = FEATURE_ANCHORS[anchor];
-  const el =
-    typeof document !== "undefined" ? document.getElementById(id) : null;
-  el?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
+type StageGroup = {
+  id: StageId;
+  name: string;
+  title: string;
+  lead: string;
+  capabilities: Capability[];
+};
 
-type PlantParticlesBackgroundHandle = React.ElementRef<
-  typeof PlantParticlesBackground
->;
-
-/* ─── Why Agent Kernel (hero) ───────────────────────────────────────────── */
-
-function WhyAgentKernel() {
-  const labelRef = useRef<HTMLParagraphElement>(null);
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const subtitleRef = useRef<HTMLParagraphElement>(null);
-  const diagramRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const tl = gsap.timeline();
-
-    gsap.set(
-      [
-        labelRef.current,
-        titleRef.current,
-        subtitleRef.current,
-        diagramRef.current,
-      ],
+const STAGES: StageGroup[] = [
+  {
+    id: 'build',
+    name: 'Build',
+    title: 'Agents, tools and frameworks',
+    lead: 'What you write, and what the runtime wraps around it.',
+    capabilities: [
       {
-        opacity: 0,
-        y: 30,
+        title: 'Core abstractions',
+        summary:
+          'Agent, Runner, Session, Module, Runtime and Tools: six abstractions that give every framework the same Python API.',
+        guide: { label: 'Core concepts', to: '/docs/core-concepts/overview' },
+        more: [
+          { label: 'Agent', to: '/docs/core-concepts/agent' },
+          { label: 'Runner', to: '/docs/core-concepts/runner' },
+          { label: 'Module', to: '/docs/core-concepts/module' },
+          { label: 'Runtime', to: '/docs/core-concepts/runtime' },
+        ],
       },
-    );
+      {
+        title: 'Framework adapters',
+        summary:
+          'Adapters for eight agent frameworks. An agent keeps its native code, and moving it to another framework changes the adapter import, not the platform around it.',
+        guide: { label: 'Frameworks overview', to: '/docs/frameworks/overview' },
+        more: [
+          { label: 'OpenAI Agents SDK', to: '/docs/frameworks/openai' },
+          { label: 'LangGraph', to: '/docs/frameworks/langgraph' },
+          { label: 'CrewAI', to: '/docs/frameworks/crewai' },
+          { label: 'Google ADK', to: '/docs/frameworks/google-adk' },
+          { label: 'Smolagents', to: '/docs/frameworks/smolagents' },
+          { label: 'Pydantic AI', to: '/docs/frameworks/pydantic-ai' },
+          { label: 'Claude Agent SDK', to: '/docs/frameworks/claude-agent-sdk' },
+          { label: 'Microsoft Agent Framework', to: '/docs/frameworks/microsoft-agents' },
+        ],
+      },
+      {
+        title: 'Several frameworks in one runtime',
+        summary:
+          'Register agents from different frameworks in the same process and reach them through one API, with no glue code between them.',
+        guide: { label: 'Multi-framework guide', to: '/docs/frameworks/multi-framework' },
+      },
+      {
+        title: 'Portable tools',
+        summary:
+          "Write a tool once as a plain Python function. ToolBuilder binds it to each framework's own tool type.",
+        guide: { label: 'Tools', to: '/docs/core-concepts/tools' },
+      },
+      {
+        title: 'Execution hooks',
+        summary: 'Pre-hooks and post-hooks run around every agent request, on any framework.',
+        points: [
+          'Pre-hooks for guardrails, retrieval, authentication and validation',
+          'Post-hooks for moderation, disclaimers and analytics',
+          'Hooks chain, and a pre-hook can end a request with its own reply',
+          'Run on realtime voice calls too',
+        ],
+        guide: { label: 'Hooks', to: '/docs/integrations/hooks' },
+      },
+      {
+        title: 'Multi-agent systems',
+        summary: 'Supervisor, peer-to-peer and pipeline patterns for agents that work together.',
+        guide: { label: 'Multi-agent systems', to: '/docs/advanced/multi-agent' },
+      },
+      {
+        title: 'Multimodal input',
+        summary:
+          "Users send images and files with their text. The runtime describes them, stores them and adds them to the agent's context.",
+        guide: { label: 'Multimodal attachments', to: '/docs/advanced/multimodal' },
+      },
+      {
+        title: 'Agent skills',
+        summary:
+          'Guides in the Agent Skills open standard that coding assistants such as Claude Code, GitHub Copilot and Codex follow to build, extend and deploy OAK agents.',
+        guide: { label: 'Agent skills', to: '/docs/agent-skills' },
+      },
+      {
+        title: 'Configuration',
+        summary:
+          'Stores, providers and execution modes are chosen in a YAML or JSON configuration file, or through environment variables. The agent code does not change.',
+        guide: { label: 'Configuration', to: '/docs/core-concepts/configuration' },
+      },
+    ],
+  },
+  {
+    id: 'connect',
+    name: 'Connect',
+    title: 'Channels, protocols and APIs',
+    lead: 'The ways a request reaches an agent. Each one is an adapter around the same runtime.',
+    capabilities: [
+      {
+        title: 'Messaging channels',
+        summary: 'Built-in handlers for seven messaging platforms, each with its own setup guide.',
+        guide: { label: 'Integrations overview', to: '/docs/integrations/overview' },
+        more: [
+          { label: 'Slack', to: '/docs/integrations/slack' },
+          { label: 'Microsoft Teams', to: '/docs/integrations/teams' },
+          { label: 'WhatsApp', to: '/docs/integrations/whatsapp' },
+          { label: 'Messenger', to: '/docs/integrations/messenger' },
+          { label: 'Telegram', to: '/docs/integrations/telegram' },
+          { label: 'Instagram', to: '/docs/integrations/instagram' },
+          { label: 'Gmail', to: '/docs/integrations/gmail' },
+        ],
+      },
+      {
+        title: 'Realtime voice',
+        summary:
+          "LiveKit rooms for OpenAI Agents SDK and Google ADK agents. The gateway sends the user's audio to the agent and plays the streamed reply back to the room.",
+        guide: { label: 'LiveKit voice', to: '/docs/integrations/livekit' },
+      },
+      {
+        title: 'REST API',
+        summary: 'A built-in REST server for talking to agents.',
+        points: [
+          'Chat, agent listing and health endpoints',
+          'Streaming replies',
+          'Images and files as input',
+          'Custom routes and authentication',
+        ],
+        guide: { label: 'REST API', to: '/docs/api/rest-api' },
+      },
+      {
+        title: 'Agent registry and catalog',
+        summary:
+          'Every agent carries one descriptor, declared in code or in configuration. The agent catalog, A2A cards, MCP tools and the AG-UI listing are all built from it.',
+        points: [
+          'Name, version, description, owner, tags, skills and tools',
+          'A catalog at GET /api/v1/agents, with a tag filter and pagination',
+          'Each agent chooses the surfaces it is served on',
+          'In-memory, Redis, Valkey or DynamoDB backend',
+        ],
+        // The agent registry is only in the unreleased docs until the next release: drop `next` once it ships.
+        guide: { label: 'Agent registry', to: '/docs/next/core-concepts/configuration#agent-registry' },
+      },
+      {
+        title: 'MCP server',
+        summary:
+          'Expose agents as Model Context Protocol tools, each described by the text you declare for its agent, so any MCP client can call them.',
+        guide: { label: 'MCP server', to: '/docs/api/mcp-server' },
+      },
+      {
+        title: 'A2A server',
+        summary:
+          'Serve agents over the Agent-to-Agent protocol, with a card for each agent built from its registry descriptor, so other agents can delegate work to them.',
+        guide: { label: 'A2A server', to: '/docs/api/a2a-server' },
+      },
+      {
+        title: 'AG-UI',
+        summary:
+          'Serve agents over AG-UI, the event-based protocol for user-facing frontends such as CopilotKit or a client of your own.',
+        guide: { label: 'AG-UI server', to: '/docs/api/agui-server' },
+        more: [{ label: 'AG-UI integration', to: '/docs/integrations/agui' }],
+      },
+      {
+        title: 'A2UI',
+        summary:
+          'An agent can answer with an interface in place of prose. OAK labels the A2UI payload and carries it intact over REST, MCP and AG-UI, and your client draws it with its own components.',
+        guide: { label: 'A2UI', to: '/docs/advanced/a2ui' },
+      },
+    ],
+  },
+  {
+    id: 'remember',
+    name: 'Remember',
+    title: 'Sessions, memory and knowledge',
+    lead: 'State that outlives a request, kept in stores you select in configuration.',
+    capabilities: [
+      {
+        title: 'Sessions',
+        summary: 'Conversation history and agent state, kept across turns in the store you choose.',
+        points: ['In-memory, Redis, Valkey, DynamoDB, Cosmos DB and Firestore'],
+        guide: { label: 'Session', to: '/docs/core-concepts/session' },
+        more: [{ label: 'Choosing a memory backend', to: '/docs/core-concepts/memory-backends' }],
+      },
+      {
+        title: 'Volatile and non-volatile caches',
+        summary:
+          'Two caches with one API. The volatile cache clears after each request, and the non-volatile cache lasts for the session. Both hold data without sending it to the model.',
+        guide: { label: 'Memory management', to: '/docs/architecture/memory-management' },
+      },
+      {
+        title: 'Conversation threads',
+        summary:
+          "Every exchange is recorded against its session and can be read back over REST, so an interface can show a user's conversations and their history.",
+        guide: { label: 'Conversation threads', to: '/docs/advanced/threads' },
+      },
+      {
+        title: 'Knowledge bases',
+        summary: 'Retrieval over curated knowledge sources, behind one interface.',
+        points: [
+          'ChromaDB for vector and semantic search',
+          'Neo4j for entity and relationship graphs',
+          'Starburst Galaxy for SQL over MongoDB, Sheets and PostgreSQL',
+          'Open Knowledge Format: markdown bundles, with no database to run',
+        ],
+        guide: { label: 'Knowledge bases', to: '/docs/advanced/knowledge-bases' },
+      },
+    ],
+  },
+  {
+    id: 'guard',
+    name: 'Guard',
+    title: 'Guardrails, identity and sandboxes',
+    lead: 'Policy the runtime enforces on every request, so it is not rebuilt in each agent.',
+    capabilities: [
+      {
+        title: 'Guardrails',
+        summary: 'Input and output guardrails, applied through the execution hooks.',
+        points: ['PII detection and redaction', 'Jailbreak prevention', 'Content moderation and off-topic filtering'],
+        guide: { label: 'Guardrails', to: '/docs/advanced/guardrails' },
+        more: [
+          { label: 'OpenAI', to: '/docs/advanced/guardrails-openai' },
+          { label: 'Amazon Bedrock', to: '/docs/advanced/guardrails-bedrock' },
+          { label: 'Walled AI', to: '/docs/advanced/guardrails-walledai' },
+        ],
+      },
+      {
+        title: 'Identity and access',
+        summary:
+          'One identity provider, set in configuration, authenticates every surface and gives tools, hooks and threads the caller as a principal.',
+        points: [
+          'Any OpenID Connect issuer, such as Auth0, Keycloak or Okta',
+          'Amazon Cognito, Microsoft Entra ID and Firebase',
+          'REST, WebSocket, AG-UI, MCP, A2A, the CLI and messaging',
+        ],
+        guide: { label: 'Identity and access', to: '/docs/advanced/identity-and-access' },
+      },
+      {
+        title: 'Secret resolution',
+        summary:
+          'Code asks for a key by name. It comes from the environment on a laptop, from AWS SSM Parameter Store on AWS, and from Kubernetes Secrets in a cluster, with only the configuration changing.',
+        guide: { label: 'Secret resolution', to: '/docs/advanced/secrets' },
+      },
+      {
+        title: 'Human in the loop',
+        summary:
+          "A run can pause for a person's decision and continue from the answer minutes or hours later, on whichever replica receives it.",
+        guide: { label: 'Human in the loop', to: '/docs/advanced/human-in-the-loop' },
+      },
+      {
+        title: 'Sandboxed code execution',
+        summary:
+          'Agents run code, shell commands and file operations in isolated sandboxes. The Execution Broker routes each execution to a policy-governed provider.',
+        points: [
+          'Six providers: local_subprocess, docker, kubernetes, e2b, daytona and ec2_ssm',
+          'A queue broker for executions that outlive the agent turn',
+          'Fail-closed network, filesystem, CPU and memory policies',
+        ],
+        guide: { label: 'Sandbox', to: '/docs/advanced/sandbox' },
+        more: [{ label: 'A closer look, below', to: '#sandbox' }],
+      },
+    ],
+  },
+  {
+    id: 'scale',
+    name: 'Scale',
+    title: 'Deployment, queues and resilience',
+    lead: 'The same agent code, from one process on a laptop to a queue-backed fleet.',
+    capabilities: [
+      {
+        title: 'Deployment targets',
+        summary:
+          'Terraform modules for AWS, Azure and Google Cloud, and a Helm chart for Kubernetes on your own infrastructure.',
+        guide: { label: 'Deployment overview', to: '/docs/deployment/overview' },
+        more: [
+          { label: 'Local', to: '/docs/deployment/local' },
+          { label: 'AWS Lambda', to: '/docs/deployment/aws-serverless' },
+          { label: 'Amazon ECS Fargate', to: '/docs/deployment/aws-containerized' },
+          { label: 'Azure Container Apps', to: '/docs/deployment/azure-containerized' },
+          { label: 'Cloud Run, serverless', to: '/docs/deployment/gcp-serverless' },
+          { label: 'Cloud Run, containers', to: '/docs/deployment/gcp-containerized' },
+          { label: 'Kubernetes', to: '/docs/deployment/onprem-kubernetes' },
+        ],
+      },
+      {
+        title: 'Queue mode',
+        summary:
+          'A chat request can travel through queues: request handler, input queue, agent runner, output queue, response handler. Ingress and agent execution then scale separately.',
+        points: ['SQS, Kafka, NATS JetStream, Google Cloud Pub/Sub and Azure Service Bus transports'],
+        guide: { label: 'Queue mode guide', to: '/docs/advanced/queue-mode-guide' },
+        more: [{ label: 'Queue mode on AWS', to: '/docs/deployment/aws-queue-mode-scalability' }],
+      },
+      {
+        title: 'Fault tolerance',
+        summary:
+          'Resilience in every deployment mode: multi-AZ deployments, automatic recovery, health monitoring and zero-downtime rollouts, with conversation state preserved across failures.',
+        guide: { label: 'Fault tolerance', to: '/docs/core-concepts/fault-tolerance' },
+      },
+      {
+        title: 'Scheduled tasks',
+        summary:
+          'A chat request that carries a schedule is registered, not run. When an occurrence is due, the stored prompt enters the normal execution path.',
+        guide: { label: 'Scheduled tasks', to: '/docs/advanced/scheduling' },
+      },
+      {
+        title: 'Execution flow',
+        summary: 'How a request moves through the runtime: synchronously, streamed, or through queues.',
+        guide: { label: 'Execution flow', to: '/docs/architecture/execution-flow' },
+      },
+    ],
+  },
+  {
+    id: 'observe',
+    name: 'Observe',
+    title: 'Tracing, testing and evaluation',
+    lead: 'See what an agent did, and test it like any other code.',
+    capabilities: [
+      {
+        title: 'Tracing',
+        summary: 'Traces of agent runs, model calls and tool calls, switched on in configuration.',
+        points: [
+          'Langfuse, OpenLLMetry, Pydantic Logfire and AWS CloudWatch',
+          'Latency, token usage and cost per run',
+          'Spans can be fetched back for evaluation',
+        ],
+        guide: { label: 'Traceability', to: '/docs/advanced/traceability' },
+      },
+      {
+        title: 'CLI testing',
+        summary: 'Interactive chat sessions against one agent or several, for quick iteration during development.',
+        guide: { label: 'CLI testing', to: '/docs/testing/cli-testing' },
+      },
+      {
+        title: 'Automated tests',
+        summary:
+          'Test suites that plug into pytest and run in CI, with session-scoped fixtures and ordered execution.',
+        guide: { label: 'Automated testing', to: '/docs/testing/automated-testing' },
+      },
+      {
+        title: 'Comparison modes',
+        summary: 'Three ways to compare a reply with the expected answer.',
+        points: [
+          'Score: deterministic and offline, with no model call',
+          'LLM: a model judges whether the reply means the same',
+          'Fallback: score first, then LLM. This is the default',
+        ],
+        guide: { label: 'Testing overview', to: '/docs/testing/overview' },
+        more: [
+          { label: 'Score mode', to: '/docs/testing/cli-testing#score-mode' },
+          { label: 'LLM mode', to: '/docs/testing/cli-testing#llm-mode' },
+          { label: 'Fallback mode', to: '/docs/testing/cli-testing#fallback-mode-default' },
+        ],
+      },
+      {
+        title: 'Pluggable evaluators',
+        summary:
+          'Every comparison runs through an evaluator. DeepEval, Opik and JEV are built in, and your own AKEvaluator subclass is selected in test-config.yaml.',
+        guide: { label: 'Bring your own evaluator', to: '/docs/testing/cli-testing#bring-your-own-evaluator' },
+      },
+    ],
+  },
+];
 
-    tl.to(labelRef.current, {
-      opacity: 1,
-      y: 0,
-      duration: 0.6,
-      ease: "power2.out",
-    })
-      .to(
-        titleRef.current,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.8,
-          ease: "power2.out",
-        },
-        "-=0.35",
-      )
-      .to(
-        subtitleRef.current,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.6,
-          ease: "power2.out",
-        },
-        "-=0.45",
-      )
-      .to(
-        diagramRef.current,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.7,
-          ease: "power2.out",
-        },
-        "-=0.3",
-      );
-  }, []);
+const STAGE_IDS = STAGES.map((stage) => stage.id);
+const CAPABILITY_COUNT = STAGES.reduce((sum, stage) => sum + stage.capabilities.length, 0);
 
-  return (
-    <section className={styles.whyHero}>
-      <div className="container">
-        <div className={styles.whyHeroBlock}>
-          <p ref={labelRef} className={styles.sectionLabel}>
-            Why Agent Kernel
-          </p>
-          <h2 ref={titleRef} className={styles.sectionTitle}>
-            Everything You Need to Build, Run and Scale AI Agents
-          </h2>
-          <p ref={subtitleRef} className={styles.sectionSubtitle}>
-            From runtime and memory to guardrails, observability, testing, and
-            multi-cloud deployment.
-          </p>
-          <div ref={diagramRef} className={styles.whyHeroDiagram}>
-            <AgentKernelRuntimeFlowDiagram />
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Page map (diagram) ────────────────────────────────────────────────── */
-
-function FeaturesPageMap({
-  plantParticlesBackgroundRef,
-}: {
-  plantParticlesBackgroundRef: React.RefObject<PlantParticlesBackgroundHandle>;
-}) {
-  const gradId = useId().replace(/:/g, "");
-  const sectionRef = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  const topRow = FEATURE_PAGE_MAP.slice(0, 3);
-  const bottomRow = FEATURE_PAGE_MAP.slice(3);
+/** The stage whose section is under the reader's eye, for the page index. */
+function useStageInView(): StageId {
+  const [inView, setInView] = useState<StageId>(STAGE_IDS[0]);
 
   useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      setVisible(true);
-      return;
-    }
-    const el = sectionRef.current;
-    if (!el) return;
-    const shouldAnimateParticles =
-      typeof window !== "undefined" &&
-      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const triggerScatterOut = () => {
-      if (shouldAnimateParticles) {
-        plantParticlesBackgroundRef.current?.triggerScatterOut();
-      }
-    };
-    const triggerScatterIn = () => {
-      if (shouldAnimateParticles) {
-        plantParticlesBackgroundRef.current?.triggerScatterIn();
-      }
-    };
-    const scrollTrigger = ScrollTrigger.create({
-      trigger: el,
-      start: "top 60%",
-      end: "bottom 40%",
-      onEnter: () => {
-        setVisible(true);
-        triggerScatterOut();
+    if (!('IntersectionObserver' in window)) return undefined;
+    // A thin band a quarter of the way down the view: the section that crosses it is the current one.
+    const seen = new IntersectionObserver(
+      (entries) => {
+        const crossing = entries.find((entry) => entry.isIntersecting);
+        if (crossing) setInView(crossing.target.id as StageId);
       },
-      onEnterBack: () => {
-        setVisible(true);
-        triggerScatterOut();
-      },
-      onLeave: () => {
-        triggerScatterIn();
-      },
-      onLeaveBack: () => {
-        setVisible(false);
-        triggerScatterIn();
-      },
-    });
-
-    return () => scrollTrigger.kill();
-  }, []);
-
-  const reducedMotion =
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const COL_X_TOP = [143, 450, 757] as const;
-  const COL_X_BOT = [117, 339, 561, 783] as const;
-
-  // Top strip
-  const topLines = COL_X_TOP.map((x, i) => ({
-    id: `${gradId}T${i}`,
-    d: `M ${x} 0 L 450 60`,
-    len: Math.round(Math.sqrt(Math.pow(x - 450, 2) + 3600)),
-    delay: 0.2 + i * 0.07,
-  }));
-
-  // Bottom strip
-  const botLines = COL_X_BOT.map((x, i) => ({
-    id: `${gradId}B${i}`,
-    d: `M 450 0 L ${x} 60`,
-    len: Math.round(Math.sqrt(Math.pow(x - 450, 2) + 3600)),
-    delay: 0.41 + i * 0.07,
-  }));
-
-  const TEAL = "rgba(0,221,255,1)";
-
-  return (
-    <div
-      ref={sectionRef}
-      className={styles.pageMapSection}
-      role="region"
-      aria-labelledby="features-page-map-heading"
-    >
-      <div className="container">
-        {/* Top border + gradient glow */}
-        <div className={styles.topGlow} />
-
-        <div className={styles.sectionHeader}>
-          <div className={styles.Badge}>
-            <span className={styles.badgeStar}>✦</span>
-            Feature Map
-          </div>
-          <h2 id="features-page-map-heading" className={styles.sectionTitle}>
-            Everything Agent Kernel Does
-          </h2>
-          <p className={styles.sectionSubtitle}>
-            Seven production-ready capabilities. Explore any area below.
-          </p>
-        </div>
-
-        <div className={styles.pageMapDiagram}>
-          {/* ── Layer 1: top row nodes ── */}
-          <div className={styles.pageMapTopRow}>
-            {topRow.map((item, i) => (
-              <button
-                key={item.anchor}
-                type="button"
-                className={`${styles.pageMapNode} ${visible ? styles.pageMapNodeIn : ""}`}
-                style={{ "--node-delay": `${i * 80}ms` } as React.CSSProperties}
-                onClick={() => scrollToFeaturesSection(item.anchor)}
-              >
-                <div className={styles.pageMapNodeHeader}>
-                  <span className={styles.pageMapNodeNumber}>{item.number}</span>
-                  <span className={styles.pageMapNodeTitle}>{item.title}</span>
-                </div>
-                <span className={styles.pageMapNodeHint}>{item.hint}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* ── Connector: top nodes → hub ── */}
-          <svg
-            className={styles.pageMapConnector}
-            viewBox="0 0 900 60"
-            preserveAspectRatio="none"
-            aria-hidden
-          >
-            <defs>
-              {topLines.map((l, i) => (
-                <linearGradient
-                  key={`grad-${l.id}`}
-                  id={`grad-${l.id}`}
-                  gradientUnits="userSpaceOnUse"
-                  x1={COL_X_TOP[i]}
-                  y1="0"
-                  x2="450"
-                  y2="60"
-                >
-                  <stop offset="0%" stopColor={TEAL} stopOpacity="0" />
-                  <stop offset="50%" stopColor={TEAL} stopOpacity="1" />
-                  <stop offset="100%" stopColor={TEAL} stopOpacity="0.3" />
-                </linearGradient>
-              ))}
-            </defs>
-
-            {topLines.map((l, i) => (
-              <g
-                key={l.id}
-                className={visible && !reducedMotion ? styles.lineBreath : undefined}
-                style={{
-                  opacity: visible ? undefined : 0,
-                  "--breath-dur": `${2.2 + i * 0.4}s`,
-                  "--breath-delay": `${i * 0.3}s`,
-                } as React.CSSProperties}
-              >
-                <path
-                  d={l.d}
-                  fill="none"
-                  stroke={`url(#grad-${l.id})`}
-                  strokeWidth="1.5"
-                />
-              </g>
-            ))}
-          </svg>
-
-          {/* ── Hub ── */}
-          <div
-            className={`${styles.pageMapHub} ${visible ? styles.pageMapHubIn : ""}`}
-            style={{ backgroundColor: "#010002" }}
-          >
-            <video
-              src="/video/hero.mp4"
-              className={styles.pageMapHubIcon}
-              autoPlay
-              loop
-              muted
-              playsInline
-            />
-          </div>
-
-          {/* ── Connector: hub → bottom nodes ── */}
-          <svg
-            className={styles.pageMapConnector}
-            viewBox="0 0 900 60"
-            preserveAspectRatio="none"
-            aria-hidden
-          >
-            <defs>
-              {botLines.map((l, i) => (
-                <linearGradient
-                  key={`grad-${l.id}`}
-                  id={`grad-${l.id}`}
-                  gradientUnits="userSpaceOnUse"
-                  x1="450"
-                  y1="0"
-                  x2={COL_X_BOT[i]}
-                  y2="60"
-                >
-                  <stop offset="0%" stopColor={TEAL} stopOpacity="0.3" />
-                  <stop offset="50%" stopColor={TEAL} stopOpacity="1" />
-                  <stop offset="100%" stopColor={TEAL} stopOpacity="0" />
-                </linearGradient>
-              ))}
-            </defs>
-
-            {botLines.map((l, i) => (
-              <g
-                key={l.id}
-                className={visible && !reducedMotion ? styles.lineBreath : undefined}
-                style={{
-                  opacity: visible ? undefined : 0,
-                  "--breath-dur": `${2.2 + i * 0.4}s`,
-                  "--breath-delay": `${0.5 + i * 0.3}s`,
-                } as React.CSSProperties}
-              >
-                <path
-                  d={l.d}
-                  fill="none"
-                  stroke={`url(#grad-${l.id})`}
-                  strokeWidth="1.5"
-                />
-              </g>
-            ))}
-          </svg>
-
-          {/* ── Layer 3: bottom row nodes ── */}
-          <div className={styles.pageMapBottomRow}>
-            {bottomRow.map((item, i) => (
-              <button
-                key={item.anchor}
-                type="button"
-                className={`${styles.pageMapNode} ${visible ? styles.pageMapNodeIn : ""}`}
-                style={
-                  { "--node-delay": `${300 + i * 80}ms` } as React.CSSProperties
-                }
-                onClick={() => scrollToFeaturesSection(item.anchor)}
-              >
-                <div className={styles.pageMapNodeHeader}>
-                  <span className={styles.pageMapNodeNumber}>{item.number}</span>
-                  <span className={styles.pageMapNodeTitle}>{item.title}</span>
-                </div>
-                <span className={styles.pageMapNodeHint}>{item.hint}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Problem comparison (orbit-style UI) ─────────────────────────────────── */
-
-function ProblemTable() {
-  const sectionRef = useRef<HTMLElement>(null);
-  const rows = [
-    {
-      problem: "Platform Engineering",
-      without:
-        "Build REST APIs, auth, session management, deployment pipelines from scratch",
-      with: "All included out of the box",
-    },
-    {
-      problem: "Framework Lock-In",
-      without: "Rewrite everything if you switch from LangGraph to OpenAI",
-      with: "Change 2 import lines — everything else stays",
-    },
-    {
-      problem: "Cloud Lock-In",
-      without: "AWS-specific code everywhere",
-      with: "Same code deploys to AWS, Azure, GCP, or on-prem",
-    },
-    {
-      problem: "Memory & State Management",
-      without: "Build your own conversation tracking, caching, and persistence",
-      with: "Built-in with multiple backends",
-    },
-    {
-      problem: "Knowledge Bases",
-      without:
-        "Build your own database connectors. Handle data complexity, separate tools for storage and retrieval",
-      with: "Built-in with multiple knowledge sources",
-    },
-    {
-      problem: "Code Execution",
-      without:
-        "Build and secure your own sandbox infrastructure before agents can safely run code",
-      with: "Isolated sandboxes built in: six providers, one config block",
-    },
-    {
-      problem: "Messaging Integrations",
-      without: "Build custom Slack/WhatsApp bots from scratch",
-      with: "Built-in handlers, plug and play",
-    },
-    {
-      problem: "Testing",
-      without: "No standard way to test AI agents",
-      with: "pytest-integrated test framework with pluggable evaluators",
-    },
-    {
-      problem: "Observability",
-      without: "Manual instrumentation",
-      with: "Langfuse/OpenLLMetry/Pydantic Logfire/AWS CloudWatch with one config line",
-    },
-    {
-      problem: "Guardrails & Safety",
-      without: "Build custom content filters",
-      with: "OpenAI and Bedrock guardrails built in",
-    },
-    {
-      problem: "Deployment",
-      without: "Write Terraform/CDK yourself",
-      with: "Pre-built Terraform modules for AWS, Azure & GCP, plus a Helm chart for Kubernetes",
-    },
-  ];
-
-  const [active, setActive] = useState(0);
-  const activeRow = rows[active];
-
-  const problemChipIcons = [
-    MdHub,
-    MdSwapHoriz,
-    MdCloud,
-    MdMemory,
-    MdMenuBook,
-    MdTerminal,
-    MdMessage,
-    MdBugReport,
-    MdVisibility,
-    MdSecurity,
-    MdCloudUpload,
-  ] as const;
-
-  const ActiveIcon = problemChipIcons[active];
-
-  useLayoutEffect(() => {
-    const section = sectionRef.current;
-    if (!section) {
-      return;
-    }
-
-    const reducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const allHeaders = section.querySelectorAll(`.${styles.sectionHeader}`);
-    const header1 = allHeaders[0];
-    const header2 = allHeaders[1];
-    const topicButtons = Array.from(
-      section.querySelectorAll(`.${styles.problemTopicBtn}`),
+      { rootMargin: '-25% 0px -70% 0px' },
     );
-    const comparePanel = section.querySelector(`.${styles.problemComparePanelOuter}`);
-
-    if (reducedMotion) {
-      gsap.set([header1, header2, ...topicButtons, comparePanel], {
-        opacity: 1,
-        y: 0,
-      });
-      return;
-    }
-
-    gsap.set(header1, {
-      opacity: 0,
-      y: 24,
+    STAGE_IDS.forEach((id) => {
+      const section = document.getElementById(id);
+      if (section) seen.observe(section);
     });
-    gsap.set(comparePanel, {
-      opacity: 0,
-      y: 24,
-    });
-    gsap.set(topicButtons, {
-      opacity: 0,
-      y: 16,
-    });
-
-    const tl1 = gsap.timeline({
-      scrollTrigger: {
-        trigger: header1,
-        start: "top 75%",
-        toggleActions: "play none none reverse",
-      },
-    });
-
-    tl1.to(header1, {
-      opacity: 1,
-      y: 0,
-      duration: 0.6,
-      ease: "power2.out",
-    })
-      .to(
-        comparePanel,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.6,
-          ease: "power2.out",
-        },
-        "-=0.35",
-      )
-      .to(
-        topicButtons,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.4,
-          stagger: 0.03,
-          ease: "power2.out",
-        },
-        "-=0.4",
-      );
-
-    return () => {
-      tl1.scrollTrigger?.kill();
-      tl1.kill();
-    };
+    return () => seen.disconnect();
   }, []);
 
+  return inView;
+}
+
+function StageIndex({ current }: { current: StageId }): JSX.Element {
+  const list = useRef<HTMLOListElement>(null);
+
+  // On a small screen the index is one row that scrolls sideways: keep the current stage in it.
+  // The row is moved directly, so the page itself never scrolls.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      ScrollTrigger.refresh();
-    }, 250);
-    return () => clearTimeout(timer);
-  }, []);
+    const row = list.current;
+    const link = row?.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!row || !link || row.scrollWidth <= row.clientWidth) return;
+    const left = link.offsetLeft - row.offsetLeft;
+    if (left < row.scrollLeft || left + link.offsetWidth > row.scrollLeft + row.clientWidth) {
+      const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      row.scrollTo({ left: Math.max(0, left - 16), behavior: still ? 'auto' : 'smooth' });
+    }
+  }, [current]);
 
   return (
-    <section
-      id={FEATURE_ANCHORS.problem}
-      className={`${styles.section} ${styles.problemSection} ${styles.pageAnchor}`}
-      ref={sectionRef}
-    >
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <p className={styles.sectionLabel}>01: The Problem</p>
-          <h2 className={styles.sectionTitle}>The Problem Agent Kernel Solves</h2>
-          <p className={styles.sectionSubtitle}>
-            Building production AI agents today involves solving many hard
-            problems that have nothing to do with the actual agent intelligence.
-          </p>
-        </div>
-        <div className={styles.problemBlock}>
-          <div className={styles.problemComparePanelOuter}>
-            <ul
-              className={styles.problemTopicGrid}
-              role="tablist"
-              aria-label="Areas to compare"
+    <nav className={styles.index} aria-label="Stages on this page">
+      <p className="ak-label">On this page</p>
+      <ol ref={list} className={styles.indexList}>
+        {STAGES.map((stage, position) => (
+          <li key={stage.id}>
+            <a
+              href={`#${stage.id}`}
+              className={clsx(styles.indexLink, stage.id === current && styles.indexLinkCurrent)}
+              aria-current={stage.id === current ? 'true' : undefined}
             >
-              {rows.map((row, i) => {
-                const ChipIcon = problemChipIcons[i];
-                return (
-                  <li key={row.problem} className={styles.problemTopicCell}>
-                    <button
-                      type="button"
-                      role="tab"
-                      id={`feature-problem-tab-${i}`}
-                      aria-selected={active === i}
-                      aria-controls="feature-problem-panel"
-                      className={`${styles.problemTopicBtn} ${active === i ? styles.problemTopicBtnActive : ""}`}
-                      onClick={() => setActive(i)}
-                    >
-                      <span
-                        className={styles.problemTopicIconWrap}
-                        aria-hidden="true"
-                      >
-                        <ChipIcon className={styles.problemTopicIcon} />
-                      </span>
-                      <span className={styles.problemTopicLabel}>
-                        {row.problem}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <div
-              id="feature-problem-panel"
-              role="tabpanel"
-              aria-labelledby={`feature-problem-tab-${active}`}
-              className={styles.problemComparePanel}
-            >
-              <div key={active} className={styles.problemComparePanelInner}>
-                <div className={styles.problemComparePanelHeader}>
-                  <span
-                    className={styles.problemComparePanelIconWrap}
-                    aria-hidden="true"
-                  >
-                    <ActiveIcon className={styles.problemComparePanelIcon} />
-                  </span>
-                  <div>
-                    <h3 className={styles.problemComparePanelTitle}>
-                      {activeRow.problem}
-                    </h3>
-                    <p className={styles.problemComparePanelMeta}>
-                      Without vs. with Agent Kernel
-                    </p>
-                  </div>
-                </div>
-                <div className={styles.problemCompareGrid}>
-                  <article
-                    className={`${styles.problemCompareSide} ${styles.problemCompareSideNeg}`}
-                  >
-                    <p className={styles.problemCompareSideLabel}>
-                      Without Agent Kernel
-                    </p>
-                    <p className={styles.problemCompareSideSub}>
-                      What you take on today
-                    </p>
-                    <div
-                      className={`${styles.problemCompareBody} ${styles.problemCompareBodyNeg}`}
-                    >
-                      <span
-                        className={styles.problemCompareBodyIcon}
-                        aria-hidden="true"
-                      >
-                        <ActiveIcon />
-                      </span>
-                      <p className={styles.problemCompareBodyText}>
-                        {activeRow.without}
-                      </p>
-                    </div>
-                  </article>
-                  <article
-                    className={`${styles.problemCompareSide} ${styles.problemCompareSidePos}`}
-                  >
-                    <p className={styles.problemCompareSideLabel}>
-                      With Agent Kernel
-                    </p>
-                    <p className={styles.problemCompareSideSub}>
-                      What the platform covers
-                    </p>
-                    <div
-                      className={`${styles.problemCompareBody} ${styles.problemCompareBodyPos}`}
-                    >
-                      <span
-                        className={styles.problemCompareBodyIcon}
-                        aria-hidden="true"
-                      >
-                        <ActiveIcon />
-                      </span>
-                      <p className={styles.problemCompareBodyText}>
-                        {activeRow.with}
-                      </p>
-                    </div>
-                  </article>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+              <span className={styles.indexNumber}>{String(position + 1).padStart(2, '0')}</span>
+              <span>{stage.name}</span>
+              <span className={styles.indexCount} aria-label={`${stage.capabilities.length} capabilities`}>
+                {stage.capabilities.length}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
-/* ─── Core Features ─────────────────────────────────────────────────────── */
-
-/** Render core capability cards with links to their documentation. */
-function CoreFeatures() {
-  const sectionRef = useRef<HTMLElement>(null);
-
-  const features = [
-    {
-      icon: <MdCode />,
-      title: "Six Core Abstractions",
-      description:
-        "Agent, Runner, Session, Module, Runtime, and Tools, a unified API across all frameworks. Build once, run on any supported framework.",
-      highlights: [
-        "Unified Python API",
-        "Framework adapters for 8 SDKs",
-        "Portable tool functions via ToolBuilder",
-        "Framework-agnostic hooks",
-      ],
-      link: "/docs/core-concepts/overview",
-    },
-    {
-      icon: <MdSwapHoriz />,
-      title: "Framework-Neutral Runtime",
-      description:
-        "OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.",
-      highlights: [
-        "OpenAI Agents SDK",
-        "LangGraph",
-        "CrewAI",
-        "Google ADK",
-        "Smolagents",
-        "Pydantic AI",
-        "Claude Agent SDK",
-        "Microsoft Agent Framework",
-      ],
-      link: "/docs/frameworks/overview",
-    },
-    {
-      icon: <MdSettings />,
-      title: "Execution Hooks",
-      description:
-        "Pre and post-execution hooks give you surgical control over every agent request, for any framework.",
-      highlights: [
-        "Pre-hooks: guardrails, RAG, auth, validation",
-        "Post-hooks: moderation, disclaimers, analytics",
-        "Hook chaining and composition",
-        "Early termination with custom responses",
-      ],
-      link: "/docs/integrations/hooks",
-    },
-    {
-      icon: <MdMemory />,
-      title: "Smart Memory Management",
-      description:
-        "Volatile and non-volatile caching with identical APIs but different lifecycles. Swap backends with just environment variables.",
-      highlights: [
-        "Volatile: request-scoped, auto-clears",
-        "Non-volatile: session-persistent",
-        "Backends: In-memory, Redis, DynamoDB, Cosmos DB",
-        "Clean prompts, reduced token usage",
-      ],
-      link: "/docs/architecture/memory-management",
-    },
-    {
-      icon: <MdMenuBook />,
-      title: "Knowledge Bases",
-      description:
-        "Built-in retrieval for curated knowledge sources and storage for agent reinforcement learning. Neo4j, Starburst Galaxy, ChromaDB, Open Knowledge Format bundles, and custom SQL data sources.",
-      highlights: [
-        "ChromaDB — vector/semantic search",
-        "Neo4j — entity and relationship graphs",
-        "Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL",
-        "Open Knowledge Format — markdown bundles, no database to run",
-        "semantic_map keeps agent prompts portable",
-      ],
-      link: "/docs/advanced/knowledge-bases",
-    },
-    {
-      icon: <MdTerminal />,
-      title: "Sandboxed Code Execution",
-      description:
-        "Agents run code, shell commands, file operations, and permitted package installs in isolated sandboxes. The Execution Broker routes every execution to a pluggable, policy-governed provider, in-process or over a queue to a separate worker fleet.",
-      highlights: [
-        "local_subprocess, docker, kubernetes, e2b, daytona, ec2_ssm",
-        "Queue broker over SQS, Kafka, NATS, Pub/Sub, or Azure Service Bus for long-running executions",
-        "Session-persistent workspaces",
-        "Fail-closed network, filesystem, CPU, and memory policies; per-profile language and package-install permissions; configurable language runtimes on Docker and Kubernetes",
-        "Agent or end-user identity",
-      ],
-      link: "/docs/advanced/sandbox",
-    },
-    {
-      icon: <MdCloud />,
-      title: "Multi-Cloud & On-Prem Deployment",
-      description:
-        "One agent codebase deploys to AWS, Azure, GCP, or your own Kubernetes cluster: Terraform modules for the clouds, a Helm chart for on-prem. No vendor lock-in, ever.",
-      highlights: [
-        "AWS Lambda (Serverless)",
-        "AWS ECS/Fargate (Containerized)",
-        "Azure Functions (Serverless)",
-        "Azure Container Apps (Containerized)",
-        "GCP Cloud Run (Serverless)",
-        "GCP Cloud Run (Containerized)",
-        "On-Prem Kubernetes (Helm chart: bare metal, EKS, air-gapped)",
-        "Queue-backed scaling: ingress and agent execution scale independently (SQS on AWS, Pub/Sub on GCP)",
-      ],
-      link: "/docs/deployment/overview",
-    },
-    {
-      icon: <MdHealthAndSafety />,
-      title: "Fault Tolerance",
-      description:
-        "Production-grade resilience with multi-AZ deployments, auto-recovery, health monitoring, and rolling deployments.",
-      highlights: [
-        "Multi-AZ for high availability",
-        "Automatic failure recovery",
-        "Health monitoring",
-        "Zero-downtime deployments",
-      ],
-      link: "/docs/core-concepts/fault-tolerance",
-    },
-    {
-      icon: <MdVisibility />,
-      title: "Observability",
-      description:
-        "Full visibility into agent execution, LLM calls, and tool invocations. One config line to enable.",
-      highlights: [
-        "Langfuse integration",
-        "OpenLLMetry (OpenTelemetry-based)",
-        "Pydantic Logfire integration",
-        "AWS CloudWatch (X-Ray) integration",
-        "Multi-level verbosity",
-        "Cost and latency tracking",
-        "Fetch spans back for evaluation",
-      ],
-      link: "/docs/advanced/traceability",
-    },
-    {
-      icon: <MdSecurity />,
-      title: "Content Safety & Guardrails",
-      description:
-        "Input and output guardrails that protect users and ensure compliance. Plugs in via execution hooks.",
-      highlights: [
-        "PII detection and redaction",
-        "Jailbreak prevention",
-        "Content moderation",
-        "Off-topic filtering",
-      ],
-      link: "/docs/advanced/guardrails",
-    },
-    {
-      icon: <MdVerifiedUser />,
-      title: "Identity & Access",
-      description:
-        "One identity provider, configured not coded, authenticates every surface and gives tools, hooks and threads the caller as a principal.",
-      highlights: [
-        "Any OIDC issuer: Auth0, Keycloak, Okta",
-        "Amazon Cognito, Microsoft Entra ID, Firebase",
-        "Static credentials through the secret capability",
-        "REST, WebSocket, AG-UI, MCP, A2A, CLI and messaging",
-      ],
-      // The identity page is only in the unreleased docs until the next release; drop `next` once it ships.
-      link: "/docs/next/advanced/identity-and-access",
-    },
-    {
-      icon: <MdNetworkCheck />,
-      title: "MCP & A2A Protocols",
-      description:
-        "Expose agents as MCP tools or enable agent-to-agent communication via A2A protocol.",
-      highlights: [
-        "MCP Server mode",
-        "A2A Server mode",
-        "Cross-agent coordination",
-        "Protocol-future-proofed",
-      ],
-      link: "/docs/api/mcp-server",
-    },
-  ];
-
-  useLayoutEffect(() => {
-    const section = sectionRef.current;
-    if (!section) return;
-
-    const reducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const header = section.querySelector(`.${styles.sectionHeader}`);
-    const cardEls = Array.from(
-      section.querySelectorAll(`.${styles.featureGridCell}`),
-    ) as HTMLElement[];
-
-    if (!header || !cardEls.length) return;
-
-    if (reducedMotion) {
-      gsap.set([header, ...cardEls], { opacity: 1, y: 0, scale: 1 });
-      return;
-    }
-
-    // Header: fade + slide up
-    gsap.set(header, { opacity: 0, y: 24 });
-    const headerTween = gsap.to(header, {
-      opacity: 1,
-      y: 0,
-      duration: 0.65,
-      ease: "power2.out",
-      scrollTrigger: {
-        trigger: header,
-        start: "top 70%",
-        toggleActions: "play none none reverse",
-      },
-    });
-
-    // Group cards into rows by actual DOM top position (layout-agnostic)
-    const rows: HTMLElement[][] = [];
-    let currentRowTop = -1;
-    let currentRow: HTMLElement[] = [];
-
-    cardEls.forEach((card) => {
-      const top = Math.round(card.getBoundingClientRect().top);
-      if (Math.abs(top - currentRowTop) > 4) {
-        if (currentRow.length) rows.push(currentRow);
-        currentRow = [card];
-        currentRowTop = top;
-      } else {
-        currentRow.push(card);
-      }
-    });
-    if (currentRow.length) rows.push(currentRow);
-
-    const rowTweens: gsap.core.Tween[] = [];
-
-    // Animate each row when its first card scrolls into view
-    rows.forEach((rowCards) => {
-      gsap.set(rowCards, {
-        opacity: 0,
-        y: 32,
-        scale: 0.88,
-        transformOrigin: "center bottom",
-      });
-
-      const tween = gsap.to(rowCards, {
-        opacity: 1,
-        y: 0,
-        scale: 1,
-        duration: 0.52,
-        stagger: 0.07,
-        ease: "back.out(1.5)",
-        scrollTrigger: {
-          trigger: rowCards[0],
-          start: "top 75%",
-          toggleActions: "play none none reverse",
-        },
-      });
-      rowTweens.push(tween);
-    });
-
-    return () => {
-      headerTween.scrollTrigger?.kill();
-      headerTween.kill();
-      rowTweens.forEach((t) => {
-        t.scrollTrigger?.kill();
-        t.kill();
-      });
-    };
-  }, []);
-
+function CapabilityEntry({ item }: { item: Capability }): JSX.Element {
   return (
-    <section
-      id={FEATURE_ANCHORS.core}
-      className={`${styles.section} ${styles.coreFeaturesSection} ${styles.pageAnchor}`}
-      ref={sectionRef}
-    >
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <p className={styles.sectionLabel}>02: Core Capabilities</p>
-          <h2 className={styles.sectionTitle}>Core Capabilities</h2>
-          <p className={styles.sectionSubtitle}>
-            Everything you need to build, run, and scale production AI agents
-            without building platform code.
-          </p>
-        </div>
-        <ul className={styles.featuresGrid}>
-          {features.map((f, i) => (
-            <li key={f.title} className={styles.featureGridCell}>
-              <article className={styles.featureCard}>
-                <div className={styles.featureCardHeader}>
-                  <div className={styles.featureIconWrap} aria-hidden="true">
-                    {f.icon}
-                  </div>
-                  <h3 className={styles.featureTitle}>{f.title}</h3>
-                </div>
-                <div className={styles.featureCardBody}>
-                  <p className={styles.featureDescription}>{f.description}</p>
-                  <ul className={styles.featureHighlights}>
-                    {f.highlights.map((h) => (
-                      <li key={h}>{h}</li>
-                    ))}
-                  </ul>
-                </div>
-                {f.link ? (
-                  <Link to={f.link} className={styles.featureLink}>
-                    Learn More
-                  </Link>
-                ) : null}
-              </article>
+    <li className={styles.capability}>
+      <h3 className="ak-h4">{item.title}</h3>
+      <p className={styles.summary}>{item.summary}</p>
+      {item.points && (
+        <ul className={styles.points}>
+          {item.points.map((point) => (
+            <li key={point}>{point}</li>
+          ))}
+        </ul>
+      )}
+      {item.more && (
+        <ul className={styles.more} aria-label={`${item.title}: more pages`}>
+          {item.more.map((link) => (
+            <li key={link.to}>
+              <Link to={link.to}>{link.label}</Link>
             </li>
           ))}
+        </ul>
+      )}
+      <Link to={item.guide.to} className={clsx('ak-link', styles.guide)}>
+        {item.guide.label}
+      </Link>
+    </li>
+  );
+}
+
+function StageSection({ stage, position }: { stage: StageGroup; position: number }): JSX.Element {
+  return (
+    <Reveal as="section" id={stage.id} className={styles.stage}>
+      <div className={styles.stageHead}>
+        <SectionHeader
+          index={String(position + 1).padStart(2, '0')}
+          label={stage.name}
+          title={stage.title}
+          lead={stage.lead}
+        />
+        <StageMotion stage={stage.id} className={styles.stageArt} />
+      </div>
+      <ul className={styles.capabilities}>
+        {stage.capabilities.map((item) => (
+          <CapabilityEntry key={item.title} item={item} />
+        ))}
+      </ul>
+    </Reveal>
+  );
+}
+
+/** One capability gets a diagram: the sandbox is the only one whose moving parts need a picture. */
+function SandboxCloserLook(): JSX.Element {
+  // Tell the build that this id exists, so links to it are checked.
+  useBrokenLinks().collectAnchor('sandbox');
+  return (
+    <section id="sandbox" className={clsx('ak-section', 'ak-section--raised', styles.closer)}>
+      <div className="ak-container">
+        <SectionHeader
+          label="A closer look"
+          title="Where agent-written code runs"
+          lead="Every execution goes through the Execution Broker to a provider you choose in configuration: in the agent process for CLI and REST deployments, or over a queue to a fleet of sandbox workers that keeps running after the agent turn ends."
+        />
+        <SandboxFlowDiagram detailed />
+        <ul className={styles.closerLinks}>
+          <li>
+            <Link to="/docs/advanced/sandbox" className="ak-link">
+              Sandbox guide
+            </Link>
+          </li>
+          <li>
+            <Link to="/docs/advanced/sandbox#the-queue-flavor" className="ak-link">
+              The queue broker
+            </Link>
+          </li>
+          <li>
+            <Link to="/docs/architecture/sandbox-internals" className="ak-link">
+              Sandbox internals
+            </Link>
+          </li>
         </ul>
       </div>
     </section>
   );
 }
 
-/* ─── Sandboxed Execution ───────────────────────────────────────────────── */
-
-function SandboxSection() {
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useLayoutEffect(() => {
-    const section = sectionRef.current;
-    if (!section) {
-      return;
-    }
-
-    const reducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const header = section.querySelector(`.${styles.sectionHeader}`);
-    if (!header) {
-      return;
-    }
-
-    if (reducedMotion) {
-      gsap.set(header, { opacity: 1, y: 0 });
-      return;
-    }
-
-    gsap.set(header, { opacity: 0, y: 24 });
-
-    const tween = gsap.to(header, {
-      opacity: 1,
-      y: 0,
-      duration: 0.5,
-      ease: "power2.out",
-      scrollTrigger: {
-        trigger: header,
-        start: "top 75%",
-        toggleActions: "play none none reverse",
-      },
-    });
-
-    return () => {
-      tween.scrollTrigger?.kill();
-      tween.kill();
-    };
-  }, []);
-
-  return (
-    <section
-      id={FEATURE_ANCHORS.sandbox}
-      className={`${styles.section} ${styles.sandboxSection} ${styles.pageAnchor}`}
-      ref={sectionRef}
-    >
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <p className={styles.sectionLabel}>03: Sandboxed Execution</p>
-          <h2 className={styles.sectionTitle}>Sandboxed Code Execution</h2>
-          <p className={styles.sectionSubtitle}>
-            Agents write code; Agent Kernel gives it a safe place to run.
-            Every execution flows through the Agent Kernel Execution Broker to
-            a pluggable, policy-governed provider: in-process for CLI and REST
-            deployments, or over a queue to a sandbox worker fleet that keeps
-            running after the agent turn ends. All chosen in configuration.
-          </p>
-        </div>
-        <div className={styles.sandboxBlock}>
-          <SandboxFlowDiagram detailed />
-          <div className={styles.sandboxLinksRow}>
-            <Link to="/docs/advanced/sandbox" className={styles.sandboxLink}>
-              Sandbox Docs
-            </Link>
-            <Link
-              to="/docs/advanced/sandbox#the-queue-flavor"
-              className={styles.sandboxLink}
-            >
-              Queue Broker
-            </Link>
-            <Link
-              to="/docs/architecture/sandbox-internals"
-              className={styles.sandboxLink}
-            >
-              Sandbox Internals
-            </Link>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Framework Support ─────────────────────────────────────────────────── */
-
-/** Render supported framework links and the card for running multiple frameworks together. */
-function FrameworkSupport() {
-  const sectionRef = useRef<HTMLElement>(null);
-
-  const integrations = [
-    {
-      key: "openai",
-      name: "OpenAI Agents SDK",
-      description:
-        "Official OpenAI agents framework with full support for tools, handoffs, and streaming.",
-      link: "/docs/frameworks/openai",
-      logo: (
-        <img
-          src="/img/integrations/chatgpt.png"
-          alt=""
-          className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
-          width={145}
-          height={45}
-        />
-      ),
-    },
-    {
-      key: "langgraph",
-      name: "LangGraph",
-      description:
-        "Graph-based agent orchestration for complex stateful multi-actor applications.",
-      link: "/docs/frameworks/langgraph",
-      logo: (
-        <img
-          src="/img/integrations/langgraph.png"
-          alt=""
-          className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
-          width={150}
-          height={50}
-        />
-      ),
-    },
-    {
-      key: "google-adk",
-      name: "Google ADK",
-      description:
-        "Google's Agent Development Kit for advanced agent capabilities and Gemini integration.",
-      link: "/docs/frameworks/google-adk",
-      logo: (
-        <img
-          src="/img/integrations/googleADK.png"
-          alt=""
-          className={`${styles.frameworkLogoImg} ${styles.frameworkLogoImgInvert}`}
-          width={150}
-          height={50}
-        />
-      ),
-    },
-    {
-      key: "crewai",
-      name: "CrewAI",
-      description:
-        "Role-based multi-agent framework for orchestrating collaborative AI workflows.",
-      link: "/docs/frameworks/crewai",
-      logo: (
-        <img
-          src="/img/integrations/crewai.png"
-          alt=""
-          className={styles.frameworkLogoImg}
-          width={168}
-          height={58}
-        />
-      ),
-    },
-    {
-      key: "smolagents",
-      name: "Smolagents",
-      description:
-        "Hugging Face's Smolagents with first-class support for writing your own coding agents.",
-      link: "https://huggingface.co/docs/smolagents/index",
-      external: true,
-      logo: (
-        <img
-          src="/img/integrations/smolagents.png"
-          alt=""
-          className={styles.frameworkLogoImg}
-          width={150}
-          height={50}
-        />
-      ),
-    },
-    {
-      key: "pydantic-ai",
-      name: "Pydantic AI",
-      description:
-        "Pydantic-team framework with native multi-provider models, FallbackModel failover, and typed structured output.",
-      link: "/docs/frameworks/pydantic-ai",
-      logo: (
-        <img
-          src="/img/integrations/pydantic-ai.png"
-          alt=""
-          className={styles.frameworkLogoImg}
-          width={150}
-          height={50}
-        />
-      ),
-    },
-    {
-      key: "claude-agent-sdk",
-      name: "Claude Agent SDK",
-      description:
-        "Anthropic's Claude Code agent harness: built-in file, shell and web tools, subagents, hooks and permissions, on Claude models.",
-      // Drop /next after the Claude Agent SDK adapter is released.
-      link: "/docs/next/frameworks/claude-agent-sdk",
-      logo: <SiClaude className={styles.frameworkLogoImg} size={52} color="#D97757" aria-hidden="true" />,
-    },
-    {
-      key: "maf",
-      name: "Microsoft Agent Framework",
-      description:
-        "Microsoft Agent Framework (MAF), the unified successor to AutoGen and Semantic Kernel.",
-      link: "/docs/next/frameworks/microsoft-agents",
-      logo: <FaMicrosoft className={styles.frameworkLogoIcon} aria-hidden="true" />,
-    },
-  ];
-
-  const multiFramework = {
-    name: "Multi-Framework",
-    description:
-      "Run agents from multiple frameworks simultaneously in a single runtime — no glue code required.",
-    link: "/docs/frameworks/multi-framework",
-    badge: "Agent Kernel",
-    logo: (
-      <img
-        src="/img/branding/agent-kernel-icon-color.svg"
-        alt=""
-        className={styles.frameworkLogoImg}
-        width={100}
-        height={100}
-      />
-    ),
-  };
-
-  const cardInner = (f: (typeof integrations)[number]) => (
-    <>
-      <div className={styles.frameworkCardHeader}>
-        <div className={styles.frameworkLogo}>{f.logo}</div>
-        <h3 className={styles.frameworkName}>{f.name}</h3>
-      </div>
-      <p className={styles.frameworkDescription}>{f.description}</p>
-      <span className={`${styles.frameworkLink} ${styles.frameworkLinkInline}`}>
-        Learn More
-      </span>
-    </>
-  );
-
-  const featuredInner = (
-    <>
-      <div className={styles.frameworkFeaturedContent}>
-        <div className={styles.frameworkFeaturedMain}>
-          <div className={styles.frameworkFeaturedMark}>
-            <div className={styles.frameworkFeaturedIconCircle}>
-              {multiFramework.logo}
-            </div>
-          </div>
-          <div className={styles.frameworkFeaturedText}>
-            <p className={styles.frameworkFeaturedBadge}>
-              {multiFramework.badge}
-            </p>
-            <h3 className={styles.frameworkFeaturedHeading}>
-              {multiFramework.name}
-            </h3>
-            <p className={styles.frameworkFeaturedLead}>
-              {multiFramework.description}
-            </p>
-          </div>
-        </div>
-        <span
-          className={`${styles.frameworkLink} ${styles.frameworkFeaturedCta}`}
-        >
-          Learn More
-        </span>
-      </div>
-    </>
-  );
-
-  useLayoutEffect(() => {
-    const section = sectionRef.current;
-    if (!section) {
-      return;
-    }
-
-    const reducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const header = section.querySelector(`.${styles.sectionHeader}`);
-    const block = section.querySelector(`.${styles.frameworkBlock}`);
-    const cards = Array.from(
-      section.querySelectorAll(`.${styles.frameworkGridCell}`),
-    );
-    const featuredRow = section.querySelector(`.${styles.frameworkFeaturedRow}`);
-
-    if (!header || !block || !cards.length || !featuredRow) {
-      return;
-    }
-
-    if (reducedMotion) {
-      gsap.set([header, block, ...cards, featuredRow], {
-        opacity: 1,
-        y: 0,
-        scale: 1,
-      });
-      return;
-    }
-
-    gsap.set(header, { opacity: 0, y: 24 });
-    gsap.set(cards, { opacity: 0, y: 28, scale: 0.95 });
-    gsap.set(featuredRow, { opacity: 0, y: 28, scale: 0.98 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: header,
-        start: "top 75%",
-        toggleActions: "play none none reverse",
-      },
-    });
-
-    tl.to(header, {
-      opacity: 1,
-      y: 0,
-      duration: 0.6,
-      ease: "power2.out",
-    })
-      .to(
-        cards,
-        {
-          opacity: 1,
-          y: 0,
-          scale: 1,
-          duration: 0.5,
-          stagger: 0.05,
-          ease: "power2.out",
-        },
-        "-=0.35",
-      )
-      .to(
-        featuredRow,
-        {
-          opacity: 1,
-          y: 0,
-          scale: 1,
-          duration: 0.5,
-          ease: "power2.out",
-        },
-        "-=0.25",
-      );
-
-    return () => {
-      tl.scrollTrigger?.kill();
-      tl.kill();
-    };
-  }, []);
-
-  return (
-    <section
-      id={FEATURE_ANCHORS.frameworks}
-      className={`${styles.section} ${styles.pageAnchor}`}
-      ref={sectionRef}
-    >
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <p className={styles.sectionLabel}>04: Framework Support</p>
-          <h2 className={styles.sectionTitle}>One Runtime, Any Framework</h2>
-          <p className={styles.sectionSubtitle}>
-            Use the best framework for each job, and run them all together in a
-            single deployment.
-          </p>
-        </div>
-
-        <div className={styles.frameworkBlock}>
-          <ul className={styles.frameworksGrid}>
-            {integrations.map((f) => (
-              <li key={f.key} className={styles.frameworkGridCell}>
-                {f.external ? (
-                  <a
-                    href={f.link}
-                    className={styles.frameworkCard}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {cardInner(f)}
-                  </a>
-                ) : (
-                  <Link to={f.link} className={styles.frameworkCard}>
-                    {cardInner(f)}
-                  </Link>
-                )}
-              </li>
-            ))}
-          </ul>
-
-          <Link
-            to={multiFramework.link}
-            className={styles.frameworkFeaturedRow}
-          >
-            {featuredInner}
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Testing Section ───────────────────────────────────────────────────── */
-
-function TestingSection() {
-  const sectionRef = useRef<HTMLElement>(null);
-
-  const approaches = [
-    {
-      key: "cli",
-      icon: <MdTerminal />,
-      title: "CLI Testing",
-      description:
-        "Interactive sessions for rapid development iteration and multi-agent testing.",
-      highlights: [
-        "Interactive chat sessions",
-        "Real-time feedback",
-        "Persistent CLI sessions",
-        "Multi-agent support",
-      ],
-      link: "/docs/testing/cli-testing",
-    },
-    {
-      key: "automated",
-      icon: <MdCode />,
-      title: "Automated Tests",
-      description:
-        "pytest-integrated test suites that run in CI/CD with session-scoped fixtures.",
-      highlights: [
-        "pytest integration",
-        "Session-scoped fixtures",
-        "Ordered test execution",
-        "CI/CD ready",
-      ],
-      link: "/docs/testing/automated-testing",
-    },
-    {
-      key: "evaluators",
-      icon: <MdFactCheck />,
-      title: "Pluggable Evaluators",
-      description:
-        "Every comparison runs through an AKEvaluator. DeepEval, Opik and JEV ship built in; swap in your own backend with one line of test-config.yaml.",
-      highlights: [
-        "DeepEval, Opik and JEV built in: exact match, fuzzy match, GEval and a hosted judge",
-        "Bring your own AKEvaluator subclass",
-        "Selected by short name or dotted path",
-        "Backend failures raise, never read as a failing agent",
-      ],
-      link: "/docs/testing/cli-testing#bring-your-own-evaluator",
-    },
-  ];
-
-  const modes = [
-    {
-      key: "score",
-      icon: <MdSpeed />,
-      name: "Score Mode",
-      description:
-        "Deterministic, offline scoring with no LLM call. Normalised exact match against any expected answer. Ideal for fixed outputs.",
-      link: "/docs/testing/cli-testing#score-mode",
-    },
-    {
-      key: "llm",
-      icon: <MdBugReport />,
-      name: "LLM Mode",
-      description:
-        "LLM-as-judge semantic evaluation. Gives credit when a short expected phrase sits inside a longer, correct response.",
-      link: "/docs/testing/cli-testing#llm-mode",
-    },
-    {
-      key: "fallback",
-      icon: <MdTimer />,
-      name: "Fallback Mode",
-      description:
-        "Tries score first, falls back to LLM. The default, and the best of both worlds.",
-      link: "/docs/testing/cli-testing#fallback-mode-default",
-    },
-  ];
-
-  useLayoutEffect(() => {
-    const section = sectionRef.current;
-    if (!section) {
-      return;
-    }
-
-    const reducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const header = section.querySelector(`.${styles.sectionHeader}`);
-    const block = section.querySelector(`.${styles.testingBlock}`);
-    const approachCards = Array.from(
-      section.querySelectorAll(`.${styles.testingApproachCell}`),
-    );
-    const modePanel = section.querySelector(`.${styles.testingModesPanel}`);
-    const modeCards = Array.from(
-      section.querySelectorAll(`.${styles.testingModeCell}`),
-    );
-
-    if (!header || !block || !approachCards.length || !modePanel || !modeCards.length) {
-      return;
-    }
-
-    if (reducedMotion) {
-      gsap.set([header, block, ...approachCards, modePanel, ...modeCards], {
-        opacity: 1,
-        y: 0,
-        scale: 1,
-      });
-      return;
-    }
-
-    gsap.set(header, { opacity: 0, y: 24 });
-    gsap.set(approachCards, { opacity: 0, y: 28, scale: 0.95 });
-    gsap.set(modeCards, { opacity: 0, y: 22, scale: 0.96 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: header,
-        start: "top 75%",
-        toggleActions: "play none none reverse",
-      },
-    });
-
-    tl.to(header, {
-      opacity: 1,
-      y: 0,
-      duration: 0.5,
-      ease: "power2.out",
-    })
-      .to(
-        approachCards,
-        {
-          opacity: 1,
-          y: 0,
-          scale: 1,
-          duration: 0.45,
-          stagger: 0.06,
-          ease: "power2.out",
-        },
-        "-=0.3",
-      )
-      .to(
-        modeCards,
-        {
-          opacity: 1,
-          y: 0,
-          scale: 1,
-          duration: 0.4,
-          stagger: 0.05,
-          ease: "power2.out",
-        },
-        "-=0.25",
-      );
-
-    return () => {
-      tl.scrollTrigger?.kill();
-      tl.kill();
-    };
-  }, []);
-
-  return (
-    <section
-      id={FEATURE_ANCHORS.testing}
-      className={`${styles.section} ${styles.testingSection} ${styles.pageAnchor}`}
-      ref={sectionRef}
-    >
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <p className={styles.sectionLabel}>05: Testing</p>
-          <h2 className={styles.sectionTitle}>Testing &amp; Evaluation</h2>
-          <p className={styles.sectionSubtitle}>
-            Test your agents like any other code. CLI testing for development,
-            automated suites for CI/CD, three comparison modes, and a pluggable
-            evaluator interface behind all of them.
-          </p>
-        </div>
-        <div className={styles.testingBlock}>
-          <ul className={styles.testingApproachesGrid}>
-            {approaches.map((a) => (
-              <li key={a.key} className={styles.testingApproachCell}>
-                <article className={styles.testingApproachCard}>
-                  <div className={styles.testingApproachHeader}>
-                    <div className={styles.testingIconWrap} aria-hidden="true">
-                      {a.icon}
-                    </div>
-                    <h3 className={styles.testingApproachTitle}>{a.title}</h3>
-                  </div>
-                  <p className={styles.testingApproachDescription}>
-                    {a.description}
-                  </p>
-                  <ul className={styles.testingHighlights}>
-                    {a.highlights.map((h) => (
-                      <li key={h}>{h}</li>
-                    ))}
-                  </ul>
-                  <Link to={a.link} className={styles.testingLink}>
-                    Learn More
-                  </Link>
-                </article>
-              </li>
-            ))}
-          </ul>
-
-          <div className={styles.testingModesPanel}>
-            <p className={styles.testingGroupLabel}>Comparison modes</p>
-            <ul className={styles.testingModesGrid}>
-              {modes.map((m) => (
-                <li key={m.key} className={styles.testingModeCell}>
-                  <Link to={m.link} className={styles.testingModeCard}>
-                    <div className={styles.testingModeHeader}>
-                      <div
-                        className={styles.testingIconWrap}
-                        aria-hidden="true"
-                      >
-                        {m.icon}
-                      </div>
-                      <h4 className={styles.testingModeName}>{m.name}</h4>
-                    </div>
-                    <p className={styles.testingModeDescription}>
-                      {m.description}
-                    </p>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-const MESSAGING_PLATFORMS = [
-  {
-    name: "Slack",
-    icon: <img src="/img/integrations/slack-logo.png" alt="" width={28} height={28} />,
-    color: "#EC407A",
-    link: "/docs/integrations/slack",
-  },
-  {
-    name: "Microsoft Teams",
-    icon: <img src="/img/integrations/teams-logo.png" alt="" width={28} height={24} />,
-    color: "#A8B2FF",
-    link: "/docs/integrations/teams",
-  },
-  {
-    name: "WhatsApp",
-    icon: <img src="/img/integrations/whatsapp-logo.png" alt="" width={28} height={28} />,
-    color: "#3DFF9A",
-    link: "/docs/integrations/whatsapp",
-  },
-  {
-    name: "Messenger",
-    icon: <img src="/img/integrations/messenger-logo.png" alt="" width={28} height={28} />,
-    color: "#1AACFF",
-    link: "/docs/integrations/messenger",
-  },
-  {
-    name: "Telegram",
-    icon: <img src="/img/integrations/telegram-logo.png" alt="" width={28} height={28} />,
-    color: "#40BFFF",
-    link: "/docs/integrations/telegram",
-  },
-  {
-    name: "Instagram",
-    icon: <img src="/img/integrations/instagram-logo.png" alt="" width={26} height={26} />,
-    color: "#FF6BA3",
-    link: "/docs/integrations/instagram",
-  },
-  {
-    name: "Gmail",
-    icon: <img src="/img/integrations/gmail-logo.png" alt="" width={26} height={20} />,
-    color: "#FF7B6E",
-    link: "/docs/integrations/gmail",
-  },
-  {
-    name: "LiveKit",
-    icon: <img src="/img/integrations/livekit-mark.svg" alt="" width={28} height={28} />,
-    color: "#00DDFF",
-    // Drop /next after the LiveKit integration is released.
-    link: "/docs/next/integrations/livekit",
-  },
-] as const;
-
-/* ─── Messaging Section ─────────────────────────────────────────────────── */
-
-function MessagingSection() {
-  const sectionRef = useRef<HTMLElement>(null);
-  const sceneRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const reducedMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    const ctx = gsap.context(() => {
-      const header = sectionRef.current?.querySelector(`.${styles.sectionHeader}`);
-      const cards = sceneRef.current?.querySelectorAll(
-        `.${styles.msgChannelCard}`,
-      );
-      if (!cards?.length) return;
-
-      if (reducedMotion) {
-        if (header) gsap.set(header, { opacity: 1, y: 0 });
-        gsap.set(cards, { opacity: 1, y: 0 });
-        return;
-      }
-
-      if (header) gsap.set(header, { opacity: 0, y: 24 });
-      gsap.set(cards, { opacity: 0, y: 18 });
-
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: header || sceneRef.current,
-          start: "top 75%",
-          toggleActions: "play none none reverse",
-        },
-      });
-
-      if (header) {
-        tl.to(header, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" });
-      }
-
-      tl.to(
-        cards,
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.45,
-          stagger: 0.04,
-          ease: "power2.out",
-        },
-        header ? "-=0.35" : "0",
-      );
-    }, sectionRef);
-
-    return () => ctx.revert();
-  }, []);
-
-  return (
-    <section
-      id={FEATURE_ANCHORS.messaging}
-      className={`${styles.section} ${styles.pageAnchor} ${styles.messagingSection}`}
-      ref={sectionRef}
-    >
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <p className={styles.sectionLabel}>06: Messaging</p>
-          <h2 className={styles.sectionTitle}>Messaging & Voice Integrations</h2>
-          <p className={styles.sectionSubtitle}>
-            Your agents meet users on the channels they already use. Every
-            integration routes through the same Agent Kernel runtime. Pick a
-            channel below for setup steps.
-          </p>
-        </div>
-
-        <div ref={sceneRef} className={styles.msgChannelScene}>
-          <ul className={styles.msgChannelGrid}>
-            {MESSAGING_PLATFORMS.slice(0, 4).map((p) => (
-              <li key={p.name} className={styles.msgChannelCell}>
-                <Link
-                  to={p.link}
-                  className={`${styles.msgChannelCard}${(p as { featured?: boolean }).featured ? ` ${styles.msgChannelCardFeatured}` : ""}`}
-                  style={{ "--msg-brand": p.color } as React.CSSProperties}
-                >
-                  {(p as { featured?: boolean }).featured && (
-                    <span className={styles.msgFeaturedBadge}>Popular</span>
-                  )}
-                  <div className={styles.msgChannelTop}>
-                    <span className={styles.msgChannelIcon} aria-hidden>
-                      {p.icon}
-                    </span>
-                    <span className={styles.msgChannelName}>{p.name}</span>
-                  </div>
-                  <span className={styles.msgChannelCta}>Step Guide</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-
-          <ul className={styles.msgChannelGrid}>
-            {MESSAGING_PLATFORMS.slice(4).map((p) => (
-              <li key={p.name} className={styles.msgChannelCell}>
-                <Link
-                  to={p.link}
-                  className={`${styles.msgChannelCard}${(p as { featured?: boolean }).featured ? ` ${styles.msgChannelCardFeatured}` : ""}`}
-                  style={{ "--msg-brand": p.color } as React.CSSProperties}
-                >
-                  {(p as { featured?: boolean }).featured && (
-                    <span className={styles.msgFeaturedBadge}>Popular</span>
-                  )}
-                  <div className={styles.msgChannelTop}>
-                    <span className={styles.msgChannelIcon} aria-hidden>
-                      {p.icon}
-                    </span>
-                    <span className={styles.msgChannelName}>{p.name}</span>
-                  </div>
-                  <span className={styles.msgChannelCta}>Step Guide</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className={styles.msgChannelFooter}>
-          <Link
-            to="/docs/integrations/overview"
-            className={`button button--primary button--md ${indexStyles.terraformLink}`}
-          >
-            Full integrations overview
-          </Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Protocol Support ──────────────────────────────────────────────────── */
-
-function ProtocolSupport() {
-  const sectionRef = useRef<HTMLElement>(null);
-  const protocols = [
-    {
-      key: "mcp",
-      icon: <MdExtension />,
-      title: "MCP - Model Context Protocol",
-      description:
-        "Model Context Protocol (MCP) is a standardized interface that lets AI models connect to external tools, data sources, and services in a structured, consistent way. It acts as a bridge between an AI's reasoning and real-world actions, enabling agents to retrieve information and execute tasks reliably. Agent Kernel natively supports running an MCP server, including exposing your agents as MCP tools.",
-      link: "/docs/api/mcp-server",
-      linkLabel: "MCP Server Docs",
-    },
-    {
-      key: "a2a",
-      icon: <MdHub />,
-      title: "A2A - Agent-to-Agent",
-      description:
-        "Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.",
-      link: "/docs/api/a2a-server",
-      linkLabel: "A2A Server Docs",
-    },
-    {
-      key: "a2ui",
-      icon: <MdDashboardCustomize />,
-      title: "A2UI - Generative UI",
-      description:
-        "A2UI is a format for an agent to answer with an interface rather than prose: a JSON document naming components your frontend already implements, which it renders and sends interactions back from. Agent Kernel carries it end to end from two config keys — the reply arrives as an object with its format named, over REST, MCP and AG-UI alike — while the component catalog stays with your application, where it belongs.",
-      link: "/docs/next/advanced/a2ui",
-      linkLabel: "A2UI Docs",
-    },
-  ];
-  useLayoutEffect(() => {
-    const section = sectionRef.current;
-    if (!section) return;
-
-    const reducedMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    const header = section.querySelector(`.${styles.sectionHeader}`);
-    const grid = section.querySelector(`.${styles.protocolGrid}`);
-    const cells = Array.from(section.querySelectorAll(`.${styles.protocolCell}`));
-
-    if (!header || !grid || !cells.length) return;
-
-    if (reducedMotion) {
-      gsap.set([header, grid, cells], { opacity: 1, y: 0, scale: 1 });
-      return;
-    }
-
-    gsap.set(header, { opacity: 0, y: 24 });
-    gsap.set(cells, { opacity: 0, y: 28, scale: 0.98 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: header,
-        start: 'top 75%',
-        toggleActions: 'play none none reverse',
-      },
-    });
-
-    tl.to(header, { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' })
-      .to(
-        cells,
-        { opacity: 1, y: 0, scale: 1, duration: 0.45, stagger: 0.05, ease: 'power2.out' },
-        '-=0.3',
-      );
-
-    return () => {
-      tl.scrollTrigger?.kill();
-      tl.kill();
-    };
-  }, []);
-
-  return (
-    <section
-      id={FEATURE_ANCHORS.protocols}
-      className={`${styles.section} ${styles.protocolSection} ${styles.pageAnchor}`}
-      ref={sectionRef}
-    >
-      <div className="container">
-        <div className={styles.sectionHeader}>
-          <p className={styles.sectionLabel}>07: Protocol</p>
-          <h2 className={styles.sectionTitle}>Protocol Support</h2>
-          <p className={styles.sectionSubtitle}>
-            Standard protocols for tool connectivity and multi-agent
-            coordination. Wired into the runtime.
-          </p>
-        </div>
-        <ul className={styles.protocolGrid}>
-          {protocols.map((p) => (
-            <li key={p.key} className={styles.protocolCell}>
-              <article className={styles.protocolCard}>
-                <div className={styles.protocolCardHeader}>
-                  <div className={styles.protocolIconWrap} aria-hidden="true">
-                    {p.icon}
-                  </div>
-                  <h3 className={styles.protocolTitle}>{p.title}</h3>
-                </div>
-                <p className={styles.protocolDescription}>{p.description}</p>
-                <Link to={p.link} className={styles.protocolLink}>
-                  {p.linkLabel}
-                </Link>
-              </article>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-/* ─── CTA ───────────────────────────────────────────────────────────────── */
-
-function CTASection({
-  sectionRef,
-}: {
-  sectionRef: React.RefObject<HTMLElement>;
-}) {
-  return (
-    <section
-      ref={sectionRef}
-      id={FEATURE_ANCHORS.cta}
-      className={`${indexStyles.ctaSection} ${styles.pageAnchor}`}
-    >
-      <div className="container">
-        <div className={indexStyles.ctaContent}>
-          <h2 className={indexStyles.ctaTitle}>
-            Ready to Ship Your
-            <br />
-            First <span className={indexStyles.ctaTitleGradient}>Agent</span>?
-          </h2>
-          <p className={indexStyles.ctaSubtitle}>
-            Free, open-source, Apache 2.0. No licensing costs, no vendor
-            lock-in. Join hundreds of developers building production AI agents
-            with Agent Kernel.
-          </p>
-          <div className={indexStyles.ctaButtons}>
-            <Link
-              className={`button button--primary button--lg ${indexStyles.heroBtnSecondary}`}
-              to="/docs"
-            >
-              Get Started
-            </Link>
-            <Link
-              className={indexStyles.heroBtnLink}
-              to="https://github.com/yaalalabs/agent-kernel"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View On GitHub
-            </Link>
-          </div>
-
-          <div className={indexStyles.ctaImageWrapper}>
-            <img src="/img/cta-bg.png" alt="Agent Kernel" className={indexStyles.ctaImage} />
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Page Export ───────────────────────────────────────────────────────── */
-
-export default function Features() {
-  const plantParticlesBackgroundRef = useRef<PlantParticlesBackgroundHandle>(
-    null,
-  );
-  const ctaRef = useRef<HTMLElement>(null);
-  const ctaObserverStateRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    if (!plantParticlesBackgroundRef.current || !ctaRef.current) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !ctaObserverStateRef.current) {
-          ctaObserverStateRef.current = true;
-          plantParticlesBackgroundRef.current?.triggerReverseScatterIn();
-        } else if (!entry.isIntersecting && ctaObserverStateRef.current) {
-          ctaObserverStateRef.current = false;
-          plantParticlesBackgroundRef.current?.triggerScatterIn();
-        }
-      },
-      { threshold: 0.4 },
-    );
-
-    observer.observe(ctaRef.current);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
+export default function Features(): JSX.Element {
+  const current = useStageInView();
 
   return (
     <Layout
       title="Features"
-      description="Comprehensive overview of Agent Kernel features: a framework-neutral, multi-cloud AI agent runtime with built-in testing, observability, guardrails, knowledge bases, sandboxed code execution, and messaging integrations."
+      description="A reference to what Open Agent Kernel does: every capability of the runtime, grouped by stage, with a link to its guide. Framework adapters, channels and protocols, sessions and knowledge bases, guardrails, identity and sandboxes, deployment and queues, tracing and testing."
     >
-      {/* <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100vh', zIndex: 0, pointerEvents: 'auto' }}>
-        <HeroAnimation
-          badge="Features"
-          title="Everything to Build AI Agents"
-          subtitle="From framework-neutral runtime and smart memory to guardrails, observability, testing and multi-cloud deployment. Everything needed to build and ship production agents without platform engineering overhead."
-          primaryCtaLabel="Get Started"
-          primaryCtaTo="/docs"
-          secondaryCtaLabel="Explore Use Cases"
-          secondaryCtaTo="/use-cases"
+      <main>
+        <PageHero
+          label="Features"
+          title="Everything the runtime does, stage by stage"
+          lead={`The home page introduces the six stages an agent request passes through. This page is the reference behind them: ${CAPABILITY_COUNT} capabilities, what each one includes, and the guide to read next.`}
+          actions={
+            <>
+              <Link to="/docs" className="ak-btn ak-btn--secondary">
+                Read the docs
+              </Link>
+              <Link to="/use-cases" className="ak-link">
+                See what teams build
+              </Link>
+            </>
+          }
         />
-      </div> */}
 
-      {/* <div style={{ height: '100vh' }} /> */}
+        <div className={clsx('ak-container', styles.reference)}>
+          <StageIndex current={current} />
+          <div className={styles.stages}>
+            {STAGES.map((stage, position) => (
+              <StageSection key={stage.id} stage={stage} position={position} />
+            ))}
+          </div>
+        </div>
 
-      <main className={indexStyles.featuresPageSection} style={{ position: 'relative', zIndex: 10 }}>
-        <WhyAgentKernel />
-        <FeaturesPageMap
-          plantParticlesBackgroundRef={plantParticlesBackgroundRef}
-        />
-        <ProblemTable />
-        <CoreFeatures />
-        <SandboxSection />
-        <FrameworkSupport />
-        <TestingSection />
-        <MessagingSection />
-        <ProtocolSupport />
+        <SandboxCloserLook />
       </main>
-
-      <CTASection sectionRef={ctaRef} />
+      <ClosingPanel />
     </Layout>
   );
 }

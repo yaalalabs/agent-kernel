@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # AWS Queue Mode: Scalability Design
 
-This page is the architecture and design reference behind Agent Kernel's AWS **queue mode**: the
+This page is the architecture and design reference behind Open Agent Kernel's AWS **queue mode**: the
 SQS-backed pipeline that decouples request handling from agent execution so the two can scale
 independently. It explains the *why* and the *shared contract* across the two processing methods
 AWS ships today — **SQS + Lambda** (serverless) and **SQS + ECS** (containerized).
@@ -85,8 +85,8 @@ graph TB
     AR -. "batchItemFailures reappear" .-> IQ
     RSH -. "batchItemFailures reappear" .-> OQ
 
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RS fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 Async (WebSocket) replaces the response-store hop with a direct push back to the connection:
@@ -103,7 +103,7 @@ graph TB
     AR -. "batchItemFailures reappear" .-> IQ
     RSH -. "batchItemFailures reappear" .-> OQ
 
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Request Flow
@@ -186,8 +186,8 @@ graph TB
     AR -. "not deleted → reappears" .-> IQ
     T2 -. "not deleted → reappears" .-> OQ
 
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RS fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 Async (WebSocket, `message_type` `complete` or `delta`) replaces the response-store hop with a direct push. WebSocket API Gateway
@@ -208,7 +208,7 @@ graph TB
     AR -. "not deleted → reappears" .-> IQ
     T2 -. "not deleted → reappears" .-> OQ
 
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Request Flow

@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # CrewAI
 
-Integrate CrewAI's role-based agent framework with Agent Kernel.
+Integrate CrewAI's role-based agent framework with Open Agent Kernel (OAK).
 
 ## Installation
 
@@ -87,7 +87,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 
 ## Structured Output
 
-CrewAI configures structured output on the `Task` (`output_pydantic` / `output_json`), not on the agent, and Agent Kernel builds the task internally per run. Pass the model class to the module constructor, keyed by agent role; the runner forwards it into the task it creates:
+CrewAI configures structured output on the `Task` (`output_pydantic` / `output_json`), not on the agent, and OAK builds the task internally per run. Pass the model class to the module constructor, keyed by agent role; the runner forwards it into the task it creates:
 
 ```python
 from crewai import Agent as CrewAgent
@@ -114,7 +114,7 @@ To change the schema after the module is loaded, set it on the wrapped agent ins
 With `output_pydantic`, the `CrewOutput.pydantic` result is converted via `model_dump()`; with `output_json`, `CrewOutput.json_dict` is used directly. Plain-text crews continue to return `AgentReplyText` from `CrewOutput.raw`. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
 :::info Streaming limitation
-Structured output applies to non-streaming execution only. Agent Kernel's CrewAI adapter does not
+Structured output applies to non-streaming execution only. OAK's CrewAI adapter does not
 implement `Runner.stream()` yet (CrewAI itself supports streaming).
 :::
 
@@ -126,7 +126,7 @@ CrewAI **does not support** per-run caller context/state. Its `kickoff(inputs=..
 
 The `Crew(...)` constructor's own arguments (`step_callback`, `task_callback`, `max_rpm`, `planning`,
 ...) are declared per agent with [`Module.run_options`](../core-concepts/runner.md#native-run-options).
-Agent Kernel builds one `Crew` per run and writes the keys it owns (`agents`, `tasks`, `memory`)
+OAK builds one `Crew` per run and writes the keys it owns (`agents`, `tasks`, `memory`)
 last; `verbose=False` is a default you may override. CrewAI agents are registered by `role`, so that
 is what resolves the agent:
 
@@ -147,7 +147,7 @@ This adapter **cannot pause**, and reports it rather than pretending: its runner
 `supports_pause` at `False`, and `resume()` raises if called directly. A request that tries to resume
 a run on this framework is refused by `Runtime` with a message naming the runner.
 
-The framework's own human-in-the-loop facility does not intersect what Agent Kernel wraps — see
+The framework's own human-in-the-loop facility does not intersect what OAK wraps — see
 [Human in the Loop](../advanced/human-in-the-loop.md) for the five adapters that do pause.
 
 ## Features

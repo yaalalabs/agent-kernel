@@ -1,6 +1,6 @@
-# Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (queue mode, streaming)
+# Open Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (queue mode, streaming)
 
-This package demonstrates Agent Kernel's queue-based, scalable containerized architecture
+This package demonstrates Open Agent Kernel's queue-based, scalable containerized architecture
 exposed over a **WebSocket API with `async` + `delta`** — the agent's reply is delivered
 token-by-token as a sequence of `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`.
 

@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers            = { aws = aws, docker = docker }
   prefix               = var.prefix
@@ -43,24 +43,23 @@ module "serverless_agents" {
   agent_endpoint = "chat"
 
   # The gateway only proxies paths registered here. These map to the `Lambda.register` routes in
-  # lambda_request_handler.py. The serverless router matches paths exactly, so there are no
-  # `{task_id}` path parameters — the task id travels as a query parameter or in the body.
+  # lambda_request_handler.py; `{task_id}` must use the same name as the registered route.
   gateway_endpoints = [
     {
       path   = "schedules"
       method = "GET" # list
     },
     {
-      path   = "schedules/get"
+      path   = "schedules/{task_id}"
       method = "GET" # read one
     },
     {
-      path   = "schedules/amend"
-      method = "POST" # full-replacement amendment
+      path   = "schedules/{task_id}"
+      method = "PUT" # full-replacement amendment
     },
     {
-      path   = "schedules/cancel"
-      method = "POST" # cancel
+      path   = "schedules/{task_id}"
+      method = "DELETE" # cancel
     },
   ]
 

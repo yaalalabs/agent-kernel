@@ -1,4 +1,4 @@
-# Agent Kernel Sandbox Capability Examples
+# Open Agent Kernel Sandbox Capability Examples
 
 Each subfolder is a self-contained project demonstrating one aspect of the sandbox
 capability. All but `identity/` (which runs over REST) and the two `broker-*` projects
@@ -11,7 +11,7 @@ run any of them the same way:
     uv run demo.py
 
 In every example the agent's own instructions say nothing about the sandbox — when the
-capability is enabled, Agent Kernel attaches the sandbox tools and injects the usage
+capability is enabled, Open Agent Kernel attaches the sandbox tools and injects the usage
 guidance into the agent's system prompt automatically. Only the `config.yaml` changes
 between examples.
 

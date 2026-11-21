@@ -1,6 +1,6 @@
-# Gmail Agent Kernel Example
+# Gmail Open Agent Kernel Example
 
-AI-powered Gmail bot that automatically reads and replies to emails using Agent Kernel and OpenAI.
+AI-powered Gmail bot that automatically reads and replies to emails using Open Agent Kernel (OAK) and OpenAI.
 
 ## Prerequisites
 
@@ -32,7 +32,7 @@ AI-powered Gmail bot that automatically reads and replies to emails using Agent 
    - Test users: Add your Gmail address
 4. Back to Create OAuth client ID:
    - Application type: **Desktop app**
-   - Name: "Gmail Agent Kernel"
+   - Name: "Gmail OAK"
    - Click **Create**
 5. Copy the `client_id` and `client_secret` from the credentials JSON file (no need to save the file)
 
@@ -78,7 +78,7 @@ Install dependencies using:
 ./build.sh
 ```
 
-For local development with Agent Kernel source:
+For local development with OAK source:
 
 ```bash
 ./build.sh local
@@ -292,4 +292,4 @@ This integration uses:
 
 - [Gmail API Documentation](https://developers.google.com/gmail/api)
 - [OAuth2 for Desktop Apps](https://developers.google.com/identity/protocols/oauth2#installed)
-- [Agent Kernel Documentation](https://github.com/yaalalabs/agent-kernel)
+- [OAK Documentation](https://github.com/yaalalabs/agent-kernel)

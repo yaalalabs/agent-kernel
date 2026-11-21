@@ -1,12 +1,12 @@
-# Agent Kernel running OpenAI Agents SDK based agents in GCP Serverless (Cloud Run)
+# Open Agent Kernel running OpenAI Agents SDK based agents in GCP Serverless (Cloud Run)
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using GCP Cloud Run with scale-to-zero capability.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using GCP Cloud Run with scale-to-zero capability.
 
 ## Deployed Resources
 
 This demo deploys the following GCP resources:
 
-- **Cloud Run Service (edge)** - Serverless container platform running the Agent Kernel implementation with scale-to-zero capability
+- **Cloud Run Service (edge)** - Serverless container platform running the OAK implementation with scale-to-zero capability
 - **Agent Runner (Cloud Run)** - A second, private service from the same image. Pub/Sub pushes each request to it; it runs the agents and publishes the reply
 - **Pub/Sub** - Request and reply topics, plus dead-letter topics for messages that keep failing
 - **API Gateway** - OpenAPI-based routing with versioned endpoints for the Cloud Run service
@@ -256,7 +256,7 @@ terraform destroy
 
 - **Scale-to-Zero**: With `min_instance_count = 0`, the service scales to zero when idle, eliminating idle costs but introducing cold starts (~1-3 seconds)
 - **Cold Starts**: First requests after idle periods may experience slight delays
-- **Redis Connection**: Connection pooling is handled automatically by the Agent Kernel
+- **Redis Connection**: Connection pooling is handled automatically by the OAK
 - **Memory Usage**: Monitor Cloud Run memory consumption through Cloud Monitoring
 - **Cost Optimization**: Use scale-to-zero for development to minimize costs
 

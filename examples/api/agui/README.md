@@ -1,6 +1,6 @@
-# Agent Kernel over the AG-UI protocol
+# Open Agent Kernel over the AG-UI protocol
 
-This package contains a demo of an Agent Kernel agent driven over [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
+This package contains a demo of an Open Agent Kernel agent driven over [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 an event-based protocol for talking to a user-facing frontend. The app mounts `AGUIRequestHandler`
 (see `app.py`), which is what enables the AG-UI surface; the `agui` block in `config.yaml` only
 parameterizes it.
@@ -72,7 +72,7 @@ different architecture from this single-origin demo — worth knowing before you
 
 A run is a `RunAgentInput` body in, and a stream of AG-UI events out: `RunStarted` first, then the
 run's events, then exactly one of `RunFinished` or `RunError`. Which event types a given agent can
-actually produce depends on its framework adapter — see the AG-UI page in the Agent Kernel docs for
+actually produce depends on its framework adapter — see the AG-UI page in the OAK docs for
 the per-adapter matrix. A well-behaved client ignores event types it does not recognise, which is what
 `reduceEvent.ts` does in its `default` branch.
 
@@ -156,7 +156,7 @@ Worth knowing:
   to the adapter undescribed — the hook never fetches it. With Conversation Thread Support enabled it
   is also recorded by address, so the thread's history keeps one entry per attachment. See
   [Multimodal](../../../docs/docs/advanced/multimodal.md).
-- **Audio and video are rejected with a 400.** Agent Kernel has no equivalent request type, and
+- **Audio and video are rejected with a 400.** OAK has no equivalent request type, and
   mapping them onto the generic file type produces misleading model output.
 - **An attachment with no prompt is a valid turn**; the image is the content. A turn with neither is a
   400.
@@ -403,7 +403,7 @@ lines — the level is nested per logger tree, and a bare `logging.level` is sil
 
 ## Notes and limits
 
-- `threadId` is Agent Kernel's `session_id`. Conversation history is rebuilt from the session store,
+- `threadId` is OAK's `session_id`. Conversation history is rebuilt from the session store,
   so only the final `user` message in `messages` is read — there is no need to send the transcript.
 - **The frontend keeps `threadId`, the state and the transcript in `sessionStorage`**, so a reload
   continues the same conversation rather than starting a new session. The state copy is not
@@ -411,10 +411,10 @@ lines — the level is nested per logger tree, and a bare `logging.level` is sil
   the state *changes* during a run, so a reloaded page cannot ask the server what it holds. A client
   owning its copy and echoing it back as `state` is the protocol's model. Everything is scoped to the
   tab; **New conversation** clears it.
-- Client-declared `tools` are ignored. Agent Kernel builds an agent's tool registry when the agent is
+- Client-declared `tools` are ignored. OAK builds an agent's tool registry when the agent is
   constructed, so a tool named per-request has nothing to bind to.
 - AG-UI state lives for the session's lifetime and is stored under a reserved session key. It is
   separate from any framework's own context.
-- Audio and video content in a request body is rejected with a 400: Agent Kernel has no equivalent
+- Audio and video content in a request body is rejected with a 400: OAK has no equivalent
   request type, and mapping it onto the generic file type produces misleading model output. Images
   and documents are accepted, from either an inline base64 `data` source or a `url` source.

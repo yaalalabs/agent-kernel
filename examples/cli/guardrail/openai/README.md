@@ -1,8 +1,8 @@
-# Agent Kernel running LangGraph Agents with OpenAI Guardrails configured
+# Open Agent Kernel running LangGraph Agents with OpenAI Guardrails configured
 
-This package contains a demo of Agent Kernel running agents built with LangGraph
+This package contains a demo of Open Agent Kernel running agents built with LangGraph
 with [OpenAI Guardrails](https://pypi.org/project/openai-guardrails/) configured.
-Users can interact with agents via the Agent Kernel CLI.
+Users can interact with agents via the OAK CLI.
 
 Install dependencies using:
 
@@ -82,7 +82,7 @@ Example `guardrails_config.json`:
 }
 ```
 
-### 2. Update Your Agent Kernel Configuration
+### 2. Update Your OAK Configuration
 
 Add guardrail configuration to your `config.yaml`:
 

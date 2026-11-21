@@ -1,7 +1,7 @@
-# Agent Kernel running LangGraph Agents
+# Open Agent Kernel running LangGraph Agents
 
-This package contains a demo of Agent Kernel running agents built with LangGraph. Users may
-interact with agents via the Agent Kernel CLI.
+This package contains a demo of Open Agent Kernel running agents built with LangGraph. Users may
+interact with agents via the OAK CLI.
 
 Install dependencies using:
 

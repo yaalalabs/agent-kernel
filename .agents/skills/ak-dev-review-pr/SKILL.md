@@ -1,7 +1,7 @@
 ---
 name: ak-dev-review-pr
 description: >
-  Review a GitHub pull request against Agent Kernel's architecture, design
+  Review a GitHub pull request against Open Agent Kernel's architecture, design
   principles, code quality standards, and testing conventions, then post the
   findings back to the PR as review comments. When the PR contains spec
   documents (design.md, spec.md, or plan.md under docs/specs/), they are
@@ -15,15 +15,15 @@ metadata:
   category: developer
 ---
 
-# Review a Pull Request Against Agent Kernel Practices
+# Review a Pull Request Against Open Agent Kernel Practices
 
-Use this skill when asked to review a specific pull request by number or URL. It fetches the PR with the GitHub CLI (`gh`), reviews the delta against Agent Kernel's documented practices, and pushes the verified findings to the PR as a single review with inline comments.
+Use this skill when asked to review a specific pull request by number or URL. It fetches the PR with the GitHub CLI (`gh`), reviews the delta against Open Agent Kernel's documented practices, and pushes the verified findings to the PR as a single review with inline comments.
 
 This skill is for **reviewing someone else's PR**, not for reviewing your own uncommitted working-tree changes.
 
 ## Goal
 
-Produce a thorough, low-noise review grounded in Agent Kernel's own standards — architecture, code quality, and testing skills — and publish it on the PR so the author can act on it, without duplicating feedback that is already on the PR.
+Produce a thorough, low-noise review grounded in OAK's own standards — architecture, code quality, and testing skills — and publish it on the PR so the author can act on it, without duplicating feedback that is already on the PR.
 
 ## Inputs
 
@@ -84,7 +84,7 @@ Then route from the PR's changed file paths to the specialized skills. Take the 
 | `trace/` — tracing providers or traced runners | `ak-dev-new-tracing-provider` |
 | `sandbox/`: sandbox providers, broker flavors, capabilities | `ak-dev-new-sandbox-provider` |
 | `pipeline/transport/`: queue transports, transport factory | `ak-dev-new-queue-transport` |
-| `docs/`, `README.md`, `ak-py/README.md`, deployment/example READMEs (repo root) | `ak-dev-sync-docs-from-branch` — use its docs-surface map to check the right surfaces were updated, including the React landing and features pages (the landing page's inventories live in `docs/src/components/IntegrationsMarquee/data.tsx`, `ArchitectureOverview/data.tsx`, and `FeatureExplorer/data.tsx`; the features page's inventories live in `docs/src/pages/features.tsx`) when the change alters the inventory of frameworks, integrations, providers, transports, deployment targets, or headline capabilities |
+| `docs/`, `README.md`, `ak-py/README.md`, deployment/example READMEs (repo root) | `ak-dev-sync-docs-from-branch`: use its docs-surface map to check the right surfaces were updated, including the React landing and features pages (the landing page's inventories live under `docs/src/components/HomeSections/` (`integrations.data.tsx`, `index.tsx`, `Deployment.tsx`, `Announcement.tsx`) and in `ArchitectureOverview/data.tsx`; the features page's inventories live in `docs/src/pages/features.tsx`) when the change alters the inventory of frameworks, integrations, providers, transports, deployment targets, or headline capabilities |
 | `.agents/skills/` or `ak-py/src/agentkernel/skills/` (user skills) | `ak-dev-sync-skills-from-branch` — use its conventions to judge skill content and placement |
 
 A PR can match several rows — load every matching skill. If the PR touches one of these areas only incidentally (e.g. a mechanical rename brushing `trace/`), a skim of the skill's checklist is enough; when the PR *adds or substantially modifies* that kind of component, walk the guide's checklist step by step and flag every step the PR skipped (missing factory registration, missing config section, missing optional-dependency extra, missing exports, missing tests, missing example).
@@ -110,7 +110,7 @@ Then, across whichever documents the PR contains:
 1. **Verify the documents' factual claims against the base branch** — file:line citations, config defaults, "appears in N places" counts, and described behaviors. An unverified claim that turns out false is a finding; a spec whose claims all verify deserves saying so in the summary.
 2. **Review each document itself** and record findings on it like any other file:
    - Completeness at its stage's altitude (see above) — or only the happy path?
-   - Consistency with Agent Kernel: does the design it describes respect the principles in `ak-dev-architecture` (framework-agnostic core, adapter pattern, config via `AKConfig`, pluggable interfaces, coupling direction)?
+   - Consistency with OAK: does the design it describes respect the principles in `ak-dev-architecture` (framework-agnostic core, adapter pattern, config via `AKConfig`, pluggable interfaces, coupling direction)?
    - House patterns: is every external-system touchpoint pluggable (ABC + factory + dotted-path BYO, even with one backend)? Does the design name the existing `AKConfig` models it reuses and justify every new field, and does it let already-configured components enable the feature where that applies instead of adding `enabled`/`type` knobs? Are the components classes with one responsibility each? A design that departs from one of these without saying so is a finding; one that says so with a reason is a `[question]` at most.
    - Internal consistency: no contradictory requirements, undefined terms, or references to components that don't exist.
    - Cross-document consistency: `spec.md` covers every `design.md` requirement; `plan.md` covers every `spec.md` component. (Only check against documents that exist — on the base branch or in this PR.)
@@ -172,7 +172,7 @@ Evaluate the delta on each dimension. For each finding, record: file, line (in t
 - User-facing changes update the relevant docs surfaces (`README.md`, `ak-py/README.md`, `docs/docs/`, deployment/example READMEs).
 - New capabilities that warrant an example include or update one under `examples/`.
 - New config keys are documented where configuration is described.
-- When the change adds, removes, or renames a framework, messaging integration, provider, transport, deployment target, or headline capability, the React docs-site pages that enumerate them are updated too: `docs/src/pages/index.tsx` (What's New banner, deployment clouds) plus its `docs/src/components/IntegrationsMarquee/data.tsx`, `ArchitectureOverview/data.tsx`, and `FeatureExplorer/data.tsx` (marquee tiles, architecture chips, feature cards), and `docs/src/pages/features.tsx` (feature page map, core capability cards, framework integrations, testing modes, messaging platforms, protocols), plus the What's New tip in `docs/docs/intro.md`. A bundled user skill change needs no landing page edit — only `docs/docs/agent-skills.md`. Missing updates here are summary-body findings; use the surface map in `ak-dev-sync-docs-from-branch`.
+- When the change adds, removes, or renames a framework, messaging integration, provider, transport, deployment target, or headline capability, the React docs-site pages that enumerate them are updated too: the home sections under `docs/src/components/HomeSections/` (`integrations.data.tsx` for the integration items, `index.tsx` for the capability rail points, `Deployment.tsx` for the deployment targets, `Announcement.tsx` for the announcement), `ArchitectureOverview/data.tsx` (architecture chips), and `docs/src/pages/features.tsx` (one capability per entry, under its stage), plus the what's new page `docs/docs/whats-new.md` and the tip in `docs/docs/intro.md` that links to it. A bundled user skill change needs no landing page edit, only `docs/docs/agent-skills.md`. Missing updates here are summary-body findings; use the surface map in `ak-dev-sync-docs-from-branch`.
 
 ### 6. Spec conformance (when the PR contains implementation code covered by spec documents)
 
@@ -244,7 +244,7 @@ After posting, report back to the requester:
 3. A findings summary grouped by severity, each with `file:line` and a one-line description.
 4. Which findings were skipped as duplicates of existing PR feedback.
 5. A link to the posted review.
-6. If there were **no** findings: still post the summary-only review saying the change looks consistent with Agent Kernel conventions, and say so in the report.
+6. If there were **no** findings: still post the summary-only review saying the change looks consistent with OAK conventions, and say so in the report.
 
 ## Common Pitfalls
 
@@ -265,4 +265,4 @@ After posting, report back to the requester:
 - Accepting a hard-wired single implementation because "only one backend exists today": the house pattern is an interface plus factory from the first PR.
 - Accepting a new config block, `enabled` flag, or `type` selector without asking whether an existing `AKConfig` model already expresses it or whether already-configured components should enable the feature implicitly.
 - Letting procedural module-level functions through because they work: the maintainability rule is classes with one responsibility each.
-- Checking `docs/docs/` pages but skipping the React landing and features pages (the landing page's hard-coded inventories in `docs/src/components/IntegrationsMarquee/data.tsx`, `ArchitectureOverview/data.tsx`, and `FeatureExplorer/data.tsx`; `docs/src/pages/features.tsx`) when the change alters an inventory those pages display.
+- Checking `docs/docs/` pages but skipping the React landing and features pages (the landing page's hard-coded inventories under `docs/src/components/HomeSections/` and in `ArchitectureOverview/data.tsx`; `docs/src/pages/features.tsx`) when the change alters an inventory those pages display.

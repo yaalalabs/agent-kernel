@@ -1,7 +1,7 @@
 ---
 name: ak-cloud-deploy
 description: >
-  Deploy an Agent Kernel project to AWS, Azure, or GCP using Terraform modules, or to any
+  Deploy an Open Agent Kernel project to AWS, Azure, or GCP using Terraform modules, or to any
   Kubernetes cluster (on-prem, baremetal, EKS) using the official Helm chart.
   Supports serverless and containerized modes for all three clouds. AWS supports
   execution modes (rest_sync, rest_async, async) with a reply message_type (complete, delta),
@@ -16,13 +16,13 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.10.1"
+  version: "0.10.2"
   category: user
 ---
 
 # Deploy to Cloud
 
-Use this skill to deploy your Agent Kernel project to AWS, Azure, or GCP.
+Use this skill to deploy your Open Agent Kernel project to AWS, Azure, or GCP.
 
 ## Instructions for the Agent
 
@@ -63,10 +63,10 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.10.1`) unless user requests another.
+Use current module version (`0.10.2`) unless user requests another.
 
 Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
-Agent Kernel repository and is published as an OCI artifact
+OAK repository and is published as an OCI artifact
 (`oci://ghcr.io/yaalalabs/charts/agent-kernel`, versioned with each release). Install the
 published chart, as in the Kubernetes section below, not a repository checkout.
 
@@ -75,7 +75,7 @@ All modules are provider-agnostic: they declare `required_providers` but do not 
 AWS-only features in this skill:
 - `authorizer` (the AWS Lambda authorizer; GCP's modules take a JWT `authorizer` object instead)
 
-`queue_mode`, `execution_mode` and `message_type` exist on AWS and GCP. On GCP `queue_mode` defaults to `true`, and `execution_mode` accepts only `rest_sync` and `rest_async`. `queue_mode` also exists on Azure Container Apps, over Service Bus: see Azure Containerized below. `execution.message_type` itself is plain Agent Kernel config.
+`queue_mode`, `execution_mode` and `message_type` exist on AWS and GCP. On GCP `queue_mode` defaults to `true`, and `execution_mode` accepts only `rest_sync` and `rest_async`. `queue_mode` also exists on Azure Container Apps, over Service Bus: see Azure Containerized below. `execution.message_type` itself is plain OAK config.
 
 Azure examples use the provider module's standard top-level inputs (`function_name`, `package_path`, `container_port`, `publisher_email`) rather than AWS serverless execution modes.
 
@@ -92,7 +92,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.10.1"
+  "agentkernel[openai,api,redis]>=0.10.2"
 ]
 ```
 
@@ -112,14 +112,14 @@ session:
 
 [Valkey](https://valkey.io/) is the open-source, Linux Foundation-governed fork of Redis. It is
 wire-compatible with Redis and available on AWS ElastiCache at a lower price point than the Redis
-OSS engine. Agent Kernel treats it as a first-class session and response store backend on AWS.
+OSS engine. OAK treats it as a first-class session and response store backend on AWS.
 
 - Dependency extras: include `valkey`
 - Typical dependency example:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.10.1"
+  "agentkernel[openai,api,aws,valkey]>=0.10.2"
 ]
 ```
 
@@ -147,7 +147,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.10.1"
+  "agentkernel[openai,api,aws]>=0.10.2"
 ]
 ```
 
@@ -168,7 +168,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.10.1"
+  "agentkernel[openai,api,azure]>=0.10.2"
 ]
 ```
 
@@ -190,7 +190,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.10.1"
+  "agentkernel[openai,api,gcp]>=0.10.2"
 ]
 ```
 
@@ -297,6 +297,13 @@ if __name__ == "__main__":
 
 Remember to list the schedule paths in `gateway_endpoints` — the gateway only proxies paths it is
 told about. ECS WebSocket mode creates no HTTP API, so the management routes are not reachable there.
+
+On **AWS serverless** the Lambda router is not FastAPI, so `ScheduleRESTRequestHandler` cannot be
+mounted. Register the same routes with `@Lambda.register("/schedules", method="GET")` and
+`@Lambda.register("/schedules/{task_id}", method="GET"|"PUT"|"DELETE")`, calling `ScheduleManager`
+directly and reading `event["pathParameters"]["task_id"]`. Declare each in `gateway_endpoints` with
+the same `{task_id}` name (`{ path = "schedules/{task_id}", method = "PUT" }`). Reference
+implementation: `examples/aws-serverless/schedule-openai/lambda_request_handler.py`.
 
 New outputs on both AWS stacks (null unless the matching flag is set): `schedule_group_name`,
 `schedule_group_arn`, `scheduler_execution_role_arn`, `schedule_table_name`, `schedule_table_arn`.
@@ -439,7 +446,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   product_display_name = "AK Serverless"
@@ -490,7 +497,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix             = var.prefix
   region             = var.region
@@ -625,7 +632,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.10.1"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.10.2"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -638,7 +645,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -781,7 +788,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis]>=0.10.1"   # add the auth extra for oidc, cognito, entra or firebase
+  "agentkernel[openai,api,aws,redis]>=0.10.2"   # add the auth extra for oidc, cognito, entra or firebase
 ]
 ```
 
@@ -794,7 +801,7 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -966,7 +973,7 @@ response_handler = {
 - The route must be declared in all three places (the bypass, `Lambda.register`, `gateway_endpoints`).
   Not registered gives a 500; missing from the bypass gives a 403 (the authorizer logs
   `Event validation failed` for a request with no `Authorization` header); a nonzero TTL gives a 401
-  that Agent Kernel never logs.
+  that OAK never logs.
 - Attachments need `multimodal.enabled` with `create_dynamodb_multimodal_memory_table = true` (or a
   Redis/Valkey store the request handler can reach).
 - Full example: `examples/aws-serverless/slack-openai`.
@@ -988,7 +995,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -1067,7 +1074,7 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix        = var.prefix
   region        = var.region
@@ -1127,7 +1134,7 @@ module "containerized_agents" {
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.10.1"
+  "agentkernel[openai,api,aws]>=0.10.2"
 ]
 ```
 
@@ -1188,7 +1195,7 @@ to each message's `endpoint_url` — custom routes registered here, no agent def
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { aws = aws, docker = docker }
 
@@ -1251,7 +1258,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -1293,7 +1300,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -1359,7 +1366,7 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1388,7 +1395,7 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1413,8 +1420,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.10.1"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.10.1"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.10.2"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.10.2"  # for Redis sessions
 ]
 ```
 
@@ -1439,7 +1446,7 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1526,7 +1533,7 @@ optional `ws-gateway` Deployment for WebSocket modes. Backing services (Valkey, 
 condition-gated dependencies of the chart; flavors (dev, baremetal, EKS) are values files.
 
 Reference: the chart at `ak-deployment/ak-k8s/` and the end-to-end example at
-`examples/k8s/openai-queue-mode/` in the Agent Kernel repository.
+`examples/k8s/openai-queue-mode/` in the OAK repository.
 
 **Entry files** (one image per component; the chart's `command` defaults match these names):
 
@@ -1581,8 +1588,8 @@ also cross-installs Linux wheels so builds work from macOS).
 **Install:**
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.2 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.2 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag> \
@@ -1592,7 +1599,7 @@ helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 \
 ```
 
 **Model credentials as mounted Secrets (alternative to `extraEnv`):** create the Secret with the key
-named exactly like the AK key, set `secret.provider.type: kubernetes` in the image's `config.yaml`, and
+named exactly like the OAK key, set `secret.provider.type: kubernetes` in the image's `config.yaml`, and
 list it in the chart instead of the `extraEnv` flags:
 
 ```bash
@@ -1603,7 +1610,7 @@ kubectl create secret generic openai-credentials --from-literal=OPENAI_API_KEY="
 The chart mounts each Secret read-only at `/var/run/secrets/agentkernel/<name>` on the agent-executing
 tier only (agent-runner, or io in the single-process profile). A set environment variable still wins.
 
-The chart version tracks the Agent Kernel release (the pin above is the current one); the
+The chart version tracks the OAK release (the pin above is the current one); the
 flavor values files ship inside the chart, so no repository checkout is needed.
 `ak-deployment/ak-k8s/chart` in the repository is for developing the chart itself.
 

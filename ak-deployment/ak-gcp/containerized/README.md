@@ -1,4 +1,4 @@
-# Agent Kernel - GCP Containerized Module
+# Open Agent Kernel - GCP Containerized Module
 
 A comprehensive Terraform module for deploying containerized applications on GCP using Cloud Run with always-on capability (min_instance_count≥1), API Gateway, and optional state management with Memorystore Redis or Firestore.
 
@@ -333,6 +333,19 @@ execution:
 instance, and Cloud Run instances are not individually addressable. Enable the
 `pubsub.googleapis.com` API first.
 
+**File uploads in queue mode.** The `-multipart` route is exposed. The edge saves each uploaded file
+to the multimodal attachment store and queues only its ID, so the edge and the agent-runner service must
+read the same store, with identical settings in both:
+
+```yaml
+multimodal:
+  enabled: true
+  storage_type: redis # or dynamodb; set multimodal.redis.url to the same Redis in both services
+```
+
+Without a shared store, requests that carry files get a 400; text chats still work, and the edge logs a
+warning at startup. API Gateway accepts request bodies up to 32 MB, above the default 10 MB `api.max_file_size`.
+
 Set `queue_mode = false` for the single-service deployment, where the agents run inside the
 service and nothing here (Pub/Sub, the agent-runner service, the automatic Memorystore) is created.
 
@@ -405,7 +418,7 @@ gateway_endpoints = [
 |------|-------------|------|---------|:--------:|
 | `create_redis_cluster` | Create Memorystore Redis instance for agent memory. Queue mode always creates it, as its response store | `bool` | `false` | no |
 | `create_firestore_database` | Create Firestore database for agent session storage | `bool` | `false` | no |
-| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database`; it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml`; setting this flag alone leaves threads on the in-memory backend. Note that enabling threads requires an authenticated caller: an `identity` block in `config.yaml` and a bearer token on every chat request. Behind API Gateway the caller's token reaches Cloud Run as `X-Forwarded-Authorization`, which only an identity provider of your own reads (see the Agent Kernel GCP deployment guide). | `bool` | `false` | no |
+| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database`; it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml`; setting this flag alone leaves threads on the in-memory backend. Note that enabling threads requires an authenticated caller: an `identity` block in `config.yaml` and a bearer token on every chat request. Behind API Gateway the caller's token reaches Cloud Run as `X-Forwarded-Authorization`, which only an identity provider of your own reads (see the Open Agent Kernel GCP deployment guide). | `bool` | `false` | no |
 
 **Redis Environment Variables (Auto-injected when enabled)**:
 - `AK_SESSION__REDIS__URL`: Complete Redis connection URL with authentication

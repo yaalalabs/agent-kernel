@@ -1,6 +1,7 @@
 # #603: Identity layer, RBAC and agent registry: Implementation Plan
 
-Builds `spec.md` in 29 iterations grouped into eight phases. Every iteration is one theme a
+Builds `spec.md` in 31 iterations (1 to 29, with 17a and 17b between 17 and 18) grouped into
+eight phases. Every iteration is one theme a
 reviewer can read as a single diff and is expected to leave the branch green; within a phase only
 the suites an iteration's Verify names are run, and the full suite (`cd ak-py && uv run --no-sync
 pytest`) runs once at the end of each phase. The phase order is set by two dependencies: nothing above the
@@ -533,52 +534,204 @@ here.
 
 ### Iteration 14: Adapter descriptors and A2A cards
 
-- **Goal:** each adapter reports its tool names and its card is built from the descriptor with
-  the provider's security scheme.
-- **Files:** the eight `framework/<name>/<name>.py`, `api/a2a/a2a.py`.
+- **Goal:** each adapter reports its tools, A2A cards and MCP agent tools are built from the
+  registry's descriptors (cards with the provider's security scheme), and `get_a2a_card` is gone
+  from the adapter contract.
+- **Files:** the eight `framework/<name>/<name>.py`, `core/base.py`, `core/builder.py`,
+  `api/a2a/a2a.py`, `api/mcp/akmcp.py`; `examples/cli/session-context/hooks_test.py` (its stub
+  agent's unused method).
 - **Steps:**
-  1. `get_tool_names()` per adapter from the spec 9 table (the LangGraph `ToolNode` walk
-     replaces the `node_data.tools` read that always produced empty skills) (spec 9).
-  2. `A2ACardBuilder.build(descriptor)` with security schemes from `security_scheme()`;
-     `get_a2a_card` goes through it (spec 6, design refinement 5).
-- **Verify:** the descriptor cases in the eight `test_tool_<adapter>` suites; the card
-  assertions in `test_api_a2a_surface` and `test_api_a2a_auth`.
+  1. `get_tool_names()` and `_tool_descriptions()` per adapter from the spec 9 table (the
+     LangGraph `ToolNode` walk replaces the `node_data.tools` read that always produced empty
+     skills); `_build_descriptor` fills each skill's description from them (spec 6, 9).
+  2. `A2ACardBuilder.build(descriptor)` with security schemes from `security_scheme()` (spec 6,
+     design refinement 5).
+  3. `A2A._build` builds one card per descriptor from `Runtime.current().registry.descriptors()`
+     and warns for an empty description. The `a2a.agents` allow-list still selects the agents,
+     by `descriptor.id`, until 16 replaces it (spec 6, design refinement 8).
+  4. `get_a2a_card` is deleted from `Agent`, the eight adapters and the example stub; the "has no
+     A2A card" branch goes with it (spec 6).
+  5. `MCP._build` registers one tool per descriptor from the same registry read, named by the id
+     and described by the descriptor's description, or by the neutral text with a warning when
+     there is none. The `mcp.agents` allow-list stays, by `descriptor.id`, until 16 (spec 8.6).
+- **Verify:** the descriptor cases (tools, skill descriptions) in the eight `test_tool_<adapter>`
+  suites; the card assertions in `test_api_a2a_surface` (the card built from the registered
+  descriptor, the empty-description warning, an ADK agent, a descriptor the process hosts no
+  agent for) and `test_api_a2a_auth`; `test_protocol_pipeline_roundtrip`; `test_base` and
+  `test_maf_runner` lose their `get_a2a_card` cases. The test agents elsewhere that define the
+  method keep it unused. `TestAgentTools` in `test_api_mcp` (a tool for an agent the process does
+  not host, the catalog text and never the instructions, the neutral text and its warning, id
+  order, the allow-list).
+- **Behaviour to expect:** a card's description is empty until `Module.describe` or (from 15) the
+  overlay sets one, where six adapters published the agent's instructions or backstory; an MCP
+  tool's text is the declared description or a neutral sentence, where it was the instructions
+  (spec behavioural changes 31 and 33).
 
 ### Iteration 15: Registry config and store backends
 
 - **Goal:** the registry is pluggable and store-backed; an instance reads descriptors another
   instance registered.
 - **Files:** `core/config.py`, `core/registry.py` (the factory reads the block and applies the
-  overlay), `identity/registry/redis_like.py`, `identity/registry/redis.py`,
-  `identity/registry/valkey.py`, `identity/registry/dynamodb.py`, `identity/registry/testing.py`.
+  overlay), `identity/registry/base.py`, `identity/registry/redis_like.py`,
+  `identity/registry/redis.py`, `identity/registry/valkey.py`, `identity/registry/dynamodb.py`,
+  `identity/registry/testing.py`, `pipeline/io_handler.py`.
 - **Steps:**
   1. `_RegistryConfig`, the defaults-only `_Registry*Config` subclasses,
-     `_RegistryAgentOverlayConfig`; `AKConfig.registry: Optional = None` (spec Config changes).
-  2. `_RedisLikeAgentRegistry`, the Redis, Valkey and DynamoDB backends,
-     `AgentRegistryContract` (spec 6).
-  3. The factory's store branches, the dotted-path branch and the overlay.
+     `_RegistryAgentOverlayConfig` (unknown keys refused); `AKConfig.registry: Optional = None`
+     (spec Config changes).
+  2. `StoreBackedAgentRegistry` (the hosted agents in process, the descriptors in a store),
+     `_RedisLikeAgentRegistry`, the Redis, Valkey and DynamoDB backends over it, and
+     `AgentRegistryContract`, which the in-memory registry's cases move into (spec 6).
+  3. The factory's store branches, the dotted-path branch and the overlay: a wrapper over any
+     backend whose `register` applies the entry and sets the final descriptor back on the agent,
+     so the hosting process holds one record (spec 6, descriptor source 3).
+  4. `IOHandler._warn_if_no_agents` (`pipeline/io_handler.py`) asks the registry for descriptors
+     where it asked the runtime for hosted agents, and its advice names the shared registry
+     beside loading the agent modules (spec 6, A2A card).
 - **Verify:** `test_agent_registry` (all backends over fake drivers, factory, overlay,
-  cross-instance read); `test_config` registry cases; the `FakeCfg` stubs gain `registry = None`.
+  cross-instance read; the overlay on `agent.descriptor`, the run's actor subject following an
+  overlaid `identity`); an overlaid description and version on the A2A card in
+  `test_api_a2a_surface`; `test_config` registry cases; the no-agents warning in
+  `test_pipeline_io_handler`; the `FakeCfg` stubs gain `registry = None`.
 
 ### Iteration 16: Catalog and exposure
 
 - **Goal:** the catalog route serves descriptors, the protocol surfaces expose agents from
   `descriptor.exposed_on`, and the three removed config lists fail loudly.
-- **Files:** `core/config.py` (the `mode="before"` validators on `_A2AConfig`, `_MCPConfig`,
-  `_AGUIConfig`), `core/service.py`, `api/handler.py`, `api/mcp/akmcp.py`, `api/a2a/a2a.py`,
-  `api/a2a/handler.py`, `integration/agui/handler.py`; the example configs
+- **Files:** `core/config.py` (the `_SurfaceConfig` base and its `mode="before"` validator under
+  `_A2AConfig`, `_MCPConfig`, `_AGUIConfig`), `core/service.py`, `core/registry.py`
+  (`AgentDescriptorPage.of`), `api/handler.py`, `api/mcp/akmcp.py`, `api/a2a/a2a.py`,
+  `integration/agui/handler.py`, `integration/agui/queue_handler.py`; the example configs
   `aws-containerized/mcp/multi` and `k8s/openai-queue-mode/config.{kafka,nats}.yaml`.
 - **Steps:**
-  1. `ensure_agent_available` resolves through the registry (`LookupError` for an unknown
-     agent) (spec 6).
-  2. `GET /api/v1/agents?cursor=&limit=&tags=` (spec 6); filtering by caller is added in 19.
-  3. MCP tool registration, A2A cards and AG-UI exposure read `exposed_on`; the removed-list
-     validators; the example configs move to `registry.agents.<id>.surfaces` (spec 8.5 to 8.7,
-     Config changes).
-- **Verify:** new `tests/test_api_catalog.py`; `test_config` cases for the removed lists;
-  changed `test_api_mcp`, `test_api_a2a_surface`, `test_agui_handler`.
+  1. `ensure_agent_available` resolves through the registry, the hosted agents first; an unknown
+     agent stays `ValueError("No agent available")` until 19 gives it the hidden agent's 404
+     (spec 6).
+  2. `GET /api/v1/agents?cursor=&limit=&tags=` over the agents exposed on `rest`, paged by
+     `AgentDescriptorPage.of` (spec 6); filtering by caller is added in 19.
+  3. MCP tool registration, A2A cards and AG-UI exposure read `exposed_on`; AG-UI resolves and
+     lists from the descriptor, so the queue-mode handler serves an agent its process does not
+     host; the removed-list validator; the example configs move to
+     `registry.agents.<id>.surfaces` (spec 8.5 to 8.7, Config changes).
+- **Verify:** new `tests/test_api_catalog.py`; `TestAvailability` in `test_agent_registry`;
+  `test_config` cases for the removed lists; changed `test_api_mcp`, `test_api_a2a_surface`
+  (exposure from `exposed_on`; a card and its routes for a descriptor the process hosts no agent
+  for, now that availability resolves through the registry), `test_agui_handler`,
+  `test_agui_queue_handler`, `test_pipeline_request_handler`.
+- **Phase-end run (2026-11-18):** the full `ak-py` suite passes but for one local-only case
+  (6699 passed, 127 skipped; `test_the_auth_package_is_gone` fails on a leftover untracked
+  `auth/__pycache__` in this checkout), and isort, black and ruff are clean over `src` and
+  `tests`. The CrewAI suites are among the skipped ones here (the extra conflicts with `test`);
+  they last ran in iteration 14.
 
-## Phase D: Authorization (iterations 17 to 20)
+### Phase C as shipped
+
+What changed in phase C after iteration 16, before it merged (2026-11-18). Each is recorded in
+the spec section it changes.
+
+- **Unknown agents (decision).** A request naming an agent the registry does not know will answer
+  like a hidden one, a 404 `LookupError`, from iteration 17a (spec 6, design refinement 9). It
+  was planned as the first two steps of iteration 19 and moved ahead of iteration 18 on
+  2026-11-19: see iteration 17a.
+- **Empty surface warning.** `A2A._build` and `MCP._build` warn once when agents are known and
+  none is exposed on the surface; the surface was otherwise mounted empty and silent (spec 6,
+  8.6; `api/a2a/a2a.py`, `api/mcp/akmcp.py`).
+- **Catalog entries.** `GET /api/v1/agents` returns each descriptor without its `identity`
+  (`AgentDescriptor.catalog_entry`, `AgentDescriptorPage.catalog`); the registry still stores it
+  (spec 2, 6; `core/model.py`, `core/registry.py`, `api/handler.py`).
+- **Examples.** The four examples that expose agents over A2A or MCP declare a description for
+  each agent: `api/mcp/multi`, `aws-containerized/mcp/multi` and `api/a2a/multi` with
+  `Module.describe`, `k8s/openai-queue-mode` through `registry.agents` in both configs, since
+  its two processes share the file.
+- **Docs and skills.** The phase C part of iterations 27 and 28 landed here: the docs site
+  (`api/a2a-server.md`, `api/mcp-server.md`, `api/agui-server.md`, `api/rest-api.md`,
+  `integrations/agui.md`, `core-concepts/configuration.md`, `core-concepts/module.md`,
+  `advanced/queue-mode-guide.md`), `ak-py/README.md`, the dev skills `ak-dev-architecture`,
+  `ak-dev-new-framework-integration` and `ak-dev-testing-conventions`, and the user skill
+  `ak-add-capabilities` with its evals.
+- **Landing and feature pages.** An "Agent Registry & Catalog" card on the landing page's Connect
+  tab (`FeatureExplorer/data.tsx`) and under Core Capabilities on the features page
+  (`features.tsx`), both linking to the unreleased `configuration#agent-registry` section; the
+  Redis, Valkey and DynamoDB marquee tiles name the agent registry among the stores they back;
+  the MCP and A2A cards say where a tool's text and a card come from; and the What's New tip in
+  `docs/docs/intro.md` and the Features list in `ak-py/README.md` each carry an Agent Registry
+  entry. The tip was also cut down to its two current entries, Agent Registry and Identity and
+  Access, on purpose (confirmed 2026-11-19); merging develop keeps the pruned list over the
+  Human in the Loop entry #860 edited there. The `WhatsNewBanner` in `index.tsx`, the persona
+  pages and the root `README.md` were left as they were.
+- **Review follow-ups (PR #983, 2026-11-19).** Fixed from the review, each with a test:
+  - The overlay is applied on read as well as at registration, and matches an id in another
+    case (design refinement 12; `core/registry.py`).
+  - The registry takes no TTL: the backends lost the parameter and a `ttl` under a store block
+    is refused at load (design refinement 11; `core/config.py`, `identity/registry/`).
+  - Store correctness: the redis-like document and index membership change in one transaction;
+    `deregister` removes the store record before the local entry; DynamoDB listings scan with
+    `ConsistentRead`; `AgentRegistry.is_empty()` answers an unnamed request and the startup
+    check without a listing.
+  - `ensure_agent_available(name, *, hosted=False)`: the direct thread handler asks for a
+    hosted agent, so nothing is recorded for an agent only the registry knows; the queue-mode
+    thread precheck and AG-UI's resolution run off the event loop, and AG-UI reads the
+    descriptor once, from the hosted agent when there is one.
+  - `Module.describe` refuses `tools`, `runner`, `supports_streaming` and `updated_at`, and
+    restores the agent's descriptor when the registry refuses the registration. The overlay
+    merges `identity` field by field, so an entry naming only its `subject` keeps the client
+    credential the code declared.
+  - An A2A card and its skills carry a neutral sentence when no description is declared, since
+    the SDK drops an empty required field from the served JSON.
+  - `_RegistryConfig` refuses unknown keys; the catalog decides a malformed cursor before it
+    reads the registry; `IOHandler._warn_if_no_agents` cannot end the process.
+  - `Agent.get_description()` is concrete and unread; an adapter that still defines
+    `get_a2a_card` is warned once; the 22 test doubles that carried the dead method lost it.
+  - The shared Redis-like driver no longer logs connection credentials at DEBUG (outside this
+    change's diff, found by the review).
+  - The duplicate-id rule is recorded as design refinement 10; `design.md` sections 4 and 10
+    are in step with refinements 8 to 12.
+- **Decided from the second review pass (2026-11-19).**
+  - The direct `AGUIRequestHandler` lists, resolves and accepts as `default_agent` only the
+    agents its process hosts (`serves_hosted_agents_only`); the queue-mode handler serves
+    everything the registry knows. An agent the direct handler cannot run is a 404, where it
+    was listed and then answered with a "could not be selected" 500 (spec 8.5).
+  - An A2A card keeps naming the provider's scheme as its one security requirement, with no
+    empty alternative, although an uncredentialed call still runs anonymous until
+    authorization refuses it (spec 6, A2A card). The A2A page says what the server does.
+  - `surfaces` without `rest` will refuse a chat request that enters by the REST API, not only
+    hide the agent from the catalog: iteration 17b (design refinement 13). Until it lands the
+    docs say what `rest` governs today.
+  - The descriptor's description defaults to the description a framework keeps for the agent
+    apart from its instructions (`Agent._native_description()`: OpenAI `handoff_description`;
+    the `description` of an ADK, Pydantic AI, MAF, Claude or smolagents agent; nothing for
+    CrewAI and LangGraph). A declared description replaces it and an empty declared one
+    withholds it. Implemented with phase C, with a case per adapter on real SDK objects
+    (design refinement 14).
+- **Third review pass (2026-11-19).** Fixed, each with a test:
+  - `Module.describe` writes the registry before the agent takes the descriptor, so a run during
+    a slow store write never acts as described ahead of the record; after a registration error
+    the store's record is the old one or the new one until the agent is described again (spec
+    6, descriptor source 2).
+  - `Module.load` rolls a failed load back agent by agent: the load's own error is raised, a
+    cleanup failure is logged, and what could not be deregistered stays in the module for
+    `unload()` to finish.
+  - `AgentHandler.initialize` and, on the in-memory transport, `ScheduleManager.create` need the
+    agent hosted, as the direct thread handler does.
+  - The redis-like `is_empty` counts only index members that have a document; the contract
+    round-trips a non-empty `surfaces`; an overlay set through the environment for a mixed-case
+    id is tested from the variable.
+  - The driver logs a fixed placeholder for a connection URL that does not parse.
+  - Docs: a new agent with no `surfaces` is on every surface, since there is no allow-list any
+    more; the bring-your-own contract example isolates its store per test; an undescribed
+    agent's catalog entry is empty while its card and tool carry the neutral sentence.
+  Declined: a server-side check of the index key's type before a registration (it guards a
+  keyspace something else wrote into, where every registration fails loudly anyway), and
+  reporting the Claude adapter's tools under `mcp__ak__<name>` (a policy names a tool as the
+  application declared it; the prefix is the adapter's own serving detail, spec 9).
+- **Deferred by the review.**
+  - A runnable example of the shared registry (an IO process that does not import the agents):
+    `examples/k8s/openai-queue-mode` still loads them in both processes. It needs the kind
+    smoke to change with it, so it is left for iteration 29's examples pass.
+  - Tool-reporting gaps per adapter, which matter once phase E gates on `descriptor.tools`:
+    see Phase E.
+
+## Phase D: Authorization (iterations 17, 17a, 17b and 18 to 20)
 
 ### Iteration 17: Authorizer
 
@@ -596,6 +749,77 @@ here.
      `AuthorizerContract` (spec 7).
 - **Verify:** new `tests/test_authorizer_static.py`; `test_config` authorization cases; the
   `FakeCfg` stubs gain `authorization = None`.
+
+### Iteration 17a: An unknown agent answers 404
+
+Moved ahead of iteration 18 on 2026-11-19 (these were steps 1 and 2 of iteration 19). Iteration
+18 wires the gate into `ensure_agent_available`, and the gate raises `LookupError` for an agent
+the caller may not see. With no surface mapping that error yet, a hidden agent would answer 500
+on REST chat, threads and schedules from iteration 18 until iteration 19. Landing the error and
+its mapping first, for the one case that needs no gate (an agent that does not exist), means the
+gate's `LookupError` is already a 404 the day it is wired in. It depends on nothing in iteration
+17 and can land before it.
+
+- **Goal:** a request naming an agent the registry does not know is a 404 `Agent '<name>' not
+  found` on every HTTP route, where it was a 400 `No agent available`; a request naming no agent
+  while none exists stays a 400.
+- **Files:** `core/service.py`, `core/chat_service.py`, `api/handler.py`,
+  `integration/thread/thread_chat.py`, `schedule/handler.py`.
+- **Steps:**
+  1. `ensure_agent_available` raises `LookupError(f"Agent '{name}' not found")` for a named
+     agent the registry does not know, and in its `hosted=True` form for one this process does
+     not host; a request naming none while none exists keeps its `ValueError` (spec 6, design
+     refinement 9; settled 2026-11-18).
+  2. `LookupError` maps to 404 with that text wherever the availability check is answered:
+     `ChatService`'s presentation wrappers (the `PermissionError` to 403 branch landed in 3) and
+     the chat route's SSE branch, the thread routes before any write, and the schedule routes'
+     `_as_http_error` after its `KeyError` branch (spec 6, 8.1). AG-UI already answers 404 with
+     this text from its own lookup and does not call the check, so it needs no change. The
+     schedule tools carry the text in their `error`; MCP keeps `ToolError("Agent not
+     available")`.
+- **Verify:** the cases that pinned the unknown named agent as a 400 or a `ValueError`, now a
+  404 and a `LookupError`, in `test_agent_registry` (`TestAvailability`),
+  `test_chat_service_core`, `test_schedule_manager`, `test_schedule_tools` and
+  `test_thread_integration` (the unknown agent and the one another process hosts); an unknown
+  agent answering 404 on the chat route, JSON and SSE, in `test_api_http`.
+
+### Iteration 17b: An agent off `rest` is not served over REST
+
+Decided 2026-11-19 from the phase C review (design refinement 13). It builds on 17a, whose
+`LookupError` and 404 mapping it reuses, and lands before the gate so that iteration 18 adds
+the caller to a check that already knows the surface.
+
+- **Goal:** a chat request that enters by the REST API and names an agent whose `surfaces`
+  leaves out `rest` is answered like one for an unknown agent, and a request naming no agent
+  runs the first agent that is on `rest`. Requests from A2A, MCP, AG-UI, the messaging
+  integrations, the CLI and scheduled occurrences behave as before.
+- **Files:** `core/model.py`, `core/service.py`, `core/chat_service.py`, `api/handler.py`,
+  `pipeline/request_handler.py`, `pipeline/ws/handler.py`,
+  `integration/thread/thread_chat.py`, `schedule/manager.py`, and the deployment entry points
+  that set the principal on a chat body (the Lambda routers, the ECS WebSocket API, the Azure
+  handler).
+- **Steps:**
+  1. `BaseChatRequest.surface: Optional[AgentSurface] = None`: the surface a request entered
+     by. Set by the entry point where it sets `principal`, overwritten when a client sends one
+     and kept out of the public schema like the other internal fields, and carried in the queued
+     body to the runner.
+  2. `ensure_agent_available(name, *, hosted, surface)` raises the unknown-agent `LookupError`
+     for a named agent not exposed on the surface; `AgentService.select(..., surface=)` defaults
+     an unnamed request to the first hosted agent exposed on it, and the check raises
+     `ValueError("No agent available")` when there is none. `ChatService.execute*` and
+     `prepare_agent_handler` pass `req.surface`.
+  3. Every REST-family entry point sets `surface="rest"`: the chat and multipart routes, the
+     queue-mode chat route, the thread handlers, the WebSocket chat frames and the deployment
+     routers. The A2A and MCP executors and AG-UI set their own, which their routes already
+     enforce. Messaging, the CLI and a scheduled occurrence set none; `ScheduleManager.create`
+     checks the task's agent against the surface of the request that creates it.
+- **Verify:** `test_api_http` and `test_pipeline_request_handler` (an agent off `rest` is a 404
+  with the unknown agent's body, named over chat, multipart and the queued route; the unnamed
+  default skips it; a client-sent `surface` is overwritten); `test_thread_integration` (no
+  thread written); `test_schedule_manager`; `test_api_a2a` and `test_api_mcp` (an agent on
+  `a2a` or `mcp` only still runs when the request comes from that surface, queued and direct);
+  `test_integration_roundtrip` and `test_cli_token` (unaffected). `rest-api.md` and
+  `configuration.md` drop the sentence saying a named agent off `rest` is still served.
 
 ### Iteration 18: Access gate and Runtime enforcement
 
@@ -619,22 +843,24 @@ here.
 
 ### Iteration 19: Service, pipeline and schedule enforcement
 
-- **Goal:** an unauthorized request is a 403 or 404 before anything is enqueued or run, the
-  catalog shows only visible agents, and a scheduled task whose owner lost access is skipped
-  and recorded.
+- **Goal:** an unauthorized request is a 403 or 404 before anything is enqueued or run, a hidden
+  agent answers exactly like the unknown one of iteration 17a, the catalog shows only visible
+  agents, and a scheduled task whose owner lost access is skipped and recorded.
 - **Files:** `core/chat_service.py`, `pipeline/request_handler.py`, `api/handler.py`,
-  `schedule/manager.py`, `schedule/store/*`.
+  `schedule/handler.py`, `schedule/manager.py`, `schedule/store/*`. The unknown-agent 404 that
+  was planned here landed in iteration 17a, which brought this iteration back under the size
+  rule.
 - **Steps:**
-  1. `ChatService` maps `LookupError` to 404 (the `PermissionError` to 403 branch landed in 3)
-     (spec 8.1).
-  2. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
+  1. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
      403 reply and the warning (spec 8.1, 8.11).
-  3. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
-  4. The catalog filtered by `visible_agents`; `get_router()` calls `validate_configuration`
-     (spec 6, 7).
-- **Verify:** 403/404 cases in `test_api_http`; `test_pipeline_request_handler` (the riskiest
-  consumer: the precheck on a store-backed registry with no local agents); the fire-time skip
-  in `test_schedule_principal`; visibility in `test_api_catalog`.
+  2. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
+  3. The catalog filtered by `visible_agents`, each entry's `tools` and tool-backed `skills`
+     narrowed to the caller; `get_router()` calls `validate_configuration` (spec 6, 7).
+- **Verify:** 403/404 cases in `test_api_http`, with the parity case (an unknown agent and a
+  hidden one answer with one status and body); `test_agui_handler`;
+  `test_pipeline_request_handler` (the riskiest consumer: the precheck on a store-backed
+  registry with no local agents); the fire-time skip in `test_schedule_principal`; visibility
+  and the `tools` and `skills` narrowing in `test_api_catalog`.
 
 ### Iteration 20: Protocol surface enforcement
 
@@ -643,18 +869,36 @@ here.
   `integration/agui/handler.py`, `pipeline/realtime_pool.py`.
 - **Steps:**
   1. MCP per-tool `AuthCheck` and list filtering (spec 8.6).
-  2. A2A `get_cards(principal)` filtering and the 403 (spec 8.7).
+  2. A2A `get_cards(principal)` filtering, a served card's skills narrowed to the caller with
+     `Vary: Authorization` and an ETag of the card as served, and the 403 (spec 8.7).
   3. AG-UI `/agents` narrowed by `visible_agents` and the 403 (spec 8.5).
   4. `RealtimeConnectionPool.dispatch` runs `ensure_agent_available(body.agent, body.principal)`
      on first connect (spec 8.4).
-- **Verify:** list filtering and `AuthCheck` in `test_api_mcp_auth`; card filtering in
-  `test_api_a2a_auth`; the 403 in `test_agui_handler`; the realtime pool tests.
+- **Verify:** list filtering and `AuthCheck` in `test_api_mcp_auth`; card filtering and skill
+  narrowing in `test_api_a2a_auth`; the 403 in `test_agui_handler`; the realtime pool tests.
 
 ## Phase E: Framework tool gates (iterations 21 to 23)
 
 Each adapter gate is one file plus one `tests/test_tool_gates_<adapter>.py`, grouped by
 mechanism. Every suite asserts the native call keyword-for-keyword unchanged with no
 `authorization` block.
+
+A policy names tools by `descriptor.tools`, which an adapter fills with the tools declared on
+its native agent (spec 6, descriptor sources). The phase C review found these gaps, to close or
+to document as ungated in the iteration that gates the adapter, each with a case on real SDK
+objects in `tests/test_tool_<adapter>.py`:
+
+- Pydantic AI: a tool behind `toolset.prefixed(...)` or a `RenamedToolset` is reported under its
+  inner name, not the name the model calls. The wrong name is worse than a missing one.
+- LangGraph: tools in a compiled subgraph mounted as a node are not reported
+  (`get_subgraphs(recurse=True)`).
+- Google ADK: a `Workflow` nested in a `Workflow` is not walked, and a callable with no
+  function name of its own is not reported under the name ADK's `FunctionTool` gives it: a
+  callable instance (`Refund()` is served as `Refund`) and a `functools.partial` (served as
+  `partial`) are both dropped.
+- smolagents: managed agents the model can call are not reported, and the built-in
+  `final_answer` is, so a deny-by-default policy would block every answer.
+- OpenAI and MAF: tools of an MCP server, and of a handoff target, are not reported.
 
 ### Iteration 21: `ToolGate`, OpenAI, Pydantic AI, MAF and Claude
 
@@ -746,7 +990,8 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
 
 The docs and skills for phases A and B landed with phase B itself (PR #937: the identity page,
 the docs-site and README updates, the landing-page tiles, `ak-dev-new-identity-provider` and the
-user-skill updates), so iterations 27 and 28 cover what phases C to F add and re-verify the rest.
+user-skill updates), and those for phase C with phase C (see "Phase C as shipped"), so iterations
+27 and 28 cover what phases D to F add and re-verify the rest.
 
 ### Iteration 26: Test walk
 
@@ -773,25 +1018,41 @@ user-skill updates), so iterations 27 and 28 cover what phases C to F add and re
      (decided 2026-11-10); `configuration.md` says the same where it lists the provider types.
   2. Confirm the Terraform resources need no change (the connections table keeps its `user_id`
      hash key; the authorizer Lambda keeps its `handler_path` contract).
-- **Verify:** `grep -rn "AuthValidator\|Authoriser\|acting_user_id\|mcp.agents\|a2a.agents\|
-  agui.agents\|userId" docs/docs ak-py/README.md README.md ak-deployment` returns only the
-  frozen `docs/versioned_docs/` snapshots and the Gmail API's `userId="me"`; the docs site
-  builds (`NODE_ENV=production`, 6 GB heap).
+  3. Landed with phase C, re-verify here: `api/a2a-server.md` says a card is built from the
+     agent's descriptor (not by the adapter's `get_a2a_card()`, which is gone), shows
+     `Module.describe` and `registry.agents.<id>.description` as the way to give a card its
+     description and version, and notes that an agent registered after a process mounted its A2A
+     routes is served there after a restart (spec 6, A2A card); `api/mcp-server.md` says the same
+     of an agent's MCP tool (spec 8.6). Still to write: what the access gate changes on each of
+     these pages (caller filtering, the 403 and 404), and what phases D to F add to the landing
+     and feature pages (the registry card, the store tiles and the What's New entry landed with
+     phase C).
+- **Verify:** `grep -rnF -e AuthValidator -e Authoriser -e acting_user_id -e mcp.agents
+  -e a2a.agents -e agui.agents -e userId -e get_a2a_card docs/docs ak-py/README.md README.md
+  ak-deployment` (fixed strings, one `-e` per term, so no term is lost to a line break in the
+  pattern and a dot matches only a dot) returns only the Gmail API's `userId="me"` and the
+  sentences that say the three lists and `get_a2a_card` were removed; `docs/versioned_docs/`
+  is frozen and is not searched. The docs site builds (`NODE_ENV=production`, 6 GB heap).
 
 ### Iteration 28: Skills
 
 - **Goal:** the dev and user skills match the implementation.
 - **Files:** `.agents/skills/ak-dev-architecture/SKILL.md`,
   `.agents/skills/ak-dev-testing-conventions/SKILL.md`,
-  `.agents/skills/ak-dev-new-messaging-integration/SKILL.md`, new
+  `.agents/skills/ak-dev-new-messaging-integration/SKILL.md`,
+  `.agents/skills/ak-dev-new-framework-integration/SKILL.md`, new
   `.agents/skills/ak-dev-new-identity-provider/SKILL.md` and
   `.agents/skills/ak-dev-new-authorizer/SKILL.md`; `ak-py/src/agentkernel/skills/ak-cloud-deploy/`,
   `ak-add-capabilities/`, `ak-add-integration/` with their `evals/evals.json`.
 - **Steps:**
   1. Run `ak-dev-sync-skills-from-branch` over the branch; write the two new dev skills from
      spec sections 4 and 7 and their contract suites.
-  2. Verify no update is needed for `ak-dev-write-spec`, `ak-dev-review-pr`, the other
-     `ak-dev-new-*` skills, `ak-build`, `ak-init` and `ak-test`.
+  2. Landed with phase C, re-verify here: `ak-dev-new-framework-integration` describes the
+     adapter contract without `get_a2a_card`, with `get_tool_names` and `_tool_descriptions` in
+     its place (the card comes from the descriptor), and the stub agent in
+     `ak-dev-testing-conventions` lost the method. Still to add: `ungated_tool_names` and the tool
+     gate, with phase E. Verify no update is needed for `ak-dev-write-spec`,
+     `ak-dev-review-pr`, the other `ak-dev-new-*` skills, `ak-build`, `ak-init` and `ak-test`.
   3. Wherever `ak-add-capabilities` and `ak-cloud-deploy` list the identity providers, Auth0 is
      named as a supported provider with its `oidc` block (decided 2026-11-10), and the
      `ak-dev-new-identity-provider` skill says a new OIDC issuer is a configuration before it is a

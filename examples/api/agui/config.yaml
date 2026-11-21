@@ -4,7 +4,8 @@
 # or message type.
 agui:
   default_agent: planner # also serves POST /agui, in addition to POST /agui/planner
-  # agents: [planner]    # omitted = every streaming-capable agent is reachable
+  # Every streaming-capable agent is reachable here. To keep one off AG-UI, set its surfaces
+  # under registry.agents.<id>.surfaces (the agui.agents list was removed).
 
   state:
     # Shared JSON both the frontend and the agent read and write.

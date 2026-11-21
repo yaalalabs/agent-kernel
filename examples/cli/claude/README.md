@@ -1,8 +1,8 @@
-# Agent Kernel running Claude Agent SDK Agents
+# Open Agent Kernel running Claude Agent SDK Agents
 
-This package contains a demo of Agent Kernel running agents built with the
+This package contains a demo of Open Agent Kernel running agents built with the
 [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview). Users may interact with agents via the
-Agent Kernel CLI.
+OAK CLI.
 
 ## Model provider
 
@@ -28,10 +28,10 @@ Each run starts a Claude Code CLI subprocess, bundled in the `claude-agent-sdk` 
 
 Claude's native multi-agent primitive is the **subagent**. Each specialist is declared once, as a native
 `AgentDefinition` in the `triage` agent's `ClaudeAgentOptions.agents`, and `triage` delegates to them
-through the SDK's `Agent` tool. Only `triage` is registered with Agent Kernel: a subagent runs inside its run, and
+through the SDK's `Agent` tool. Only `triage` is registered with OAK: a subagent runs inside its run, and
 would be registered as an agent of its own only for callers that must address it directly.
 
-The weather subagent calls `get_weather`, an Agent Kernel tool bound to the `triage` agent with
+The weather subagent calls `get_weather`, an OAK tool bound to the `triage` agent with
 `ClaudeToolBuilder` and referred to by its MCP name in the subagent's `tools`. `triage` serves it from its own
 session, so it can call `get_weather` too. The math and general subagents list `tools=[]`: a subagent that lists no
 tools inherits every tool of the session.
@@ -42,7 +42,7 @@ By default the Claude Agent SDK gives the model Claude Code's built-in tools (Ba
 acting on this host, and loads `~/.claude` settings. The shared `options()` helper in `demo.py` turns that off for
 every agent with `tools=[]` and `setting_sources=[]`, and uses `permission_mode="dontAsk"` so any tool call that is
 not explicitly approved is denied. `strict_mcp_config=True` and `verbatim_prompts=True` additionally keep local MCP
-configuration and `@path` expansion out of user prompts, and `max_turns=8` bounds a runaway run. Agent Kernel
+configuration and `@path` expansion out of user prompts, and `max_turns=8` bounds a runaway run. OAK
 approves the tools bound with `ClaudeToolBuilder`, and the `Agent` tool an agent with native subagents delegates through.
 
 ## Running

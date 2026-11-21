@@ -1,6 +1,6 @@
-# Agent Kernel Documentation - Setup Guide
+# Open Agent Kernel Documentation - Setup Guide
 
-This guide will help you set up and deploy the Agent Kernel documentation to GitHub Pages.
+This guide will help you set up and deploy the Open Agent Kernel documentation to GitHub Pages.
 
 ## 📋 Overview
 

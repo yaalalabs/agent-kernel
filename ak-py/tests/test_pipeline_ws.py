@@ -80,6 +80,7 @@ def _use_config(
         execution = _ExecutionConfig(mode=mode, message_type=message_type, queues=_QueuesConfig(type=transport_type))
 
     _Cfg.identity = identity
+    _Cfg.registry = None
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
     return _Cfg

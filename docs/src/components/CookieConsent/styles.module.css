@@ -11,14 +11,14 @@
   max-width: 780px;
   width: calc(100% - 2rem);
   padding: 1rem 1.25rem;
-  background: rgba(8, 18, 38, 0.7);
+  background: rgba(var(--ak-prussian-rgb), 0.7);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: none;
   border-radius: 10px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 40px rgba(var(--ak-shadow-rgb), 0.5);
   font-size: 0.875rem;
-  color: #9A91B8;
+  color: var(--ak-text-secondary);
   animation: slideUp 0.3s ease;
 }
 
@@ -40,7 +40,7 @@
 }
 
 .text a {
-  color: #00DDFF;
+  color: var(--ak-primary-text);
   text-decoration: none;
 }
 
@@ -52,23 +52,6 @@
   display: flex;
   gap: 0.625rem;
   flex-shrink: 0;
-}
-
-@media (max-width: 600px) {
-  .banner {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .actions {
-    width: 100%;
-  }
-
-  .decline,
-  .accept {
-    flex: 1;
-    text-align: center;
-  }
 }
 
 .decline,
@@ -89,12 +72,39 @@
 
 .decline {
   background: transparent;
-  border: 1px solid rgba(154, 145, 184, 0.4);
-  color: #9A91B8;
+  border: 1px solid rgba(var(--ak-sky-rgb), 0.4);
+  color: var(--ak-text-secondary);
 }
 
 .accept {
-  background: rgba(0, 221, 255, 0.15);
-  color: #00DDFF;
-  border: 1px solid rgba(0, 221, 255, 0.3);
+  background: rgba(var(--ak-primary-rgb), 0.15);
+  color: var(--ak-primary-text);
+  border: 1px solid rgba(var(--ak-primary-rgb), 0.3);
+}
+
+/* Phones: one sentence, the two policy links, and two full-size buttons */
+@media (max-width: 600px) {
+  .banner {
+    flex-direction: column;
+    align-items: stretch;
+    bottom: 1rem;
+    gap: 1rem;
+    font-size: var(--ak-type-small);
+  }
+
+  .detail {
+    display: none;
+  }
+
+  .actions {
+    width: 100%;
+  }
+
+  .decline,
+  .accept {
+    flex: 1;
+    min-height: 2.75rem;
+    font-size: var(--ak-type-small);
+    text-align: center;
+  }
 }

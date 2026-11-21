@@ -35,8 +35,8 @@ graph TB
     C --> G
     C --> H
     
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style C fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 :::tip Not sure which backend to choose?
@@ -76,6 +76,10 @@ stateDiagram-v2
         on each interaction
     end note
 ```
+
+### Realtime calls
+
+A realtime call loads its session when the call opens and **stores it after each finished turn, and again when the call ends normally** (after the framework's live session has disconnected). A call that fails stores nothing more, so it loses at most the turn in progress and the next call starts from the last finished turn. The write runs on a worker thread, so a slow store never delays other calls' audio. The volatile cache and the published identity are cleared when the call closes, as at the end of a run.
 
 ## Creating and Managing Sessions
 
@@ -133,7 +137,7 @@ result = await runner.run(agent, session, prompt)
 
 ## Storage Backends
 
-Agent Kernel supports multiple storage backends for session persistence, each optimized for different deployment scenarios.
+Open Agent Kernel (OAK) supports multiple storage backends for session persistence, each optimized for different deployment scenarios.
 
 ### In-Memory Storage (Default)
 
@@ -198,7 +202,7 @@ export AK_SESSION__REDIS__URL=rediss://secure-endpoint:6380
 
 [Valkey](https://valkey.io/) is the open-source, Linux Foundation-governed fork of Redis. It is
 wire-compatible with Redis and available on AWS ElastiCache as a native engine at a lower price
-point than the Redis OSS engine. Agent Kernel treats it as a first-class backend with its own
+point than the Redis OSS engine. OAK treats it as a first-class backend with its own
 client library (`valkey-py`) and configuration block:
 
 ```bash
@@ -234,7 +238,7 @@ export AK_SESSION__VALKEY__URL=valkeys://secure-endpoint:6380
 ```
 
 `valkey-py` also accepts the `redis://` / `rediss://` URL schemes, so an ElastiCache endpoint
-works with either form; Agent Kernel standardizes on `valkey://` / `valkeys://`.
+works with either form; OAK standardizes on `valkey://` / `valkeys://`.
 
 ### DynamoDB Storage
 
@@ -268,7 +272,7 @@ export AK_SESSION__DYNAMODB__TTL=604800  # 7 days (0 to disable)
 - Optional: TTL attribute `expiry_time` enabled
 - Appropriate IAM permissions
 
-**Note**: Agent Kernel's Terraform modules automatically create the required DynamoDB table with proper configuration.
+**Note**: OAK's Terraform modules automatically create the required DynamoDB table with proper configuration.
 
 ### Cosmos DB Storage {#cosmosdb-storage}
 
@@ -302,7 +306,7 @@ export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
 - Optional: TTL configured on the table
 - A Cosmos DB connection string (Azure Portal → Cosmos DB account → Keys)
 
-**Note**: Agent Kernel's Terraform modules automatically create the required Cosmos DB resources with proper configuration.
+**Note**: OAK's Terraform modules automatically create the required Cosmos DB resources with proper configuration.
 
 ### Firestore Storage (GCP) {#firestore-storage}
 
@@ -435,7 +439,7 @@ if ctx is None:
 session.clear_framework_context()
 ```
 
-These accessors are for **pre-hooks and post-hooks**: the two places Agent Kernel hands your code the
+These accessors are for **pre-hooks and post-hooks**: the two places OAK hands your code the
 session around a run (see
 [Hooks → Per-run framework context](../integrations/hooks.md#per-run-framework-context)). A pre-hook
 seeds or edits the context *before* the runner loads it, so the edit is part of what gets injected this
@@ -906,7 +910,7 @@ exists = session_manager.has_session("custom-id")
 
 ## Summary
 
-Sessions are the foundation of conversational AI in Agent Kernel:
+Sessions are the foundation of conversational AI in OAK:
 
 - **Automatic Management**: Sessions are created and managed automatically in CLI and API modes
 - **Multi-Backend Support**: Choose between in-memory (dev), Redis/Valkey (production), or DynamoDB, Cosmos DB, Firestore (serverless)

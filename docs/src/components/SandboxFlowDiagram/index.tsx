@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React from "react";
 import Link from "@docusaurus/Link";
-import { MdTerminal, MdExtension } from "react-icons/md";
-import { FaDocker, FaAws } from "react-icons/fa";
-import { SiKubernetes } from "react-icons/si";
+import { TbPuzzle, TbTerminal2 } from "react-icons/tb";
+// Simple Icons has no AWS mark, so that one comes from Font Awesome.
+import { FaAws } from "react-icons/fa";
+import { SiDocker, SiKubernetes } from "react-icons/si";
 import styles from "./styles.module.css";
 
 type ProviderNode = {
@@ -23,7 +24,7 @@ const PROVIDERS: ProviderNode[] = [
   {
     key: "local",
     name: "Local Subprocess Provider",
-    icon: <MdTerminal />,
+    icon: <TbTerminal2 />,
     sub: "host process · dev only",
     sandboxName: "Local Sandbox",
     tier: "no isolation",
@@ -32,7 +33,7 @@ const PROVIDERS: ProviderNode[] = [
   {
     key: "docker",
     name: "Docker Provider",
-    icon: <FaDocker />,
+    icon: <SiDocker />,
     sub: "your Docker daemon",
     sandboxName: "Docker Sandbox",
     tier: "container",
@@ -90,7 +91,7 @@ const PROVIDERS: ProviderNode[] = [
   {
     key: "byo",
     name: "Bring Your Own",
-    icon: <MdExtension />,
+    icon: <TbPuzzle />,
     sub: "any SandboxProvider subclass",
     sandboxName: "Custom Sandbox",
     tier: "declared tier",
@@ -121,47 +122,14 @@ const DETAIL_FOOTER = [
   },
 ] as const;
 
-function delayStyle(ms: number): React.CSSProperties {
-  return { "--node-delay": `${ms}ms` } as React.CSSProperties;
-}
-
 export default function SandboxFlowDiagram({
   detailed = false,
 }: {
   detailed?: boolean;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
   const providers = detailed
     ? PROVIDERS
     : PROVIDERS.filter((p) => p.key !== "local");
-
-  useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      setVisible(true);
-      return;
-    }
-
-    const el = panelRef.current;
-    if (!el) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.15 },
-    );
-
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   const providerBoxInner = (p: ProviderNode) => (
     <>
@@ -179,11 +147,7 @@ export default function SandboxFlowDiagram({
   );
 
   return (
-    <div
-      ref={panelRef}
-      className={`${styles.panel} ${visible ? styles.panelVisible : ""}`}
-      aria-label="Sandbox execution flow"
-    >
+    <div className={styles.panel} role="group" aria-label="Sandbox execution flow">
       <p className={styles.scrollHint} aria-hidden="true">
         Scroll horizontally to see the full flow
       </p>
@@ -195,7 +159,6 @@ export default function SandboxFlowDiagram({
           {/* Agent (a stack: one agent per framework) */}
           <div
             className={`${styles.node} ${styles.stack} ${styles.agentStack}`}
-            style={delayStyle(0)}
           >
             <div className={`${styles.stackFront} ${styles.agentNode}`}>
               <p className={styles.nodeTitle}>Agent</p>
@@ -204,10 +167,10 @@ export default function SandboxFlowDiagram({
             </div>
           </div>
 
-          <div className={styles.stem} style={delayStyle(70)} aria-hidden="true" />
+          <div className={styles.stem} aria-hidden="true" />
 
           {/* Sandbox tools */}
-          <div className={`${styles.node} ${styles.chipNode}`} style={delayStyle(120)}>
+          <div className={`${styles.node} ${styles.chipNode}`}>
             <p className={styles.nodeTitle}>Sandbox Tools</p>
             {detailed ? (
               <p className={styles.nodeSub}>
@@ -216,14 +179,13 @@ export default function SandboxFlowDiagram({
             ) : null}
           </div>
 
-          <div className={styles.stem} style={delayStyle(190)} aria-hidden="true" />
+          <div className={styles.stem} aria-hidden="true" />
 
           {/* Session pill + security policy on the side */}
           <div className={styles.sessionRow}>
             <div className={styles.sessionSide} aria-hidden="true" />
             <div
               className={`${styles.node} ${styles.sessionNode}`}
-              style={delayStyle(240)}
             >
               <p className={styles.nodeTitle}>sandbox session</p>
               {detailed ? (
@@ -234,7 +196,6 @@ export default function SandboxFlowDiagram({
             </div>
             <div
               className={`${styles.node} ${styles.policyNode} ${styles.sessionSide}`}
-              style={delayStyle(300)}
             >
               <p className={styles.nodeTitle}>Security Policy</p>
               {detailed ? (
@@ -245,18 +206,18 @@ export default function SandboxFlowDiagram({
             </div>
           </div>
 
-          <div className={styles.stem} style={delayStyle(340)} aria-hidden="true" />
+          <div className={styles.stem} aria-hidden="true" />
 
           {/* Agent Kernel Execution Broker */}
-          <div className={`${styles.node} ${styles.brokerNode}`} style={delayStyle(400)}>
+          <div className={`${styles.node} ${styles.brokerNode}`}>
             <div className={styles.brokerRow}>
               <img
-                src="/img/branding/agent-kernel-icon-color.svg"
+                src="/img/branding/oak-mark-orange.svg"
                 alt=""
                 className={styles.brokerLogo}
               />
               <div className={styles.brokerText}>
-                <p className={styles.brokerEyebrow}>Agent Kernel</p>
+                <p className={styles.brokerEyebrow}>OAK</p>
                 <p className={styles.brokerTitle}>Execution Broker</p>
               </div>
             </div>
@@ -267,14 +228,13 @@ export default function SandboxFlowDiagram({
             ) : null}
           </div>
 
-          <div className={styles.stem} style={delayStyle(470)} aria-hidden="true" />
+          <div className={styles.stem} aria-hidden="true" />
 
           {/* Broker flavors: in-process lane beside the queue-decoupled lane */}
           <div className={styles.lanesRow}>
             <div className={styles.laneCol}>
               <div
                 className={`${styles.node} ${styles.laneNode} ${styles.laneInProcess}`}
-                style={delayStyle(540)}
               >
                 <p className={styles.laneEyebrow}>in-process</p>
                 <p className={styles.nodeTitle}>thread · embedded</p>
@@ -286,7 +246,6 @@ export default function SandboxFlowDiagram({
               </div>
               <div
                 className={styles.laneDrop}
-                style={delayStyle(600)}
                 aria-hidden="true"
               />
             </div>
@@ -294,7 +253,6 @@ export default function SandboxFlowDiagram({
             <div className={styles.laneCol}>
               <div
                 className={`${styles.node} ${styles.laneNode} ${styles.laneQueue}`}
-                style={delayStyle(610)}
               >
                 <p className={styles.laneEyebrow}>queue-decoupled</p>
                 <div className={styles.chain}>
@@ -321,13 +279,12 @@ export default function SandboxFlowDiagram({
               </div>
               <div
                 className={styles.laneDrop}
-                style={delayStyle(670)}
                 aria-hidden="true"
               />
             </div>
           </div>
 
-          <div className={styles.stem} style={delayStyle(690)} aria-hidden="true" />
+          <div className={styles.stem} aria-hidden="true" />
 
           {/* Provider fan-out */}
           <div
@@ -340,14 +297,12 @@ export default function SandboxFlowDiagram({
                   <Link
                     to={p.link}
                     className={`${styles.node} ${styles.providerNode} ${styles.providerNodeLink}`}
-                    style={delayStyle(740 + i * 70)}
                   >
                     {providerBoxInner(p)}
                   </Link>
                 ) : (
                   <div
                     className={`${styles.node} ${styles.providerNode}`}
-                    style={delayStyle(740 + i * 70)}
                   >
                     {providerBoxInner(p)}
                   </div>
@@ -355,13 +310,11 @@ export default function SandboxFlowDiagram({
 
                 <div
                   className={styles.colStem}
-                  style={delayStyle(820 + i * 70)}
                   aria-hidden="true"
                 />
 
                 <div
                   className={`${styles.node} ${styles.stack} ${styles.sandboxStack}`}
-                  style={delayStyle(900 + i * 70)}
                 >
                   <div className={`${styles.stackFront} ${styles.sandboxNode}`}>
                     <p className={styles.sandboxName}>{p.sandboxName}</p>
@@ -380,7 +333,6 @@ export default function SandboxFlowDiagram({
             <article
               key={item.title}
               className={styles.footerCard}
-              style={delayStyle(1400 + i * 70)}
             >
               <h3 className={styles.footerTitle}>{item.title}</h3>
               <p className={styles.footerDesc}>{item.description}</p>

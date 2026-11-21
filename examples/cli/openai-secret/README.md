@@ -1,6 +1,6 @@
-# Agent Kernel — resolving secrets from the environment (OpenAI Agents SDK)
+# Open Agent Kernel — resolving secrets from the environment (OpenAI Agents SDK)
 
-This demo shows Agent Kernel's secret capability with the default `env` provider: agents read their
+This demo shows Open Agent Kernel's secret capability with the default `env` provider: agents read their
 secrets through `SecretManager` instead of `os.environ`, so the same code later reads them from a
 managed store (e.g. AWS SSM Parameter Store) by changing only `config.yaml`.
 

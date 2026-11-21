@@ -1,4 +1,4 @@
-# Agent Kernel Realtime Voice Handoffs (OpenAI)
+# Open Agent Kernel Realtime Voice Handoffs (OpenAI)
 
 This example shows one voice conversation moving between several agents with the **OpenAI Agents SDK's native handoffs**, over LiveKit, powered by the **OpenAI Realtime API**.
 
@@ -10,26 +10,26 @@ The scenario is the support line of an internet provider:
 | `billing` | Invoices, charges, payments, refunds | `get_latest_invoice` | `supervisor` |
 | `tech_support` | Connection problems, outages, technician visits | `check_outage`, `book_technician` | `supervisor` |
 
-The agents are native `agents.realtime.RealtimeAgent` objects with `handoffs=[...]`, exactly as you would write them for a text run. Only the entry agent, `supervisor`, is registered with Agent Kernel; the specialists are reached through its handoffs.
+The agents are native `agents.realtime.RealtimeAgent` objects with `handoffs=[...]`, exactly as you would write them for a text run. Only the entry agent, `supervisor`, is registered with Open Agent Kernel (OAK); the specialists are reached through its handoffs.
 
-It uses the `in_memory` queue transport, so the LiveKit gateway and the agent runner run as threads in a single Python process.
+It uses the `in_memory` queue transport, so the LiveKit edge and the agent runner run as threads in a single Python process.
 
 ## How a handoff works in realtime mode
 
-One OpenAI `RealtimeSession` serves the conversation. The SDK executes each handoff, switches the active agent, and runs that agent's native tools. Agent Kernel changes the speaking LiveKit participant when the SDK reports a handoff.
+One OpenAI `RealtimeSession` serves the conversation. The SDK executes each handoff, switches the active agent, and runs that agent's native tools. OAK changes the speaking LiveKit participant when the SDK reports a handoff.
 
-Every handoff reaches the LiveKit gateway as an `agent_changed` event, in order with the audio around it.
+Every handoff reaches the LiveKit edge as an `agent_changed` event, in order with the audio around it.
 
 ## What you see in the room
 
-Every agent in the graph appears in the room as a participant of its own (`agent-supervisor`, `agent-billing`, `agent-tech_support`), with its own audio track. There is nothing to configure: when the call starts, the conversation tells the LiveKit gateway its whole team, and the specialists join the room about a second later.
+Every agent in the graph appears in the room as a participant of its own (`agent-supervisor`, `agent-billing`, `agent-tech_support`), with its own audio track. There is nothing to configure: when the call starts, the conversation tells the LiveKit edge its whole team, and the specialists join the room about a second later.
 
 - Only the agent that has the call is heard, the others stay connected and muted (their tiles show a muted mic). On a handoff, the previous agent finishes what it was saying and the next agent's participant takes over, so the room client's speaking indicator moves to it.
 - Each agent's words are published to the room chat from its own participant.
 - Each agent participant carries an `ak.active` attribute, `"true"` on the one that has the call, for a custom client UI to highlight.
 - Only `agent-supervisor`'s connection listens to you; no agent's audio or chat is ever taken as your input.
 
-Each agent participant needs a token of its own, so the gateway needs `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET` (not a single pre-made token). A single agent with no handoffs is one participant, as before.
+Each agent participant needs a token of its own, so the edge needs `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET` (not a single pre-made token). A single agent with no handoffs is one participant, as before.
 
 ## Quickstart
 
@@ -48,7 +48,7 @@ export AK_LIVEKIT__API_SECRET="..."
 uv run server.py
 ```
 
-Connect to `room_01` in your LiveKit Sandbox dashboard and speak.
+Point LiveKit's webhook at the server (see the parent README), then join a room, for example `call_01`, in your LiveKit Sandbox dashboard and speak. Each room is its own call.
 
 ### 3. Try a conversation
 
@@ -62,5 +62,5 @@ You can talk over an agent at any time, including while a handoff is happening.
 
 - **One model and one voice.** `OpenAIModule.run_options()` sets both on the starting agent. The same live session serves every speaker.
 - **One LiveKit connection per agent.** Every listed agent is a participant for the whole call, so LiveKit bills connection minutes for each.
-- **Tools run in the SDK.** The SDK runs the tools declared on each `RealtimeAgent`; Agent Kernel system tools attach as in other modes when enabled. A tool needing human approval is rejected before the call opens, because a realtime session has no approval path.
-- **SDK behavior.** Handoff and guardrail details follow the installed OpenAI Agents SDK; Agent Kernel does not implement another tool or handoff engine.
+- **Tools run in the SDK.** The SDK runs the tools declared on each `RealtimeAgent`; OAK system tools attach as in other modes when enabled. A tool needing human approval is rejected before the call opens, because a realtime session has no approval path.
+- **SDK behavior.** Handoff and guardrail details follow the installed OpenAI Agents SDK; OAK does not implement another tool or handoff engine.

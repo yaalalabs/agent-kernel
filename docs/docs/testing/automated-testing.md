@@ -4,11 +4,11 @@ sidebar_position: 3
 
 # Automated Testing
 
-Create automated test suites for your CLI agents using pytest and the Agent Kernel Test framework.
+Create automated test suites for your CLI agents using pytest and the Open Agent Kernel Test framework.
 
 ## pytest Integration
 
-The Agent Kernel Test framework integrates seamlessly with pytest for automated testing:
+The OAK Test framework integrates seamlessly with pytest for automated testing:
 
 ```python
 import pytest
@@ -39,7 +39,7 @@ async def test_follow_up_question(test_client):
 
 ## Test Comparison Modes
 
-Agent Kernel supports three comparison modes for validating responses:
+OAK supports three comparison modes for validating responses:
 
 ### Score Mode
 
@@ -460,7 +460,7 @@ def setup_test_env():
 
 Enable debug output for troubleshooting:
 
-Agent Kernel configures logging when the application loads its configuration (on first access, not at import). These settings apply to the application under test; set them in its environment or `config.yaml`:
+OAK configures logging when the application loads its configuration (on first access, not at import). These settings apply to the application under test; set them in its environment or `config.yaml`:
 
 **Using environment variables:**
 ```bash

@@ -1,0 +1,32 @@
+/* Marks in the brand palette. Every colour comes from a theme token. */
+
+.art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.faint,
+.panel,
+.check {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.faint {
+  stroke: rgba(var(--ak-blue-rgb), 0.22);
+  stroke-width: 1;
+}
+
+.panel {
+  fill: rgba(var(--ak-blue-rgb), 0.08);
+  stroke: rgba(var(--ak-blue-rgb), 0.55);
+  stroke-width: 1.5;
+}
+
+.check {
+  stroke: var(--ak-primary);
+  stroke-width: 3;
+}

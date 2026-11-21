@@ -14,7 +14,6 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import azure.functions as func
 import pytest
 
 from agentkernel.api.http import RESTAPI
@@ -32,7 +31,6 @@ from agentkernel.deployment.aws.serverless.aklambda import Lambda
 from agentkernel.deployment.aws.serverless.akwsconnectionhandler import WebsocketConnectionHandler
 from agentkernel.deployment.aws.serverless.core.router.rest_lambda import DefaultEndpointsHandler
 from agentkernel.deployment.aws.serverless.core.router.ws_lambda import ConnectionRoutesHandler, SystemRoutesHandler, WSLambdaRouter
-from agentkernel.deployment.azure.akfunction import AzureFunctions
 from agentkernel.identity import IdentityProviderFactory
 
 ALICE = Principal(subject="alice", provider="static", namespace="static", groups=["ops"])
@@ -427,61 +425,6 @@ class TestLambdaCustomWebSocketRoutes:
 
         assert status == 500
         handler.assert_not_called()
-
-
-def _azure_request(headers: dict | None = None, body: dict | None = None) -> func.HttpRequest:
-    payload = CHAT_BODY if body is None else body
-    return func.HttpRequest(method="POST", url="https://fn.example.net/api/chat", headers=headers or {}, body=json.dumps(payload).encode())
-
-
-class TestAzureFunctions:
-    @pytest.fixture
-    def chat_service(self, monkeypatch):
-        service = MagicMock()
-        service.process_chat_request.return_value = (200, {"ok": True})
-        monkeypatch.setattr(AzureFunctions, "_chat_service", service)
-        return service
-
-    def test_a_bearer_token_runs_the_request_as_the_principal(self, static_identity, chat_service):
-        response = AzureFunctions.handler(_azure_request({"Authorization": "Bearer alice-secret"}, body={**CHAT_BODY, "principal": FORGED}))
-
-        assert response.status_code == 200
-        assert chat_service.process_chat_request.call_args.args[0].principal == ALICE
-
-    def test_an_invalid_token_is_401_before_the_body_is_read(self, static_identity, chat_service):
-        """An empty body would be a 400; the credential is refused first."""
-        response = AzureFunctions.handler(_azure_request({"Authorization": "Bearer mallory"}, body={}))
-
-        assert response.status_code == 401
-        assert json.loads(response.get_body()) == {"error": "Unauthorized", "session_id": None}
-        chat_service.process_chat_request.assert_not_called()
-
-    def test_a_malformed_header_is_401_with_its_own_detail(self, static_identity, chat_service):
-        response = AzureFunctions.handler(_azure_request({"Authorization": "Token abc"}))
-
-        assert (response.status_code, json.loads(response.get_body())["error"]) == (401, "Invalid authorization header")
-        chat_service.process_chat_request.assert_not_called()
-
-    def test_the_function_key_stays_out_of_the_log_and_the_context(self, static_identity, chat_service, caplog):
-        """Under authLevel: function a caller may send ``?code=``; only the path is logged or handed to the provider."""
-        request = func.HttpRequest(
-            method="POST",
-            url="https://fn.example.net/api/chat?code=the-function-key",
-            headers={"Authorization": "Bearer mallory"},
-            body=json.dumps(CHAT_BODY).encode(),
-        )
-        with caplog.at_level("INFO"):
-            response = AzureFunctions.handler(request)
-
-        assert response.status_code == 401
-        assert "the-function-key" not in " ".join(record.getMessage() for record in caplog.records)
-        ((_, context),) = static_identity.calls
-        assert context.path == "/api/chat"
-
-    def test_no_header_runs_anonymously(self, static_identity, chat_service):
-        AzureFunctions.handler(_azure_request())
-
-        assert chat_service.process_chat_request.call_args.args[0].principal.is_anonymous
 
 
 class TestConnectionStorePrincipal:

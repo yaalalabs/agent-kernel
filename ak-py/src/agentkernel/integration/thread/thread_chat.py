@@ -14,6 +14,7 @@ before enqueueing and marks the message, and AgentRunner records the reply.
 Both serve the thread read routes.
 """
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -249,10 +250,14 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         from leaving a phantom thread with an unanswered user message. The rule itself is
         shared with the other commit-before-running surfaces (AgentService.ensure_agent_available).
 
+        This handler runs the agent in its own process, so the agent must be hosted here: one a
+        shared registry knows from another process would pass a registry-wide check, have its user
+        message recorded, and then fail to be selected.
+
         :param name: The requested agent name, or None for the default agent
         :raises ValueError: If no matching agent is available
         """
-        AgentService.ensure_agent_available(name)
+        AgentService.ensure_agent_available(name, hosted=True)
 
 
 class ThreadRequestHandler(RequestHandler):
@@ -322,6 +327,7 @@ class ThreadRequestHandler(RequestHandler):
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
         self._reject_unprocessable(body)
         self._reject_unroutable(body)
+        self._reject_unqueueable_attachments(body)
         if body.schedule is None:
             await self._record_user_message(body)
         return await super().run_chat(body, request)
@@ -341,7 +347,8 @@ class ThreadRequestHandler(RequestHandler):
             any thread write, so an unanswerable request leaves no phantom thread behind.
         """
         try:
-            AgentService.ensure_agent_available(body.agent)
+            # Off the event loop: for an agent another process hosts this reads the registry's store.
+            await asyncio.to_thread(AgentService.ensure_agent_available, body.agent)
             requests = await RequestBuilder.from_base_request_async(body)
             requests, _ = self._recorder.pre_run(body, requests)
         except ValueError as e:

@@ -4,7 +4,7 @@ sidebar_position: 10
 
 # Queue Mode Guide
 
-Queue mode is Agent Kernel's chat execution pipeline
+Queue mode is Open Agent Kernel's chat execution pipeline
 ([#495](https://github.com/yaalalabs/agent-kernel/issues/495)): every chat request travels
 
 ```
@@ -172,9 +172,21 @@ store it, whatever `execution.mode` is, because these callers wait for one whole
   that starts no agent runner (`RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on a broker,
   `AWSWebsocketAPI` with no queue) raises `AKConfigError` at startup.
 - **Broker transports**: the response store must be shared (`redis`, `valkey` or `dynamodb`) in
-  every execution mode, not only the REST ones. Load the same agent modules in the IO process as
-  in the agent runner, since cards and agent tools are built from the IO process's registry; an
-  IO process without them logs a warning and serves empty catalogs.
+  every execution mode, not only the REST ones. Cards and agent tools are built from the
+  [agent registry](../core-concepts/configuration.md#agent-registry), so the IO process has to know
+  the agents: either load the same agent modules in the IO process as in the agent runner, or share
+  the registry (`registry.type: redis`, `valkey` or `dynamodb`), in which case the IO process reads
+  the descriptors the runner registered and need not load the agents at all. Cards and tools are
+  built when the IO process starts, so start the runner first and let it finish loading its agents
+  (their descriptors are then in the shared registry), and restart the IO process after adding an
+  agent or when it started before the runner had registered. An IO process whose registry knows no
+  agent logs a warning and serves empty catalogs.
+- **One set of agents per queue**: a request is taken by whichever agent runner reads it from the
+  input queue, and nothing routes it by agent. Every runner on a queue must therefore host every
+  agent the IO process serves from the registry; a runner that takes a request for an agent it did
+  not load answers it with an error. A shared registry shares what is known about the agents, not
+  the queue: on the single-process `in_memory` transport, an agent the registry only knows from
+  another process is listed and cannot be run.
 - **Wait budget**: the same `execution.response_store.retry_count × delay` as `rest_sync` (60 × 1 s
   without a block). Replies arrive on the next poll, so expect at least one `delay` of latency.
 - **Rolling upgrades** in a WebSocket mode: upgrade the agent runners first. A runner from before
@@ -230,9 +242,9 @@ acknowledgement model:
   consumers configured against it. Adding partitions later re-maps session keys, so size up
   front.
 - **Retry bookkeeping follows your session store.** Delivery counts and deduplication are
-  reconstructed by Agent Kernel, not the broker. With `session.type: redis` or `valkey` they are
+  reconstructed by OAK, not the broker. With `session.type: redis` or `valkey` they are
   stored there and survive a pod restart; with any other session type they are process-local and
-  Agent Kernel logs a warning at startup, because a message that crashes its worker would then
+  OAK logs a warning at startup, because a message that crashes its worker would then
   reset its own delivery count.
 - **No visibility timeout.** An unacknowledged record comes back through the in-process retry or,
   if the pod dies, when its uncommitted offset is reassigned. Nothing redelivers a record while
@@ -300,13 +312,13 @@ Three things to know:
 
 - **Partitions set your concurrency**, as on Kafka, but the server enforces it. Sessions hash to a
   partition subject, each served by a durable consumer with `max_ack_pending: 1`, so a session's
-  turns stay ordered and at most `partitions` messages are in flight cluster-wide. Agent Kernel logs
+  turns stay ordered and at most `partitions` messages are in flight cluster-wide. OAK logs
   the ratio at startup and warns when partitions are fewer than the configured consumers. Changing
   the count re-maps sessions, so size it up front.
 - **`ack_wait` must exceed your longest turn.** It defaults to 300 seconds here rather than
   JetStream's usual 30, because it is a visibility timeout: a turn that outlives it is redelivered
   and the agent runs again.
-- **`auto_provision` is off by default.** Locally, turn it on and Agent Kernel creates the streams
+- **`auto_provision` is off by default.** Locally, turn it on and OAK creates the streams
   and per-partition consumers at startup. In production, leave it off so a missing stream or consumer
   fails loudly at startup, naming the object, instead of being silently created with defaults
   alongside your NACK CRs.
@@ -345,8 +357,8 @@ Like JetStream, the broker does most of the work: the session (`group_id`) gives
 one message in flight, `delivery_count` is the receive count, the queue's `MessageId` duplicate detection
 is the dedup window, and `max_delivery_count` is the server-side ceiling. Three things to know:
 
-- **Queues must be session-enabled and duplicate-detecting.** Agent Kernel never creates them; the
-  Terraform module does, with `max_delivery_count` one above `max_receive_count` so Agent Kernel's
+- **Queues must be session-enabled and duplicate-detecting.** OAK never creates them; the
+  Terraform module does, with `max_delivery_count` one above `max_receive_count` so OAK's
   permanent-failure reply fires first.
 - **`ack_wait` must exceed your longest turn**, as on NATS: past it the session lock lapses and the turn
   runs again.
@@ -561,9 +573,9 @@ graph TB
     RS -.->|poll| RH
     IQ -. "visibility timeout retries,<br/>DLQ after maxReceiveCount" .- IQ
 
-    style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RSH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RSH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 With `execution_mode = "async"` and `message_type = "delta"` the Agent Runner Lambda (`ServerlessStreamAgentRunner`) sends **one output-queue message per token chunk**, and the Response Handler broadcasts each as a `STREAM_CHUNK` WebSocket message.
@@ -718,8 +730,8 @@ graph TB
     OC1 --> RS[(DynamoDB Response Store)]
     RS -.->|"poll by request_id"| T1
 
-    style T1 fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style T1 fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RS fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 :::note

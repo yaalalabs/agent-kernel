@@ -1,6 +1,6 @@
-# Agent Kernel Scheduled & Recurring Chats on AWS ECS
+# Open Agent Kernel Scheduled & Recurring Chats on AWS ECS
 
-This package demonstrates the Agent Kernel **scheduling capability** deployed on AWS ECS: a chat
+This package demonstrates the Open Agent Kernel (OAK) **scheduling capability** deployed on AWS ECS: a chat
 request carrying a `schedule` block is not run — it is registered as a scheduled task and
 acknowledged with **HTTP 202**. When an occurrence is due, AWS EventBridge Scheduler delivers the
 stored prompt into the Input Queue as a plain chat request, and the agent runner executes it

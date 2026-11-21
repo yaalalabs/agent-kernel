@@ -1,7 +1,7 @@
 ---
 slug: /kubernetes-on-prem-helm-chart
 title: "Your Cluster, Your Data, One Helm Chart: Agent Kernel on On-Prem Kubernetes"
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, kubernetes, helm, on-prem, self-hosted, nats, kafka, keda, queue-mode, multi-cloud, cloud-agnostic, enterprise-ai]
 image: /img/blog/kubernetes-onprem-banner.png
 description: Agent Kernel now ships an official Helm chart that runs its queue-execution pipeline on any Kubernetes cluster, from a laptop k3d cluster to bare metal and EKS, with NATS, Kafka, or SQS as the broker, KEDA autoscaling, WebSocket delivery, a sandbox worker tier, and air-gapped installs. Same agents, zero code changes.

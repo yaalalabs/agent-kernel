@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .model import ExecutionMode, ReplyMessageType
+from .model import AgentIdentitySpec, AgentSurface, ExecutionMode, ReplyMessageType
 from .util.config_yaml_util import YamlBaseSettingsModified
 from .util.factory import AKConfigError
 
@@ -138,17 +138,38 @@ class _WebSocketAPIConfig(BaseModel):
     )
 
 
-class _A2AConfig(BaseModel):
+class _SurfaceConfig(BaseModel):
+    """Base for the protocol surface blocks (``a2a``, ``mcp``, ``agui``) that used to carry an ``agents`` allow-list.
+
+    Which surfaces serve an agent is part of the agent's descriptor now (``registry.agents.<id>.surfaces``,
+    every surface when unset). A block that still sets the removed list is refused at load: ignoring it
+    would leave every agent on the surface the list was written to narrow.
+    """
+
+    SURFACE: ClassVar[str]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_agents(cls, data: Any) -> Any:
+        """Fail the removed ``agents`` list with where the setting went, instead of dropping it silently."""
+        if isinstance(data, dict) and "agents" in data:
+            raise AKConfigError(f"{cls.SURFACE}.agents was removed: set registry.agents.<id>.surfaces instead")
+        return data
+
+
+class _A2AConfig(_SurfaceConfig):
+    SURFACE: ClassVar[str] = "a2a"
+
     enabled: bool = Field(default=False, description="Enable A2A")
-    agents: list[str] = Field(default=["*"], description="List of agent names to enable A2A")
     url: str = Field(default="http://localhost:8000/a2a", description="A2A URL")
     task_store_type: str = Field(default="in_memory", pattern="^(in_memory|redis)$")
 
 
-class _MCPConfig(BaseModel):
+class _MCPConfig(_SurfaceConfig):
+    SURFACE: ClassVar[str] = "mcp"
+
     enabled: bool = Field(default=False, description="Enable MCP")
     expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
-    agents: list[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     url: str = Field(
         default="http://localhost:8000/mcp",
         description="Public URL of the MCP endpoint; with an OpenID identity provider it is the protected resource the RFC 9728 metadata names",
@@ -389,7 +410,7 @@ class _GmailConfig(BaseModel):
 
 
 class _LiveKitConfig(BaseModel):
-    """LiveKit realtime voice gateway settings.
+    """LiveKit realtime voice edge settings.
 
     Bound like every other block, from YAML or ``AK_LIVEKIT__<FIELD>`` env vars (e.g.
     ``AK_LIVEKIT__URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``).
@@ -899,7 +920,7 @@ class _ExecutionConfig(BaseModel):
         description=(
             "Invocation mode: rest_sync (REST, wait for the reply), rest_async (REST, submit then "
             "poll), async (WebSocket only), realtime (persistent realtime sockets, e.g. the LiveKit voice "
-            "gateway). Unset runs as rest_sync."
+            "edge). Unset runs as rest_sync."
         ),
     )
     message_type: ReplyMessageType | None = Field(
@@ -1532,6 +1553,99 @@ class _IdentityConfig(BaseModel):
     )
 
 
+class _RegistryStoreConfig(BaseModel):
+    """What the registry's store blocks share: a descriptor does not expire.
+
+    The connection models these blocks reuse carry a ``ttl``. The registry cannot honour one: nothing
+    registers a hosted agent again while its process runs, so an expiry would drop running agents from the
+    catalog, A2A, MCP and AG-UI. A value is refused at load rather than accepted and left to do that.
+    """
+
+    STORE: ClassVar[str]
+
+    @field_validator("ttl", check_fields=False)
+    @classmethod
+    def _reject_ttl(cls, value: int) -> int:
+        """Fail a configured TTL with why the registry takes none, instead of expiring the agents it lists."""
+        if value:
+            raise AKConfigError(
+                f"registry.{cls.STORE}.ttl is not supported: agent descriptors do not expire, since nothing registers "
+                "a running agent again. Remove the setting; an agent that was retired is deleted from the store by its id"
+            )
+        return value
+
+
+class _RegistryRedisConfig(_RegistryStoreConfig, _RedisConfig):
+    STORE: ClassVar[str] = "redis"
+    ttl: int = Field(default=0, description="Not supported for the agent registry: descriptors do not expire. Must stay 0")
+    prefix: str = Field(default="ak:registry:", description="Key prefix for Redis agent registry storage")
+
+
+class _RegistryValkeyConfig(_RegistryStoreConfig, _ValkeyConfig):
+    STORE: ClassVar[str] = "valkey"
+    ttl: int = Field(default=0, description="Not supported for the agent registry: descriptors do not expire. Must stay 0")
+    prefix: str = Field(default="ak:registry:", description="Key prefix for Valkey agent registry storage")
+
+
+class _RegistryDynamoDBConfig(_RegistryStoreConfig, _DynamoDBConfig):
+    STORE: ClassVar[str] = "dynamodb"
+    table_name: str = Field(
+        default="ak-agent-registry",
+        description="DynamoDB table name for the agent registry. Table should have a partition key named 'agent_id' (S) and no sort key",
+    )
+    ttl: int = Field(default=0, description="Not supported for the agent registry: descriptors do not expire. Must stay 0")
+
+
+class _RegistryAgentOverlayConfig(BaseModel):
+    """The catalog fields a deployment sets for one agent, over what the agent's code declares.
+
+    Every field is optional; one left out keeps the value the adapter or `Module.describe` gave it.
+    Unknown keys are refused rather than ignored: a misspelt `surfaces` or `visibility` would
+    otherwise leave an agent more exposed than the configuration reads.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str | None = Field(default=None, description="The agent's version, as its catalog entry and A2A card report it")
+    description: str | None = Field(default=None, description="Catalog text for people and other agents; never the agent's instructions")
+    owner: str | None = Field(default=None, description="The subject that owns the agent")
+    tags: list[str] | None = Field(default=None, description="Free-form labels; a grant's 'tag:<name>' selects the agents carrying one")
+    visibility: Literal["private", "internal", "public"] | None = Field(default=None, description="Who may see the agent in the catalog")
+    surfaces: list[AgentSurface] | None = Field(
+        default=None,
+        description=(
+            "The protocol surfaces the agent is served on (rest, a2a, mcp, agui); [] is no surface. Omitted keeps what the "
+            "agent's code declared with Module.describe, which is every surface when it declared none"
+        ),
+    )
+    identity: AgentIdentitySpec | None = Field(default=None, description="How the agent identifies itself when it acts as a principal")
+
+
+class _RegistryConfig(BaseModel):
+    """Agent registry: where agent descriptors are kept, and the per-agent catalog overlay.
+
+    Absent, or with the default type, descriptors live in the memory of the process that hosts the
+    agents. A store-backed type shares them, so a process lists agents another process hosts.
+
+    Unknown keys are refused, as they are under an agent: ``agent:`` written for ``agents:`` would
+    otherwise drop every restriction beneath it without a word. A bring-your-own registry is built with
+    no arguments, so nothing else reads a key of its own here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: str = Field(
+        default="in_memory",
+        description="Agent registry backend: a built-in short name (in_memory, redis, valkey, dynamodb) or a dotted path to an AgentRegistry subclass",
+    )
+    redis: _RegistryRedisConfig | None = None
+    valkey: _RegistryValkeyConfig | None = None
+    dynamodb: _RegistryDynamoDBConfig | None = None
+    agents: dict[str, _RegistryAgentOverlayConfig] = Field(
+        default_factory=dict, description="Catalog fields set per agent id, over the ones the agent's code declares"
+    )
+
+
 class _AGUIStateConfig(BaseModel):
     """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
 
@@ -1549,11 +1663,12 @@ class _AGUIClientContextConfig(BaseModel):
     agents: list[str] | None = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 
-class _AGUIConfig(BaseModel):
+class _AGUIConfig(_SurfaceConfig):
     """Parameterizes a mounted AGUIRequestHandler. Mounting the handler is what enables AG-UI;
     this block never switches the surface on. The two nested blocks do switch on agent-facing tools."""
 
-    agents: list[str] | None = Field(default=None, description="Agent names reachable over AG-UI; omitted = all streaming-capable agents")
+    SURFACE: ClassVar[str] = "agui"
+
     prefix: str = Field(default="/agui", description="Route prefix for the AG-UI surface")
     default_agent: str | None = Field(default=None, description="Agent served on the bare prefix route")
     state: _AGUIStateConfig = Field(default_factory=_AGUIStateConfig)
@@ -1606,6 +1721,10 @@ class AKConfig(YamlBaseSettingsModified):
     identity: _IdentityConfig | None = Field(
         default=None,
         description="Identity capability configurations (the provider that authenticates callers, the role mapper). Absent = every request is the anonymous principal.",
+    )
+    registry: _RegistryConfig | None = Field(
+        default=None,
+        description="Agent registry configurations (the backend that keeps agent descriptors, the per-agent catalog overlay). Absent = an in-memory registry with no overlay.",
     )
     a2ui: _A2UIConfig = Field(description="A2UI labelling capability configurations", default_factory=_A2UIConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)

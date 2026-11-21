@@ -4,7 +4,7 @@
 
 ## Acceptance of Terms
 
-By accessing and using the Agent Kernel documentation website ("the Site"), you accept and agree to be bound by the terms and provisions of this agreement. **Note:** Acceptance of these Terms does not constitute consent to the use of analytics cookies. Cookie consent is obtained separately via the consent banner displayed on your first visit, in accordance with our [Cookie Policy](/cookie-policy).
+By accessing and using the Open Agent Kernel documentation website ("the Site"), you accept and agree to be bound by the terms and provisions of this agreement. **Note:** Acceptance of these Terms does not constitute consent to the use of analytics cookies. Cookie consent is obtained separately via the consent banner displayed on your first visit, in accordance with our [Cookie Policy](/cookie-policy).
 
 ## Use of Documentation
 
@@ -26,11 +26,11 @@ You may not:
 
 ## Open Source Software
 
-Agent Kernel is an open-source project. The use of the Agent Kernel software itself is governed by the license included in the project repository (see the [LICENSE file](https://github.com/yaalalabs/agent-kernel/blob/develop/LICENSE)). These Terms of Use apply specifically to the documentation website.
+OAK is an open-source project. The use of the OAK software itself is governed by the license included in the project repository (see the [LICENSE file](https://github.com/yaalalabs/agent-kernel/blob/develop/LICENSE)). These Terms of Use apply specifically to the documentation website.
 
 ## Intellectual Property
 
-The documentation, design, logos, and other content on this Site are the property of Yaala Labs and are protected by copyright and other intellectual property laws. The Agent Kernel name and logo are trademarks of Yaala Labs.
+The documentation, design, logos, and other content on this Site are the property of Yaala Labs and are protected by copyright and other intellectual property laws. The OAK name and logo are trademarks of Yaala Labs.
 
 ## Disclaimer of Warranties
 
@@ -72,7 +72,7 @@ These Terms of Use shall be governed by and construed in accordance with applica
 
 ## Contributions
 
-If you contribute to the Agent Kernel project through GitHub or other means, your contributions are subject to the project's license and the terms of service of the platform used for contribution.
+If you contribute to the OAK project through GitHub or other means, your contributions are subject to the project's license and the terms of service of the platform used for contribution.
 
 ## Contact
 

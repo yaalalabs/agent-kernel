@@ -121,3 +121,23 @@ def test_the_thread_manager_still_returns_thread_attachments(multimodal, monkeyp
     assert isinstance(rebuilt[0], AgentRequestAttachmentRef)
     assert isinstance(references[0], ThreadAttachment)
     assert references[0].attachment_id == rebuilt[0].attachment_id
+
+
+def test_a_failed_save_deletes_the_files_already_saved(multimodal, monkeypatch):
+    from agentkernel.core.multimodal.storage.in_memory import InMemoryAttachmentStore
+
+    saved, deleted = [], []
+    real_save = InMemoryAttachmentStore.save
+
+    def save(self, attachment, max_attachments):
+        if saved:
+            raise ValueError("over the item limit")
+        saved.append(attachment["id"])
+        return real_save(self, attachment, max_attachments)
+
+    monkeypatch.setattr(InMemoryAttachmentStore, "save", save)
+    monkeypatch.setattr(InMemoryAttachmentStore, "delete", lambda self, attachment_id: deleted.append(attachment_id))
+
+    with pytest.raises(ValueError, match="over the item limit"):
+        _offload([AgentRequestFile(file_data="ZmFrZQ==", name="a.txt"), AgentRequestFile(file_data="ZmFrZQ==", name="b.txt")])
+    assert deleted == saved

@@ -19,6 +19,7 @@ from langgraph.checkpoint.base import (
     CheckpointTuple,
 )
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import ToolNode
 from langgraph.types import Command
 from pydantic import BaseModel
 
@@ -26,7 +27,6 @@ from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -392,28 +392,32 @@ class LangGraphAgent(BaseAgent):
         # TODO improve this description
         return "I am a LangGraph agent."
 
-    def get_a2a_card(self):
+    def get_tool_names(self) -> list[str]:
         """
-        Returns the A2A AgentCard associated with the agent.
-        """
-        from a2a.types import AgentSkill
+        Returns the names of the tools the compiled graph's tool nodes hold.
 
-        graph = self.agent.get_graph()
-        skills = []
-        for node_name, node_data in graph.nodes.items():
-            # TODO improve this to better extract tools
-            if hasattr(node_data, "tools"):
-                for tool in node_data.tools:
-                    skills.append(
-                        AgentSkill(
-                            id=tool.name,
-                            name=tool.name,
-                            description=tool.description,
-                            tags=[],
-                        )
-                    )
-        # TODO extract description from graph
-        return A2ACardBuilder.build(name=self.name, description="", skills=skills)
+        Not reported: tools of a compiled subgraph mounted as a node, and tools a node calls without a `ToolNode`.
+        """
+        return list(self._graph_tools())
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each graph tool by name.
+        """
+        return {name: getattr(tool, "description", None) or "" for name, tool in self._graph_tools().items()}
+
+    def _graph_tools(self) -> dict[str, Any]:
+        """
+        Returns the tools of every `ToolNode` in the compiled graph, by name. The graph is immutable once compiled,
+        so its tool nodes are the one place its tools can be read from; a node that calls tools some other way holds
+        none this can see.
+        """
+        found: dict[str, Any] = {}
+        for node in self.agent.nodes.values():
+            bound = getattr(node, "bound", None)
+            if isinstance(bound, ToolNode):
+                found.update(bound.tools_by_name)
+        return found
 
     def attach_tool(self, tool: Any) -> None:
         """

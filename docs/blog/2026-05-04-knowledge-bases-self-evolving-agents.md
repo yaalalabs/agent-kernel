@@ -1,12 +1,14 @@
 ---
 slug: /knowledge-bases-self-evolving-agents
 title: "Knowledge Bases: The Missing Layer That Lets AI Agents Self-Evolve"
-authors: [yaala]
+authors: [john]
 tags: [agent-kernel, knowledge-bases, chromadb, neo4j, starburst, rag, vector-store, graph-database, self-evolving-agents, enterprise-ai]
-image: /img/card.png
+image: /img/blog/knowledge-bases-banner.png
 ---
 
 # Knowledge Bases: The Missing Layer That Lets AI Agents Self-Evolve
+
+![The missing layer that lets AI agents self-evolve. Knowledge bases, so an agent stops starting every conversation from zero.](/img/blog/knowledge-bases-banner.png)
 
 Most AI agents have a fundamental flaw: **they forget everything.**
 

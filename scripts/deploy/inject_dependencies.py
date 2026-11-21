@@ -101,7 +101,7 @@ def get_projects(config: Dict) -> Set[Tuple[str, str, str]]:
     if 'deployment_base' in config:
         for project in config['deployment_base']:
             t = project.get('type', '')
-            if t in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized','gcp-serverless', 'gcp-containerized']:
+            if t in ['aws-serverless', 'aws-containerized', 'azure-containerized','gcp-serverless', 'gcp-containerized']:
                 path = project.get('path', '')
                 deploy_dir = project.get('deploy_dir', 'deploy')
                 if path:
@@ -111,7 +111,7 @@ def get_projects(config: Dict) -> Set[Tuple[str, str, str]]:
         if schedule in config and 'tests' in config[schedule]:
             for test in config[schedule]['tests']:
                 t = test.get('type', '')
-                if t in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized','gcp-serverless', 'gcp-containerized']:
+                if t in ['aws-serverless', 'aws-containerized', 'azure-containerized','gcp-serverless', 'gcp-containerized']:
                     path = test.get('path', '')
                     deploy_dir = test.get('deploy_dir', 'deploy')
                     if path:

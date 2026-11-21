@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/dist/ScrollTrigger';
 import styles from './styles.module.css';
-
-gsap.registerPlugin(ScrollTrigger);
 
 type NodeKind = 'logic' | 'kernel' | 'memory' | 'framework' | 'test';
 
@@ -17,7 +13,7 @@ type FlowNode = {
 
 const AK_ICON = (
   <img
-    src="/img/branding/agent-kernel-icon-color.svg"
+    src="/img/branding/oak-mark-orange.svg"
     alt=""
     aria-hidden="true"
     className={styles.akNodeIcon}
@@ -25,11 +21,11 @@ const AK_ICON = (
 );
 
 const FLOW_NODES: FlowNode[] = [
-  { id: 'logic',     label: 'Actual Agent Logic',                kind: 'logic',     color: '#94a3b8' },
-  { id: 'api',       label: 'REST API',                          kind: 'kernel',    color: '#60a5fa',  showIcon: true },
-  { id: 'memory',    label: 'Agent Memory',                      kind: 'memory',    color: '#f472b6',  showIcon: true },
-  { id: 'framework', label: 'Agentic Framework Implementation',  kind: 'framework', color: '#facc15',  showIcon: true },
-  { id: 'testAuto',  label: 'Agent Test Automation',             kind: 'test',      color: '#4ade80',  showIcon: true },
+  { id: 'logic',     label: 'Actual Agent Logic',                kind: 'logic',     color: 'var(--ak-text-muted)' },
+  { id: 'api',       label: 'REST API',                          kind: 'kernel',    color: 'var(--ak-blue)',  showIcon: true },
+  { id: 'memory',    label: 'Agent Memory',                      kind: 'memory',    color: 'var(--ak-sky)',  showIcon: true },
+  { id: 'framework', label: 'Agentic Framework Implementation',  kind: 'framework', color: 'var(--ak-sky)',  showIcon: true },
+  { id: 'testAuto',  label: 'Agent Test Automation',             kind: 'test',      color: 'var(--ak-blue)',  showIcon: true },
 ];
 
 type Point = { x: number; y: number };
@@ -71,7 +67,7 @@ function FlowNodeCard({ node }: { node: FlowNode }) {
       data-flow-node={node.id}
       data-kind={node.kind}
       className={`${styles.flowNode} ${kindClass} ${node.showIcon ? styles.flowNodeWithIcon : ''}`}
-      style={{ '--node-color': node.color ?? '#00d5be' } as React.CSSProperties}
+      style={{ '--node-color': node.color ?? 'var(--ak-blue)' } as React.CSSProperties}
     >
       {node.showIcon && (
         <span className={styles.akNodeIconWrap} aria-hidden="true">
@@ -102,10 +98,10 @@ export default function AgentKernelSitsInFlowDiagram() {
     svg.innerHTML = `
       <defs>
         <marker id="akSitArrowEnd" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(255,255,255,0.65)" />
+          <path d="M0,0 L8,4 L0,8 Z" fill="rgba(var(--ak-fg-rgb), 0.65)" />
         </marker>
         <marker id="akSitArrowStart" markerWidth="8" markerHeight="8" refX="1" refY="4" orient="auto">
-          <path d="M8,0 L0,4 L8,8 Z" fill="rgba(255,255,255,0.65)" />
+          <path d="M8,0 L0,4 L8,8 Z" fill="rgba(var(--ak-fg-rgb), 0.65)" />
         </marker>
       </defs>`;
 
@@ -132,7 +128,7 @@ export default function AgentKernelSitsInFlowDiagram() {
       const basePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       basePath.setAttribute('d', pointsToPath(points));
       basePath.setAttribute('fill', 'none');
-      basePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
+      basePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.2)');
       basePath.setAttribute('stroke-width', '2');
       basePath.setAttribute('marker-start', 'url(#akSitArrowStart)');
       basePath.setAttribute('marker-end', 'url(#akSitArrowEnd)');
@@ -141,7 +137,7 @@ export default function AgentKernelSitsInFlowDiagram() {
       const pulsePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       pulsePath.setAttribute('d', pointsToPath(points));
       pulsePath.setAttribute('fill', 'none');
-      pulsePath.setAttribute('stroke', 'rgba(255, 255, 255, 0.7)');
+      pulsePath.setAttribute('stroke', 'rgba(var(--ak-fg-rgb), 0.7)');
       pulsePath.setAttribute('stroke-width', '2');
       pulsePath.setAttribute('class', styles.pulseFlow);
       svg.appendChild(pulsePath);
@@ -198,42 +194,13 @@ export default function AgentKernelSitsInFlowDiagram() {
     };
   }, [drawLines]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const nodes = container.querySelectorAll(`.${styles.flowNode}`);
-    const tween = gsap.fromTo(
-      nodes,
-      { opacity: 0, y: 16 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.5,
-        stagger: 0.05,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: container,
-          start: 'top 82%',
-          once: true,
-        },
-        onComplete: drawLines,
-        clearProps: 'transform',
-      }
-    );
-
-    return () => {
-      tween.scrollTrigger?.kill();
-      tween.kill();
-    };
-  }, [drawLines]);
 
   const getNode = (id: string) => FLOW_NODES.find((n) => n.id === id)!;
 
   return (
     <figure
       className={styles.figure}
-      aria-label="How Agent Kernel sits in: kernel-provided components surround user-defined actual agent logic"
+      aria-label="How Open Agent Kernel sits in: kernel-provided components surround user-defined actual agent logic"
     >
       <div ref={containerRef} className={styles.flowScene}>
         <svg ref={svgRef} className={styles.flowSvg} aria-hidden="true" />

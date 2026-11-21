@@ -4,13 +4,13 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.10.1"
+version = "0.10.2"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = { text = "Apache-2.0" }
 authors = [
-    { name = "Yaala Labs", email = "agentkernel@yaalalabs.com" }
+    { name = "Open Agent Kernel", email = "agentkernel@yaalalabs.com" }
 ]
 dependencies = [
     "pydantic>=2.11.7,<3.0.0",
@@ -83,7 +83,6 @@ aws = [
 ]
 
 azure = [
-    "azure-functions>=1.24.0,<3.0.0",
     "azure-data-tables>=12.4.0,<13.0.0",
     "azure-core>=1.26.0,<2.0.0",
     "azure-servicebus>=7.15.0,<8.0.0",
@@ -140,7 +139,7 @@ openai = [
 adk = [
     "google-adk>=2.7.0,<3.0.0",
     "litellm>=1.100.3,<1.106",  # same bounds as the langgraph extra
-    "openinference-instrumentation-google-adk>=0.1.6,<0.2.0",
+    "openinference-instrumentation-google-adk>=1.0.0,<2.0.0",
 ]
 walledai = [
     "walledai>=4.9.3,<5.0.0"

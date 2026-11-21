@@ -174,7 +174,7 @@ class ResponseHandler:
     def _realtime_edge(message: QueueMessage):
         """The live edge (e.g. a LiveKit room) a realtime output message belongs to, or None.
 
-        A stateful edge registers itself in this process when its gateway starts, keyed by session
+        A stateful edge registers itself in this process when its edge starts, keyed by session
         id, which is the output message's group id. Imported lazily, as ``IntegrationDelivery``
         imports the adapter factory, so a process without integrations never loads that package.
         """

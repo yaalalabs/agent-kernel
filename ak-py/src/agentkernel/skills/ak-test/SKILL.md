@@ -1,7 +1,7 @@
 ---
 name: ak-test
 description: >
-  Set up testing and debug common issues in Agent Kernel projects. This skill guides
+  Set up testing and debug common issues in Open Agent Kernel projects. This skill guides
   you through configuring the built-in test framework, writing agent tests, choosing
   test modes (score, llm, fallback), and troubleshooting common errors.
 license: Apache-2.0
@@ -12,7 +12,7 @@ metadata:
 
 # Testing & Debugging
 
-Use this skill to set up testing for your Agent Kernel project or debug issues.
+Use this skill to set up testing for your Open Agent Kernel project or debug issues.
 
 ## Instructions for the Agent
 
@@ -24,7 +24,7 @@ Update `pyproject.toml`:
 ```toml
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.10.1",
+    "agentkernel[test]>=0.10.2",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -78,7 +78,7 @@ evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to
 Use this when none of the built-in evaluators' scoring fits your agent — e.g. `deepeval`'s binary
 exact-match score mode is too strict and `opik`'s graded `LevenshteinRatio` still doesn't capture
 what you need, or you want a judge call that doesn't depend on DeepEval/Opik/JEV at all, or a
-domain-specific rubric. No AK core change is required: any dotted path to an `AKEvaluator` subclass
+domain-specific rubric. No OAK core change is required: any dotted path to an `AKEvaluator` subclass
 works as the `evaluator:` value, resolved the same way sandbox providers and session stores resolve
 their own bring-your-own backends.
 
@@ -139,7 +139,7 @@ their own bring-your-own backends.
    evaluator: my_evaluator.MyEvaluator
    ```
 
-5. No AK extra beyond `agentkernel[test]` is needed unless your evaluator's own dependencies
+5. No OAK extra beyond `agentkernel[test]` is needed unless your evaluator's own dependencies
    (an LLM client, a scoring library) require one — each built-in's import (`deepeval`, `opik`, `jev`)
    lives entirely inside its own resolution branch, so a custom evaluator never pulls any in.
 
@@ -353,7 +353,7 @@ uv add "agentkernel[claude]"     # For Claude Agent SDK (Claude models only; ANT
 
 Or in `pyproject.toml`:
 ```toml
-dependencies = ["agentkernel[openai,api]>=0.10.1"]
+dependencies = ["agentkernel[openai,api]>=0.10.2"]
 ```
 
 #### Issue: Redis connection errors
@@ -411,9 +411,9 @@ export AK_LOGGING__AK__LEVEL=DEBUG
 export AK_LOGGING__SYSTEM__LEVEL=DEBUG
 ```
 
-- `logging.ak.level` controls Agent Kernel's own logger verbosity
+- `logging.ak.level` controls OAK's own logger verbosity
 - `logging.system.level` controls the process-wide/root logger (use with caution as it affects all application logging)
-- If you do not want Agent Kernel to modify application-wide logging, omit the `system` section
+- If you do not want OAK to modify application-wide logging, omit the `system` section
 
 ### Health Check Endpoint
 

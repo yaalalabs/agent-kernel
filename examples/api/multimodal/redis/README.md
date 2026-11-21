@@ -1,12 +1,12 @@
-# Agent Kernel — Multimodal with Redis Attachment Storage on AWS Lambda
+# Open Agent Kernel — Multimodal with Redis Attachment Storage on AWS Lambda
 
-This example demonstrates how to use Agent Kernel's `RedisStorageDriver` to store and retrieve multimodal attachments (images, PDFs, etc.) in Redis — preventing session cache bloat.
+This example demonstrates how to use Open Agent Kernel's `RedisStorageDriver` to store and retrieve multimodal attachments (images, PDFs, etc.) in Redis — preventing session cache bloat.
 
 ## Deployed Resources
 
 This demo deploys the following AWS resources:
 
-- AWS Lambda function running the Agent Kernel implementation.
+- AWS Lambda function running the OAK implementation.
 - API Gateway endpoint for the Lambda function.
 - Redis (ElastiCache) cluster for multimodal attachment storage (set `create_redis_cluster = true` in `main.tf`, or configure an existing Redis URL in `config.yaml`).
 

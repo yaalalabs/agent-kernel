@@ -1,6 +1,6 @@
-# Agent Kernel running OpenAI Agents SDK based agents in GCP Containerized (Cloud Run)
+# Open Agent Kernel running OpenAI Agents SDK based agents in GCP Containerized (Cloud Run)
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a containerized configuration on GCP Cloud Run with always-on capability (min_instance_count≥1) and Redis for session storage.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a containerized configuration on GCP Cloud Run with always-on capability (min_instance_count≥1) and Redis for session storage.
 
 ## Deployed Resources
 
@@ -294,7 +294,7 @@ terraform destroy
 
 - **Always-On**: With `min_instance_count = 1`, the service maintains at least one instance running, eliminating cold starts but incurring idle costs
 - **No Cold Starts**: Requests are processed immediately without startup latency
-- **Redis Connection**: Connection pooling is handled automatically by the Agent Kernel
+- **Redis Connection**: Connection pooling is handled automatically by the OAK
 - **Memory Usage**: Monitor Cloud Run memory consumption through Cloud Monitoring
 - **Cost Optimization**: Use scale-to-zero (min_instance_count = 0) for development to minimize costs
 
