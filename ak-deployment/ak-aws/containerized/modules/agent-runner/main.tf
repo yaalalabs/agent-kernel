@@ -438,8 +438,8 @@ resource "aws_iam_policy" "backlog_metric_lambda_policy" {
       {
         Sid    = "LambdaLogging"
         Effect = "Allow"
+        # No logs:CreateLogGroup: Terraform owns the group, and a last run during destroy would recreate and leak it.
         Action = [
-          "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]

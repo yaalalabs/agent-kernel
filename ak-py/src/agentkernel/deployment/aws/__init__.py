@@ -12,11 +12,7 @@ except importlib.metadata.PackageNotFoundError:
 # the other target's dependencies (e.g. containerized/ECS's fastapi/uvicorn requirement).
 _LAZY_EXPORTS = {
     # containerized (ECS)
-    "AWSRestAPI": ".containerized",
     "AWSWebsocketAPI": ".containerized",
-    "ECSAgentRunner": ".containerized",
-    "ECSIOHandler": ".containerized",
-    "ECSOutputConsumer": ".containerized",
     "ECSWebSocketSystemRequestHandler": ".containerized",
     "ECSSQSConsumer": ".containerized.core",
     # serverless (Lambda)
@@ -36,11 +32,7 @@ __all__ = sorted(_LAZY_EXPORTS)
 # Not executed at runtime (preserves laziness) — lets mypy/IDEs resolve these names statically.
 if TYPE_CHECKING:
     from .containerized import (
-        AWSRestAPI,
         AWSWebsocketAPI,
-        ECSAgentRunner,
-        ECSIOHandler,
-        ECSOutputConsumer,
         ECSWebSocketSystemRequestHandler,
     )
     from .containerized.core import ECSSQSConsumer

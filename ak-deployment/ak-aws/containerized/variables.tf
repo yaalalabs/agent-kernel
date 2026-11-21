@@ -275,11 +275,15 @@ variable "execution_mode" {
 
 variable "message_type" {
   type        = string
-  description = "Reply delivery: 'complete' (whole reply) or 'delta' (chunks: SSE under rest_sync, WebSocket under async). null leaves it to Agent Kernel's default (delta for realtime, complete otherwise). Injected as AK_EXECUTION__MESSAGE_TYPE."
+  description = "Reply delivery: 'complete' (whole reply) or 'delta' (chunks: SSE under rest_sync, WebSocket under async). SSE is rejected with queue_mode = true. null leaves it to Agent Kernel's default (delta for realtime, complete otherwise). Injected as AK_EXECUTION__MESSAGE_TYPE."
   default     = null
   validation {
     condition     = contains(["complete", "delta"], coalesce(var.message_type, "complete")) # null passes
     error_message = "message_type must be null, 'complete' or 'delta'."
+  }
+  validation {
+    condition     = !(var.queue_mode && var.execution_mode == "rest_sync" && var.message_type == "delta")
+    error_message = "rest_sync with message_type = \"delta\" (SSE) is not supported with queue_mode = true: the HTTP API buffers streamed responses. Use execution_mode = \"async\" with message_type = \"delta\" (WebSocket)."
   }
 }
 
