@@ -302,8 +302,12 @@ Feature logic is written as classes, not as procedural module-level functions. T
 
 The following log levels are supported (in order of verbosity):
 
+- **TRACE** (`agentkernel.core.TRACE`, value 5): one line per request-path stage (`TraceStage`), for benchmarking
 - **DEBUG**: Detailed information for diagnosing problems
 - **INFO**: General information about program execution
 - **WARNING**: Something unexpected happened
 - **ERROR**: Due to a more serious problem, the software has not been able to perform some function
 - **CRITICAL**: A serious error, indicating that the program itself may be unable to continue running
+
+A trace point is one `%`-style call, nothing else: `self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)`.
+Only trace lines carry a `[STAGE]` tag; `TraceLine.parse` (`core/logger.py`) reads them back, so the call shape and the parser change together.

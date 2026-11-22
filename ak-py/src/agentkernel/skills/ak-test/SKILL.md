@@ -399,7 +399,7 @@ Add to `config.yaml`:
 ```yaml
 logging:
   ak:
-    level: DEBUG  # Agent Kernel logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
+    level: DEBUG  # Agent Kernel logger level (TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL)
   system:
     level: DEBUG  # System/root logger level (affects process-wide logging)
 ```

@@ -402,13 +402,13 @@ Supported formats: `.yaml`, `.yml`, `.json`
 - **Field**: `logging.ak.level`
 - **Type**: string
 - **Default**: `WARNING`
-- **Description**: OAK logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
+- **Description**: OAK logger level (TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL). `TRACE` adds one line per request-path stage for benchmarking
 - **Environment Variable**: `AK_LOGGING__AK__LEVEL`
 
 - **Field**: `logging.system.level`
 - **Type**: string
 - **Default**: `WARNING`
-- **Description**: System/root logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
+- **Description**: System/root logger level (TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL)
 - **Environment Variable**: `AK_LOGGING__SYSTEM__LEVEL`
 
 #### Identity
