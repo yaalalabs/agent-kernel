@@ -50,6 +50,7 @@ from .model import (
     ToolFilter,
 )
 from .config import AKConfig as Config
+from .logger import TRACE, TraceLine, TraceStage
 from .registry import AgentRegistrationError, AgentRegistry
 from .module import Module
 from .runtime import Runtime

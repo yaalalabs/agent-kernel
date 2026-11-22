@@ -8,6 +8,7 @@ from typing import ClassVar
 
 from .config import AKConfig
 
+# Below DEBUG; 5 is the value other libraries (e.g. uvicorn) use for TRACE, so the name stays consistent
 TRACE = 5
 logging.addLevelName(TRACE, "TRACE")
 

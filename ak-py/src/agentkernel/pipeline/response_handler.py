@@ -4,6 +4,7 @@ import logging
 import threading
 
 from ..core.config import AKConfig
+from ..core.logger import TRACE, TraceStage
 from ..core.model import StreamChunk
 from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
@@ -65,6 +66,8 @@ class ResponseHandler:
         if integration and message.attributes.get(ATTR_REALTIME):
             self._deliver_realtime(message, integration)
             return
+        # Delta sends one output message per chunk, so this fires per chunk (#911 Q1).
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_RECEIVED, message.attributes.get(ATTR_REQUEST_ID))
         if integration:
             body = json.loads(message.body) if message.body else {}
             status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
@@ -241,7 +244,8 @@ class ResponseHandler:
             "body": body,
         }
         self._get_store().add_message(record)
-        self._log.info(f"[OUTPUT DONE] Stored response: request_id={request_id}, status_code={record['status_code']}")
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+        self._log.info(f"Output done: stored response: request_id={request_id}, status_code={record['status_code']}")
 
     def _store_failure_record(self, message: QueueMessage, request_id: str | None, error_text: str) -> None:
         """Store a 500 record for a caller polling the response store, so it never waits out its budget."""
@@ -265,6 +269,7 @@ class ResponseHandler:
                 "or a BYO store with the capability)"
             )
         store.add_chunk(request_id, json.loads(message.body))
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
 
     def _broadcast(self, message: QueueMessage, message_type: WebSocketHandlerABC.MessageType) -> None:
         """Push an output message to the user's current WebSocket connections.
@@ -284,9 +289,10 @@ class ResponseHandler:
             body = {"response": body}
 
         self._get_ws_handler().broadcast(message=body, user_id=user_id, message_type=message_type)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, message.attributes.get(ATTR_REQUEST_ID))
         # Chunks are one message per token: INFO here would log the whole reply token by token.
         log = self._log.debug if message_type == WebSocketHandlerABC.MessageType.STREAM_CHUNK else self._log.info
-        log(f"[OUTPUT DONE] Broadcasted {message_type.value} via WebSocket: user_id={user_id}")
+        log(f"Output done: broadcasted {message_type.value} via WebSocket: user_id={user_id}")
 
     def _broadcast_error(self, message: QueueMessage, error_message: dict, message_type: WebSocketHandlerABC.MessageType) -> None:
         """Best-effort WebSocket delivery of a permanent-failure error (never hang the client silently)."""

@@ -426,6 +426,9 @@ class TestTrace:
         assert logging.getLevelName(TRACE) == "TRACE"
         assert AKLogger.resolve_level("trace") == TRACE
 
+    def test_stdlib_logging_not_patched(self):
+        assert not hasattr(logging, "TRACE")
+
     def test_trace_written_at_trace_level(self):
         out = _ak_output("TRACE", lambda log: log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, "r1"))
         assert " - ak.test.trace - TRACE - [AGENT_START] request_id=r1" in out

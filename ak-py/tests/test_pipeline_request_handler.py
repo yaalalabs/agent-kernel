@@ -1,6 +1,8 @@
 import base64
 import json
+import logging
 import threading
+import time
 
 import pytest
 from fastapi import FastAPI, HTTPException, Response
@@ -10,6 +12,7 @@ from fastapi.testclient import TestClient
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
+from agentkernel.core.logger import TRACE, AKLogger, TraceLine, TraceStage
 from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest
 from agentkernel.core.multimodal.hooks import MultimodalPreHook
 from agentkernel.core.multimodal.storage import AttachmentStorageManager
@@ -316,6 +319,81 @@ class TestStreamSSE:
         assert frames[3] == {"event": {"type": "message_end", "message_id": message_id}, "done": False, "session_id": "s1"}
         assert frames[-1]["done"] is True
         assert frames[-1]["session_id"] == "s1"
+
+
+def _trace_lines(caplog) -> dict[str, list[TraceLine]]:
+    """The captured TRACE records, written with AK's own formatter and parsed back, grouped by logger."""
+    formatter_holder = logging.getLogger("ak.test.trace_formatter")
+    AKLogger.attach_stream_handler(formatter_holder, attach_formatter=True)
+    formatter = formatter_holder.handlers[0].formatter
+    by_logger: dict[str, list[TraceLine]] = {}
+    for record in caplog.records:
+        if record.levelno == TRACE:
+            by_logger.setdefault(record.name, []).append(TraceLine.parse(formatter.format(record)))
+    return by_logger
+
+
+def _await_deliveries(caplog, count: int) -> None:
+    """Wait for the Response Handler's thread: it traces a delivery after the client can already read it."""
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if sum(1 for record in caplog.records if record.levelno == TRACE and record.args[0] == TraceStage.RESPONSE_DELIVERED) >= count:
+            return
+        time.sleep(0.01)
+
+
+class TestTraceStages:
+    """#911: every request-path stage is traced once per component, in order, with one request_id.
+
+    The edge, runner and Response Handler run on their own threads, so order is checked per component.
+    """
+
+    def test_complete_rest_sync(self, monkeypatch, dummy_agent, workers, caplog):
+        _configure(monkeypatch, mode="rest_sync")
+        workers()
+        with caplog.at_level(TRACE, logger="ak"):
+            assert _client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME}).status_code == 200
+            _await_deliveries(caplog, 1)
+
+        lines = _trace_lines(caplog)
+        assert [line.stage for line in lines["ak.pipeline.request_handler"]] == [
+            TraceStage.REQUEST_RECEIVED,
+            TraceStage.INPUT_ENQUEUED,
+            TraceStage.RESPONSE_POLL_START,
+            TraceStage.RESPONSE_FOUND,
+        ]
+        assert [line.stage for line in lines["ak.pipeline.agent_runner"]] == [
+            TraceStage.AGENT_RECEIVED,
+            TraceStage.AGENT_START,
+            TraceStage.AGENT_DONE,
+            TraceStage.OUTPUT_ENQUEUED,
+        ]
+        assert [line.stage for line in lines["ak.pipeline.response_handler"]] == [TraceStage.OUTPUT_RECEIVED, TraceStage.RESPONSE_DELIVERED]
+        assert len({line.request_id for group in lines.values() for line in group}) == 1
+
+    def test_delta_sse(self, monkeypatch, dummy_agent, workers, caplog):
+        _configure(monkeypatch, mode="rest_sync", message_type="delta")
+        workers(stream=True)
+        with caplog.at_level(TRACE, logger="ak"):
+            with _client().stream("POST", CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME}) as response:
+                frames = [line for line in response.iter_lines() if line.startswith("data: ")]
+            _await_deliveries(caplog, len(frames))
+
+        lines = _trace_lines(caplog)
+        assert [line.stage for line in lines["ak.pipeline.request_handler"]] == [TraceStage.REQUEST_RECEIVED, TraceStage.INPUT_ENQUEUED]
+        assert [line.stage for line in lines["ak.pipeline.stream_agent_runner"]] == [
+            TraceStage.AGENT_RECEIVED,
+            TraceStage.AGENT_START,
+            TraceStage.AGENT_FIRST_CHUNK,
+            TraceStage.AGENT_DONE,
+            TraceStage.OUTPUT_ENQUEUED,
+        ]
+        # One output message per chunk, each traced (#911 Q1).
+        assert [line.stage for line in lines["ak.pipeline.response_handler"]] == [
+            TraceStage.OUTPUT_RECEIVED,
+            TraceStage.RESPONSE_DELIVERED,
+        ] * len(frames)
+        assert len({line.request_id for group in lines.values() for line in group}) == 1
 
 
 class TestStatusHonoringResponses:

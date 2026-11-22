@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from agentkernel.core.config import _ExecutionConfig, _QueuesConfig
+from agentkernel.core.logger import TRACE, TraceStage
 from agentkernel.core.model import ExecutionMode, Principal
 from agentkernel.core.session.in_memory import InMemoryWSConnectionStore
 from agentkernel.core.util.factory import AKConfigError
@@ -478,6 +479,16 @@ class TestCoHostedThroughRESTAPI:
 
 
 class TestWebSocketChat:
+    def test_chat_frame_traces_received_then_enqueued(self, monkeypatch, caplog):
+        app, _, _, _ = _ws_app(monkeypatch)
+        with caplog.at_level(TRACE, logger="ak"):
+            with TestClient(app).websocket_connect(f"{WS_PATH}?token=good") as websocket:
+                websocket.send_json({"route": "chat", "request_id": "r-1", "body": {"prompt": "hi", "session_id": "s1"}})
+                websocket.receive_json()
+
+        traces = [record.args for record in caplog.records if record.levelno == TRACE]
+        assert traces == [(TraceStage.REQUEST_RECEIVED, "r-1"), (TraceStage.INPUT_ENQUEUED, "r-1")]
+
     def test_chat_frame_is_enqueued_with_the_pipeline_attributes(self, monkeypatch):
         app, _, transport, _ = _ws_app(monkeypatch)
         client = TestClient(app)

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from ..api.handler import AgentRESTRequestHandler
 from ..core.chat_service import ChatService, RequestBuilder
 from ..core.config import AKConfig
+from ..core.logger import TRACE, TraceStage
 from ..core.model import BaseRunRequest, ChatRunRequest, ExecutionMode, FileData, ImageData
 from ..core.multimodal.storage import AttachmentStorageManager
 from ..core.util.factory import AKConfigError
@@ -255,19 +256,22 @@ class RestHandler(AgentRESTRequestHandler):
             # Unique request_id, distinct from session_id.
             request_id = str(uuid.uuid4())
 
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
             self._log.info(
-                f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
+                f"Request start: session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
             )
 
             # Offload the sync send so it doesn't block the event loop.
             queue_result = await asyncio.to_thread(self._enqueue_request, body, request_id)
 
-            self._log.info(f"[ENQUEUED] MessageId={queue_result.get('MessageId')}, request_id={request_id}")
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
+            self._log.info(f"Enqueued: MessageId={queue_result.get('MessageId')}, request_id={request_id}")
 
             mode = self._effective_mode()
             if mode == ExecutionMode.REST_SYNC:
                 # Wait for the response in the response store.
-                self._log.info(f"[WAITING] Polling response store for request_id={request_id}")
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_POLL_START, request_id)
+                self._log.info(f"Waiting: polling response store for request_id={request_id}")
 
                 response = await self._await_response_record(request_id)
 
@@ -281,7 +285,8 @@ class RestHandler(AgentRESTRequestHandler):
                         },
                     )
 
-                self._log.info(f"[RESPONSE FOUND] request_id={request_id}, response_keys={list(response.keys())}")
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_FOUND, request_id)
+                self._log.info(f"Response found: request_id={request_id}, response_keys={list(response.keys())}")
 
                 return self._build_sync_response(response)
 
@@ -585,8 +590,10 @@ class RequestHandler(RestHandler):
     async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
         """Enqueue and serve the chunks over SSE; _reject_unroutable has vouched for the store."""
         request_id = str(uuid.uuid4())
-        self._log.info(f"[STREAM REQUEST] session_id={body.session_id}, request_id={request_id}")
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
+        self._log.info(f"Stream request: session_id={body.session_id}, request_id={request_id}")
         await asyncio.to_thread(self._enqueue_request, body, request_id)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: str | None) -> AsyncGenerator[str, None]:

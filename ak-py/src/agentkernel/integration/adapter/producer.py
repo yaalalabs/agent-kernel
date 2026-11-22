@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 from ...core.config import AKConfig
+from ...core.logger import TRACE, TraceStage
 from ...core.model import AgentRequestVoice, BaseRunRequest, Principal
 from ...core.multimodal.storage import AttachmentStorageManager
 from ...core.util.factory import AKConfigError
@@ -97,7 +98,8 @@ class IntegrationProducer:
         )
         # A voice edge enqueues a frame every ~100 ms, so those are logged at debug.
         level = logging.DEBUG if any(isinstance(item, AgentRequestVoice) for item in request.requests) else logging.INFO
-        self._log.log(level, f"[ENQUEUED] integration={adapter_name}, session_id={request.session_id}, request_id={request.request_id}")
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request.request_id)
+        self._log.log(level, f"Enqueued: integration={adapter_name}, session_id={request.session_id}, request_id={request.request_id}")
         return result
 
     @staticmethod

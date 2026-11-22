@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ValidationError
 
 from ..core.event import PausedInterruption
+from ..core.logger import TRACE, TraceStage
 from ..core.model import AgentPausedReplyAny, AgentReplyText
 from ..core.util.async_bridge import run_async_sync
 from .envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, REPLY_CONTEXT_PREFIX
@@ -103,17 +104,20 @@ class IntegrationDelivery:
                 f"request_id={request_id}, status_code={status_code}, error={body.get('error')}"
             )
             run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
             return
 
         if body.get("status") == "PAUSED":
             paused = self._paused_reply(body, session_id, integration)
             if paused is not None:
                 run_async_sync(adapter.deliver_paused(paused, reply_context))
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
                 self._log.info(f"[OUTPUT PAUSED] Delivered a pause to {integration}: session_id={session_id}, request_id={request_id}")
                 return
 
         run_async_sync(adapter.deliver(AgentReplyText(response=str(body.get("result", ""))), reply_context))
-        self._log.info(f"[OUTPUT DONE] Delivered to {integration}: session_id={session_id}, request_id={request_id}")
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+        self._log.info(f"Output done: delivered to {integration}: session_id={session_id}, request_id={request_id}")
 
     def _paused_reply(self, body: dict, session_id: str | None, integration: str) -> AgentPausedReplyAny | None:
         """Rebuild the paused reply from the pause keys ``ResponseBuilder`` promoted onto the body.

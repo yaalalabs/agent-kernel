@@ -27,6 +27,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ...api.handler import RESTRequestHandler
 from ...core.config import AKConfig
+from ...core.logger import TRACE, TraceStage
 from ...core.model import BaseRequest, Principal
 from ...core.session.base import WSConnectionStore
 from ...core.util.factory import AKConfigError
@@ -251,6 +252,7 @@ class PipelineWebSocketHandler(RESTRequestHandler):
         body.principal = principal
         user_id = principal.subject
         request_id = request.request_id or str(uuid.uuid4())
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
         # USER_ID doubles as the WS-entered marker (spec §2 invariant): the Response Handler
         # resolves delivery from the connection store, so no return address is stamped.
         message = QueueMessage(
@@ -268,7 +270,8 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             await self._send_system(websocket, "Request processing failed")
             return
 
-        self._log.info(f"[ENQUEUED] request_id={request_id}, session_id={body.session_id}, subject={user_id}")
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
+        self._log.info(f"Enqueued: request_id={request_id}, session_id={body.session_id}, subject={user_id}")
         await websocket.send_json(
             {
                 "status": "SUCCESS",
