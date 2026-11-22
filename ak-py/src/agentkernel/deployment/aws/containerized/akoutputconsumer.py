@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from ....core.config import AKConfig
+from ....core.logger import TRACE, TraceStage
 from ....core.model import StreamChunk
 from ..core.response_store import ResponseStoreFactory
 from ..core.sqs_handler import SQSHandler
@@ -60,13 +61,17 @@ class ECSOutputConsumer(ECSSQSConsumer):
         :param record: boto3 SQS ``receive_message`` record
         """
         message_id = record.get("MessageId")
-        cls._log.info(f"[OUTPUT START] Processing output message {message_id}")
+        request_id = SQSHandler.get_message_custom_attributes(record).get("request_id")
+        cls._log.info(f"Output start: processing output message {message_id}, request_id={request_id}")
+        # Delta sends one output message per chunk, so this fires per chunk (#911 Q1).
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_RECEIVED, request_id)
 
         execution = cls._config.execution
         if execution.is_websocket:
             message_type = AWSWebSocketHandler.MessageType.STREAM_CHUNK if execution.is_delta else AWSWebSocketHandler.MessageType.CHAT_RESPONSE
             cls._broadcast_via_websocket(record, message_type=message_type)
-            cls._log.info(f"[OUTPUT DONE] Broadcasted {message_type.value} {message_id} via WebSocket")
+            cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+            cls._log.info(f"Output done: broadcasted {message_type.value} {message_id} via WebSocket, request_id={request_id}")
             return
 
         message = cls._construct_message_for_store(record)
@@ -75,7 +80,8 @@ class ECSOutputConsumer(ECSSQSConsumer):
             f"session_id={message['session_id']}, body_keys={list(message.get('body', {}).keys()) if isinstance(message.get('body'), dict) else 'N/A'}"
         )
         cls._get_response_store().add_message(message)
-        cls._log.info(f"[OUTPUT DONE] Stored response — session_id={message['session_id']} " f"request_id={message['request_id']}")
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+        cls._log.info(f"Output done: stored response — session_id={message['session_id']} request_id={message['request_id']}")
 
     @classmethod
     def on_permanent_failure(cls, record: dict[str, Any]) -> None:

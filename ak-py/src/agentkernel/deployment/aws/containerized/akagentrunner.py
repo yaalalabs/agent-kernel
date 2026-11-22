@@ -5,6 +5,7 @@ import logging
 
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
+from ....core.logger import TRACE, TraceStage
 from ....core.model import BaseRunRequest, Principal, StreamChunk
 from ....pipeline.thread_runner import ThreadRunner
 from ....pipeline.transport.base import QueueTransportFactory
@@ -132,26 +133,31 @@ class ECSAgentRunner(ECSSQSConsumer):
     def process_message(cls, record: dict) -> None:
         """Implements ECSSQSConsumer.process_message."""
         message_id = record.get("MessageId")
-        cls._log.info(f"[AGENT START] Processing message {message_id}")
+        cls._log.info(f"Processing message {message_id}")
 
         body = BaseRunRequest.model_validate(json.loads(record["Body"]))
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
+        request_id = record_attributes["request_id"]
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_RECEIVED, request_id)
 
         cls._log.info(
-            f"[AGENT PROCESSING] request_id={record_attributes['request_id']}, "
+            f"Agent processing: request_id={request_id}, "
             f"session_id={body.session_id}, agent={body.agent}, prompt={body.prompt[:50] if body.prompt else 'N/A'}"
         )
 
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, request_id)
         status_code, agent_response = cls._get_chat_service().process_chat_request(req=body)
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)
 
         cls._log.info(
-            f"[AGENT RESPONSE] request_id={record_attributes['request_id']}, status_code={status_code}, "
+            f"Agent response: request_id={request_id}, status_code={status_code}, "
             f"response_keys={list(agent_response.keys()) if isinstance(agent_response, dict) else 'N/A'}"
         )
 
         cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes, status_code=status_code)
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_ENQUEUED, request_id)
 
-        cls._log.info(f"[AGENT DONE] Sent to output queue: {SQSHandler.get_output_queue_url()}, " f"request_id={record_attributes['request_id']}")
+        cls._log.info(f"Agent done: sent to output queue: {SQSHandler.get_output_queue_url()}, request_id={request_id}")
 
     @classmethod
     def on_permanent_failure(cls, record: dict) -> None:
@@ -243,13 +249,18 @@ class ECSStreamAgentRunner(ECSAgentRunner):
         message_id = record.get("MessageId")
         # Included in the dedup suffix below so a retry's chunks never collide with a prior attempt's.
         receive_count = record.get("Attributes", {}).get("ApproximateReceiveCount", "1")
-        cls._log.info(f"[STREAM AGENT START] Processing message {message_id} (receive_count={receive_count})")
+        cls._log.info(f"Stream agent start: processing message {message_id} (receive_count={receive_count})")
 
         body = BaseRunRequest.model_validate(json.loads(record["Body"]))
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
+        request_id = record_attributes["request_id"]
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_RECEIVED, request_id)
 
         chunk_count = 0
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, request_id)
         for raw_chunk in cls._get_chat_service().process_stream_chat_sync(req=body):
+            if chunk_count == 0:
+                cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_FIRST_CHUNK, request_id)
             chunk_dict = json.loads(raw_chunk)
             cls._send_chunk_to_output_queue(
                 chunk_body=chunk_dict,
@@ -257,10 +268,12 @@ class ECSStreamAgentRunner(ECSAgentRunner):
                 chunk_dedup_suffix=f"{receive_count}-{chunk_count}",
             )
             chunk_count += 1
+        # Each chunk is sent inside the loop, so the last send is already done here (#911 Q2).
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_ENQUEUED, request_id)
 
         cls._log.info(
-            f"[STREAM AGENT DONE] Streamed {chunk_count} chunks to output queue: "
-            f"{SQSHandler.get_output_queue_url()}, request_id={record_attributes['request_id']}"
+            f"Stream agent done: streamed {chunk_count} chunks to output queue: {SQSHandler.get_output_queue_url()}, request_id={request_id}"
         )
 
     @classmethod

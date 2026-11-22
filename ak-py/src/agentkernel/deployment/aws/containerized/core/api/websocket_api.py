@@ -16,6 +16,7 @@ from ......api.handler import RESTRequestHandler
 from ......api.http import RESTAPI
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
+from ......core.logger import TRACE, TraceStage
 from ......core.model import BaseRequest, BaseRunRequest, Principal, StreamChunk
 from ......core.util.factory import AKConfigError
 from ......identity.errors import AuthenticationError
@@ -348,6 +349,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
     async def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: str | None, session_id: str, endpoint_url: str) -> JSONResponse:
         """Queue mode: send to the input queue; ECSOutputConsumer pushes the reply."""
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
         self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
 
         await self._offload(
@@ -360,6 +362,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
                 SQSHandler.CustomAttribute(name="endpoint_url", value=endpoint_url, datatype=SQSHandler.AttributeDataType.STRING)
             ],
         )
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
 
         response = self._body("Request queued successfully", success=True, user_id=user_id)
         response["request_id"] = request_id
