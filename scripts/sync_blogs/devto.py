@@ -106,6 +106,7 @@ ARTICLES_PAGE_SIZE = 1000
 
 STYLE_PX_RE = r"\b{}:\s*'(\d+)px'"
 SIZED_IMG_RE = re.compile(r'<img src="(https?://[^"]+)" alt="([^"]*)"(?: width="(\d+)")?(?: height="(\d+)")? />')
+VIDEO_RE = re.compile(r'<video\b.*?<source src="([^"]+)".*?</video>', re.DOTALL)
 
 
 class DevtoAPIError(RuntimeError):
@@ -317,6 +318,8 @@ def strip_jsx(body: str) -> str:
     """Drop the handful of JSX-only bits our MDX posts use that DEV can't render."""
     body = re.sub(r"<!--\s*truncate\s*-->\n?", "", body)
     body = re.sub(r"\sstyle=\{\{[^}]*\}\}", "", body)
+    # DEV plays a <video> only as a muted GIF with no controls, so link to the file instead.
+    body = VIDEO_RE.sub(lambda m: f"**[▶ Watch the video]({m.group(1)})**", body)
     return body
 
 
