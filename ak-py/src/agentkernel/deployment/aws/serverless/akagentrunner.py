@@ -3,6 +3,7 @@ import logging
 
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig
+from ....core.logger import TRACE, TraceStage
 from ....core.model import BaseRunRequest, Principal, StreamChunk
 from ....pipeline.envelope import ATTR_STATUS_CODE
 from ....pipeline.integration_delivery import IntegrationDelivery
@@ -172,13 +173,18 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         """
         cls._log.info(f"Processing message: {record}")
         body = cls._parse_body(record)
+        record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
+        request_id = record_attributes["request_id"]
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_RECEIVED, request_id)
         # ChatService(rest_api_mode=False) returns (status_code, response_dict). The status travels
         # to the output message as an attribute so the deferred-schedule 202 and the validation 4xx
         # survive the queue round trip instead of collapsing to 200 at the REST surface.
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, request_id)
         status_code, agent_response = cls._get_chat_service().process_chat_request(req=body, requests=body.requests)
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)
         cls._log.info(f"Chat service response: '{agent_response}' with status_code: {status_code}")
-        record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
         cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes, status_code=status_code)
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_ENQUEUED, request_id)
         cls._log.info(f"Sent Response message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
 
     @classmethod
@@ -341,11 +347,16 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         cls._log.info(f"Processing stream message: {record}")
         body = cls._parse_body(record)
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
+        request_id = record_attributes["request_id"]
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_RECEIVED, request_id)
         # Included in the dedup suffix below so a retry's chunks never collide with a prior attempt's.
         receive_count = record.get("attributes", {}).get("ApproximateReceiveCount", "1")
 
         chunk_count = 0
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, request_id)
         for raw_chunk in cls._get_chat_service().process_stream_chat_sync(req=body, requests=body.requests):
+            if chunk_count == 0:
+                cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_FIRST_CHUNK, request_id)
             chunk_dict = json.loads(raw_chunk)
             cls._send_chunk_to_output_queue(
                 chunk_body=chunk_dict,
@@ -353,6 +364,9 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
                 chunk_dedup_suffix=f"{receive_count}-{chunk_count}",
             )
             chunk_count += 1
+        # Each chunk is sent inside the loop, so the last send is already done here (#911 Q2).
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_ENQUEUED, request_id)
         cls._log.info(f"Streamed {chunk_count} chunks to output queue for request_id: {record_attributes['request_id']}")
 
     @classmethod

@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from ....core.config import AKConfig
+from ....core.logger import TRACE, TraceStage
 from ....core.model import StreamChunk
 from ....pipeline.envelope import ATTR_STATUS_CODE
 from ....pipeline.integration_delivery import IntegrationDelivery
@@ -140,8 +141,12 @@ class ResponseHandler(LambdaSQSConsumer):
         cls._log.info(f"Processing message: {record}")
 
         message_attributes = SQSHandler.get_message_custom_attributes(record)
+        request_id = message_attributes.get("request_id")
+        # Delta sends one output message per chunk, so this fires per chunk (#911 Q1).
+        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_RECEIVED, request_id)
         integration = IntegrationDelivery.integration_of(message_attributes)
         if integration:
+            # IntegrationDelivery traces RESPONSE_DELIVERED itself.
             cls._get_integration_delivery().deliver(
                 integration,
                 message_attributes,
@@ -155,9 +160,11 @@ class ResponseHandler(LambdaSQSConsumer):
         if execution.is_websocket:
             message_type = LambdaWSHandler.MessageType.STREAM_CHUNK if execution.is_delta else LambdaWSHandler.MessageType.CHAT_RESPONSE
             cls._broadcast_via_websocket(record, message_type=message_type)
+            cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
         else:
             message = cls._construct_message_for_store(record)
             cls._get_response_store().add_message(message)
+            cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
             cls._log.info(f"Stored message for session_id: {message['session_id']}, request_id: {message['request_id']}")
 
     @classmethod

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
+from ......core.logger import TRACE, TraceStage
 from ......core.model import BaseRequest, Principal, StreamChunk
 from ......core.util.async_bridge import run_async_sync
 from ......core.util.factory import AKConfigError
@@ -408,6 +409,7 @@ class SystemRoutesHandler(LambdaWSHandler):
             if not session_id:
                 raise ValueError("session_id is required")
 
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request.request_id)
             self._log.info(f"Sending WebSocket request to queue: request_id={request.request_id}, session_id={session_id}")
 
             endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
@@ -422,6 +424,7 @@ class SystemRoutesHandler(LambdaWSHandler):
                 ],
             )
 
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request.request_id)
             self._log.info(f"Request sent to input queue successfully: {response}")
 
             response_body = self._build_lambda_response(user_id=user_id, msg="Request queued successfully", success=True)
