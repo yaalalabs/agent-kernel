@@ -20,7 +20,14 @@ from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _RegistryConfig
 from agentkernel.core.model import AgentDescriptor, AgentIdentitySpec, AgentReplyText, AgentRequestText, AgentSkillDescriptor
 from agentkernel.core.module import Module
-from agentkernel.core.registry import AgentDescriptorPage, AgentRegistrationError, AgentRegistry, AgentRegistryFactory, InMemoryAgentRegistry
+from agentkernel.core.registry import (
+    AgentDescriptorPage,
+    AgentNotFoundError,
+    AgentRegistrationError,
+    AgentRegistry,
+    AgentRegistryFactory,
+    InMemoryAgentRegistry,
+)
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.service import AgentService
 from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -1233,6 +1240,35 @@ class TestModuleLoadRollback:
         assert sorted(registry.agents()) == ["billing", "search"]
 
 
+class TestAgentNotFoundError:
+    """The one error for an agent a request named and cannot have: unknown now, hidden once the access gate lands."""
+
+    def test_it_names_the_agent_in_one_fixed_text(self):
+        error = AgentNotFoundError("billing")
+
+        assert (str(error), error.agent) == ("Agent 'billing' not found", "billing")
+
+    def test_it_is_a_lookup_error_a_surface_cannot_mistake_for_a_missing_key(self):
+        # A KeyError or an IndexError raised by a run is a failure (500), and a schedule route reads a KeyError as a
+        # missing schedule: a surface maps this class alone to 404.
+        assert issubclass(AgentNotFoundError, LookupError)
+        assert not issubclass(AgentNotFoundError, (KeyError, IndexError))
+        assert not isinstance(KeyError("billing"), AgentNotFoundError)
+
+    def test_it_survives_a_copy_with_its_text_unchanged(self):
+        import copy
+        import pickle
+
+        error = AgentNotFoundError("billing")
+
+        assert str(pickle.loads(pickle.dumps(error))) == str(copy.copy(error)) == "Agent 'billing' not found"
+
+    def test_it_is_exported_beside_the_registry(self):
+        import agentkernel.core as core
+
+        assert core.AgentNotFoundError is AgentNotFoundError
+
+
 class TestAvailability:
     """`AgentService.ensure_agent_available` asks the registry, so a process answers for agents it does not host."""
 
@@ -1240,9 +1276,9 @@ class TestAvailability:
         with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([_descriptor("billing")])):
             AgentService.ensure_agent_available("billing")
 
-    def test_a_named_agent_the_registry_does_not_know_is_not_available(self, descriptor_only_registry):
+    def test_a_named_agent_the_registry_does_not_know_is_not_found(self, descriptor_only_registry):
         with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([_descriptor("billing")])):
-            with pytest.raises(ValueError, match="No agent available"):
+            with pytest.raises(AgentNotFoundError, match="^Agent 'support' not found$"):
                 AgentService.ensure_agent_available("support")
 
     def test_an_unnamed_request_needs_the_registry_to_know_some_agent(self, descriptor_only_registry):
@@ -1287,10 +1323,20 @@ class TestAvailability:
         # Direct execution: an agent another process hosts cannot be selected here, so the request must fail before
         # anything is written for it (a thread message, a session).
         with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([_descriptor("billing")])):
-            with pytest.raises(ValueError, match="No agent available"):
+            # Named, it answers as an agent that does not exist would: this process cannot serve it either way.
+            with pytest.raises(AgentNotFoundError, match="^Agent 'billing' not found$"):
                 AgentService.ensure_agent_available("billing", hosted=True)
+            # Unnamed, there is no name to hide and no agent to default to.
             with pytest.raises(ValueError, match="No agent available"):
                 AgentService.ensure_agent_available(None, hosted=True)
+
+    def test_an_unknown_named_agent_and_no_agent_at_all_are_different_errors(self):
+        # A name the registry does not know is the 404 a hidden agent gets; a request naming none is a 400.
+        with Runtime(InMemorySessionStore()):
+            with pytest.raises(AgentNotFoundError):
+                AgentService.ensure_agent_available("support")
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService.ensure_agent_available(None)
 
     def test_a_hosted_agent_satisfies_the_hosted_check_without_reading_the_store(self):
         class _HostedOnly(InMemoryAgentRegistry):

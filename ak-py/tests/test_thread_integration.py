@@ -258,6 +258,22 @@ class TestAgentThreadRequestHandler:
         with pytest.raises(HTTPException) as exc:
             await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent="no-such-agent"))
 
+        assert exc.value.status_code == 404
+        assert exc.value.detail == {"error": "Agent 'no-such-agent' not found", "session_id": "s1"}
+        assert thread_enabled.get_thread("s1") is None
+        assert handler.chat_service.calls == []
+
+    @pytest.mark.asyncio
+    async def test_a_request_naming_no_agent_while_none_is_hosted_stays_a_400(self, thread_enabled):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService()
+
+        with Runtime(InMemorySessionStore()):
+            with pytest.raises(HTTPException) as exc:
+                await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1))
+
         assert exc.value.status_code == 400
         assert exc.value.detail["error"] == "No agent available"
         assert thread_enabled.get_thread("s1") is None
@@ -278,8 +294,9 @@ class TestAgentThreadRequestHandler:
             with pytest.raises(HTTPException) as exc:
                 await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent="billing"))
 
-        assert exc.value.status_code == 400
-        assert exc.value.detail["error"] == "No agent available"
+        # The answer an unknown agent gets: this process cannot serve the name, and says no more about it.
+        assert exc.value.status_code == 404
+        assert exc.value.detail["error"] == "Agent 'billing' not found"
         assert thread_enabled.get_thread("s1") is None
         assert handler.chat_service.calls == []
 
@@ -429,6 +446,33 @@ def _request(principal: Principal | None = U1) -> Request:
 
 
 class TestEndToEnd:
+    def test_an_unknown_agent_is_404_on_the_chat_route_with_no_thread_written(self, thread_enabled):
+        client = _client(AgentThreadRequestHandler())
+
+        resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-ghost", "agent": "ghost"}, headers=AUTH)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == {"error": "Agent 'ghost' not found", "session_id": "s-ghost"}
+        assert client.get("/api/v1/threads/s-ghost", headers=AUTH).status_code == 404
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_an_unknown_agent_is_404_before_the_stream_opens(self, thread_enabled, monkeypatch, route):
+        from agentkernel.core.config import _ExecutionConfig
+        from agentkernel.core.model import ExecutionMode
+
+        monkeypatch.setattr(AKConfig.get(), "execution", _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta"))
+        client = _client(AgentThreadRequestHandler())
+        fields = {"prompt": "hello", "session_id": "s-ghost", "agent": "ghost"}
+
+        if route == "json":
+            resp = client.post("/api/v1/chat", json=fields, headers=AUTH)
+        else:
+            resp = client.post("/api/v1/chat-multipart", data=fields, headers=AUTH)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Agent 'ghost' not found"
+        assert client.get("/api/v1/threads/s-ghost", headers=AUTH).status_code == 404
+
     def test_an_anonymous_chat_is_401_before_any_thread_write(self, thread_enabled, registered_agent):
         """The chat route refuses a request nothing authenticated before the recorder runs (#603)."""
         client = _client(AgentThreadRequestHandler())

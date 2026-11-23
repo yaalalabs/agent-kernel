@@ -668,3 +668,61 @@ class TestIdentityDependency:
 
         assert len(dependencies) == 1
         assert dependencies[0].dependency.__name__ == "identity_dependency"
+
+
+class TestUnknownAgentOnTheChatRoute:
+    """A chat request naming an agent the registry does not know is a 404 `Agent '<name>' not found` (#603): the
+    answer an agent the caller may not see gets, so the status does not say whether a name exists. Nothing is
+    mocked: the real handler and chat service over a runtime of the test's own."""
+
+    @pytest.fixture(autouse=True)
+    def _config(self, monkeypatch):
+        from agentkernel.core.config import AKConfig
+
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.delenv("AK_EXECUTION__MODE", raising=False)
+        monkeypatch.delenv("AK_EXECUTION__MESSAGE_TYPE", raising=False)
+        AKConfig._reset()
+        yield
+        AKConfig._reset()
+
+    @staticmethod
+    def _post(route: str, fields: dict, sse: bool = False):
+        """One chat request to an app serving a runtime that hosts no agent."""
+        from agentkernel.api.handler import AgentRESTRequestHandler
+        from agentkernel.core.config import AKConfig, _ExecutionConfig
+        from agentkernel.core.model import ExecutionMode
+        from agentkernel.core.runtime import Runtime
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        if sse:
+            AKConfig.get().execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta")
+        app = FastAPI()
+        with Runtime(InMemorySessionStore()):
+            app.include_router(AgentRESTRequestHandler().get_router())
+            client = TestClient(app, raise_server_exceptions=False)
+            if route == "json":
+                return client.post(AgentRESTRequestHandler.CHAT_PATH, json=fields)
+            return client.post(AgentRESTRequestHandler.CHAT_MULTIPART_PATH, data=fields)
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_a_named_unknown_agent_is_404(self, route):
+        response = self._post(route, {"prompt": "hello", "session_id": "s-1", "agent": "ghost"})
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": {"error": "Agent 'ghost' not found", "session_id": "s-1"}}
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_it_is_404_on_the_sse_path_before_the_stream_opens(self, route):
+        response = self._post(route, {"prompt": "hello", "session_id": "s-1", "agent": "ghost"}, sse=True)
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Agent 'ghost' not found"}
+        assert not response.headers["content-type"].startswith("text/event-stream")
+
+    @pytest.mark.parametrize("sse", [False, True], ids=["json", "sse"])
+    def test_a_request_naming_no_agent_while_none_exists_stays_a_400(self, sse):
+        response = self._post("json", {"prompt": "hello", "session_id": "s-1"}, sse=sse)
+
+        assert response.status_code == 400
+        assert "No agent available" in response.text

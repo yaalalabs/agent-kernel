@@ -532,9 +532,10 @@ and `research/design-options.md` section 4).
     refinement 15).
 - `AccessGate` (class, `identity/authz/gate.py`): the one consumer of registry plus authorizer.
   `get()` returns `None` when authorization is not configured. Methods: `authorize_agent(principal,
-  agent_id) -> AccessLevel` (raises `PermissionError` when `None`; raises `LookupError("Agent
-  '<id>' not found")` when the registry has no descriptor, the error and the 404 of an agent the
-  caller may not see and of an unknown agent named in a request, spec refinement 9),
+  agent_id) -> AccessLevel` (raises `PermissionError` when `None`; raises `AgentNotFoundError`,
+  a `LookupError` reading `Agent '<id>' not found`, when the registry has no descriptor: the
+  error and the 404 of an agent the caller may not see and of an unknown agent named in a
+  request, spec refinement 9),
   `visible(principal, descriptor) -> bool` (`agent_level is not None`,
   or `visibility` admits: `public` everyone, `internal` non-anonymous, `private` nobody; settled Q5:
   visibility never confers a level), `visible_agents(principal) -> list[AgentDescriptor]`,
@@ -844,7 +845,9 @@ registry:
   names. AG-UI's `/agents` lists ids in id order too.
 - A request naming an agent the registry does not know is answered 404 `Agent '<name>' not found`
   on the HTTP routes, where it was 400 `No agent available`, the answer a hidden agent gets
-  (spec refinement 9).
+  (spec refinement 9). A process that runs agents itself answers the same for an agent only
+  another process hosts. The error is `AgentNotFoundError`, which the surfaces map by its own
+  class so that a `KeyError` out of a run stays a 500.
 - `api.enabled_routes.agents` (`core/config.py:111-112`) stays declared and unread; not in scope.
 - `a2ui.agents` (`core/config.py:1093`) scopes the A2UI labelling post-hook, not access, and stays
   with the capability scopes of Q8.

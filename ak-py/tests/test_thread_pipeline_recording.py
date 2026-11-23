@@ -280,8 +280,10 @@ class TestEdgeRecording:
 
         response = _client().post(CHAT, json=_chat(agent="nope"))
 
-        assert response.status_code == 400
+        assert response.status_code == 404
+        assert response.json()["detail"] == {"error": "Agent 'nope' not found", "session_id": "s1"}
         assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
     def test_async_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
         """The route cannot answer in ASYNC mode, so it must refuse before opening the thread."""

@@ -300,9 +300,10 @@ Azure Functions also accepts the normalized envelope, and flat run payloads are 
 ```
 
 **Status Codes:**
-- `200` — Success
-- `400` — No agent available
-- `500` — Unexpected error
+- `200`: Success
+- `400`: Invalid request, or no agent named and none available
+- `404`: The agent the request names was not found
+- `500`: Unexpected error
 
 ### GCP Cloud Run Deployment
 

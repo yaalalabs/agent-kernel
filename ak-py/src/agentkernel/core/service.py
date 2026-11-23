@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 
 from ..core import Agent, AgentRequest, Runtime, Session
 from ..core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequestText, Principal, StreamChunk
+from ..core.registry import AgentNotFoundError
 
 
 class AgentService:
@@ -64,6 +65,13 @@ class AgentService:
         here count and the store is never read. Without it a request for such an agent would pass
         this check, commit its state, and then fail to run.
 
+        The two failures are different errors. A request that names an agent it cannot have gets
+        ``AgentNotFoundError``, which an HTTP route answers with a 404: the answer an agent the
+        caller may not see gets, so the status does not say whether a name exists. That holds for
+        the ``hosted`` form as well, where an agent another process hosts is, to this one, an agent
+        it does not have. A request that names no agent while there is none to default to has no
+        name to hide, and stays a ``ValueError`` (a 400).
+
         For an agent that is not hosted here this reads the registry's store (one read for a named
         agent, the registry's emptiness check for an unnamed request), so an ``async`` caller over
         a shared registry runs it off the event loop.
@@ -75,15 +83,15 @@ class AgentService:
 
         :param name: Name of the requested agent, or None for the default agent.
         :param hosted: Whether the agent must be hosted by this process, not merely known to the registry.
-        :raises ValueError: If no matching agent is available.
+        :raises AgentNotFoundError: If the request names an agent that is not available.
+        :raises ValueError: If the request names no agent and there is none to default to.
         """
         registry = Runtime.current().registry
         # The agents this process hosts answer first: the store is read only for what is not hosted here.
         if name:
-            available = registry.get(name) is not None or (not hosted and registry.descriptor(name) is not None)
-        else:
-            available = bool(registry.agents()) or (not hosted and not registry.is_empty())
-        if not available:
+            if registry.get(name) is None and (hosted or registry.descriptor(name) is None):
+                raise AgentNotFoundError(name)
+        elif not registry.agents() and (hosted or registry.is_empty()):
             raise ValueError("No agent available")
 
     def select(self, session_id: str | None = None, name: str | None = None):

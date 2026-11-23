@@ -9,7 +9,7 @@ from pydantic import ConfigDict
 from ..core import Config
 from ..core.chat_service import ChatService
 from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, ChatRunRequest, Principal
-from ..core.registry import AgentDescriptorPage
+from ..core.registry import AgentDescriptorPage, AgentNotFoundError
 from ..core.runtime import Runtime
 from ..core.util.factory import AKConfigError
 from ..core.util.pagination import decode_cursor
@@ -137,6 +137,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 raise HTTPException(status_code=400, detail=str(e))
             except PermissionError as e:
                 raise HTTPException(status_code=403, detail=str(e))
+            except AgentNotFoundError as e:
+                raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self.chat_service.process_async_chat_request(req=body)
@@ -188,6 +190,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 raise HTTPException(status_code=400, detail=str(e))
             except PermissionError as e:
                 raise HTTPException(status_code=403, detail=str(e))
+            except AgentNotFoundError as e:
+                raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self.chat_service.process_async_chat_request(req=req)

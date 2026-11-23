@@ -222,6 +222,17 @@ Every thread route, the chat routes included, serves authenticated callers only:
 }
 ```
 
+**404 Not Found:**
+
+A request that names an agent the server does not have. A request that names no agent runs the default agent, and is a 400 (`No agent available`) only when there is none.
+
+```json
+{
+  "error": "Agent 'support-triage' not found",
+  "session_id": "session-x"
+}
+```
+
 **500 Internal Server Error:**
 
 ```json

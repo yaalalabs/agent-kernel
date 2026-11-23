@@ -152,6 +152,8 @@ HTTP/1.1 400 Bad Request
 {"detail":{"error":"schedule 'at' must be in the future: '2020-01-01T09:00:00' has already passed in UTC","session_id":"ses-1"}}
 ```
 
+So is a schedule for an agent that does not exist: a request naming one is a `404` (`Agent '<name>' not found`), as it is on a chat request that runs straight away.
+
 ## Managing Schedules
 
 ```bash

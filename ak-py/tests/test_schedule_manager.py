@@ -11,6 +11,7 @@ import pytest
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ScheduleConfig
 from agentkernel.core.model import AgentReplyText, BaseRunRequest, Principal, ScheduleSpec
+from agentkernel.core.registry import AgentNotFoundError
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.transport.base import QueueTransportFactory
@@ -254,7 +255,7 @@ class TestCreation:
     def test_creation_rejects_an_agent_that_is_not_registered(self, manager, store):
         # Every occurrence runs unattended, so a bad agent name has to fail at creation rather
         # than in the runner at each fire time.
-        with pytest.raises(ValueError, match="No agent available"):
+        with pytest.raises(AgentNotFoundError, match="^Agent 'not-an-agent' not found$"):
             _create(manager, agent="not-an-agent")
 
         assert store.list() == ([], None)
@@ -268,7 +269,7 @@ class TestCreation:
         registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
 
         with Runtime(InMemorySessionStore(), registry=registry):
-            with pytest.raises(ValueError, match="No agent available"):
+            with pytest.raises(AgentNotFoundError, match="^Agent 'billing' not found$"):
                 _create(manager, agent="billing")
 
         assert store.list() == ([], None)

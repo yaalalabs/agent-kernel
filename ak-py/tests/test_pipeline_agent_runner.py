@@ -74,6 +74,24 @@ class TestAgentRunner:
         assert out.attributes["status_code"] == "500"
         assert json.loads(out.body)["error"] == "boom"
 
+    def test_an_unknown_agent_is_forwarded_as_a_404(self):
+        """The queued chat route answers with the status the runner forwards: for an agent the runner does not have,
+        the 404 the direct route gives, with the same body."""
+        from agentkernel.core.chat_service import ChatService
+        from agentkernel.core.runtime import Runtime
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        transport = InMemoryTransport()
+        message = _input_msg()
+        message.body = json.dumps({"prompt": "hi", "session_id": "s1", "agent": "ghost"})
+
+        with Runtime(InMemorySessionStore()):
+            AgentRunner(transport=transport, chat_service=ChatService()).process(message)
+
+        [out] = _fetch_output(transport)
+        assert out.attributes["status_code"] == "404"
+        assert json.loads(out.body) == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+
     def test_a_labelled_reply_reaches_the_output_queue(self):
         """The riskiest consumer: this is the call site the bare ``json.dumps`` used to raise on.
 

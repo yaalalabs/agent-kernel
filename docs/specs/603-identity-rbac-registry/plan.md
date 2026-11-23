@@ -630,7 +630,7 @@ What changed in phase C after iteration 16, before it merged (2026-11-18). Each 
 the spec section it changes.
 
 - **Unknown agents (decision).** A request naming an agent the registry does not know will answer
-  like a hidden one, a 404 `LookupError`, from iteration 17a (spec 6, design refinement 9). It
+  like a hidden one, a 404 `AgentNotFoundError`, from iteration 17a (spec 6, design refinement 9). It
   was planned as the first two steps of iteration 19 and moved ahead of iteration 18 on
   2026-11-19: see iteration 17a.
 - **Empty surface warning.** `A2A._build` and `MCP._build` warn once when agents are known and
@@ -804,6 +804,26 @@ gate's `LookupError` is already a 404 the day it is wired in. It depends on noth
   `test_chat_service_core`, `test_schedule_manager`, `test_schedule_tools` and
   `test_thread_integration` (the unknown agent and the one another process hosts); an unknown
   agent answering 404 on the chat route, JSON and SSE, in `test_api_http`.
+- **As built (2026-11-23):** three things settled along the way, each written into spec 6 and
+  refinement 9.
+  - The error is `AgentNotFoundError` (`core/registry.py`, exported from `agentkernel.core`), a
+    `LookupError` subclass carrying the one text, and every surface maps that class and not
+    `LookupError`. The wrappers and the thread handlers catch around the whole run, where the
+    `KeyError` a strict session load or a thread store raises, or one out of a hook, is a
+    `LookupError` too: mapped by the base class those would have turned from a 500 into a 404
+    reading as a missing agent. The gate of iteration 18 raises the same class.
+  - `schedule/handler.py` is unchanged, against this entry's file list. No schedule route
+    reaches the check: a task is created by a chat request, which the chat mapping answers
+    (404), and an amendment cannot change a task's agent. A branch in `_as_http_error` would
+    have been code no route runs.
+  - Mapped beyond the list in step 2: the multipart chat route's SSE branch and the direct
+    thread handler's two SSE branches, which raise before the stream opens like the chat
+    route's; and the queue-mode thread edge (`_record_user_message`). The queue pipeline's
+    runner and the deployment adapters answer through the wrappers and needed nothing: a
+    queued request for an unknown agent makes the round trip and comes back 404, until the
+    precheck of iteration 19 stops it at the edge.
+  The user-facing change is in `rest-api.md` (Error Handling), `scheduling.md` and the
+  `ak-py` README's status list.
 
 ### Iteration 17b: An agent off `rest` is not served over REST
 
@@ -825,7 +845,7 @@ the caller to a check that already knows the surface.
      by. Set by the entry point where it sets `principal`, overwritten when a client sends one
      and kept out of the public schema like the other internal fields, and carried in the queued
      body to the runner.
-  2. `ensure_agent_available(name, *, hosted, surface)` raises the unknown-agent `LookupError`
+  2. `ensure_agent_available(name, *, hosted, surface)` raises the unknown-agent `AgentNotFoundError`
      for a named agent not exposed on the surface; `AgentService.select(..., surface=)` defaults
      an unnamed request to the first hosted agent exposed on it, and the check raises
      `ValueError("No agent available")` when there is none. `ChatService.execute*` and
@@ -850,7 +870,7 @@ the caller to a check that already knows the surface.
 - **Files:** `identity/authz/gate.py`, `core/runtime.py`, `core/module.py`, `core/service.py`.
 - **Steps:**
   1. `AccessGate` with its sync and async twins: `authorize_agent` (`PermissionError`,
-     `LookupError`), `visible`, `visible_agents`, `tool_filter`, `authorize_session`,
+     `AgentNotFoundError`), `visible`, `visible_agents`, `tool_filter`, `authorize_session`,
      `validate_configuration` (the Q12 check reads `ungated_tool_names`, empty until phase E)
      (spec 7).
   2. `Runtime` gate sequence before the pre-hooks, the tool filter publication,

@@ -25,6 +25,7 @@ from ...core import Config
 from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
 from ...core.event import RunPaused
 from ...core.model import AgentPausedReplyAny, BaseChatRequest, BaseRunRequest, ChatRunRequest, StreamChunk
+from ...core.registry import AgentNotFoundError
 from ...core.service import AgentService
 from ...pipeline.envelope import ATTR_THREAD
 from ...pipeline.producer import RequestProducer
@@ -88,6 +89,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
                 raise HTTPException(status_code=400, detail=str(e))
             except PermissionError as e:
                 raise HTTPException(status_code=403, detail=str(e))
+            except AgentNotFoundError as e:
+                raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self._run_with_recording(body)
@@ -126,6 +129,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
                 raise HTTPException(status_code=400, detail=str(e))
             except PermissionError as e:
                 raise HTTPException(status_code=403, detail=str(e))
+            except AgentNotFoundError as e:
+                raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self._run_with_recording(req)
@@ -155,6 +160,9 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         except PermissionError as pe:
             self._log.warning(f"Refused request: {pe}")
             return ResponseBuilder.build_response(403, req.session_id, True, error=pe)
+        except AgentNotFoundError as nf:
+            self._log.warning(f"Agent not found: {nf}")
+            return ResponseBuilder.build_response(404, req.session_id, True, error=nf)
         except HTTPException:
             raise
         except Exception as e:
@@ -175,7 +183,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
 
         :param req: The chat request
         :return: Async generator yielding SSE-formatted frames
-        :raises ValueError: If validation fails, no agent is available, or pre_run rejects
+        :raises ValueError: If validation fails, the request names no agent and none is hosted, or pre_run rejects
+        :raises AgentNotFoundError: If the request names an agent this process does not host
         """
         self._validate_chat_request(req)
         self._check_agent_available(req.agent)
@@ -255,7 +264,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         message recorded, and then fail to be selected.
 
         :param name: The requested agent name, or None for the default agent
-        :raises ValueError: If no matching agent is available
+        :raises AgentNotFoundError: If the request names an agent this process does not host
+        :raises ValueError: If the request names no agent and this process hosts none
         """
         AgentService.ensure_agent_available(name, hosted=True)
 
@@ -342,9 +352,10 @@ class ThreadRequestHandler(RequestHandler):
         once `requests` is set.
 
         :param body: The chat request, mutated in place into its queue-ready form.
-        :raises HTTPException: 400 when the agent is unavailable or the attachment configuration
-            rejects the request, 403 when another principal owns the thread, all of them before
-            any thread write, so an unanswerable request leaves no phantom thread behind.
+        :raises HTTPException: 404 when the request names an agent the registry does not know, 400
+            when it names none and there is none or the attachment configuration rejects the
+            request, 403 when another principal owns the thread, all of them before any thread
+            write, so an unanswerable request leaves no phantom thread behind.
         """
         try:
             # Off the event loop: for an agent another process hosts this reads the registry's store.
@@ -357,6 +368,9 @@ class ThreadRequestHandler(RequestHandler):
         except PermissionError as e:
             self._log.warning(f"Refused before recording: {e}")
             raise HTTPException(status_code=403, detail={"error": str(e), "session_id": body.session_id})
+        except AgentNotFoundError as e:
+            self._log.warning(f"Agent not found, nothing recorded: {e}")
+            raise HTTPException(status_code=404, detail={"error": str(e), "session_id": body.session_id})
         body.requests = requests
         body.files = None
         body.images = None

@@ -371,7 +371,7 @@ class TestToolContracts:
         # every unattended fire time.
         result = json.loads(await create_schedule("send the weekly report", cron="0 9 * * 1", agent="not-an-agent"))
 
-        assert result == {"error": "No agent available"}
+        assert result == {"error": "Agent 'not-an-agent' not found"}
 
     @pytest.mark.asyncio
     async def test_create_accepts_a_one_time_timestamp(self, manager, acting_session):

@@ -24,6 +24,7 @@ from .model import (
     Principal,
     StreamChunk,
 )
+from .registry import AgentNotFoundError
 from .service import AgentService
 from .util.async_bridge import iterate_async_sync, run_async_sync
 from .util.payload import PayloadCodec
@@ -251,7 +252,8 @@ class AgentHandler:
         :param session_id: Session identifier for the agent
         :param agent: Optional agent name/identifier to select
         :return: None
-        :raises ValueError: If no agent matching the request is available
+        :raises AgentNotFoundError: If the request names an agent this process does not host
+        :raises ValueError: If the request names no agent and this process hosts none
         """
         self.service = AgentService()
         self.service.ensure_agent_available(agent, hosted=True)
@@ -447,7 +449,8 @@ class ChatService:
         :param session_id: Session identifier to load, or None to create a new session.
         :param agent: Agent name to select, or None for the default agent.
         :return: The initialized AgentHandler holding the selected agent and session.
-        :raises ValueError: If no matching agent is available.
+        :raises AgentNotFoundError: If the request names an agent this process does not host.
+        :raises ValueError: If the request names no agent and this process hosts none.
         """
         handler = AgentHandler()
         handler.initialize(session_id, agent)
@@ -463,7 +466,8 @@ class ChatService:
         :param requests: Optional prebuilt AgentRequest list. When given, RequestBuilder is
                          skipped and prompt is optional; the list must be non-empty.
         :return: Tuple of (typed agent reply, response session id)
-        :raises ValueError: If validation fails or no agent is available
+        :raises ValueError: If validation fails, or the request names no agent and none is available
+        :raises AgentNotFoundError: If the request names an agent this process does not host
         """
         self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
@@ -481,7 +485,8 @@ class ChatService:
         :param req: Run request carrying prompt, agent, and session_id
         :param requests: Optional prebuilt AgentRequest list (see execute())
         :return: Tuple of (typed agent reply, response session id)
-        :raises ValueError: If validation fails or no agent is available
+        :raises ValueError: If validation fails, or the request names no agent and none is available
+        :raises AgentNotFoundError: If the request names an agent this process does not host
         """
         self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
@@ -503,7 +508,8 @@ class ChatService:
         :param req: Chat request carrying prompt, agent, and session_id
         :param requests: Optional prebuilt AgentRequest list (see execute())
         :return: Async generator yielding raw StreamChunk objects
-        :raises ValueError: If validation fails or no agent is available
+        :raises ValueError: If validation fails, or the request names no agent and none is available
+        :raises AgentNotFoundError: If the request names an agent this process does not host
         """
         self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
@@ -532,7 +538,8 @@ class ChatService:
         :param req: Run request carrying prompt, agent, and session_id
         :param requests: Optional prebuilt AgentRequest list (see execute())
         :return: Generator yielding raw StreamChunk objects
-        :raises ValueError: If validation fails or no agent is available
+        :raises ValueError: If validation fails, or the request names no agent and none is available
+        :raises AgentNotFoundError: If the request names an agent this process does not host
         """
         self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
@@ -705,6 +712,10 @@ class ChatService:
             # Scheduling by an anonymous principal, and from the access gate onwards every refusal.
             self._log.warning(f"Refused request: {pe}")
             return ResponseBuilder.build_response(403, req.session_id, self.rest_api_mode, error=pe)
+        except AgentNotFoundError as nf:
+            # An agent the request named and cannot have: unknown here, and from the access gate onwards hidden too.
+            self._log.warning(f"Agent not found: {nf}")
+            return ResponseBuilder.build_response(404, req.session_id, self.rest_api_mode, error=nf)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
@@ -726,6 +737,9 @@ class ChatService:
         except PermissionError as pe:
             self._log.warning(f"Refused request: {pe}")
             return ResponseBuilder.build_response(403, req.session_id, self.rest_api_mode, error=pe)
+        except AgentNotFoundError as nf:
+            self._log.warning(f"Agent not found: {nf}")
+            return ResponseBuilder.build_response(404, req.session_id, self.rest_api_mode, error=nf)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
@@ -743,7 +757,8 @@ class ChatService:
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
         :return: Async generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, or no agent is available
+        :raises ValueError: If session_id or prompt is missing, or the request names no agent and none is available
+        :raises AgentNotFoundError: If the request names an agent this process does not host
         """
         session_id = req.session_id
         chunks = await self.execute_stream(req)
@@ -775,7 +790,8 @@ class ChatService:
                            When False, yield raw StreamChunk JSON payloads.
         :param requests: Optional prebuilt AgentRequest list (see execute_stream_sync())
         :return: Generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, or no agent is available
+        :raises ValueError: If session_id or prompt is missing, or the request names no agent and none is available
+        :raises AgentNotFoundError: If the request names an agent this process does not host
         """
         session_id = req.session_id
         chunks = self.execute_stream_sync(req, requests)

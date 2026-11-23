@@ -18,6 +18,7 @@ from agentkernel.core.model import (
     Principal,
     StreamChunk,
 )
+from agentkernel.core.registry import AgentNotFoundError
 from agentkernel.core.runtime import Runtime
 
 ACTING_USER_AGENT = "acting-user-agent"
@@ -110,6 +111,14 @@ class TestExecute:
             service = ChatService()
             with pytest.raises(ValueError, match="No agent available"):
                 await service.execute(BaseRunRequest(prompt="hi", session_id="s1"))
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_agent_propagates_as_not_found(self):
+        handler = _mock_handler()
+        handler.initialize.side_effect = AgentNotFoundError("ghost")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(AgentNotFoundError, match="Agent 'ghost' not found"):
+                await ChatService().execute(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
 
     @pytest.mark.asyncio
     async def test_handler_exceptions_propagate_unmodified(self):
@@ -286,6 +295,88 @@ class TestProcessWrappers:
         assert status == 400
         assert body["error"] == "No agent available"
 
+    @pytest.mark.asyncio
+    async def test_process_async_chat_request_unknown_agent_maps_to_404(self):
+        handler = _mock_handler()
+        handler.initialize.side_effect = AgentNotFoundError("ghost")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            status, body = await ChatService().process_async_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+        assert status == 404
+        assert body == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+
+    def test_process_chat_request_unknown_agent_maps_to_404(self):
+        handler = _mock_handler()
+        handler.initialize.side_effect = AgentNotFoundError("ghost")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            status, body = ChatService().process_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+        assert status == 404
+        assert body == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+
+    @pytest.mark.asyncio
+    async def test_the_rest_form_of_an_unknown_agent_is_an_http_404(self):
+        from fastapi import HTTPException
+
+        handler = _mock_handler()
+        handler.initialize.side_effect = AgentNotFoundError("ghost")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(HTTPException) as exc:
+                await ChatService(rest_api_mode=True).process_async_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+        assert exc.value.status_code == 404
+        assert exc.value.detail == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("failure", [KeyError("customer_id"), IndexError("list index out of range")], ids=["key", "index"])
+    async def test_a_lookup_failure_inside_the_run_stays_a_500(self, failure):
+        """A KeyError or IndexError a hook or a session store raises is a failure of the run. Both are LookupErrors,
+        and reported as 404 they would read as an agent that does not exist."""
+        handler = _mock_handler()
+        handler.run_async = AsyncMock(side_effect=failure)
+        handler.run_sync.side_effect = failure
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            service = ChatService()
+            async_status, _ = await service.process_async_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
+            sync_status, _ = service.process_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
+        assert (async_status, sync_status) == (500, 500)
+
+
+class TestUnknownAgentThroughTheService:
+    """Nothing mocked: a request naming an agent the runtime does not have, answered by the service itself."""
+
+    def test_a_named_unknown_agent_is_404_and_loads_no_session(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        store = InMemorySessionStore()
+        with Runtime(store):
+            with patch.object(store, "load", wraps=store.load) as load:
+                status, body = ChatService().process_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+            load.assert_not_called()
+        assert (status, body) == (404, {"error": "Agent 'ghost' not found", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_the_async_wrapper_answers_the_same(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        with Runtime(InMemorySessionStore()):
+            status, body = await ChatService().process_async_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+        assert (status, body) == (404, {"error": "Agent 'ghost' not found", "session_id": "s1"})
+
+    def test_a_request_naming_no_agent_while_none_exists_stays_a_400(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        with Runtime(InMemorySessionStore()):
+            status, body = ChatService().process_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
+        assert (status, body) == (400, {"error": "No agent available", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_a_stream_for_an_unknown_agent_raises_before_it_opens(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        with Runtime(InMemorySessionStore()):
+            with pytest.raises(AgentNotFoundError, match="Agent 'ghost' not found"):
+                await ChatService().process_stream_chat_async(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"), sse_format=True)
+            with pytest.raises(AgentNotFoundError, match="Agent 'ghost' not found"):
+                ChatService().process_stream_chat_sync(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+
 
 class _ActingUserRunner(Runner):
     """Records the run principal's subject visible from inside the run, the way a hook or tool would
@@ -394,9 +485,9 @@ class TestPrepareAgentHandler:
 
     def test_unknown_agent_raises(self):
         handler = _mock_handler()
-        handler.initialize.side_effect = ValueError("No agent available")
+        handler.initialize.side_effect = AgentNotFoundError("missing")
         with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
-            with pytest.raises(ValueError, match="No agent available"):
+            with pytest.raises(AgentNotFoundError, match="Agent 'missing' not found"):
                 ChatService().prepare_agent_handler("s1", "missing")
 
 
@@ -407,7 +498,7 @@ class TestEnsureAgentAvailable:
 
         runtime = Runtime(InMemorySessionStore())
         with runtime:
-            with pytest.raises(ValueError, match="No agent available"):
+            with pytest.raises(AgentNotFoundError, match="Agent 'missing' not found"):
                 AgentService().ensure_agent_available("missing")
 
     def test_unnamed_with_empty_registry_raises(self):
@@ -435,8 +526,8 @@ class TestEnsureAgentAvailable:
 
     def test_initialize_refuses_an_agent_only_the_registry_knows_before_selecting(self, descriptor_only_registry):
         """`initialize` is where the agent runs. One a shared registry knows from another process cannot be selected
-        here, so the request fails as `No agent available` (a 400) rather than opening a stream that can only carry
-        an error, for a named agent and for a request naming none."""
+        here, so the request fails before a session is loaded rather than opening a stream that can only carry an
+        error: as the unknown agent it is to this process when it is named, as `No agent available` when none is."""
         from agentkernel.core.chat_service import AgentHandler
         from agentkernel.core.model import AgentDescriptor
         from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -445,9 +536,10 @@ class TestEnsureAgentAvailable:
         registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
         with Runtime(store, registry=registry):
             with patch.object(store, "load", wraps=store.load) as load:
-                for agent in ("billing", None):
-                    with pytest.raises(ValueError, match="No agent available"):
-                        AgentHandler().initialize("s1", agent)
+                with pytest.raises(AgentNotFoundError, match="Agent 'billing' not found"):
+                    AgentHandler().initialize("s1", "billing")
+                with pytest.raises(ValueError, match="No agent available"):
+                    AgentHandler().initialize("s1", None)
                 load.assert_not_called()
 
     def test_initialize_does_not_load_a_session_for_an_unknown_agent(self):
@@ -458,7 +550,7 @@ class TestEnsureAgentAvailable:
         runtime = Runtime(store)
         with runtime:
             with patch.object(store, "load", wraps=store.load) as load:
-                with pytest.raises(ValueError, match="No agent available"):
+                with pytest.raises(AgentNotFoundError, match="Agent 'missing' not found"):
                     AgentHandler().initialize("s1", "missing")
                 load.assert_not_called()
 
