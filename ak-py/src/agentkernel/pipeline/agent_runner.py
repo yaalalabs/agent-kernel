@@ -43,7 +43,7 @@ class AgentRunner:
     """Pipeline Agent Runner (spec #495 §8): consumes the input queue, executes via the
     ChatService execution layer, and forwards the reply to the output queue.
 
-    The generalization of ECSAgentRunner: transport-agnostic and instance-based. The
+    Transport-agnostic and instance-based. The
     ``run()`` classmethod is the two-process container entry point; ``start()`` runs the
     blocking consumer loop on an already-constructed instance.
     """

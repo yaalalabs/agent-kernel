@@ -8,7 +8,7 @@
 # /api/v1/app_info        - Custom POST endpoint
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration

@@ -10,7 +10,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.10.1"
+version = "0.10.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9c/ca/d90e1312f219a1abb46c9ec72050e0a259d2163724f05d44ded2fe949e9f/agentkernel-0.10.1.tar.gz", hash = "sha256:248d420a3d37c45090c6808b695b686a63a5a581e687156432cf0599bc19828b", size = 853158, upload-time = "2026-11-16T08:38:30.326Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/1f/880522d187c6848a5ddc50f0a83e9cbe006f4e47bfb04b27f3d98622dfac/agentkernel-0.10.2.tar.gz", hash = "sha256:ed3730a8bbea83306fc3c8e60af2610fc218fe2daef5457fa548083128823f37", size = 925430, upload-time = "2026-11-20T11:17:01.924Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7d/a2/300d3a4cd46d2a1953f901ae5fbfb477f600f74644d238c9853a7a27927c/agentkernel-0.10.1-py3-none-any.whl", hash = "sha256:48343062fdcbcdfe2de75ae191e050799cb49a08ad8d17a023a2e29bf3bf4dd9", size = 1078427, upload-time = "2026-11-16T08:38:27.88Z" },
+    { url = "https://files.pythonhosted.org/packages/19/3f/eda7b7644e5b5219dccd6d24131f4214c70490c8319f759ae82611230fc1/agentkernel-0.10.2-py3-none-any.whl", hash = "sha256:d6eda607a486f9d4855673887dabae0032bf07984b4dddadcb428d6e0bc8515d", size = 1154640, upload-time = "2026-11-20T11:17:00.006Z" },
 ]
 
 [package.optional-dependencies]
@@ -33,8 +33,6 @@ api = [
 azure = [
     { name = "azure-core" },
     { name = "azure-data-tables" },
-    { name = "azure-functions", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
-    { name = "azure-functions", version = "2.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "azure-identity" },
     { name = "azure-servicebus" },
 ]
@@ -285,7 +283,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "api", "azure", "redis", "test"], specifier = ">=0.10.1" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "api", "azure", "redis", "test"], specifier = ">=0.10.2" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -320,38 +318,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ad/b8/e76cfa7f5f847722664c6f8108c391deadcb9d9aad579650c128affd4669/azure_data_tables-12.7.0.tar.gz", hash = "sha256:b14fc94a3223a2835ff5688e17d8e107b27c7cd7c4114138f2ac81373723705d", size = 258650, upload-time = "2025-05-06T17:51:06.323Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/14/3e/2b8da274b49402659cd732def2ae217f2e86312278feb56b55ccbffbbc26/azure_data_tables-12.7.0-py3-none-any.whl", hash = "sha256:24ed9b5690aa46c213182e32bb1b39a68dd9f526d84f447c287e3a401b437c10", size = 133178, upload-time = "2025-05-06T17:51:07.65Z" },
-]
-
-[[package]]
-name = "azure-functions"
-version = "1.26.0"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version < '3.13'",
-]
-dependencies = [
-    { name = "werkzeug" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/ed/315d7843371830e248f716f11b30f707ae7eff64272eaece992649d4dae7/azure_functions-1.26.0.tar.gz", hash = "sha256:f4aad4a401bdc7833cce4c17352ce410fc4e419dcc6ece5f02247fdee3fbb838", size = 166896, upload-time = "2026-11-03T17:58:21.484Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/26/8f/431fdd8aa8debf41fa1a8b8564f0b06bcd5b92d39ed53b67fb222cb6ac28/azure_functions-1.26.0-py3-none-any.whl", hash = "sha256:4d97c30716a14db3b584dfe0dd72df5ea38adb922ad5ca046e4b0af0a309ddcb", size = 123901, upload-time = "2026-11-03T17:58:23.507Z" },
-]
-
-[[package]]
-name = "azure-functions"
-version = "2.4.0"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.15'",
-    "python_full_version == '3.14.*'",
-    "python_full_version == '3.13.*'",
-]
-dependencies = [
-    { name = "werkzeug" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/99/c2/5109e07bc920a77e5bb79aa09fdc9d0f81b3822f4a45e755508e94fd21fc/azure_functions-2.4.0.tar.gz", hash = "sha256:4b764002c787b860dbee0c8ec02f795bdd2ca0384f8b3860da8369403ee19b01", size = 182897, upload-time = "2026-11-11T21:51:07.685Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f0/97/8d748de8f1afb8ff112ce0e53b15348568bbc3e1e1cc3e31c615a6af8225/azure_functions-2.4.0-py3-none-any.whl", hash = "sha256:c1f69edce150af18bcbf4cd6eab224506335a7bfd225a5269a54df27c115aa12", size = 132161, upload-time = "2026-11-11T21:51:09.327Z" },
 ]
 
 [[package]]
@@ -4287,18 +4253,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/49/b2/b6987faf330f5af5c787a2610124c2e8403d51724f9001ec4fff6311fe7a/websockets-16.1.1-cp314-cp314t-win32.whl", hash = "sha256:8483c2096363120eea8b07c06ae7304d520f686665fffd4811fad423930a65d7", size = 179729, upload-time = "2026-07-17T22:50:53.269Z" },
     { url = "https://files.pythonhosted.org/packages/a2/6e/fbac6ed878dd362fbad7d415fa4f84d38e3e33fed8cde45c64e783acf826/websockets-16.1.1-cp314-cp314t-win_amd64.whl", hash = "sha256:bcce07e23e5769375158f5efdcdafa8d5cd014b93c6683865b840ed65b96f231", size = 180072, upload-time = "2026-07-17T22:50:54.969Z" },
     { url = "https://files.pythonhosted.org/packages/be/4d/2d0d67834092e354d2b0498f014a41249a89556bc406cf86f3e1557bb463/websockets-16.1.1-py3-none-any.whl", hash = "sha256:6abbd3e82c731c8e531714466acd5d87b5e88ac3243465337ba71d68e23ae7e3", size = 173814, upload-time = "2026-07-17T22:51:04.184Z" },
-]
-
-[[package]]
-name = "werkzeug"
-version = "3.1.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "markupsafe" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a4/34/4dd12fc8bb7d61c91467ec3efe415ffa7d5456f799954b40c5bbaeae470e/werkzeug-3.1.9.tar.gz", hash = "sha256:55ca7c70a75689be937aa27f8ff4b018f06ff4838fc73045560bf0f5a1291060", size = 940188, upload-time = "2026-09-27T18:33:41.637Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a1/38/df03f564f43cec2684823f3cccae1a652ee7face1cbaa76fb223096e64d7/werkzeug-3.1.9-py3-none-any.whl", hash = "sha256:6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab", size = 228700, upload-time = "2026-09-27T18:33:39.685Z" },
 ]
 
 [[package]]

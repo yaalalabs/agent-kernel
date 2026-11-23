@@ -403,8 +403,7 @@ class TestStatusHonoringResponses:
     """
 
     def test_status_honoring_lives_in_the_shared_base(self):
-        """ECSQueueRequestHandler is a bare RestHandler, so the behavior has to be inherited, not
-        re-implemented on the pipeline handler."""
+        """The behavior is inherited from RestHandler, not re-implemented on the pipeline handler."""
         assert RequestHandler._build_sync_response is RestHandler._build_sync_response
 
     def test_2xx_non_200_is_preserved(self, monkeypatch):

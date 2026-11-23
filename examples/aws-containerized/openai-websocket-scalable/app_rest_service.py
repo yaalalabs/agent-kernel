@@ -1,4 +1,4 @@
-from agentkernel.aws import AWSWebsocketAPI, ECSIOHandler
+from agentkernel.aws import AWSWebsocketAPI
 
 
 # A custom route receives the frame's raw body and the connection's principal: the identity the
@@ -10,9 +10,9 @@ async def echo(ctx: dict) -> dict:
 
 def main():
     # The REST/IO service: $connect authenticates through the identity block in config.yaml
-    # (ECSIOHandler refuses to start WebSocket mode without it), chat frames are enqueued, and
+    # (AWSWebsocketAPI refuses to start without it), chat frames are enqueued, and
     # the output-queue consumer pushes the replies.
-    ECSIOHandler.run()
+    AWSWebsocketAPI.run()
 
 
 if __name__ == "__main__":
