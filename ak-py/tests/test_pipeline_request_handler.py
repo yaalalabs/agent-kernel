@@ -334,10 +334,11 @@ def _trace_lines(caplog) -> dict[str, list[TraceLine]]:
 
 
 def _await_deliveries(caplog, count: int) -> None:
-    """Wait for the Response Handler's thread: it traces a delivery after the client can already read it."""
+    """Wait for the Response Handler's and runner's threads: both trace after the client can already read the reply."""
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
-        if sum(1 for record in caplog.records if record.levelno == TRACE and record.args[0] == TraceStage.RESPONSE_DELIVERED) >= count:
+        traced = [record.args[0] for record in caplog.records if record.levelno == TRACE]
+        if traced.count(TraceStage.RESPONSE_DELIVERED) >= count and TraceStage.OUTPUT_ENQUEUED in traced:
             return
         time.sleep(0.01)
 

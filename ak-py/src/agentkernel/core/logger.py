@@ -40,7 +40,7 @@ class TraceLine:
 
     # Matches the lines AKLogger's formatter writes at TRACE; the two change together
     _PATTERN: ClassVar[re.Pattern] = re.compile(
-        r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) - \S+ - TRACE - \[([A-Z_]+)\] request_id=(\S+)(?: message="(.*)")?$'
+        r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) - \S+ - TRACE - \[([A-Z_]+)\] request_id=(.+?)(?: message="(.*)")?$'
     )
 
     @classmethod
