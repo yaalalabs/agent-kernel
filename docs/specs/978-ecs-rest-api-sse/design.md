@@ -75,20 +75,9 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
 
 - `local.gateway_endpoints_map` (`state.tf:66`) is rendered into OpenAPI paths. Its construction — and
   therefore the `gateway_endpoints`, MCP and default-chat inputs feeding it — is unchanged.
-- Four cases must be handled, each testable against an existing example:
+- Three cases must be handled, each testable against an existing example:
   - A method-and-path key (`POST /api/v1/chat`) becomes a path object with a lowercased method key.
   - `ANY` becomes `x-amazon-apigateway-any-method`; OpenAPI has no `any` method key.
-  - `$default` becomes a **set** of paths, not one. A REST API matches by descending its resource
-    tree and does not backtrack, so a root `/{proxy+}` alone would stop catching `/api/v1/other` as
-    soon as `/api/v1/chat` exists, and a greedy proxy never matches the empty path. `$default`
-    therefore emits `x-amazon-apigateway-any-method` on `/`, on `/{proxy+}`, and on
-    `<prefix>/{proxy+}` for every ancestor prefix of the generated routes — `/api` and `/api/v1`
-    under the default `api_base_segment` + `api_version` (`state.tf:28`). The set is bounded: the
-    prefix has at most two segments. `$default` is opt-in (`state.tf:53-54`), so only deployments
-    that ask for it pay this.
-    - Non-backtracking is the one matching rule here taken from AWS behaviour rather than verified.
-      The first deployment checks `/api/v1/other` and `/` explicitly; if REST APIs do backtrack, the
-      extra proxy paths are redundant, not wrong.
   - `$request.path.<name>` in `overwrite_path` becomes `{<name>}` in the integration `uri`, **plus** a
     method-level `parameters` entry declaring the path parameter and an integration `requestParameters`
     mapping `integration.request.path.<name>` to `method.request.path.<name>`. REST APIs do not infer
@@ -96,6 +85,9 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
   - No prior art to copy from the serverless module: #935 gave its REST API `{task_id}` path parts, but
     over an `AWS_PROXY` integration to Lambda, which forwards the raw event and needs no mapping. An
     `http_proxy` integration to an ALB does.
+  - There is no `$default` case: `variables.tf:60` matches `upper(ep.method)` against a lowercase
+    `"$default"`, so no spelling passes validation and the key never reaches the renderer. The dead
+    entry is pre-existing and left alone.
 - `api_gateway_async.tf` is deleted. Its `rest_async` `GET` poll route becomes one more OpenAPI path on
   the same condition (`var.queue_mode && var.execution_mode == "rest_async"`).
 - Binary uploads: the OpenAPI root declares
@@ -180,10 +172,10 @@ already owns that resource** for WebSocket mode, so REST mode joins an existing 
 
 ### Compatibility
 
-- `gateway_endpoints` keeps its current type, validation and semantics — including `$default`, `ANY` and
-  path parameters. Verified against `examples/aws-containerized/openai-schedule/deploy/main.tf:72-83`
-  (`ANY` plus `$request.path.task_id`) and `examples/aws-containerized/crewai/deploy/main.tf:18-29`
-  (two plain `GET` routes).
+- `gateway_endpoints` keeps its current type and semantics for `ANY` and path parameters. Verified
+  against `examples/aws-containerized/openai-schedule/deploy/main.tf:72-83` (`ANY` plus
+  `$request.path.task_id`) and `examples/aws-containerized/crewai/deploy/main.tf:18-29` (two plain
+  `GET` routes).
 - Output names and types are unchanged, repointed at the new resources: `api_gateway_id`,
   `api_gateway_stage`, `agent_invoke_url`, and the two log-group outputs. `e2e/app/deploy/outputs.tf:2`
   builds `https://<id>.execute-api.<region>.amazonaws.com/<stage>` from the first two; a REST API's
