@@ -89,11 +89,23 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
     `integration.request.path.<name>` to `method.request.path.<name>`. The HTTP API's `overwrite:path`
     inferred all this from the string; a REST API does not. Not copyable from the serverless module:
     its `{task_id}` support (#935) rides `AWS_PROXY` to Lambda, which forwards the raw event.
+  - **Only `$request.path.*` is translated.** HTTP API parameter mapping also accepts
+    `$request.header.*` and `$request.querystring.*` in `overwrite:path`. Nothing in the repo uses
+    them, and a REST API can express them only by declaring the source parameter on the method first,
+    so they are **rejected in the `gateway_endpoints` validation** rather than translated. Left
+    untranslated they would be emitted as literal text in the integration `uri` and fail silently;
+    the validation is the cheap way to make that loud.
   - No `$default` case: `variables.tf:60` matches `upper(ep.method)` against a lowercase `"$default"`,
     so no spelling passes validation. The dead entry is pre-existing and left alone.
 - `api_gateway_async.tf` is deleted; its `rest_async` `GET` poll route becomes a `"get"` **method on
-  the existing `/api/v1/chat` path object**, not a new path, on the same condition
+  the default chat path object**, not a new path, on the same condition
   (`var.queue_mode && var.execution_mode == "rest_async"`).
+  - That path is `local.default_endpoint_path` (`state.tf:29`) — `/{api_base_path}/{api_version}/
+    {agent_endpoint}` — the same path the default `POST` uses, **not** the literal `/api/v1/chat`.
+    `/api/v1/chat` is the *backend* path, the hardcoded `overwrite:path` of the integration
+    (`api_gateway_async.tf:16`), and stays on the integration side. With `api_base_path = "service"`
+    and `agent_endpoint = "ask"` the route is `GET /service/v1/ask`, which a literal reading would
+    have missed entirely.
   - So the renderer groups methods per path rather than emitting one path per route key. This is the
     one structural trap GCP calls out in the same situation
     (`ak-gcp/containerized/api_gateway.tf:7-9`, `openapi_paths_block`).
