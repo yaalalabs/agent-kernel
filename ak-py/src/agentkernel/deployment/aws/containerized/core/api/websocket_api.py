@@ -21,6 +21,7 @@ from ......core.util.factory import AKConfigError
 from ......identity.errors import AuthenticationError
 from ......identity.provider.base import RequestContext
 from ......identity.provider.request import RequestAuthenticator
+from ......pipeline.transport.base import QueueTransportFactory
 from ....core.sqs_handler import SQSHandler
 from ....core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 
@@ -347,7 +348,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         )
 
     async def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: str | None, session_id: str, endpoint_url: str) -> JSONResponse:
-        """Queue mode: send to the input queue; ECSOutputConsumer pushes the reply."""
+        """Queue mode: send to the input queue; the shared ResponseHandler pushes the reply."""
         self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
 
         await self._offload(
@@ -520,6 +521,19 @@ class AWSWebsocketAPI(RESTAPI):
     def run(cls, handlers: list[RESTRequestHandler] | None = None) -> None:
         """Start the WebSocket API server with the system handler plus the chat/custom-route application handler.
 
+        With a queue transport configured, this process is the pipeline's IO tier: ``IOHandler`` serves
+        the same routes and runs the Response Handler beside them, pushing replies through API Gateway
+        to each message's ``endpoint_url``. Without one (direct mode), the API alone is served.
+
         :param handlers: Optional REST handlers mounted alongside the defaults, which are always served.
+        :raises AKConfigError: If no identity block is configured (raised before any thread starts).
         """
-        super().run(handlers=[*cls.get_default_handlers(), *(handlers or [])])
+        system_handler, app_handler = cls.get_default_handlers()
+        all_handlers = [system_handler, app_handler, *(handlers or [])]
+        if QueueTransportFactory.resolve_type() == "in_memory":
+            return super().run(handlers=all_handlers)
+
+        from ......pipeline.io_handler import IOHandler  # local import, as RESTAPI.run hands off
+
+        # The system handler's own push client: built over the same connection table $connect writes.
+        IOHandler.run(handlers=all_handlers, ws_handler=system_handler.get_websocket_handler())

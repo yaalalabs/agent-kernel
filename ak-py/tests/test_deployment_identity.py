@@ -25,7 +25,6 @@ from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
     ECSWebSocketRequestHandler,
     ECSWebSocketSystemRequestHandler,
 )
-from agentkernel.deployment.aws.containerized.ecs_io_handler import ECSIOHandler
 from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 from agentkernel.deployment.aws.serverless.akauthorizer import APIGatewayAuthorizer
 from agentkernel.deployment.aws.serverless.aklambda import Lambda
@@ -497,7 +496,13 @@ class TestRemovedNames:
         assert not hasattr(RESTAPI, "add_auth_handlers")
         assert not hasattr(RESTAPI, "_auth_token_validators")
 
+    @pytest.mark.parametrize("name", ["ECSIOHandler", "ECSAgentRunner", "ECSOutputConsumer", "AWSRestAPI"])
+    def test_the_ecs_only_pipeline_classes_are_gone(self, name):
+        import agentkernel.aws as aws
+
+        assert not hasattr(aws, name)
+
     def test_the_entry_points_take_no_validator(self):
-        assert list(inspect.signature(ECSIOHandler.run).parameters) == ["handlers"]
+        assert list(inspect.signature(AWSWebsocketAPI.run).parameters) == ["handlers"]
         assert "auth_validator" not in inspect.signature(WSLambdaRouter.__init__).parameters
         assert list(inspect.signature(APIGatewayAuthorizer.__init__).parameters) == ["self", "bypass"]

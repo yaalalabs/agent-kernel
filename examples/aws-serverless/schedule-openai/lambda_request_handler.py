@@ -5,9 +5,9 @@ hand-rolled path/method table, so `ScheduleRESTRequestHandler` (a FastAPI APIRou
 mounted here. Management is exposed instead through `Lambda.register` routes that call
 `ScheduleManager` directly, which is the same object the REST handler wraps.
 
-Two consequences of the router being exact-match on the path:
-  * no `{task_id}` path parameters: the task id travels as a query parameter or in the body
-  * these paths must also be declared in `gateway_endpoints` in deploy/main.tf
+The routes match the containerized `ScheduleRESTRequestHandler`: the task id is the `{task_id}` path
+parameter, read from `event["pathParameters"]`. These paths must also be declared in
+`gateway_endpoints` in deploy/main.tf, with the same `{task_id}` name.
 
 The owner of a task is the caller the API Gateway authorizer (lambda_auth.py) authenticated: the
 framework's chat route assigns that principal to the request body itself, and the custom routes read
@@ -66,17 +66,10 @@ def list_schedules(event, context):
     }
 
 
-@Lambda.register("/schedules/get", method="GET")
+@Lambda.register("/schedules/{task_id}", method="GET")
 def get_schedule(event, context):
-    """GET /api/v1/schedules/get?task_id=... : read one of the caller's tasks.
-
-    A query parameter rather than a path segment: the serverless router matches paths exactly, so
-    `/schedules/{task_id}` would never resolve.
-    """
-    params = event.get("queryStringParameters") or {}
-    task_id = params.get("task_id")
-    if not task_id:
-        return 400, {"error": "task_id query parameter is required"}
+    """GET /api/v1/schedules/{task_id} : read one of the caller's tasks."""
+    task_id = event["pathParameters"]["task_id"]
     try:
         subject = _subject(event)
     except PermissionError as e:
@@ -90,24 +83,21 @@ def get_schedule(event, context):
     return task.model_dump(mode="json")
 
 
-@Lambda.register("/schedules/amend", method="POST")
+@Lambda.register("/schedules/{task_id}", method="PUT")
 def amend_schedule(event, context):
-    """POST /api/v1/schedules/amend : full-replacement amendment of one of the caller's tasks.
+    """PUT /api/v1/schedules/{task_id} : full-replacement amendment of one of the caller's tasks.
 
-    Body: {"task_id", "prompt", "at"|"cron", "timezone", "session_mode", "status"}.
-    Replaces the amendable state rather than merging, matching the PUT route's semantics: an
-    omitted occurrence field clears it.
+    Body: {"prompt", "at"|"cron", "timezone", "session_mode", "status"}. Replaces the amendable
+    state rather than merging, matching the containerized PUT route: an omitted occurrence field
+    clears it.
     """
-    body = json.loads(event.get("body") or "{}")
-    task_id = body.pop("task_id", None)
-    if not task_id:
-        return 400, {"error": "task_id is required"}
+    task_id = event["pathParameters"]["task_id"]
     try:
         subject = _subject(event)
     except PermissionError as e:
         return 401, {"error": str(e)}
     try:
-        task = _manager().update(task_id, body, user_id=subject)
+        task = _manager().update(task_id, json.loads(event.get("body") or "{}"), user_id=subject)
     except PermissionError as e:
         return 403, {"error": str(e)}
     except KeyError:
@@ -117,16 +107,13 @@ def amend_schedule(event, context):
     return task.model_dump(mode="json")
 
 
-@Lambda.register("/schedules/cancel", method="POST")
+@Lambda.register("/schedules/{task_id}", method="DELETE")
 def cancel_schedule(event, context):
-    """POST /api/v1/schedules/cancel : body {"task_id"}; cancels one of the caller's tasks.
+    """DELETE /api/v1/schedules/{task_id} : cancel one of the caller's tasks.
 
     The record survives as the audit trail, so the cancelled task is returned.
     """
-    body = json.loads(event.get("body") or "{}")
-    task_id = body.get("task_id")
-    if not task_id:
-        return 400, {"error": "task_id is required"}
+    task_id = event["pathParameters"]["task_id"]
     try:
         subject = _subject(event)
     except PermissionError as e:

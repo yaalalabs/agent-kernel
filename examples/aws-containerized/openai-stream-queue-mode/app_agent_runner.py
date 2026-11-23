@@ -1,5 +1,5 @@
-from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
 from agentkernel.secret import SecretManager
 from agents import Agent, set_default_openai_key
 
@@ -31,8 +31,8 @@ triage_agent = Agent(
 
 OpenAIModule([triage_agent, math_agent, history_agent])
 
-# Dispatches to ECSStreamAgentRunner per config.yaml's execution.mode: async + message_type: delta
-handler = ECSAgentRunner.run
+# Dispatches to StreamAgentRunner per config.yaml's execution.mode: async + message_type: delta
+handler = AgentRunner.run
 
 if __name__ == "__main__":
     handler()

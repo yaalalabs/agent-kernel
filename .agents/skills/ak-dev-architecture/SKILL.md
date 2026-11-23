@@ -15,8 +15,8 @@ description: >
   AgentRunner/ResponseHandler/RequestHandler/IOHandler, the RESTAPI.run delegation rule, and the
   relocation shims), the WebSocket gateway tier (pipeline/ws: WebSocketGateway, the shared
   WSConnectionStore on the session backend, pod-direct reply pushes), the ak-deployment/ak-k8s
-  Helm chart topology, and the AWS ECS containerized deployment classes
-  (ECSIOHandler, ECSOutputConsumer, ECSAgentRunner, ECSStreamAgentRunner, ECSSQSConsumer, RawQueueConsumer, ThreadRunner).
+  Helm chart topology, and the AWS ECS containerized deployment on the shared pipeline classes
+  (IOHandler, AgentRunner, AWSWebsocketAPI, AWSWebSocketHandler, ECSSQSConsumer, RawQueueConsumer, ThreadRunner).
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -175,7 +175,7 @@ knowledge of conversation threads (that lives in `integration/thread/`).
     `_collect()` wrapper could only ever deliver the whole run at once. Two behavioural consequences: a chunk
     reaches a sync consumer as the run produces it, and a mid-run exception arrives as an error chunk **after** the
     chunks already yielded — the same shape the async path always had. All four sync consumers
-    (`pipeline/agent_runner.py`'s `StreamAgentRunner`, the serverless and containerized `akagentrunner.py`,
+    (`pipeline/agent_runner.py`'s `StreamAgentRunner`, the serverless `akagentrunner.py`,
     `serverless/core/router/ws_lambda.py`) already iterate, so none needed changing. **The pump pins one
     `contextvars.copy_context()` across every step, and that is load-bearing, not tidiness**: each step is its own
     task and a task otherwise runs in a fresh copy, so `Runtime.stream`'s current-session/current-agent tokens
@@ -1029,7 +1029,7 @@ deleted).
   into `requestContext.authorizer.principal` before calling a custom `Lambda.register` route, so
   `Lambda.principal(event)` works there too; the wrapper resolves only that principal
   (`LambdaWSHandler._connection_principal`) and hands the frame over unparsed, since a custom
-  frame is not a chat request (the ECS and gateway custom routes behave the same). `ECSIOHandler.run(handlers=None)` refuses WebSocket mode without an
+  frame is not a chat request (the ECS and gateway custom routes behave the same). `AWSWebsocketAPI.run()` refuses to start without an
   `identity` block and `AWSWebsocketAPI` custom routes receive `{"message", "principal"}` (a
   `Principal` model: a route returning it must dump it to JSON). `AzureFunctions.handler`
   authenticates the header before parsing the body (a 401 JSON body on refusal) and passes and
@@ -1336,7 +1336,7 @@ Rules that govern the package:
 
 1. **Activation**: `RESTAPI.run()` delegates to `IOHandler` only when **all three** hold: `cls is
    RESTAPI` exactly, no explicit `handlers`, and `resolve_type() == "in_memory"`. Subclasses
-   (`AWSRestAPI`, `AWSWebsocketAPI`) and explicit-handler surfaces (thread handler, custom
+   (`AWSWebsocketAPI`) and explicit-handler surfaces (thread handler, custom
    handlers) never delegate; the CLI uses `AgentService` directly. After that branch (and
    outside its `cls is RESTAPI` guard, so subclasses are covered) `RESTAPI.run` raises
    `AKConfigError` for any handler declaring `RESTRequestHandler.requires_pipeline` — the
@@ -1345,9 +1345,9 @@ Rules that govern the package:
    still get its 200 (#524). It then calls `RESTAPI.reject_unqueued_protocols()` (#780): A2A
    (`a2a.enabled`) or agent MCP (`mcp.enabled` **and** `mcp.expose_agents`, per
    `RESTAPI.agent_protocol_surfaces()`) on any entry point that starts no runner —
-   `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on a broker, `AWSRestAPI`, `AWSWebsocketAPI` — is
-   an `AKConfigError`, because their executors only enqueue. `ECSIOHandler.run` calls the same check
-   as its first statement, before any thread starts (ECS queue-mode A2A/MCP is a follow-up). MCP
+   `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on a broker, `AWSWebsocketAPI` with no queue — is
+   an `AKConfigError`, because their executors only enqueue. With a queue, `AWSWebsocketAPI.run`
+   hands off to `IOHandler.run` (#870), which does not refuse them, like any broker IO process. MCP
    serving only the app's own tools runs no agent and is not refused. `build_app` still mounts A2A
    and MCP, since `IOHandler` serves its app; `WebSocketGateway` never mounts them.
 2. **Coupling**: `pipeline` imports `core`, `api` and `secret` only (`secret` itself imports only `core`;
@@ -1398,7 +1398,7 @@ package:
 `driver/__init__.py` has no eager imports: `redis`, `valkey`, `azure`, and `gcp` extras stay
 optional; consumers import the concrete module (`from agentkernel.core.util.driver.redis import
 RedisDriver`). Connect/reconnect is serialized by a per-instance `threading.Lock`, so drivers
-are safe to share across threads (e.g. response stores under `ECSOutputConsumer`).
+are safe to share across threads (e.g. response stores under `ResponseHandler`).
 
 ## Directory Structure
 
@@ -1479,15 +1479,11 @@ ak-py/src/agentkernel/
 │   ├── aws/
 │   │   ├── serverless/      # Lambda handlers: Lambda, ResponseHandler, ServerlessAgentRunner, etc.
 │   │   │   └── core/router/ws_lambda.py  # LambdaWSHandler (renamed from BaseWSHandler): subclasses AWSWebSocketHandler, adds Lambda-event parsing only
-│   │   ├── containerized/   # ECS Fargate handlers
+│   │   ├── containerized/   # ECS Fargate WebSocket API (queue mode runs the shared pipeline IOHandler/AgentRunner)
 │   │   │   ├── core/
 │   │   │   │   ├── sqs_consumer.py      # ECSSQSConsumer: extends RawQueueConsumer: SQS poll loop
 │   │   │   │   └── api/
-│   │   │   │       ├── rest_api.py      # ECSQueueRequestHandler (extends RestHandler), AWSRestAPI (extends RESTAPI)
-│   │   │   │       └── websocket_api.py # ECSWebSocketHandlerBase, ECSWebSocketSystemRequestHandler, ECSWebSocketRequestHandler, AWSWebsocketAPI (extends RESTAPI)
-│   │   │   ├── akagentrunner.py         # ECSAgentRunner: polls Input Queue, runs agent
-│   │   │   ├── akoutputconsumer.py      # ECSOutputConsumer: polls Output Queue, writes to DB/WS
-│   │   │   └── ecs_io_handler.py        # ECSIOHandler: entrypoint: wires both threads
+│   │   │   │       └── websocket_api.py # ECSWebSocketHandlerBase, ECSWebSocketSystemRequestHandler, ECSWebSocketRequestHandler, AWSWebsocketAPI (extends RESTAPI; queue mode hands off to IOHandler)
 │   │   └── core/            # Shared AWS-only: SQSHandler, ResponseStore, websocket_service.py (WebSocketConnectionStore, DynamoDB, AWSWebSocketHandler, API Gateway Management API push, extends WebSocketHandlerABC)
 │   ├── azure/               # Azure Functions handler
 │   └── gcp/                 # Cloud Run: CloudRun (akcloudrun.py: run() always starts IOHandler, so the edge in queue mode),
@@ -1619,18 +1615,14 @@ The containerized deployment runs on ECS Fargate and uses a two-container archit
 | `RawQueueConsumer` | `deployment/aws/core/raw_queue_consumer.py` | Internal abstract base shared by `ECSSQSConsumer` and `LambdaSQSConsumer`: declares `poll`, `process_message`, `on_permanent_failure`, `delete_message` |
 | `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Extends `RawQueueConsumer`: SQS long-poll loop, retry/DLQ logic. Since #495 the machinery is the pipeline's `ConsumerLoop` bound to the SQS classmethod surface: public classmethods, raw-record subclass contract, log messages, and patch targets (`…sqs_consumer.time.sleep`) unchanged |
 | `ThreadRunner` | `pipeline/thread_runner.py` (shim at `deployment/common/thread_runner.py`) | Runs N callables as peer threads (one `threading.Thread` per `Task`, gated by a `Semaphore`) |
-| `ECSOutputConsumer` | `containerized/akoutputconsumer.py` | Extends `ECSSQSConsumer`: polls Output Queue, writes to DynamoDB or broadcasts via WebSocket |
 | `ServerlessAgentRunner` | `serverless/akagentrunner.py` | Extends `LambdaSQSConsumer`: runs `ChatService.process_chat_request` and sends the reply to the Output Queue, forwarding its status as the `ATTR_STATUS_CODE` custom attribute (`on_permanent_failure` sends 500). `ResponseHandler._construct_message_for_store` stores it on the record (absent/unparseable → 200), and `rest_lambda.DefaultEndpointsHandler` replays it: `_get_record` polls `get_record_with_retry`, `_record_response` maps the record to `(statusCode, body)`, and every `_handle_request` operation returns its own status instead of a hardcoded 200 (a missing record keeps its 200 + `NOT_FOUND` body). Since #760 it passes the body's prebuilt `requests` list to the chat service and copies the integration return address (`routing_attributes`: `integration` + `reply_*`) onto the output message, including the permanent-failure 500; `ServerlessStreamAgentRunner` hands an integration record (and its permanent failure) to `ServerlessAgentRunner`, since a platform has no streaming consumer. The serverless `ResponseHandler` delivers integration records through `IntegrationDelivery` before its mode branch, and reads the permanent-failure session id from the `MessageGroupId` system attribute |
-| `ECSAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSSQSConsumer`: polls Input Queue, runs the agent, sends to Output Queue. `run()` dispatches `REALTIME` to `ECSRealtimeAgentRunner`, then to `ECSStreamAgentRunner.run()` when `execution.is_delta` (`async` + `delta`), re-checked on every call (mirroring `ECSIOHandler.run` and the serverless `ServerlessAgentRunner.handle()`/`ServerlessStreamAgentRunner.handle()` dispatch) |
-| `ECSStreamAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSAgentRunner`: the `async` + `delta` sibling: fans out each streamed chunk as its own Output Queue message instead of sending one full response |
-| `ECSIOHandler` | `containerized/ecs_io_handler.py` | Entrypoint for the IO container: wires REST/WebSocket API + output consumer as peer threads. `run(handlers=None)`: `handlers` mounts optional REST surfaces (the schedule/thread management routes, a Slack handler) **alongside** the API's own defaults, mirroring the pipeline `IOHandler.run(handlers=...)` contract: the REST branch composes `[*AWSRestAPI.get_default_handlers(), *handlers]` because `RESTAPI.run()` *replaces* the defaults with whatever it is handed, and the queue-producing chat route must survive. This is the reason no example needs to reimplement the two-thread body in user code. `run()` refuses `rest_sync` + `delta` (SSE) with `AKConfigError` before any thread starts: the queue-backed REST route has no SSE bridge, so queue-mode delta replies need `async` + `delta` (ECS direct mode runs the plain `RESTAPI`, whose direct handler serves SSE). Authentication is configuration, not an argument: in WebSocket (`async`) mode `run()` refuses to start without an `identity` block (`AKConfigError`), since `$connect` authenticates the `?token=` through the provider and keys the connection by its subject; in REST modes the identity dependency `RESTAPI.build_app` installs on every router covers the routes |
-| `RestHandler` | `pipeline/request_handler.py` (shim at `deployment/common/rest_handler.py`) | Queue-aware `AgentRESTRequestHandler` subclass used by ECS's `ECSQueueRequestHandler` (Lambda's poll path is the separate `rest_lambda.py` router, which uses a JSON body, not query params): `enqueue_and_wait` (`POST /api/v1/chat`, `REST_SYNC` waits on the response store / `REST_ASYNC` returns a `request_id`) and `poll_response` (`GET /api/v1/chat?request_id=...&session_id=...`, query params only: `session_id` is for logging, not validated against the stored reply) |
-| `ECSQueueRequestHandler` | `containerized/core/api/rest_api.py` | Thin `RestHandler` subclass wiring the SQS transport and response store (both inherited from `RestHandler`); routes inherited from `RestHandler.get_router()` |
-| `AWSRestAPI` | `containerized/core/api/rest_api.py` | Extends `RESTAPI`; overrides `get_default_handlers()` to default to `ECSQueueRequestHandler`, safe to construct without config |
+| `AgentRunner` | `pipeline/agent_runner.py` | The Agent Runner container's entrypoint (`AgentRunner.run`) since #870, which deleted the ECS-only runners with no aliases. `run()` dispatches `REALTIME` to `RealtimeAgentRunner` and `delta` to `StreamAgentRunner`; SQS message shapes and attributes are unchanged, so rolling deploys work both ways |
+| `IOHandler` | `pipeline/io_handler.py` | Entrypoint for the IO container since #870 (which deleted the ECS-only IO handler, output consumer and REST API classes): REST modes call `IOHandler.run(handlers=[...])`, which serves the pipeline `RequestHandler` and runs `ResponseHandler` as a peer thread. WebSocket (`async`) mode calls `AWSWebsocketAPI.run(handlers=...)`, which hands off to `IOHandler.run(handlers=..., ws_handler=<AWSWebSocketHandler>)` so replies are pushed through the API Gateway Management API to each message's `endpoint_url`. `rest_sync` + `delta` (SSE) is rejected by `terraform plan` in queue mode (the HTTP API buffers streamed responses) |
+| `RestHandler` | `pipeline/request_handler.py` (shim at `deployment/common/rest_handler.py`) | Queue-aware `AgentRESTRequestHandler` subclass, the base of the pipeline `RequestHandler` that `IOHandler` mounts on ECS (Lambda's poll path is the separate `rest_lambda.py` router, which uses a JSON body, not query params): `enqueue_and_wait` (`POST /api/v1/chat`, `REST_SYNC` waits on the response store / `REST_ASYNC` returns a `request_id`) and `poll_response` (`GET /api/v1/chat?request_id=...&session_id=...`, query params only: `session_id` is for logging, not validated against the stored reply) |
 | `ECSWebSocketHandlerBase` | `containerized/core/api/websocket_api.py` | Abstract shared base for the two WS handlers: connection store, push-endpoint construction, response envelope, `x-ws-*` headers |
 | `ECSWebSocketSystemRequestHandler` | `containerized/core/api/websocket_api.py` | Framework-managed protocol routes `$connect`/`$disconnect`/`$default`; builds `RequestAuthenticator.from_config()` and refuses to construct without an `identity` block; only `$connect` authenticates (the `?token=` query parameter: 401 `Authentication token is required` when missing, `Authentication failed` when refused), storing the whole principal beside the connection. Not an extension point |
 | `ECSWebSocketRequestHandler` | `containerized/core/api/websocket_api.py` | Application routes: built-in chat route + custom routes. Framework-managed (not a subclassing extension point) and **not publicly exported**: `AWSWebsocketAPI` constructs it; custom routes are added via `AWSWebsocketAPI.register(route)` and passed in as `custom_routes`. Authenticates nothing itself: the connection's principal is read back from the connection store (`get_principal`), the chat route puts it on the body, and custom routes receive `{"message", "principal"}` |
-| `AWSWebsocketAPI` | `containerized/core/api/websocket_api.py` | Extends `RESTAPI`; `run(handlers=None)` **always builds** its own two handlers: the system handler (built lazily over the configured identity provider) plus one `ECSWebSocketRequestHandler` carrying every route registered via the `register(route)` decorator. Any `handlers` passed are appended to those two, never substituted for them, so `ECSIOHandler.run(handlers=...)` behaves the same in WebSocket mode as in the REST modes. Lazy build keeps importing the module safe when WebSocket mode isn't configured |
+| `AWSWebsocketAPI` | `containerized/core/api/websocket_api.py` | Extends `RESTAPI`; `run(handlers=None)` **always builds** its own two handlers: the system handler (built lazily over the configured identity provider) plus one `ECSWebSocketRequestHandler` carrying every route registered via the `register(route)` decorator. Any `handlers` passed are appended to those two, never substituted for them. With no queue it serves them directly (direct mode); with a queue it hands off to `IOHandler.run(handlers=..., ws_handler=system_handler.get_websocket_handler())`, so the `ResponseHandler` pushes replies over the DynamoDB connection table `$connect` writes (`AWSWebSocketHandler.broadcast` raises `ValueError` without an `endpoint_url`). Lazy build keeps importing the module safe when WebSocket mode isn't configured |
 
 ### Shared WebSocket Transport (Serverless + Containerized)
 
@@ -1664,16 +1656,16 @@ RESTAPI` and every `agentkernel.api.http.uvicorn` patch target keep working.
 ### Two-Container Layout
 
 ```
-Container 1: ECSIOHandler
-  Thread 1 (ThreadRunner):  AWSRestAPI.run(handlers=[ECSQueueRequestHandler()])
-                            (or AWSWebsocketAPI.run() in async mode: system + custom-route
-                            handlers built automatically over the identity provider)
-                           : FastAPI/uvicorn, handles POST /chat and GET /chat?request_id=...
-  Thread 2 (ThreadRunner):  ECSOutputConsumer.run()
+Container 1: IOHandler.run(handlers=[...])
+                            (or AWSWebsocketAPI.run() in async mode, which hands off to
+                            IOHandler.run with the API Gateway ws_handler)
+  Thread 1 (ThreadRunner):  rest-api: FastAPI/uvicorn + pipeline RequestHandler,
+                            handles /agents, POST /chat and GET /chat?request_id=...
+  Thread 2 (ThreadRunner):  response-handler: ResponseHandler(ws_handler=...).start()
                            : polls Output Queue, writes to DynamoDB / broadcasts via WebSocket
 
-Container 2: ECSAgentRunner
-  N threads (ThreadRunner):  ECSSQSConsumer._consumer_loop, one per
+Container 2: AgentRunner.run()
+  N threads (ThreadRunner):  agent-runner-*, the shared ConsumerLoop, one per
                              execution.queues.input.no_of_consumers (default 5)
                             : each polls Input Queue, runs agent, sends result to Output Queue
 ```
@@ -1684,7 +1676,7 @@ Container 2: ECSAgentRunner
 - **`process_message(cls, record)`** *(abstract, from `RawQueueConsumer`)*: handle one message; called on every successful receive.
 - **`on_permanent_failure(cls, record)`** *(abstract, from `RawQueueConsumer`)*: called when `ApproximateReceiveCount > max_receive_count`; **must catch its own exceptions**: if it raises, the message is not deleted and loops back.
 - **`delete_message(cls, msg: dict)`** *(public)*: subclasses may call this directly when manual deletion is needed.
-- **`run(cls)`**: blocking poll loop: the container entry-point.
+- **`run(cls)`**: blocking poll loop: a custom consumer container's entry-point (the built-in ECS containers run the pipeline `AgentRunner`/`IOHandler` instead).
 
 ### ThreadRunner Contract
 
@@ -1745,8 +1737,8 @@ Guidance:
   `graceful=True` always requires `stop_all_on_failure=True`: both raise `ValueError` in
   `Task.__post_init__` if violated.
 - Only set `graceful=True` on tasks in a `run()` call where every *other* task in that same call is
-  either similarly cooperative, or marked `awaited_on_shutdown=False`: e.g. `ECSIOHandler`
-  deliberately marks its `rest-api` task (`uvicorn.run()`, which never checks `shutdown_event` and
+  either similarly cooperative, or marked `awaited_on_shutdown=False`: e.g. `IOHandler`
+  deliberately marks its `rest-api` task (uvicorn's `server.run`, which never checks `shutdown_event` and
   can only be stopped by an OS signal) as `awaited_on_shutdown=False`, so the drain loop doesn't
   wait on it and it's simply cut off whenever `os._exit(1)` eventually fires.
 - The drain-complete exit uses `ThreadRunner.shutdown_exit_code` (default 1). The pipeline
@@ -1769,21 +1761,21 @@ Guidance:
 
 ```python
 # Container 1: app_rest_service.py
-from agentkernel.deployment.aws.containerized import ECSIOHandler
+from agentkernel.pipeline import IOHandler  # WebSocket mode: from agentkernel.aws import AWSWebsocketAPI
 
-runner = ECSIOHandler.run
+runner = IOHandler.run
 
 if __name__ == "__main__":
     runner()
 
 # Container 2: app_agent_runner.py
-from agentkernel.deployment.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
 
 OpenAIModule([...])
 
 if __name__ == "__main__":
-    ECSAgentRunner.run()
+    AgentRunner.run()
 ```
 
 ### Public Exports
@@ -1791,15 +1783,12 @@ if __name__ == "__main__":
 ```python
 # agentkernel.deployment.aws
 from agentkernel.deployment.aws import (
-    ECSAgentRunner,           # Container 2 entry-point
-    ECSIOHandler,             # Container 1 entry-point
-    ECSOutputConsumer,        # Subclass ECSSQSConsumer for custom output processing
-    AWSRestAPI,               # RESTAPI subclass defaulting to ECSQueueRequestHandler
-    AWSWebsocketAPI,          # RESTAPI subclass; builds system + custom-route handlers; register(route) decorator
+    AWSWebsocketAPI,          # RESTAPI subclass; builds system + custom-route handlers; register(route) decorator; queue mode hands off to IOHandler
     ECSWebSocketSystemRequestHandler, # Framework $connect/$disconnect/$default handler (injected automatically)
 )
 from agentkernel.deployment.aws.containerized.core import ECSSQSConsumer
 from agentkernel.deployment.common import ThreadRunner
+from agentkernel.pipeline import AgentRunner, IOHandler  # the ECS container entry-points
 ```
 
 `deployment/aws/__init__.py` (and the thin `agentkernel/aws.py` re-export shim above it) resolves
@@ -1854,8 +1843,8 @@ User Input
             → clear volatile cache                   # cleanup
     → REST: SSE (`text/event-stream`) when execution.mode=rest_sync + execution.message_type=delta (`is_sse`)
     → AWS Lambda serverless (async + delta; the REST router refuses rest_sync + delta at init): each StreamChunk sent as a separate SQS/WebSocket `STREAM_CHUNK` message
-    → AWS ECS containerized (async + delta): queue mode: `ECSStreamAgentRunner` fans out one SQS output message per
-      chunk, `ECSOutputConsumer` broadcasts each as `STREAM_CHUNK`; direct mode: `ECSWebSocketRequestHandler`
+    → AWS ECS containerized (async + delta): queue mode: `StreamAgentRunner` fans out one SQS output message per
+      chunk, `ResponseHandler` broadcasts each as `STREAM_CHUNK`; direct mode: `ECSWebSocketRequestHandler`
       broadcasts chunks inline via `ChatService.process_stream_chat_async`
 ```
 
