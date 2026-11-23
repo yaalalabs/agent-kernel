@@ -58,6 +58,12 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
 | `default_route_settings` throttling | `aws_api_gateway_method_settings` | |
 | `aws_apigatewayv2_vpc_link.ecs_alb` | **kept as is** | V2 links serve REST APIs; replacing it would recreate the link for nothing |
 
+- **Four of these are not new decisions** — they match the REST API the serverless module already
+  runs (`serverless/modules/api-gateway/main.tf`): `REGIONAL` endpoint type (`:40`), the stage named
+  `agents` (`:160`), a separate `aws_api_gateway_deployment` + `aws_api_gateway_stage` (`:128`,
+  `:157`), and redeployment driven by a hash in `triggers` (`:130`). This change follows that module
+  rather than inventing conventions. It diverges on exactly two points, each with its own reason: the
+  OpenAPI body (decision 6) and gateway-side CORS (Route translation).
 - **Do not confuse the VPC links.** The module has both: `aws_api_gateway_vpc_link.ws`
   (`api_gateway_ws.tf:32`) is V1, targets the **NLB**, and is WebSocket-only. V1 links accept only an
   NLB — exactly the limitation this change avoids. "A REST API needs a V1 VPC link" is the old rule.
@@ -73,49 +79,55 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
 
 ### Route translation (`state.tf`)
 
-- `local.gateway_endpoints_map` (`state.tf:66`) is rendered into OpenAPI paths. Its construction — and
-  therefore the `gateway_endpoints`, MCP and default-chat inputs feeding it — is unchanged.
-- Three cases must be handled, each testable against an existing example:
-  - A method-and-path key (`POST /api/v1/chat`) becomes a path object with a lowercased method key.
-  - `ANY` becomes `x-amazon-apigateway-any-method`; OpenAPI has no `any` method key.
-  - `$request.path.<name>` in `overwrite_path` — either bare or braced as
-    `${request.path.<name>}` — becomes `{<name>}` in the integration `uri`, **plus** a
-    method-level `parameters` entry declaring the path parameter and an integration `requestParameters`
-    mapping `integration.request.path.<name>` to `method.request.path.<name>`. REST APIs do not infer
-    path parameters from a string the way the HTTP API's `overwrite:path` did.
-  - No prior art to copy from the serverless module: #935 gave its REST API `{task_id}` path parts, but
-    over an `AWS_PROXY` integration to Lambda, which forwards the raw event and needs no mapping. An
-    `http_proxy` integration to an ALB does.
-  - There is no `$default` case: `variables.tf:60` matches `upper(ep.method)` against a lowercase
-    `"$default"`, so no spelling passes validation and the key never reaches the renderer. The dead
-    entry is pre-existing and left alone.
-- `api_gateway_async.tf` is deleted. Its `rest_async` `GET` poll route becomes one more OpenAPI path on
-  the same condition (`var.queue_mode && var.execution_mode == "rest_async"`).
-- Binary uploads: the OpenAPI root declares
-  `x-amazon-apigateway-binary-media-types: ["multipart/form-data"]`. Without it `/chat-multipart` bodies
-  are corrupted silently — no error is raised.
-- CORS: when `var.enable_cors` is true, every path gets an `OPTIONS` mock integration honouring the
-  existing `cors_*` variables. HTTP APIs answered preflight from one `cors_configuration` block; REST
-  APIs have no equivalent.
-  - **The mock covers preflight only.** On an actual response an `http_proxy` integration returns
-    whatever the container sent, and the container already sends CORS headers unconditionally —
-    `CORSMiddleware` with `allow_origins=["*"]` (`ak-py/src/agentkernel/api/http.py:55-61`). Browsers
-    therefore keep working, but `cors_allow_origins` stops governing actual responses and the served
-    policy becomes **wider than configured**. (Today the gateway applies `cors_configuration` to
-    actual responses too; the exact precedence between its header and the container's is not
-    verified here, but either way the configured value stops reaching the browser afterwards.)
-  - Accepted, not closed: making the container honour the configured origins needs CORS fields in
-    `AKConfig`, which has none. Recorded under Compatibility and as a non-goal.
+- `local.gateway_endpoints_map` (`state.tf:66`) is rendered into OpenAPI paths. Its construction, and
+  the inputs feeding it, are unchanged.
+- Three cases, each testable against an existing example:
+  - `POST /api/v1/chat` → a path object with a lowercased method key.
+  - `ANY` → `x-amazon-apigateway-any-method`; OpenAPI has no `any` key.
+  - `$request.path.<name>` in `overwrite_path`, bare or braced → `{<name>}` in the integration `uri`,
+    **plus** a method-level `parameters` entry and an integration `requestParameters` mapping
+    `integration.request.path.<name>` to `method.request.path.<name>`. The HTTP API's `overwrite:path`
+    inferred all this from the string; a REST API does not. Not copyable from the serverless module:
+    its `{task_id}` support (#935) rides `AWS_PROXY` to Lambda, which forwards the raw event.
+  - No `$default` case: `variables.tf:60` matches `upper(ep.method)` against a lowercase `"$default"`,
+    so no spelling passes validation. The dead entry is pre-existing and left alone.
+- `api_gateway_async.tf` is deleted; its `rest_async` `GET` poll route becomes a `"get"` **method on
+  the existing `/api/v1/chat` path object**, not a new path, on the same condition
+  (`var.queue_mode && var.execution_mode == "rest_async"`).
+  - So the renderer groups methods per path rather than emitting one path per route key. This is the
+    one structural trap GCP calls out in the same situation
+    (`ak-gcp/containerized/api_gateway.tf:7-9`, `openapi_paths_block`).
+- Binary uploads: the root declares `x-amazon-apigateway-binary-media-types: ["multipart/form-data"]`.
+  Without it `/chat-multipart` bodies are corrupted silently.
+- CORS: a REST API has no `cors_configuration`, so preflight needs a declared `OPTIONS` method — but
+  **only on paths that do not already use `x-amazon-apigateway-any-method`**, which accepts every
+  verb including `OPTIONS`. Where one is needed it is **proxied to the container, not a mock**:
+  FastAPI's `CORSMiddleware` already answers preflight (`ak-py/src/agentkernel/api/http.py:55-61`),
+  and a mock built from `cors_*` would contradict the container on every non-preflight response.
+  - This mirrors the GCP module exactly, which proxies its preflight operation to Cloud Run and
+    builds one only for non-`ANY` paths (`ak-gcp/containerized/api_gateway.tf:47-58`, `:73-74`).
+  - Consequence: `var.enable_cors` and the `cors_*` variables stop affecting ECS. They are already
+    inert for actual responses once the gateway stops rewriting them; this makes that honest. #1006
+    makes the container's own policy configurable, which is the actual fix.
 
 ### ALB
 
-- Set `idle_timeout = 300` on `aws_lb.app` (`modules/rest-service/main.tf:219`), replacing the current
+- Set `idle_timeout` on `aws_lb.app` (`modules/rest-service/main.tf:219`), replacing the current
   implicit 60 s, so a silent gap in an SSE stream does not close the connection.
-- A fixed constant, not a module variable: nothing has asked to tune it, and 300 s matches the REST API's
-  own stated idle limit, leaving one number to reason about rather than two.
-- If testing shows a different REST API idle limit, this value follows that measurement.
-- Accepted cost: an abandoned connection (closed laptop, killed tab) is now held for 300 s rather than
-  60 s before the ALB reaps it.
+- **A new module variable `alb_idle_timeout`, default 300.** How long an agent may stay silent is a
+  property of the user's workload, not of AWS, and every other request-path timeout in the repo is a
+  variable with a default: `backend_deadline` and `timeout` on GCP containerized
+  (`ak-gcp/containerized/variables.tf:81-91`), `backend_deadline` on GCP serverless (`:93-97`), the
+  Lambda `timeout`s in `ak-aws/serverless/variables.tf:317`, `:334`, `:354`, and the Helm chart's
+  `websocket.requestTimeout` (`ak-k8s/chart/values.yaml:322-323`), which is `0s` for exactly this
+  reason — "agent streams are long-lived".
+  - The description states the relationship the operator needs: the gateway's own idle limit caps it,
+    so raising this alone does not extend a stream past what API Gateway allows. GCP documents the
+    same pairing ("Must be <= Cloud Run timeout").
+- The **default** follows the measured REST API idle limit if testing contradicts the documented
+  300 s.
+- Accepted cost: an abandoned connection (closed laptop, killed tab) is now held for the timeout
+  rather than 60 s before the ALB reaps it, so a higher value holds idle connections longer.
 
 ### Response store
 
@@ -135,15 +147,24 @@ case.
     `config.yaml` selected — the module injects the URL only, never the type. It would **block** a
     valid deployment pointing at an external Redis with no module cluster, and **pass** one that
     created a cluster but selects `dynamodb`.
-  - A `check` block warns without blocking (Terraform >= 1.5; this module already requires >= 1.9.5,
-    `main.tf:14`). Enforcement stays at gate 4, which reads the resolved config at startup and is the
-    only place the real answer exists.
+  - A `check` block warns without blocking, and this module already uses one — `check
+    "scheduling_requires_queue_mode"` (`eventbridge.tf:6-11`). Follow its shape: a named check, one
+    `assert`, and an `error_message` opening `[IMPORTANT]`. Enforcement stays at gate 4, which reads
+    the resolved config at startup and is the only place the real answer exists.
 - Terraform injects the **connection detail only**, never
   `AK_EXECUTION__RESPONSE_STORE__TYPE`; `config.yaml` selects the backend, as with `thread.type`.
+- The env var and the source are not new: both GCP modules already inject
+  `AK_EXECUTION__RESPONSE_STORE__REDIS__URL = local.redis_url`
+  (`ak-gcp/containerized/queue_mode.tf:30`, `ak-gcp/serverless/queue_mode.tf:30`). This brings AWS
+  containerized in line with them.
 - **The REST service tier only — not the agent runner.** The store is wired and IAM-granted solely to
   the REST service (`iam.tf:40-62`, `:116-119`; `rest_service.tf:55`); `modules/agent-runner/` has no
   response-store variable at all. Correct, and not to be "fixed": the runner fans chunks onto the
   output queue, while both the writer and the reader live in the IO container.
+  - A deliberate divergence from GCP, which hands the same `queue_env` block to both its service and
+    its runner (`ak-gcp/containerized/cloud_run.tf:161`, `queue_mode.tf:82`). That is a consequence of
+    sharing one env block, not a requirement; the runner never reads the store. Harmless there,
+    unnecessary here.
 - Gates 4 and 5 stay as they are and must still fire for a non-streaming store.
 
 ### Access logging and the account-level CloudWatch role
@@ -190,11 +211,15 @@ already owns that resource** for WebSocket mode, so REST mode joins an existing 
   `api_gateway_stage`, `agent_invoke_url`, and the two log-group outputs. `e2e/app/deploy/outputs.tf:2`
   builds `https://<id>.execute-api.<region>.amazonaws.com/<stage>` from the first two; a REST API's
   invoke URL has that same shape, so only the id changes.
-- Access logging: the log format replaces `$context.routeKey` (`api_gateway.tf:82`) with
-  `$context.resourcePath`.
-- **CORS on actual responses widens.** `cors_allow_origins` governs preflight only afterwards; actual
-  responses carry the container's unconditional `*`. No browser breaks, but a deployment that
-  restricted origins is no longer restricted on the response itself. See Route translation.
+- Access logging: the log format gains `$context.resourcePath` and **keeps** `$context.routeKey`,
+  matching the serverless REST API's format, which logs both
+  (`serverless/modules/api-gateway/main.tf:177-178`).
+- **`cors_*` stops having any effect on ECS**, so a deployment that narrowed origins is no longer
+  narrowed — the container answers every origin, with credentials (#1006). Nothing breaks: the
+  variables default to `["*"]` (`variables.tf:186`), so only a deliberately restricted deployment
+  changes. AWS documents both halves — an HTTP API "ignores CORS headers returned from your backend
+  integration", while a REST API's proxy integration leaves the backend "responsible for returning
+  the `Access-Control-Allow-Origin` ... headers".
 - **`aws_api_gateway_account` now also reaches REST deployments.** A REST-mode deployment with
   `enable_api_gateway_logs = true` joins a known hazard: the role is a singleton per account and
   region, concurrent deployments "will contend over this resource", and disabling the toggle
@@ -213,8 +238,10 @@ already owns that resource** for WebSocket mode, so REST mode joins an existing 
 - The only new Terraform-injected variable is an existing `AKConfig` field's env var
   (`AK_EXECUTION__RESPONSE_STORE__REDIS__URL`), reusing `_ResponseStoreRedisConfig`
   (`ak-py/src/agentkernel/core/config.py:658`) whole. No new model, no new selector.
-- **No new Terraform input variables.** The ALB idle timeout is a constant, and the response-store
-  requirement is expressed through the existing `create_redis_cluster` / `create_valkey_cluster` flags.
+- **One new Terraform input variable: `alb_idle_timeout`** (number, default 300). Nothing existing
+  expresses it — the module has no request-path timeout of any kind today — and it matches the
+  variable every other deployment target already exposes. The response-store requirement adds none,
+  being expressed through the existing `create_redis_cluster` / `create_valkey_cluster` flags.
 - No `enabled` flag is added: `execution_mode` + `message_type` already select SSE.
 
 ### House patterns
@@ -272,6 +299,9 @@ There is no dedicated breaking-change channel, so it rides the two surfaces that
   it are that work's concern, not this change's.
 - **WebSocket mode.** `api_gateway_ws.tf` keeps its own v2 API and NLB, untouched.
 - **The serverless (Lambda) module**, which already uses a REST API.
+- **The GCP modules.** They already build their gateway from an OpenAPI document and have no SSE
+  restriction — `message_type: delta` is documented for `rest_sync` with no rejection
+  (`ak-gcp/containerized/variables.tf:310-315`). Read as precedent, not edited.
 - **An SSE heartbeat in the server.** Only needed if raising the ALB idle timeout proves insufficient; a
   separate issue if so.
 - **A2A / MCP on ECS queue mode**, which remains blocked on #780 follow-up work.
@@ -288,8 +318,11 @@ Each was an open choice during drafting; the requirements above state the outcom
    cluster. Neither covers the other. One env var, two outputs, one `check` block. A `check` rather
    than a `validation` because Terraform cannot see which store `config.yaml` selects, so a hard
    rejection would block valid external-Redis deployments.
-2. **ALB `idle_timeout` = 300 s, a fixed constant.** Matches the REST API's stated idle limit, so one
-   number governs rather than two. No variable: nothing has asked to tune it.
+2. **ALB `idle_timeout` is a variable, `alb_idle_timeout`, defaulting to 300 s.** The default matches
+   the REST API's stated idle limit, so the out-of-the-box behaviour needs no thought. It is a
+   variable rather than a constant because every sibling deployment exposes its request-path timeout
+   that way, and because the right value depends on how long the user's agent goes quiet. Rejected: a
+   hardcoded constant, which would make ECS the only target where this cannot be tuned.
 3. **The ~3.5× per-request cost is accepted** — immaterial beside the model call on the same request.
    Supporting both API types behind a variable would double this module's surface permanently.
 4. **The unconfirmed AWS behaviours are tested on the first deployment, not proven up front.** The one
@@ -304,6 +337,10 @@ Each was an open choice during drafting; the requirements above state the outcom
    the body adds none (worked comparison in `research/aws-claims-to-verify.md`). The serverless module
    is that approach in this repo (`serverless/modules/api-gateway/main.tf:45-96`): a fixed
    `api → version → main → sub → child` ladder, which can express only three user-supplied segments.
+   The body approach is also already in this repo — `ak-gcp/containerized/api_gateway.tf` renders the
+   same `gateway_endpoints_map` into an OpenAPI document, mapping `ANY` to `x-google-allow` (`:13`)
+   and routing with `x-google-backend` (`:53`). Same input, same technique, different vendor
+   extensions.
 7. **`aws_api_gateway_account` stays owned by this module; its gate widens to both modes.** Relaxing
    the count is the smallest change that follows the pattern already in the file. Rejected: declining
    to manage it, which would give REST mode a different arrangement from WebSocket mode in one module;

@@ -12,7 +12,7 @@ at all.
 | 1 | AWS provider `6.70.0` exposes `response_transfer_mode` and `integration_target` | provider schema, locally | **Confirmed — see below** |
 | 2 | A REST API integrates directly with an ALB over VPC link V2, no NLB | the stack applies and serves one request end to end | Diagnose first (below). The issue closes only on a confirmed AWS limitation |
 | 3 | With `responseTransferMode = "STREAM"`, SSE chunks arrive **incrementally** | `curl -N`, timestamping each chunk | Diagnose first (below). The issue closes only on a confirmed AWS limitation |
-| 4 | The REST API's real idle timeout on a Regional endpoint | a route that stays silent, then emits | The ALB `idle_timeout` constant follows the measurement, not the documented 5 min |
+| 4 | The REST API's real idle timeout on a Regional endpoint | a route that stays silent, then emits | The `alb_idle_timeout` **default** follows the measurement, not the documented 5 min |
 
 ## 1. Provider support — confirmed 2026-11-23
 
@@ -72,8 +72,8 @@ Claims 2 and 3 close the issue only on a **confirmed AWS limitation**, never on 
 
 - Regional endpoint only. An edge-optimized endpoint reportedly keeps a 30 s streaming idle cap and
   would produce a false negative.
-- The ALB `idle_timeout` must be raised **above the longest probe**, not merely to the design's 300 s.
-  At the default 60 s the ALB cuts first; at exactly 300 s it still cuts first whenever the gateway
+- Set `alb_idle_timeout` **above the longest probe** for this run, not to its 300 s default.
+  At the implicit 60 s the ALB cuts first; at exactly 300 s it still cuts first whenever the gateway
   allows more, and the run would report the ALB's limit as the gateway's. Set it to 900 s for the
   measurement, and confirm which component closed the connection — ALB access logs, or the shape of
   the error the client sees — before attributing the number to the gateway.
@@ -89,5 +89,5 @@ Claims 2 and 3 close the issue only on a **confirmed AWS limitation**, never on 
 | 4 | — | — |
 
 Record claims 2 to 4 here once the first deployment has been tested, along with anything that should
-change in `design.md` — in particular the ALB `idle_timeout` constant if claim 4 contradicts the
+change in `design.md` — in particular the `alb_idle_timeout` default if claim 4 contradicts the
 documented 5 minutes.
