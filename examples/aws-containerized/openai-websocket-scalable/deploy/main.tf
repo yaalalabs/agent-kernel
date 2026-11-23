@@ -18,7 +18,7 @@ module "containerized_agents" {
   # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
   ssm_enabled = true
 
-  # REST/IO service: authenticates $connect, enqueues chat, and pushes replies back over the connection (ECSIOHandler).
+  # REST/IO service: authenticates $connect, enqueues chat, and pushes replies back over the connection (AWSWebsocketAPI).
   rest_service = {
     package_path = "../dist-rest-service"
     command      = ["python", "app_rest_service.py"]
