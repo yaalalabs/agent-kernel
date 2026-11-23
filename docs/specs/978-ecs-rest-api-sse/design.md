@@ -20,19 +20,20 @@ their current shape.
 - Reusable as is: `aws_apigatewayv2_vpc_link.ecs_alb` (`api_gateway.tf:21`), and `alb_arn` /
   `alb_dns_name` already on `modules/rest-service/outputs.tf:21`, `:26`. No new module output needed.
 
-### Five gates stand between a user and SSE; two must survive
+### Of five gates between a user and SSE, two must survive
 
 | # | Gate | Location | Disposition |
 | --- | --- | --- | --- |
-| 1 | `ECSIOHandler.run` raises for `rest_sync` + `delta` | `deployment/aws/containerized/ecs_io_handler.py:50-55` | Removed by **#962**, which deletes the file |
-| 2 | `terraform plan` validation `!(queue_mode && rest_sync && delta)` | `variables.tf`, on the #962 branch | **Removed here** |
-| 3 | `message_type` description asserting SSE is rejected | `variables.tf:278`, on the #962 branch | **Removed here** |
-| 4 | `IOHandler` startup: SSE needs a chunk-streaming store | `pipeline/io_handler.py:229` | **Kept** — about the store, not the gateway |
+| 1 | `ECSIOHandler.run` raised for `rest_sync` + `delta` | `deployment/aws/containerized/ecs_io_handler.py` | **Already gone** — #962 deleted the file |
+| 2 | `terraform plan` validation `!(queue_mode && rest_sync && delta)` | `variables.tf:284-287` | **Removed here** |
+| 3 | `message_type` description asserting SSE is rejected | `variables.tf:278` | **Removed here** |
+| 4 | `IOHandler` startup: SSE needs a chunk-streaming store | `pipeline/io_handler.py:238` | **Kept** — about the store, not the gateway |
 | 5 | `RequestHandler._reject_unroutable` 400s SSE on such a store | `pipeline/request_handler.py:561-569` | **Kept** — same reason |
 
-Gate 1's reason is not the gateway — "its REST container has no SSE route" — and it disappears because
-#962 moves ECS onto the shared `IOHandler`. So "no Python changes needed" holds **only if #962 lands
-first**; it is a hard dependency, not a related issue.
+Gate 1's reason was not the gateway — "its REST container has no SSE route" — and it is already
+gone: **#962 has landed** (`184345298`), moving ECS onto the shared `IOHandler`. No ECS-specific chat
+request handler remains, so `rest_sync` now runs the shared `RequestHandler`, which has an SSE route.
+"No Python changes needed" is therefore settled fact rather than a dependency on unmerged work.
 
 ### Two things the module cannot currently do
 
@@ -82,6 +83,9 @@ first**; it is a hard dependency, not a related issue.
     method-level `parameters` entry declaring the path parameter and an integration `requestParameters`
     mapping `integration.request.path.<name>` to `method.request.path.<name>`. REST APIs do not infer
     path parameters from a string the way the HTTP API's `overwrite:path` did.
+  - No prior art to copy from the serverless module: #935 gave its REST API `{task_id}` path parts, but
+    over an `AWS_PROXY` integration to Lambda, which forwards the raw event and needs no mapping. An
+    `http_proxy` integration to an ALB does.
 - `api_gateway_async.tf` is deleted. Its `rest_async` `GET` poll route becomes one more OpenAPI path on
   the same condition (`var.queue_mode && var.execution_mode == "rest_async"`).
 - Binary uploads: the OpenAPI root declares
@@ -128,8 +132,8 @@ case.
 REST API access logging needs the account-level CloudWatch role, which HTTP APIs did not. **The module
 already owns that resource** for WebSocket mode, so REST mode joins an existing arrangement.
 
-- `aws_api_gateway_account.this` (`api_gateway_ws.tf:95`), `aws_iam_role.apigw_cloudwatch` (`:74`) and
-  its policy attachment (`:88`) are all gated `local.is_websocket_mode && var.enable_api_gateway_logs`.
+- `aws_api_gateway_account.this` (`api_gateway_ws.tf:95`), `aws_iam_role.apigw_cloudwatch` (`:73`) and
+  its policy attachment (`:89`) are all gated `local.is_websocket_mode && var.enable_api_gateway_logs`.
   **Relax that to `var.enable_api_gateway_logs` alone.** Each is a single `count = 0/1` resource, so
   a deployment still creates at most one of each however many stages consume it — the relaxation does
   not rely on the modes being mutually exclusive, which #985 would make untrue by serving a REST stage
@@ -206,7 +210,7 @@ Verified on a deployed stack once the implementation is written.
 ### Documentation
 
 These assert that ECS queue mode refuses SSE and must be corrected: `ak-cloud-deploy/SKILL.md:50`,
-`:853`, `:1154`; `docs/docs/deployment/aws-containerized.md:18`;
+`:860`, `:1161`; `docs/docs/deployment/aws-containerized.md:18`;
 `docs/docs/advanced/queue-mode-guide.md:536`, `:740`; containerized `README.md:411`;
 `docs/specs/remove-direct-mode/research/blockers.md:13` (B5) and the #870 design's "SSE on ECS"
 non-goal.
@@ -262,7 +266,9 @@ Each was an open choice during drafting; the requirements above state the outcom
    `aws_api_gateway_resource` / `_method` / `_integration` resources would keep those diffs, but REST
    APIs model a path as a tree, so `state.tf` would have to decompose arbitrary user paths into
    segments, dedupe shared prefixes and order `parent_id` references — and it adds ~23 resources where
-   the body adds none (worked comparison in `research/aws-claims-to-verify.md`).
+   the body adds none (worked comparison in `research/aws-claims-to-verify.md`). The serverless module
+   is that approach in this repo (`serverless/modules/api-gateway/main.tf:45-96`): a fixed
+   `api → version → main → sub → child` ladder, which can express only three user-supplied segments.
 7. **`aws_api_gateway_account` stays owned by this module; its gate widens to both modes.** Relaxing
    the count is the smallest change that follows the pattern already in the file. Rejected: declining
    to manage it, which would give REST mode a different arrangement from WebSocket mode in one module;
