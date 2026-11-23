@@ -20,7 +20,7 @@ from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
 
 class _QueuedRestHandler(RestHandler):
-    """RestHandler in queue mode, the shape ECSQueueRequestHandler serves."""
+    """RestHandler in queue mode, the shape the pipeline RequestHandler serves."""
 
     def _is_queue_mode(self) -> bool:
         return True

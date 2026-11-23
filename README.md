@@ -203,8 +203,8 @@ The Terraform modules are also published on the [Terraform Registry](https://reg
 The chart is published as an OCI artifact at [`ghcr.io/yaalalabs/charts/agent-kernel`](https://github.com/yaalalabs/agent-kernel/pkgs/container/charts%2Fagent-kernel). Install it with Helm (the `docker pull` command GitHub shows on the package page does not apply to charts):
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.2 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.2 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>

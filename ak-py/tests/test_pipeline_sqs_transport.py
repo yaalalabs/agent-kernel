@@ -9,6 +9,7 @@ import pytest
 
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.deployment.aws.core.sqs_handler import SQSHandler
+from agentkernel.pipeline.agent_runner import AgentRunner
 from agentkernel.pipeline.envelope import QueueMessage, QueueName
 from agentkernel.pipeline.testing import QueueTransportContract
 from agentkernel.pipeline.transport import sqs as sqs_wire
@@ -24,7 +25,7 @@ def _record(receipt_handle="rh-1"):
         "MessageId": "mid-1",
         "ReceiptHandle": receipt_handle,
         "Body": '{"result": "ok"}',
-        "Attributes": {"MessageGroupId": "s1", "ApproximateReceiveCount": "2"},
+        "Attributes": {"MessageGroupId": "s1", "MessageDeduplicationId": "r1", "ApproximateReceiveCount": "2"},
         "MessageAttributes": {
             "request_id": {"DataType": "String", "StringValue": "r1"},
             "status_code": {"DataType": "String", "StringValue": "200"},
@@ -72,6 +73,30 @@ class TestSendWireFormat:
         assert client.send_message.call_args.kwargs["QueueUrl"] == OUTPUT_URL
 
 
+class TestDedupIdBounds:
+    """A dedup id SQS would reject is sent as its SHA-256 digest (#870): a client-chosen request id
+    becomes the input's dedup id, and chunk suffixes can push a reply's past the 128-char limit."""
+
+    @staticmethod
+    def _sent_dedup_id(dedup_id):
+        return sqs_wire.build_send_message_kwargs(message_body="{}", message_deduplication_id=dedup_id).get("MessageDeduplicationId")
+
+    def test_an_id_at_the_limit_is_sent_unchanged(self):
+        assert self._sent_dedup_id("r" * 128) == "r" * 128
+
+    @pytest.mark.parametrize("dedup_id", ["r" * 129, "has space"], ids=["too-long", "space"])
+    def test_an_id_sqs_would_reject_is_sent_as_its_digest(self, dedup_id):
+        sent = self._sent_dedup_id(dedup_id)
+        assert len(sent) == 64 and sent == self._sent_dedup_id(dedup_id)
+
+    def test_chunk_ids_past_the_limit_stay_distinct(self):
+        base = "r" * 128
+        assert self._sent_dedup_id(f"{base}-1-0") != self._sent_dedup_id(f"{base}-1-1")
+
+    def test_no_id_stays_absent(self):
+        assert self._sent_dedup_id(None) is None
+
+
 class TestSQSHandlerDelegation:
     """SQSHandler's wire-format surface is the relocated pipeline implementation: the nested
     classes must stay the same objects (user imports, isinstance checks, patch targets), and
@@ -114,9 +139,35 @@ class TestConsumer:
         assert message.body == '{"result": "ok"}'
         assert message.attributes == {"request_id": "r1", "status_code": "200"}
         assert message.group_id == "s1"
+        assert message.dedup_id == "r1"
         assert message.receive_count == 2
         assert message.message_id == "mid-1"
         assert message.native is record
+
+    def test_fetch_without_a_dedup_id_maps_to_none(self, monkeypatch):
+        """A standard (non-FIFO) queue returns no MessageDeduplicationId."""
+        record = _record()
+        del record["Attributes"]["MessageDeduplicationId"]
+        client = MagicMock()
+        client.receive_message.return_value = {"Messages": [record]}
+
+        [message] = self._consumer(monkeypatch, client).fetch(5, 20.0)
+
+        assert message.dedup_id is None
+
+    def test_reply_sent_from_a_fetched_record_carries_its_dedup_id(self, monkeypatch):
+        """Regression (#870): the ECS output queue is FIFO without content-based dedup, so SQS
+        rejects a reply that has no MessageDeduplicationId."""
+        client = MagicMock()
+        client.receive_message.return_value = {"Messages": [_record()]}
+        [message] = self._consumer(monkeypatch, client).fetch(5, 20.0)
+        runner = AgentRunner(transport=SQSTransport(input_url=INPUT_URL, output_url=OUTPUT_URL), chat_service=MagicMock())
+
+        runner._send_to_output(message, {"result": "ok"}, 200)
+        runner._send_to_output(message, {"delta": "o"}, dedup_suffix="2-0")
+
+        sent = [call.kwargs["MessageDeduplicationId"] for call in client.send_message.call_args_list]
+        assert sent == ["r1", "r1-2-0"]
 
     def test_fetch_passes_long_poll_parameters(self, monkeypatch):
         client = MagicMock()

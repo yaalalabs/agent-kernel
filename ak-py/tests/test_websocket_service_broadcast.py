@@ -140,3 +140,32 @@ class TestAWSPushCarriesALabelledReply:
         self._handler(api_gateway).send(endpoint_url="https://example.com/prod", connection_id="conn-1", message=body)
 
         assert api_gateway.post_to_connection.call_args.kwargs["Data"] == json.dumps(body).encode("utf-8")
+
+
+class TestAWSBroadcastNeedsAnEndpoint:
+    """The API Gateway push needs the message's return address (#870): without one it raises, so a
+    queue consumer retries the reply instead of posting to the default regional endpoint."""
+
+    def _handler(self, connections):
+        from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandler
+
+        store = MagicMock(spec=WebSocketConnectionStoreABC)
+        store.get_connections.return_value = connections
+        handler = AWSWebSocketHandler(connection_store=store)
+        handler.get_client = MagicMock()
+        return handler
+
+    @pytest.mark.parametrize("endpoint_url", [None, ""])
+    def test_no_endpoint_raises_before_any_client_is_built(self, endpoint_url):
+        handler = self._handler(["conn-1"])
+        with pytest.raises(ValueError, match="endpoint_url"):
+            handler.broadcast(endpoint_url=endpoint_url, message={"result": "ok"}, user_id="u1")
+        handler.get_client.assert_not_called()
+
+    def test_with_an_endpoint_each_connection_gets_the_message(self):
+        handler = self._handler(["conn-1", "conn-2"])
+        handler.broadcast(endpoint_url="https://gw.example/prod", message={"result": "ok"}, user_id="u1")
+
+        handler.get_client.assert_called_with("https://gw.example/prod")
+        posted = [call.kwargs["ConnectionId"] for call in handler.get_client.return_value.post_to_connection.call_args_list]
+        assert posted == ["conn-1", "conn-2"]

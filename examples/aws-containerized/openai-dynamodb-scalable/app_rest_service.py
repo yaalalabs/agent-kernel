@@ -1,6 +1,6 @@
-from agentkernel.aws import ECSIOHandler
+from agentkernel.pipeline import IOHandler
 
-runner = ECSIOHandler.run
+runner = IOHandler.run
 
 if __name__ == "__main__":
     runner()

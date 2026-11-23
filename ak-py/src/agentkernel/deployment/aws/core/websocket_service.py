@@ -196,6 +196,24 @@ class AWSWebSocketHandler(WebSocketHandlerABC):
         return self._connection_store.get_principal(connection_id)
 
     # Message sending operations
+    def broadcast(
+        self,
+        endpoint_url: str | None = None,
+        message: dict | None = None,
+        user_id: str | None = None,
+        connection_ids: list[str] | None = None,
+        message_type: WebSocketHandlerABC.MessageType | None = None,
+    ) -> None:
+        """
+        Broadcast through the API Gateway Management API, which needs the endpoint to post to.
+
+        :raises ValueError: If endpoint_url is missing: without it boto3 would target the default
+            regional endpoint and fail obscurely, and raising lets a queue consumer retry the reply.
+        """
+        if not endpoint_url:
+            raise ValueError("endpoint_url is required for API Gateway WebSocket delivery")
+        super().broadcast(endpoint_url, message, user_id, connection_ids, message_type)
+
     def send(self, endpoint_url: str, connection_id: str, message: dict) -> None:
         """
         Send a message to a specific WebSocket connection.

@@ -822,8 +822,8 @@ Configure queue-backed and serverless execution behavior.
     reply in one message (JSON under `rest_sync`, one `CHAT_RESPONSE` under `async`); `delta` sends one
     message per chunk (SSE under `rest_sync`, one `STREAM_CHUNK` per chunk ending with `done: true`
     under `async`). `rest_async` + `delta` and `realtime` + `complete` fail at config load. AWS
-    Lambda (REST router init) and the ECS queue-mode `ECSIOHandler` (startup) refuse `rest_sync` +
-    `delta`; use `async` + `delta` there
+    Lambda (REST router init) and ECS queue mode (`terraform plan`) refuse `rest_sync` + `delta`;
+    use `async` + `delta` there
   - **Environment Variable**: `AK_EXECUTION__MESSAGE_TYPE`
 
 - **Queues**

@@ -1,10 +1,10 @@
 import logging
 
-from agentkernel.aws import ECSAgentRunner
 from agentkernel.framework.openai import (
     OpenAIModule,
     OpenAIToolBuilder,
 )
+from agentkernel.pipeline import AgentRunner
 from agents.realtime import RealtimeAgent
 
 logging.basicConfig(level=logging.INFO)
@@ -27,4 +27,4 @@ OpenAIModule([general_agent]).run_options(
 )
 
 if __name__ == "__main__":
-    ECSAgentRunner.run()
+    AgentRunner.run()

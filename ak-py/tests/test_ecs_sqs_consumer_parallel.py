@@ -102,15 +102,3 @@ class TestConsumerLoop:
 
         _SyncConsumer.process_message.assert_called_once_with(msg)
         _SyncConsumer.delete_message.assert_called_once_with(msg)
-
-
-class TestECSOutputConsumerRegression:
-    """Verify ECSOutputConsumer's process_message uses the sync dispatch path."""
-
-    def test_process_message_is_sync_not_async(self):
-        import inspect
-
-        from agentkernel.deployment.aws.containerized.akoutputconsumer import ECSOutputConsumer
-
-        underlying = getattr(ECSOutputConsumer.process_message, "__func__", ECSOutputConsumer.process_message)
-        assert not inspect.iscoroutinefunction(underlying), "ECSOutputConsumer.process_message must be sync for this regression check"

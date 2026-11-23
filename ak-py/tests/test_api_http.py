@@ -425,7 +425,7 @@ class TestPipelineOnlyHandlerRefusal:
     """A queue producer served by RESTAPI.run would enqueue into a queue no runner drains.
 
     The check sits outside the `cls is RESTAPI` delegation guard, so a subclass is covered too —
-    `AWSRestAPI` and `AWSWebsocketAPI` inherit `run` and would otherwise serve one silently.
+    `AWSWebsocketAPI` inherits `run` and would otherwise serve one silently.
     """
 
     @staticmethod
@@ -444,7 +444,7 @@ class TestPipelineOnlyHandlerRefusal:
         assert "IOHandler.run" in message
 
     def test_a_subclass_run_refuses_it_too(self, monkeypatch):
-        """AWSRestAPI and AWSWebsocketAPI never reach the delegation guard, only this one."""
+        """AWSWebsocketAPI never reaches the delegation guard, only this one."""
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
         offender = self._pipeline_handler()
 
@@ -538,7 +538,7 @@ class TestUnqueuedProtocolRefusal:
         mock_uvicorn.assert_not_called()
 
     def test_a_subclass_is_refused(self, monkeypatch):
-        """AWSRestAPI and AWSWebsocketAPI inherit run and never reach the in_memory hand-off."""
+        """AWSWebsocketAPI inherits run and never reaches the in_memory hand-off."""
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
         handler = self._handler()
 

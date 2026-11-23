@@ -153,8 +153,6 @@ jobs:
 
       - name: Test ak-py
         working-directory: ak-py
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: ./build.sh && uv run pytest -s
 
   transport-integration-tests:
