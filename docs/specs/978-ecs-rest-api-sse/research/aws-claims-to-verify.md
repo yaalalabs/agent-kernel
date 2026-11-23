@@ -10,8 +10,8 @@ at all.
 | # | Claim | How it is checked | If it fails |
 | --- | --- | --- | --- |
 | 1 | AWS provider `6.70.0` exposes `response_transfer_mode` and `integration_target` | provider schema, locally | **Confirmed — see below** |
-| 2 | A REST API integrates directly with an ALB over VPC link V2, no NLB | the stack applies and serves one request end to end | The feature is not yet possible on AWS; the issue closes |
-| 3 | With `responseTransferMode = "STREAM"`, SSE chunks arrive **incrementally** | `curl -N`, timestamping each chunk | The feature is not yet possible on AWS; the issue closes |
+| 2 | A REST API integrates directly with an ALB over VPC link V2, no NLB | the stack applies and serves one request end to end | Diagnose first (below). The issue closes only on a confirmed AWS limitation |
+| 3 | With `responseTransferMode = "STREAM"`, SSE chunks arrive **incrementally** | `curl -N`, timestamping each chunk | Diagnose first (below). The issue closes only on a confirmed AWS limitation |
 | 4 | The REST API's real idle timeout on a Regional endpoint | a route that stays silent, then emits | The ALB `idle_timeout` constant follows the measurement, not the documented 5 min |
 
 ## 1. Provider support — confirmed 2026-11-23
@@ -55,12 +55,28 @@ Test these before working through the rest of the acceptance criteria.
 3. **Claim 4:** drive a request whose agent stays silent for a measured interval before replying, and
    bisect the point at which the connection drops.
 
+### A failure is not a verdict
+
+Claims 2 and 3 close the issue only on a **confirmed AWS limitation**, never on a first red result.
+
+- A failed apply is more often IAM, a security group, a subnet or a wrong ARN than a missing AWS
+  feature. Read the API error, fix what it names, and retry before concluding anything.
+- A response that arrives in one burst may be buffered by the client, by the agent (a framework that
+  yields nothing until it finishes), or by a proxy in between — not by the gateway. `curl -N` against
+  the ALB **directly**, bypassing the gateway, separates these: if that burst too, the gateway is not
+  the component under test.
+- Only a reproduction that isolates the gateway, with everything else ruled out, is grounds for
+  closing.
+
 ### Controls worth keeping
 
 - Regional endpoint only. An edge-optimized endpoint reportedly keeps a 30 s streaming idle cap and
   would produce a false negative.
-- The ALB `idle_timeout` must already be raised. At the default 60 s the ALB, not the gateway, is what
-  cuts a long stream, and claim 4 would measure the wrong component.
+- The ALB `idle_timeout` must be raised **above the longest probe**, not merely to the design's 300 s.
+  At the default 60 s the ALB cuts first; at exactly 300 s it still cuts first whenever the gateway
+  allows more, and the run would report the ALB's limit as the gateway's. Set it to 900 s for the
+  measurement, and confirm which component closed the connection — ALB access logs, or the shape of
+  the error the client sees — before attributing the number to the gateway.
 - Record the AWS region. Feature availability in late 2025 may not be uniform.
 
 ## Results

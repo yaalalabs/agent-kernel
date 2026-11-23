@@ -78,7 +78,17 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
 - Four cases must be handled, each testable against an existing example:
   - A method-and-path key (`POST /api/v1/chat`) becomes a path object with a lowercased method key.
   - `ANY` becomes `x-amazon-apigateway-any-method`; OpenAPI has no `any` method key.
-  - `$default` becomes `/{proxy+}` with `x-amazon-apigateway-any-method`.
+  - `$default` becomes a **set** of paths, not one. A REST API matches by descending its resource
+    tree and does not backtrack, so a root `/{proxy+}` alone would stop catching `/api/v1/other` as
+    soon as `/api/v1/chat` exists, and a greedy proxy never matches the empty path. `$default`
+    therefore emits `x-amazon-apigateway-any-method` on `/`, on `/{proxy+}`, and on
+    `<prefix>/{proxy+}` for every ancestor prefix of the generated routes — `/api` and `/api/v1`
+    under the default `api_base_segment` + `api_version` (`state.tf:28`). The set is bounded: the
+    prefix has at most two segments. `$default` is opt-in (`state.tf:53-54`), so only deployments
+    that ask for it pay this.
+    - Non-backtracking is the one matching rule here taken from AWS behaviour rather than verified.
+      The first deployment checks `/api/v1/other` and `/` explicitly; if REST APIs do backtrack, the
+      extra proxy paths are redundant, not wrong.
   - `$request.path.<name>` in `overwrite_path` becomes `{<name>}` in the integration `uri`, **plus** a
     method-level `parameters` entry declaring the path parameter and an integration `requestParameters`
     mapping `integration.request.path.<name>` to `method.request.path.<name>`. REST APIs do not infer
@@ -94,6 +104,15 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
 - CORS: when `var.enable_cors` is true, every path gets an `OPTIONS` mock integration honouring the
   existing `cors_*` variables. HTTP APIs answered preflight from one `cors_configuration` block; REST
   APIs have no equivalent.
+  - **The mock covers preflight only.** On an actual response an `http_proxy` integration returns
+    whatever the container sent, and the container already sends CORS headers unconditionally —
+    `CORSMiddleware` with `allow_origins=["*"]` (`ak-py/src/agentkernel/api/http.py:55-61`). Browsers
+    therefore keep working, but `cors_allow_origins` stops governing actual responses and the served
+    policy becomes **wider than configured**. (Today the gateway applies `cors_configuration` to
+    actual responses too; the exact precedence between its header and the container's is not
+    verified here, but either way the configured value stops reaching the browser afterwards.)
+  - Accepted, not closed: making the container honour the configured origins needs CORS fields in
+    `AKConfig`, which has none. Recorded under Compatibility and as a non-goal.
 
 ### ALB
 
@@ -115,10 +134,17 @@ case.
   outputs. Without it, a user who set everything up correctly still fails: `_RedisConfig.url` defaults
   to `redis://localhost:6379` (`core/config.py:25`), so a task selecting `type: redis` silently points
   at its own loopback. Nothing reports a missing URL.
-- **(b) Reject the unsatisfiable combination at plan time** — `queue_mode && rest_sync && delta`
-  requires `create_redis_cluster` or `create_valkey_cluster`, with the fix named in the message.
-  Without it, a user who created no cluster applies cleanly and finds out when gate 4 crash-loops the
-  ECS task — minutes later in CloudWatch, rather than in two seconds at plan time.
+- **(b) Warn at plan time — a `check` block, not a `validation`.** Under
+  `queue_mode && rest_sync && delta`, assert `create_redis_cluster || create_valkey_cluster` and emit
+  a **warning** naming the fix. Without it a user who created no cluster applies cleanly and learns
+  from a CloudWatch crash-loop minutes later.
+  - A hard rejection would be wrong in both directions, because Terraform never sees which store
+    `config.yaml` selected — the module injects the URL only, never the type. It would **block** a
+    valid deployment pointing at an external Redis with no module cluster, and **pass** one that
+    created a cluster but selects `dynamodb`.
+  - A `check` block warns without blocking (Terraform >= 1.5; this module already requires >= 1.9.5,
+    `main.tf:14`). Enforcement stays at gate 4, which reads the resolved config at startup and is the
+    only place the real answer exists.
 - Terraform injects the **connection detail only**, never
   `AK_EXECUTION__RESPONSE_STORE__TYPE`; `config.yaml` selects the backend, as with `thread.type`.
 - **The REST service tier only — not the agent runner.** The store is wired and IAM-granted solely to
@@ -164,6 +190,9 @@ already owns that resource** for WebSocket mode, so REST mode joins an existing 
   invoke URL has that same shape, so only the id changes.
 - Access logging: the log format replaces `$context.routeKey` (`api_gateway.tf:82`) with
   `$context.resourcePath`.
+- **CORS on actual responses widens.** `cors_allow_origins` governs preflight only afterwards; actual
+  responses carry the container's unconditional `*`. No browser breaks, but a deployment that
+  restricted origins is no longer restricted on the response itself. See Route translation.
 - **`aws_api_gateway_account` now also reaches REST deployments.** A REST-mode deployment with
   `enable_api_gateway_logs = true` joins a known hazard: the role is a singleton per account and
   region, concurrent deployments "will contend over this resource", and disabling the toggle
@@ -245,14 +274,18 @@ There is no dedicated breaking-change channel, so it rides the two surfaces that
   separate issue if so.
 - **A2A / MCP on ECS queue mode**, which remains blocked on #780 follow-up work.
 - Changing the response store's **default** backend for non-SSE ECS deployments.
+- **CORS parity on actual responses.** Making the container honour `cors_allow_origins` needs CORS
+  fields in `AKConfig`, which has none. A separate issue.
 
 ## Decisions taken
 
 Each was an open choice during drafting; the requirements above state the outcome.
 
-1. **Response store: wire the URL *and* add the plan check.** They catch different mistakes — the user
+1. **Response store: wire the URL *and* warn at plan time.** They catch different mistakes — the user
    who set Redis up correctly and still hits the localhost default, and the user who created no
-   cluster. Neither covers the other. One env var, two outputs, one validation.
+   cluster. Neither covers the other. One env var, two outputs, one `check` block. A `check` rather
+   than a `validation` because Terraform cannot see which store `config.yaml` selects, so a hard
+   rejection would block valid external-Redis deployments.
 2. **ALB `idle_timeout` = 300 s, a fixed constant.** Matches the REST API's stated idle limit, so one
    number governs rather than two. No variable: nothing has asked to tune it.
 3. **The ~3.5× per-request cost is accepted** — immaterial beside the model call on the same request.
