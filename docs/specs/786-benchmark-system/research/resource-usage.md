@@ -244,8 +244,8 @@ The standard `AWS/Lambda` metrics have no CPU or memory metric. Two sources, bot
 - In the `lambda` host's `after_step` list.
 
 Bound: both. `aws.lambda_report_memory` always (free). `aws.lambda_insights` is **on by default**; a per-run config
-value switches it off (e.g. to check how much latency the extension adds). The deployer adds the layer when it's on (no
-IAM change, see above); the run metadata records whether it was.
+value switches it off (e.g. to check how much latency the extension adds). The `lambda-*` deployment folders add the
+layer when it's on (no IAM change, see above); the run metadata records whether it was.
 
 ## What's recorded
 
