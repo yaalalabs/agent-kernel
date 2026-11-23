@@ -78,7 +78,8 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
 - Three cases must be handled, each testable against an existing example:
   - A method-and-path key (`POST /api/v1/chat`) becomes a path object with a lowercased method key.
   - `ANY` becomes `x-amazon-apigateway-any-method`; OpenAPI has no `any` method key.
-  - `$request.path.<name>` in `overwrite_path` becomes `{<name>}` in the integration `uri`, **plus** a
+  - `$request.path.<name>` in `overwrite_path` — either bare or braced as
+    `${request.path.<name>}` — becomes `{<name>}` in the integration `uri`, **plus** a
     method-level `parameters` entry declaring the path parameter and an integration `requestParameters`
     mapping `integration.request.path.<name>` to `method.request.path.<name>`. REST APIs do not infer
     path parameters from a string the way the HTTP API's `overwrite:path` did.
@@ -176,6 +177,15 @@ already owns that resource** for WebSocket mode, so REST mode joins an existing 
   against `examples/aws-containerized/openai-schedule/deploy/main.tf:72-83` (`ANY` plus
   `$request.path.task_id`) and `examples/aws-containerized/crewai/deploy/main.tf:18-29` (two plain
   `GET` routes).
+- **Known incompatibility: a greedy route no longer catches method misses on an explicit path.** A
+  user-supplied `path = "{proxy+}"` with `method = "ANY"` passes validation today and becomes
+  `ANY /api/v1/{proxy+}`. An HTTP API matches method and path together, so `GET /api/v1/chat` misses
+  the default `POST /api/v1/chat` and falls through to it. A REST API matches the path first, selects
+  the explicit `/api/v1/chat` resource, finds no `GET` method and returns 403 — the greedy sibling is
+  never reached.
+  - Documented, not worked around. Giving every explicit resource a fallback method would turn
+    today's clean method-not-allowed into a silent catch-all, which is worse than the gap.
+  - Nothing in `examples/` or `e2e/` uses `{proxy+}`, and it is not documented as supported.
 - Output names and types are unchanged, repointed at the new resources: `api_gateway_id`,
   `api_gateway_stage`, `agent_invoke_url`, and the two log-group outputs. `e2e/app/deploy/outputs.tf:2`
   builds `https://<id>.execute-api.<region>.amazonaws.com/<stage>` from the first two; a REST API's
