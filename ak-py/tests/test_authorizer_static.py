@@ -2,14 +2,15 @@
 
 Nothing consults an authorizer yet: these tests drive it directly. `AuthorizerContract` holds what every
 backend must answer; the rest is what only the static backend has (its grant grammar, its tool tiers, its
-reasons) and how the factory builds one from the `authorization` block.
+reasons), how it is built from its own `authorization.static` block, and how the factory builds an
+authorizer from the `authorization` block alone.
 """
 
 import threading
 
 import pytest
 
-from agentkernel.core.config import _AuthorizationConfig, _GrantConfig, _ToolPolicyConfig
+from agentkernel.core.config import _AuthorizationConfig, _GrantConfig, _StaticAuthorizerConfig, _ToolPolicyConfig
 from agentkernel.core.model import AccessLevel, AgentDescriptor, Principal, SystemTool
 from agentkernel.core.registry import InMemoryAgentRegistry
 from agentkernel.core.runtime import Runtime
@@ -46,8 +47,8 @@ class TestStaticAuthorizerContractFromConfig(AuthorizerContract):
 
     @pytest.fixture
     def authorizer(self):
-        block = _AuthorizationConfig.model_validate({"grants": self.GRANTS, "tools": self.TOOLS})
-        return AuthorizerFactory.create(block, descriptor_lookup=lambda: list(self.DESCRIPTORS))
+        block = _AuthorizationConfig.model_validate({"static": {"grants": self.GRANTS, "tools": self.TOOLS}})
+        return StaticAuthorizer.from_config(block, descriptor_lookup=lambda: list(self.DESCRIPTORS), system_tiers=lambda agent_id: {})
 
 
 class TestAuthorizerDefaults:
@@ -193,7 +194,7 @@ class TestGrantTable:
     def test_an_unusable_grant_is_a_configuration_error_naming_the_grant(self, grant, problem):
         usable = {"subjects": "*", "agents": "faq", "level": "read"}
 
-        with pytest.raises(AKConfigError, match=r"authorization\.grants\[1\]") as error:
+        with pytest.raises(AKConfigError, match=r"authorization\.static\.grants\[1\]") as error:
             GrantTable([usable, grant])
 
         assert problem in str(error.value)
@@ -390,11 +391,11 @@ class TestStaticToolDecisions:
 
     def test_two_policies_for_one_agent_are_a_configuration_error(self):
         # Which allow-list would win is not something to guess at.
-        with pytest.raises(AKConfigError, match=r"authorization\.tools\[1\].*'support-triage'"):
+        with pytest.raises(AKConfigError, match=r"authorization\.static\.tools\[1\].*'support-triage'"):
             _authorizer(self.GRANTS, tools=[{"agent": "support-triage"}, {"agent": "support-triage", "deny": ["purge"]}])
 
     def test_an_unusable_policy_is_a_configuration_error_naming_the_policy(self):
-        with pytest.raises(AKConfigError, match=r"authorization\.tools\[0\]"):
+        with pytest.raises(AKConfigError, match=r"authorization\.static\.tools\[0\]"):
             _authorizer(self.GRANTS, tools=[{"agent": "support-triage", "tiers": {"refund": "owner"}}])
 
 
@@ -470,7 +471,7 @@ class TestEmptyGrants:
             _authorizer(grants=[])
 
         [warning] = [record.getMessage() for record in caplog.records]
-        assert "authorization.grants" in warning and "denied" in warning
+        assert "authorization.static.grants" in warning and "denied" in warning
 
     @pytest.mark.asyncio
     async def test_with_no_grants_nobody_holds_a_level_on_anything(self):
@@ -485,6 +486,52 @@ class TestEmptyGrants:
             _authorizer(grants=[{"subjects": "*", "agents": "faq", "level": "read"}])
 
         assert [record.getMessage() for record in caplog.records] == []
+
+
+class TestStaticFromConfig:
+    """The static backend reads its policy from its own section of the block, `authorization.static`."""
+
+    @pytest.mark.asyncio
+    async def test_the_policy_is_the_static_section_of_the_block(self):
+        block = _AuthorizationConfig.model_validate(
+            {
+                "static": {
+                    "grants": [{"subjects": "group:support", "agents": "faq", "level": "write"}],
+                    "tools": [{"agent": "faq", "deny": ["purge"]}],
+                }
+            }
+        )
+
+        authorizer = StaticAuthorizer.from_config(block, descriptor_lookup=_no_descriptors)
+
+        assert await authorizer.agent_level(ALICE, "faq") == WRITE
+        assert not (await authorizer.check_tool(ALICE, "faq", "purge")).allowed
+
+    @pytest.mark.asyncio
+    async def test_the_lookups_it_is_given_are_the_ones_it_asks(self):
+        block = _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:sandboxed", "level": "read"}]}})
+
+        authorizer = StaticAuthorizer.from_config(
+            block,
+            descriptor_lookup=lambda: [AgentDescriptor(id="coder", name="coder", tags=["sandboxed"])],
+            system_tiers=lambda agent_id: {"execute_code": WRITE},
+        )
+
+        assert await authorizer.agent_level(ALICE, "coder") == READ
+        assert not (await authorizer.check_tool(ALICE, "coder", "execute_code")).allowed
+
+    def test_a_block_with_no_static_section_is_a_configuration_error(self):
+        # The configuration refuses this when it is loaded; a block built some other way is refused here.
+        block = _AuthorizationConfig.model_construct(type="static", static=None)
+
+        with pytest.raises(AKConfigError, match=r"authorization\.type static requires the authorization\.static block"):
+            StaticAuthorizer.from_config(block, descriptor_lookup=_no_descriptors)
+
+    def test_an_empty_static_section_is_a_policy_with_no_grants(self, caplog):
+        with caplog.at_level("WARNING", logger="ak.identity.authz.static"):
+            StaticAuthorizer.from_config(_AuthorizationConfig(static=_StaticAuthorizerConfig()), descriptor_lookup=_no_descriptors)
+
+        assert ["authorization.static.grants is empty" in record.getMessage() for record in caplog.records] == [True]
 
 
 class RecordingAuthorizer(Authorizer):
@@ -524,40 +571,43 @@ class TestAuthorizerFactory:
     @pytest.mark.asyncio
     async def test_the_static_type_builds_the_static_authorizer_from_the_block(self):
         block = _AuthorizationConfig.model_validate(
-            {"grants": [{"subjects": "group:support", "agents": "faq", "level": "write"}], "tools": [{"agent": "faq", "deny": ["purge"]}]}
+            {
+                "static": {
+                    "grants": [{"subjects": "group:support", "agents": "faq", "level": "write"}],
+                    "tools": [{"agent": "faq", "deny": ["purge"]}],
+                }
+            }
         )
 
-        authorizer = AuthorizerFactory.create(block, descriptor_lookup=_no_descriptors)
+        authorizer = AuthorizerFactory.create(block)
 
         assert isinstance(authorizer, StaticAuthorizer)
         assert await authorizer.agent_level(ALICE, "faq") == WRITE
         assert not (await authorizer.check_tool(ALICE, "faq", "purge")).allowed
 
     def test_the_type_is_matched_whatever_its_case(self):
-        assert isinstance(AuthorizerFactory.create(_AuthorizationConfig(type="Static"), descriptor_lookup=_no_descriptors), StaticAuthorizer)
+        assert isinstance(AuthorizerFactory.create(_AuthorizationConfig(type="Static", static={})), StaticAuthorizer)
 
     @pytest.mark.asyncio
-    async def test_create_hands_the_static_authorizer_its_lookups(self):
-        block = _AuthorizationConfig.model_validate({"grants": [{"subjects": "*", "agents": "tag:sandboxed", "level": "read"}]})
+    async def test_a_static_authorizer_built_from_the_block_alone_reads_the_current_runtimes_registry(self):
+        # The factory hands a backend the block and nothing else: what the static one looks up, it finds itself.
+        block = _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}})
+        registry = InMemoryAgentRegistry()
+        registry.register(AgentDescriptor(id="billing", name="billing", tags=["support"]), ContractAgent("billing"))
+        authorizer = AuthorizerFactory.create(block)
 
-        authorizer = AuthorizerFactory.create(
-            block,
-            descriptor_lookup=lambda: [AgentDescriptor(id="coder", name="coder", tags=["sandboxed"])],
-            system_tiers=lambda agent_id: {"execute_code": WRITE},
-        )
-
-        assert await authorizer.agent_level(ALICE, "coder") == READ
-        assert not (await authorizer.check_tool(ALICE, "coder", "execute_code")).allowed
+        with Runtime(InMemorySessionStore(), registry=registry):
+            assert await authorizer.agent_level(ALICE, "billing") == WRITE
 
     @pytest.mark.parametrize("name", ["casbin", "openfga", "cedar", "authzen"])
     def test_a_reserved_engine_name_says_it_is_not_shipped_yet(self, name):
         with pytest.raises(AKConfigError, match=f"authorization.type: {name} is not shipped yet; use a dotted path"):
-            AuthorizerFactory.create(_AuthorizationConfig(type=name), descriptor_lookup=_no_descriptors)
+            AuthorizerFactory.create(_AuthorizationConfig(type=name))
 
     def test_a_dotted_path_builds_that_authorizer_with_the_whole_block(self):
         block = _AuthorizationConfig.model_validate({"type": f"{__name__}.RecordingAuthorizer", "endpoint": "https://pdp.acme.test"})
 
-        authorizer = AuthorizerFactory.create(block, descriptor_lookup=_no_descriptors)
+        authorizer = AuthorizerFactory.create(block)
 
         assert isinstance(authorizer, RecordingAuthorizer)
         assert authorizer.config is block
@@ -565,21 +615,21 @@ class TestAuthorizerFactory:
 
     def test_a_dotted_path_that_is_not_an_authorizer_is_a_configuration_error(self):
         with pytest.raises(AKConfigError, match="not a Authorizer subclass"):
-            AuthorizerFactory.create(_AuthorizationConfig(type=f"{__name__}.NotAnAuthorizer"), descriptor_lookup=_no_descriptors)
+            AuthorizerFactory.create(_AuthorizationConfig(type=f"{__name__}.NotAnAuthorizer"))
 
     def test_a_dotted_path_that_cannot_be_imported_is_a_configuration_error(self):
         with pytest.raises(AKConfigError, match="could not import"):
-            AuthorizerFactory.create(_AuthorizationConfig(type="acme.authz.Missing"), descriptor_lookup=_no_descriptors)
+            AuthorizerFactory.create(_AuthorizationConfig(type="acme.authz.Missing"))
 
     def test_an_unknown_short_name_lists_what_is_available(self):
         with pytest.raises(AKConfigError, match="unknown authorization type 'rbac'.*static.*dotted path"):
-            AuthorizerFactory.create(_AuthorizationConfig(type="rbac"), descriptor_lookup=_no_descriptors)
+            AuthorizerFactory.create(_AuthorizationConfig(type="rbac"))
 
     def test_an_unusable_policy_fails_when_the_authorizer_is_built(self):
-        block = _AuthorizationConfig.model_validate({"grants": [{"subjects": "team:support", "agents": "faq", "level": "read"}]})
+        block = _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "team:support", "agents": "faq", "level": "read"}]}})
 
-        with pytest.raises(AKConfigError, match=r"authorization\.grants\[0\]"):
-            AuthorizerFactory.create(block, descriptor_lookup=_no_descriptors)
+        with pytest.raises(AKConfigError, match=r"authorization\.static\.grants\[0\]"):
+            AuthorizerFactory.create(block)
 
     def test_get_is_none_without_an_authorization_block(self, monkeypatch):
         self._configure(monkeypatch, None)
@@ -587,7 +637,7 @@ class TestAuthorizerFactory:
         assert AuthorizerFactory.get() is None
 
     def test_get_builds_the_authorizer_once_and_reset_drops_it(self, monkeypatch):
-        self._configure(monkeypatch, _AuthorizationConfig.model_validate({"grants": [{"subjects": "*", "agents": "*", "level": "read"}]}))
+        self._configure(monkeypatch, _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "*", "level": "read"}]}}))
 
         first = AuthorizerFactory.get()
 
@@ -597,7 +647,7 @@ class TestAuthorizerFactory:
         assert AuthorizerFactory.get() is not first
 
     def test_get_builds_one_authorizer_for_every_thread_that_asks_at_once(self, monkeypatch):
-        self._configure(monkeypatch, _AuthorizationConfig.model_validate({"grants": [{"subjects": "*", "agents": "*", "level": "read"}]}))
+        self._configure(monkeypatch, _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "*", "level": "read"}]}}))
         built: list[Authorizer] = []
         start = threading.Barrier(8)
 
@@ -615,7 +665,9 @@ class TestAuthorizerFactory:
 
     @pytest.mark.asyncio
     async def test_the_shared_authorizer_resolves_a_tag_against_the_current_runtimes_registry(self, monkeypatch):
-        self._configure(monkeypatch, _AuthorizationConfig.model_validate({"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}))
+        self._configure(
+            monkeypatch, _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}})
+        )
         registry = InMemoryAgentRegistry()
         registry.register(AgentDescriptor(id="billing", name="billing", tags=["support"]), ContractAgent("billing"))
         registry.register(AgentDescriptor(id="faq", name="faq"), ContractAgent("faq"))
@@ -628,7 +680,9 @@ class TestAuthorizerFactory:
 
     @pytest.mark.asyncio
     async def test_the_shared_authorizer_follows_the_runtime_that_is_current_when_it_is_asked(self, monkeypatch):
-        self._configure(monkeypatch, _AuthorizationConfig.model_validate({"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}))
+        self._configure(
+            monkeypatch, _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}})
+        )
         tagged, untagged = InMemoryAgentRegistry(), InMemoryAgentRegistry()
         tagged.register(AgentDescriptor(id="billing", name="billing", tags=["support"]), ContractAgent("billing"))
         untagged.register(AgentDescriptor(id="billing", name="billing"), ContractAgent("billing"))
@@ -641,7 +695,7 @@ class TestAuthorizerFactory:
 
     @pytest.mark.asyncio
     async def test_the_shared_authorizer_reads_the_tier_a_system_tool_of_the_agent_declares(self, monkeypatch):
-        self._configure(monkeypatch, _AuthorizationConfig.model_validate({"grants": [{"subjects": "*", "agents": "*", "level": "read"}]}))
+        self._configure(monkeypatch, _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "*", "level": "read"}]}}))
 
         def system_tools(agent_name=None):
             tool = SystemTool(name="execute_code", description="", func=lambda: None, tier=WRITE)

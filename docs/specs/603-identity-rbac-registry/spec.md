@@ -13,7 +13,7 @@ Evidence is cited against `feature/603-identity-rbac-registry` at `d9d0d18bc` (a
 over the develop merge `287ec7485`; every `.py` cited is identical in both). The change ships as a
 breaking change with no compatibility window (design section 10).
 
-Fourteen places where detailing refined the design are listed in [Design refinements](#design-refinements)
+Fifteen places where detailing refined the design are listed in [Design refinements](#design-refinements)
 at the end; each is a mechanism change inside a settled decision, not a new decision, and each is
 reflected in `design.md`.
 
@@ -933,15 +933,17 @@ object every instance of a backend shares.
 **`StaticAuthorizer`** (`authz/static.py`), constructed with `grants`, `tools`, a
 `descriptor_lookup: Callable[[], list[AgentDescriptor]]` and an optional `system_tiers:
 Callable[[str], Mapping[str, AccessLevel]]`, its only dependencies, for `tag:` and for tier
-defaults. The factory supplies both (below); the authorizer reads no configuration and keeps no
-copy of the registry:
+defaults. `from_config(authorization_config, descriptor_lookup=None, system_tiers=None)` builds it
+from the block's `static` section (`AKConfigError` when the section is missing) and supplies each
+lookup that is omitted (below); the constructor reads no configuration and keeps no copy of the
+registry:
 
 - `GrantTable` normalizes each grant at construction. An entry is a `_GrantConfig` or the mapping
   one is built from, so the block's own models are taken as they are and a hand-built policy
   (a test, a wrapper) is validated the same way: `subjects` and `agents` coerced from a bare
   string to a one-element list, `level` parsed into `AccessLevel`. An entry that does not
   validate, an unknown subject form, an empty list, an empty agent entry or a bare `tag:` is
-  `AKConfigError` naming `authorization.grants[<index>]`.
+  `AKConfigError` naming `authorization.static.grants[<index>]`.
 - `SubjectMatcher.matches(form: str, principal) -> bool`: `*` always; `authenticated` when not
   anonymous (messaging senders included, design 5); `provider:<name>` when `principal.provider ==
   name`, or when `name` ends with `:` and `principal.provider.startswith(name)`; `user:<subject>`
@@ -957,10 +959,10 @@ copy of the registry:
   a policy without `tag:` entries never reads the registry.
 - `agent_level`: the maximum `level` over grants where any subject matches and any agent entry
   matches `agent_id`; `None` when none.
-- `ToolPolicyTable` holds the `tools` block by agent, each entry a `_ToolPolicyConfig` or the
+- `ToolPolicyTable` holds the section's `tools` by agent, each entry a `_ToolPolicyConfig` or the
   mapping one is built from. A second policy for an agent is `AKConfigError` naming
-  `authorization.tools[<index>]`: which allow-list would apply is not guessed at.
-- Tool tier for `(agent_id, tool)`: the `tiers` entry of the `tools` block for that agent, else the
+  `authorization.static.tools[<index>]`: which allow-list would apply is not guessed at.
+- Tool tier for `(agent_id, tool)`: the `tiers` entry of the agent's tool policy, else the
   tier `system_tiers(agent_id)` gives the name (the tier the `SystemTool` of that name attached to
   that agent declares, asked per agent so an application tool that shares a system tool's name on
   another agent is not tiered by it), else `READ`.
@@ -972,21 +974,26 @@ copy of the registry:
   allow-list are decided first and without the level, so the reason is the same whoever asks.
 - `filter_tools` and `visible_agents` are overridden to resolve the level, the declared tiers and
   the tags once for the whole list, where the base class asks per tool and per candidate.
-- With the `authorization` block present and `grants == []`, every `agent_level` is `None` and
-  one startup warning names the empty block.
+- With a `static` section that states no grants, every `agent_level` is `None` and one startup
+  warning names `authorization.static.grants`. A block of type `static` with no `static` section
+  at all never reaches the authorizer: it is refused when the configuration is loaded (Config
+  changes).
 
-**`AuthorizerFactory`** (`authz/factory.py`): `create(authorization_config, descriptor_lookup,
-system_tiers=None)`; `get()` returns the process-wide authorizer or `None` without the block;
-`reset()`. `get()` is where the two lookups are wired, not the gate: `descriptor_lookup` is
-`Runtime.current().registry.descriptors`, resolved when a decision asks (so the shared authorizer
-follows a context-managed runtime), and `system_tiers` is `{tool.name: tool.tier for tool in
-SystemToolFactory.get_all(agent_id)}`, the factory an agent's system tools are attached from, so
-it answers for an agent the process does not host as long as both read the same configuration.
-Branches, the type matched whatever its case: `static`; `casbin` (first engine after static, Q11;
-its `require_extra("casbin", ...)` arrives with the adapter), `openfga`, `cedar`, `authzen`: each
-a reserved name that raises `AKConfigError(f"authorization.type: {name} is not shipped yet; use a
-dotted path")` until its adapter lands; a dotted path to an `Authorizer` subclass is built with
-the whole block and neither lookup, since it owns its policy; else `AKConfigError`.
+**`AuthorizerFactory`** (`authz/factory.py`): `create(authorization_config)`; `get()` returns the
+process-wide authorizer or `None` without the block; `reset()`. Every backend is built from the
+block and nothing else (design refinement 15): a built-in one through its `from_config`, which
+reads the section named after it, and a dotted path to an `Authorizer` subclass by handing the
+whole block to its constructor, since it owns its policy. What the static backend looks up it
+supplies itself, in `StaticAuthorizer.from_config` and not in the factory or the gate:
+`descriptor_lookup` defaults to `Runtime.current().registry.descriptors`, resolved when a decision
+asks (so the shared authorizer follows a context-managed runtime), and `system_tiers` to
+`{tool.name: tool.tier for tool in SystemToolFactory.get_all(agent_id)}`, the factory an agent's
+system tools are attached from, so it answers for an agent the process does not host as long as
+both read the same configuration. Branches, the type matched whatever its case: `static`;
+`casbin` (first engine after static, Q11; its `require_extra("casbin", ...)` arrives with the
+adapter), `openfga`, `cedar`, `authzen`: each a reserved name that raises
+`AKConfigError(f"authorization.type: {name} is not shipped yet; use a dotted path")` until its
+adapter lands; a dotted path; else `AKConfigError`.
 `agentkernel.identity` exports `Authorizer`, `AuthorizerCapabilities`, `Decision`,
 `AuthorizerFactory` and `StaticAuthorizer`, lazily.
 
@@ -1637,9 +1644,11 @@ class _GrantConfig(BaseModel):                          # extra="forbid"
     # before validator coerces a bare string in subjects/agents to a one-element list
 class _ToolPolicyConfig(BaseModel):                     # extra="forbid"
     agent: str; tiers: dict[str, AccessLevel] = {}; allow: Optional[list[str]] = None; deny: list[str] = []
+class _StaticAuthorizerConfig(BaseModel):               # extra="forbid"
+    grants: list[_GrantConfig] = []; tools: list[_ToolPolicyConfig] = []
 class _AuthorizationConfig(BaseModel):                  # extra="allow"; after validator below
     type: str = Field(default="static", description="static | dotted path to an Authorizer; casbin, openfga, cedar, authzen reserved")
-    grants: list[_GrantConfig] = []; tools: list[_ToolPolicyConfig] = []
+    static: Optional[_StaticAuthorizerConfig] = None    # one section per built-in backend
 
 class _RegistryStoreConfig(BaseModel):        # mixin: STORE names the block; a field validator on `ttl`
     STORE: ClassVar[str]                      # raises AKConfigError for any value but 0
@@ -1686,21 +1695,31 @@ class AKConfig(...):
   registry cannot honour it: nothing registers a hosted agent again, so an expiry would remove
   running agents from every listing (section 6; design refinement 11). The field stays, at 0,
   because a defaults-only subclass cannot drop it.
-- The authorization models refuse unknown keys for the registry's reason. `_GrantConfig` and
-  `_ToolPolicyConfig` are `extra="forbid"`: a misspelt `deny`, `allow` or `tiers` silently ignored
-  would leave a tool more reachable than the configuration reads. `_AuthorizationConfig` is
-  `extra="allow"`, since a bring-your-own authorizer (a dotted-path `type`) reads the settings of
-  its own from `model_extra`, with an after validator that raises `AKConfigError` naming
-  `authorization.<key>` for any unknown key when the type is not a dotted path: `tool:` written
-  for `tools:` would otherwise drop every tier and deny list beneath it. The subject grammar is
-  not checked here but when the authorizer is built (`GrantTable`, section 7), which names the
-  grant by its index.
+- The static authorizer's policy sits in a section of its own, `authorization.static`, the shape
+  `identity.provider.static` and `registry.redis` have (design refinement 15). The block carries
+  `type` and one section per built-in backend, so no key of the block belongs to one backend and a
+  later engine adds a sibling section. An after validator on `_AuthorizationConfig` raises
+  `AKConfigError("authorization.type static requires the authorization.static block")` when the
+  type is `static`, whatever its case, and the section is missing: the identity provider block's
+  rule. An empty section is a policy with no grants (section 7). A section left under another
+  type is not refused, as an unselected provider's section is not.
+- The authorization models refuse unknown keys for the registry's reason. `_GrantConfig`,
+  `_ToolPolicyConfig` and `_StaticAuthorizerConfig` are `extra="forbid"`: a misspelt `deny`,
+  `allow`, `tiers` or `tools` silently ignored would leave a tool more reachable than the
+  configuration reads. `_AuthorizationConfig` is `extra="allow"`, since a bring-your-own
+  authorizer (a dotted-path `type`) reads the settings of its own from `model_extra`, and the same
+  validator raises `AKConfigError` naming `authorization.<key>` for any unknown key when the type
+  is not a dotted path: `grants:` written beside `type`, or a misspelt `static`, would otherwise
+  drop the whole policy. That check runs before the missing-section one, so the flat form is told
+  which key is misplaced. The subject grammar is not checked here but when the authorizer is built
+  (`GrantTable`, section 7), which names the grant by its index.
 - Every new field carries a `description`; defaults keep every existing YAML and `AK_*` variable
   valid except the three removed lists, which fail with the message above by design.
 - Field readers: see design section 9's table; this spec adds `identity.provider.cognito|entra|
   firebase|static` (their provider classes), `identity.credentials.store.<backend>`
   (`CredentialStoreFactory`), `registry.agents.<id>.identity` (`AgentRegistry.register`
-  overlay), and `authorization.tools[].tiers` as `dict[str, AccessLevel]` (`StaticAuthorizer`).
+  overlay), and `authorization.static.tools[].tiers` as `dict[str, AccessLevel]`
+  (`StaticAuthorizer`).
 - `ak-py/pyproject.toml`: the `auth` extra becomes `["PyJWT>=2.15.0,<3.0.0",
   "cryptography>=42.0,<51.0.0", "httpx>=0.27.0,<0.29.0"]` (develop's #919 pins plus the two
   additions); a `casbin` extra is **not** added in this change (the branch raises).
@@ -1859,8 +1878,9 @@ for the two caches and the framework context; public exports other than those na
 | Agent exposed as an MCP tool with no description | `MCP._build` | one warning per agent at build; the tool carries the neutral `UNDESCRIBED_TOOL_TEXT` |
 | A2A, or MCP agent tools, enabled while no known agent is exposed on the surface | `A2A._build`, `MCP._build` | one warning at build naming `registry.agents.<id>.surfaces`; the surface serves nothing |
 | Policy naming an unknown tool on a hosted agent; LangGraph/smolagents ungated tools | `AccessGate.validate_configuration` | `AKConfigError` at `Module.load` / `get_router()` |
-| A key the `authorization` block, a grant or a tool policy does not take | the config model | `AKConfigError` naming `authorization.<key>` for the block (unless `type` is a dotted path); a validation error at load for a grant or a policy |
-| A grant or tool policy that cannot be used (unknown subject form, empty `subjects` or `agents`, bare `tag:`, a second policy for an agent) | `GrantTable`, `ToolPolicyTable` | `AKConfigError` naming `authorization.grants[<index>]` or `authorization.tools[<index>]`, when the authorizer is built |
+| A key the `authorization` block, its `static` section, a grant or a tool policy does not take | the config model | `AKConfigError` naming `authorization.<key>` for the block (unless `type` is a dotted path); a validation error at load for the section, a grant or a policy |
+| `authorization.type: static` with no `static` section | `_AuthorizationConfig` (`StaticAuthorizer.from_config` for a block built without validation) | `AKConfigError` naming `authorization.static`, at load |
+| A grant or tool policy that cannot be used (unknown subject form, empty `subjects` or `agents`, bare `tag:`, a second policy for an agent) | `GrantTable`, `ToolPolicyTable` | `AKConfigError` naming `authorization.static.grants[<index>]` or `authorization.static.tools[<index>]`, when the authorizer is built |
 | `authorization.type` naming an engine that is not shipped, an unknown short name, or a dotted path that is not an `Authorizer` | `AuthorizerFactory.create` | `AKConfigError` |
 | Removed config lists present | `_A2AConfig`/`_MCPConfig`/`_AGUIConfig` validators | `AKConfigError` naming `registry.agents.<id>.surfaces` |
 | Registry store unreachable | driver retries (3 × 2 s) then the driver's error | `register` fails the `Module.load`; `deregister` raises and keeps the agent hosted, so a retry removes the record; at mount, `A2A._build`, `MCP._build` and the `agui.default_agent` check raise and the process does not start (cards and tools built from an unread registry would stay empty until a restart), while `IOHandler._warn_if_no_agents` only logs that it could not check; per request, the catalog route, `ensure_agent_available` for an agent hosted elsewhere and AG-UI's resolution raise, which the surface answers 500 |
@@ -1927,19 +1947,24 @@ New files under `ak-py/tests/`:
   leaving the descriptor as it was when the registry refuses the registration; one warning per
   class that still defines `get_a2a_card`.
 - `test_authorizer_static.py`: `AuthorizerContract` subclassed twice (the policy handed over as
-  mappings, and read through an `authorization` block and the factory); the base class's two
+  mappings, and read from an `authorization.static` section through `from_config`); the base class's two
   list defaults; `SubjectMatcher` form by form (the shared-channel and anonymous exclusions of
   `user:`, the `provider:` prefix); grant normalization errors, each naming the grant's index;
   the static backend's corners (a tag resolved when asked, no registry read without a tag
   grant, one read per question and per listing, the read off the event loop); the three reason
   strings and deny and allow decided before the level; one policy per agent; tier defaults from
-  system tools (per agent, overridden by a `tiers` entry); the empty-grants warning; the factory
-  (reserved names, dotted path with the whole block, `get()` built once, following the current
-  runtime's registry and reading system tool tiers); the lazy exports.
+  system tools (per agent, overridden by a `tiers` entry); the empty-grants warning;
+  `StaticAuthorizer.from_config` (the section as the policy, the lookups it is given, a block
+  with no section refused); the factory (a static authorizer built from the block alone reading
+  the current runtime's registry, reserved names, dotted path with the whole block, `get()`
+  built once, following the current runtime's registry and reading system tool tiers); the lazy
+  exports.
 - `test_config.py` (`TestAuthorizationConfig`): the block absent by default, parsed from YAML and
-  from `AK_AUTHORIZATION__*`, a bare string coerced, levels and tiers outside the three refused,
-  unknown keys refused under a grant, a tool policy and (for the static type) the block, and a
-  bring-your-own type keeping its own settings.
+  from `AK_AUTHORIZATION__STATIC__*`, the static type refused without its section (in the model
+  and from `AK_AUTHORIZATION__TYPE` alone), a bare string coerced, levels and tiers outside the
+  three refused, unknown keys refused under a grant, a tool policy, the static section and (for
+  a built-in type) the block, the flat form named by its misplaced key, and a bring-your-own
+  type keeping its own settings.
 - `test_access_gate.py`: visibility rules, 403 versus 404, `tool_filter` composition, `tag:`
   resolution, `authorize_session` (no owner, anonymous refused on an owned session, a
   shared-channel owner admitting its platform scope and refusing a REST caller, namespace
@@ -2369,3 +2394,17 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    description, at the cost of publishing a field written for a neighbouring audience (a
    handoff description) without a declaration; instructions stay unpublished (section 6,
    descriptor sources).
+15. **The static authorizer's policy sits in its own section of the block** (decided 2026-11-23,
+   after iteration 17). Design section 5 and the config example put `grants` and `tools` directly
+   in the `authorization` block, and the factory handed the static backend the two lookups it
+   needs. That made the one backend that ships a special case twice: the shared block carried one
+   backend's policy as its own keys, with nowhere for a second engine's, and
+   `AuthorizerFactory.create` took parameters only `static` used while a bring-your-own
+   authorizer was built another way. The policy is now `authorization.static.grants` and
+   `authorization.static.tools`, the shape `identity.provider.static` already has; `create` takes
+   the block and nothing else; and the static backend supplies its registry and system tool
+   lookups itself, in `from_config`. A block of type `static` with no `static` section is refused
+   at load, where it denied every agent with a warning; an empty section still does that.
+   Nothing enforced or documented the block yet, so no configuration in use changes. Weighed
+   against it: one more level of YAML for the only backend that ships, and `type: static` beside
+   `static:` (section 7; Config changes).

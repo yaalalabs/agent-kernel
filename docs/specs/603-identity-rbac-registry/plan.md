@@ -740,15 +740,18 @@ the spec section it changes.
 - **Files:** `core/config.py`, `identity/__init__.py` (the lazy exports), `identity/authz/base.py`,
   `identity/authz/factory.py`, `identity/authz/static.py`, `identity/authz/testing.py`.
 - **Steps:**
-  1. `_AuthorizationConfig`, `_GrantConfig`, `_ToolPolicyConfig`, each refusing a key it does not
-     take (the block itself only for a built-in type, so a bring-your-own authorizer keeps its
-     own settings); `AKConfig.authorization: Optional = None` (spec Config changes).
+  1. `_AuthorizationConfig` (`type` and one section per built-in backend), the static section
+     `_StaticAuthorizerConfig` with `_GrantConfig` and `_ToolPolicyConfig`, each refusing a key it
+     does not take (the block itself only for a built-in type, so a bring-your-own authorizer
+     keeps its own settings); the static type refused without its section;
+     `AKConfig.authorization: Optional = None` (spec Config changes).
   2. `Decision`, `AuthorizerCapabilities`, the `Authorizer` ABC (spec 7).
   3. `StaticAuthorizer` with `GrantTable`, `ToolPolicyTable` and `SubjectMatcher` (the six
      subject forms, `tag:<name>`, `tiers`/`allow`/`deny`), the reason strings (spec 7).
-  4. `AuthorizerFactory` with the reserved engine names raising `AKConfigError`, its `get()`
-     wiring the two lookups the static backend takes (the current runtime's registry, the tiers
-     the system tools of an agent declare); `AuthorizerContract` (spec 7).
+  4. `AuthorizerFactory`, building every backend from the block alone, with the reserved engine
+     names raising `AKConfigError`; `StaticAuthorizer.from_config` supplying the two lookups the
+     static backend takes (the current runtime's registry, the tiers the system tools of an agent
+     declare); `AuthorizerContract` (spec 7).
 - **Verify:** new `tests/test_authorizer_static.py`; `test_config` authorization cases; the
   `FakeCfg` stubs gain `authorization = None`.
 - **As built (2026-11-19):** settled along the way and written into spec 7 and the config
@@ -759,6 +762,15 @@ the spec section it changes.
   gate of iteration 18 takes its authorizer from `AuthorizerFactory.get()` and lists through
   `authorizer.visible_agents`. No user documentation yet: the block does nothing until the gate
   consults it.
+- **Amended (2026-11-23):** the static authorizer became one backend among several (spec
+  refinement 15), before anything consults the block. Its policy moved from the block's own keys
+  to a section named after it, `authorization.static.grants` and `authorization.static.tools`;
+  `AuthorizerFactory.create` takes the block and nothing else, and the lookups moved from the
+  factory into `StaticAuthorizer.from_config` as its defaults; a block of type `static` with no
+  section is refused at load. The decisions themselves (subject forms, levels, tiers, allow and
+  deny, the reasons) are unchanged. A `static` section left under another type is not refused,
+  as an unselected provider's section is not; whether an engine should refuse it is a question
+  for the iteration that ships the first engine.
 
 ### Iteration 17a: An unknown agent answers 404
 

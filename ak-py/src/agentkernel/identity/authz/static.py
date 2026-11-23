@@ -1,16 +1,20 @@
-"""StaticAuthorizer: grants and a per-agent tool policy, read from the ``authorization`` block."""
+"""StaticAuthorizer: grants and a per-agent tool policy, read from the ``authorization.static`` block."""
 
 import asyncio
 import logging
 from collections.abc import Callable, Collection, Iterable, Mapping
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ValidationError
 
 from ...core.config import _GrantConfig, _ToolPolicyConfig
 from ...core.model import AccessLevel, AgentDescriptor, Principal
+from ...core.tool import SystemToolFactory
 from ...core.util.factory import AKConfigError
 from .base import Authorizer, Decision
+
+if TYPE_CHECKING:
+    from ...core.config import _AuthorizationConfig
 
 
 class SubjectMatcher:
@@ -139,7 +143,7 @@ class GrantTable(_PolicyTable):
 
     @classmethod
     def _checked(cls, index: int, entry: Any) -> _GrantConfig:
-        where = f"authorization.grants[{index}]"
+        where = f"authorization.static.grants[{index}]"
         grant = cls._entry(entry, _GrantConfig, where, "grant")
         if not grant.subjects:
             raise AKConfigError(f"{where}.subjects is empty: a grant names at least one subject")
@@ -167,7 +171,7 @@ class ToolPolicyTable(_PolicyTable):
         """
         self._by_agent: dict[str, _ToolPolicyConfig] = {}
         for index, entry in enumerate(policies):
-            where = f"authorization.tools[{index}]"
+            where = f"authorization.static.tools[{index}]"
             policy = self._entry(entry, _ToolPolicyConfig, where, "tool policy")
             if policy.agent in self._by_agent:
                 raise AKConfigError(f"{where} is a second tool policy for agent '{policy.agent}'; merge it into the first")
@@ -179,7 +183,7 @@ class ToolPolicyTable(_PolicyTable):
 
 
 class StaticAuthorizer(Authorizer):
-    """Decides from the ``authorization`` block's own policy: its grants and its per-agent tool policies.
+    """Decides from the policy in the ``authorization.static`` block: its grants and its per-agent tool policies.
 
     The level a principal holds on an agent is the highest over every grant that names both. There are no
     negative grants at the agent level; ``deny`` exists for tools only. A tool is offered when it is not
@@ -202,8 +206,8 @@ class StaticAuthorizer(Authorizer):
         system_tiers: Callable[[str], Mapping[str, AccessLevel]] | None = None,
     ):
         """
-        :param grants: The ``authorization.grants`` entries, as configuration models or mappings.
-        :param tools: The ``authorization.tools`` entries, as configuration models or mappings.
+        :param grants: The ``authorization.static.grants`` entries, as configuration models or mappings.
+        :param tools: The ``authorization.static.tools`` entries, as configuration models or mappings.
         :param descriptor_lookup: Returns every descriptor the registry knows; what ``tag:`` entries are
             resolved against.
         :param system_tiers: Returns, for an agent id, the tier each of Agent Kernel's own tools on that
@@ -216,9 +220,52 @@ class StaticAuthorizer(Authorizer):
         self._system_tiers = system_tiers
         if not len(self._grants):
             self._log.warning(
-                "authorization.grants is empty: every agent is denied to every principal. "
+                "authorization.static.grants is empty: every agent is denied to every principal. "
                 "Add a grant, or remove the authorization block to run without authorization"
             )
+
+    @classmethod
+    def from_config(
+        cls,
+        config: "_AuthorizationConfig",
+        descriptor_lookup: Callable[[], list[AgentDescriptor]] | None = None,
+        system_tiers: Callable[[str], Mapping[str, AccessLevel]] | None = None,
+    ) -> "StaticAuthorizer":
+        """Build the authorizer from an ``authorization`` block of type ``static``.
+
+        :param config: The authorization block; its ``static`` section is required by the config validator.
+        :param descriptor_lookup: What ``tag:`` entries are resolved against; the registry of whichever
+            runtime is current when a decision needs it, when omitted.
+        :param system_tiers: The tiers Agent Kernel's own tools declare, by agent id; those of the system
+            tools the configuration attaches to the agent, when omitted.
+        :return: The authorizer.
+        :raises AKConfigError: If the block has no ``static`` section, or as the constructor.
+        """
+        if config.static is None:
+            raise AKConfigError("authorization.type static requires the authorization.static block")
+        return cls(
+            grants=config.static.grants,
+            tools=config.static.tools,
+            descriptor_lookup=descriptor_lookup if descriptor_lookup is not None else cls._registry_descriptors,
+            system_tiers=system_tiers if system_tiers is not None else cls._system_tool_tiers,
+        )
+
+    @staticmethod
+    def _registry_descriptors() -> list[AgentDescriptor]:
+        """Every descriptor the current runtime's registry knows, read when a decision needs them."""
+        # Imported here: the runtime reaches the authorization package, never the reverse at import time.
+        from ...core.runtime import Runtime
+
+        return Runtime.current().registry.descriptors()
+
+    @staticmethod
+    def _system_tool_tiers(agent_id: str) -> dict[str, AccessLevel]:
+        """The tier each system tool attached to an agent declares, by tool name.
+
+        Asked of the same factory an agent's tools are attached from, so it answers for an agent this
+        process does not host as well, as long as both processes read the same configuration.
+        """
+        return {tool.name: tool.tier for tool in SystemToolFactory.get_all(agent_id)}
 
     async def agent_level(self, principal: Principal, agent_id: str) -> AccessLevel | None:
         held = self._grants.held_by(principal)

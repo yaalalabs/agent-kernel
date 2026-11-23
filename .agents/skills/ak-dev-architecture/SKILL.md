@@ -1037,9 +1037,11 @@ deleted).
   abstract; `filter_tools` and `visible_agents` default to asking those per tool and per candidate,
   and `capabilities` (`AuthorizerCapabilities.lists_resources`) says a backend lists agents
   natively. An authorizer decides from the principal it is handed and stores nothing about it.
-  `StaticAuthorizer` (`static.py`) evaluates the block's own policy. A grant is `subjects`,
-  `agents`, `level`, applying to every pair it names (`GrantTable`, which raises `AKConfigError`
-  naming `authorization.grants[<index>]` for an entry it cannot use); the level held is the
+  `StaticAuthorizer` (`static.py`) evaluates the policy in its own section of the block,
+  `authorization.static` (`grants` and `tools`; the shape `identity.provider.static` has, so a
+  later engine adds a sibling section and no key of the block belongs to one backend). A grant is
+  `subjects`, `agents`, `level`, applying to every pair it names (`GrantTable`, which raises
+  `AKConfigError` naming `authorization.static.grants[<index>]` for an entry it cannot use); the level held is the
   highest over the matching grants, and there are no negative grants. `SubjectMatcher` is the
   subject grammar: `*`, `authenticated`, `user:<subject>` (never a `messaging:` / `realtime:`
   sender, never the anonymous principal), `group:<name>`, `role:<name>`, `provider:<name>` (a
@@ -1051,18 +1053,26 @@ deleted).
   `AKConfigError`); a tool is offered when it is not denied, is in the allow-list when there is
   one, and its tier is at or below the level; the tier is the policy's entry, else the tier the
   `SystemTool` of that name on that agent declares, else `read`. The deny list and the allow-list
-  are decided before the level, so their reason is the same whoever asks. The static backend
-  takes two lookups and reads no configuration: `descriptor_lookup` and `system_tiers` (agent id
-  to tool name to tier). `AuthorizerFactory` (`factory.py`) is the `core/util/factory.py` shape:
-  `create(authorization_config, descriptor_lookup, system_tiers=None)` resolves `static`, refuses
-  the reserved engine names (`casbin`, `openfga`, `cedar`, `authzen`: "not shipped yet; use a
-  dotted path"), and builds a dotted-path `Authorizer` subclass with the whole block (its own
-  settings in `model_extra`); `get()` is the process-wide, lock-guarded instance, `None` without
-  the block, wired to the current runtime's registry (resolved when asked, so it follows a
-  context-managed runtime) and to `SystemToolFactory.get_all(agent_id)` for the declared tiers;
-  `reset()` for tests. The config models refuse a key they do not take (`_GrantConfig` and
-  `_ToolPolicyConfig` always, `_AuthorizationConfig` unless the type is a dotted path), because a
-  misspelt `deny` or `tools` would leave a tool more reachable than the configuration reads.
+  are decided before the level, so their reason is the same whoever asks. The static backend's
+  constructor takes two lookups and reads no configuration: `descriptor_lookup` and `system_tiers`
+  (agent id to tool name to tier). `StaticAuthorizer.from_config(block, descriptor_lookup=None,
+  system_tiers=None)` reads the `static` section and supplies each lookup that is omitted: the
+  current runtime's registry (resolved when asked, so it follows a context-managed runtime) and
+  `SystemToolFactory.get_all(agent_id)` for the declared tiers. `AuthorizerFactory` (`factory.py`)
+  is the `core/util/factory.py` shape and builds **every backend from the block alone**:
+  `create(authorization_config)` resolves `static` through its `from_config`, refuses the reserved
+  engine names (`casbin`, `openfga`, `cedar`, `authzen`: "not shipped yet; use a dotted path"),
+  and hands a dotted-path `Authorizer` subclass the whole block (its own settings in
+  `model_extra`). A new built-in backend follows the static one: a section named after it on
+  `_AuthorizationConfig`, a `from_config` that reads it and finds whatever else it needs itself,
+  and no backend-specific parameter on the factory. `get()` is the process-wide, lock-guarded
+  instance, `None` without the block; `reset()` for tests. The config models refuse a key they do
+  not take (`_GrantConfig`, `_ToolPolicyConfig` and `_StaticAuthorizerConfig` always,
+  `_AuthorizationConfig` unless the type is a dotted path), because a misspelt `deny` or `tools`
+  would leave a tool more reachable than the configuration reads; and the static type is refused
+  without its section (`authorization.type static requires the authorization.static block`), the
+  identity provider block's rule, while an empty section is a policy with no grants (every agent
+  denied, one warning).
 - **Contract suites** (imported from test code only): `identity/provider/testing.py` has
   `IdentityProviderContract` (fixtures `provider`, `valid_credential` as `(credential, expected
   fields)`, `invalid_credentials`) and `RoleMapperContract` (`mapper`, `cases`);
@@ -1109,14 +1119,15 @@ identity:                      # optional: absent means every request is anonymo
     claims: []                 # claim paths looked up beside the groups; only groups by default
 authorization:                 # optional: absent means nothing is restricted (not enforced yet, see above)
   type: static                 # static, or a dotted path to an Authorizer
-  grants:                      # subjects and agents take one entry or a list
-    - {subjects: role:admin, agents: "*", level: admin}
-    - {subjects: [group:support, authenticated], agents: [support-triage, tag:frontline], level: read}
-  tools:                       # one entry per agent
-    - agent: support-triage
-      tiers: {create_ticket: write, refund: admin}   # unlisted: the system tool's own tier, else read
-      allow: null              # when set, the only tools offered
-      deny: [delete_ticket]    # refused at every level
+  static:                      # the static authorizer's policy; required by type static
+    grants:                    # subjects and agents take one entry or a list
+      - {subjects: role:admin, agents: "*", level: admin}
+      - {subjects: [group:support, authenticated], agents: [support-triage, tag:frontline], level: read}
+    tools:                     # one entry per agent
+      - agent: support-triage
+        tiers: {create_ticket: write, refund: admin}   # unlisted: the system tool's own tier, else read
+        allow: null            # when set, the only tools offered
+        deny: [delete_ticket]  # refused at every level
 ```
 
 Auth0, Keycloak and Okta are `oidc` blocks (the one above is an Auth0 tenant: the issuer with its

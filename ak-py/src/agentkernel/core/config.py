@@ -1603,13 +1603,30 @@ class _ToolPolicyConfig(BaseModel):
     deny: list[str] = Field(default_factory=list, description="Tools the agent never offers, at any level; deny wins over allow")
 
 
-class _AuthorizationConfig(BaseModel):
-    """Authorization capability: which authorizer decides, and the static backend's policy. Presence enables it.
+class _StaticAuthorizerConfig(BaseModel):
+    """Settings of the `static` authorizer: its policy, as grants and a per-agent tool policy.
 
-    The built-in backend refuses a key it does not take, since ``tool:`` written for ``tools:`` would drop
-    every tier and deny list beneath it without a word. A bring-your-own authorizer (a dotted-path type)
-    reads the settings of its own from ``model_extra``, and owns its policy: it is free to ignore ``grants``
-    and ``tools``.
+    Unknown keys are refused: ``tool:`` written for ``tools:`` would drop every tier and deny list beneath
+    it without a word.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    grants: list[_GrantConfig] = Field(
+        default_factory=list, description="Who holds which level on which agents. With none, every agent is denied to every principal"
+    )
+    tools: list[_ToolPolicyConfig] = Field(
+        default_factory=list, description="The tool policy, one entry per agent: tiers, an allow-list and a deny list"
+    )
+
+
+class _AuthorizationConfig(BaseModel):
+    """Authorization capability: which authorizer decides, and each built-in backend's settings. Presence enables it.
+
+    A built-in backend keeps its settings in a section named after it (``static``), and the block refuses
+    any other key for one: a policy written beside ``type``, or under a misspelt section, would be dropped
+    without a word. A bring-your-own authorizer (a dotted-path type) reads the settings of its own from
+    ``model_extra``, and owns its policy.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -1618,20 +1635,20 @@ class _AuthorizationConfig(BaseModel):
         default="static",
         description="Authorizer: static, or a dotted path to an Authorizer subclass. casbin, openfga, cedar and authzen are reserved names, not shipped yet",
     )
-    grants: list[_GrantConfig] = Field(
-        default_factory=list, description="The static authorizer's grants. With none, every agent is denied to every principal"
-    )
-    tools: list[_ToolPolicyConfig] = Field(
-        default_factory=list, description="The static authorizer's tool policy, one entry per agent: tiers, an allow-list and a deny list"
-    )
+    static: _StaticAuthorizerConfig | None = Field(default=None, description="Settings of the static authorizer: its grants and tool policy")
 
     @model_validator(mode="after")
-    def _reject_unknown_keys(self) -> "_AuthorizationConfig":
-        """Fail a key the block does not take, unless a bring-your-own authorizer is there to read it."""
+    def _check_authorizer_settings(self) -> "_AuthorizationConfig":
+        """Fail at load time for a key the block does not take, or a built-in backend whose section is missing.
+
+        A dotted-path authorizer is there to read the keys of its own, and validates them in its constructor.
+        """
         unknown = sorted(self.model_extra or {})
         if unknown and "." not in self.type:
             names = ", ".join(f"authorization.{key}" for key in unknown)
-            raise AKConfigError(f"{names} is not a setting of the authorization block; it takes type, grants and tools")
+            raise AKConfigError(f"{names} is not a setting of the authorization block; it takes type and static")
+        if self.type.lower() == "static" and self.static is None:
+            raise AKConfigError("authorization.type static requires the authorization.static block")
         return self
 
 
@@ -1806,7 +1823,7 @@ class AKConfig(YamlBaseSettingsModified):
     )
     authorization: _AuthorizationConfig | None = Field(
         default=None,
-        description="Authorization capability configurations (the authorizer that decides who may use which agent and tool, and the static backend's grants and tool policy). Absent = nothing is restricted.",
+        description="Authorization capability configurations (the authorizer that decides who may use which agent and tool, and the settings of each built-in backend). Absent = nothing is restricted.",
     )
     registry: _RegistryConfig | None = Field(
         default=None,

@@ -498,9 +498,12 @@ and `research/design-options.md` section 4).
   extra), `authzen` (HTTP, no extra), else a dotted path to an `Authorizer` subclass, else
   `AKConfigError`. Only `static` is implemented in the first iteration; `casbin` is the first
   engine after it (settled, Q11: in-process, runs in CI with no service) and the others are named
-  branches whose adapters subclass the contract suite when they land.
-- `StaticAuthorizer` (`static`) evaluates the `authorization.grants` and `authorization.tools`
-  blocks (its policy source; engine backends ignore these blocks and own their policy):
+  branches whose adapters subclass the contract suite when they land. Every backend is built from
+  the block alone: a built-in one reads the section of the block named after it, a dotted path
+  is handed the whole block (spec refinement 15).
+- `StaticAuthorizer` (`static`) evaluates the `grants` and `tools` of its own section of the
+  block, `authorization.static` (its policy source, the shape `identity.provider.static` has;
+  an engine backend has a section of its own and owns its policy; spec refinement 15):
   - A grant is `subjects`, `agents`, `level`. `subjects` and `agents` are lists; a bare string is
     coerced to a one-element list, so `agents: support-triage` and `agents: [a, b]` are both
     valid. A grant applies to every (subject, agent) pair it names.
@@ -523,8 +526,10 @@ and `research/design-options.md` section 4).
     `tier`, else `read`.
   - `check_tool` allows when the tool is not in `deny`, is in `allow` when `allow` is set, and its
     tier is at or below `agent_level`; `agent_level` of `None` denies everything.
-  - With the block present and no grants at all, every agent is denied for every principal except
-    through `visibility`; one warning at startup names the empty block.
+  - With a `static` section that states no grants, every agent is denied for every principal
+    except through `visibility`; one warning at startup names the empty grants. A block of type
+    `static` with no `static` section is refused when the configuration is loaded (spec
+    refinement 15).
 - `AccessGate` (class, `identity/authz/gate.py`): the one consumer of registry plus authorizer.
   `get()` returns `None` when authorization is not configured. Methods: `authorize_agent(principal,
   agent_id) -> AccessLevel` (raises `PermissionError` when `None`; raises `LookupError("Agent
@@ -567,18 +572,19 @@ identity:
   role_mapper: {type: mapping, mapping: {sre-oncall: [operator], platform-admins: [admin]}}
 authorization:
   type: static
-  grants:
-    - {subjects: role:admin,     agents: "*",                     level: admin}
-    - {subjects: role:operator,  agents: k8s-troubleshooter,      level: write}
-    - {subjects: group:support,  agents: [support-triage, faq],   level: write}
-    - {subjects: authenticated,  agents: support-triage,          level: read}
-    - {subjects: "*",            agents: faq,                     level: read}
-  tools:
-    - agent: k8s-troubleshooter
-      tiers: {kubectl_get: read, kubectl_describe: read, kubectl_apply: write, kubectl_delete_namespace: admin}
-    - agent: support-triage
-      tiers: {lookup_ticket: read, create_ticket: write, refund: admin}
-      deny: [delete_ticket]
+  static:
+    grants:
+      - {subjects: role:admin,     agents: "*",                     level: admin}
+      - {subjects: role:operator,  agents: k8s-troubleshooter,      level: write}
+      - {subjects: group:support,  agents: [support-triage, faq],   level: write}
+      - {subjects: authenticated,  agents: support-triage,          level: read}
+      - {subjects: "*",            agents: faq,                     level: read}
+    tools:
+      - agent: k8s-troubleshooter
+        tiers: {kubectl_get: read, kubectl_describe: read, kubectl_apply: write, kubectl_delete_namespace: admin}
+      - agent: support-triage
+        tiers: {lookup_ticket: read, create_ticket: write, refund: admin}
+        deny: [delete_ticket]
 registry:
   agents:
     faq: {visibility: public}
@@ -607,7 +613,7 @@ registry:
   limits the offer to the tools it names.
 - A higher level widens which tools are offered; it never changes what a tool does. A
   `read`-tier tool behaves the same for Carol as for Dave. The tier is a static property of the
-  tool on that agent (`authorization.tools`); the level is the per-principal value resolved from
+  tool on that agent (`authorization.static.tools`); the level is the per-principal value resolved from
   `grants`. A capability whose read and write forms should reach different principals is
   modelled as two tools with two tiers (`lookup_ticket` at `read`, `create_ticket` at `write`),
   the recommended pattern. A tool that cannot be split declares the tier of its least-privileged
@@ -753,15 +759,16 @@ identity:
       # when required: {audience: "api://billing", type: entra_obo, scopes: [Invoices.Read]}
 authorization:
   type: static                      # static | casbin | openfga | cedar | authzen | dotted path
-  grants:
-    - {subjects: role:admin, agents: "*", level: admin}
-    - {subjects: [group:support, role:cx-lead], agents: [support-triage, faq], level: write}
-    - {subjects: authenticated, agents: faq, level: read}
-  tools:
-    - agent: support-triage
-      tiers: {create_ticket: write, lookup_ticket: read}
-      allow: null                   # optional allow-list over the agent's bound tools
-      deny: [delete_ticket]
+  static:                           # the static authorizer's policy; each built-in backend has its own section
+    grants:
+      - {subjects: role:admin, agents: "*", level: admin}
+      - {subjects: [group:support, role:cx-lead], agents: [support-triage, faq], level: write}
+      - {subjects: authenticated, agents: faq, level: read}
+    tools:
+      - agent: support-triage
+        tiers: {create_ticket: write, lookup_ticket: read}
+        allow: null                 # optional allow-list over the agent's bound tools
+        deny: [delete_ticket]
 registry:
   type: in_memory                   # in_memory | redis | valkey | dynamodb | dotted path
   redis: {url: redis://localhost:6379, prefix: "ak:registry:", ttl: 0}
@@ -790,7 +797,7 @@ registry:
 | `identity.role_mapper` (`type`, `mapping`, `pass_through`) | `RoleMapperFactory`, the `mapping` mapper | IdP groups are identity facts, AK roles are policy; optional by design |
 | `identity.credentials.store`, `encryption_key`, `inbound_ttl`, `exchangers` | `CredentialStoreFactory`, `CredentialBroker`, `TokenExchangerFactory` | where tokens live and how they are exchanged cannot be derived from the provider block (section 3.1); only `passthrough` ships in this change |
 | `authorization.type` | `AuthorizerFactory` | backend selection |
-| `authorization.grants`, `authorization.tools` | `StaticAuthorizer` | the policy itself |
+| `authorization.static.grants`, `authorization.static.tools` | `StaticAuthorizer` | the policy itself |
 | `registry.type` and backend blocks | `AgentRegistryFactory` | settled Q9 |
 | `registry.agents.<id>.*` | `Runtime.register` overlay | deployment-owned metadata not known to code |
 | `AgentDescriptor.surfaces` | catalog routes and the four protocol surfaces | replaces three lists (section 10) |

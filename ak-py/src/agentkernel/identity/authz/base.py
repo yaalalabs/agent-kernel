@@ -39,8 +39,9 @@ class Authorizer(ABC):
     principal it is handed (its subject, groups, roles and claims) and stores nothing about it: roles are
     produced by the configured role mapper, and a backend is free to ignore them.
 
-    An authorizer reads no configuration in its methods. The factory hands the ``authorization`` block to
-    the constructor, which raises ``AKConfigError`` when the policy in it cannot be used.
+    An authorizer reads no configuration in its methods. The factory builds it from the ``authorization``
+    block alone: a built-in backend from the section named after it, a bring-your-own one by handing the
+    whole block to its constructor. Building it raises ``AKConfigError`` when its settings cannot be used.
     """
 
     capabilities: ClassVar[AuthorizerCapabilities] = AuthorizerCapabilities()

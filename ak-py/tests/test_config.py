@@ -817,8 +817,9 @@ class TestRegistryConfig:
 
 
 class TestAuthorizationConfig:
-    """The `authorization` block (#603): absent by default (nothing is restricted), and when present the static
-    backend's policy: grants binding subjects to agents at a level, and a per-agent tool policy."""
+    """The `authorization` block (#603): absent by default (nothing is restricted). When present it names the
+    authorizer, and each built-in backend keeps its settings in a section of its own: the static backend's
+    policy (grants binding subjects to agents at a level, and a per-agent tool policy) is `authorization.static`."""
 
     def test_absent_by_default(self, monkeypatch):
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
@@ -829,35 +830,46 @@ class TestAuthorizationConfig:
         cfg_path.write_text(
             "authorization:\n"
             "  type: static\n"
-            "  grants:\n"
-            '    - {subjects: role:admin, agents: "*", level: admin}\n'
-            "    - {subjects: [group:support, role:cx-lead], agents: [support-triage, faq], level: write}\n"
-            "    - {subjects: authenticated, agents: tag:support, level: read}\n"
-            "  tools:\n"
-            "    - agent: support-triage\n"
-            "      tiers: {lookup_ticket: read, create_ticket: write, refund: admin}\n"
-            "      allow: [lookup_ticket, create_ticket, refund]\n"
-            "      deny: [delete_ticket]\n"
+            "  static:\n"
+            "    grants:\n"
+            '      - {subjects: role:admin, agents: "*", level: admin}\n'
+            "      - {subjects: [group:support, role:cx-lead], agents: [support-triage, faq], level: write}\n"
+            "      - {subjects: authenticated, agents: tag:support, level: read}\n"
+            "    tools:\n"
+            "      - agent: support-triage\n"
+            "        tiers: {lookup_ticket: read, create_ticket: write, refund: admin}\n"
+            "        allow: [lookup_ticket, create_ticket, refund]\n"
+            "        deny: [delete_ticket]\n"
         )
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
 
         authorization = AKConfig.get().authorization
 
         assert authorization.type == "static"
-        assert [(grant.subjects, grant.agents, grant.level) for grant in authorization.grants] == [
+        assert [(grant.subjects, grant.agents, grant.level) for grant in authorization.static.grants] == [
             (["role:admin"], ["*"], AccessLevel.ADMIN),
             (["group:support", "role:cx-lead"], ["support-triage", "faq"], AccessLevel.WRITE),
             (["authenticated"], ["tag:support"], AccessLevel.READ),
         ]
-        [policy] = authorization.tools
+        [policy] = authorization.static.tools
         assert policy.agent == "support-triage"
         assert policy.tiers == {"lookup_ticket": AccessLevel.READ, "create_ticket": AccessLevel.WRITE, "refund": AccessLevel.ADMIN}
         assert (policy.allow, policy.deny) == (["lookup_ticket", "create_ticket", "refund"], ["delete_ticket"])
 
-    def test_a_bare_block_is_the_static_backend_with_no_policy(self):
-        authorization = _AuthorizationConfig()
+    @pytest.mark.parametrize("block", [{}, {"type": "static"}, {"type": "Static"}, {"static": None}], ids=["bare", "named", "any-case", "null"])
+    def test_the_static_type_requires_its_section(self, block):
+        # The same rule as an identity provider: the backend the block names is one it can be built for.
+        with pytest.raises(AKConfigError, match=r"authorization\.type static requires the authorization\.static block"):
+            _AuthorizationConfig.model_validate(block)
 
-        assert (authorization.type, authorization.grants, authorization.tools) == ("static", [], [])
+    def test_an_empty_static_section_is_a_policy_with_no_grants(self):
+        authorization = _AuthorizationConfig.model_validate({"static": {}})
+
+        assert (authorization.type, authorization.static.grants, authorization.static.tools) == ("static", [], [])
+
+    @pytest.mark.parametrize("name", ["casbin", "acme.authz.PolicyServer"])
+    def test_another_type_needs_no_static_section(self, name):
+        assert _AuthorizationConfig(type=name).static is None
 
     def test_a_grant_takes_one_subject_or_agent_as_a_bare_string(self):
         grant = _GrantConfig.model_validate({"subjects": "group:support", "agents": "faq", "level": "read"})
@@ -888,31 +900,41 @@ class TestAuthorizationConfig:
         with pytest.raises(ValueError, match="tiers"):
             _ToolPolicyConfig.model_validate({"agent": "support-triage", "tiers": {"refund": "owner"}})
 
+    @pytest.mark.parametrize("key", ["grants", "tools", "statc"])
+    def test_a_key_the_block_does_not_take_is_rejected_for_a_built_in_backend(self, key):
+        # A policy written beside `type`, or under a misspelt `static`, would otherwise be dropped without a word.
+        with pytest.raises(AKConfigError, match=rf"authorization\.{key} is not a setting of the authorization block; it takes type and static"):
+            _AuthorizationConfig.model_validate({"type": "static", "static": {}, key: []})
+
+    def test_grants_written_beside_the_type_are_named_before_the_missing_section(self):
+        # The flat form is the likely mistake: the error says which key is misplaced, not only that `static` is missing.
+        with pytest.raises(AKConfigError, match=r"authorization\.grants is not a setting of the authorization block"):
+            _AuthorizationConfig.model_validate({"grants": [{"subjects": "*", "agents": "*", "level": "read"}]})
+
     @pytest.mark.parametrize("key", ["tool", "grant"])
-    def test_a_misspelt_block_key_is_rejected_for_the_static_backend(self, key):
+    def test_a_misspelt_key_of_the_static_section_is_rejected(self, key):
         # `tool:` for `tools:` would otherwise drop every tier and deny list beneath it without a word.
-        with pytest.raises(AKConfigError, match=f"authorization.{key}"):
-            _AuthorizationConfig.model_validate({"type": "static", key: []})
+        with pytest.raises(ValueError, match=rf"static\.{key}"):
+            _AuthorizationConfig.model_validate({"static": {key: []}})
 
     def test_a_bring_your_own_authorizer_keeps_the_settings_of_its_own(self):
         authorization = _AuthorizationConfig.model_validate({"type": "acme.authz.PolicyServer", "endpoint": "https://pdp.acme.test"})
 
         assert authorization.model_extra == {"endpoint": "https://pdp.acme.test"}
 
-    def test_an_authorization_env_var_materializes_the_block(self, monkeypatch):
+    def test_naming_the_static_type_in_the_environment_alone_is_refused(self, monkeypatch):
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
         monkeypatch.setenv("AK_AUTHORIZATION__TYPE", "static")
 
-        authorization = AKConfig.get().authorization
-
-        # Present with no grants: every agent is then denied, which is what the static backend warns about.
-        assert (authorization.type, authorization.grants) == ("static", [])
+        # A block with no policy at all is refused when it is loaded, in place of denying every agent later.
+        with pytest.raises(AKConfigError, match=r"authorization\.type static requires the authorization\.static block"):
+            AKConfig.get()
 
     def test_grants_set_through_the_environment_are_parsed(self, monkeypatch):
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
-        monkeypatch.setenv("AK_AUTHORIZATION__GRANTS", '[{"subjects": "*", "agents": ["faq"], "level": "read"}]')
+        monkeypatch.setenv("AK_AUTHORIZATION__STATIC__GRANTS", '[{"subjects": "*", "agents": ["faq"], "level": "read"}]')
 
-        [grant] = AKConfig.get().authorization.grants
+        [grant] = AKConfig.get().authorization.static.grants
 
         assert (grant.subjects, grant.agents, grant.level) == (["*"], ["faq"], AccessLevel.READ)
 
