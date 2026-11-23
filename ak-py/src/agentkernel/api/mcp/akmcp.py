@@ -94,7 +94,9 @@ class MCP:
             # The principal the verifier put on this call's access token; a server built without
             # auth, or a token another verifier minted, authenticated nobody we know.
             principal = AKAccessToken.principal_of(get_access_token())
-            body = BaseRunRequest(prompt=prompt, agent=self.agent_name, session_id=session_id, principal=principal)
+            # The body names the surface it entered by: the runner serves the call the agents on `mcp`, whatever the
+            # agent's descriptor says of `rest`.
+            body = BaseRunRequest(prompt=prompt, agent=self.agent_name, session_id=session_id, principal=principal, surface="mcp")
             try:
                 reply = await MCP.get_client().request(body, protocol=MCP.PROTOCOL)
             except ReplyTimeoutError as e:

@@ -66,6 +66,13 @@ class TestProducerPrincipal:
 
         assert "principal" not in sent["body"]
 
+    def test_a_messaging_request_enters_by_none_of_the_agent_surfaces(self):
+        """The descriptor's `surfaces` name rest, a2a, mcp and agui: a messaging delivery is none of them, so its
+        body carries no surface and the runner serves it any agent, as before (#603, design refinement 13)."""
+        assert "surface" not in _enqueue(_inbound())["body"]
+        # A session of its own: the queue hands out one message of a session at a time.
+        assert "surface" not in _enqueue(_inbound(session_id="s2"), adapter_name="livekit", source="realtime")["body"]
+
     def test_the_sender_is_still_not_the_websocket_marker(self):
         """ATTR_USER_ID is the WebSocket-entered marker the runners branch on; integration traffic never stamps it."""
         sent = _enqueue(_inbound(user_id="U123", namespace="T1"), "slack")

@@ -1352,3 +1352,154 @@ class TestAvailability:
         with runtime:
             AgentService.ensure_agent_available("billing", hosted=True)
             AgentService.ensure_agent_available(None, hosted=True)
+
+
+def _hosted(runtime: Runtime, name: str, surfaces: list[str] | None = None) -> StubAgent:
+    """Registers an agent served on the given surfaces: every surface when None, none when empty."""
+    agent = StubAgent(name)
+    agent._set_descriptor(agent.descriptor.model_copy(update={"surfaces": surfaces}))
+    runtime.register(agent)
+    return agent
+
+
+class TestAvailabilityOnASurface:
+    """A request carries the surface it entered by, and the availability check answers for that surface (design
+    refinement 13): an agent kept off it is, to that request, an agent that does not exist."""
+
+    @pytest.mark.parametrize("hosted", [False, True], ids=["registry-wide", "hosted"])
+    def test_a_named_agent_kept_off_the_surface_is_not_found(self, hosted):
+        runtime = Runtime(InMemorySessionStore())
+        _hosted(runtime, "internal", ["a2a", "mcp"])
+
+        with runtime:
+            # The unknown agent's error and text: the answer does not say the name exists on another surface.
+            with pytest.raises(AgentNotFoundError, match="^Agent 'internal' not found$"):
+                AgentService.ensure_agent_available("internal", hosted=hosted, surface="rest")
+
+    @pytest.mark.parametrize("hosted", [False, True], ids=["registry-wide", "hosted"])
+    def test_it_is_available_to_a_request_from_a_surface_it_is_on(self, hosted):
+        runtime = Runtime(InMemorySessionStore())
+        _hosted(runtime, "internal", ["a2a", "mcp"])
+
+        with runtime:
+            AgentService.ensure_agent_available("internal", hosted=hosted, surface="a2a")
+            AgentService.ensure_agent_available("internal", hosted=hosted, surface="mcp")
+
+    def test_an_agent_with_no_surfaces_list_is_on_every_surface(self):
+        runtime = Runtime(InMemorySessionStore())
+        _hosted(runtime, "public")
+
+        with runtime:
+            for surface in ("rest", "a2a", "mcp", "agui"):
+                AgentService.ensure_agent_available("public", hosted=True, surface=surface)
+
+    def test_a_request_with_no_surface_is_not_governed_by_surfaces(self):
+        # Messaging, the CLI and a scheduled occurrence enter by none of the four surfaces.
+        runtime = Runtime(InMemorySessionStore())
+        _hosted(runtime, "nowhere", [])
+
+        with runtime:
+            AgentService.ensure_agent_available("nowhere")
+            AgentService.ensure_agent_available("nowhere", hosted=True)
+            AgentService.ensure_agent_available(None, hosted=True)
+
+    def test_an_agent_another_process_hosts_is_checked_against_the_surfaces_the_registry_holds(self, descriptor_only_registry):
+        registry = descriptor_only_registry([_descriptor("internal", surfaces=["a2a"]), _descriptor("public")])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(AgentNotFoundError, match="^Agent 'internal' not found$"):
+                AgentService.ensure_agent_available("internal", surface="rest")
+            AgentService.ensure_agent_available("internal", surface="a2a")
+            AgentService.ensure_agent_available("public", surface="rest")
+
+    def test_a_hosted_agent_is_checked_against_the_surface_without_reading_the_store(self):
+        class _HostedOnly(InMemoryAgentRegistry):
+            def descriptor(self, id):
+                raise AssertionError("the registry's store was read for an agent this process hosts")
+
+            def descriptors(self):
+                raise AssertionError("the registry's store was read while this process hosts an agent")
+
+            def is_empty(self):
+                raise AssertionError("the registry's store was read while this process hosts an agent")
+
+        runtime = Runtime(InMemorySessionStore(), registry=_HostedOnly())
+        _hosted(runtime, "internal", ["a2a"])
+        _hosted(runtime, "public")
+
+        with runtime:
+            AgentService.ensure_agent_available("public", surface="rest")
+            AgentService.ensure_agent_available(None, surface="rest")
+            with pytest.raises(AgentNotFoundError):
+                AgentService.ensure_agent_available("internal", surface="rest")
+
+    def test_an_unnamed_request_needs_a_hosted_agent_on_the_surface_where_the_agent_runs(self):
+        runtime = Runtime(InMemorySessionStore())
+        _hosted(runtime, "internal", ["a2a"])
+
+        with runtime:
+            # No name to hide: there is simply no agent to default to on this surface.
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService.ensure_agent_available(None, hosted=True, surface="rest")
+            AgentService.ensure_agent_available(None, hosted=True, surface="a2a")
+
+            _hosted(runtime, "public")
+            AgentService.ensure_agent_available(None, hosted=True, surface="rest")
+
+    def test_an_unnamed_request_at_an_edge_still_asks_only_whether_any_agent_is_known(self, descriptor_only_registry):
+        # The default is the running process's to pick, and it applies the surface there. An edge that read every
+        # descriptor to second-guess it would list the whole store on each request that names no agent.
+        class _Unlistable(descriptor_only_registry):
+            def descriptors(self):
+                raise AssertionError("every descriptor was read to learn whether one is on the surface")
+
+            def is_empty(self):
+                return not self._descriptors
+
+        with Runtime(InMemorySessionStore(), registry=_Unlistable([_descriptor("internal", surfaces=["a2a"])])):
+            AgentService.ensure_agent_available(None, surface="rest")
+
+        with Runtime(InMemorySessionStore(), registry=_Unlistable([])):
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService.ensure_agent_available(None, surface="rest")
+
+
+class TestSelectionOnASurface:
+    """`AgentService.select` follows the availability check's rule: the default is the first hosted agent on the
+    request's surface, and an agent kept off it is not selected."""
+
+    @pytest.fixture
+    def runtime(self) -> Runtime:
+        runtime = Runtime(InMemorySessionStore())
+        _hosted(runtime, "internal", ["a2a"])
+        _hosted(runtime, "public")
+        return runtime
+
+    @staticmethod
+    def _selected(runtime: Runtime, name: str | None = None, **surface) -> tuple[str | None, bool]:
+        with runtime:
+            service = AgentService()
+            service.select("s1", name, **surface)
+            return (service.agent.name if service.agent else None), service.session is not None
+
+    def test_an_unnamed_request_defaults_to_the_first_hosted_agent_on_its_surface(self, runtime):
+        assert self._selected(runtime, surface="rest") == ("public", True)
+        assert self._selected(runtime, surface="a2a") == ("internal", True)
+
+    def test_an_unnamed_request_with_no_surface_defaults_to_the_first_agent_as_before(self, runtime):
+        assert self._selected(runtime) == ("internal", True)
+        assert self._selected(runtime, surface=None) == ("internal", True)
+
+    def test_a_named_agent_kept_off_the_surface_is_not_selected_and_no_session_is_created(self, runtime):
+        assert self._selected(runtime, "internal", surface="rest") == (None, False)
+
+    def test_a_named_agent_is_selected_on_a_surface_it_is_on_and_with_no_surface(self, runtime):
+        assert self._selected(runtime, "internal", surface="a2a") == ("internal", True)
+        assert self._selected(runtime, "internal") == ("internal", True)
+        assert self._selected(runtime, "public", surface="rest") == ("public", True)
+
+    def test_no_agent_on_the_surface_selects_nothing(self, runtime):
+        assert self._selected(runtime, surface="agui") == ("public", True)
+        runtime.deregister(runtime.agents()["public"])
+
+        assert self._selected(runtime, surface="agui") == (None, False)

@@ -74,8 +74,14 @@ class A2A:
             if not context.message:
                 raise ValueError("RequestContext must have a message")
 
+            # The body names the surface it entered by, as it names its principal: the runner serves the request
+            # the agents on `a2a`, whatever the agent's descriptor says of `rest`.
             body = BaseRunRequest(
-                prompt=context.get_user_input(), agent=self.agent_name, session_id=context.context_id, principal=self._principal(context)
+                prompt=context.get_user_input(),
+                agent=self.agent_name,
+                session_id=context.context_id,
+                principal=self._principal(context),
+                surface="a2a",
             )
             try:
                 reply = await A2A.get_client().request(body, protocol=A2A.PROTOCOL)

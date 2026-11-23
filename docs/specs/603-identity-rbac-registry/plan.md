@@ -828,8 +828,8 @@ gate's `LookupError` is already a 404 the day it is wired in. It depends on noth
 ### Iteration 17b: An agent off `rest` is not served over REST
 
 Decided 2026-11-19 from the phase C review (design refinement 13). It builds on 17a, whose
-`LookupError` and 404 mapping it reuses, and lands before the gate so that iteration 18 adds
-the caller to a check that already knows the surface.
+`AgentNotFoundError` and 404 mapping it reuses, and lands before the gate so that iteration 18
+adds the caller to a check that already knows the surface.
 
 - **Goal:** a chat request that enters by the REST API and names an agent whose `surfaces`
   leaves out `rest` is answered like one for an unknown agent, and a request naming no agent
@@ -862,6 +862,41 @@ the caller to a check that already knows the surface.
   `a2a` or `mcp` only still runs when the request comes from that surface, queued and direct);
   `test_integration_roundtrip` and `test_cli_token` (unaffected). `rest-api.md` and
   `configuration.md` drop the sentence saying a named agent off `rest` is still served.
+- **As built (2026-11-23):** the mechanism is the one above. What was settled along the way is
+  written into spec 6 (Availability, Catalog) and refinement 13.
+  - A client that sends `surface` is refused, not overwritten: the field joined
+    `ChatRunRequest.INTERNAL_FIELDS`, so it is a 422 on the FastAPI chat routes and is left out
+    of the published schema by the mechanism the other internal fields use. A chat body may
+    carry any extra key as context for the pre-hooks and `surface` is a likely one; dropping it
+    in silence would have changed what an agent sees. The entry points still assign it
+    unconditionally.
+  - `AgentService.select` applies the surface to a named agent as well as to the default, so it
+    cannot select what the check would refuse. The unnamed request in the registry-wide form
+    (the queue-mode thread edge) still asks only `is_empty()`: the default is the runner's to
+    pick, and a per-request listing of the store was ruled out in phase C.
+  - Files beyond the list: `pipeline/agent_runner.py` (the AG-UI branch prepares the handler
+    itself and hands the body's surface on), `api/a2a/a2a.py`, `api/mcp/akmcp.py` and both
+    AG-UI handlers (each names its own surface). `realtime/pool.py` is unchanged: a realtime
+    edge names no surface. The Lambda runners needed nothing, since they answer through the
+    wrappers.
+  - The check runs where the agent runs. For a queued request that is the runner, judging by
+    the descriptor the runner holds, so a `surfaces` overlay set only in the process that
+    accepts requests narrows the catalog and the thread route but not a queued REST chat
+    request, until the edge precheck of iteration 19. For A2A, MCP and AG-UI the runner's check
+    is added to the edge's: an overlay at the edge can narrow what the hosting process declares
+    and no longer widen it. The docs tell operators to declare a restriction in code or in
+    configuration both processes read.
+  - A queued streaming request for an agent kept off `rest` fails as one for an unknown agent
+    does today: retries, then an error chunk. The edge precheck of iteration 19 turns both into
+    a 404.
+  - Open, for iteration 19: a task that names no agent, created by a REST request, runs the
+    firing process's default whatever its `surfaces`, because an occurrence carries no surface.
+    Keeping the creating surface on the task record would close it.
+  - Tests: two shared fixtures (`surface_agent`, `kept_off_rest`) carry the cases across the
+    suites; `test_chat_internal_fields` runs the client refusal over the five chat handlers.
+    The CLI needed no new case: it selects with no surface, which `TestSelectionOnASurface`
+    pins. User docs: `rest-api.md`, `configuration.md`, `module.md`, `scheduling.md`, the
+    `ak-py` README and the `ak-add-capabilities` skill.
 
 ### Iteration 18: Access gate and Runtime enforcement
 
@@ -895,7 +930,10 @@ the caller to a check that already knows the surface.
 - **Steps:**
   1. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
      403 reply and the warning (spec 8.1, 8.11).
-  2. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
+  2. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3). It
+     passes the request's surface, so the edge's own view of `surfaces` holds for a queued REST
+     chat request (left to the runner by iteration 17b), and decides whether a task keeps the
+     surface of the request that created it (the unnamed scheduled request, 17b's open point).
   3. The catalog filtered by `visible_agents`, each entry's `tools` and tool-backed `skills`
      narrowed to the caller; `get_router()` calls `validate_configuration` (spec 6, 7).
 - **Verify:** 403/404 cases in `test_api_http`, with the parity case (an unknown agent and a

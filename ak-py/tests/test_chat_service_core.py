@@ -64,7 +64,7 @@ class TestExecute:
             result, session_id = await service.execute(BaseRunRequest(prompt="hi", session_id="s1", agent="a1"))
         assert result is reply
         assert session_id == "s1"
-        handler.initialize.assert_called_once_with("s1", "a1")
+        handler.initialize.assert_called_once_with("s1", "a1", surface=None)
         built = handler.run_async.call_args.args[0]
         assert isinstance(built[0], AgentRequestText)
         assert built[0].prompt == "hi"
@@ -378,6 +378,147 @@ class TestUnknownAgentThroughTheService:
                 ChatService().process_stream_chat_sync(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
 
 
+class _WhoRanRunner(Runner):
+    """Replies with the name of the agent that ran, so a test reads which agent a request reached."""
+
+    def __init__(self):
+        super().__init__("WhoRanRunner")
+
+    async def run(self, agent, session, requests):
+        return AgentReplyText(response=agent.name)
+
+    async def stream(self, agent, session, requests):
+        yield MessageStart(message_id="who-1")
+        yield TextDelta(message_id="who-1", content=agent.name)
+        yield MessageEnd(message_id="who-1")
+
+
+class _WhoRanAgent(Agent):
+    """An agent served on the given surfaces: every surface when None."""
+
+    def __init__(self, name: str, surfaces: list[str] | None = None):
+        super().__init__(name, _WhoRanRunner())
+        self._set_descriptor(self.descriptor.model_copy(update={"surfaces": surfaces}))
+
+    def get_description(self) -> str:
+        return "Surface test agent"
+
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
+
+class TestSurfaceThroughTheService:
+    """An agent kept off the surface a request entered by is not served to it (#603, design refinement 13). Nothing
+    mocked: a runtime hosting an agent that is on `a2a` only, registered first, beside one on every surface."""
+
+    @staticmethod
+    def _runtime(store=None) -> Runtime:
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        runtime = Runtime(store or InMemorySessionStore())
+        runtime.register(_WhoRanAgent("internal", ["a2a"]))
+        runtime.register(_WhoRanAgent("public"))
+        return runtime
+
+    @staticmethod
+    def _request(agent=None, surface=None) -> BaseRunRequest:
+        return BaseRunRequest(prompt="hi", session_id="s1", agent=agent, surface=surface)
+
+    def test_a_rest_request_naming_it_is_answered_like_one_for_an_unknown_agent(self):
+        with self._runtime():
+            kept_off = ChatService().process_chat_request(self._request("internal", "rest"))
+            unknown = ChatService().process_chat_request(self._request("ghost", "rest"))
+
+        assert kept_off == (404, {"error": "Agent 'internal' not found", "session_id": "s1"})
+        assert unknown == (404, {"error": "Agent 'ghost' not found", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_the_async_wrapper_answers_the_same(self):
+        with self._runtime():
+            status, body = await ChatService().process_async_chat_request(self._request("internal", "rest"))
+
+        assert (status, body) == (404, {"error": "Agent 'internal' not found", "session_id": "s1"})
+
+    def test_no_session_is_loaded_for_it(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        store = InMemorySessionStore()
+        with self._runtime(store):
+            with patch.object(store, "load", wraps=store.load) as load:
+                ChatService().process_chat_request(self._request("internal", "rest"))
+            load.assert_not_called()
+
+    def test_a_rest_request_naming_no_agent_runs_the_first_agent_on_rest(self):
+        with self._runtime():
+            status, body = ChatService().process_chat_request(self._request(surface="rest"))
+
+        assert (status, body) == (200, {"result": "public", "session_id": "s1"})
+
+    def test_a_request_from_a_surface_it_is_on_runs_it(self):
+        with self._runtime():
+            named = ChatService().process_chat_request(self._request("internal", "a2a"))
+            default = ChatService().process_chat_request(self._request(surface="a2a"))
+
+        assert named == default == (200, {"result": "internal", "session_id": "s1"})
+
+    def test_a_request_with_no_surface_is_served_as_before(self):
+        # Messaging, the CLI and a scheduled occurrence: named or not, the descriptor's surfaces do not apply.
+        with self._runtime():
+            named = ChatService().process_chat_request(self._request("internal"))
+            default = ChatService().process_chat_request(self._request())
+
+        assert named == default == (200, {"result": "internal", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_the_async_core_and_stream_refuse_it_before_anything_runs(self):
+        with self._runtime():
+            service = ChatService()
+            with pytest.raises(AgentNotFoundError, match="Agent 'internal' not found"):
+                await service.execute(self._request("internal", "rest"))
+            with pytest.raises(AgentNotFoundError, match="Agent 'internal' not found"):
+                await service.execute_stream(self._request("internal", "rest"))
+
+    def test_the_sync_stream_refuses_it_before_it_opens(self):
+        with self._runtime():
+            with pytest.raises(AgentNotFoundError, match="Agent 'internal' not found"):
+                ChatService().execute_stream_sync(self._request("internal", "rest"))
+
+    @pytest.mark.asyncio
+    async def test_the_async_core_and_stream_default_to_the_first_agent_on_the_surface(self):
+        with self._runtime():
+            service = ChatService()
+            reply, _ = await service.execute(self._request(surface="rest"))
+            streamed = [chunk.delta async for chunk in await service.execute_stream(self._request(surface="rest")) if chunk.delta]
+
+        assert (str(reply), streamed) == ("public", ["public"])
+
+    def test_the_sync_stream_defaults_to_the_first_agent_on_the_surface(self):
+        with self._runtime():
+            streamed = [chunk.delta for chunk in ChatService().execute_stream_sync(self._request(surface="rest")) if chunk.delta]
+
+        assert streamed == ["public"]
+
+    def test_a_request_naming_no_agent_while_none_is_on_its_surface_stays_a_400(self):
+        with self._runtime():
+            status, body = ChatService().process_chat_request(self._request(surface="mcp"))
+            Runtime.current().deregister(Runtime.current().agents()["public"])
+            emptied = ChatService().process_chat_request(self._request(surface="mcp"))
+
+        assert (status, body) == (200, {"result": "public", "session_id": "s1"})
+        assert emptied == (400, {"error": "No agent available", "session_id": "s1"})
+
+    def test_prepare_agent_handler_takes_the_surface(self):
+        # AG-UI and the queue runner prepare the handler themselves, between loading the session and running.
+        with self._runtime():
+            with pytest.raises(AgentNotFoundError, match="Agent 'internal' not found"):
+                ChatService().prepare_agent_handler("s1", "internal", surface="rest")
+            assert ChatService().prepare_agent_handler("s1", None, surface="rest").service.agent.name == "public"
+            assert ChatService().prepare_agent_handler("s1", "internal").service.agent.name == "internal"
+
+
 class _ActingUserRunner(Runner):
     """Records the run principal's subject visible from inside the run, the way a hook or tool would
     read it; None for an anonymous run."""
@@ -481,7 +622,13 @@ class TestPrepareAgentHandler:
         with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
             prepared = ChatService().prepare_agent_handler("s1", "a1")
         assert prepared is handler
-        handler.initialize.assert_called_once_with("s1", "a1")
+        handler.initialize.assert_called_once_with("s1", "a1", surface=None)
+
+    def test_the_surface_of_the_request_reaches_the_handler(self):
+        handler = _mock_handler(AgentReplyText(response="ok"))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            ChatService().execute_sync(BaseRunRequest(prompt="hi", session_id="s1", agent="a1", surface="rest"))
+        handler.initialize.assert_called_once_with("s1", "a1", surface="rest")
 
     def test_unknown_agent_raises(self):
         handler = _mock_handler()

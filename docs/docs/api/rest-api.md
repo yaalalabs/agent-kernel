@@ -46,6 +46,11 @@ Execute an agent with a message.
 }
 ```
 
+`agent` is optional. A request that leaves it out runs the default agent: the first agent loaded that is served on
+the `rest` surface (every agent is, unless its `surfaces` says otherwise; see
+[Agent Registry](../core-concepts/configuration.md#agent-registry)). A request that names an agent kept off `rest`
+is answered as if the agent did not exist (see [Error Handling](#error-handling)).
+
 #### Structured replies
 
 `result` is a **string** unless the reply carries a format label. An agent configured for structured
@@ -159,7 +164,7 @@ keeps for it.
   is declared it is the description the agent's framework keeps for it, and empty where the framework has none.
 - `tools` and `skills` come from the agent's framework: the tools it can call, and one skill per tool.
 - `surfaces` is `null` for an agent served on every surface. An agent whose `surfaces` leaves out `rest` is not
-  listed here; a chat request that names it is still served.
+  listed here and is not served by the chat routes: a chat request that names it gets the 404 an unknown agent gets.
 - `visibility` is the declared value and is not enforced yet: until authorization ships, every agent on the `rest`
   surface is listed to every caller, and this route answers a caller with no credential.
 - With a shared registry the listing includes agents another process hosts.
@@ -224,7 +229,7 @@ Every thread route, the chat routes included, serves authenticated callers only:
 
 **404 Not Found:**
 
-A request that names an agent the server does not have. A request that names no agent runs the default agent, and is a 400 (`No agent available`) only when there is none.
+A request that names an agent the server does not have, or one whose `surfaces` leaves out `rest`: the two get the same answer, so the status does not tell a caller that a name exists on another surface. A request that names no agent runs the default agent, and is a 400 (`No agent available`) only when no agent is on `rest`.
 
 ```json
 {
@@ -258,7 +263,7 @@ In the following example, **locale (string)** and **additional_context (dict)** 
 }
 ```
 
-`user_id` is the one extra key a body may not carry: who the request acts as comes from the credential (see [Authentication](#authentication)), and a body with a `user_id` is a 400.
+Two extra keys are not yours to send. `user_id`: who the request acts as comes from the credential (see [Authentication](#authentication)), and a body with a `user_id` is a 400. `surface`: Agent Kernel records there which surface a request came in by, and a body that carries a value for it is a 422. If you passed a `surface` of your own as context, rename it.
 
 Please study the [Hooks documentation](/docs/integrations/hooks) for the use of hooks to implement various use cases.
 

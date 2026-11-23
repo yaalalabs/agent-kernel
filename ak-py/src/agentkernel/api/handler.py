@@ -129,6 +129,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         # with the one the identity dependency RESTAPI installs put on the request (the anonymous
         # principal without an identity block). The default covers a router mounted on a bare app.
         body.principal = getattr(request.state, "principal", None)
+        # And where the request came in: only an agent whose descriptor is on `rest` is served to it.
+        body.surface = "rest"
         if Config.get().execution.is_sse:
             try:
                 gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
@@ -181,6 +183,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             files=files,
             images=images,
             principal=getattr(request.state, "principal", None),
+            surface="rest",
         )
         if Config.get().execution.is_sse:
             try:

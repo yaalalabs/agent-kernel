@@ -3,7 +3,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 from ..core import Agent, AgentRequest, Runtime, Session
-from ..core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequestText, Principal, StreamChunk
+from ..core.model import AgentDescriptor, AgentReply, AgentReplyAny, AgentReplyText, AgentRequestText, AgentSurface, Principal, StreamChunk
 from ..core.registry import AgentNotFoundError
 
 
@@ -48,7 +48,7 @@ class AgentService:
         self._session = None
 
     @staticmethod
-    def ensure_agent_available(name: str | None, *, hosted: bool = False) -> None:
+    def ensure_agent_available(name: str | None, *, hosted: bool = False, surface: AgentSurface | None = None) -> None:
         """
         Checks that a request naming ``name`` could be served, without selecting anything.
 
@@ -65,12 +65,24 @@ class AgentService:
         here count and the store is never read. Without it a request for such an agent would pass
         this check, commit its state, and then fail to run.
 
+        A request that entered by one of the agent surfaces carries it (``BaseChatRequest.surface``)
+        and passes it here: an agent whose descriptor leaves that surface out is not available to
+        the request, named or as the default, so an agent kept off ``rest`` is not served over the
+        REST API by a caller who knows its name. A request with no surface (messaging, the CLI, a
+        scheduled occurrence) is not governed by the descriptor's ``surfaces``.
+
         The two failures are different errors. A request that names an agent it cannot have gets
         ``AgentNotFoundError``, which an HTTP route answers with a 404: the answer an agent the
         caller may not see gets, so the status does not say whether a name exists. That holds for
         the ``hosted`` form as well, where an agent another process hosts is, to this one, an agent
-        it does not have. A request that names no agent while there is none to default to has no
-        name to hide, and stays a ``ValueError`` (a 400).
+        it does not have, and for an agent kept off the request's surface. A request that names no
+        agent while there is none to default to has no name to hide, and stays a ``ValueError`` (a
+        400).
+
+        Without ``hosted``, an unnamed request is asked only whether the registry knows any agent,
+        whatever the surface: the default is picked by the process that runs the agent, which
+        applies the surface to its own agents, and reading every descriptor here to second-guess
+        it would list the whole store on each request that names no agent.
 
         For an agent that is not hosted here this reads the registry's store (one read for a named
         agent, the registry's emptiness check for an unnamed request), so an ``async`` caller over
@@ -83,34 +95,56 @@ class AgentService:
 
         :param name: Name of the requested agent, or None for the default agent.
         :param hosted: Whether the agent must be hosted by this process, not merely known to the registry.
+        :param surface: The surface the request entered by, or None for a request no surface governs.
         :raises AgentNotFoundError: If the request names an agent that is not available.
         :raises ValueError: If the request names no agent and there is none to default to.
         """
         registry = Runtime.current().registry
         # The agents this process hosts answer first: the store is read only for what is not hosted here.
         if name:
-            if registry.get(name) is None and (hosted or registry.descriptor(name) is None):
+            agent = registry.get(name)
+            if agent is not None:
+                descriptor = agent.descriptor
+            else:
+                descriptor = None if hosted else registry.descriptor(name)
+            if descriptor is None or not AgentService._serves(descriptor, surface):
                 raise AgentNotFoundError(name)
-        elif not registry.agents() and (hosted or registry.is_empty()):
-            raise ValueError("No agent available")
+        elif not any(AgentService._serves(agent.descriptor, surface) for agent in registry.agents().values()):
+            if hosted or registry.is_empty():
+                raise ValueError("No agent available")
 
-    def select(self, session_id: str | None = None, name: str | None = None):
+    @staticmethod
+    def _serves(descriptor: AgentDescriptor, surface: AgentSurface | None) -> bool:
+        """
+        Whether an agent is served to a request that entered by ``surface``.
+
+        :param descriptor: The agent's descriptor.
+        :param surface: The surface the request entered by, or None for a request no surface governs.
+        :return: True when the request carries no surface, or the descriptor exposes the agent on it.
+        """
+        return surface is None or descriptor.exposed_on(surface)
+
+    def select(self, session_id: str | None = None, name: str | None = None, surface: AgentSurface | None = None):
         """
         Selects an agent by name, or the first available agent if no name is provided.
 
+        Only an agent served on the request's surface is selected (see ensure_agent_available): a
+        named agent kept off it selects nothing, and an unnamed request defaults to the first agent
+        that is on it.
+
         :param session_id: Unique identifier for the session.
         :param name: Name of the agent to select.
+        :param surface: The surface the request entered by, or None for a request no surface governs.
         """
         if name:
             selected = self._runtime.agents().get(name)
-            if selected:
+            if selected and self._serves(selected.descriptor, surface):
                 self._agent = selected
             else:
                 self._log.warning(f"No agent found with name '{name}'")
         else:
             self._log.info("No agent was requested. Defaulting to first agent in the list")
-            agents = list(self._runtime.agents().values())
-            self._agent = agents[0] if agents else None
+            self._agent = next((agent for agent in self._runtime.agents().values() if self._serves(agent.descriptor, surface)), None)
             if self._agent:
                 self._log.info(f"Selected agent: {self._agent.name}")
             else:

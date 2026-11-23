@@ -191,7 +191,7 @@ OpenAIModule([triage, math]).describe(
 | `version` | The agent's version (default `0.0.0`) |
 | `owner`, `tags` | Free-form metadata; the catalog route filters by tag |
 | `visibility` | `private` (default), `internal` or `public`. Recorded and published in the catalog, not enforced yet: until authorization ships every listed agent is listed to every caller, and `surfaces` is what keeps an agent off a listing |
-| `surfaces` | Where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Unset means every surface, `[]` none |
+| `surfaces` | Where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Unset means every surface, `[]` none. An agent kept off a surface is not reachable on it: off `rest`, it is left out of the catalog and a chat request naming it is a 404 |
 | `skills` | The skills an A2A card lists; by default one per tool |
 | `identity` | How the agent identifies itself when it acts as a principal |
 

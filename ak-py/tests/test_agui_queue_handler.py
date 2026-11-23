@@ -132,9 +132,11 @@ class _FakeChatService:
     def __init__(self, session, chunks, during_run=None):
         self._handler = _FakeHandler(session, chunks, during_run)
         self.prepared = []
+        self.surfaces = []
 
-    def prepare_agent_handler(self, session_id, agent):
+    def prepare_agent_handler(self, session_id, agent, surface=None):
         self.prepared.append((session_id, agent))
+        self.surfaces.append(surface)
         return self._handler
 
 
@@ -238,6 +240,22 @@ class TestMarkerDispatchIsStructural:
         assert body["done"] is True, "an AG-UI error chunk without `done` never ends the client's stream"
         assert body["error"]
         assert ATTR_AGUI in outputs[0].attributes
+
+
+class TestTheRunnerAppliesTheSurfaceTheBodyCarries:
+    """The runner prepares the handler itself for an AG-UI run, so it hands the body's surface on itself (#603)."""
+
+    @pytest.mark.parametrize("surface", ["agui", None])
+    def test_the_agent_is_selected_for_the_surface_the_edge_named(self, surface):
+        transport = InMemoryTransport()
+        chat_service = _FakeChatService(Session("t-1"), _text_run())
+        body = AGUIRunRequest(session_id="t-1", agent="planner", requests=[], surface=surface)
+        message = _agui_message()
+        message.body = body.model_dump_json(exclude_none=True)
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(message)
+
+        assert (chat_service.prepared, chat_service.surfaces) == ([("t-1", "planner")], [surface])
 
 
 class TestTheMarkerSurvivesTheRunnerHop:
@@ -652,6 +670,18 @@ class TestAPauseIsTheRunsTerminalOutcome:
 
         [request] = handler._producer.requests
         assert request.principal == PRINCIPAL
+
+    @pytest.mark.asyncio
+    async def test_the_queued_request_says_it_entered_by_agui(self, monkeypatch):
+        """The edge resolved the agent as one on `agui`; the body carries that surface to the runner, which applies
+        it, and never `rest`, when it selects the agent (#603, design refinement 13)."""
+        handler = _edge_handler(monkeypatch)
+
+        # The enqueue happens before the response begins: the stream is not read, since nothing answers it here.
+        await handler._run("planner", _StubRequest())
+
+        [request] = handler._producer.requests
+        assert request.surface == "agui"
 
     @pytest.mark.asyncio
     async def test_the_queued_request_names_the_agent_by_its_id(self, monkeypatch):

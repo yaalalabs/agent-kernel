@@ -837,9 +837,12 @@ registry:
   carry the declared description, else the framework's own description field for the agent
   where it keeps one, else a neutral sentence naming the agent. A card's `version` is the
   descriptor's, not the library's (spec refinements 8 and 14).
-- From iteration 17b a chat request entering by the REST API for an agent whose `surfaces`
-  leaves out `rest` is answered like one for an unknown agent, where the agent was only left
-  out of the catalog (spec refinement 13).
+- A chat request entering by the REST API for an agent whose `surfaces` leaves out `rest` is
+  answered like one for an unknown agent, where the agent was only left out of the catalog, and
+  a request naming no agent runs the first agent on `rest` (iteration 17b; spec refinement 13).
+  The request carries the surface it entered by (`BaseChatRequest.surface`), which the entry
+  point sets and a client may not send: a body that used `surface` as a context key of its own
+  is a 422.
 - `GET /api/v1/agents` returns `{"agents": [<descriptor>...], "next_cursor": ...}`, the agents on
   the `rest` surface in id order and without their `identity`, where it returned a list of
   names. AG-UI's `/agents` lists ids in id order too.

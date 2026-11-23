@@ -158,7 +158,7 @@ HTTP/1.1 400 Bad Request
 {"detail":{"error":"schedule 'at' must be in the future: '2020-01-01T09:00:00' has already passed in UTC","session_id":"ses-1"}}
 ```
 
-So is a schedule for an agent that does not exist: a request naming one is a `404` (`Agent '<name>' not found`), as it is on a chat request that runs straight away.
+So is a schedule for an agent that does not exist: a request naming one is a `404` (`Agent '<name>' not found`), as it is on a chat request that runs straight away. A request that comes in by the REST API gets the same `404` for an agent whose `surfaces` leaves out `rest`: what a caller cannot run now, it cannot schedule. The check is made once, when the task is created. An occurrence comes in by no surface, so a task that names no agent runs the default agent of the process that fires it, whatever that agent's `surfaces`; name the agent when that matters.
 
 ## Managing Schedules
 

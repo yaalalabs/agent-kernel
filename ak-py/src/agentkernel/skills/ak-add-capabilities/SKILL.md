@@ -1742,9 +1742,12 @@ registry:
 ```
    An unknown key under an agent, or under `registry`, stops the application at startup.
 
-2. Choose the surfaces. An agent with no `surfaces` is on every surface. `a2a`, `mcp` and `agui`
-   decide whether the agent can be reached on that protocol; `rest` decides whether it is listed in
-   the catalog. `visibility` (`private`, `internal`, `public`) is recorded and not enforced yet.
+2. Choose the surfaces. An agent with no `surfaces` is on every surface. Each of `rest`, `a2a`,
+   `mcp` and `agui` decides whether the agent can be reached that way. An agent kept off `rest` is
+   left out of the catalog, a chat request naming it is a 404 (the answer an unknown agent gets), and
+   a chat request naming no agent runs the first agent on `rest`. Messaging integrations, the CLI and
+   scheduled occurrences are not governed by `surfaces`. `visibility` (`private`, `internal`,
+   `public`) is recorded and not enforced yet.
 
 3. Read the catalog: `GET /api/v1/agents?limit=50&tags=support` returns
    `{"agents": [<descriptor>...], "next_cursor": ...}`, ordered by id.
@@ -1760,8 +1763,9 @@ registry:
    - Start the runner first: A2A cards and MCP tools are built when the IO process starts.
    - Every agent runner on the input queue must host every agent the IO process serves.
    - Each process applies its own `registry.agents` block to what it reads, so put `surfaces`
-     restrictions in the configuration of the process that serves the surface (or in one file
-     both processes read).
+     restrictions in one file both processes read (or declare them in code with
+     `Module.describe`). The IO process decides what it lists and mounts; the agent runner decides
+     which agents a queued chat request is served, from its own copy of the descriptor.
    - Descriptors do not expire and a `ttl` is refused at startup. After a deployment that renames
      or removes an agent, delete its record from the store.
 

@@ -13,7 +13,7 @@ from threading import RLock
 from typing import Any, ClassVar, Optional
 
 from ..core.config import AKConfig
-from ..core.model import BaseChatRequest, Principal, ScheduleSpec
+from ..core.model import AgentSurface, BaseChatRequest, Principal, ScheduleSpec
 from ..core.service import AgentService
 from ..core.util.factory import AKConfigError
 from ..core.util.pagination import DEFAULT_PAGE_SIZE, clamp_limit, decode_cursor, encode_cursor
@@ -102,6 +102,8 @@ class ScheduleManager:
         :return: The created task.
         :raises ValueError: If the request carries no schedule block, or the schedule is unusable.
         :raises PermissionError: If the request carries no authenticated principal.
+        :raises AgentNotFoundError: If the request names an agent that is not available, or one kept
+            off the surface the request entered by.
         :raises ScheduleError: If the provider rejected the registration.
         """
         if req.schedule is None:
@@ -112,6 +114,7 @@ class ScheduleManager:
             spec=req.schedule,
             agent=req.agent,
             session_id=req.session_id,
+            surface=req.surface,
         )
 
     def create(
@@ -121,6 +124,7 @@ class ScheduleManager:
         spec: ScheduleSpec,
         agent: str | None = None,
         session_id: str | None = None,
+        surface: AgentSurface | None = None,
     ) -> ScheduledTask:
         """Validate, store and register a new scheduled task.
 
@@ -133,9 +137,14 @@ class ScheduleManager:
         :param spec: The occurrence rule.
         :param agent: The agent each occurrence runs on, or None for the default.
         :param session_id: Originating session of the task.
+        :param surface: The surface the creating request entered by, or None when no surface governs
+            it (a schedule tool). A named agent must be served on it: a request that could not run
+            the agent now cannot schedule it either. The task does not keep it, since an occurrence
+            enters by no surface.
         :return: The created task, carrying its provider reference.
         :raises PermissionError: If the principal is missing or anonymous.
-        :raises ValueError: If the prompt, session, agent or occurrence rule is unusable.
+        :raises AgentNotFoundError: If the named agent is not available, or is kept off the surface.
+        :raises ValueError: If the prompt, session or occurrence rule is unusable.
         :raises ScheduleError: If the provider rejected the registration.
         """
         if principal is None or principal.is_anonymous:
@@ -151,7 +160,7 @@ class ScheduleManager:
         # that process is not necessarily this one. Where this process is the one that fires, the agent
         # must be hosted here: a descriptor a removed agent left in a shared registry is not enough.
         if agent:
-            AgentService.ensure_agent_available(agent, hosted=self._runs_occurrences)
+            AgentService.ensure_agent_available(agent, hosted=self._runs_occurrences, surface=surface)
         OccurrenceCalculator.validate(spec)
 
         now = utc_now_iso()

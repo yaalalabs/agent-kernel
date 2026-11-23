@@ -213,6 +213,18 @@ class TestExecutorPrincipal:
         assert body.principal == ALICE
 
     @pytest.mark.asyncio
+    async def test_the_body_says_it_entered_by_mcp(self, monkeypatch):
+        """The tool exists only for agents on `mcp`; the body says so too, so the runner applies `mcp` and never
+        `rest` to a call this surface brought (#603, design refinement 13)."""
+        client = FakeClient(_reply())
+        MCP._client = client
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: None)
+
+        await MCP.Executor("triage").execute("s1", "hi", AsyncMock())
+
+        assert client.calls[0][0].surface == "mcp"
+
+    @pytest.mark.asyncio
     async def test_no_access_token_is_the_anonymous_principal(self, monkeypatch):
         client = FakeClient(_reply())
         MCP._client = client

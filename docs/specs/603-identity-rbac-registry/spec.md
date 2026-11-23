@@ -179,6 +179,12 @@ class AgentDescriptor(BaseModel):
   `group_id`, `thread_name`, `schedule` and `resume` stay. The docstring lines 411-417 that
   say `user_id` is required for threads and schedules are rewritten to "a non-anonymous
   principal is required".
+  `surface: Optional[AgentSurface] = None` is **added** in iteration 17b (design refinement 13):
+  the agent surface the request entered by, assigned by the entry point where it assigns the
+  principal and carried in the queued body. `None` for a request that entered by none of the
+  four (a messaging integration, the CLI, a scheduled occurrence). It is one of
+  `ChatRunRequest.INTERNAL_FIELDS`, so the client-facing body refuses a value for it and leaves
+  it out of the published schema, and `RequestBuilder` never hands it to the agent as context.
 - `BaseRequest.from_payload` (`core/model.py:488-520`): the envelope `user_id` read (line 497),
   its stripping from the body (lines 503 and 505) and the "envelope is authoritative" propagation
   (lines 513-516) are deleted. A payload whose envelope or body carries a `user_id` key raises
@@ -742,14 +748,28 @@ adapter, the native agent or `get_description()`.
 
 ```python
 @staticmethod
-def ensure_agent_available(name: Optional[str], principal: Optional[Principal] = None, *, hosted: bool = False) -> None
+def ensure_agent_available(
+    name: Optional[str], principal: Optional[Principal] = None, *, hosted: bool = False, surface: Optional[AgentSurface] = None
+) -> None
 ```
 
 `registry = Runtime.current().registry`; a named agent must have `registry.descriptor(name)`, and
 an unnamed request needs the registry not to be empty (`registry.is_empty()`, never a listing).
 The agents the process hosts answer first (`registry.get(name)`, `registry.agents()`), so the
 store is read only for an agent that is not hosted here and a hosted agent costs no round trip
-per request. (`principal` arrives with the gate in phase D; phase C ships `name` and `hosted`.)
+per request. (`principal` arrives with the gate in phase D; phase C ships `name` and `hosted`,
+iteration 17b adds `surface`.)
+
+`surface` is the request's `BaseChatRequest.surface` (iteration 17b, design refinement 13). With
+one, an agent is available only when its descriptor exposes it there (`descriptor.exposed_on`):
+a named agent kept off the surface raises the unknown agent's `AgentNotFoundError`, hosted or
+known only to the registry, and an unnamed request counts only the hosted agents that are on it.
+A hosted agent is judged by the descriptor it carries, so the surface costs no store read
+either. With no surface the descriptor's `surfaces` are not consulted. One case is left to the
+process that runs the agent: an unnamed request in the registry-wide form still asks only
+`is_empty()`, whatever the surface, since the default is that process's to pick and reading
+every descriptor at an edge to second-guess it would list the store on each request that names
+no agent.
 
 `hosted=True` is what a caller that runs the agent in its own process passes: only the agents
 hosted here count and the store is never read. Three callers do. `AgentHandler.initialize`
@@ -806,9 +826,14 @@ tools already turn any error into `{"error": ...}` and now carry this text; MCP 
 
 Then, when `AccessGate.get()` is not `None` and a name is given:
 `gate.authorize_agent(principal or Principal.anonymous(), name)`, which raises `PermissionError`
-(no level) or `AgentNotFoundError` (not visible; section 7). `select` (`core/service.py:72-101`) is
-unchanged and still needs the local `Agent`: for an agent the process does not host it selects
-nothing, and the run that follows raises `ValueError("No agent selected...")`.
+(no level) or `AgentNotFoundError` (not visible; section 7). `select` (`core/service.py:72-101`)
+still needs the local `Agent`: for an agent the process does not host it selects nothing, and
+the run that follows raises `ValueError("No agent selected...")`. Since iteration 17b it takes
+the same `surface` and follows the check's rule, so the two cannot disagree: a named agent kept
+off the surface is not selected, and an unnamed request defaults to the first hosted agent that
+is on it (the first agent, as before, with no surface). `AgentHandler.initialize` and
+`ChatService.prepare_agent_handler` take `surface` and hand it to both; `ChatService.execute*`
+pass `req.surface`.
 
 **Catalog** (`api/handler.py:102-103`, `list_agents`): becomes
 `GET /api/v1/agents?cursor=&limit=&tags=` returning `{"agents": [descriptor...],
@@ -831,18 +856,45 @@ queue-mode `RequestHandler` mounts the same `list_agents` (`pipeline/request_han
 when each request arrives: an agent added or removed between two requests can repeat or skip an
 entry on the next page.
 
-`rest` in `surfaces` governs this listing, and from iteration 17b the chat requests that enter
+`rest` in `surfaces` governs this listing and, since iteration 17b, the chat requests that enter
 by the REST API as well (design refinement 13, decided 2026-11-19). Until then a chat request
-that names an agent kept off `rest` is still served: the three removed lists had no REST
-counterpart, so phase C carried nothing over. From 17b such a request answers like one for an
-agent that does not exist, and a request naming no agent defaults to the first agent on `rest`.
+that named an agent kept off `rest` was still served: the three removed lists had no REST
+counterpart, so phase C carried nothing over. Such a request now answers like one for an agent
+that does not exist, and a request naming no agent defaults to the first agent on `rest`.
 The check cannot simply sit in the shared service, which also runs the requests A2A, MCP, the
 messaging integrations, the CLI and scheduled occurrences bring, so the request carries the
 surface it entered by: `BaseChatRequest.surface`, set by the entry point beside `principal`,
-never honoured from a client, and riding the queued body. `ensure_agent_available(name, ...,
+refused from a client, and riding the queued body. `ensure_agent_available(name, ...,
 surface=)` and `AgentService.select(..., surface=)` then refuse or skip an agent not exposed on
-it. Requests with no surface (messaging, the CLI, a scheduled occurrence) are not governed by
-`surfaces`; a schedule's agent is checked when the task is created, by the route that creates it.
+it (Availability, above). Who sets what:
+
+- `rest`: the chat and multipart routes (`AgentRESTRequestHandler.run`, `run_multipart`), the
+  queue-mode chat routes (`RestHandler.enqueue_and_wait`, `RequestHandler.run_chat`, which the
+  multipart route goes through), both thread handlers, the WebSocket gateway's chat frames
+  (`pipeline/ws/handler.py`), and the deployment entry points that assign the principal: the
+  REST Lambda router's `_parse_body`, the Lambda WebSocket frames and the ECS WebSocket API's
+  chat route.
+- `a2a`, `mcp`, `agui`: the A2A and MCP executors on the body they enqueue, the AG-UI handlers on
+  `prepare_agent_handler` (direct) and on the queued `AGUIRunRequest`, whose surface the runner
+  hands on. Their routes already serve only the agents on their surface; the body says so too,
+  so the process that runs the agent applies that surface and never `rest`. `RestHandler.request`
+  enqueues the body as its executor built it.
+- none: `IntegrationProducer` (messaging and the realtime edges), the CLI, the trigger body of a
+  scheduled occurrence, and the schedule tools. `surfaces` does not govern them.
+
+A task's agent is checked when the task is created, against the surface of the request that
+creates it: `ScheduleManager.create(..., surface=)`, which `create_from_request` fills from the
+request, so a REST request cannot schedule an agent it could not run. The task does not keep the
+surface. Two limits follow from where the check runs, and both are stated in the user docs:
+
+- A queued request is checked by the process that runs the agent, against the descriptor that
+  process holds (what the code declared and its own `registry.agents` overlay). An overlay set
+  only in the process that accepts the request narrows the catalog and the thread route there
+  and what it mounts on A2A, MCP and AG-UI, but not a queued REST chat request: that takes the
+  edge precheck of iteration 19. For A2A, MCP and AG-UI the runner's check comes on top of the
+  edge's, so an overlay at the edge can narrow what the hosting process declares, not widen it.
+- An occurrence enters by no surface, so a task naming no agent runs the firing process's
+  default whatever its `surfaces`.
 
 An entry is `AgentDescriptor.catalog_entry()`, the descriptor without its `identity`, and the
 response is `AgentDescriptorPage.catalog()` (added 2026-11-18, before phase C merged). `identity`
@@ -1083,7 +1135,11 @@ is.
   the acting user comes from the credential")`.
 - `RequestBuilder._attach_additional_context` (`core/chat_service.py:140-175`): the
   `known_fields` set drops `"user_id"` and adds `"principal"`, so a principal never reaches the
-  agent as `AgentRequestAny`.
+  agent as `AgentRequestAny`. `"surface"` joins it in iteration 17b for the same reason.
+- `ChatService.execute*` also pass `req.surface` to `prepare_agent_handler(session_id, agent,
+  surface=)`, which `AgentHandler.initialize` hands to the availability check and to `select`
+  (iteration 17b; section 6, Availability and Catalog). The queue runner and the AG-UI handlers,
+  which prepare the handler themselves, pass the surface the same way.
 - `_record_trigger` (`core/chat_service.py:572-600`) forwards `req.principal` instead of
   `req.user_id`; `_maybe_schedule` is unchanged (the manager reads `req.principal`, section 8.11).
 - Presentation wrappers (`core/chat_service.py:690-695, 708-713`): a `PermissionError` branch
@@ -1483,7 +1539,11 @@ is.
   `ChatService.reject_unprocessable` before the recorder's first write, so a `user_id` extra is a
   400 with no thread written; an anonymous principal on the chat routes is 401 (8.2): the chat
   routes assign `body.principal` from the composed read handler's `_resolve_user(request)`, so
-  the 401 fires before any validation or write (iteration 10). `ThreadRESTRequestHandler`
+  the 401 fires before any validation or write (iteration 10). On the same line they assign
+  `body.surface = "rest"`, and both prechecks pass it (`_check_agent_available(name, surface)`,
+  and `ensure_agent_available(body.agent, surface=body.surface)` at the queue-mode edge), so an
+  agent kept off `rest` is refused before the thread is opened (iteration 17b; section 6,
+  Catalog). `ThreadRESTRequestHandler`
   (312-384) keeps its 403 and 404 rules with the principal's subject in place of the resolved
   user (351, 368); the listing route's `user_id` query parameter (365) is removed, since every
   listing is the caller's own and a parameter that is always overridden would only mislead
@@ -1496,7 +1556,10 @@ is.
   `PermissionError("scheduling requires an authenticated principal")`; the task stores the owner
   without the creating run's actor chain or credential handle,
   `principal=principal.model_copy(update={"actor": None, "credential_ref": None}).model_dump(mode="json")`.
-  `create_from_request` (95-111) passes `req.principal or Principal.anonymous()`.
+  `create_from_request` (95-111) passes `req.principal or Principal.anonymous()`. Since
+  iteration 17b `create` also takes `surface` (`create_from_request` passes `req.surface`) and
+  hands it to the named agent's availability check; a schedule tool passes none. The task
+  record and the trigger body carry no surface (section 6, Catalog).
 - `_build_trigger_body` (469-490): `"user_id"` is replaced by `"principal": task.principal`
   (`None` only on a task created before the change, whose frozen body also still carries
   `user_id` and is therefore refused at fire time; such tasks are recreated, not migrated, and
@@ -1573,7 +1636,7 @@ Shared pieces (`core/`):
 | Consumer | Deleted | Changed | Verified unchanged |
 |---|---|---|---|
 | `auth/` package, `auth.py` shadow module | both, whole | | |
-| `core/model.py` | `BaseChatRequest.user_id` (427); `from_payload` user_id handling (497, 503, 505, 513-516) | `BaseChatRequest.principal`; `SystemTool.tier`; new models (section 2) | every other request and reply model; `BaseRunRequest.extra="allow"` |
+| `core/model.py` | `BaseChatRequest.user_id` (427); `from_payload` user_id handling (497, 503, 505, 513-516) | `BaseChatRequest.principal` and `surface`; `ChatRunRequest.INTERNAL_FIELDS` gains `surface`; `SystemTool.tier`; new models (section 2) | every other request and reply model; `BaseRunRequest.extra="allow"` |
 | `core/runtime.py` | `ACTING_USER_CACHE_KEY` (40); `acting_user_id` (378, 433); `_agents` dict (144) | `run`/`stream` signatures and sequence; `_validate_resume` eighth check; `register`/`deregister`/`agents` delegate | system hook lists; `_prepare_requests`; `StreamBoundaryTracker` |
 | `core/base.py` | abstract `Agent.get_a2a_card` | `Keys.OWNER`; accessors; `Agent.descriptor`, `get_tool_names`, `ungated_tool_names` (default `[]`), `_tool_descriptions` (default `{}`) | framework-context accessors; run options; `_attach_system_tools` |
 | `core/tool.py` | | `ToolContext.principal/access_level/credentials` | `SystemToolFactory.get_all`, `_agent_allowed` |
@@ -1856,17 +1919,26 @@ Each is intentional; the justification is design section 10 unless stated.
     DEBUG, never its user, password or query, and a fixed placeholder for a value that does not
     parse as a URL with a scheme and a host, where it logged the URL whole
     (`core/util/driver/redis_like.py`; every store on the shared driver, not the registry alone).
-38. From iteration 17b, a chat request that enters by the REST API and names an agent whose
-    `surfaces` leaves out `rest` is answered like one for an unknown agent (404), and a request
-    naming no agent runs the first agent that is on `rest`, where either ran whatever agent was
-    named or registered first (section 6, Catalog; design refinement 13).
+38. A chat request that enters by the REST API and names an agent whose `surfaces` leaves out
+    `rest` is answered like one for an unknown agent (404), and a request naming no agent runs
+    the first agent that is on `rest`, where either ran whatever agent was named or registered
+    first (iteration 17b; section 6, Catalog; design refinement 13). It holds on the chat and
+    multipart routes, the thread chat routes (before any thread write), WebSocket chat and a
+    chat request that schedules a task. Requests from a messaging integration, the CLI and a
+    scheduled occurrence are served as before.
+39. `surface` is a field of the chat body the entry point sets (iteration 17b). A client that
+    sends a value for it is refused like the other internal fields (422 on the FastAPI chat
+    routes, an invalid-request frame on the WebSocket gateway), where the key was passed to the
+    pre-hooks as additional context. `AgentService.select`, `AgentHandler.initialize`,
+    `ChatService.prepare_agent_handler` and `ScheduleManager.create` take an optional
+    `surface`; a double or subclass that overrides one with the old signature must accept it.
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (one optional
 `last_error` on schedule occurrences and `principal` on tasks aside); the queue envelope
 attributes and `ATTR_USER_ID` as the WS-entered marker; `RequestProducer`, `IntegrationProducer`
 attribute stamping; every native framework call when no `authorization` block is present
-(keyword-for-keyword, the #754 invariant); `AgentService.select`; `ChatService` wire shapes other
-than the 403/404 branches; the HITL approval flags and resume contract; `Session.Keys` values
+(keyword-for-keyword, the #754 invariant); `AgentService.select` for a request with no surface
+(item 38); `ChatService` wire shapes other than the 403/404 branches; the HITL approval flags and resume contract; `Session.Keys` values
 for the two caches and the framework context; public exports other than those named deleted.
 
 ## Error handling
@@ -1878,7 +1950,9 @@ for the two caches and the framework context; public exports other than those na
 | Anonymous caller on a surface that needs a user | `AuthorisedRESTRequestHandler._resolve_user` | 401 `"Authentication required"` |
 | No level on the agent | `AccessGate.authorize_agent` → `PermissionError` | 403 with the message; `StreamChunk(error, done=True)` on a stream; `ToolError("Agent not available")` on MCP; A2A `InternalError` |
 | Agent named in a request is unknown to the registry, or not visible to the caller | `AgentService.ensure_agent_available`, `AccessGate.authorize_agent` → `AgentNotFoundError` | 404 `"Agent '<name>' not found"`, one status and body for both, on REST chat (direct and queued, a request that schedules included), the thread chat routes and AG-UI; `ToolError("Agent not available")` on MCP; `{"error": ...}` from the schedule tools |
-| No agent named and the registry knows none | `AgentService.ensure_agent_available` → `ValueError` | 400 `"No agent available"` |
+| Agent named in a request is kept off the surface the request entered by | `AgentService.ensure_agent_available(..., surface=)` → `AgentNotFoundError` | The unknown agent's 404 and body on REST chat (direct and queued, a request that schedules included), the thread chat routes before any write, and WebSocket chat |
+| No agent named and the registry knows none, or none hosted here is on the request's surface | `AgentService.ensure_agent_available` → `ValueError` | 400 `"No agent available"` |
+| `surface` sent by a client | `ChatRunRequest` (`INTERNAL_FIELDS`) | 422 naming the field on the FastAPI chat routes; an invalid-request frame on the WebSocket gateway; on the Lambda and ECS entry points, what each answers for the other internal fields (#884) |
 | Session owned by another principal | `authorize_session` → `PermissionError` | 403 at the choke point; thread path 403 before any write |
 | Resume by another subject | `_validate_resume` → `PermissionError` | 403; record kept |
 | Denied tool at call time | adapter gate | a tool result string with the reason; never an exception into the framework; a failure inside the gate denies with `"tool gate failed: <type>"` |
@@ -2031,6 +2105,32 @@ New files under `ak-py/tests/`:
   `test_pipeline_agent_runner` (the runner forwarding the 404 the queued route answers with).
   In iteration 19 `test_api_http` gains the parity case: an unknown agent and a hidden one answer
   with the same status and body.
+- With the request's surface (iteration 17b), two shared fixtures in `conftest.py`:
+  `surface_agent`, the class of an agent served on the surfaces it is built with whose reply is
+  its own name, and `kept_off_rest`, a runtime hosting `internal` (on `a2a` only, registered
+  first) beside `public`, so a test reads from the reply which agent a request reached.
+  `test_agent_registry` (`TestAvailabilityOnASurface`, `TestSelectionOnASurface`): the named
+  agent kept off the surface in both forms, the registry-held surfaces of an agent another
+  process hosts, no store read for a hosted agent, the unnamed request in the hosted form and
+  at an edge (no listing), and `select` following the same rule. `test_model`
+  (`TestRequestSurface`): the field, its ride through the queued body, the client-facing body
+  and `from_payload` refusing it, the schema leaving it out, and no additional context from it;
+  `test_chat_internal_fields` runs the refusal over the five chat handlers.
+  `test_chat_service_core` (`TestSurfaceThroughTheService`): the wrappers' 404 beside the
+  unknown agent's, the default, a request from a surface the agent is on, one with no surface,
+  every execution path and `prepare_agent_handler`. Per entry point: `test_api_http`
+  (`TestAnAgentKeptOffRestOnTheChatRoute`: chat and multipart, JSON and SSE, the default, a
+  form field named `surface` changing nothing), `test_pipeline_request_handler`
+  (`TestAnAgentKeptOffRest`: the queued body carrying `rest` from each queue route, the 404 and
+  the default through the runner, `request` leaving a protocol body as built),
+  `test_pipeline_ws`, `test_thread_integration` and `test_thread_pipeline_recording` (no
+  thread written, nothing enqueued, an agent another process hosts), `test_deployment_identity`
+  (`TestEntryPointsNameTheSurface`: the Lambda routers and the ECS WebSocket API),
+  `test_schedule_manager` (a REST request cannot schedule the agent, a tool can, the trigger
+  body carries no surface), `test_api_a2a_auth`, `test_api_mcp_auth`, `test_agui_handler` and
+  `test_agui_queue_handler` (each surface naming itself, the runner handing the body's surface
+  on), `test_pipeline_agent_runner` (a queued body's surface deciding which agents serve it)
+  and `test_principal_messaging` (a messaging body carries none).
 - `test_api_catalog.py` also pins that an entry never carries the agent's `identity`, and
   `test_agent_registry` that the stored descriptor keeps it. `test_api_a2a_surface` and
   `test_api_mcp` cover the empty-surface warning: once when agents are known and none is exposed,
@@ -2420,6 +2520,21 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    unknown agent gets. The request carries its entry surface, set where its principal is set,
    so the one availability check enforces it for requests that are queued and run elsewhere
    (section 6, Catalog).
+   Amended in iteration 17b (2026-11-23), four points. A client that sends `surface` is refused
+   like the other internal fields, where the plan had the entry point overwrite it: a body may
+   carry any extra key as context for the pre-hooks, `surface` is a likely one, and dropping it
+   would change what an agent sees without a word. The unnamed request at an edge still asks
+   only whether the registry knows an agent, since the default is the running process's to pick
+   and the alternative is a listing of the store per request. `AgentService.select` applies the
+   surface to a named agent too, so it cannot select what the check would refuse. And the check
+   runs where the agent runs: for a queued request that is the runner, with the descriptor the
+   runner holds, so an overlay set only at the edge does not narrow a queued REST chat request
+   until the edge precheck of iteration 19, and for A2A, MCP and AG-UI the runner's check is
+   added to the edge's (an edge overlay can narrow what the hosting process declares, no longer
+   widen it). Left open: a task that names no agent, created by a REST request, runs the firing
+   process's default whatever its `surfaces`, because an occurrence carries no surface; keeping
+   the creating surface on the task would close it and is a decision for the iteration that
+   next changes the task record (19).
 14. **The description defaults to a native description field** (decided 2026-11-19, from the
    phase C review). The design never defaults `description` from `get_description()`, which
    for most frameworks is the system prompt, and refinement 8 left it empty until declared.

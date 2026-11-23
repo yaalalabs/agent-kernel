@@ -473,6 +473,51 @@ class TestEndToEnd:
         assert resp.json()["detail"] == "Agent 'ghost' not found"
         assert client.get("/api/v1/threads/s-ghost", headers=AUTH).status_code == 404
 
+    def test_an_agent_kept_off_rest_is_404_with_no_thread_written(self, thread_enabled, kept_off_rest):
+        """`surfaces` governs the thread chat route too (#603, design refinement 13): the unknown agent's answer,
+        refused before the user message is recorded."""
+        with kept_off_rest:
+            client = _client(AgentThreadRequestHandler())
+            resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-off", "agent": "internal"}, headers=AUTH)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == {"error": "Agent 'internal' not found", "session_id": "s-off"}
+        assert client.get("/api/v1/threads/s-off", headers=AUTH).status_code == 404
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_an_agent_kept_off_rest_is_404_before_the_stream_opens(self, thread_enabled, kept_off_rest, monkeypatch, route):
+        from agentkernel.core.config import _ExecutionConfig
+        from agentkernel.core.model import ExecutionMode
+
+        monkeypatch.setattr(AKConfig.get(), "execution", _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta"))
+        fields = {"prompt": "hello", "session_id": "s-off", "agent": "internal"}
+
+        with kept_off_rest:
+            client = _client(AgentThreadRequestHandler())
+            if route == "json":
+                resp = client.post("/api/v1/chat", json=fields, headers=AUTH)
+            else:
+                resp = client.post("/api/v1/chat-multipart", data=fields, headers=AUTH)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Agent 'internal' not found"
+        assert client.get("/api/v1/threads/s-off", headers=AUTH).status_code == 404
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_a_thread_chat_naming_no_agent_runs_the_first_agent_on_rest(self, thread_enabled, kept_off_rest, route):
+        fields = {"prompt": "hello", "session_id": "s-default"}
+
+        with kept_off_rest:
+            client = _client(AgentThreadRequestHandler())
+            if route == "json":
+                resp = client.post("/api/v1/chat", json=fields, headers=AUTH)
+            else:
+                resp = client.post("/api/v1/chat-multipart", data=fields, headers=AUTH)
+
+        assert resp.json() == {"result": "public", "session_id": "s-default"}
+        recorded = client.get("/api/v1/threads/s-default", headers=AUTH).json()["messages"]
+        assert [(message["role"], message["content"]) for message in recorded] == [("user", "hello"), ("assistant", "public")]
+
     def test_an_anonymous_chat_is_401_before_any_thread_write(self, thread_enabled, registered_agent):
         """The chat route refuses a request nothing authenticated before the recorder runs (#603)."""
         client = _client(AgentThreadRequestHandler())

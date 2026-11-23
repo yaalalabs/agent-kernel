@@ -386,6 +386,27 @@ class TestAgentResolution:
             assert remote.status_code == unknown.status_code == 404
             assert remote.json()["detail"].replace("remote", "X") == unknown.json()["detail"].replace("nobody", "X")
 
+    def test_a_run_is_prepared_as_a_request_that_entered_by_agui(self, monkeypatch):
+        """An agent on `agui` only runs here, where a REST chat request naming it is refused (#603, design
+        refinement 13): the handler says which surface the run came in by, and the selection applies that one."""
+        from agentkernel.core.chat_service import ChatService
+
+        prepared_with = []
+        prepare = ChatService.prepare_agent_handler
+
+        def _spy(self, session_id, agent, surface=None):
+            prepared_with.append(surface)
+            return prepare(self, session_id, agent, surface=surface)
+
+        monkeypatch.setattr(ChatService, "prepare_agent_handler", _spy)
+        agui_only = _RegistryConfig(agents={"assistant": {"surfaces": ["agui"]}})
+
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)], registry_cfg=agui_only) as (client, _):
+            response = client.post("/agui/assistant", headers=AUTH, json=body())
+            assert types_of(response)[-1] == "RUN_FINISHED"
+
+        assert prepared_with == ["agui"]
+
     def test_a_non_streaming_agent_is_400_naming_its_framework(self, monkeypatch):
         """A live path from day one for any app with a CrewAI or smolagents agent, so the message
         has to name the framework and read as pending rather than permanent."""

@@ -263,6 +263,105 @@ class TestRestAsync:
         assert "principal" not in json.loads(message.body)
 
 
+class _QueuedRestHandler(RestHandler):
+    """RestHandler in queue mode: its own enqueue-and-wait route, the one the pipeline handler builds on."""
+
+    def _is_queue_mode(self) -> bool:
+        return True
+
+
+class TestAnAgentKeptOffRest:
+    """The queued chat routes say the request entered by the REST API, and the runner serves it only the agents on
+    `rest` (#603, design refinement 13). The `kept_off_rest` runtime hosts `internal` (on `a2a` only, registered
+    first) and `public`; the runner threads run under it, as the edge does."""
+
+    def test_the_queued_body_carries_the_surface_it_entered_by(self, monkeypatch, kept_off_rest):
+        _configure(monkeypatch, mode="rest_async")
+
+        with kept_off_rest:
+            _client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "public"})
+
+        [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert json.loads(message.body)["surface"] == "rest"
+
+    def test_the_base_handlers_own_queue_route_marks_it_too(self, monkeypatch, kept_off_rest):
+        _configure(monkeypatch, mode="rest_async")
+        app = FastAPI()
+        app.include_router(_QueuedRestHandler().get_router())
+
+        with kept_off_rest:
+            TestClient(app).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "public"})
+
+        [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert json.loads(message.body)["surface"] == "rest"
+
+    def test_the_multipart_route_marks_it_too(self, monkeypatch, kept_off_rest):
+        _configure(monkeypatch, mode="rest_async")
+
+        with kept_off_rest:
+            _client().post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "session_id": "s1", "agent": "public"})
+
+        [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert json.loads(message.body)["surface"] == "rest"
+
+    def test_naming_it_is_answered_with_the_unknown_agents_404(self, monkeypatch, kept_off_rest, workers):
+        _configure(monkeypatch, mode="rest_sync")
+        with kept_off_rest:
+            workers()
+            client = _client()
+            kept_off = client.post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "internal"})
+            unknown = client.post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "ghost"})
+
+        assert kept_off.status_code == unknown.status_code == 404
+        assert kept_off.json()["detail"] == {"error": "Agent 'internal' not found", "session_id": "s1"}
+        assert unknown.json()["detail"] == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+
+    def test_a_request_naming_no_agent_runs_the_first_agent_on_rest(self, monkeypatch, kept_off_rest, workers):
+        _configure(monkeypatch, mode="rest_sync")
+        with kept_off_rest:
+            workers()
+            response = _client().post(CHAT, json={"prompt": "hello", "session_id": "s1"})
+
+        assert response.status_code == 200
+        assert response.json() == {"result": "public", "session_id": "s1"}
+
+    def test_the_multipart_route_answers_the_same(self, monkeypatch, kept_off_rest, workers):
+        _configure(monkeypatch, mode="rest_sync")
+        with kept_off_rest:
+            workers()
+            client = _client()
+            kept_off = client.post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "session_id": "s1", "agent": "internal"})
+            default = client.post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "session_id": "s1"})
+
+        assert (kept_off.status_code, kept_off.json()["detail"]["error"]) == (404, "Agent 'internal' not found")
+        assert default.json() == {"result": "public", "session_id": "s1"}
+
+    def test_the_streamed_default_skips_it(self, monkeypatch, kept_off_rest, workers):
+        _configure(monkeypatch, mode="rest_sync", message_type="delta")
+        with kept_off_rest:
+            workers(stream=True)
+            with _client().stream("POST", CHAT, json={"prompt": "hello", "session_id": "s1"}) as response:
+                frames = [json.loads(line[len("data: ") :]) for line in response.iter_lines() if line.startswith("data: ")]
+
+        assert "".join(frame.get("delta", "") for frame in frames) == "public"
+
+    def test_a_protocol_request_is_enqueued_as_its_executor_built_it(self, monkeypatch):
+        # A2A and MCP reach the queue through ``request``: each executor names its own surface, and this path
+        # neither adds ``rest`` nor takes theirs away.
+        import asyncio
+
+        _configure(monkeypatch)
+        transport = InMemoryTransport()
+        store = FakeStore(record={"status_code": 200, "body": {"result": "ok"}})
+
+        # A session each: the queue hands out one message of a session at a time.
+        asyncio.run(_protocol_handler(store, transport).request(_protocol_body(session_id="s1", surface="a2a"), protocol="a2a"))
+        asyncio.run(_protocol_handler(store, transport).request(_protocol_body(session_id="s2"), protocol="mcp"))
+
+        bodies = {body["session_id"]: body for body in (json.loads(m.body) for m in transport.create_consumer(QueueName.INPUT).fetch(2, 0.5))}
+        assert (bodies["s1"]["surface"], "surface" in bodies["s2"]) == ("a2a", False)
+
+
 class TestInternalFieldsRejected:
     """#884: a client cannot set the fields internal producers use, so a resume decision cannot be dropped."""
 

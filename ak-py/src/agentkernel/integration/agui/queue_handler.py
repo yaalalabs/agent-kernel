@@ -144,7 +144,8 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
             self._producer.enqueue,
             # The caller's principal rides the body: the runner publishes it for the run (#603).
             # The agent travels by its id: the edge resolved a descriptor, and need not host the agent.
-            AGUIRunRequest(session_id=run_input.thread_id, agent=agent.id, requests=requests, agui=envelope, principal=principal),
+            # The surface travels too: the runner selects the agent as one served on `agui`.
+            AGUIRunRequest(session_id=run_input.thread_id, agent=agent.id, requests=requests, agui=envelope, principal=principal, surface="agui"),
             request_id=request_id,
             attributes={ATTR_AGUI: "1"},
             group_id=run_input.thread_id,

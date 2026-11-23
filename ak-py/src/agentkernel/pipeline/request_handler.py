@@ -241,6 +241,8 @@ class RestHandler(AgentRESTRequestHandler):
         # with the one the identity dependency RESTAPI installs put on the request (the anonymous
         # principal without an identity block). The default covers a router mounted on a bare app.
         body.principal = getattr(request.state, "principal", None)
+        # The surface rides the queued body, so the process that runs the agent serves only the agents on `rest`.
+        body.surface = "rest"
         try:
             if not body.session_id:
                 raise HTTPException(status_code=400, detail="session_id is required")
@@ -413,8 +415,9 @@ class RequestHandler(RestHandler):
 
     async def run_chat(self, body: ChatRunRequest, request: Request):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
-        # The surface assigns the principal; a client value is overwritten (see enqueue_and_wait).
+        # The surface assigns the principal and names itself; a client value is overwritten (see enqueue_and_wait).
         body.principal = getattr(request.state, "principal", None)
+        body.surface = "rest"
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:

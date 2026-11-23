@@ -302,7 +302,7 @@ Azure Functions also accepts the normalized envelope, and flat run payloads are 
 **Status Codes:**
 - `200`: Success
 - `400`: Invalid request, or no agent named and none available
-- `404`: The agent the request names was not found
+- `404`: The agent the request names was not found, or is not served on the `rest` surface
 - `500`: Unexpected error
 
 ### GCP Cloud Run Deployment
@@ -1144,7 +1144,10 @@ served on, in code (`Module.describe`) or in this block.
     `surfaces`, `identity`
   - **Description**: Catalog fields set for one agent, over what the code declares with
     `Module.describe(agent, ...)`. `surfaces` lists where the agent is served (`rest`, `a2a`, `mcp`, `agui`); an
-    agent that declares none is on every surface, and `[]` puts it on none. `description` is the text an A2A card
+    agent that declares none is on every surface, and `[]` puts it on none. An agent kept off `rest` is left out of
+    the catalog, a chat request that names it is a 404, and a chat request that names no agent runs the first agent
+    on `rest`. Messaging integrations, the CLI and scheduled occurrences are not governed by `surfaces`.
+    `description` is the text an A2A card
     and an MCP tool publish; an agent's instructions are never published, and when none is declared the
     description the agent's framework keeps for it (OpenAI `handoff_description`, the `description` of ADK,
     Pydantic AI, MAF, Claude and smolagents agents) is used. `visibility` is recorded and not

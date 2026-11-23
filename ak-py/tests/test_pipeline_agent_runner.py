@@ -92,6 +92,62 @@ class TestAgentRunner:
         assert out.attributes["status_code"] == "404"
         assert json.loads(out.body) == {"error": "Agent 'ghost' not found", "session_id": "s1"}
 
+    @pytest.mark.parametrize(
+        "surface, status, body",
+        [
+            # A2A and MCP reach the runner through the queue: an agent on `a2a` only still runs for a request from it.
+            ("a2a", "200", {"result": "internal", "session_id": "s1"}),
+            # The same agent named by a request that entered by the REST API is the unknown agent's 404.
+            ("rest", "404", {"error": "Agent 'internal' not found", "session_id": "s1"}),
+            # A body with no surface (a messaging integration, a scheduled occurrence) is not governed by surfaces.
+            (None, "200", {"result": "internal", "session_id": "s1"}),
+        ],
+    )
+    def test_the_surface_a_queued_body_carries_decides_which_agents_serve_it(self, kept_off_rest, surface, status, body):
+        from agentkernel.core.chat_service import ChatService
+
+        transport = InMemoryTransport()
+        message = _input_msg()
+        queued = {"prompt": "hi", "session_id": "s1", "agent": "internal"}
+        message.body = json.dumps(queued if surface is None else {**queued, "surface": surface})
+
+        with kept_off_rest:
+            AgentRunner(transport=transport, chat_service=ChatService()).process(message)
+
+        [out] = _fetch_output(transport)
+        assert (out.attributes["status_code"], json.loads(out.body)) == (status, body)
+
+    @pytest.mark.parametrize("surface, status", [("mcp", "200"), ("a2a", "404"), ("rest", "404")])
+    def test_an_agent_on_mcp_only_runs_for_a_request_from_mcp_alone(self, surface_agent, surface, status):
+        from agentkernel.core.chat_service import ChatService
+        from agentkernel.core.runtime import Runtime
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("tooling", ["mcp"]))
+        transport = InMemoryTransport()
+        message = _input_msg()
+        message.body = json.dumps({"prompt": "hi", "session_id": "s1", "agent": "tooling", "surface": surface})
+
+        with runtime:
+            AgentRunner(transport=transport, chat_service=ChatService()).process(message)
+
+        [out] = _fetch_output(transport)
+        assert out.attributes["status_code"] == status
+
+    def test_a_queued_rest_request_naming_no_agent_runs_the_first_agent_on_rest(self, kept_off_rest):
+        from agentkernel.core.chat_service import ChatService
+
+        transport = InMemoryTransport()
+        message = _input_msg()
+        message.body = json.dumps({"prompt": "hi", "session_id": "s1", "surface": "rest"})
+
+        with kept_off_rest:
+            AgentRunner(transport=transport, chat_service=ChatService()).process(message)
+
+        [out] = _fetch_output(transport)
+        assert json.loads(out.body) == {"result": "public", "session_id": "s1"}
+
     def test_a_labelled_reply_reaches_the_output_queue(self):
         """The riskiest consumer: this is the call site the bare ``json.dumps`` used to raise on.
 

@@ -82,7 +82,7 @@ class DefaultEndpointsHandler:
 
     def _parse_body(self, event: dict[str, Any]) -> BaseRequest:
         """
-        Parse request body from API Gateway event and assign the caller's principal to it.
+        Parse request body from API Gateway event and assign the caller's principal and the `rest` surface to it.
 
         The principal is the one the API Gateway authorizer serialized into the request context
         (``requestContext.authorizer.principal``); without an authorizer context the request runs
@@ -96,6 +96,8 @@ class DefaultEndpointsHandler:
         request = BaseRequest.from_payload(body_dict)
         if request.body is not None:
             request.body.principal = self.principal_from_event(event)
+            # The request entered by the REST API: only an agent whose descriptor is on `rest` is served to it.
+            request.body.surface = "rest"
         return request
 
     @staticmethod

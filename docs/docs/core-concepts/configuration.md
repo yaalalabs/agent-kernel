@@ -693,8 +693,16 @@ export AK_REGISTRY__AGENTS__BILLING__SURFACES='["rest"]'  # a per-agent field; t
   exactly. A registry passed to `Runtime(sessions, registry=...)` in code is used as given, without these fields.
 - **Surfaces.** `surfaces` lists where the agent is served: `rest`, `a2a`, `mcp`, `agui`. An agent that declares
   none, in code or here, is on every surface; `[]` puts it on none. `a2a`, `mcp` and `agui` decide whether the
-  agent can be reached on that protocol at all. `rest` decides whether the agent is listed in the catalog
-  (`GET /api/v1/agents`); a chat request that names the agent is still served. This replaces the `a2a.agents`,
+  agent can be reached on that protocol at all. `rest` does the same for the REST API: an agent kept off it is
+  left out of the catalog (`GET /api/v1/agents`), a chat request that names it is answered with the 404 an unknown
+  agent gets, and a chat request that names no agent runs the first agent that is on `rest`. That covers the chat
+  and multipart routes, the thread chat routes, WebSocket chat and a chat request that schedules a task. The four
+  surfaces are all `surfaces` governs: a messaging integration, the CLI, a scheduled occurrence and another agent
+  handing off still reach an agent whatever its `surfaces`, `[]` included. Where requests are queued to an agent
+  runner in another process, the runner decides which agents a request is served, from the agent's descriptor as
+  the runner holds it. So declare a `surfaces` restriction in code or in configuration the runner reads, not only
+  in the configuration of the process that accepts the request; and the accepting process cannot add an agent to a
+  surface the runner's descriptor keeps it off. This replaces the `a2a.agents`,
   `mcp.agents` and `agui.agents` lists. Those lists named the agents a surface served, where `surfaces` is set per
   agent, so removing a list is not enough to keep what it did: give every agent the list left out a `surfaces`
   value without that surface. There is no allow-list any more: an agent added later with no `surfaces` is on

@@ -285,6 +285,39 @@ class TestEdgeRecording:
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
+    def test_an_agent_kept_off_rest_leaves_no_phantom_thread(self, monkeypatch, kept_off_rest):
+        """The edge knows the request entered by the REST API, so an agent the registry knows on another surface is
+        refused here like an unknown one, before the user message is recorded or anything is enqueued (#603)."""
+        manager = _configure(monkeypatch, mode="rest_async")
+
+        with kept_off_rest:
+            response = _client().post(CHAT, json=_chat(agent="internal"))
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == {"error": "Agent 'internal' not found", "session_id": "s1"}
+        assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_an_agent_another_process_hosts_off_rest_is_refused_at_the_edge_too(self, monkeypatch, descriptor_only_registry):
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        manager = _configure(monkeypatch, mode="rest_async")
+        registry = descriptor_only_registry(
+            [AgentDescriptor(id="internal", name="internal", surfaces=["a2a"]), AgentDescriptor(id="public", name="public")]
+        )
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            client = _client()
+            kept_off = client.post(CHAT, json=_chat(agent="internal"))
+            served = client.post(CHAT, json=_chat(session_id="s2", agent="public"))
+
+        assert (kept_off.status_code, kept_off.json()["detail"]["error"]) == (404, "Agent 'internal' not found")
+        assert manager.get_thread("s1") is None
+        # The agent on `rest` is recorded and enqueued, marked as a request that entered by it.
+        assert served.status_code == 200
+        assert json.loads(_enqueued().body)["surface"] == "rest"
+
     def test_async_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
         """The route cannot answer in ASYNC mode, so it must refuse before opening the thread."""
         manager = _configure(monkeypatch, mode="async")

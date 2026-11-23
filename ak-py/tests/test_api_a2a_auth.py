@@ -199,6 +199,15 @@ class TestOverHttp:
         assert (body.principal.subject, body.principal.provider, body.principal.groups) == ("alice", "static", ["ops"])
 
     @pytest.mark.asyncio
+    async def test_the_body_says_it_entered_by_a2a(self, served):
+        """The route serves only agents on `a2a`; the body says so too, so the runner applies `a2a` and never `rest`
+        to a request this surface brought (#603, design refinement 13)."""
+        app, client = served
+
+        assert (await self._send(app, {"Authorization": "Bearer alice-secret"})).status_code == 200
+        assert client.calls[0][0].surface == "a2a"
+
+    @pytest.mark.asyncio
     async def test_no_token_runs_anonymous(self, served):
         app, client = served
 

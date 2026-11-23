@@ -290,6 +290,58 @@ class TestCreation:
 
         assert task.agent == "billing"
 
+    @staticmethod
+    def _rest_request(agent: str, surface: str | None = "rest") -> BaseRunRequest:
+        return BaseRunRequest(
+            prompt="send the weekly report",
+            agent=agent,
+            session_id="s1",
+            principal=_principal(),
+            schedule=ScheduleSpec(at=FUTURE_AT),
+            surface=surface,
+        )
+
+    def test_a_request_from_the_rest_api_cannot_schedule_an_agent_kept_off_rest(self, manager, store, kept_off_rest):
+        """A task's agent is checked against the surface of the request that creates it (design refinement 13):
+        scheduling is not a way round an agent being kept off `rest`. It is the unknown agent's error."""
+        with kept_off_rest:
+            with pytest.raises(AgentNotFoundError, match="^Agent 'internal' not found$"):
+                manager.create_from_request(self._rest_request("internal"))
+
+        assert store.list() == ([], None)
+
+    def test_the_chat_service_answers_that_request_with_the_unknown_agents_404(self, manager, store, kept_off_rest, monkeypatch):
+        from agentkernel.core.chat_service import ChatService
+
+        monkeypatch.setattr(ScheduleManager, "get", classmethod(lambda cls: manager))
+
+        with kept_off_rest:
+            status, body = ChatService().process_chat_request(self._rest_request("internal"))
+
+        assert (status, body) == (404, {"error": "Agent 'internal' not found", "session_id": "s1"})
+        assert store.list() == ([], None)
+
+    def test_a_request_from_a_surface_the_agent_is_on_schedules_it(self, manager, kept_off_rest):
+        with kept_off_rest:
+            on_rest = manager.create_from_request(self._rest_request("public"))
+            on_a2a = manager.create_from_request(self._rest_request("internal", surface="a2a"))
+
+        assert (on_rest.agent, on_a2a.agent) == ("public", "internal")
+
+    def test_a_task_created_with_no_surface_is_not_governed_by_surfaces(self, manager, kept_off_rest):
+        # The schedule tool an agent calls, and any caller of `create` that is not a chat route.
+        with kept_off_rest:
+            task = _create(manager, agent="internal")
+
+        assert task.agent == "internal"
+
+    def test_an_occurrence_is_triggered_with_no_surface(self, manager, provider, kept_off_rest):
+        # The check is made once, when the task is created: what fires later entered by no surface.
+        with kept_off_rest:
+            manager.create_from_request(self._rest_request("public"))
+
+        assert "surface" not in json.loads(provider.created[0][1])
+
     def test_creation_without_an_agent_name_is_not_prechecked(self, manager, provider):
         # The default agent is resolved by whichever process fires the occurrence, which is not
         # necessarily this one, so an unnamed agent is left to run time.
