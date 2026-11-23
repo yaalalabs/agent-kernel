@@ -16,7 +16,7 @@ from typing import Any
 
 from ..core.base import Session
 from ..core.config import AKConfig
-from ..core.model import Principal, ScheduleSpec, SystemTool
+from ..core.model import AccessLevel, Principal, ScheduleSpec, SystemTool
 from .manager import ScheduleManager
 from .model import ScheduledTask
 
@@ -374,10 +374,13 @@ def get_schedule_tools() -> list[SystemTool]:
     """
     cron_doc = ScheduleToolUtil.cron_description()
     ScheduleToolUtil.describe_cron_flavor(cron_doc)
+    # Every one is tiered `write` for an authorization policy: a task runs unattended as its owner, and the
+    # tools that read tasks are of use only to a principal that may create them.
+    tier = AccessLevel.WRITE
     return [
-        SystemTool(name="create_schedule", description=_GUIDANCE_TEMPLATE.replace(_CRON_TOKEN, cron_doc), func=create_schedule),
-        SystemTool(name="list_schedules", description="", func=list_schedules),
-        SystemTool(name="get_schedule", description="", func=get_schedule),
-        SystemTool(name="update_schedule", description="", func=update_schedule),
-        SystemTool(name="delete_schedule", description="", func=delete_schedule),
+        SystemTool(name="create_schedule", description=_GUIDANCE_TEMPLATE.replace(_CRON_TOKEN, cron_doc), func=create_schedule, tier=tier),
+        SystemTool(name="list_schedules", description="", func=list_schedules, tier=tier),
+        SystemTool(name="get_schedule", description="", func=get_schedule, tier=tier),
+        SystemTool(name="update_schedule", description="", func=update_schedule, tier=tier),
+        SystemTool(name="delete_schedule", description="", func=delete_schedule, tier=tier),
     ]

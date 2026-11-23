@@ -243,7 +243,7 @@ class AgentHandler:
         """
         self.service: AgentService | None = None
 
-    def initialize(self, session_id: str | None, agent: str | None, surface: AgentSurface | None = None):
+    def initialize(self, session_id: str | None, agent: str | None, surface: AgentSurface | None = None, principal: Principal | None = None):
         """Initialize AgentService with session and agent selection.
 
         The availability rule is checked before selecting, so an unservable request fails
@@ -256,15 +256,23 @@ class AgentHandler:
         that surface is refused as an agent this process does not host is, and an unnamed request
         defaults to the first agent that is on it.
 
+        With an ``authorization`` block the access gate is asked for the request's principal here
+        too, so a caller that may not have the agent is refused before a session is loaded.
+        ``Runtime`` asks again when the run starts.
+
         :param session_id: Session identifier for the agent
         :param agent: Optional agent name/identifier to select
         :param surface: The surface the request entered by, or None for a request no surface governs
+        :param principal: Who the request acts as, for the access gate; None is the anonymous principal
         :return: None
-        :raises AgentNotFoundError: If the request names an agent this process does not host, or one kept off its surface
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept
+            off its surface, or one its principal may not see
+        :raises PermissionError: If the principal may see the agent and holds no level on it
         :raises ValueError: If the request names no agent and this process hosts none on its surface
+            that the principal may see
         """
         self.service = AgentService()
-        self.service.ensure_agent_available(agent, hosted=True, surface=surface)
+        self.service.ensure_agent_available(agent, principal, hosted=True, surface=surface)
         self.service.select(session_id, agent, surface=surface)
 
     @staticmethod
@@ -447,7 +455,9 @@ class ChatService:
         self._log = logging.getLogger("ak.chatservice")
         self.rest_api_mode = rest_api_mode
 
-    def prepare_agent_handler(self, session_id: str | None, agent: str | None, surface: AgentSurface | None = None) -> AgentHandler:
+    def prepare_agent_handler(
+        self, session_id: str | None, agent: str | None, surface: AgentSurface | None = None, principal: Principal | None = None
+    ) -> AgentHandler:
         """Select the agent and load the session, without running.
 
         Surfaces that need the session object between load and run — AG-UI writes
@@ -458,12 +468,16 @@ class ChatService:
         :param agent: Agent name to select, or None for the default agent.
         :param surface: The surface the request entered by (a request's ``surface``), or None for
                         a request no surface governs. Only an agent on it is selected.
+        :param principal: Who the request acts as (a request's ``principal``), for the access gate;
+                        None is the anonymous principal. Pass the principal the run will be given.
         :return: The initialized AgentHandler holding the selected agent and session.
-        :raises AgentNotFoundError: If the request names an agent this process does not host, or one kept off its surface.
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept
+                        off its surface, or one its principal may not see.
+        :raises PermissionError: If the principal may see the agent and holds no level on it.
         :raises ValueError: If the request names no agent and this process hosts none on its surface.
         """
         handler = AgentHandler()
-        handler.initialize(session_id, agent, surface=surface)
+        handler.initialize(session_id, agent, surface=surface, principal=principal)
         return handler
 
     async def execute(self, req: BaseChatRequest, requests: list[AgentRequest] | None = None) -> tuple[AgentReply, str | None]:
@@ -477,7 +491,9 @@ class ChatService:
                          skipped and prompt is optional; the list must be non-empty.
         :return: Tuple of (typed agent reply, response session id)
         :raises ValueError: If validation fails, or the request names no agent and none is available
-        :raises AgentNotFoundError: If the request names an agent this process does not host, or one kept off its surface
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept off its surface,
+            or one its principal may not see
+        :raises PermissionError: If the access gate refuses the principal an agent it may see
         """
         self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
@@ -485,7 +501,7 @@ class ChatService:
             return scheduled, req.session_id
         self._record_trigger(req)
         requests = await self._prepare_async(req, requests)
-        handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface)
+        handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface, principal=req.principal)
         result = await handler.run_async(requests, principal=req.principal)
         return result, handler.get_response_session_id(req.session_id)
 
@@ -496,7 +512,9 @@ class ChatService:
         :param requests: Optional prebuilt AgentRequest list (see execute())
         :return: Tuple of (typed agent reply, response session id)
         :raises ValueError: If validation fails, or the request names no agent and none is available
-        :raises AgentNotFoundError: If the request names an agent this process does not host, or one kept off its surface
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept off its surface,
+            or one its principal may not see
+        :raises PermissionError: If the access gate refuses the principal an agent it may see
         """
         self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
@@ -504,7 +522,7 @@ class ChatService:
             return scheduled, req.session_id
         self._record_trigger(req)
         requests = self._prepare_sync(req, requests)
-        handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface)
+        handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface, principal=req.principal)
         result = handler.run_sync(requests, principal=req.principal)
         return result, handler.get_response_session_id(req.session_id)
 
@@ -519,7 +537,9 @@ class ChatService:
         :param requests: Optional prebuilt AgentRequest list (see execute())
         :return: Async generator yielding raw StreamChunk objects
         :raises ValueError: If validation fails, or the request names no agent and none is available
-        :raises AgentNotFoundError: If the request names an agent this process does not host, or one kept off its surface
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept off its surface,
+            or one its principal may not see
+        :raises PermissionError: If the access gate refuses the principal an agent it may see
         """
         self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
@@ -527,7 +547,7 @@ class ChatService:
             return self._acknowledgement_stream(scheduled)
         self._record_trigger(req)
         requests = await self._prepare_async(req, requests)
-        handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface)
+        handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface, principal=req.principal)
 
         async def _stream() -> AsyncGenerator[StreamChunk, None]:
             try:
@@ -549,7 +569,9 @@ class ChatService:
         :param requests: Optional prebuilt AgentRequest list (see execute())
         :return: Generator yielding raw StreamChunk objects
         :raises ValueError: If validation fails, or the request names no agent and none is available
-        :raises AgentNotFoundError: If the request names an agent this process does not host, or one kept off its surface
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept off its surface,
+            or one its principal may not see
+        :raises PermissionError: If the access gate refuses the principal an agent it may see
         """
         self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
@@ -557,7 +579,7 @@ class ChatService:
             return self._acknowledgement_stream_sync(scheduled)
         self._record_trigger(req)
         requests = self._prepare_sync(req, requests)
-        handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface)
+        handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface, principal=req.principal)
 
         def _stream() -> Generator[StreamChunk, None, None]:
             with contextlib.closing(handler.run_stream_sync(requests, principal=req.principal)) as chunks:
@@ -768,7 +790,9 @@ class ChatService:
                            When False, yield raw StreamChunk JSON payloads.
         :return: Async generator yielding StreamChunk payloads as JSON or SSE-formatted strings
         :raises ValueError: If session_id or prompt is missing, or the request names no agent and none is available
-        :raises AgentNotFoundError: If the request names an agent this process does not host, or one kept off its surface
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept off its surface,
+            or one its principal may not see
+        :raises PermissionError: If the access gate refuses the principal an agent it may see
         """
         session_id = req.session_id
         chunks = await self.execute_stream(req)
@@ -801,7 +825,9 @@ class ChatService:
         :param requests: Optional prebuilt AgentRequest list (see execute_stream_sync())
         :return: Generator yielding StreamChunk payloads as JSON or SSE-formatted strings
         :raises ValueError: If session_id or prompt is missing, or the request names no agent and none is available
-        :raises AgentNotFoundError: If the request names an agent this process does not host, or one kept off its surface
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept off its surface,
+            or one its principal may not see
+        :raises PermissionError: If the access gate refuses the principal an agent it may see
         """
         session_id = req.session_id
         chunks = self.execute_stream_sync(req, requests)

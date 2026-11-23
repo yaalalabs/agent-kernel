@@ -24,7 +24,7 @@ from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
 from ...core import Config
 from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
 from ...core.event import RunPaused
-from ...core.model import AgentPausedReplyAny, AgentSurface, BaseChatRequest, BaseRunRequest, ChatRunRequest, StreamChunk
+from ...core.model import AgentPausedReplyAny, AgentSurface, BaseChatRequest, BaseRunRequest, ChatRunRequest, Principal, StreamChunk
 from ...core.registry import AgentNotFoundError
 from ...core.service import AgentService
 from ...pipeline.envelope import ATTR_THREAD
@@ -145,7 +145,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         """
         try:
             self._validate_chat_request(req)
-            self._check_agent_available(req.agent, req.surface)
+            self._check_agent_available(req.agent, req.surface, req.principal)
             if req.schedule is not None:
                 # A deferred request produces no conversation: the thread and its messages are
                 # recorded when an occurrence actually runs, not when the schedule is created.
@@ -189,7 +189,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         :raises AgentNotFoundError: If the request names an agent this process does not host
         """
         self._validate_chat_request(req)
-        self._check_agent_available(req.agent, req.surface)
+        self._check_agent_available(req.agent, req.surface, req.principal)
         if req.schedule is not None:
             return self._acknowledgement_frames(await self.chat_service.execute_stream(req), req.session_id)
         requests = await RequestBuilder.from_base_request_async(req)
@@ -256,7 +256,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             raise ValueError("No prompt provided in the request")
 
     @staticmethod
-    def _check_agent_available(name: str | None, surface: AgentSurface | None = None) -> None:
+    def _check_agent_available(name: str | None, surface: AgentSurface | None = None, principal: Principal | None = None) -> None:
         """Agent-availability precheck before any thread write, keeping a missing agent
         from leaving a phantom thread with an unanswered user message. The rule itself is
         shared with the other commit-before-running surfaces (AgentService.ensure_agent_available).
@@ -264,14 +264,17 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         This handler runs the agent in its own process, so the agent must be hosted here: one a
         shared registry knows from another process would pass a registry-wide check, have its user
         message recorded, and then fail to be selected. An agent kept off the request's surface is
-        refused the same way, and for the same reason.
+        refused the same way, and for the same reason, and so is one the access gate refuses the caller.
 
         :param name: The requested agent name, or None for the default agent
         :param surface: The surface the request entered by
-        :raises AgentNotFoundError: If the request names an agent this process does not host, or one kept off its surface
+        :param principal: The caller, for the access gate
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept off its
+            surface, or one the caller may not see
+        :raises PermissionError: If the caller may see the agent and holds no level on it
         :raises ValueError: If the request names no agent and this process hosts none on its surface
         """
-        AgentService.ensure_agent_available(name, hosted=True, surface=surface)
+        AgentService.ensure_agent_available(name, principal, hosted=True, surface=surface)
 
 
 class ThreadRequestHandler(RequestHandler):
@@ -366,7 +369,7 @@ class ThreadRequestHandler(RequestHandler):
         """
         try:
             # Off the event loop: for an agent another process hosts this reads the registry's store.
-            await asyncio.to_thread(AgentService.ensure_agent_available, body.agent, surface=body.surface)
+            await asyncio.to_thread(AgentService.ensure_agent_available, body.agent, body.principal, surface=body.surface)
             requests = await RequestBuilder.from_base_request_async(body)
             requests, _ = self._recorder.pre_run(body, requests)
         except ValueError as e:

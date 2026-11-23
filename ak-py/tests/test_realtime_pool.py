@@ -1079,6 +1079,17 @@ class TestRealtimeEndSession:
         assert pool.get_connection("s1") is None
         assert chat_service.prepare_agent_handler.call_count == 1
 
+    def test_the_agent_check_of_a_new_connection_is_made_for_the_inputs_principal(self, pool):
+        """With an authorization block the access gate decides for the caller of the first input, not for nobody
+        (#603, iteration 18)."""
+        chat_service = self._chat_service()
+        caller = Principal(subject="caller-1", provider="realtime:livekit", namespace="lk-project")
+        body = BaseRunRequest(prompt="", session_id="s1", requests=[AgentRequestText(prompt="hi")], principal=caller)
+
+        pool.dispatch(body, "r1", None, {}, chat_service)
+
+        chat_service.prepare_agent_handler.assert_called_once_with("s1", None, principal=caller)
+
     def test_the_control_for_a_session_with_no_connection_creates_none(self, pool):
         chat_service = self._chat_service()
 
@@ -1545,7 +1556,7 @@ class TestCloseBarrier:
     def _chat_service():
         from unittest.mock import MagicMock
 
-        def prepare(session_id, agent):
+        def prepare(session_id, agent, principal=None):
             return types.SimpleNamespace(
                 service=types.SimpleNamespace(
                     agent=_Agent(realtime_runner_cls=_SlowCloseAdapter), runtime=Runtime(InMemorySessionStore()), session=Session(session_id)

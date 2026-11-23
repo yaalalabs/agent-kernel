@@ -394,9 +394,9 @@ class TestAgentResolution:
         prepared_with = []
         prepare = ChatService.prepare_agent_handler
 
-        def _spy(self, session_id, agent, surface=None):
+        def _spy(self, session_id, agent, surface=None, principal=None):
             prepared_with.append(surface)
-            return prepare(self, session_id, agent, surface=surface)
+            return prepare(self, session_id, agent, surface=surface, principal=principal)
 
         monkeypatch.setattr(ChatService, "prepare_agent_handler", _spy)
         agui_only = _RegistryConfig(agents={"assistant": {"surfaces": ["agui"]}})
@@ -406,6 +406,16 @@ class TestAgentResolution:
             assert types_of(response)[-1] == "RUN_FINISHED"
 
         assert prepared_with == ["agui"]
+
+    def test_with_authorization_the_run_is_prepared_for_the_caller_not_for_nobody(self, monkeypatch, authorization):
+        """The handler hands the caller's principal to the pre-run check, so a caller the policy names is served
+        (#603, iteration 18). Checked as nobody, it would be refused an agent only it is granted."""
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)]) as (client, _):
+            authorization(grants=[{"subjects": ["group:ops"], "agents": ["assistant"], "level": "read"}])
+            response = client.post("/agui/assistant", headers=AUTH, json=body())
+
+            assert response.status_code == 200
+            assert types_of(response)[-1] == "RUN_FINISHED"
 
     def test_a_non_streaming_agent_is_400_naming_its_framework(self, monkeypatch):
         """A live path from day one for any app with a CrewAI or smolagents agent, so the message

@@ -109,7 +109,7 @@ class AgentRunner:
         request_id = self._resolve_request_metadata(message, body)
         self._log.info(f"[AGUI AGENT START] request_id={request_id}, session_id={body.session_id} (receive_count={message.receive_count})")
 
-        handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent, surface=body.surface)
+        handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent, surface=body.surface, principal=body.principal)
         session = handler.service.session if handler.service is not None else None
         if session is None:
             # The edge already resolved this agent, so the two resolution paths disagree.

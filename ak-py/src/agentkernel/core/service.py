@@ -48,7 +48,9 @@ class AgentService:
         self._session = None
 
     @staticmethod
-    def ensure_agent_available(name: str | None, *, hosted: bool = False, surface: AgentSurface | None = None) -> None:
+    def ensure_agent_available(
+        name: str | None, principal: Principal | None = None, *, hosted: bool = False, surface: AgentSurface | None = None
+    ) -> None:
         """
         Checks that a request naming ``name`` could be served, without selecting anything.
 
@@ -84,6 +86,14 @@ class AgentService:
         applies the surface to its own agents, and reading every descriptor here to second-guess
         it would list the whole store on each request that names no agent.
 
+        With an ``authorization`` block the access gate is asked last, for ``principal``: the agent
+        must be one the principal holds a level on. One it may see and not use is a
+        ``PermissionError`` (a 403); one it may not see is the same ``AgentNotFoundError`` an
+        unknown agent gets. A caller that passes no principal is asked about as the anonymous one,
+        which is what the run would be. For a request naming no agent the gate is asked only in the
+        ``hosted`` form, where the default is known, and a default the principal may not see is
+        ``No agent available``: the request gave no name, and the answer gives none away.
+
         For an agent that is not hosted here this reads the registry's store (one read for a named
         agent, the registry's emptiness check for an unnamed request), so an ``async`` caller over
         a shared registry runs it off the event loop.
@@ -94,9 +104,12 @@ class AgentService:
         is kept here, next to select(), because it is select()'s rule.
 
         :param name: Name of the requested agent, or None for the default agent.
+        :param principal: Who the request acts as, for the access gate; None is the anonymous principal.
         :param hosted: Whether the agent must be hosted by this process, not merely known to the registry.
         :param surface: The surface the request entered by, or None for a request no surface governs.
-        :raises AgentNotFoundError: If the request names an agent that is not available.
+        :raises AgentNotFoundError: If the request names an agent that is not available, or one the
+            principal may not see.
+        :raises PermissionError: If the principal may see the agent and holds no level on it.
         :raises ValueError: If the request names no agent and there is none to default to.
         """
         registry = Runtime.current().registry
@@ -109,9 +122,43 @@ class AgentService:
                 descriptor = None if hosted else registry.descriptor(name)
             if descriptor is None or not AgentService._serves(descriptor, surface):
                 raise AgentNotFoundError(name)
-        elif not any(AgentService._serves(agent.descriptor, surface) for agent in registry.agents().values()):
+            AgentService._authorize(principal, descriptor)
+            return
+        default = AgentService._default_agent(registry.agents(), surface)
+        if default is None:
             if hosted or registry.is_empty():
                 raise ValueError("No agent available")
+        elif hosted:
+            try:
+                AgentService._authorize(principal, default.descriptor)
+            except AgentNotFoundError:
+                # The request named no agent: a default it may not see is, to this caller, no default at all.
+                raise ValueError("No agent available") from None
+
+    @staticmethod
+    def _authorize(principal: Principal | None, descriptor: AgentDescriptor) -> None:
+        """
+        Asks the access gate whether a principal may use an agent; a no-op without an ``authorization`` block.
+
+        :param principal: Who the request acts as; None is the anonymous principal.
+        :param descriptor: The descriptor of the agent the request would run.
+        :raises AgentNotFoundError: If the principal may not see the agent.
+        :raises PermissionError: If the principal may see the agent and holds no level on it.
+        """
+        gate = Runtime.access_gate()
+        if gate is not None:
+            gate.authorize_agent(principal or Principal.anonymous(), descriptor.id, descriptor=descriptor)
+
+    @staticmethod
+    def _default_agent(agents: dict[str, Agent], surface: AgentSurface | None) -> Agent | None:
+        """
+        Returns the agent a request naming none runs: the first hosted agent served on the request's surface.
+
+        :param agents: The agents this process hosts, in registration order.
+        :param surface: The surface the request entered by, or None for a request no surface governs.
+        :return: The default agent, or None when no hosted agent is on the surface.
+        """
+        return next((agent for agent in agents.values() if AgentService._serves(agent.descriptor, surface)), None)
 
     @staticmethod
     def _serves(descriptor: AgentDescriptor, surface: AgentSurface | None) -> bool:
@@ -144,7 +191,7 @@ class AgentService:
                 self._log.warning(f"No agent found with name '{name}'")
         else:
             self._log.info("No agent was requested. Defaulting to first agent in the list")
-            self._agent = next((agent for agent in self._runtime.agents().values() if self._serves(agent.descriptor, surface)), None)
+            self._agent = self._default_agent(self._runtime.agents(), surface)
             if self._agent:
                 self._log.info(f"Selected agent: {self._agent.name}")
             else:

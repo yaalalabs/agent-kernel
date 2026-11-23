@@ -133,10 +133,12 @@ class _FakeChatService:
         self._handler = _FakeHandler(session, chunks, during_run)
         self.prepared = []
         self.surfaces = []
+        self.principals = []
 
-    def prepare_agent_handler(self, session_id, agent, surface=None):
+    def prepare_agent_handler(self, session_id, agent, surface=None, principal=None):
         self.prepared.append((session_id, agent))
         self.surfaces.append(surface)
+        self.principals.append(principal)
         return self._handler
 
 
@@ -256,6 +258,19 @@ class TestTheRunnerAppliesTheSurfaceTheBodyCarries:
         AgentRunner(transport=transport, chat_service=chat_service).process(message)
 
         assert (chat_service.prepared, chat_service.surfaces) == ([("t-1", "planner")], [surface])
+
+    @pytest.mark.parametrize("principal", [PRINCIPAL, None], ids=["authenticated", "nobody"])
+    def test_the_agent_is_checked_for_the_principal_the_body_carries(self, principal):
+        """The access gate is asked at the pre-run check for whoever the run will act as (#603, iteration 18)."""
+        transport = InMemoryTransport()
+        chat_service = _FakeChatService(Session("t-1"), _text_run())
+        body = AGUIRunRequest(session_id="t-1", agent="planner", requests=[], principal=principal)
+        message = _agui_message()
+        message.body = body.model_dump_json(exclude_none=True)
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(message)
+
+        assert chat_service.principals == [principal]
 
 
 class TestTheMarkerSurvivesTheRunnerHop:

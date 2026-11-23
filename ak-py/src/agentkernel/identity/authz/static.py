@@ -7,13 +7,14 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ValidationError
 
-from ...core.config import _GrantConfig, _ToolPolicyConfig
+from ...core.config import AKConfig, _GrantConfig, _ToolPolicyConfig
 from ...core.model import AccessLevel, AgentDescriptor, Principal
 from ...core.tool import SystemToolFactory
 from ...core.util.factory import AKConfigError
 from .base import Authorizer, Decision
 
 if TYPE_CHECKING:
+    from ...core.base import Agent
     from ...core.config import _AuthorizationConfig
 
 
@@ -170,16 +171,22 @@ class ToolPolicyTable(_PolicyTable):
             second policy for an agent: which allow-list would then apply is not something to guess at.
         """
         self._by_agent: dict[str, _ToolPolicyConfig] = {}
+        self._where: dict[str, str] = {}
         for index, entry in enumerate(policies):
             where = f"authorization.static.tools[{index}]"
             policy = self._entry(entry, _ToolPolicyConfig, where, "tool policy")
             if policy.agent in self._by_agent:
                 raise AKConfigError(f"{where} is a second tool policy for agent '{policy.agent}'; merge it into the first")
             self._by_agent[policy.agent] = policy
+            self._where[policy.agent] = where
 
     def for_agent(self, agent_id: str) -> _ToolPolicyConfig | None:
         """Return the policy of an agent, or None when the configuration states none for it."""
         return self._by_agent.get(agent_id)
+
+    def where(self, agent_id: str) -> str:
+        """Return the setting an agent's policy was read from, for an error that names it."""
+        return self._where[agent_id]
 
 
 class StaticAuthorizer(Authorizer):
@@ -204,6 +211,7 @@ class StaticAuthorizer(Authorizer):
         tools: Iterable[Any],
         descriptor_lookup: Callable[[], list[AgentDescriptor]],
         system_tiers: Callable[[str], Mapping[str, AccessLevel]] | None = None,
+        roles_mapped: Callable[[], bool] | None = None,
     ):
         """
         :param grants: The ``authorization.static.grants`` entries, as configuration models or mappings.
@@ -212,12 +220,15 @@ class StaticAuthorizer(Authorizer):
             resolved against.
         :param system_tiers: Returns, for an agent id, the tier each of Agent Kernel's own tools on that
             agent declares, by tool name. Omitted, no tool declares a tier.
+        :param roles_mapped: Returns whether a role mapper is configured, which ``validate`` asks before it
+            warns about a ``role:`` subject. Omitted, it is not known and no such warning is made.
         :raises AKConfigError: If a grant or a tool policy cannot be used.
         """
         self._grants = GrantTable(grants)
         self._policies = ToolPolicyTable(tools)
         self._descriptor_lookup = descriptor_lookup
         self._system_tiers = system_tiers
+        self._roles_mapped = roles_mapped
         if not len(self._grants):
             self._log.warning(
                 "authorization.static.grants is empty: every agent is denied to every principal. "
@@ -230,6 +241,7 @@ class StaticAuthorizer(Authorizer):
         config: "_AuthorizationConfig",
         descriptor_lookup: Callable[[], list[AgentDescriptor]] | None = None,
         system_tiers: Callable[[str], Mapping[str, AccessLevel]] | None = None,
+        roles_mapped: Callable[[], bool] | None = None,
     ) -> "StaticAuthorizer":
         """Build the authorizer from an ``authorization`` block of type ``static``.
 
@@ -238,6 +250,7 @@ class StaticAuthorizer(Authorizer):
             runtime is current when a decision needs it, when omitted.
         :param system_tiers: The tiers Agent Kernel's own tools declare, by agent id; those of the system
             tools the configuration attaches to the agent, when omitted.
+        :param roles_mapped: Whether a role mapper is configured; read from the ``identity`` block when omitted.
         :return: The authorizer.
         :raises AKConfigError: If the block has no ``static`` section, or as the constructor.
         """
@@ -248,6 +261,7 @@ class StaticAuthorizer(Authorizer):
             tools=config.static.tools,
             descriptor_lookup=descriptor_lookup if descriptor_lookup is not None else cls._registry_descriptors,
             system_tiers=system_tiers if system_tiers is not None else cls._system_tool_tiers,
+            roles_mapped=roles_mapped if roles_mapped is not None else cls._role_mapper_configured,
         )
 
     @staticmethod
@@ -266,6 +280,78 @@ class StaticAuthorizer(Authorizer):
         process does not host as well, as long as both processes read the same configuration.
         """
         return {tool.name: tool.tier for tool in SystemToolFactory.get_all(agent_id)}
+
+    @staticmethod
+    def _role_mapper_configured() -> bool:
+        """Whether the ``identity`` block configures a role mapper, the one producer of roles for most providers."""
+        identity = AKConfig.get().identity
+        return identity is not None and identity.role_mapper is not None
+
+    def validate(self, agents: Iterable["Agent"], descriptors: Iterable[AgentDescriptor] | None = None) -> list[str]:
+        """Compare the policy with the agents being served.
+
+        A tool policy that names a tool its agent does not have is refused: a misspelt ``deny`` would deny
+        nothing and a misspelt ``tiers`` entry would leave the tool at ``read``. A policy for an agent that is
+        not among ``agents`` is left alone, since the process that hosts the agent is the one that can check it.
+
+        What only matches nothing is a finding: a ``role:`` subject while no role mapper is configured, and,
+        when ``descriptors`` is given, a grant naming an agent id or a ``tag:`` no descriptor carries (the
+        agent may be hosted by another process, or not be deployed yet).
+
+        :param agents: The hosted agents to check the tool policies against.
+        :param descriptors: Every descriptor the registry knows; None skips the findings that need them all.
+        :return: The findings, in the order of the grants.
+        :raises AKConfigError: Naming the tool policy, for an entry naming a tool its agent does not have.
+        """
+        for agent in agents:
+            self._check_tool_policy(agent)
+        known = None if descriptors is None else list(descriptors)
+        roles_mapped = self._roles_mapped() if self._roles_mapped is not None else True
+        findings: list[str] = []
+        for index, grant in enumerate(self._grants.grants):
+            where = f"authorization.static.grants[{index}]"
+            if not roles_mapped:
+                findings.extend(
+                    f"{where} names '{form}' but no identity.role_mapper is configured: only a principal whose provider "
+                    "sets roles itself holds one"
+                    for form in grant.subjects
+                    if form.startswith("role:")
+                )
+            if known is not None:
+                findings.extend(self._unmatched(where, grant, known))
+        return findings
+
+    def _check_tool_policy(self, agent: "Agent") -> None:
+        """Refuse the tool policy of a hosted agent when it names a tool the agent does not report."""
+        agent_id = agent.descriptor.id
+        policy = self._policies.for_agent(agent_id)
+        if policy is None:
+            return
+        has = set(agent.get_tool_names())
+        named = {"allow": policy.allow or [], "deny": policy.deny, "tiers": policy.tiers}
+        problems = [f"{setting} {unknown}" for setting, entries in named.items() if (unknown := sorted(set(entries) - has))]
+        if problems:
+            raise AKConfigError(
+                f"{self._policies.where(agent_id)} names tools agent '{agent_id}' does not have: {'; '.join(problems)}. "
+                f"The agent has {sorted(has)}"
+            )
+
+    @staticmethod
+    def _unmatched(where: str, grant: _GrantConfig, known: list[AgentDescriptor]) -> list[str]:
+        """The agent entries of a grant that match no known descriptor, each as a finding."""
+        ids = {descriptor.id for descriptor in known}
+        tags = {tag for descriptor in known for tag in descriptor.tags}
+        findings = []
+        for entry in grant.agents:
+            if entry == GrantTable.ANY_AGENT:
+                continue
+            if entry.startswith(GrantTable.TAG):
+                tag = entry[len(GrantTable.TAG) :]
+                if tag not in tags:
+                    findings.append(f"{where} names tag '{tag}', which no registered agent carries: it grants nothing until one does")
+            elif entry not in ids:
+                findings.append(f"{where} names agent '{entry}', which is not registered: it grants nothing unless another process hosts the agent")
+        return findings
 
     async def agent_level(self, principal: Principal, agent_id: str) -> AccessLevel | None:
         held = self._grants.held_by(principal)

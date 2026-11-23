@@ -1,11 +1,15 @@
 """The Authorizer seam: what a principal may do with an agent and with each of its tools."""
 
 from abc import ABC, abstractmethod
-from typing import ClassVar
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
-from ...core.model import AccessLevel, Principal
+from ...core.model import AccessLevel, AgentDescriptor, Principal
+
+if TYPE_CHECKING:
+    from ...core.base import Agent
 
 
 class Decision(BaseModel):
@@ -42,6 +46,11 @@ class Authorizer(ABC):
     An authorizer reads no configuration in its methods. The factory builds it from the ``authorization``
     block alone: a built-in backend from the section named after it, a bring-your-own one by handing the
     whole block to its constructor. Building it raises ``AKConfigError`` when its settings cannot be used.
+
+    One instance serves the whole process and may be awaited on more than one event loop: the server's, for
+    a run, and a short-lived one when a synchronous caller asks from inside a coroutine (the access gate
+    drives the question on a thread of its own). A backend that talks to an engine therefore does not bind a
+    connection to the loop it was first awaited on.
     """
 
     capabilities: ClassVar[AuthorizerCapabilities] = AuthorizerCapabilities()
@@ -85,3 +94,19 @@ class Authorizer(ABC):
         :return: The ids ``agent_level`` answers with a level for.
         """
         return [agent_id for agent_id in candidates if await self.agent_level(principal, agent_id) is not None]
+
+    def validate(self, agents: Iterable["Agent"], descriptors: Iterable[AgentDescriptor] | None = None) -> list[str]:
+        """Compare the policy with the agents a process is about to serve, when it starts serving them.
+
+        The access gate calls this as agents load. The default finds nothing, which is right for a backend
+        whose policy lives in an engine it cannot read back. A backend that holds its policy overrides it:
+        what cannot work for a hosted agent is an error, so the process does not start on a policy that
+        silently protects nothing, and what merely matches nothing yet is a finding to warn about.
+
+        :param agents: The agents this process hosts that are being checked.
+        :param descriptors: Every descriptor the registry knows, for the findings that need all of them; None
+            when not every agent has registered yet, and those findings are left out.
+        :return: The findings worth a warning, each a full sentence naming the setting; the gate logs each once.
+        :raises AKConfigError: If the policy cannot work for one of the agents.
+        """
+        return []

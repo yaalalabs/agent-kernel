@@ -419,7 +419,9 @@ class RealtimeConnectionPool:
         if conn is None:
             # Before the load: the session the previous call stored must be the one this call starts from.
             self._wait_for_close(body.session_id)
-            handler = chat_service.prepare_agent_handler(body.session_id, body.agent)
+            # The agent check is made for the caller of this input: with an authorization block the access
+            # gate would otherwise decide for nobody.
+            handler = chat_service.prepare_agent_handler(body.session_id, body.agent, principal=body.principal)
             conn = self.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session, **delivery)
 
         conn.update_delivery_context(**delivery)

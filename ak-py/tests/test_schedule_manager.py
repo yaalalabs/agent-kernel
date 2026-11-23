@@ -342,6 +342,27 @@ class TestCreation:
 
         assert "surface" not in json.loads(provider.created[0][1])
 
+    def test_with_authorization_a_task_is_created_only_for_an_agent_its_owner_may_use(self, manager, store, authorization, surface_agent):
+        """The owner's principal is what the access gate decides on (#603, iteration 18): a task every occurrence of
+        which would be refused is not armed. An agent the owner may not see is the unknown agent's error."""
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        authorization(grants=[{"subjects": ["user:u1"], "agents": ["assistant"], "level": "read"}])
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("assistant"))
+        status = surface_agent("status")
+        status._set_descriptor(status.descriptor.model_copy(update={"visibility": "public"}))
+        runtime.register(status)
+
+        with runtime:
+            task = _create(manager, agent="assistant")
+            with pytest.raises(AgentNotFoundError, match="^Agent 'assistant' not found$"):
+                _create(manager, agent="assistant", principal=_principal("u2"))
+            with pytest.raises(PermissionError, match="^Principal 'u2' holds no level on agent 'status'$"):
+                _create(manager, agent="status", principal=_principal("u2"))
+
+        assert [stored.task_id for stored in store.list()[0]] == [task.task_id]
+
     def test_creation_without_an_agent_name_is_not_prechecked(self, manager, provider):
         # The default agent is resolved by whichever process fires the occurrence, which is not
         # necessarily this one, so an unnamed agent is left to run time.

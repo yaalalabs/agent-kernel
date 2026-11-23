@@ -257,7 +257,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         principal, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
 
-        handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name, surface="agui")
+        handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name, surface="agui", principal=principal)
         session = handler.service.session if handler.service is not None else None
         if session is None:
             self._log.error(f"Agent '{agent_name}' was resolved but AgentService could not select it, so no session was created.")

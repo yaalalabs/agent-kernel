@@ -280,3 +280,32 @@ def kept_off_rest(surface_agent):
     runtime.register(surface_agent("internal", ["a2a"]))
     runtime.register(surface_agent("public"))
     return runtime
+
+
+@pytest.fixture
+def authorization(monkeypatch):
+    """Returns a function that installs an ``authorization`` block of type ``static`` on the live configuration (#603).
+
+    ``authorization(grants=[...], tools=[...])`` puts the block where ``AuthorizerFactory`` and the access gate
+    read it, so everything from the gate down runs as it does in a configured process: the real factory, the real
+    static backend with the lookups it supplies itself, the real gate. The shared authorizer and gate are dropped
+    before and after, and the block is removed when the test ends. A test that replaces or resets ``AKConfig``
+    calls it afterwards.
+    """
+    from agentkernel.core.config import AKConfig, _AuthorizationConfig
+    from agentkernel.identity.authz.factory import AuthorizerFactory
+    from agentkernel.identity.authz.gate import AccessGate
+
+    def _forget() -> None:
+        AuthorizerFactory.reset()
+        AccessGate.reset()
+
+    def _install(grants=(), tools=()):
+        block = _AuthorizationConfig.model_validate({"type": "static", "static": {"grants": list(grants), "tools": list(tools)}})
+        monkeypatch.setattr(AKConfig.get(), "authorization", block)
+        _forget()
+        return block
+
+    _forget()
+    yield _install
+    _forget()

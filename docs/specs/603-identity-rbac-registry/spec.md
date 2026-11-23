@@ -13,7 +13,7 @@ Evidence is cited against `feature/603-identity-rbac-registry` at `d9d0d18bc` (a
 over the develop merge `287ec7485`; every `.py` cited is identical in both). The change ships as a
 breaking change with no compatibility window (design section 10).
 
-Fifteen places where detailing refined the design are listed in [Design refinements](#design-refinements)
+Sixteen places where detailing refined the design are listed in [Design refinements](#design-refinements)
 at the end; each is a mechanism change inside a settled decision, not a new decision, and each is
 reflected in `design.md`.
 
@@ -172,7 +172,10 @@ class AgentDescriptor(BaseModel):
   (`core/multimodal/tools.py:89-101`), the OKF read tools (`knowledgebase/okf/tools.py:55`),
   `get_agui_state`, `get_forwarded_props`, `get_agui_context` (`integration/agui/state.py:198-212`)
   `READ`; `write_kb` and `update_agui_state` `WRITE`. `AnalyzeAttachmentsTool` declares it as a
-  field default like its other fields.
+  field default like its other fields. Declared in iteration 18. Every sandbox tool is `WRITE`,
+  the ones that only read a sandbox included (`read_sandbox_file`, `check_sandbox_task`,
+  `list_sandbox_sessions`), and so are `list_schedules` and `get_schedule`: they are of use only
+  to a principal that may run code or create a task. A policy's `tiers` entry lowers one.
 - `BaseChatRequest` (`core/model.py:408-431`): `user_id` (line 427) is **removed**;
   `principal: Optional[Principal] = None` is **added** with the docstring rule "assigned by the
   surface after authentication; a value arriving from a client is overwritten, never read".
@@ -301,6 +304,17 @@ Sequence inside `async with session:` (replacing `core/runtime.py:394-430` and `
 
 - The gate check runs before `_prepare_requests`, so an unauthorized principal never reaches a
   pre-hook or a guardrail call.
+- As built (iteration 18): steps 2 to 4 are `Runtime._admit(agent, session, principal)`, awaited
+  first inside `async with session:`; with no gate it is the publication alone. The gate is
+  reached through `Runtime.access_gate()`, the enabled-check `core` uses: it returns `None`
+  without reading anything of `identity/` when the configuration has no `authorization` block.
+  `_admit` awaits the gate's `async` forms and hands `authorize_agent` the descriptor of the
+  agent it was given (`descriptor=agent.descriptor`), so the decision does not depend on that
+  agent being registered in whichever runtime is current, and hands `tool_filter` the level it
+  just resolved. `_publish(agent, session, principal, tool_filter=None)` stays synchronous for
+  the realtime connection, which publishes each input's principal with no filter until
+  iteration 23. In `stream` an `AgentNotFoundError` from the gate (an agent the principal may
+  not see) is the same single error chunk as a `PermissionError`.
 - `_validate_resume` (`core/runtime.py:273-332`) gains an eighth check after the agent-name check
   (line 314): when `record.subject` is set and the run principal is non-anonymous and
   `(record.namespace, record.subject) != (principal.namespace, principal.subject)`, raise
@@ -826,7 +840,22 @@ tools already turn any error into `{"error": ...}` and now carry this text; MCP 
 
 Then, when `AccessGate.get()` is not `None` and a name is given:
 `gate.authorize_agent(principal or Principal.anonymous(), name)`, which raises `PermissionError`
-(no level) or `AgentNotFoundError` (not visible; section 7). `select` (`core/service.py:72-101`)
+(no level) or `AgentNotFoundError` (not visible; section 7). As built in iteration 18: the gate
+is asked last, after the registry and the surface, with the descriptor the check already
+resolved, so an unknown agent, one kept off the surface and one the caller may not see are one
+answer and cost one lookup. A caller that passes no principal is asked about as the anonymous
+one, which is what `Runtime` would run it as: a caller that forgets the principal refuses, it
+does not let through. Every caller in the tree passes the request's principal:
+`AgentHandler.initialize(session_id, agent, surface, principal)` through
+`ChatService.prepare_agent_handler(..., principal=)` (from `execute*` with `req.principal`, from
+the AG-UI handler, the queue runner's AG-UI branch and the realtime pool with theirs), both
+thread handlers, and `ScheduleManager.create` with the task's owner. For a request naming no
+agent the gate is asked only in the `hosted` form, where the default is known (the first hosted
+agent on the surface, `AgentService._default_agent`, which `select` uses too): a default the
+principal may not see is `ValueError("No agent available")` and not the 404 that would name an
+agent the request never did; one it may see and not use is the `PermissionError`. The default
+is not chosen per caller: a principal that cannot use it is refused, although a later agent
+might have served it. `select` (`core/service.py:72-101`)
 still needs the local `Agent`: for an agent the process does not host it selects nothing, and
 the run that follows raises `ValueError("No agent selected...")`. Since iteration 17b it takes
 the same `surface` and follows the check's rule, so the two cannot disagree: a named agent kept
@@ -1110,6 +1139,38 @@ class AccessGate:
   empty, else `AKConfigError(f"authorization is configured but agent '{id}' on {runner} has
   tools Agent Kernel cannot gate: {names}")` (section 9.5 and 9.6 define the method).
 
+As built (iteration 18), where the gate differs from the outline above:
+
+- `authorize_agent(principal, agent_id, descriptor=None)`: a caller that holds the descriptor
+  hands it over (`Runtime`, `ensure_agent_available`); otherwise the hosted agent's own answers,
+  and only an agent hosted elsewhere reads the registry's store (off the loop in the `async`
+  form).
+- `visible` has an `async` twin as well, since it asks the authorizer. `visible_agents` is the
+  authorizer's listing plus the agents a visibility admits, so it agrees with `visible`.
+- `tool_filter(principal, agent, level=None)` takes the level already resolved; a principal with
+  no level has no filter and gets the `PermissionError` of `authorize_agent`.
+- The synchronous forms work from any context. With no event loop running in the thread they go
+  through `run_async_sync`; called from inside a coroutine (`AgentHandler.initialize` under
+  `ChatService.execute`) they run the question to completion on a thread of their own with the
+  caller's context, and the caller waits. An authorizer may therefore be awaited on more than
+  one event loop, and must not bind a connection to the first (stated on `Authorizer`).
+- `authorize_session` matches a shared-channel owner on provider and namespace alone, and a
+  direct-channel owner on namespace and subject. The outline's rule tried namespace and subject
+  first for every owner, which would have let a principal of another provider continue a shared
+  session by carrying the same two strings as the sender who opened it.
+- `validate_configuration(agents, *, registry_wide=True)`. What depends on a backend's policy is
+  asked of the backend through a new hook, `Authorizer.validate(agents, descriptors=None) ->
+  list[str]`, a no-op by default: it raises `AKConfigError` for what cannot work for a hosted
+  agent and returns the findings worth a warning, which the gate logs once each. The static
+  backend implements the three checks named above (the `role:` finding through a `roles_mapped`
+  lookup that `from_config` fills from the `identity` block, like its other two lookups). The
+  gate itself keeps the one check that is about the agent and not the policy: an agent whose
+  `ungated_tool_names()` is not empty is refused, whatever its runner. `Module.load` passes
+  `registry_wide=False`, because a module loaded later has not registered yet and a grant
+  naming one of its agents would be warned about wrongly; the findings that compare the policy
+  with the whole registry are made by the call from `get_router()` (iteration 19). A failed
+  validation rolls the load back like a failed registration.
+
 **`AuthorizerContract`** (`authz/testing.py`): level resolution across the six subject forms,
 highest level wins, `*` and `tag:` agent entries, tier gating, `allow`/`deny` precedence,
 anonymous handling, `provider:` prefix matching, and `visible_agents` equivalence with the
@@ -1140,6 +1201,12 @@ is.
   surface=)`, which `AgentHandler.initialize` hands to the availability check and to `select`
   (iteration 17b; section 6, Availability and Catalog). The queue runner and the AG-UI handlers,
   which prepare the handler themselves, pass the surface the same way.
+- Since iteration 18 the same path carries the principal for the access gate:
+  `prepare_agent_handler(session_id, agent, surface=None, principal=None)` and
+  `AgentHandler.initialize(..., principal=)` hand it to `ensure_agent_available`, and `execute*`
+  pass `req.principal`, so a request its principal may not make is refused before a session is
+  loaded, a stream opened or a schedule registered after it. The check is synchronous; on the
+  `async` paths the gate answers it on a thread of its own (section 7).
 - `_record_trigger` (`core/chat_service.py:572-600`) forwards `req.principal` instead of
   `req.user_id`; `_maybe_schedule` is unchanged (the manager reads `req.principal`, section 8.11).
 - Presentation wrappers (`core/chat_service.py:690-695, 708-713`): a `PermissionError` branch
@@ -1286,7 +1353,9 @@ is.
   (`RealtimeConnection.principal`, None when the input named nobody); on first connect
   `chat_service.prepare_agent_handler` (line 550) runs the agent check through
   `ensure_agent_available(body.agent, body.principal)` once the gate exists (iterations 17 to
-  20). `_execute_tool_and_reply` (`228-252`) wraps `adapter.execute_tool` in
+  20; since iteration 18 the pool passes `principal=body.principal`, so the check is made for
+  the first input's caller, and what iteration 20 adds is how a refusal reaches the edge).
+  `_execute_tool_and_reply` (`228-252`) wraps `adapter.execute_tool` in
   `Runtime._publish(agent, session, principal)` / `session._unpublish_run()`, so the tool sees
   the participant with the agent as actor and the session's owner is recorded as on a turn; the
   tool filter (`gate.tool_filter(principal, agent)`, `ToolFilter.allows(name)` returning the
@@ -1339,7 +1408,10 @@ is.
   `_resolve_run_inputs` runs the resolution through `asyncio.to_thread`. It does not call
   `ensure_agent_available`, whose existence check the one read subsumes; the gate, when it
   lands, is asked here with `AccessGate.authorize_agent` rather than through a second registry
-  read. The direct handler never reads the store here: an agent it does not host is not
+  read (iteration 20). Since iteration 18 the handler hands the caller's principal to
+  `prepare_agent_handler`, so the pre-run check decides for the caller and not for nobody; until
+  the handler's own check lands, a run the gate refuses there is an unmapped error (a 500).
+  The direct handler never reads the store here: an agent it does not host is not
   served (above), so its `_descriptor` returns `None` and the route answers 404. The "could not
   be selected" 500 stays as the guard for a resolved agent whose session cannot be created.
 - `_resolve_run_inputs` (178-201) returns the `Principal`; `_events` passes
@@ -1543,7 +1615,9 @@ is.
   `body.surface = "rest"`, and both prechecks pass it (`_check_agent_available(name, surface)`,
   and `ensure_agent_available(body.agent, surface=body.surface)` at the queue-mode edge), so an
   agent kept off `rest` is refused before the thread is opened (iteration 17b; section 6,
-  Catalog). `ThreadRESTRequestHandler`
+  Catalog). Both prechecks also hand over `body.principal` (iteration 18), so with an
+  `authorization` block the gate's 403 and 404 come before any thread write too.
+  `ThreadRESTRequestHandler`
   (312-384) keeps its 403 and 404 rules with the principal's subject in place of the resolved
   user (351, 368); the listing route's `user_id` query parameter (365) is removed, since every
   listing is the caller's own and a parameter that is always overridden would only mislead
@@ -1559,7 +1633,9 @@ is.
   `create_from_request` (95-111) passes `req.principal or Principal.anonymous()`. Since
   iteration 17b `create` also takes `surface` (`create_from_request` passes `req.surface`) and
   hands it to the named agent's availability check; a schedule tool passes none. The task
-  record and the trigger body carry no surface (section 6, Catalog).
+  record and the trigger body carry no surface (section 6, Catalog). The same check is handed
+  the owner (iteration 18), so with an `authorization` block a task is not created for an agent
+  its owner may not use; the fire-time re-check and skip are iteration 19.
 - `_build_trigger_body` (469-490): `"user_id"` is replaced by `"principal": task.principal`
   (`None` only on a task created before the change, whose frozen body also still carries
   `user_id` and is therefore refused at fire time; such tasks are recreated, not migrated, and
@@ -1951,9 +2027,9 @@ for the two caches and the framework context; public exports other than those na
 | No level on the agent | `AccessGate.authorize_agent` → `PermissionError` | 403 with the message; `StreamChunk(error, done=True)` on a stream; `ToolError("Agent not available")` on MCP; A2A `InternalError` |
 | Agent named in a request is unknown to the registry, or not visible to the caller | `AgentService.ensure_agent_available`, `AccessGate.authorize_agent` → `AgentNotFoundError` | 404 `"Agent '<name>' not found"`, one status and body for both, on REST chat (direct and queued, a request that schedules included), the thread chat routes and AG-UI; `ToolError("Agent not available")` on MCP; `{"error": ...}` from the schedule tools |
 | Agent named in a request is kept off the surface the request entered by | `AgentService.ensure_agent_available(..., surface=)` → `AgentNotFoundError` | The unknown agent's 404 and body on REST chat (direct and queued, a request that schedules included), the thread chat routes before any write, and WebSocket chat |
-| No agent named and the registry knows none, or none hosted here is on the request's surface | `AgentService.ensure_agent_available` → `ValueError` | 400 `"No agent available"` |
+| No agent named and the registry knows none, or none hosted here is on the request's surface, or the default agent is one the caller may not see | `AgentService.ensure_agent_available` → `ValueError` | 400 `"No agent available"` |
 | `surface` sent by a client | `ChatRunRequest` (`INTERNAL_FIELDS`) | 422 naming the field on the FastAPI chat routes; an invalid-request frame on the WebSocket gateway; on the Lambda and ECS entry points, what each answers for the other internal fields (#884) |
-| Session owned by another principal | `authorize_session` → `PermissionError` | 403 at the choke point; thread path 403 before any write |
+| Session owned by another principal | `authorize_session` → `PermissionError` | 403 at the choke point (`Runtime._admit`, after the agent check and before any pre-hook); one error chunk on a stream; thread path 403 before any write |
 | Resume by another subject | `_validate_resume` → `PermissionError` | 403; record kept |
 | Denied tool at call time | adapter gate | a tool result string with the reason; never an exception into the framework; a failure inside the gate denies with `"tool gate failed: <type>"` |
 | `identity.provider` misconfigured (no issuer, missing block, symmetric algorithm) | config validator / provider constructor | `AKConfigError` at startup |
@@ -1969,7 +2045,8 @@ for the two caches and the framework context; public exports other than those na
 | Agent served over A2A with no description | `A2A._build` | one warning per agent at mount; the card carries the neutral `UNDESCRIBED_AGENT_TEXT` |
 | Agent exposed as an MCP tool with no description | `MCP._build` | one warning per agent at build; the tool carries the neutral `UNDESCRIBED_TOOL_TEXT` |
 | A2A, or MCP agent tools, enabled while no known agent is exposed on the surface | `A2A._build`, `MCP._build` | one warning at build naming `registry.agents.<id>.surfaces`; the surface serves nothing |
-| Policy naming an unknown tool on a hosted agent; LangGraph/smolagents ungated tools | `AccessGate.validate_configuration` | `AKConfigError` at `Module.load` / `get_router()` |
+| Policy naming an unknown tool on a hosted agent (`Authorizer.validate`); an agent reporting ungated tools | `AccessGate.validate_configuration` | `AKConfigError` at `Module.load` (the load is rolled back) / `get_router()` |
+| A grant naming an agent id or a `tag:` no descriptor carries; a `role:` subject with no role mapper | `Authorizer.validate` findings, logged by the gate | one warning each; the two that need the whole registry only from the registry-wide check |
 | A key the `authorization` block, its `static` section, a grant or a tool policy does not take | the config model | `AKConfigError` naming `authorization.<key>` for the block (unless `type` is a dotted path); a validation error at load for the section, a grant or a policy |
 | `authorization.type: static` with no `static` section | `_AuthorizationConfig` (`StaticAuthorizer.from_config` for a block built without validation) | `AKConfigError` naming `authorization.static`, at load |
 | A grant or tool policy that cannot be used (unknown subject form, empty `subjects` or `agents`, bare `tag:`, a second policy for an agent) | `GrantTable`, `ToolPolicyTable` | `AKConfigError` naming `authorization.static.grants[<index>]` or `authorization.static.tools[<index>]`, when the authorizer is built |
@@ -2062,6 +2139,25 @@ New files under `ak-py/tests/`:
   shared-channel owner admitting its platform scope and refusing a REST caller, namespace
   mismatch), `validate_configuration` (unknown tool `AKConfigError`, unknown agent and tag
   warnings, `role:` without a mapper warning, the LangGraph and smolagents refusal).
+  As built (iteration 18) it also holds: the shared gate following a rebuilt authorizer; a
+  hosted agent decided with no store read and a descriptor handed in decided with no registry;
+  the synchronous forms answering inside a running event loop; one authorizer listing per
+  `visible_agents`; the level handed to `tool_filter`; `registry_wide=False`; the availability
+  check asking the gate (`TestTheAvailabilityCheckAsksTheGate`: the principal, a missing one
+  read as anonymous, the surface decided first, the default agent in the hosted form);
+  `Module.load` validating and rolling back; and `TestTheConfiguredGate`, over the real factory
+  and the static backend's own lookups (a tier a system tool declares reaching the filter, a
+  policy tier overriding it, the role mapper read from the `identity` block). The gate through
+  each surface that hands it the caller's principal is pinned beside that surface:
+  `test_chat_service_core` (`TestTheGateThroughTheService`: 403, the unknown agent's 404, no
+  session loaded, the default agent), `test_thread_integration` and
+  `test_thread_pipeline_recording` (no thread written, nothing enqueued),
+  `test_schedule_manager` (no task for an agent its owner may not use), `test_agui_handler`,
+  `test_agui_queue_handler` and `test_realtime_pool` (the principal handed to the pre-run
+  check). The declared tiers are pinned in `test_schedule_tools`, `test_sandbox`,
+  `test_agui_state` and `test_knowledgebase_okf_tools`. A shared fixture, `authorization`
+  (`conftest.py`), installs a static block on the live configuration and resets the shared
+  authorizer and gate around the test.
 - `test_session_identity.py`: `ak.` keys refused through `set`, `delete`, `update`, `__setitem__`
   and `__delitem__`; `clear()` keeps them and `_clear_all` does not; `get_principal`,
   `get_tool_filter`, `get_owner` and `ToolContext.access_level` read-only; `access_level` `None`
@@ -2069,7 +2165,10 @@ New files under `ak-py/tests/`:
   drivers); principal never persisted; ownership 403 on a subject or namespace mismatch;
   messaging and realtime exemption; `PausedRunState` writes through the reserved path.
 - `test_runtime_principal.py`: `Runtime.run`/`stream` publishing and unpublishing; the gate order
-  (refused before pre-hooks, nothing stored); the actor chain; the resume subject check as the
+  (refused before pre-hooks, nothing stored; `TestGate`, iteration 18, which also pins the
+  filter per principal, `ToolContext.access_level` read during a run, the single error chunk of
+  a refused stream, the agent decided before the session, and an anonymous resume refused by the
+  session's ownership); the actor chain; the resume subject check as the
   eighth failure mode with the record kept. Realtime publication is pinned in
   `test_realtime_pool.py` (`TestRealtimePrincipal`, `TestDispatchPrincipal`): a native tool reads
   the input's principal with the agent as actor, an anonymous input publishes the anonymous
@@ -2559,3 +2658,23 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    Nothing enforced or documented the block yet, so no configuration in use changes. Weighed
    against it: one more level of YAML for the only backend that ships, and `type: static` beside
    `static:` (section 7; Config changes).
+16. **The access gate, where building it settled the outline** (iteration 18, 2026-11-23). Five
+   points, each written into the section it belongs to.
+   A backend's policy is checked by the backend: `Authorizer.validate(agents, descriptors)` is a
+   hook the gate calls, with the static backend's three checks behind it, where design section 5
+   had the gate read the static policy itself. After refinement 15 the gate knows no backend's
+   settings, and an engine that can read its policy back gets the same startup check.
+   The findings that compare the policy with every registered agent are not made as a module
+   loads (`registry_wide=False`): an application with two modules would be warned, once and
+   wrongly, about the agents of the second. They are made where the registry is complete, at
+   `get_router()` (iteration 19).
+   A shared-channel session is matched on its platform scope alone. The design's rule tried the
+   owner's namespace and subject first for every session.
+   A request naming no agent is decided for the default agent where the agent runs, and a
+   default the caller may not see is `No agent available`: the 404 would have named an agent the
+   request did not.
+   The gate's synchronous forms answer from inside a coroutine by running the question on a
+   thread of their own, because the availability check is synchronous and is reached from
+   `ChatService.execute`. The alternative was an `async` twin of the check and of everything
+   between it and the routes; the cost of this one is that a remote engine holds the event loop
+   for the length of that one question, where `Runtime` awaits it (sections 3, 6 and 7).

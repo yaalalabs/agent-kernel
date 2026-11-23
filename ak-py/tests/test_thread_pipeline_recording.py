@@ -318,6 +318,33 @@ class TestEdgeRecording:
         assert served.status_code == 200
         assert json.loads(_enqueued().body)["surface"] == "rest"
 
+    def test_with_authorization_the_edge_decides_for_the_caller_before_recording(self, monkeypatch, authorization, descriptor_only_registry):
+        """The edge hands the caller's principal to the check (#603, iteration 18): u1, granted the agent, is recorded
+        and enqueued; u2 gets the unknown agent's 404 for an agent it may not see and a 403 for one it sees."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        manager = _configure(monkeypatch, mode="rest_async")
+        authorization(grants=[{"subjects": ["user:u1"], "agents": ["assistant"], "level": "read"}])
+        registry = descriptor_only_registry(
+            [AgentDescriptor(id="assistant", name="assistant"), AgentDescriptor(id="status", name="status", visibility="public")]
+        )
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            served = _client().post(CHAT, json=_chat(session_id="s-u1", agent="assistant"))
+            other = _client(token="u2-token")
+            hidden = other.post(CHAT, json=_chat(session_id="s-hidden", agent="assistant"))
+            forbidden = other.post(CHAT, json=_chat(session_id="s-forbidden", agent="status"))
+
+        assert served.status_code == 200
+        assert (hidden.status_code, hidden.json()["detail"]) == (404, {"error": "Agent 'assistant' not found", "session_id": "s-hidden"})
+        assert (forbidden.status_code, forbidden.json()["detail"]) == (
+            403,
+            {"error": "Principal 'u2' holds no level on agent 'status'", "session_id": "s-forbidden"},
+        )
+        assert (manager.get_thread("s-hidden"), manager.get_thread("s-forbidden")) == (None, None)
+        assert json.loads(_enqueued().body)["session_id"] == "s-u1"
+
     def test_async_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
         """The route cannot answer in ASYNC mode, so it must refuse before opening the thread."""
         manager = _configure(monkeypatch, mode="async")

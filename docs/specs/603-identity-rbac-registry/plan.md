@@ -917,6 +917,50 @@ adds the caller to a check that already knows the surface.
      `update_agui_state` at `WRITE`, the rest at the `READ` default (spec 2).
 - **Verify:** new `tests/test_access_gate.py`; the gate cases in `test_runtime_principal`;
   changed `test_module`, `test_schedule_tools`, `test_sandbox_tools`.
+- **As built (2026-11-23):** the four steps, with what was settled along the way written into
+  spec 3, 6 and 7 and gathered as refinement 16.
+  - **The caller's principal reaches the availability check in this iteration.** Step 3 gives
+    `ensure_agent_available` the principal and the gate, and a missing principal is read as the
+    anonymous one (it fails closed). With only the signature changed, every request through
+    `ChatService` would have been checked as nobody and an authorized caller refused until
+    iteration 19. So the callers pass it now: `AgentHandler.initialize` and
+    `ChatService.prepare_agent_handler` take `principal`, `execute*` pass `req.principal`, and
+    the thread handlers, `ScheduleManager.create`, the AG-UI handler, the queue runner's AG-UI
+    branch and the realtime pool pass theirs. Files beyond the list: `core/chat_service.py`,
+    `integration/thread/thread_chat.py`, `schedule/manager.py`, `integration/agui/handler.py`,
+    `pipeline/agent_runner.py`, `realtime/pool.py`. What stays for 19 and 20 is each surface's
+    own handling: the pipeline precheck, the catalog, AG-UI's and MCP's and A2A's listings and
+    refusals. Until iteration 20 an AG-UI run the gate refuses surfaces as a 500 from
+    `prepare_agent_handler`, since that route maps no refusal yet.
+  - **The policy checks are the backend's** (`Authorizer.validate`, a no-op by default); the gate
+    keeps the ungated-tools refusal, which it makes for any agent that reports ungated tools
+    and not by runner class. The static backend learns whether roles are mapped through a third
+    lookup, `roles_mapped`, filled from the `identity` block in `from_config`.
+  - **`Module.load` validates with `registry_wide=False`.** The warnings about a grant naming an
+    agent or a tag nothing carries need every module loaded; they are made by the
+    `get_router()` call of iteration 19. A failed validation rolls the load back.
+  - **A shared-channel session is matched on provider and namespace alone**, where the outline
+    tried namespace and subject first for every owner.
+  - **A request naming no agent** is decided for the default agent in the `hosted` form of the
+    check; a default the caller may not see is `No agent available` (400), so the answer does
+    not name an agent the request did not. The default is not chosen per caller.
+  - **The gate's synchronous forms answer inside a coroutine** by running the question on a
+    thread of their own (the check is synchronous under `ChatService.execute`). `Runtime`
+    awaits the `async` forms. A remote engine therefore holds the event loop for the pre-run
+    question on the direct async path; an authorizer may be awaited on more than one loop.
+  - **`Runtime`** asks through `_admit`, with the descriptor of the agent in hand, so a run does
+    not depend on the agent being registered in the current runtime; a stream the gate refuses
+    is one error chunk for `AgentNotFoundError` as for `PermissionError`.
+  - **Cost to revisit with the first engine:** building a run's filter asks the authorizer for
+    the level, the allowed list and then once per denied tool for its reason. Over the static
+    backend each is cheap, but a policy with `tag:` grants lists the registry for each.
+  - **Tiers:** every sandbox tool and all five schedule tools are `write`, the reading ones
+    included; `write_kb` and `update_agui_state` are `write`; the rest keep `read`.
+  - No user documentation yet. The block now gates runs, but the catalog, the pipeline edge and
+    the protocol surfaces do not consult it until iterations 19 and 20; the page is written in
+    iteration 27 against the finished phase. `test_sandbox_tools` in the verify line is
+    `test_sandbox.py`, and `test_module` needed no change (the load cases sit in
+    `test_access_gate.py`).
 
 ### Iteration 19: Service, pipeline and schedule enforcement
 
@@ -935,7 +979,13 @@ adds the caller to a check that already knows the surface.
      chat request (left to the runner by iteration 17b), and decides whether a task keeps the
      surface of the request that created it (the unnamed scheduled request, 17b's open point).
   3. The catalog filtered by `visible_agents`, each entry's `tools` and tool-backed `skills`
-     narrowed to the caller; `get_router()` calls `validate_configuration` (spec 6, 7).
+     narrowed to the caller; `get_router()` calls `validate_configuration` (spec 6, 7), with the
+     hosted agents and the default `registry_wide=True`: this is the call that makes the
+     warnings about grants `Module.load` leaves out (iteration 18).
+  The caller's principal already reaches `ensure_agent_available` through `ChatService`, the
+  thread handlers and `ScheduleManager.create` (iteration 18), so the direct routes answer 403
+  and 404 before a session loads; what this iteration adds on the request path is the edge
+  precheck of step 2 and the fire-time skip of step 1.
 - **Verify:** 403/404 cases in `test_api_http`, with the parity case (an unknown agent and a
   hidden one answer with one status and body); `test_agui_handler`;
   `test_pipeline_request_handler` (the riskiest consumer: the precheck on a store-backed
@@ -951,9 +1001,12 @@ adds the caller to a check that already knows the surface.
   1. MCP per-tool `AuthCheck` and list filtering (spec 8.6).
   2. A2A `get_cards(principal)` filtering, a served card's skills narrowed to the caller with
      `Vary: Authorization` and an ETag of the card as served, and the 403 (spec 8.7).
-  3. AG-UI `/agents` narrowed by `visible_agents` and the 403 (spec 8.5).
+  3. AG-UI `/agents` narrowed by `visible_agents` and the 403 (spec 8.5). The handler already
+     hands the caller's principal to `prepare_agent_handler` (iteration 18); its own check in
+     `_resolve_agent` is what turns a refusal into a 403 or 404 where it is a 500 today.
   4. `RealtimeConnectionPool.dispatch` runs `ensure_agent_available(body.agent, body.principal)`
-     on first connect (spec 8.4).
+     on first connect (spec 8.4). The check is already made, through `prepare_agent_handler`
+     with the input's principal (iteration 18); what remains is how a refusal reaches the edge.
 - **Verify:** list filtering and `AuthCheck` in `test_api_mcp_auth`; card filtering and skill
   narrowing in `test_api_a2a_auth`; the 403 in `test_agui_handler`; the realtime pool tests.
 

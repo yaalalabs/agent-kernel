@@ -142,8 +142,10 @@ class ScheduleManager:
             the agent now cannot schedule it either. The task does not keep it, since an occurrence
             enters by no surface.
         :return: The created task, carrying its provider reference.
-        :raises PermissionError: If the principal is missing or anonymous.
-        :raises AgentNotFoundError: If the named agent is not available, or is kept off the surface.
+        :raises PermissionError: If the principal is missing or anonymous, or the access gate gives it
+            no level on an agent it may see.
+        :raises AgentNotFoundError: If the named agent is not available, is kept off the surface, or is
+            one the principal may not see.
         :raises ValueError: If the prompt, session or occurrence rule is unusable.
         :raises ScheduleError: If the provider rejected the registration.
         """
@@ -159,8 +161,10 @@ class ScheduleManager:
         # agent is checked: an unnamed one resolves to whatever default the firing process has, and
         # that process is not necessarily this one. Where this process is the one that fires, the agent
         # must be hosted here: a descriptor a removed agent left in a shared registry is not enough.
+        # With an authorization block the owner must also be one the access gate lets use the agent,
+        # since every occurrence runs as the owner.
         if agent:
-            AgentService.ensure_agent_available(agent, hosted=self._runs_occurrences, surface=surface)
+            AgentService.ensure_agent_available(agent, principal, hosted=self._runs_occurrences, surface=surface)
         OccurrenceCalculator.validate(spec)
 
         now = utc_now_iso()

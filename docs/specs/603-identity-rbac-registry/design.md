@@ -542,6 +542,10 @@ and `research/design-options.md` section 4).
   `tool_filter(principal, agent) -> ToolFilter` (the per-run allow set over
   `agent.get_tool_names()`, with `reason` per denied tool and the resolved `level`, which
   `ToolContext.access_level` exposes).
+- As built (spec refinement 16): the policy checks below are the backend's own
+  (`Authorizer.validate`, which the gate calls), `Module.load` leaves the registry-wide warnings to
+  the `get_router()` call, a shared-channel session is matched on provider and namespace alone, and
+  a request naming no agent is decided for the default agent where the agent runs.
 - Startup validation (`AccessGate.validate_configuration()`, called from `Module.load` for the
   agents it loads and from the handlers' `get_router()`): an `allow`, `deny` or `tiers` entry naming
   a tool the loaded agent does not have raises `AKConfigError`; a grant naming an unknown agent id
