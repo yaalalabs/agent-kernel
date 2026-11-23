@@ -89,12 +89,19 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
     `integration.request.path.<name>` to `method.request.path.<name>`. The HTTP API's `overwrite:path`
     inferred all this from the string; a REST API does not. Not copyable from the serverless module:
     its `{task_id}` support (#935) rides `AWS_PROXY` to Lambda, which forwards the raw event.
-  - **Only `$request.path.*` is translated.** HTTP API parameter mapping also accepts
-    `$request.header.*` and `$request.querystring.*` in `overwrite:path`. Nothing in the repo uses
-    them, and a REST API can express them only by declaring the source parameter on the method first,
-    so they are **rejected in the `gateway_endpoints` validation** rather than translated. Left
-    untranslated they would be emitted as literal text in the integration `uri` and fail silently;
-    the validation is the cheap way to make that loud.
+  - **`$request.header.*` and `$request.querystring.*` are translated too**, by the same rule with a
+    different source. HTTP API parameter mapping accepts all three in `overwrite:path`, so all three
+    work today. Each becomes a `{<name>}` segment in the integration `uri`, a method-level
+    `parameters` entry with the matching `in` (`header` or `query`), and a `requestParameters` line
+    mapping `integration.request.path.<name>` to `method.request.header.<name>` or
+    `method.request.querystring.<name>`.
+    - Translated rather than rejected because the capability exists in REST, and these modules are
+      published to the Terraform registry: `gateway_endpoints` is a public input, so a deployment
+      relying on header rewriting is invisible to this repo. Rejecting would force those users to
+      read the header in application code — a code change delivered as a deployment upgrade.
+    - Left untranslated the expression reaches the container as literal text and 404s with no error
+      anywhere, which is the current GCP behaviour (`ak-gcp/containerized/api_gateway.tf:54`) and not
+      a model to copy.
   - No `$default` case: `variables.tf:60` matches `upper(ep.method)` against a lowercase `"$default"`,
     so no spelling passes validation. The dead entry is pre-existing and left alone.
 - `api_gateway_async.tf` is deleted; its `rest_async` `GET` poll route becomes a `"get"` **method on
