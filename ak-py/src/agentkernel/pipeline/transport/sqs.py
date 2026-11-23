@@ -7,6 +7,8 @@ pipeline and the ECS/Lambda queue mode byte-identical on the wire by constructio
 producers and ECS consumers (or vice versa) interoperate during a migration.
 """
 
+import hashlib
+import re
 import threading
 from collections.abc import Mapping
 from enum import Enum
@@ -21,6 +23,9 @@ from .base import QueueTransport, TransportConsumer
 
 # SQS caps ReceiveMessage long polls at 20 s.
 SQS_MAX_WAIT_SECONDS = 20.0
+
+# What SQS accepts as a MessageDeduplicationId: 1-128 printable ASCII characters, no spaces.
+_SQS_DEDUP_ID = re.compile(r"[!-~]{1,128}")
 
 
 class AttributeDataType(str, Enum):
@@ -63,11 +68,11 @@ def serialize_message_body(message_body: Any) -> str:
     is a ``JSONText``, so a sender hands it an object and the envelope encodes — which is why
     ``nats.py``, ``kafka.py`` and ``in_memory.py`` have nothing like this. ``SQSTransport.send``
     does not need it either: it arrives with ``message.body``, already a ``str``, and falls through
-    the first branch. The dict branch exists for ``SQSHandler``, which ``ECSAgentRunner`` and
-    ``ServerlessAgentRunner`` use to write the output queue **without** building a ``QueueMessage``.
+    the first branch. The dict branch exists for ``SQSHandler``, which ``ServerlessAgentRunner``
+    uses to write the output queue **without** building a ``QueueMessage``.
 
     So: do not delete this as dead code because the transports look symmetric, and do not copy it
-    into a new transport. If those two runners are ever converged onto the envelope, this whole
+    into a new transport. If that runner is ever converged onto the envelope, this whole
     function goes with them and ``PayloadCodec.encode`` drops to one internal caller.
 
     :param message_body: The message payload to serialize.
@@ -122,6 +127,22 @@ def build_message_attributes(message_attributes: list[CustomAttribute] | None) -
     return built_message_attributes
 
 
+def _sqs_dedup_id(dedup_id: str | None) -> str | None:
+    """
+    Return a deduplication id SQS accepts: the id itself, or its SHA-256 hex digest.
+
+    A client-chosen request id becomes the input's dedup id, and replies append chunk suffixes to
+    it, so an id SQS took at enqueue can outgrow the limit on the way back. The digest is
+    deterministic, so resending the same id still deduplicates against its first send.
+
+    :param dedup_id: The deduplication id, or None
+    :return: The id unchanged when SQS accepts it, its 64-character hex digest otherwise, or None
+    """
+    if dedup_id is None or _SQS_DEDUP_ID.fullmatch(dedup_id):
+        return dedup_id
+    return hashlib.sha256(dedup_id.encode()).hexdigest()
+
+
 def build_send_message_kwargs(
     message_body: Any,
     message_group_id: str | None = None,
@@ -145,7 +166,7 @@ def build_send_message_kwargs(
     return SQSQueueInputMessage(
         MessageBody=serialize_message_body(message_body),
         MessageGroupId=message_group_id,
-        MessageDeduplicationId=message_deduplication_id,
+        MessageDeduplicationId=_sqs_dedup_id(message_deduplication_id),
         MessageAttributes=build_message_attributes(message_attributes),
         **extra_kwargs,
     ).model_dump(exclude_none=True)
@@ -226,6 +247,7 @@ class SQSTransportConsumer(TransportConsumer):
             body=record.get("Body", ""),
             attributes={name: str(value) for name, value in get_message_custom_attributes(record).items()},
             group_id=system_attributes.get("MessageGroupId"),
+            dedup_id=system_attributes.get("MessageDeduplicationId"),  # FIFO only: replies derive theirs from it
             receive_count=int(system_attributes.get("ApproximateReceiveCount", "1")),
             message_id=record.get("MessageId"),
             native=record,

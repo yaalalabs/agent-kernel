@@ -17,6 +17,7 @@ import uuid
 from datetime import timedelta
 
 import pytest
+from agentkernel.pipeline.envelope import QueueName
 from agentkernel.pipeline.testing import QueueTransportContract
 
 NAMESPACE = os.getenv("AK_TEST_SERVICEBUS_NAMESPACE")
@@ -28,7 +29,7 @@ LOCK_SECONDS = 5
     not NAMESPACE, reason="AK_TEST_SERVICEBUS_NAMESPACE not set: the live contract runs in the weekly integration test"
 )
 class TestServiceBusTransportContractLive(QueueTransportContract):
-    """The shared transport contract against real Service Bus session queues, no opt-outs."""
+    """The shared transport contract against real Service Bus session queues; only the batching tests are relaxed."""
 
     # Above the transport's 0.5 s session-reuse wait, as in the fake-backed subclass.
     ack_wait = 1.0
@@ -65,6 +66,30 @@ class TestServiceBusTransportContractLive(QueueTransportContract):
             output_url=f"https://{NAMESPACE}/{output_queue}",
             ack_wait=self.ack_wait,
         )
+
+    # Live overrides of the two batching tests. After the first message, a fetch waits only 0.5 s for another
+    # session, and the SDK opens a new connection per session receiver within that budget, which a real namespace
+    # does not meet. So one fetch returns one new session; other groups arrive on the next fetch, unblocked.
+    def _fetch_until(self, consumer, count: int, batch_size: int = 10) -> list[str]:
+        bodies: set[str] = set()  # a set: an unacked message may be redelivered once its lock lapses
+        deadline = time.monotonic() + self.fetch_wait
+        while len(bodies) < count and time.monotonic() < deadline:
+            batch = consumer.fetch(batch_size, deadline - time.monotonic())
+            assert len(batch) <= batch_size
+            bodies |= {message.body for message in batch}  # never acked: delivery proves the group is not blocked
+        return sorted(bodies)
+
+    def test_distinct_groups_delivered_in_parallel(self):
+        transport, consumer = self._pair()
+        transport.send(QueueName.INPUT, self._msg(body="a", group_id="s1"))
+        transport.send(QueueName.INPUT, self._msg(body="b", group_id="s2"))
+        assert self._fetch_until(consumer, 2) == ["a", "b"]
+
+    def test_batch_size_is_respected(self):
+        transport, consumer = self._pair()
+        for i in range(3):
+            transport.send(QueueName.INPUT, self._msg(body=f"m{i}", group_id=f"s{i}"))
+        assert self._fetch_until(consumer, 3, batch_size=2) == ["m0", "m1", "m2"]
 
     def force_redelivery(self) -> None:
         # Renewal stops after 2 x ack_wait (the transport's ceiling), then the last lock runs out.
