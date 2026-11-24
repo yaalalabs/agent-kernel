@@ -1,0 +1,12 @@
+ts,queue,waiting,in_flight,fetcher
+2026-11-24T10:00:00.000Z,input,0,0,transport
+2026-11-24T10:00:10.000Z,input,0,0,transport
+2026-11-24T10:00:15.000Z,input,5,1,transport
+2026-11-24T10:00:20.000Z,input,8,2,transport
+2026-11-24T10:00:30.000Z,input,4,1,transport
+2026-11-24T10:00:35.000Z,input,0,0,transport
+2026-11-24T10:00:45.000Z,input,0,0,transport
+2026-11-24T10:00:55.000Z,input,0,0,transport
+2026-11-24T10:00:00.000Z,output,0,0,transport
+2026-11-24T10:00:30.000Z,output,0,0,transport
+2026-11-24T10:00:55.000Z,output,0,0,transport

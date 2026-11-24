@@ -1,0 +1,9 @@
+ts,tier,worker,metric,stat,value,fetcher
+2026-11-24T10:00:00.000Z,runner,w1,cpu_pct,value,10,resource
+2026-11-24T10:00:10.000Z,runner,w1,cpu_pct,value,20,resource
+2026-11-24T10:00:20.000Z,runner,w1,cpu_pct,value,30,resource
+2026-11-24T10:00:20.000Z,runner,w2,cpu_pct,value,50,resource
+2026-11-24T10:00:30.000Z,runner,w2,cpu_pct,value,60,resource
+2026-11-24T10:00:40.000Z,runner,w2,cpu_pct,value,70,resource
+2026-11-24T10:00:50.000Z,runner,w2,cpu_pct,value,80,resource
+2026-11-24T10:00:30.000Z,runner,,mem_pct,max,40.0,resource

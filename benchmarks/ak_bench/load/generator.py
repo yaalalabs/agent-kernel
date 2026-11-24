@@ -133,6 +133,7 @@ class LoadGenerator:
     def _settle(self, record: RequestRecord, status: RequestStatus, error: str | None = None, mono: float | None = None) -> None:
         record.status, record.error = status, error
         record.settled_mono = time.monotonic() if mono is None else mono
+        record.settled = self._wall(record.settled_mono)
         self._waiting.pop(record.request_id, None)
         self._last_settle_mono = max(self._last_settle_mono or record.settled_mono, record.settled_mono)
         self._pending -= 1

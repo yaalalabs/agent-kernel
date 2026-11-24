@@ -38,7 +38,7 @@ Written by `deploy.sh` on success. A missing or unreadable file is a failure.
 | `resources` | What the host's fetchers read for scaling and resource usage (service / cluster names, ...) |
 | `queues` | The transport's queues, for the transport collector |
 | `logs` | Where the app's `TRACE` lines are written, for the trace collector |
-| `settings` | Host settings as deployed, recorded in the run metadata |
+| `settings` | Host settings as deployed, recorded in the run metadata. The #786 run-metadata fields go under `region`, `tiers` (per tier: worker size, min / max workers, autoscaling), `transport`, `session_store`, `resource_usage` and `front_door`; a missing one is recorded as `null`, other keys are recorded as given |
 
 ## Rules
 

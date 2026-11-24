@@ -25,7 +25,8 @@ class RequestRecord:
     sent_mono: float | None = None
     first_chunk_mono: float | None = None
     complete_mono: float | None = None
-    settled_mono: float | None = None  # when status was set (error / timeout time for the windows)
+    settled_mono: float | None = None  # when status was set
+    settled: datetime | None = None  # wall time of settled_mono (error / timeout time for the windows)
     error: str | None = None
 
     @property

@@ -2,7 +2,8 @@ import csv
 import json
 import os
 import threading
-from collections.abc import Iterable
+from collections import defaultdict
+from collections.abc import Callable, Hashable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -39,19 +40,48 @@ class KeyedCsv:
             merged = {self._key_of(row): row for row in self.read()}
             for row in new:
                 merged[self._key_of(row)] = row  # dict keeps first-insert order on replace
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_name(self.path.name + ".tmp")
-            with tmp.open("w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=self.columns)
-                writer.writeheader()
-                writer.writerows(merged.values())
-            os.replace(tmp, self.path)
+            self._write(merged.values())
+
+    def remove(self, keys: Iterable[tuple[str, ...]]) -> None:
+        """Drops the rows with these keys (as CSV cells); a missing file stays missing."""
+        drop = set(keys)
+        with self._lock():
+            if self.path.exists():
+                self._write([row for row in self.read() if self._key_of(row) not in drop])
 
     def read(self) -> list[dict[str, str]]:
         if not self.path.exists():
             return []
         with self.path.open(newline="") as f:
             return list(csv.DictReader(f))
+
+    def header(self) -> list[str]:
+        """The file's columns; [] when it doesn't exist."""
+        if not self.path.exists():
+            return []
+        with self.path.open(newline="") as f:
+            return next(csv.reader(f), [])
+
+    def series(self, key: Callable[[dict[str, str]], Hashable], value: Callable[[dict[str, str]], Any]) -> dict[Any, list[tuple[datetime, Any]]]:
+        """A long-form file with a `ts` column as {key(row): [(ts, value(row))]}, in file order."""
+        out: dict[Any, list[tuple[datetime, Any]]] = defaultdict(list)
+        for row in self.read():
+            out[key(row)].append((self.parse_ts(row["ts"]), value(row)))
+        return out
+
+    @staticmethod
+    def parse_ts(cell: str) -> datetime | None:
+        """Reads back a datetime written by cell()."""
+        return datetime.fromisoformat(cell) if cell else None
+
+    def _write(self, rows: Iterable[dict[str, str]]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        with tmp.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=self.columns)
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(tmp, self.path)
 
     def _key_of(self, row: dict[str, str]) -> tuple[str, ...]:
         return tuple(row.get(k, "") for k in self.key)
