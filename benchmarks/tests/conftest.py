@@ -1,6 +1,7 @@
 import pytest
 
 from ak_bench.config import BenchConfig
+from ak_bench.platforms.base import Deployment, RunInfo
 
 
 @pytest.fixture
@@ -20,3 +21,13 @@ def fast_config() -> BenchConfig:
             "fetchers": {"default": {"poll_interval_s": 0.05}},
         }
     )
+
+
+@pytest.fixture
+def run_info() -> RunInfo:
+    return RunInfo("20261124T100000Z", "20261124T100000Z-mock-async-complete", "mock", "mock", "async", "complete")
+
+
+@pytest.fixture
+def deployment() -> Deployment:
+    return Deployment("ws://127.0.0.1:1", {}, {"input": {}, "output": {}}, {}, {})
