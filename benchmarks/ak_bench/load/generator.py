@@ -75,7 +75,10 @@ class LoadGenerator:
 
         await self._sleep_until(self._base_mono + schedule.load_time_s)
         first_mono = self._first_sent_mono()
-        t_load_up = self._wall(first_mono if first_mono is not None else self._base_mono)
+        load_up_mono = first_mono if first_mono is not None else self._base_mono
+        # t_load_down is counted from the first send, so return no earlier than that, or the cool-down could start before it.
+        await self._sleep_until(load_up_mono + schedule.load_time_s)
+        t_load_up = self._wall(load_up_mono)
         # Late replies and timeouts keep updating the records until close().
         return LoadResult(list(self._records.values()), t_load_up, t_load_up + timedelta(seconds=schedule.load_time_s), None)
 
