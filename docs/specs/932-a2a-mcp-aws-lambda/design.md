@@ -1,25 +1,14 @@
 # #932: A2A and MCP on AWS Lambda through the queue pipeline
 
-Serve A2A `message:send` and agent-exposing MCP from the serverless (Lambda) deployment. The request Lambda runs the existing
-`RESTAPI.build_app()` through AK's own Lambda event translator. Covers the REST modes (`rest_sync`, `rest_async`) only; `async`
-(WebSocket) deployments are #985. Queue mode only: direct mode is not touched, it is being removed (#959).
+- Serve A2A `message:send` and agent-exposing MCP from the serverless (Lambda) deployment
+- The request Lambda runs the existing `RESTAPI.build_app()` through AK's own Lambda event translator
+- Covers the REST modes (`rest_sync`, `rest_async`) only; `async` (WebSocket) deployments are #985
+- Queue mode only: direct mode is not touched, it is being removed (#959)
+- Today an A2A or MCP call on Lambda never reaches the queue: there is no `/a2a` or `/mcp` route (G7) and the router knows only the chat path (G1)
 
 ## Flow
 
-**Today:** an A2A or MCP call on Lambda never reaches the queue (red).
-
-```mermaid
-flowchart LR
-    C[A2A / MCP client] --> GW[API Gateway]
-    GW -. "G7: no /a2a or /mcp route" .-> X1((fails))
-    GW --> RL[Request Lambda]
-    RL -. "G1: router knows only the chat path" .-> X2((fails))
-
-    classDef bad fill:#fde2e1,stroke:#b3261e,color:#5c0f0b
-    class X1,X2 bad
-```
-
-**Design Flow:** the new parts are green; the queue and the workers are unchanged.
+- Design flow below: the new parts are green; the queue and the workers are unchanged
 
 ```mermaid
 flowchart LR
@@ -105,7 +94,7 @@ Paths are under `ak-py/src/agentkernel/` unless they say otherwise.
 - `AKConfigError` when A2A or agent MCP is on and:
   - the queue transport is not `sqs` (no `execution.queues` block resolves to `in_memory`, and every call would time out)
   - `execution.mode` is `async`: there is no REST API to reach the routes (#985)
-  - no shared response store is configured (the ECS check, `IOHandler._validate_topology`)
+  - no shared response store is configured (the ECS check, `IOHandler.check_deployment`)
   - `execution.response_store.retry_count × delay` is longer than the API Gateway limit (29 s) or the Lambda timeout
     (the first read is immediate, so the real wait is `(retry_count - 1) × delay`; cold start also counts against the 29 s)
   - `mcp.stateless_http` is false and MCP is on (any call may reach another instance; ECS keeps one replica's session)

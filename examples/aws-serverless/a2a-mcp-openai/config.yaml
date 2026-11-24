@@ -14,7 +14,7 @@ session:
 #
 # `url` is the PUBLIC URL of the API, stage and base path included: the agent card advertises it. It is known only
 # once the API exists, so Terraform injects it as AK_A2A__URL / AK_MCP__URL on the second apply that deploy.sh runs
-# (see the README). Left at its localhost default, the request handler refuses to start.
+# (see the README). Left at its localhost default, the agent card advertises an address no client can reach; nothing checks it.
 a2a:
   enabled: true
 mcp:
@@ -62,7 +62,7 @@ secret:
 # Lambda and to the request-handler Lambda, which the secret capability resolves at startup.
 #   - the authorizer checks the bearer token of the chat route;
 #   - the A2A and MCP routes have no authorizer: the request handler checks the token (FastMCP refuses a missing or
-#     bad one; A2A reads the caller's principal, a call with no token is the anonymous principal, as on ECS).
+#     bad one; A2A reads the caller's principal: a call with no token is the anonymous principal, as on ECS).
 # The request handler reads this block, so it must be in the config.yaml that Lambda carries.
 identity:
   provider:

@@ -45,7 +45,7 @@ review; the rest of this spec is written as proposed here.
    Both `<host>/.well-known/oauth-protected-resource/mcp/` (403 `Forbidden`) and `<host>/<stage>/.well-known/...` (403
    `Missing Authentication Token`) are refused on a default URL.
    Bearer-only providers (`static`) are unaffected.
-   - Proposed: document the limit (use a custom domain mapped at root, or a bearer provider). A custom domain was not tested.
+   - Decided: document the limit. A custom domain mapped at the root removes the stage prefix but still creates no `/.well-known/oauth-protected-resource/mcp/` route, and neither does ECS (`ak-deployment/ak-aws/containerized/state.tf` routes only `/api/v1/mcp`), so OIDC MCP login discovery is unsupported on both. A root metadata route for ECS and Lambda is a follow-up. Bearer-only providers need nothing.
 7. **The Lambda timeout cannot be checked at cold start.** Lambda sets no environment variable holding its timeout, and the
    context object exists only per invocation. The cold-start guard checks the 29 s API Gateway limit; the host checks
    `context.get_remaining_time_in_millis()` against the wait budget per invocation and logs a warning.
@@ -158,7 +158,7 @@ then, only when A2A or agent MCP runs agents (`RESTAPI.agent_protocol_surfaces()
 | # | Check | Rule |
 |---|---|---|
 | 1 | Transport | `QueueTransportFactory.resolve_type() == "sqs"` (`in_memory` when no `execution.queues` block, so calls would time out) |
-| 2 | Shared topology | `IOHandler._validate_topology("sqs", config)` and `_warn_if_no_agents(config)`, the ECS checks: a shared response store, and a warning when the registry knows no agents. Only when A2A or agent MCP runs agents |
+| 2 | Shared topology | `IOHandler.check_deployment("sqs", config)` (the public entry `IOHandler.run` uses: `_validate_topology`, then `_warn_if_no_agents`), the ECS checks: a shared response store, and a warning when the registry knows no agents. Only when A2A or agent MCP runs agents |
 | 3 | Wait budget | `(retry_count - 1) * delay <= 29` (`API_GATEWAY_TIMEOUT_SECONDS`); the first read is immediate (`pipeline/request_handler.py:148-163`) |
 
 Check 2 uses the config model alone; it does not build the store. A missing input queue is #959's check, not repeated.
@@ -227,7 +227,7 @@ Verified unchanged: the three workers, integration delivery, `LambdaWebhookHost`
 No config changes. Reused as is: `a2a.enabled`, `mcp.enabled`, `mcp.expose_agents`, `mcp.stateless_http` (`core/config.py:156`),
 `a2a.url` (`:144`), `mcp.url` (`:152`), `execution.response_store.retry_count` / `delay` (`:657-658`, defaults 5 x 5 s). Existing
 YAML and `AK_*` variables are valid unchanged. `a2a.url` and `mcp.url` must be the public URL including stage and base path;
-their defaults (`localhost`) now fail the guard when the host is built (check 7).
+their defaults (`localhost`) are not checked by the guard (ECS does not check them either; a shared check is a follow-up), so the card advertises them until they are set.
 
 ### Terraform (`ak-deployment/ak-aws/serverless`)
 

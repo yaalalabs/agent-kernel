@@ -137,7 +137,7 @@ With `-s` every test prints the real status it got, which is the record that the
 - **29 seconds.** API Gateway stops waiting at 29 s, and a call waits for the agent's reply. `config.yaml` sets
   `retry_count: 10` and `delay: 2`, a wait of `(retry_count - 1) x delay` = 18 s, and the request handler refuses to start
   with a longer one. An agent run plus queue time over that fails with the executors' timeout error.
-- **A2A tasks.** The default `a2a.task_store_type: in_memory` keeps tasks in one Lambda instance, so `tasks/get` across instances needs `task_store_type: redis` (the same on ECS).
+- **A2A tasks.** `tasks/get` across Lambda instances is not supported (nor on ECS): both `a2a.task_store_type` values keep tasks in the memory of one process.
 - **Streaming** (`message:stream`, streamed MCP replies) is not supported on Lambda.
 - **MCP login metadata** (RFC 9728, with an OpenID identity provider) is served at the root of the host, a path neither this
   deployment nor ECS routes, so that OAuth discovery is not supported. The `static` provider used here is bearer-only and is

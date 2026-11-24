@@ -478,6 +478,13 @@ class TestServingA2A:
         assert proxy["statusCode"] == 401
         assert deployed.queue.calls == []
 
+    def test_a_trailing_slash_is_a_404_and_never_a_redirect_to_a_url_the_gateway_does_not_serve(self, deployed):
+        """The app sees the path without the prefix, so a slash redirect would drop the stage and base path."""
+        proxy = deployed.host.handle(_api_event("GET", "/a2a/catalog/", "/a2a/{proxy+}"), None)
+
+        assert proxy["statusCode"] == 404
+        assert "location" not in {name.lower() for name in proxy.get("multiValueHeaders", {})}
+
     def test_the_public_agent_card_needs_no_token(self, deployed):
         proxy = deployed.host.handle(
             _api_event("GET", "/a2a/triage/.well-known/agent-card.json", "/a2a/{proxy+}", headers={"Authorization": None}), None

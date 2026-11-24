@@ -120,6 +120,8 @@ class LambdaProtocolHost:
         self._wait_budget_seconds = LambdaProtocolGuard.wait_budget_seconds()
         # An empty list, not None: None builds the direct chat routes, which run agents in this process.
         self._app = RESTAPI.build_app(handlers=[])
+        # The app sees the path without the API Gateway prefix, so a slash redirect would name a URL the gateway does not serve.
+        self._app.router.redirect_slashes = False
         self._lifespan = AppLifespan(self._app)
         self._run(self._lifespan.start())
 
@@ -147,8 +149,9 @@ class LambdaProtocolHost:
     def _app_path(self, event: Mapping[str, Any]) -> str:
         """The path the app routes on: the event's path without ``/<API_BASE_PATH>/<API_VERSION>``.
 
-        The exact path ``/mcp`` becomes ``/mcp/``: the app redirects the first to the second, and a redirect built
-        from the stripped path points the client at a URL the gateway does not serve (spec Deviation 9).
+        The exact path ``/mcp`` becomes ``/mcp/``: the app would redirect the first to the second, and a redirect built
+        from the stripped path points the client at a URL the gateway does not serve (spec Deviation 9). Slash redirects
+        are off for the same reason, so a path with a stray trailing slash is a 404.
 
         :raises HTTPException: 404 for a path that is neither A2A nor MCP.
         """
@@ -222,7 +225,7 @@ class LambdaProtocolGuard:
         return max(response_store.retry_count - 1, 0) * response_store.delay
 
     def _check_mode(self) -> None:
-        mode = AKConfig.get().execution.mode
+        mode = AKConfig.get().execution.mode or ExecutionMode.REST_SYNC  # an unset mode runs as rest_sync, as in the pipeline
         if mode == ExecutionMode.ASYNC:
             # An async deployment has no REST API and no response store; serving A2A and MCP there is tracked in #985.
             raise AKConfigError(
@@ -231,7 +234,7 @@ class LambdaProtocolGuard:
             )
         if mode not in self.REST_MODES:
             raise AKConfigError(
-                f"LambdaProtocolHost serves A2A and MCP in execution.mode rest_sync or rest_async only; got {mode.value if mode else 'unset'}. "
+                f"LambdaProtocolHost serves A2A and MCP in execution.mode rest_sync or rest_async only; got {mode.value}. "
                 "Lambda routes the other modes' events to WSLambdaRouter"
             )
 
@@ -257,8 +260,7 @@ class LambdaProtocolGuard:
         """The checks and the no-agents warning ``IOHandler`` runs on ECS: a shared response store, since the Agent Runner
         Lambda writes the reply and this Lambda reads it."""
         config = AKConfig.get()
-        IOHandler._validate_topology("sqs", config)
-        IOHandler._warn_if_no_agents(config)
+        IOHandler.check_deployment("sqs", config)
 
     def _check_stateless_mcp(self) -> None:
         """A call can land on any Lambda instance, so a stateful MCP session fails intermittently. ECS keeps one replica's session."""

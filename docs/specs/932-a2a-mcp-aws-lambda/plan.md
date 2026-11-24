@@ -44,7 +44,7 @@ gateway door: no `/a2a` or `/mcp` route).
      Then the router test: a `{proxy+}` event dispatches to a route registered with `Lambda.register` (spec: Deviation 10).
      If it fails, stop and tell the reviewer before building on it.
   2. `ProtocolPaths.ROUTES`.
-  3. `LambdaProtocolGuard` with its seven checks (spec: Guard).
+  3. `LambdaProtocolGuard` (spec: Guard).
   4. `LambdaProtocolHost` (spec: `LambdaProtocolHost`) and its lazy export.
 - **Verify:** `uv run pytest tests/test_lambda_protocol_host.py tests/test_lambda_protocol_guard.py tests/test_lambda_router.py tests/test_aws_lazy_exports.py`
 
@@ -73,7 +73,7 @@ gateway door: no `/a2a` or `/mcp` route).
 - **Goal:** everything in `spec.md` Testing exists and passes.
 - **Files:** the new and changed test files listed in spec: Testing.
 - **Steps:** finish any case not written alongside Iterations 3-4; add the pins for Deviations 2 and 4.
-- **Verify:** `uv run pytest tests/test_lambda_protocol_host.py tests/test_lambda_protocol_guard.py tests/test_protocol_route_matcher.py tests/test_lambda_protocol_roundtrip.py`, then `uv run pytest`, then `make lint-check-all`.
+- **Verify:** `uv run pytest tests/test_lambda_protocol_host.py tests/test_lambda_protocol_guard.py tests/test_lambda_protocol_roundtrip.py`, then `uv run pytest`, then `make lint-check-all`.
 
 ## Iteration 8: Sync docs and skills
 

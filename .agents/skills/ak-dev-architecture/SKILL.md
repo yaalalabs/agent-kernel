@@ -661,9 +661,9 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   `receive()` blocks until the response is complete, so the buffered MCP SSE body is not empty); the queue workers are
   unchanged. `AppLifespan` starts the app's lifespan once per execution environment. `LambdaProtocolGuard` fails the
   cold start on a non-REST mode, missing base-path variables or stateful MCP (`mcp.stateless_http`, since any call can land on another instance); when A2A or agent MCP runs (`RESTAPI.agent_protocol_surfaces()`) it
-  also requires the `sqs` transport, a wait within 29 s (`(retry_count - 1) x delay`) and runs `IOHandler._validate_topology` and `_warn_if_no_agents`, the ECS checks, so a tool-only MCP needs no queue. Auth is
+  also requires the `sqs` transport, a wait within 29 s (`(retry_count - 1) x delay`) and runs `IOHandler.check_deployment`, the ECS startup checks, so a tool-only MCP needs no queue. Auth is
   as on ECS: the routes carry no API Gateway authorizer (`authorization = "NONE"`) and the request-handler Lambda authenticates
-  the bearer token through its own `identity` block (no token is the anonymous principal, a bad one a 401). Terraform:
+  the bearer token through its own `identity` block (A2A: no token is the anonymous principal, a bad one a 401; MCP: either is a 401 from FastMCP). Terraform:
   `enable_a2a_server` and `enable_mcp_server` (both need `queue_mode`) add `proxy_routes`, one API Gateway method per verb.
   `agentkernel.aws` exports `LambdaProtocolHost` and `ProtocolPaths` lazily. WebSocket
   `async` mode is #985; direct mode is #959.

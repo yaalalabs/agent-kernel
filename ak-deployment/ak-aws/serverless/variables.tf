@@ -319,6 +319,11 @@ variable "enable_a2a_server" {
     condition     = !var.enable_a2a_server || var.queue_mode
     error_message = "'enable_a2a_server' needs queue_mode = true: every call is enqueued and the agent runs on the agent-runner Lambda."
   }
+
+  validation {
+    condition     = !var.enable_a2a_server || alltrue([for ep in var.gateway_endpoints : split("/", trim(trimspace(ep.path), "/"))[0] != "a2a"])
+    error_message = "'enable_a2a_server' creates the /a2a routes: remove the gateway_endpoints entries under /a2a, or they would create the same API Gateway resource twice."
+  }
 }
 
 variable "enable_mcp_server" {
@@ -334,6 +339,11 @@ variable "enable_mcp_server" {
   validation {
     condition     = !var.enable_mcp_server || var.queue_mode
     error_message = "'enable_mcp_server' needs queue_mode = true: every call is enqueued and the agent runs on the agent-runner Lambda."
+  }
+
+  validation {
+    condition     = !var.enable_mcp_server || alltrue([for ep in var.gateway_endpoints : split("/", trim(trimspace(ep.path), "/"))[0] != "mcp"])
+    error_message = "'enable_mcp_server' creates the /mcp routes: remove the gateway_endpoints entries under /mcp, or they would create the same API Gateway resource twice."
   }
 }
 

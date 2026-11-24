@@ -96,10 +96,11 @@ class TestMode:
 
         _refuses(f"got {mode}")
 
-    def test_an_unset_mode_is_refused(self, monkeypatch):
+    def test_an_unset_mode_runs_as_rest_sync_and_passes(self, monkeypatch):
+        """The pipeline treats an unset mode as rest_sync (``execution.mode`` documents it), so the guard does too."""
         _unset(monkeypatch, "AK_EXECUTION__MODE")
 
-        _refuses("got unset")
+        LambdaProtocolGuard().check()
 
 
 class TestTransport:
