@@ -9,7 +9,7 @@ from agentkernel.core.util.factory import AKConfigError
 from agentkernel.identity.errors import AuthenticationError
 from agentkernel.identity.provider.factory import IdentityProviderFactory
 from agentkernel.secret import EnvSecretProvider, SecretManager
-from bench_identity import BenchIdentityProvider
+from identity import BenchIdentityProvider
 
 SECRET = "s3cret"
 CONFIG = Path(__file__).resolve().parent.parent / "config.yaml"
@@ -26,7 +26,7 @@ def provider(monkeypatch, value: str | None = SECRET, **extra) -> BenchIdentityP
         monkeypatch.delenv(key, raising=False)
     else:
         monkeypatch.setenv(key, value)
-    return BenchIdentityProvider(_IdentityProviderConfig(type="bench_identity.BenchIdentityProvider", **extra), SecretManager(EnvSecretProvider()))
+    return BenchIdentityProvider(_IdentityProviderConfig(type="identity.BenchIdentityProvider", **extra), SecretManager(EnvSecretProvider()))
 
 
 @pytest.mark.asyncio

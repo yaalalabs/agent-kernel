@@ -1,14 +1,13 @@
-"""The benchmarked app's agent: the mock agent when BenchAppConfig has mock delays, else a real OpenAI agent under the same name.
+"""The benchmarked app's agent: the mock agent when ak-bench deploy passed mock delays, else a real OpenAI agent under the same name.
 
 Importing this module registers the agent; it starts nothing. Each deployment folder's own entry files import it and
 hand over to the host's entry point (Lambda handlers, ECS `AgentRunner.run` / `AWSWebsocketAPI.run`, ...).
 """
 
 from agentkernel.core.runtime import Runtime
-from bench_config import BenchAppConfig
-from mock_agent import AGENT_NAME, MockAgent
+from mock_agent import AGENT_NAME, MockAgent, mock_delays
 
-if BenchAppConfig.get().mock_delays:
+if mock_delays():
     Runtime.current().register(MockAgent())
 else:
     from agentkernel.openai import OpenAIModule

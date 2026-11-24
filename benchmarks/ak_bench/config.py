@@ -1,8 +1,12 @@
+import os
 from pathlib import Path
-from typing import Literal
+from threading import RLock
+from typing import ClassVar, Literal, Optional
 
 import yaml
+from agentkernel.core.util.config_yaml_util import YamlBaseSettingsModified, yaml_config_settings_source
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError, field_validator, model_validator
+from pydantic_settings import SettingsConfigDict
 
 from ak_bench.errors import BenchConfigError
 
@@ -84,18 +88,30 @@ class MockAgentConfig(BaseModel):
         return self.min_delay, self.max_delay
 
 
-class BenchConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class BenchConfig(YamlBaseSettingsModified):
+    """Loaded the way AKConfig is: ak-bench.yaml in the working directory (path override AK_BENCH_CONFIG_PATH_OVERRIDE,
+    which `--config` sets) and `AK_BENCH_`-prefixed environment variables, nested keys joined with `__`
+    (e.g. AK_BENCH_STEP_RUN__TIME_WINDOW_S). Read it with BenchConfig.get().
+    """
+
+    yaml_file_env_var: ClassVar[str] = "AK_BENCH_CONFIG_PATH_OVERRIDE"
+    yaml_file_default: ClassVar[str] = "ak-bench.yaml"
+    warn_if_missing: ClassVar[bool] = False  # a missing file is reported by get() as a BenchConfigError
+
+    _instance: ClassVar[Optional["BenchConfig"]] = None
+    _instance_lock: ClassVar[RLock] = RLock()
+
+    model_config = SettingsConfigDict(env_prefix="AK_BENCH_", env_nested_delimiter="__", extra="forbid", env_ignore_empty=True)
 
     hosts: list[str] | None = None
     modes: list[str] | None = None
     message_types: list[str] | None = None
-    test_types: list[Literal["steady", "burst"]] = ["steady", "burst"]
+    test_types: list[Literal["steady", "burst"]] = Field(default_factory=lambda: ["steady", "burst"])
     load_steps: list[int] = Field(default=[1, 10, 100, 1000], min_length=1)
     step_run: StepRunConfig
     steady_traffic: SteadyTrafficConfig = SteadyTrafficConfig()
     fetchers: FetchersConfig
-    host_settings: dict[str, HostSettings] = {}
+    host_settings: dict[str, HostSettings] = Field(default_factory=dict)
     mock_agent: MockAgentConfig | None = None
 
     @field_validator("load_steps")
@@ -114,15 +130,32 @@ class BenchConfig(BaseModel):
         return self.step_run.max_cooldown_s
 
     @classmethod
-    def load(cls, path: Path) -> "BenchConfig":
+    def get(cls) -> "BenchConfig":
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = cls._load()
+        return cls._instance
+
+    @classmethod
+    def _reset(cls):
+        """Clear the cached singleton so the next get() reloads the config."""
+        cls._instance = None
+
+    @classmethod
+    def _load(cls) -> "BenchConfig":
+        path = Path(os.environ.get(cls.yaml_file_env_var, cls.yaml_file_default))
         try:
-            data = yaml.safe_load(Path(path).read_text())
-            return cls.model_validate(data or {})
-        except FileNotFoundError:
-            raise BenchConfigError(f"config file not found: {path}") from None
-        except OSError as e:
-            raise BenchConfigError(f"can't read config file {path}: {e}") from None
+            # AK's YAML source passes on only known keys; a top-level typo must still be refused.
+            unknown = sorted(set(yaml_config_settings_source(cls)) - set(cls.model_fields))
+            if unknown:
+                raise BenchConfigError(f"{path}: unknown key(s): {', '.join(unknown)}")
+            return cls()
+        except ValidationError as e:
+            if not path.exists():
+                raise BenchConfigError(f"config file not found: {path}") from None
+            raise BenchConfigError(f"{path}: {e}") from None
         except yaml.YAMLError as e:
             raise BenchConfigError(f"{path}: invalid YAML: {e}") from None
-        except ValidationError as e:
-            raise BenchConfigError(f"{path}: {e}") from None
+        except (OSError, TypeError) as e:
+            raise BenchConfigError(f"can't read config file {path}: {e}") from None

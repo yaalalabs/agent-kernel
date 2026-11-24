@@ -68,11 +68,10 @@ benchmarks/
 │   ├── uv.lock
 │   ├── README.md
 │   ├── agent.py                # registers MockAgent or the real agent; starts nothing (entry files are per deployment folder)
-│   ├── bench_config.py         # BenchAppConfig: the app's own settings (mock delays), separate from AKConfig
 │   ├── config.yaml             # the app's AK config (below)
-│   ├── mock_agent.py           # MockRunner, MockAgent
-│   ├── bench_identity.py       # BenchIdentityProvider
-│   ├── tests/                  # test_mock_agent.py, test_bench_config.py, test_bench_identity.py
+│   ├── mock_agent.py           # MockRunner, MockAgent, mock_delays()
+│   ├── identity.py             # BenchIdentityProvider
+│   ├── tests/                  # test_mock_agent.py, test_identity.py
 │   └── deploy/                 # deployment folders: none in this issue (they come with the AWS issues)
 └── tests/
     ├── conftest.py             # fixtures below
@@ -154,10 +153,14 @@ class FetcherTypeError(BenchError): ...          # fetch() returned another type
 
 ### Configuration (`config.py`)
 
-`BenchConfig` is a Pydantic model read with `yaml.safe_load` from `--config` (default `./ak-bench.yaml`). Every model
-has `model_config = ConfigDict(extra="forbid")`, so an unknown key fails with Pydantic's error, which names the key
-path (e.g. `step_run.befor_window_s: Extra inputs are not permitted`). `BenchConfig.load(path)` wraps any
-`ValidationError` / `yaml.YAMLError` / missing file in `BenchConfigError`.
+`BenchConfig` is loaded the way `AKConfig` is: a `YamlBaseSettingsModified` subclass
+(`ak-py/src/agentkernel/core/util/config_yaml_util.py`) reading `ak-bench.yaml` in the working directory (path
+override `AK_BENCH_CONFIG_PATH_OVERRIDE`, which `--config` sets) and `AK_BENCH_`-prefixed environment variables, nested
+keys joined with `__` (e.g. `AK_BENCH_STEP_RUN__TIME_WINDOW_S`); environment variables win over the file. Read with the
+`BenchConfig.get()` singleton (`_reset()` clears it). Every sub-model has `extra="forbid"`, so an unknown key fails
+with Pydantic's error, which names the key path (e.g. `step_run.befor_window_s: Extra inputs are not permitted`);
+unknown top-level keys of the file are refused by `get()` (AK's YAML source passes on only known keys). `get()` wraps
+any `ValidationError` / `yaml.YAMLError` / missing file in `BenchConfigError`.
 
 ```python
 class StepRunConfig(BaseModel):
@@ -192,7 +195,10 @@ class MockAgentConfig(BaseModel):
     max_delay: float | None = None
     def delays(self) -> tuple[float, float] | None: ...    # the mock_agent rules below
 
-class BenchConfig(BaseModel):
+class BenchConfig(YamlBaseSettingsModified):
+    yaml_file_env_var = "AK_BENCH_CONFIG_PATH_OVERRIDE"; yaml_file_default = "ak-bench.yaml"
+    model_config = SettingsConfigDict(env_prefix="AK_BENCH_", env_nested_delimiter="__", extra="forbid", env_ignore_empty=True)
+
     hosts: list[str] | None = None           # None = every registered host
     modes: list[str] | None = None           # None = every mode with a driver
     message_types: list[str] | None = None   # None = every message type with a driver
@@ -205,6 +211,10 @@ class BenchConfig(BaseModel):
     mock_agent: MockAgentConfig | None = None
 
     def max_cooldown_for(self, host: str) -> float: ...    # host_settings.<host>.max_cooldown_s, else step_run's
+    @classmethod
+    def get(cls) -> "BenchConfig": ...    # singleton; refuses unknown top-level keys; errors → BenchConfigError
+    @classmethod
+    def _reset(cls): ...
 ```
 
 - **Required keys:** `step_run.time_window_s` and `fetchers.default.poll_interval_s`. A file without them fails at load
@@ -615,7 +625,7 @@ exit 1; `KeyboardInterrupt` → exit 130.
 class MockRunner(Runner):
     def __init__(self):
         super().__init__("MockRunner")
-        self._min, self._max = BenchAppConfig.get().mock_delays   # read once, at creation
+        self._min, self._max = mock_delays()   # read once, at creation
 
     async def run(self, agent, session, requests) -> AgentReplyAny:
         await asyncio.sleep(random.uniform(self._min, self._max))
@@ -637,14 +647,12 @@ class MockAgent(Agent):
 - `Runner` (`ak-py/src/agentkernel/core/base.py:337`) has abstract `run()` (`:491`) and `stream()` (`:574`);
   `Agent` is at `:603`; the shape follows `DummyRunner` / `DummyAgent` (`ak-py/tests/test_pipeline_request_handler.py:35,51`).
 - No state on `self` besides the two delays; no timing; nothing written to the session.
-- **`BenchAppConfig` (`bench_config.py`):** a `YamlBaseSettingsModified` subclass like `AKTestConfig`
-  (`ak-py/src/agentkernel/test/config.py`) with a `get()` singleton. Fields `mock_agent_min_delay_s` /
-  `mock_agent_max_delay_s` (`float | None`, `ge=0`), env prefix `AK_BENCH_` (so the deploy contract's variable names
-  are unchanged), optional `bench-config.yaml` (override `AK_BENCH_CONFIG_PATH_OVERRIDE`), empty values ignored.
-  Validator: exactly one set, or min > max → `ValidationError`. `mock_delays` → `(min, max)` or `None`.
+- **`mock_delays()` (`mock_agent.py`):** reads `AK_BENCH_MOCK_AGENT_MIN_DELAY_S` / `AK_BENCH_MOCK_AGENT_MAX_DELAY_S`
+  (empty counts as unset) → `(min, max)` or `None`. The values come from `ak-bench.yaml` `mock_agent`, already checked
+  by `MockAgentConfig.delays()` before `deploy`; the app only refuses exactly one set (`RuntimeError`).
 - **`agent.py`:** registers the agent only; it starts nothing, since every host and tier has its own entry
   point (Lambda handlers, ECS `AgentRunner.run` / `AWSWebsocketAPI.run()`), written in the deployment folder's entry
-  files that `import agent`. `MockAgent` is registered when `BenchAppConfig.get().mock_delays` is set; otherwise the real agent: an
+  files that `import agent`. `MockAgent` is registered when `mock_delays()` is set; otherwise the real agent: an
   `OpenAIModule` agent under the same `AGENT_NAME` (OpenAI key from `SecretManager`, as the AWS examples do), instructed to repeat the user's message (so the reply still
   carries the request id, see [WebSocket complete driver](#websocket-complete-driver-loaddriverws_completepy)). Exactly one
   of the two set → the app raises at import (a broken deployment, not a silent real agent; `deploy` already refuses
@@ -652,13 +660,13 @@ class MockAgent(Agent):
 - `Runtime.run` calls the runner (`core/runtime.py:546`) and saves the session after the post-hooks (`:555`), so the
   hooks and the in-memory save stay in the measured `AGENT_START` → `AGENT_DONE` span.
 - **`config.yaml`:** `session.type: in_memory`, `logging.ak.level: TRACE`, `execution.mode: async`,
-  `execution.message_type: complete`, `identity.provider.type: bench_identity.BenchIdentityProvider` with
+  `execution.message_type: complete`, `identity.provider.type: identity.BenchIdentityProvider` with
   `secret_key: AK_BENCH_AUTH_SECRET`, no hooks. Host-specific keys (transport, `secret.provider.type: aws_ssm`,
   `secret.prefix`, deployment blocks) are set by each deployment folder (env vars / its own config), not here.
 
 ### Client authentication
 
-**`BenchIdentityProvider` (`app/bench_identity.py`):**
+**`BenchIdentityProvider` (`app/identity.py`):**
 
 ```python
 class BenchIdentityProvider(IdentityProvider):
@@ -1123,7 +1131,7 @@ For the reviewer: none changes a `design.md` requirement, but each fills a gap i
 
 | Failure | Where | What happens |
 |---|---|---|
-| `ak-bench.yaml` missing / invalid YAML / unknown key / missing required key | `BenchConfig.load` | `BenchConfigError` naming the key path; exit 1; nothing runs |
+| `ak-bench.yaml` missing / invalid YAML / unknown key / missing required key | `BenchConfig.get()` | `BenchConfigError` naming the key path; exit 1; nothing runs |
 | unknown host / no driver for mode × message type | `HostRegistry.get`, `DriverFactory` | `BenchConfigError` naming the built-ins |
 | invalid host fetcher lists | `Fetchers.validate` | `HostRefused` naming host and fetcher, before deploy |
 | unknown `fetchers.<name>` | `FetchersConfig.check_names` | `BenchConfigError` naming key and known names, before deploy |
@@ -1176,7 +1184,7 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 
 | File | Asserts |
 |---|---|
-| `test_config.py` | defaults equal the #786 example; missing `step_run.time_window_s` / `fetchers.default` named; unknown key named; `host_settings.x.anything` accepted; `max_cooldown_for` override; `check_names` refuses `aws.ecs-api` listing known names; `mock_agent` table (both / neither / one / negative / min > max) |
+| `test_config.py` | defaults equal the #786 example; env vars override the file; other `AK_BENCH_` variables ignored; `get()` singleton; `--config` sets the path; unknown top-level key named; missing `step_run.time_window_s` / `fetchers.default` named; unknown key named; `host_settings.x.anything` accepted; `max_cooldown_for` override; `check_names` refuses `aws.ecs-api` listing known names; `mock_agent` table (both / neither / one / negative / min > max) |
 | `test_registries.py` | unknown host / driver error lists built-ins; `HostRegistry.get` runs `validate` |
 | `test_fetchers_base.py` | `validate` refuses: cooldown fetcher without `is_settled`, scaling without `running`, nameless fetcher (message names host + fetcher); `fetch_and_store` wrong type → `FetcherTypeError` naming fetcher, expected, returned |
 | `test_family_store.py` | each family writes its file and columns; a second store with the same key replaces the row (all five families, incl. spans latest-wins); two threads storing 500 rows each into one file lose none |
@@ -1193,8 +1201,7 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 | `test_plots.py` | every phase-1 graph file is produced from recorded data, including one with all-empty resource data (panels drawn, not skipped); cost graph only when `cost.csv` exists |
 | `test_token_cross_check.py` | a `TokenSigner` token is accepted by `BenchIdentityProvider` (imports the app module by path; the app's dependencies are a subset of the harness's) |
 | `app/tests/test_mock_agent.py` | `run()` sleeps within [min, max] (patched `asyncio.sleep` records the delay; `random.uniform` bounds over many draws), echo content, nothing added to the session, variables read once at creation; `agent.py` registers `MockAgent` with both variables, the real agent with neither, and raises with one |
-| `app/tests/test_bench_config.py` | env vars → `mock_delays`; neither / empty → `None`; YAML read and env wins over it; `get()` singleton; one set / negative / min > max → `ValidationError` |
-| `app/tests/test_bench_identity.py` | signed token → `Principal(subject="bench-7", kind="user", provider="bench", namespace="bench")`; changed user, changed signature, no `.`, empty user / signature, unsigned token → `AuthenticationError`; missing / empty secret → `AKConfigError` at build; same token for the same user every time (`TokenSigner`) |
+| `app/tests/test_identity.py` | signed token → `Principal(subject="bench-7", kind="user", provider="bench", namespace="bench")`; changed user, changed signature, no `.`, empty user / signature, unsigned token → `AuthenticationError`; missing / empty secret → `AKConfigError` at build; same token for the same user every time (`TokenSigner`) |
 
 - Riskiest consumer: `Run`'s teardown path (a missed `finish` leaves cloud resources running) has its own file.
 - No existing test file changes; no AK patch targets move.

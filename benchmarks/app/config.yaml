@@ -13,5 +13,5 @@ execution:
 
 identity:
   provider:
-    type: bench_identity.BenchIdentityProvider
+    type: identity.BenchIdentityProvider
     secret_key: AK_BENCH_AUTH_SECRET

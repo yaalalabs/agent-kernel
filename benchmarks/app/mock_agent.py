@@ -1,6 +1,7 @@
 """The mock agent: replies with an echo of the prompt after a random delay, so the benchmark measures AK, not a model."""
 
 import asyncio
+import os
 import random
 import uuid
 from collections.abc import AsyncGenerator
@@ -8,9 +9,18 @@ from collections.abc import AsyncGenerator
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import AgentReplyAny, AgentRequestText
-from bench_config import BenchAppConfig
 
 AGENT_NAME = "bench"
+MIN_DELAY_ENV, MAX_DELAY_ENV = "AK_BENCH_MOCK_AGENT_MIN_DELAY_S", "AK_BENCH_MOCK_AGENT_MAX_DELAY_S"
+
+
+def mock_delays() -> tuple[float, float] | None:
+    """(min, max) seconds that ak-bench deploy passed in from its `mock_agent` config (checked there), else None for the real agent."""
+    low, high = os.environ.get(MIN_DELAY_ENV) or None, os.environ.get(MAX_DELAY_ENV) or None
+    # A half-configured mock is a broken deployment, never a silent fall-back to the real (billed) agent.
+    if (low is None) != (high is None):
+        raise RuntimeError(f"set both {MIN_DELAY_ENV} and {MAX_DELAY_ENV} for the mock agent, or neither for the real agent")
+    return None if low is None else (float(low), float(high))
 
 
 class MockRunner(Runner):
@@ -18,7 +28,7 @@ class MockRunner(Runner):
 
     def __init__(self):
         super().__init__("MockRunner")
-        self._min, self._max = BenchAppConfig.get().mock_delays
+        self._min, self._max = mock_delays()
 
     async def run(self, agent, session, requests) -> AgentReplyAny:
         await asyncio.sleep(random.uniform(self._min, self._max))

@@ -35,7 +35,7 @@ Global options (before the command):
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--config` | `./ak-bench.yaml` | Benchmark config file |
+| `--config` | `$AK_BENCH_CONFIG_PATH_OVERRIDE`, else `./ak-bench.yaml` | Benchmark config file |
 | `--results-dir` | `./results` | Where results go: `results/<run-id>/...`, plus `run.log` per run |
 | `--deploy-root` | `benchmarks/app/deploy/` | Folder holding the deployment folders (`<host>-<mode>-<message-type>/`) |
 
@@ -53,7 +53,8 @@ uv run ak-bench post-run --deployment <id>    # later, once the bill is in
 ## Configuration (`ak-bench.yaml`)
 
 [ak-bench.example.yaml](ak-bench.example.yaml) lists every key with its default. Unknown keys are refused, naming the
-key.
+key. Any key can also be set by an `AK_BENCH_`-prefixed environment variable, nested keys joined with `__`
+(`AK_BENCH_STEP_RUN__TIME_WINDOW_S=5`); it wins over the file.
 
 | Key | Default | Meaning |
 |---|---|---|

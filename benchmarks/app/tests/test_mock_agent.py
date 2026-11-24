@@ -7,20 +7,10 @@ import pytest
 from agentkernel.core.base import Session
 from agentkernel.core.model import AgentReplyAny, AgentRequestText
 from agentkernel.core.runtime import Runtime
-from bench_config import BenchAppConfig
 from mock_agent import AGENT_NAME, MockAgent, MockRunner
-from pydantic import ValidationError
 
 APP = Path(__file__).resolve().parent.parent / "agent.py"
 MIN, MAX = "AK_BENCH_MOCK_AGENT_MIN_DELAY_S", "AK_BENCH_MOCK_AGENT_MAX_DELAY_S"
-
-
-@pytest.fixture(autouse=True)
-def fresh_config(monkeypatch):
-    monkeypatch.setenv("AK_BENCH_CONFIG_PATH_OVERRIDE", "/nonexistent/bench-config.yaml")
-    BenchAppConfig._reset()
-    yield
-    BenchAppConfig._reset()
 
 
 @pytest.fixture
@@ -88,7 +78,6 @@ async def test_variables_read_once_at_creation(delays, sleeps, monkeypatch):
     runner = MockRunner()
     monkeypatch.setenv(MIN, "100")
     monkeypatch.setenv(MAX, "200")
-    BenchAppConfig._reset()
     await runner.run(None, MagicMock(spec=Session), [AgentRequestText(prompt="x")])
     assert 0.5 <= sleeps[0] <= 1.5
 
@@ -111,6 +100,6 @@ def test_agent_registers_real_agent_with_neither(monkeypatch, clean_runtime):
 def test_agent_raises_with_only_one_variable(monkeypatch, clean_runtime, set_var, unset_var):
     monkeypatch.setenv(set_var, "1")
     monkeypatch.setenv(unset_var, "")
-    with pytest.raises(ValidationError, match="set both"):
+    with pytest.raises(RuntimeError, match="set both"):
         runpy.run_path(str(APP))
     assert AGENT_NAME not in Runtime.current().agents()

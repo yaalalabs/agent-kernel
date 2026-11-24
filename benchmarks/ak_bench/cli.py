@@ -1,6 +1,9 @@
 import argparse
+import os
 import sys
 from pathlib import Path
+
+from ak_bench.config import BenchConfig
 
 DEFAULT_DEPLOY_ROOT = Path(__file__).resolve().parent.parent / "app" / "deploy"
 
@@ -18,6 +21,9 @@ class BenchCli:
 
     def run(self, argv: list[str]) -> int:
         args = self.parser.parse_args(argv)
+        if args.config is not None:
+            # BenchConfig.get() reads the file from here, as AKConfig does from AK_CONFIG_PATH_OVERRIDE.
+            os.environ[BenchConfig.yaml_file_env_var] = str(args.config)
         if args.command == "step":
             self._check_step_args(args)
         raise NotImplementedError(f"ak-bench {args.command}: not implemented yet")
@@ -34,7 +40,7 @@ class BenchCli:
     @staticmethod
     def _build_parser() -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(prog="ak-bench", description="Agent Kernel benchmark harness")
-        parser.add_argument("--config", type=Path, default=Path("ak-bench.yaml"), help="benchmark config file (default: ./ak-bench.yaml)")
+        parser.add_argument("--config", type=Path, help="benchmark config file (default: $AK_BENCH_CONFIG_PATH_OVERRIDE, else ./ak-bench.yaml)")
         parser.add_argument("--results-dir", type=Path, default=Path("results"), help="results root (default: ./results)")
         parser.add_argument("--deploy-root", type=Path, default=DEFAULT_DEPLOY_ROOT, help="folder holding the deployment folders")
         sub = parser.add_subparsers(dest="command", required=True)

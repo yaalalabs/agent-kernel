@@ -72,7 +72,8 @@ of restating them, and only adds what the harness build needs to pin down. Part 
 
 - Its own config file, not `AKConfig` (departure from the config-reuse house pattern already accepted in #786:
   benchmark settings, not AK runtime config).
-- Read into one Pydantic model (`BenchConfig`) with every key of the #786 example (Benchmark project) and the
+- Loaded into `BenchConfig` the way `AKConfig` is loaded (`YamlBaseSettingsModified`: the YAML file plus
+  `AK_BENCH_`-prefixed environment variables, a `get()` singleton), with every key of the #786 example (Benchmark project) and the
   defaults listed there, plus two new keys under `step_run` (below), and no others.
 - New keys for the step-end check (were fixed values in `StepEndCheck`):
   - `step_run.cooldown_poll_interval_s`, default `10`: time between two cool-down polls.
@@ -109,8 +110,9 @@ of restating them, and only adds what the harness build needs to pin down. Part 
 
 - `MockRunner(Runner)` and `MockAgent(Agent)` in `benchmarks/app/`, registered with the runtime like any agent. No AK
   code change.
-- `MockRunner` reads its delays once, at creation, from `BenchAppConfig` (the app's own settings class, separate from
-  `AKConfig`), which loads `AK_BENCH_MOCK_AGENT_MIN_DELAY_S` and `AK_BENCH_MOCK_AGENT_MAX_DELAY_S`.
+- The delays are owned by `ak-bench.yaml` `mock_agent` (checked by `ak-bench`); `deploy` passes them to the app as
+  `AK_BENCH_MOCK_AGENT_MIN_DELAY_S` and `AK_BENCH_MOCK_AGENT_MAX_DELAY_S`. `MockRunner` reads the two variables once, at
+  creation; the app has no settings class of its own.
 - `run()`: `await asyncio.sleep(random.uniform(min_delay, max_delay))`, drawn per request, then returns
   `AgentReplyAny(content={"echo": <prompt>})`.
 - `stream()`: the same delay, then the echo as stream events (unused by WebSocket complete; for delta later).

@@ -22,7 +22,7 @@ No file under `ak-py/` changes in any iteration.
   1. Write `pyproject.toml` as in Dependencies and tooling (path source on `../ak-py`, `ak-bench` script, dev group);
      `uv lock`.
   2. Add the error classes (Errors).
-  3. Add `BenchConfig` and its sub-models, `BenchConfig.load`, `FetchersConfig.poll_interval_for` /
+  3. Add `BenchConfig` (an AKConfig-style `YamlBaseSettingsModified` with `get()` / `_reset()`) and its sub-models, `FetchersConfig.poll_interval_for` /
      `check_names`, `MockAgentConfig.delays`, `max_cooldown_for` (Configuration).
   4. Add `ak-bench.example.yaml` with every #786 key and its default plus the two new `step_run` keys.
   5. Add `BenchCli` with the global flags and the six sub-commands' arguments, and `main()` (Commands → CLI).
@@ -51,15 +51,15 @@ No file under `ak-py/` changes in any iteration.
 Independent of Iterations 1–2; can be built in parallel.
 
 - **Goal:** `benchmarks/app/` runs the mock agent or the real agent, and accepts only signed tokens.
-- **Files:** `benchmarks/app/pyproject.toml`, `uv.lock`, `README.md`, `agent.py`, `bench_config.py`, `config.yaml`, `mock_agent.py`,
-  `bench_identity.py`, `app/deploy/README.md`, `app/tests/test_mock_agent.py`, `app/tests/test_bench_config.py`,
-  `app/tests/test_bench_identity.py`
+- **Files:** `benchmarks/app/pyproject.toml`, `uv.lock`, `README.md`, `agent.py`, `config.yaml`, `mock_agent.py`,
+  `identity.py`, `app/deploy/README.md`, `app/tests/test_mock_agent.py`,
+  `app/tests/test_identity.py`
 - **Steps:**
   1. Write `pyproject.toml` like `e2e/app/pyproject.toml` with `agentkernel[api,openai]` from `../../ak-py`;
      `uv lock` (Dependencies and tooling).
   2. Add `MockRunner` / `MockAgent` (Mock agent app).
   3. Add `BenchIdentityProvider` (Client authentication).
-  4. Add `BenchAppConfig` and `agent.py` (mock vs real selection, raise when only one variable is set) and `config.yaml` (Mock agent app →
+  4. Add `mock_delays()` and `agent.py` (mock vs real selection, raise when only one variable is set) and `config.yaml` (Mock agent app →
      `config.yaml`).
   5. Write `app/deploy/README.md` with the deployment-folder script contract, including "no component sets
      `AK_BENCH_AUTH_SECRET`" (Deployment folders).
