@@ -1,13 +1,11 @@
 import hashlib
 import hmac
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from agentkernel.core.config import AKConfig, _IdentityProviderConfig
-from agentkernel.core.model import Principal
-from agentkernel.core.util.factory import AKConfigError
-from agentkernel.identity.errors import AuthenticationError
-from agentkernel.identity.provider.factory import IdentityProviderFactory
+from agentkernel.core import Config, Principal
+from agentkernel.identity import AuthenticationError, IdentityProviderFactory
 from agentkernel.secret import EnvSecretProvider, SecretManager
 from identity import BenchIdentityProvider
 
@@ -26,7 +24,7 @@ def provider(monkeypatch, value: str | None = SECRET, **extra) -> BenchIdentityP
         monkeypatch.delenv(key, raising=False)
     else:
         monkeypatch.setenv(key, value)
-    return BenchIdentityProvider(_IdentityProviderConfig(type="identity.BenchIdentityProvider", **extra), SecretManager(EnvSecretProvider()))
+    return BenchIdentityProvider(SimpleNamespace(model_extra=extra), SecretManager(EnvSecretProvider()))
 
 
 @pytest.mark.asyncio
@@ -61,7 +59,7 @@ async def test_bad_tokens_refused(monkeypatch, credential):
 
 @pytest.mark.parametrize("value", [None, ""])
 def test_missing_or_empty_secret_fails_at_build(monkeypatch, value):
-    with pytest.raises(AKConfigError, match="AK_BENCH_AUTH_SECRET"):
+    with pytest.raises(RuntimeError, match="AK_BENCH_AUTH_SECRET"):
         provider(monkeypatch, value)
 
 
@@ -69,12 +67,12 @@ def test_missing_or_empty_secret_fails_at_build(monkeypatch, value):
 async def test_app_config_builds_provider_through_ak_factory(monkeypatch):
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(CONFIG))
     monkeypatch.setenv("AK_BENCH_AUTH_SECRET", SECRET)
-    AKConfig._reset()
+    Config._reset()
     SecretManager.reset()
     try:
-        built = IdentityProviderFactory.create(AKConfig.get().identity)
+        built = IdentityProviderFactory.create(Config.get().identity)
         assert isinstance(built, BenchIdentityProvider)
         assert (await built.authenticate(sign("bench-2"))).subject == "bench-2"
     finally:
-        AKConfig._reset()
+        Config._reset()
         SecretManager.reset()

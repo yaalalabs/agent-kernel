@@ -2,7 +2,7 @@ import csv
 import threading
 from datetime import UTC, datetime, timedelta
 
-from agentkernel.core.logger import TraceStage
+from agentkernel.core import TraceStage
 from mocks.fetchers import MockCostFetcher, MockResourceFetcher, MockScalingFetcher, MockTraceCollector, MockTransportCollector
 
 from ak_bench.platforms.base import (

@@ -5,7 +5,7 @@ import time
 from datetime import UTC, datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from agentkernel.core.logger import TraceStage
+from agentkernel.core import TraceStage
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 

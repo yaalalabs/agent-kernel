@@ -4,7 +4,7 @@ Importing this module registers the agent; it starts nothing. Each deployment fo
 hand over to the host's entry point (Lambda handlers, ECS `AgentRunner.run` / `AWSWebsocketAPI.run`, ...).
 """
 
-from agentkernel.core.runtime import Runtime
+from agentkernel.core import Runtime
 from mock_agent import AGENT_NAME, MockAgent, mock_delays
 
 if mock_delays():

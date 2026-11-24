@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import ClassVar
 
-from agentkernel.core.logger import TraceStage
+from agentkernel.core import TraceStage
 
 from ak_bench.load.records import ResponseEvent
 

@@ -4,9 +4,8 @@ from threading import RLock
 from typing import ClassVar, Literal, Optional
 
 import yaml
-from agentkernel.core.util.config_yaml_util import YamlBaseSettingsModified, yaml_config_settings_source
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError, field_validator, model_validator
-from pydantic_settings import SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from ak_bench.errors import BenchConfigError
 
@@ -88,15 +87,14 @@ class MockAgentConfig(BaseModel):
         return self.min_delay, self.max_delay
 
 
-class BenchConfig(YamlBaseSettingsModified):
-    """Loaded the way AKConfig is: ak-bench.yaml in the working directory (path override AK_BENCH_CONFIG_PATH_OVERRIDE,
+class BenchConfig(BaseSettings):
+    """Loaded like AKConfig, without AK's internal loader: ak-bench.yaml in the working directory (path override AK_BENCH_CONFIG_PATH_OVERRIDE,
     which `--config` sets) and `AK_BENCH_`-prefixed environment variables, nested keys joined with `__`
     (e.g. AK_BENCH_STEP_RUN__TIME_WINDOW_S). Read it with BenchConfig.get().
     """
 
     yaml_file_env_var: ClassVar[str] = "AK_BENCH_CONFIG_PATH_OVERRIDE"
     yaml_file_default: ClassVar[str] = "ak-bench.yaml"
-    warn_if_missing: ClassVar[bool] = False  # a missing file is reported by get() as a BenchConfigError
 
     _instance: ClassVar[Optional["BenchConfig"]] = None
     _instance_lock: ClassVar[RLock] = RLock()
@@ -113,6 +111,22 @@ class BenchConfig(YamlBaseSettingsModified):
     fetchers: FetchersConfig
     host_settings: dict[str, HostSettings] = Field(default_factory=dict)
     mock_agent: MockAgentConfig | None = None
+
+    @classmethod
+    def _path(cls) -> Path:
+        return Path(os.environ.get(cls.yaml_file_env_var, cls.yaml_file_default))
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Environment variables override the file, as in AKConfig.
+        return init_settings, env_settings, YamlConfigSettingsSource(settings_cls, yaml_file=cls._path())
 
     @field_validator("load_steps")
     @classmethod
@@ -144,10 +158,12 @@ class BenchConfig(YamlBaseSettingsModified):
 
     @classmethod
     def _load(cls) -> "BenchConfig":
-        path = Path(os.environ.get(cls.yaml_file_env_var, cls.yaml_file_default))
+        path = cls._path()
+        if path.exists() and not path.is_file():  # pydantic's YAML source would silently read it as empty
+            raise BenchConfigError(f"can't read config file {path}: not a file")
         try:
-            # AK's YAML source passes on only known keys; a top-level typo must still be refused.
-            unknown = sorted(set(yaml_config_settings_source(cls)) - set(cls.model_fields))
+            # Named up front so the message says "unknown key" rather than pydantic's "extra inputs".
+            unknown = sorted(set(YamlConfigSettingsSource(cls, yaml_file=path)()) - set(cls.model_fields))
             if unknown:
                 raise BenchConfigError(f"{path}: unknown key(s): {', '.join(unknown)}")
             return cls()
@@ -157,5 +173,5 @@ class BenchConfig(YamlBaseSettingsModified):
             raise BenchConfigError(f"{path}: {e}") from None
         except yaml.YAMLError as e:
             raise BenchConfigError(f"{path}: invalid YAML: {e}") from None
-        except (OSError, TypeError) as e:
+        except (OSError, ValueError) as e:  # ValueError: the top level isn't a mapping
             raise BenchConfigError(f"can't read config file {path}: {e}") from None

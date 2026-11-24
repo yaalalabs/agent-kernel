@@ -4,9 +4,7 @@ from unittest.mock import MagicMock
 
 import mock_agent
 import pytest
-from agentkernel.core.base import Session
-from agentkernel.core.model import AgentReplyAny, AgentRequestText
-from agentkernel.core.runtime import Runtime
+from agentkernel.core import AgentReplyAny, AgentRequestText, Runtime, Session
 from mock_agent import AGENT_NAME, MockAgent, MockRunner
 
 APP = Path(__file__).resolve().parent.parent / "agent.py"

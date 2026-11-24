@@ -1,8 +1,8 @@
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from agentkernel.core.config import _IdentityProviderConfig
 from agentkernel.secret import EnvSecretProvider, SecretManager
 
 from ak_bench.load.token import TokenSigner
@@ -20,7 +20,7 @@ def identity():
 @pytest.mark.asyncio
 async def test_signer_token_accepted_by_app_provider(monkeypatch):
     monkeypatch.setenv("AK_BENCH_AUTH_SECRET", "s3cret")
-    provider = identity().BenchIdentityProvider(_IdentityProviderConfig(type="identity.BenchIdentityProvider"), SecretManager(EnvSecretProvider()))
+    provider = identity().BenchIdentityProvider(SimpleNamespace(model_extra={}), SecretManager(EnvSecretProvider()))
     signer = TokenSigner("s3cret")
     principal = await provider.authenticate(signer.token(TokenSigner.user(7)))
     assert principal.subject == "bench-7"

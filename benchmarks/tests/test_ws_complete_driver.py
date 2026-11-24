@@ -2,7 +2,7 @@ import asyncio
 import json
 
 import pytest
-from agentkernel.core.logger import TraceStage
+from agentkernel.core import TraceStage
 from mocks.ws_server import MockWsServer
 
 from ak_bench.load.driver.ws_complete import WebSocketCompleteDriver

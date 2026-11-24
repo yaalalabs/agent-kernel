@@ -6,9 +6,7 @@ import random
 import uuid
 from collections.abc import AsyncGenerator
 
-from agentkernel.core.base import Agent, Runner
-from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
-from agentkernel.core.model import AgentReplyAny, AgentRequestText
+from agentkernel.core import Agent, AgentReplyAny, AgentRequestText, MessageEnd, MessageStart, Runner, TextDelta
 
 AGENT_NAME = "bench"
 MIN_DELAY_ENV, MAX_DELAY_ENV = "AK_BENCH_MOCK_AGENT_MIN_DELAY_S", "AK_BENCH_MOCK_AGENT_MAX_DELAY_S"

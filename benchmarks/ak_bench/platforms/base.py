@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from agentkernel.core.logger import TraceStage
+from agentkernel.core import TraceStage
 
 from ak_bench.errors import FetcherTypeError, HostRefused, ScriptFailed
 from ak_bench.results.keyed_csv import KeyedCsv
