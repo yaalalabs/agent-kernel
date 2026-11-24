@@ -6,11 +6,11 @@ Set:
   config.yaml accepts.
 
 Each test prints the real status it got (run with `pytest -s`), so the output can be kept as the record that the
-authorizer and FastMCP behave as the design says:
+request handler authenticates as the design says (the A2A and MCP routes have no API Gateway authorizer):
 
-- an A2A message with no token is refused by the API Gateway authorizer (401 or 403);
-- the A2A agent card and catalog are public: no token, 200;
-- /mcp bypasses the authorizer, so a call with no token gets FastMCP's own 401, and a call with a valid token works;
+- an A2A message with no token runs as the anonymous principal (200), as on ECS; one with a wrong token gets the app's 401;
+- the A2A agent card and catalog need no token: 200;
+- /mcp with no token or a wrong one gets FastMCP's own 401, and a call with a valid token works;
 - two A2A messages and two MCP calls on one session share the agent's memory, so the session holds across Lambda
   invocations.
 """
@@ -172,7 +172,7 @@ async def test_two_mcp_tool_calls_on_one_session_share_the_agents_memory(stack):
     assert "amber" in second.lower()
 
 
-# ---- A2A: public card and catalog, everything else behind the authorizer --------------------------------------------
+# ---- A2A: the request handler authenticates; no token is the anonymous principal -------------------------------------
 
 
 @pytest.mark.asyncio
@@ -207,38 +207,39 @@ A2A_SEND = {
 
 @pytest.mark.asyncio
 @pytest.mark.order(6)
-async def test_an_a2a_message_with_no_token_is_refused_by_the_authorizer(stack):
-    """The app would run it as the anonymous principal: the authorizer is what keeps the caller away from the agent."""
+async def test_an_a2a_message_with_no_token_runs_as_the_anonymous_principal(stack):
+    """The same as on ECS: no credential is not a refusal, the call runs as the anonymous principal."""
     response = await request(
         "POST", f"{stack['base']}/a2a/{AGENT}/message:send", token=None, json=A2A_SEND, headers=A2A_HEADERS
     )
     show("a2a message:send, no token", response)
 
-    assert response.status_code in (401, 403)
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(7)
-async def test_an_a2a_message_with_a_wrong_token_is_refused_by_the_authorizer(stack):
+async def test_an_a2a_message_with_a_wrong_token_gets_the_apps_401(stack):
     response = await request(
         "POST", f"{stack['base']}/a2a/{AGENT}/message:send", token="not-the-token", json=A2A_SEND, headers=A2A_HEADERS
     )
     show("a2a message:send, wrong token", response)
 
-    assert response.status_code in (401, 403)
+    assert response.status_code == 401
+    assert not any(refusal in response.text for refusal in GATEWAY_REFUSALS)
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(8)
-async def test_an_a2a_task_route_with_no_token_is_refused_by_the_authorizer(stack):
-    """Only the card and the catalog are public: every other A2A route needs a token."""
-    response = await request("GET", f"{stack['base']}/a2a/{AGENT}/tasks", token=None, headers=A2A_HEADERS)
-    show("a2a GET tasks, no token", response)
+async def test_an_a2a_task_route_with_a_wrong_token_gets_the_apps_401(stack):
+    """Every A2A route authenticates in the app: a credential that is present has to be valid."""
+    response = await request("GET", f"{stack['base']}/a2a/{AGENT}/tasks", token="not-the-token", headers=A2A_HEADERS)
+    show("a2a GET tasks, wrong token", response)
 
-    assert response.status_code in (401, 403)
+    assert response.status_code == 401
 
 
-# ---- MCP: bypasses the authorizer, FastMCP authenticates ------------------------------------------------------------
+# ---- MCP: FastMCP authenticates, in the request handler ------------------------------------------------------------
 
 MCP_LIST_TOOLS = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
@@ -246,7 +247,7 @@ MCP_LIST_TOOLS = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 @pytest.mark.asyncio
 @pytest.mark.order(9)
 async def test_mcp_with_no_token_gets_fastmcps_own_401(stack):
-    """/mcp bypasses the authorizer, so this 401 comes from FastMCP in the request handler, not from the gateway."""
+    """/mcp has no authorizer, so this 401 comes from FastMCP in the request handler, not from the gateway."""
     response = await request("POST", f"{stack['base']}/mcp/", token=None, json=MCP_LIST_TOOLS, headers=MCP_HEADERS)
     show("mcp tools/list, no token", response)
 

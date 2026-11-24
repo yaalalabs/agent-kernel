@@ -997,15 +997,13 @@ for path, method in ProtocolPaths.ROUTES:
 handler = Lambda.handler
 ```
 
-- Terraform: `enable_a2a_server = true` and/or `enable_mcp_server = true` on the module (one API Gateway method per verb).
-- Authorizer: `APIGatewayAuthorizer(bypass=ProtocolRouteMatcher()).handle`, with `result_ttl_in_seconds = 0`. Only `/mcp`,
-  the agent cards and `/a2a/catalog` bypass it; every other A2A route needs a token.
-- `APIGatewayAuthorizer` takes one bypass. With a webhook (for example Slack) and A2A/MCP, combine the matchers:
-  `slack = WebhookRouteMatcher.for_integrations("slack")`, `protocols = ProtocolRouteMatcher()`,
-  `handler = APIGatewayAuthorizer(bypass=lambda event: slack(event) or protocols(event)).handle`.
-- Config: `mcp.stateless_http: true`, `a2a.url` and `mcp.url` set to the API's public URL (stage and base path included;
-  deploy twice, since the API id exists only after the first apply), and a response store with
-  `(retry_count - 1) x delay` at most 29 s.
+- Terraform: `enable_a2a_server = true` and/or `enable_mcp_server = true` on the module (one API Gateway method per verb; both need `queue_mode = true`).
+- Auth: as on ECS, the A2A and MCP routes carry no API Gateway authorizer. The request-handler Lambda authenticates the bearer
+  token itself, so the `config.yaml` it carries must have the `identity` block. A call with no token runs as the anonymous
+  principal; a bad token gets a 401. An authorizer, if any, protects the chat route only.
+- Config (the host checks `mcp.stateless_http: true`, the response store and its wait; not the URLs): `mcp.stateless_http: true`, `a2a.url` and `mcp.url` set to the
+  API's public URL (stage and base path included; deploy twice, since the API id exists only after the first apply), and a
+  response store with `(retry_count - 1) x delay` at most 29 s.
 - The request handler builds the agent registry, so deploy it as a container image with 2 GB of memory, and set
   `AK_SESSION__TYPE=in_memory` on it (the module gives it no session table in queue mode).
 - Limits: 29 s API Gateway wait, no task store (`tasks/{id}`), no streaming, MCP login metadata needs a custom domain.

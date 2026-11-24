@@ -9,7 +9,6 @@ import pytest
 from agentkernel.core.config import AKConfig
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.deployment.aws.serverless.core.protocol_host import LambdaProtocolGuard
-from agentkernel.identity import IdentityProviderFactory
 
 PUBLIC_A2A_URL = "https://abc.execute-api.us-east-1.amazonaws.com/agents/api/v1/a2a"
 PUBLIC_MCP_URL = "https://abc.execute-api.us-east-1.amazonaws.com/agents/api/v1/mcp"
@@ -33,8 +32,8 @@ ACCEPTED = {
 
 
 @pytest.fixture(autouse=True)
-def _deployment(monkeypatch, static_identity):
-    """The accepted deployment, with an identity provider installed (``static_identity``)."""
+def _deployment(monkeypatch):
+    """The accepted deployment."""
     for name, value in ACCEPTED.items():
         monkeypatch.setenv(name, value)
     AKConfig._reset()
@@ -70,13 +69,13 @@ class TestAnAcceptedDeployment:
         LambdaProtocolGuard().check()
 
     def test_a2a_alone_passes_without_mcp(self, monkeypatch):
-        """MCP's own checks apply only while MCP is on: its default (stateful, localhost) is no objection when it is off."""
-        _set(monkeypatch, AK_MCP__ENABLED="false", AK_MCP__STATELESS_HTTP="false", AK_MCP__URL="http://localhost:8000/mcp")
+        """The stateless check applies only while MCP is on: its default (stateful) is no objection when it is off."""
+        _set(monkeypatch, AK_MCP__ENABLED="false", AK_MCP__STATELESS_HTTP="false")
 
         LambdaProtocolGuard().check()
 
     def test_mcp_alone_passes_without_a2a(self, monkeypatch):
-        _set(monkeypatch, AK_A2A__ENABLED="false", AK_A2A__URL="http://localhost:8000/a2a")
+        _set(monkeypatch, AK_A2A__ENABLED="false")
 
         LambdaProtocolGuard().check()
 
@@ -101,11 +100,6 @@ class TestMode:
         _unset(monkeypatch, "AK_EXECUTION__MODE")
 
         _refuses("got unset")
-
-    def test_delta_replies_are_refused(self, monkeypatch):
-        _set(monkeypatch, AK_EXECUTION__MESSAGE_TYPE="delta")
-
-        _refuses(r"execution\.message_type complete only; got delta")
 
 
 class TestTransport:
@@ -134,36 +128,60 @@ class TestBasePathEnvironment:
         _refuses("needs API_BASE_PATH, API_VERSION, AGENT_ENDPOINT in the environment")
 
 
-class TestSomethingToServe:
-    def test_neither_a2a_nor_mcp_is_refused(self, monkeypatch):
-        _set(monkeypatch, AK_A2A__ENABLED="false", AK_MCP__ENABLED="false")
-
-        _refuses(r"nothing to serve.*a2a\.enabled or mcp\.enabled")
-
-
-class TestIdentity:
-    def test_no_identity_provider_is_refused(self, monkeypatch):
-        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: None))
-
-        _refuses(r"needs an identity block.*identity\.provider")
-
-
 class TestResponseStore:
     def test_no_response_store_is_refused(self, monkeypatch):
         _unset(monkeypatch, "AK_EXECUTION__RESPONSE_STORE__TYPE")
 
-        _refuses(r"shared execution\.response_store, but its type is 'unset'")
+        _refuses(r"need a shared response store")
 
     def test_an_in_memory_response_store_is_refused(self, monkeypatch):
         _set(monkeypatch, AK_EXECUTION__RESPONSE_STORE__TYPE="in_memory")
 
-        _refuses(r"shared execution\.response_store, but its type is 'in_memory'")
+        _refuses(r"need a shared response store")
 
     @pytest.mark.parametrize("store", ["dynamodb", "redis", "valkey"])
     def test_a_shared_store_passes(self, monkeypatch, store):
         _set(monkeypatch, AK_EXECUTION__RESPONSE_STORE__TYPE=store)
 
         LambdaProtocolGuard().check()
+
+
+class TestToolOnlyMcp:
+    """MCP serving only the application's own tools runs no agent and enqueues nothing: no queue is needed."""
+
+    @pytest.fixture(autouse=True)
+    def _tool_only_mcp(self, monkeypatch):
+        _set(monkeypatch, AK_A2A__ENABLED="false", AK_MCP__EXPOSE_AGENTS="false")
+
+    def test_it_passes_without_a_queue_or_a_response_store(self, monkeypatch):
+        _unset(monkeypatch, "AK_EXECUTION__QUEUES__TYPE", "AK_EXECUTION__RESPONSE_STORE__TYPE")
+
+        LambdaProtocolGuard().check()
+
+    def test_stateful_mcp_is_still_refused(self, monkeypatch):
+        """Tool-only MCP has sessions too: the stateless rule is outside the agent-protocol block."""
+        _set(monkeypatch, AK_MCP__STATELESS_HTTP="false")
+
+        _refuses("needs mcp.stateless_http")
+
+    def test_a_wait_budget_over_the_gateway_limit_is_no_objection(self, monkeypatch):
+        """Nothing waits for a reply, so the 29 s limit does not matter: the same budget is refused when agents run."""
+        _set(monkeypatch, AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT="31", AK_EXECUTION__RESPONSE_STORE__DELAY="1")
+
+        LambdaProtocolGuard().check()
+
+    def test_the_lambda_checks_still_apply(self, monkeypatch):
+        _set(monkeypatch, AK_EXECUTION__MODE="async")
+
+        _refuses("got async")
+
+
+class TestNoAgents:
+    def test_a_registry_with_no_agents_warns_and_carries_on(self, caplog):
+        with caplog.at_level("WARNING"):
+            LambdaProtocolGuard().check()
+
+        assert "no agents" in caplog.text.lower()
 
 
 class TestStatelessMcp:
@@ -201,55 +219,29 @@ class TestWaitBudget:
         assert LambdaProtocolGuard.wait_budget_seconds() == 20
 
 
-class TestPublicUrls:
-    @pytest.mark.parametrize("url", ["http://localhost:8000/a2a", "http://127.0.0.1:8000/a2a", "http://0.0.0.0:8000/a2a"])
-    def test_a_local_a2a_url_is_refused(self, monkeypatch, url):
-        _set(monkeypatch, AK_A2A__URL=url)
-
-        _refuses(rf"a2a\.url is still '{url}'.*AK_A2A__URL")
-
-    @pytest.mark.parametrize("url", ["http://localhost:8000/mcp", "http://127.0.0.1:8000/mcp", "http://0.0.0.0:8000/mcp"])
-    def test_a_local_mcp_url_is_refused(self, monkeypatch, url):
-        _set(monkeypatch, AK_MCP__URL=url)
-
-        _refuses(rf"mcp\.url is still '{url}'.*AK_MCP__URL")
-
-    def test_the_default_urls_are_local_and_refused(self, monkeypatch):
-        _unset(monkeypatch, "AK_A2A__URL")
-
-        _refuses(r"a2a\.url is still 'http://localhost:8000/a2a'")
-
-
 class TestOrder:
     """The first failing check is the one reported, in the order the guard runs them."""
 
-    def test_what_there_is_to_serve_comes_before_everything_else(self, monkeypatch):
-        """A deployment that serves nothing is told so, whatever else is also wrong with it."""
-        _set(monkeypatch, AK_A2A__ENABLED="false", AK_MCP__ENABLED="false", AK_EXECUTION__MODE="async", AK_EXECUTION__QUEUES__TYPE="kafka")
-        _unset(monkeypatch, "API_VERSION")
-
-        _refuses("nothing to serve")
-
-    def test_the_mode_comes_before_the_transport_and_the_base_path_variables(self, monkeypatch):
+    def test_the_mode_comes_before_the_base_path_variables(self, monkeypatch):
         _set(monkeypatch, AK_EXECUTION__MODE="async", AK_EXECUTION__QUEUES__TYPE="kafka")
         _unset(monkeypatch, "API_VERSION")
 
         _refuses("got async")
 
-    def test_the_transport_comes_before_the_base_path_variables(self, monkeypatch):
-        _set(monkeypatch, AK_EXECUTION__QUEUES__TYPE="kafka")
-        _unset(monkeypatch, "API_VERSION")
-
-        _refuses("needs the sqs queue transport")
-
-    def test_the_base_path_variables_come_before_the_a2a_and_mcp_settings(self, monkeypatch):
+    def test_the_base_path_variables_come_before_the_stateless_check(self, monkeypatch):
         _set(monkeypatch, AK_MCP__STATELESS_HTTP="false")
         _unset(monkeypatch, "API_VERSION")
 
         _refuses("needs API_VERSION in the environment")
 
-    def test_the_identity_comes_before_the_response_store(self, monkeypatch):
-        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: None))
+    def test_the_base_path_variables_come_before_the_transport(self, monkeypatch):
+        _set(monkeypatch, AK_EXECUTION__QUEUES__TYPE="kafka")
+        _unset(monkeypatch, "API_VERSION")
+
+        _refuses("needs API_VERSION in the environment")
+
+    def test_the_transport_comes_before_the_response_store(self, monkeypatch):
+        _set(monkeypatch, AK_EXECUTION__QUEUES__TYPE="kafka")
         _unset(monkeypatch, "AK_EXECUTION__RESPONSE_STORE__TYPE")
 
-        _refuses("needs an identity block")
+        _refuses("needs the sqs queue transport")

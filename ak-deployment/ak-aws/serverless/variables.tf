@@ -307,23 +307,33 @@ variable "gateway_endpoints" {
 
 variable "enable_a2a_server" {
   type        = bool
-  description = "Serve A2A (agent-to-agent) from the request-handler Lambda: adds the /a2a and /a2a/{proxy+} routes to the REST API. The application builds a LambdaProtocolHost and registers ProtocolPaths.ROUTES, and needs queue_mode (A2A enqueues every call). Not available in the 'async' (websocket) execution mode. Off by default: an existing deployment plans no change."
+  description = "Serve A2A (agent-to-agent) from the request-handler Lambda: adds the /a2a and /a2a/{proxy+} routes to the REST API. The application builds a LambdaProtocolHost and registers ProtocolPaths.ROUTES, and needs queue_mode (A2A enqueues every call). The routes carry no API Gateway authorizer: the request-handler Lambda authenticates the bearer token itself, so its config.yaml needs an identity block. Not available in the 'async' (websocket) execution mode. Off by default: an existing deployment plans no change."
   default     = false
 
   validation {
     condition     = !var.enable_a2a_server || var.execution_mode != "async"
     error_message = "'enable_a2a_server' needs a REST API: set execution_mode to rest_sync or rest_async. The 'async' (websocket) execution mode has none."
   }
+
+  validation {
+    condition     = !var.enable_a2a_server || var.queue_mode
+    error_message = "'enable_a2a_server' needs queue_mode = true: every call is enqueued and the agent runs on the agent-runner Lambda."
+  }
 }
 
 variable "enable_mcp_server" {
   type        = bool
-  description = "Serve MCP (agents as tools) from the request-handler Lambda: adds the /mcp and /mcp/{proxy+} routes to the REST API. The application builds a LambdaProtocolHost and registers ProtocolPaths.ROUTES, and needs queue_mode (agent tools enqueue every call). With an authorizer, /mcp must be let through it (ProtocolRouteMatcher): MCP authenticates itself. Not available in the 'async' (websocket) execution mode. Off by default: an existing deployment plans no change."
+  description = "Serve MCP (agents as tools) from the request-handler Lambda: adds the /mcp and /mcp/{proxy+} routes to the REST API. The application builds a LambdaProtocolHost and registers ProtocolPaths.ROUTES, and needs queue_mode (agent tools enqueue every call). The routes carry no API Gateway authorizer: the request-handler Lambda authenticates the bearer token itself, so its config.yaml needs an identity block. Not available in the 'async' (websocket) execution mode. Off by default: an existing deployment plans no change."
   default     = false
 
   validation {
     condition     = !var.enable_mcp_server || var.execution_mode != "async"
     error_message = "'enable_mcp_server' needs a REST API: set execution_mode to rest_sync or rest_async. The 'async' (websocket) execution mode has none."
+  }
+
+  validation {
+    condition     = !var.enable_mcp_server || var.queue_mode
+    error_message = "'enable_mcp_server' needs queue_mode = true: every call is enqueued and the agent runs on the agent-runner Lambda."
   }
 }
 

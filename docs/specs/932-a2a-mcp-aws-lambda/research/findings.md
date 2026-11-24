@@ -49,13 +49,10 @@ Supporting facts behind `design.md`. Checked against the code on `feature/932-a2
 
 ## 4. Authentication
 
-- The gateway method is `CUSTOM` on every route when an authorizer exists (`modules/api-gateway/main.tf`)
-- `APIGatewayAuthorizer` takes a `WebhookBypass`; it only runs with authorizer caching off (`result_ttl_in_seconds = 0`), because with a TTL
-  API Gateway answers a header-less request with 401 first (`akauthorizer.py` docstring)
-- The bypass helpers are webhook shaped (`WebhookRouteMatcher.for_integrations`); the authorizer is wired in user code
-  (`examples/aws-serverless/slack-openai/lambda_auth.py`)
+- The gateway method is `CUSTOM` on every route when an authorizer exists (`modules/api-gateway/main.tf`); the protocol routes
+  override that with `NONE`, as ECS has no authorizer at all
 - Every FastAPI router runs `RequestAuthenticator` (`RESTAPI._get_router_dependencies`), so the app can authenticate from headers alone
-- Without an `identity` block the app would not authenticate, so a bypassed route would be open
+- No token is the anonymous principal and a bad token a 401, so the request handler's `config.yaml` needs an `identity` block
 
 ## 5. Timing
 

@@ -35,9 +35,8 @@ locals {
   # {proxy+} routes (A2A, MCP). Their ids join the deployment hash only when there are any, so a deployment without
   # them keeps the hash it had and plans no change.
   proxy_routes = toset(var.proxy_routes)
-  # The verbs the application registers for every route (ProtocolPaths.ROUTES). One method per verb, not `ANY`: the
-  # authorizer is handed the method's configured name as httpMethod, so an `ANY` method reaches it as "ANY" and it
-  # cannot tell a public GET (the agent card) from a POST. Spiked on a real API Gateway (#932).
+  # The verbs the application registers for every route (ProtocolPaths.ROUTES): the router looks a route up by resource
+  # template and verb, so each verb is its own method.
   proxy_methods      = ["GET", "POST", "DELETE"]
   proxy_method_pairs = { for pair in setproduct(local.proxy_routes, local.proxy_methods) : "${pair[0]}/${pair[1]}" => { route = pair[0], method = pair[1] } }
   proxy_route_triggers = length(local.proxy_routes) == 0 ? [] : [
@@ -136,7 +135,8 @@ resource "aws_api_gateway_integration" "endpoint" {
 # {proxy+} routes (proxy_routes): /<name> and /<name>/{proxy+}, one method per verb in local.proxy_methods, straight to the
 # request-handler Lambda.
 # The router looks a route up by the resource template, so these templates are the keys the application registers
-# (ProtocolPaths.ROUTES). Methods use the same authorization as every other route.
+# (ProtocolPaths.ROUTES). Methods carry no authorizer, as on ECS: the application authenticates the bearer token itself
+# (the identity block in config.yaml), so a call with no token runs as the anonymous principal and a bad one gets 401.
 resource "aws_api_gateway_resource" "protocol" {
   for_each    = local.proxy_routes
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
@@ -156,8 +156,7 @@ resource "aws_api_gateway_method" "protocol" {
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
   resource_id   = aws_api_gateway_resource.protocol[each.value.route].id
   http_method   = each.value.method
-  authorization = var.create_authorizer ? "CUSTOM" : "NONE"
-  authorizer_id = var.create_authorizer ? aws_api_gateway_authorizer.lambda_authorizer[0].id : null
+  authorization = "NONE"
 }
 
 resource "aws_api_gateway_method" "protocol_proxy" {
@@ -165,8 +164,7 @@ resource "aws_api_gateway_method" "protocol_proxy" {
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
   resource_id   = aws_api_gateway_resource.protocol_proxy[each.value.route].id
   http_method   = each.value.method
-  authorization = var.create_authorizer ? "CUSTOM" : "NONE"
-  authorizer_id = var.create_authorizer ? aws_api_gateway_authorizer.lambda_authorizer[0].id : null
+  authorization = "NONE"
 }
 
 resource "aws_api_gateway_integration" "protocol" {

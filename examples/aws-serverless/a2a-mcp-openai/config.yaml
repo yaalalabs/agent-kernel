@@ -60,9 +60,10 @@ secret:
 # Who may call. The static provider maps one credential to the `demo-user` principal; the value is never written
 # here: Terraform passes it as the DEMO_AUTH_TOKEN environment variable (var.demo_auth_token) to the authorizer
 # Lambda and to the request-handler Lambda, which the secret capability resolves at startup.
-#   - the authorizer checks the bearer token of every route except the ones lambda_auth.py lets through;
-#   - the request handler checks it again for MCP (FastMCP refuses a missing or bad token itself, since /mcp
-#     bypasses the authorizer) and reads the caller's principal for A2A.
+#   - the authorizer checks the bearer token of the chat route;
+#   - the A2A and MCP routes have no authorizer: the request handler checks the token (FastMCP refuses a missing or
+#     bad one; A2A reads the caller's principal, a call with no token is the anonymous principal, as on ECS).
+# The request handler reads this block, so it must be in the config.yaml that Lambda carries.
 identity:
   provider:
     type: static

@@ -219,7 +219,7 @@ class TestProtocolPaths:
         assert not ProtocolPaths.matches(app_path)
 
     def test_importing_it_loads_no_fastapi(self):
-        """The authorizer reads these paths and its package carries no FastAPI."""
+        """The module holds only constants: reading the routes pulls in no web framework."""
         code = (
             "import sys\n"
             "from agentkernel.deployment.aws.serverless.core.protocol_paths import ProtocolPaths\n"
@@ -415,7 +415,7 @@ def _api_event(method: str, path: str, resource: str | None = None, body: dict |
     }
 
 
-def _a2a_send(prompt: str = "hello", context_id: str = "ctx-1", configuration: dict | None = None, **event) -> dict:
+def _a2a_send(prompt: str = "hello", context_id: str = "ctx-1", configuration: dict | None = None, headers: dict | None = None) -> dict:
     message = {"message": {"messageId": "m-1", "contextId": context_id, "role": "ROLE_USER", "parts": [{"text": prompt}]}}
     if configuration is not None:
         message["configuration"] = configuration
@@ -424,8 +424,7 @@ def _a2a_send(prompt: str = "hello", context_id: str = "ctx-1", configuration: d
         "/a2a/triage/message:send",
         "/a2a/{proxy+}",
         message,
-        {"Content-Type": "application/json", "A2A-Version": "1.0"},
-        **event,
+        {"Content-Type": "application/json", "A2A-Version": "1.0", **(headers or {})},
     )
 
 
@@ -464,6 +463,20 @@ class TestServingA2A:
         assert protocol == "a2a"
         assert (body.prompt, body.agent, body.session_id) == ("hello", "triage", "ctx-9")
         assert body.principal.subject == "alice"
+
+    def test_a_call_with_no_token_runs_as_the_anonymous_principal(self, deployed):
+        """The same as on ECS: the app authenticates, and a request with no credential is anonymous, not refused."""
+        proxy = deployed.host.handle(_a2a_send("hello", headers={"Authorization": None}), None)
+
+        assert proxy["statusCode"] == 200
+        [(body, _protocol)] = deployed.queue.calls
+        assert body.principal.is_anonymous
+
+    def test_a_call_with_a_bad_token_is_refused_by_the_app(self, deployed):
+        proxy = deployed.host.handle(_a2a_send("hello", headers={"Authorization": "Bearer wrong"}), None)
+
+        assert proxy["statusCode"] == 401
+        assert deployed.queue.calls == []
 
     def test_the_public_agent_card_needs_no_token(self, deployed):
         proxy = deployed.host.handle(
@@ -530,7 +543,7 @@ class TestServingMCP:
         assert proxy["statusCode"] == 405
 
     def test_a_call_with_no_token_is_refused_by_mcp_itself(self, deployed):
-        """``/mcp`` bypasses the API Gateway authorizer, so FastMCP's own check is the one that refuses it."""
+        """The routes have no API Gateway authorizer, as on ECS, so FastMCP's own check is the one that refuses it."""
         proxy = deployed.host.handle(
             _api_event("POST", "/mcp", body={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers={"Authorization": None, **MCP_HEADERS}), None
         )

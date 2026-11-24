@@ -397,9 +397,7 @@
         "Lambda.register",
         "enable_a2a_server",
         "enable_mcp_server",
-        "ProtocolRouteMatcher",
-        "APIGatewayAuthorizer(bypass=",
-        "result_ttl_in_seconds = 0",
+        "identity",
         "stateless_http: true",
         "examples/aws-serverless/a2a-mcp-openai"
       ],

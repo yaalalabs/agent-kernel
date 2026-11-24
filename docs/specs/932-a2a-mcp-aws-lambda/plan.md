@@ -3,7 +3,7 @@
 Order of work for `spec.md`. The branch is based on `develop`, not on #935 (spec: Deviation 8). Each iteration leaves the branch working and testable. Commands run from `ak-py/`.
 
 The two breaks: Iterations 3–4 fix break 2 (inside the Lambda: the router knows only chat); Iteration 5 fixes break 1 (the
-gateway door: no `/a2a` or `/mcp` route, and its authorizer).
+gateway door: no `/a2a` or `/mcp` route).
 
 ## Iteration 1: Spike (no production code)
 
@@ -48,27 +48,23 @@ gateway door: no `/a2a` or `/mcp` route, and its authorizer).
   4. `LambdaProtocolHost` (spec: `LambdaProtocolHost`) and its lazy export.
 - **Verify:** `uv run pytest tests/test_lambda_protocol_host.py tests/test_lambda_protocol_guard.py tests/test_lambda_router.py tests/test_aws_lazy_exports.py`
 
-## Iteration 5: The gateway door (Terraform and the authorizer bypass)
+## Iteration 5: The gateway door (Terraform)
 
-- **Goal:** the gateway routes `/a2a` and `/mcp` to the request Lambda when the flags are on, and the authorizer lets only the
-  right routes through.
-- **Files:** `ak-deployment/ak-aws/serverless/variables.tf`, `state.tf`, `modules/api-gateway/{main,variables}.tf`, both READMEs;
-  `ProtocolRouteMatcher` in `deployment/aws/serverless/core/protocol_paths.py` (spec: Deviation 13) and its lazy export.
+- **Goal:** the gateway routes `/a2a` and `/mcp` to the request Lambda when the flags are on, with no authorizer on them (the app
+  authenticates, as on ECS).
+- **Files:** `ak-deployment/ak-aws/serverless/variables.tf`, `state.tf`, `modules/api-gateway/{main,variables}.tf`, both READMEs.
 - **Steps:**
   1. Flags `enable_a2a_server` / `enable_mcp_server` and validation; pass `proxy_routes` to the module (spec: Terraform, Deviation 11).
   2. Module resources, methods, integrations, deployment triggers; the resource templates match `ProtocolPaths.ROUTES`.
   3. Confirm the request role's response-store permissions cover delete-on-read.
-  4. `ProtocolRouteMatcher`: bypasses `/mcp`, the agent cards and the catalog only; A2A message routes stay behind the authorizer.
-- **Verify:** `terraform validate`; plan with both flags off shows no changes; plan with both on shows only the new resources;
-  `uv run pytest tests/test_protocol_route_matcher.py`. The `CUSTOM` authorizer on the new methods (not run in the Iteration 1
-  spike) is proven on AWS in Iteration 6.
+- **Verify:** `terraform validate`; plan with both flags off shows no changes; plan with both on shows only the new resources.
 
 ## Iteration 6: Example and CI entry
 
 - **Goal:** a deployable queue-mode `rest_sync` example serving A2A and MCP.
-- **Files:** new `examples/aws-serverless/a2a-mcp-openai/` (request handler, agent runner, response handler, authorizer with
-  `ProtocolRouteMatcher`, `config.yaml`, `deploy/`, test), `.github/integration-test-config.yaml`.
-- **Steps:** model on `examples/aws-serverless/slack-openai`; set `authorizer.result_ttl_in_seconds = 0`, request-Lambda memory
+- **Files:** new `examples/aws-serverless/a2a-mcp-openai/` (request handler, agent runner, response handler, authorizer for the chat route,
+  `config.yaml`, `deploy/`, test), `.github/integration-test-config.yaml`.
+- **Steps:** model on `examples/aws-serverless/slack-openai`; set request-Lambda memory
   above 128 MB, `a2a.url` / `mcp.url`, `mcp.stateless_http: true`, an `identity` block; the test sends the calls in spec: Testing.
 - **Verify:** `build.sh` and `terraform validate` in the example; weekly workflow dispatch for the new entry.
 
@@ -84,7 +80,7 @@ gateway door: no `/a2a` or `/mcp` route, and its authorizer).
 - **Goal:** docs and skills match the change.
 - **Steps (name file and line; run `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` before merge):**
   1. `docs/docs/api/a2a-server.md:56` and `docs/docs/api/mcp-server.md:48`: add the Lambda row; state the 29 s limit, stateless MCP, and the `tasks/{id}` limit.
-  2. `docs/docs/deployment/aws-serverless.md`: the host, the Terraform flags, the authorizer wiring, the OAuth-metadata limit.
+  2. `docs/docs/deployment/aws-serverless.md`: the host, the Terraform flags, the authentication (no authorizer, the `identity` block), the OAuth-metadata limit.
   3. `.agents/skills/ak-dev-architecture/SKILL.md` and `.claude/skills/ak-dev-architecture/SKILL.md` (`LambdaWebhookHost` text near `:626`, `:899`): add `LambdaProtocolHost`.
   4. `ak-py/src/agentkernel/skills/ak-cloud-deploy/SKILL.md`: the new flags and host.
   5. `.agents/skills/ak-dev-testing-conventions/SKILL.md` (and `.claude` copy): the new test files.

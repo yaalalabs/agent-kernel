@@ -16,10 +16,13 @@ review; the rest of this spec is written as proposed here.
 1. **A2A is open to anonymous callers (security gap).** With an `identity` block configured, an A2A call with no token runs as
    the anonymous principal: the identity dependency returns `Principal.anonymous()` when there is no `Authorization` header
    (`identity/provider/request.py:72-73`), and `tests/test_api_a2a_auth.py:200` (`test_no_token_runs_anonymous`) pins it.
-   The first `design.md` bypassed the API Gateway authorizer for all of `/a2a/*`, so an unauthenticated caller would have
-   reached the agent. MCP is safe: FastMCP answers 401 itself (`tests/test_api_mcp_auth.py`).
-   - **Decided: the existing flow.** The authorizer keeps guarding A2A message routes, like the chat route. The bypass covers
-     only `/mcp`, the public agent cards and the catalog. No new auth code in front of the app. `design.md` is updated.
+   MCP is safe: FastMCP answers 401 itself (`tests/test_api_mcp_auth.py`).
+   - **Decided: ECS parity.** ECS has no API Gateway authorizer (`ak-deployment/ak-aws/containerized/*.tf`): the app authenticates
+     the bearer token through the `identity` block, so a call with no token is the anonymous principal and a bad token is a 401.
+     The Lambda protocol routes work the same way: `authorization = "NONE"`, no authorizer and no bypass. A token-less A2A call
+     therefore runs as anonymous (it was a 401 at API Gateway under the earlier design). Requiring a token on every A2A call is
+     a generic feature for ECS and Lambda alike, a follow-up. The request handler's `config.yaml` must carry the `identity`
+     block, or every caller is anonymous.
 2. **`return_immediately` cannot stall our executor (spiked).** a2a-sdk 1.2.3 binds `DefaultRequestHandler` to
    `DefaultRequestHandlerV2` (`a2a/server/request_handlers/__init__.py:46`), not the file `research/findings.md` cites. In V2,
    `return_immediately` stops waiting only on a `Task` event (`default_request_handler_v2.py:421`). `A2A.Executor` enqueues one
@@ -34,9 +37,8 @@ review; the rest of this spec is written as proposed here.
      proves the unchanged workers already serve A2A and MCP in REST modes.
 4. **`GET /mcp` already answers 405 (spiked).** In stateless mode FastMCP returns 405 for GET with no code from us. The
    stateless guard makes this hold, so the host adds no GET handling; a test pins it.
-5. **The authorizer bypass cannot express A2A paths.** `WebhookRouteMatcher` looks up exact `(method, path)` pairs
-   (`integration/adapter/route_matcher.py`, `__call__`), but A2A paths contain the agent name and task ids. A new prefix
-   matcher, `ProtocolRouteMatcher`, is needed. `design.md` says only that "the user's authorizer Lambda must call" the hook.
+5. **No authorizer on the protocol routes.** The first design put a route bypass in front of the API Gateway authorizer. The routes now carry
+   no authorizer, as on ECS (Deviation 1), so nothing has to express the A2A paths.
 6. **MCP OAuth discovery does not work on a default API Gateway URL (spiked, Iteration 1).** For an OpenID provider the MCP 401 points at
    `<scheme>://<netloc of mcp.url>/.well-known/oauth-protected-resource/mcp/` (`api/mcp/auth.py`, `AKMCPAuthProvider.from_config`),
    the origin root. A default `execute-api` URL carries a stage prefix, so a root path is not served by the REST API. **(spiked)**
@@ -87,20 +89,12 @@ review; the rest of this spec is written as proposed here.
       Terraform has no registry table or permissions today.
     - Decided for #932: the in-memory set-up, with no new code; the shared set-up works with no host change and is documented with
       its limit. A registry table in Terraform and a fix for the cold-start ordering are out of scope.
-13. **`ProtocolRouteMatcher` lives beside `ProtocolPaths`, not in `integration/adapter/`.** `integration/adapter/` is the messaging
-    integration seam (Slack, WhatsApp, ...); A2A and MCP are not messaging integrations, and the matcher reads `ProtocolPaths`
-    from `deployment/aws/`, which the generic package must not import. It subclasses `WebhookRouteMatcher`, an import in the
-    allowed direction (`deployment` may import `integration`).
-14. **An `ANY` method hides the request's verb from the authorizer (real AWS, Iteration 6).** The Iteration 1 spike used `ANY`
-    methods, which was fine for routing, and the first design kept them. On a real API Gateway the authorizer's event for an
-    `ANY` method carries `httpMethod: "ANY"`, not the request's verb (the authorizer log read `ANY /api/v1/mcp/` for a `POST`).
-    `ProtocolRouteMatcher` makes the agent card and the catalog public for `GET` only, so with `ANY` it could not tell them
-    from a `POST` and the authorizer denied the public card (403). `/mcp`, let through for every method, was unaffected.
-    - Decided: the module creates one method per verb (`GET`, `POST`, `DELETE`), the verbs `ProtocolPaths.ROUTES` registers, so
-      the authorizer is handed the real verb. The matcher stays as it is and stays strict: it does not guess a verb from `ANY`
-      (a test pins that). An unlisted verb (`PUT`, `PATCH`) is answered by API Gateway itself with 403 "Missing Authentication
-      Token", instead of reaching the Lambda and failing at the router.
-    - The local rehearsal could not catch this: it fed the authorizer a real `GET`. Only a deployed gateway shows it.
+13. **`ProtocolPaths` lives in `deployment/aws/serverless/core/`**, beside the host that reads it: A2A and MCP are not messaging
+    integrations, so it is not in `integration/adapter/`.
+14. **One API Gateway method per verb, not `ANY`.** The Lambda router looks a route up by the resource template and the request's
+    verb (`rest_lambda.py`), and `ProtocolPaths.ROUTES` registers `GET`, `POST` and `DELETE` for each template. The module creates
+    exactly those methods; a test pins it. An unlisted verb (`PUT`, `PATCH`) is answered by API Gateway itself with 403 "Missing
+    Authentication Token", instead of reaching the Lambda and failing at the router.
 15. **The request Lambda builds a session store at import (real AWS, Iteration 6).** Registering an agent (`OpenAIModule(...)`)
     makes the runtime build its session store. In queue mode the Terraform module gives the request handler no session table
     (`state.tf:602-606`: `var.queue_mode ? null`), because the agent runner owns the sessions. With `session.type: dynamodb`
@@ -108,7 +102,7 @@ review; the rest of this spec is written as proposed here.
     every route that reaches it answered 502.
     - Decided for #932: no new code. The example sets `AK_SESSION__TYPE=in_memory` on the request handler, which holds no
       session. The docs say so. A request Lambda that needs no session store at all would be a runtime change, out of scope.
-    - Not caught by the guard: the cold-start failure is the runtime's, not one of the seven checks.
+    - Not caught by the guard: the cold-start failure is the runtime's, not one of the guard checks.
 
 ## Design
 
@@ -157,22 +151,17 @@ handler = Lambda.handler
 ### `LambdaProtocolGuard` (new class, same module)
 
 Modelled on `develop`'s `LambdaWebhookGuard` (`core/webhook_host.py:91-170`): same method names and message style, no shared
-base class (Deviation 8). Runs in the host's constructor. Order: `_check_mode` (`rest_sync` or `rest_async` with `message_type`
-complete; the message names #985 for `async`), `_check_transport` (always checks, since the protocol host has no handler to read
-`requires_pipeline` from), `_check_base_path_env` (`API_BASE_PATH`, `API_VERSION`, `AGENT_ENDPOINT`, as the webhook guard),
-then the feature checks below. Each raises `AKConfigError` naming the setting and the fix.
+base class (Deviation 8). Runs in the host's constructor. Order: `_check_mode` (`rest_sync` or `rest_async`; the message names #985 for `async`; a `delta` reply is already refused by the REST router at init), `_check_base_path_env` (`API_BASE_PATH`, `API_VERSION`, `AGENT_ENDPOINT`, as the webhook guard),
+then, only when A2A or agent MCP runs agents (`RESTAPI.agent_protocol_surfaces()`; an MCP serving only the application's own tools enqueues nothing and waits for nothing), the checks below.
+`_check_stateless_mcp` runs whenever `mcp.enabled` (tool-only MCP included): `mcp.stateless_http` defaults to false and a call can land on any Lambda instance, whereas ECS keeps one replica's session. Not checked, because ECS does not check them either: that A2A or MCP is enabled, and the public `a2a.url` / `mcp.url` (documented requirements; shared checks are a follow-up). Each raises `AKConfigError` naming the setting and the fix.
 
 | # | Check | Rule |
 |---|---|---|
-| 1 | Something to serve | `a2a.enabled` or `mcp.enabled` |
-| 2 | Transport | `QueueTransportFactory.resolve_type() == "sqs"` (`in_memory` when no `execution.queues` block, so calls would time out) |
-| 3 | Identity | `IdentityProviderFactory.get()` is not `None` (`/mcp` bypasses the authorizer and relies on FastMCP's own check, which needs a provider) |
-| 4 | Response store | `execution.response_store` is set and its `type` is neither unset nor `in_memory` (default budget would be 60 x 1 s, `pipeline/request_handler.py:23`) |
-| 5 | Stateless MCP | when `mcp.enabled`: `mcp.stateless_http` is true |
-| 6 | Wait budget | `(retry_count - 1) * delay <= 29` (`API_GATEWAY_TIMEOUT_SECONDS`); the first read is immediate (`pipeline/request_handler.py:148-163`) |
-| 7 | Public URLs | `a2a.url` / `mcp.url` host (when enabled) is not `localhost`, `127.0.0.1` or `0.0.0.0` (the card advertises `a2a.url/<agent>`, `core/builder.py:67`) |
+| 1 | Transport | `QueueTransportFactory.resolve_type() == "sqs"` (`in_memory` when no `execution.queues` block, so calls would time out) |
+| 2 | Shared topology | `IOHandler._validate_topology("sqs", config)` and `_warn_if_no_agents(config)`, the ECS checks: a shared response store, and a warning when the registry knows no agents. Only when A2A or agent MCP runs agents |
+| 3 | Wait budget | `(retry_count - 1) * delay <= 29` (`API_GATEWAY_TIMEOUT_SECONDS`); the first read is immediate (`pipeline/request_handler.py:148-163`) |
 
-Check 4 uses the config model alone; it does not build the store. A missing input queue is #959's check, not repeated.
+Check 2 uses the config model alone; it does not build the store. A missing input queue is #959's check, not repeated.
 
 ### `LambdaEventTranslator` — extended (`deployment/aws/serverless/core/event_translator.py`, not moved)
 
@@ -211,29 +200,12 @@ class AppLifespan:
 - A startup failure is re-raised from `start()`, so a broken app fails Lambda init, not the first request.
 - One lifespan per host, so the loop is `LambdaProtocolHost`'s class-level loop.
 
-### `ProtocolPaths` and `ProtocolRouteMatcher` (new, FastAPI-free)
+### `ProtocolPaths` (new, FastAPI-free)
 
 `ProtocolPaths` (`deployment/aws/serverless/core/protocol_paths.py`) is the one definition of the hosted prefixes, as
 `BUILTIN_WEBHOOK_ROUTES` is for webhooks: `PREFIXES = ("/a2a", "/mcp")`, `matches(app_path)` (the prefix itself or the prefix
 followed by `/`), and `ROUTES`: the `(path, method)` pairs the application registers, matching the Terraform resource templates:
-`/a2a`, `/a2a/{proxy+}`, `/mcp`, `/mcp/{proxy+}`, each for `GET`, `POST` and `DELETE`. Read by the application, `LambdaProtocolHost`
-and the matcher.
-
-`ProtocolRouteMatcher(WebhookRouteMatcher)` (`deployment/aws/serverless/core/protocol_paths.py`, beside `ProtocolPaths`;
-Deviation 13) is the authorizer bypass
-(Deviation 1): it reuses the parent's base-path derivation and overrides `__call__`. It does not normalize the request path, as
-the parent does not: `/a2a/catalog/` is not the catalog and is not let through. A path with a `..` segment is never let
-through, and the inherited `for_integrations` raises `TypeError` (the matcher is built with `ProtocolRouteMatcher()`). With the
-base path removed, it returns:
-
-- `"mcp"` for `/mcp` or anything under `/mcp/`, any method (FastMCP authenticates MCP itself);
-- `"a2a"` for `GET /a2a/catalog` and `GET /a2a/<agent>/.well-known/agent-card.json` only (public by design);
-- `None` for everything else, including every other `/a2a/...` route, which stays behind the authorizer like the chat route.
-
-It reads no header, so it cannot be spoofed by one, and fails closed when `API_BASE_PATH` or `API_VERSION` is unset (the parent's
-rule). Exported from `agentkernel.aws`
-lazily. It makes the authorizer Allow with `principalId` `integration:a2a` / `integration:mcp` (`akauthorizer.py:_bypass_policy`);
-the prefix reads oddly for a protocol and is accepted, since changing it is an authorizer change outside #932.
+`/a2a`, `/a2a/{proxy+}`, `/mcp`, `/mcp/{proxy+}`, each for `GET`, `POST` and `DELETE`. Read by the application and `LambdaProtocolHost`.
 
 ### Consumer changes
 
@@ -271,8 +243,8 @@ New optional inputs, both off by default; with both off the plan is empty for an
 - `modules/api-gateway`: new variable `proxy_routes` (`list(string)`, default `[]`). For each name: an
   `aws_api_gateway_resource` `<name>` under the version resource, a child resource `{proxy+}`, and on each of the two a
   method per verb in `GET`, `POST`, `DELETE` (**not `ANY`**, Deviation 14) with an `AWS_PROXY` integration to the request Lambda
-  (as `modules/api-gateway/main.tf:106-117`). The verbs are `ProtocolPaths.ROUTES`'s; a test pins them. Methods use
-  the same `authorization` as every route: `CUSTOM` when an authorizer exists. The new resources, methods and integrations are
+  (as `modules/api-gateway/main.tf:106-117`). The verbs are `ProtocolPaths.ROUTES`'s; a test pins them. Methods carry
+  `authorization = "NONE"` whether or not an authorizer exists: the app authenticates (Deviation 1). The new resources, methods and integrations are
   added to the deployment `triggers` hash (`main.tf:131-141`) **only when `proxy_routes` is not empty** (`concat(<the existing
   list>, <the proxy ids or []>)`), so the hash of a deployment that sets none is unchanged and its plan stays empty; evaluating
   the old and new forms gives the same SHA-1 **(verified, Iteration 5)**. The existing three-level `endpoints` code is not
@@ -288,19 +260,14 @@ New optional inputs, both off by default; with both off the plan is empty for an
 - **(spiked S1)** `{proxy+}` plus a separate `/mcp` method serves `/mcp`, `/mcp/` and `/a2a/<agent>/tasks/<id>:cancel`. Run on a
   real REST API (stage `agents`, `authorization = NONE`): `/mcp` and `/mcp/` both reach the `/mcp` method (`event.path` keeps the
   trailing slash, `pathParameters` null); every `/a2a/...` path reaches `{proxy+}` with the rest of the path in
-  `pathParameters.proxy`, including `triage/tasks/123:cancel` and `triage/message:send` (the colon arrives whole). Not run: the
-  `CUSTOM` authorizer on these methods, and a custom domain.
+  `pathParameters.proxy`, including `triage/tasks/123:cancel` and `triage/message:send` (the colon arrives whole). Not run: a custom domain.
 
-### Authorizer wiring (docs and example)
+### Authentication (docs and example)
 
-The user's authorizer Lambda passes `ProtocolRouteMatcher()` as the `bypass` of `APIGatewayAuthorizer`, as the Slack example does
-with `WebhookRouteMatcher` (`examples/aws-serverless/slack-openai/lambda_auth.py`). `APIGatewayAuthorizer` takes one `bypass`
-callable; a deployment hosting webhooks and protocols together writes a small callable that tries both matchers (out of scope
-here, noted in the docs). The bypass only runs with `result_ttl_in_seconds = 0` (`akauthorizer.py` docstring,
-`modules/api-gateway/main.tf` identity-source comment); that setting applies to every route, chat included, and the docs say so.
-The public agent card and catalog need no token (the matcher lets them through). Every other A2A route needs a token the
-authorizer accepts; the app then reads the same `Authorization` header and sets the caller's principal. The `{proxy+}` methods use
-`CUSTOM` authorization like every route (see Terraform), so the authorizer runs on them.
+The protocol routes have no authorizer. The request-handler Lambda authenticates the bearer token through the `identity` block of
+the `config.yaml` it carries, exactly as the ECS REST service does: A2A reads the principal from the identity dependency, FastMCP
+refuses a missing or bad token. An authorizer on the same API protects the chat route only, and its cache can stay on. The docs say
+that the request handler's `config.yaml` must carry the `identity` block, and that a token-less A2A call runs as anonymous.
 
 ## Behavioural changes
 
@@ -308,9 +275,8 @@ All intentional.
 
 1. With the protocol routes registered, `/a2a/*` and `/mcp*` events are served by the app instead of failing at the router.
    Today they raise `ValueError` from `RESTLambdaRouter.dispatch` (`rest_lambda.py:430-432`) and `Lambda.handler` answers 500.
-2. An A2A request with no valid token (other than the public card and catalog) is refused by the API Gateway authorizer, as a
-   chat request is (Deviation 1).
-3. Cold start fails with `AKConfigError` for the seven guard conditions above, only when the host is constructed.
+2. An A2A request with no token runs as the anonymous principal, as on ECS (Deviation 1); one with a bad token is a 401 from the app.
+3. Cold start fails with `AKConfigError` for the guard conditions above, only when the host is constructed.
 
 **Non-changes:** the chat route and its wire format; `RESTLambdaRouter`, `WSLambdaRouter`; the three Lambda queue workers; direct mode; ECS and the pipeline
 `IOHandler`; the `MCP.get_http_app` call and any other deployment's MCP answer (still SSE); the SQS wire format; response-store
@@ -339,13 +305,8 @@ New files:
   A2A `message:send`, MCP `tools/call` (SSE body buffered, status 200), the public card with no token, A2A with `returnImmediately: true` returns the same reply after the wait (Deviation 2 pin), `GET /mcp` is 405 (Deviation 4
   pin), `/mcp` and `/mcp/` both served with no redirect (Deviation 9), base-path stripping, lifespan started once and reused across three calls, a lifespan start
   failure raising at construction, error mapping to proxy responses (the riskiest consumer: the whole app behind a translator).
-- `tests/test_lambda_protocol_guard.py`: each of the seven checks passing and failing, with the message naming the setting;
+- `tests/test_lambda_protocol_guard.py`: each check passing and failing, with the message naming the setting;
   `async` mode refused naming #985.
-- `tests/test_protocol_route_matcher.py`: `/mcp` and `/mcp/...` bypassed for any method; `GET /a2a/catalog` and
-  `GET /a2a/<agent>/.well-known/agent-card.json` bypassed; `POST /a2a/<agent>/message:send`, `/a2a/<agent>/tasks/...` and a
-  non-GET card request **not** bypassed; base path removed exactly as the router does, no header read, fails closed with the
-  environment unset; `APIGatewayAuthorizer(bypass=...)` Allows the card with `principalId` `integration:a2a` and takes the normal
-  token path for `message:send`.
 - `tests/test_lambda_protocol_roundtrip.py`: proves the **unchanged** workers serve A2A and MCP in `rest_sync` and `rest_async`
   (Deviation 3): an input record with `protocol` through `ServerlessAgentRunner.process_message` then
   `ResponseHandler.process_message` into an `InMemoryResponseStore`, read by `RestHandler.request`; success, permanent failure
@@ -354,8 +315,8 @@ New files:
 Changed files (patch targets and assertions):
 - `tests/test_lambda_event_translator.py`: `call_app` buffering, `proxy_response_from_parts`, and that `to_request` and the app
   scope agree on headers and body; existing cases unchanged (the delegation must not change `_proxy_response` output).
-- `tests/test_aws_lazy_exports.py`: `LambdaProtocolHost` and `ProtocolRouteMatcher` resolve lazily; importing `agentkernel.aws` and
-  touching `Lambda` loads neither FastAPI nor the host; the authorizer imports no FastAPI.
+- `tests/test_aws_lazy_exports.py`: `LambdaProtocolHost` and `ProtocolPaths` resolve lazily; importing `agentkernel.aws` and
+  touching `Lambda` loads neither FastAPI nor the host.
 - `tests/test_lambda_router.py`: with `ProtocolPaths.ROUTES` registered, a `{proxy+}` event (`resource` `/api/v1/a2a/{proxy+}`,
   `path` `/api/v1/a2a/triage/message:send`) and an `/mcp` event dispatch to the registered handler for `GET`, `POST` and
   `DELETE`; the chat route still dispatches as today (Deviation 10). This is the first test written in Iteration 4.
@@ -365,7 +326,7 @@ Terraform: `terraform validate` and a plan with both flags off showing no change
 
 Integration test: a weekly entry for the new example (`.github/integration-test-config.yaml`, after `schedule-openai` at `:83`);
 the test sends one A2A `message:send` and one MCP tool call, twice each on one session, plus an A2A `message:send` with no token
-expecting the authorizer to refuse it (401 or 403) and a card fetch with no token expecting 200.
+expecting 200 (anonymous, as on ECS), one with a wrong token expecting 401, and a card fetch with no token expecting 200.
 
 ## Docs and skills touched
 

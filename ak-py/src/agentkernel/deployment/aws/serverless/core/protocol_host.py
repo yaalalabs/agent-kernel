@@ -10,16 +10,15 @@ import logging
 import os
 from collections.abc import Coroutine, Mapping
 from typing import Any, ClassVar
-from urllib.parse import urlparse
 
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 
 from .....api.http import RESTAPI
 from .....core.config import AKConfig
-from .....core.model import ExecutionMode, ReplyMessageType
+from .....core.model import ExecutionMode
 from .....core.util.factory import AKConfigError
-from .....identity.provider.factory import IdentityProviderFactory
+from .....pipeline.io_handler import IOHandler
 from .....pipeline.transport.base import QueueTransportFactory
 from .event_translator import LambdaEventTranslator
 from .protocol_paths import ProtocolPaths
@@ -190,37 +189,40 @@ class LambdaProtocolGuard:
     BASE_PATH_ENV = ("API_BASE_PATH", "API_VERSION", "AGENT_ENDPOINT")
     # API Gateway stops waiting for a REST integration at 29 seconds; raising it is a quota request.
     API_GATEWAY_TIMEOUT_SECONDS = 29
-    LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0")
 
     def check(self) -> None:
-        """Run every check, in this order: what there is to serve first, then the deployment, then the A2A and MCP settings.
+        """Run the cold-start checks that are specific to Lambda; the topology checks are the ECS ones.
+
+        Stateless MCP is checked whenever MCP is on, tool-only MCP included: it has sessions too.
+        The queue checks (the sqs transport, the shared topology and the wait budget) apply only when A2A or agent MCP
+        runs agents for the caller. An MCP server that serves only the application's own tools enqueues nothing and
+        waits for nothing.
 
         :raises AKConfigError: The first check that fails, naming the setting and the fix.
         """
-        self._check_something_to_serve()
         self._check_mode()
-        self._check_transport()
         self._check_base_path_env()
-        self._check_identity()
-        self._check_response_store()
         self._check_stateless_mcp()
-        self._check_wait_budget()
-        self._check_public_urls()
+        if RESTAPI.agent_protocol_surfaces():
+            self._check_transport()
+            self._check_shared_topology()
+            self._check_wait_budget()
 
     @staticmethod
     def wait_budget_seconds() -> float:
         """How long ``RestHandler.request`` can wait for a reply: ``(retry_count - 1) x delay``.
 
         The first read of the response store is immediate, so one read fewer than ``retry_count`` is waited for.
+        Zero without a ``response_store`` block: nothing waits for a reply then, because A2A and agent MCP, the
+        only waiters, are refused without a shared store.
         """
         response_store = AKConfig.get().execution.response_store
         if response_store is None:
-            raise AKConfigError("LambdaProtocolHost needs execution.response_store: without a block the reply cannot be waited for")
+            return 0.0
         return max(response_store.retry_count - 1, 0) * response_store.delay
 
     def _check_mode(self) -> None:
-        execution = AKConfig.get().execution
-        mode = execution.mode
+        mode = AKConfig.get().execution.mode
         if mode == ExecutionMode.ASYNC:
             # An async deployment has no REST API and no response store; serving A2A and MCP there is tracked in #985.
             raise AKConfigError(
@@ -231,12 +233,6 @@ class LambdaProtocolGuard:
             raise AKConfigError(
                 f"LambdaProtocolHost serves A2A and MCP in execution.mode rest_sync or rest_async only; got {mode.value if mode else 'unset'}. "
                 "Lambda routes the other modes' events to WSLambdaRouter"
-            )
-        message_type = execution.resolved_message_type
-        if message_type != ReplyMessageType.COMPLETE:
-            raise AKConfigError(
-                f"LambdaProtocolHost serves A2A and MCP with execution.message_type complete only; got {message_type.value}. "
-                "A2A and MCP callers wait for one whole reply"
             )
 
     def _check_transport(self) -> None:
@@ -257,32 +253,15 @@ class LambdaProtocolGuard:
                 "from the gateway's prefix. The ak-serverless Terraform module sets them on the request-handler Lambda"
             )
 
-    def _check_something_to_serve(self) -> None:
+    def _check_shared_topology(self) -> None:
+        """The checks and the no-agents warning ``IOHandler`` runs on ECS: a shared response store, since the Agent Runner
+        Lambda writes the reply and this Lambda reads it."""
         config = AKConfig.get()
-        if not (config.a2a.enabled or config.mcp.enabled):
-            raise AKConfigError(
-                "LambdaProtocolHost has nothing to serve: set a2a.enabled or mcp.enabled to true (AK_A2A__ENABLED, AK_MCP__ENABLED), "
-                "or do not build the host"
-            )
-
-    def _check_identity(self) -> None:
-        if IdentityProviderFactory.get() is None:
-            raise AKConfigError(
-                "LambdaProtocolHost needs an identity block: /mcp bypasses the API Gateway authorizer and relies on the identity provider to "
-                "refuse a missing or bad token, and A2A reads the caller's principal from it. Configure identity.provider in config.yaml"
-            )
-
-    def _check_response_store(self) -> None:
-        response_store = AKConfig.get().execution.response_store
-        store_type = response_store.type if response_store else None
-        if not store_type or store_type == "in_memory":
-            raise AKConfigError(
-                f"LambdaProtocolHost needs a shared execution.response_store, but its type is '{store_type or 'unset'}': the Agent Runner Lambda "
-                "writes the reply and this Lambda reads it, so the store cannot live in one process, and without a block the wait budget "
-                "would be the default 60 x 1 s. Set execution.response_store.type (dynamodb, redis or valkey) in config.yaml"
-            )
+        IOHandler._validate_topology("sqs", config)
+        IOHandler._warn_if_no_agents(config)
 
     def _check_stateless_mcp(self) -> None:
+        """A call can land on any Lambda instance, so a stateful MCP session fails intermittently. ECS keeps one replica's session."""
         config = AKConfig.get()
         if config.mcp.enabled and not config.mcp.stateless_http:
             raise AKConfigError(
@@ -298,12 +277,3 @@ class LambdaProtocolGuard:
                 f"at {self.API_GATEWAY_TIMEOUT_SECONDS}s. Lower execution.response_store.retry_count or delay so the wait stays within "
                 f"{self.API_GATEWAY_TIMEOUT_SECONDS}s"
             )
-
-    def _check_public_urls(self) -> None:
-        config = AKConfig.get()
-        for name, surface in (("a2a", config.a2a), ("mcp", config.mcp)):
-            if surface.enabled and urlparse(surface.url).hostname in self.LOCAL_HOSTS:
-                raise AKConfigError(
-                    f"{name}.url is still '{surface.url}', a local address: the A2A card advertises it to clients, and MCP names it in its "
-                    f"login metadata. Set {name}.url to the public URL of the API, stage and base path included (AK_{name.upper()}__URL)"
-                )

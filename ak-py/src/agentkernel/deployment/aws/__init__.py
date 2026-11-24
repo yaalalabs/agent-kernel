@@ -21,7 +21,6 @@ _LAZY_EXPORTS = {
     "LambdaProtocolHost": ".serverless.core.protocol_host",
     "LambdaWebhookHost": ".serverless.core.webhook_host",
     "ProtocolPaths": ".serverless.core.protocol_paths",
-    "ProtocolRouteMatcher": ".serverless.core.protocol_paths",
     "ResponseHandler": ".serverless",
     "ServerlessAgentRunner": ".serverless",
     "WebsocketConnectionHandler": ".serverless",
@@ -49,7 +48,7 @@ if TYPE_CHECKING:
     )
     from .serverless.core import LambdaSQSConsumer
     from .serverless.core.protocol_host import LambdaProtocolHost
-    from .serverless.core.protocol_paths import ProtocolPaths, ProtocolRouteMatcher
+    from .serverless.core.protocol_paths import ProtocolPaths
     from .serverless.core.webhook_host import LambdaWebhookHost
 
 

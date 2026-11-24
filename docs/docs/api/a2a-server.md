@@ -108,12 +108,12 @@ separate process only in split deployments.
 
 The request-handler Lambda serves A2A through `LambdaProtocolHost`, in `rest_sync` or `rest_async` with
 `queue_mode = true`. The host runs the same A2A routes the pipeline's `IOHandler` serves and hands each call to the
-unchanged queue workers. Set up the host, the Terraform flags (`enable_a2a_server`) and the authorizer bypass as in
+unchanged queue workers. Set up the host, the Terraform flag (`enable_a2a_server`) and the authentication (the request handler's own `identity` block, no authorizer) as in
 [A2A and MCP on Lambda](../deployment/aws-serverless.md#a2a-and-mcp-on-lambda). On Lambda:
 
 - **29 seconds.** API Gateway stops waiting at 29 s, so the whole call (queue time plus the agent run) has to fit. The host
   refuses to start when `(retry_count - 1) x delay` is above 29 s.
-- **No task store.** `message:send` returns a plain message, so `tasks/{id}` across Lambda instances is not available.
+- **Task store.** The default `a2a.task_store_type: in_memory` keeps tasks in one Lambda instance, so `tasks/get` across instances needs `task_store_type: redis` (the same on ECS).
 - **No streaming.** `message:stream` is not supported on Lambda.
 - **Public URL.** `a2a.url` has to be the API's public URL, stage and base path included: it is what the agent card advertises.
 - **WebSocket `async` mode** is not supported; it is tracked in #985.

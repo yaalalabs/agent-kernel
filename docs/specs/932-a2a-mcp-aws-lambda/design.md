@@ -94,30 +94,22 @@ Paths are under `ak-py/src/agentkernel/` unless they say otherwise.
 
 ### Authentication
 
-- Follows the existing flow; no new auth code in front of the app
-- A2A message routes (`/a2a/<agent>/message:send`, `/tasks/...`) keep the API Gateway authorizer, like the chat route
-  - needed: the app lets a call with no token through as anonymous (`identity/provider/request.py:27-29`,
-    `tests/test_api_a2a_auth.py:200`), so without the authorizer anyone could reach the agent
-  - the app still reads the same token and sets the caller's principal (`api/http.py:40`)
-- The authorizer lets three things through, as it does for Slack (`akauthorizer.py:30`, `slack-openai/lambda_auth.py`):
-  - `/mcp`: MCP's 401 must point the client at its login metadata (RFC 9728), which the authorizer cannot send; FastMCP
-    refuses a missing or bad token itself (`api/mcp/auth.py:96`, `tests/test_api_mcp_auth.py:255`)
-  - `GET /a2a/<agent>/.well-known/agent-card.json` and `GET /a2a/catalog`: public by design
-  - the bypass only runs with authorizer caching off (`result_ttl_in_seconds = 0`); that applies to every route, chat included
-  - the bypass hook is webhook shaped today (`WebhookBypass`); the user's authorizer Lambda must call it, so the docs and the
-    example show the wiring
+- ECS parity: ECS has no API Gateway authorizer, the app authenticates the bearer token through the `identity` block
+  - protocol routes use `authorization = "NONE"`; no new auth code in front of the app
+  - no token runs as the anonymous principal (`identity/provider/request.py`), a bad token is a 401; MCP's FastMCP refuses a missing token itself
+  - the request handler's `config.yaml` must carry the `identity` block, or every caller is anonymous
+  - authenticated-only A2A access is a generic feature for ECS and Lambda alike, a follow-up
 
 ### Guards at cold start
 
 - `AKConfigError` when A2A or agent MCP is on and:
   - the queue transport is not `sqs` (no `execution.queues` block resolves to `in_memory`, and every call would time out)
-  - no `identity` block is configured (`/mcp` bypasses the authorizer and relies on FastMCP's own token check)
   - `execution.mode` is `async`: there is no REST API to reach the routes (#985)
-  - no response store is configured
-  - `mcp.stateless_http` is false (the next call may reach another instance)
+  - no shared response store is configured (the ECS check, `IOHandler._validate_topology`)
   - `execution.response_store.retry_count × delay` is longer than the API Gateway limit (29 s) or the Lambda timeout
     (the first read is immediate, so the real wait is `(retry_count - 1) × delay`; cold start also counts against the 29 s)
-  - `a2a.url` or `mcp.url` still points at `localhost` (the default); the agent card advertises `a2a.url/<agent>` (`core/builder.py:67`)
+  - `mcp.stateless_http` is false and MCP is on (any call may reach another instance; ECS keeps one replica's session)
+  - not checked (ECS does not either, shared follow-up): a `localhost` `a2a.url` / `mcp.url` (the card advertises `a2a.url/<agent>`)
 - Limit to document: an agent run plus queue time over about 29 s fails in v1; `tasks/{id}` is out of scope
 - Timeouts and runner failures reach the caller as A2A or MCP errors (already true in the executors; tested on Lambda)
 - A missing input queue is #959's cold-start check, not repeated here
@@ -180,8 +172,7 @@ Supporting findings are in `research/findings.md`.
   - cost: the agents' dependencies and more memory; a separate protocol Lambda can follow if size becomes a problem
 - **Workers: no change in #932**
   - in REST modes they already store whole replies; the `protocol` fixes only matter in `async`, so they go to #985
-- **Auth: existing flow.** The authorizer guards A2A message routes; it lets only `/mcp`, the agent cards and the catalog
-  through (see Authentication)
+- **Auth: as on ECS.** No API Gateway authorizer on the protocol routes; the app authenticates (see Authentication)
 - **Routing: `Lambda.register`, like Slack and threads**
   - no new hook in `Lambda.handler`; `aklambda.py` is not changed
 - **Terraform flags: `enable_a2a_server`, `enable_mcp_server`**, matching ECS's `enable_mcp_server`

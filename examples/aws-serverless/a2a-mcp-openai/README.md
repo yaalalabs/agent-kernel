@@ -10,12 +10,10 @@ two protocols from the pipeline's FastAPI server.
 ## Architecture Overview
 
 ```
-A2A / MCP client --> API Gateway --> Authorizer Lambda
-   /a2a/...  /mcp/...                 (bearer token for chat and A2A message routes;
-                                       lets through /mcp, the agent cards and the catalog)
-                                          |
+A2A / MCP client --> API Gateway (no authorizer on these routes)
+   /a2a/...  /mcp/...                     |
                                           v
-                               Request-handler Lambda
+                               Request-handler Lambda (authenticates the bearer token)
                                Lambda.register -> LambdaProtocolHost -> the A2A routes + the MCP mount
                                (builds the cards and tools from the agents registered in this Lambda)
                                           |  enqueue, protocol = a2a | mcp
@@ -30,7 +28,7 @@ A2A / MCP client --> API Gateway --> Authorizer Lambda
   the same FastAPI app the pipeline's `IOHandler` serves, so the A2A and MCP code is not copied.
 - **Agent-runner Lambda**: runs the agent. Nothing in it mentions A2A or MCP.
 - **Response-handler Lambda**: stores each reply for the caller waiting on it.
-- **Authorizer Lambda**: `lambda_auth.py`, below.
+- **Authorizer Lambda**: `lambda_auth.py`, for the chat route only; A2A and MCP are authenticated in the request handler.
 
 The request handler imports the agents because the A2A cards and MCP tools are built from the agent registry when the host
 is constructed (the default in-memory registry). That is why it deploys as a container image with 2 GB of memory, like the
@@ -43,21 +41,15 @@ the request handler no session table, so `deploy/main.tf` sets `AK_SESSION__TYPE
 | Route | Authenticated by | No token |
 |---|---|---|
 | Chat (`POST /api/v1/chat`) | the authorizer | 401 / 403 |
-| A2A `message:send`, tasks, every other `/a2a/...` route | the authorizer | **401 / 403** |
-| A2A agent card and catalog (`GET`) | nobody: public by design | **200** |
+| A2A (every `/a2a/...` route) | the request-handler Lambda, through `config.yaml` `identity` | **runs as the anonymous principal** (200), as on ECS |
 | MCP (`/mcp`) | FastMCP, in the request-handler Lambda | **401 from FastMCP** |
 
-`ProtocolRouteMatcher` in `lambda_auth.py` lets `/mcp`, the agent cards and the catalog past the authorizer by method and
-path, never by header. Every other A2A route has to stay behind it: the A2A app runs a call that carries no token as the
-anonymous principal, so the authorizer is what keeps an unauthenticated caller away from the agent. MCP is let through
-because its 401 has to carry the client's login metadata, which an authorizer cannot send; FastMCP refuses a missing or bad
-token itself, using the same identity provider.
+The A2A and MCP routes carry **no API Gateway authorizer**, the same as ECS. The request-handler Lambda authenticates the bearer
+token itself, so **the `config.yaml` that Lambda carries must have the `identity` block** (this example's does). Without it every
+caller is anonymous. A call that presents a bad token gets a 401 from the app. A2A accepts a call with no token as the anonymous
+principal; requiring a token on every A2A call is an Open Agent Kernel feature for both deployments, not a Lambda setting.
 
-**The authorizer's cache must be off** (`result_ttl_in_seconds = 0`, set in `deploy/main.tf`). With a TTL, API Gateway answers
-a request that has no `Authorization` header with 401 before the authorizer runs, so the bypass never gets a say. The cost
-is one authorizer call per request, chat included.
-
-## Declare the protocols in three places
+## Declare the protocols in two places
 
 They must agree:
 
@@ -65,7 +57,6 @@ They must agree:
 |---|---|---|
 | `lambda_request_handler.py` | `Lambda.register(path, method=method)(protocol.handle)` for each `ProtocolPaths.ROUTES` | 500: the router has no route for the call |
 | `deploy/main.tf` | `enable_a2a_server = true`, `enable_mcp_server = true` | API Gateway answers 403 before any Lambda runs: there is no `/a2a` or `/mcp` route |
-| `lambda_auth.py` | `ProtocolRouteMatcher()` | MCP and the public cards are refused with 401 / 403 by the authorizer |
 
 ## The public URL, and the second apply
 
@@ -76,8 +67,7 @@ first one's `public_base_url` output to the request handler as `AK_A2A__URL` and
 environment only. The value is kept in `deploy/public_url.auto.tfvars` (not committed), so a later plain `terraform apply`
 keeps it. With a custom domain you know the URL up front: set `public_base_url` yourself.
 
-Until `a2a.url` and `mcp.url` are public, the request handler refuses to start (they default to `localhost`), and the first
-call fails with the guard's message in the CloudWatch log.
+Until `a2a.url` and `mcp.url` are public (they default to `localhost`), the agent card advertises an address no client can reach. Nothing checks them.
 
 ## Build
 
@@ -106,7 +96,7 @@ cd deploy
 ./deploy.sh local   # packages from ../../../ak-py/dist, Terraform module from this checkout
 ```
 
-> `enable_a2a_server` and `enable_mcp_server` ship with the `ak-serverless` module release after 0.10.1. Until it is
+> `enable_a2a_server` and `enable_mcp_server` ship with the `ak-serverless` module release after 0.10.2. Until it is
 > published the registry module has no such input, so deploy with `./deploy.sh local`: it writes `deploy/zz_local_module_override.tf`
 > (not committed), which points the module at `../../../../ak-deployment/ak-aws/serverless` for that deployment.
 
@@ -136,8 +126,8 @@ With `-s` every test prints the real status it got, which is the record that the
 | two MCP tool calls, one session | the same for MCP |
 | agent card with no token | 200, and the card advertises the public `a2a.url` |
 | catalog with no token | 200 |
-| A2A `message:send` with no token / a wrong token | the **authorizer** refuses it (401 or 403) |
-| A2A task route with no token | every non-public A2A route needs a token |
+| A2A `message:send` with no token | runs as the anonymous principal (200), as on ECS |
+| A2A `message:send` / task route with a wrong token | the app's own 401 (not the gateway's) |
 | `/mcp` with no token / a wrong token | FastMCP's own 401 (not the gateway's) |
 | `/mcp` with a valid token | the agent is listed as a tool, and a call works |
 | `GET /mcp` | 405: stateless MCP has no server push |
@@ -147,10 +137,10 @@ With `-s` every test prints the real status it got, which is the record that the
 - **29 seconds.** API Gateway stops waiting at 29 s, and a call waits for the agent's reply. `config.yaml` sets
   `retry_count: 10` and `delay: 2`, a wait of `(retry_count - 1) x delay` = 18 s, and the request handler refuses to start
   with a longer one. An agent run plus queue time over that fails with the executors' timeout error.
-- **No task store.** `message:send` returns a plain message, so `tasks/{id}` across Lambda instances is out of scope.
+- **A2A tasks.** The default `a2a.task_store_type: in_memory` keeps tasks in one Lambda instance, so `tasks/get` across instances needs `task_store_type: redis` (the same on ECS).
 - **Streaming** (`message:stream`, streamed MCP replies) is not supported on Lambda.
-- **MCP login metadata** (OAuth, with an OpenID identity provider) needs a custom domain mapped at the root of the host: a
-  default `execute-api` URL carries a stage prefix and cannot serve it. The `static` provider used here is bearer-only and is
+- **MCP login metadata** (RFC 9728, with an OpenID identity provider) is served at the root of the host, a path neither this
+  deployment nor ECS routes, so that OAuth discovery is not supported. The `static` provider used here is bearer-only and is
   not affected.
 - **Memory.** The request handler loads the agents, so give it far more than the 128 MB default.
 

@@ -9,7 +9,7 @@ set -eo pipefail # exit if any command in this script fails
 # Pass `local` as the first argument to use the branch you are on:
 #   - install agentkernel from ../../../ak-py/dist instead of PyPI, and
 #   - use the Terraform module from ../../../../ak-deployment/ak-aws/serverless instead of the registry's. The
-#     enable_a2a_server and enable_mcp_server inputs this example uses ship with the module release after 0.10.1,
+#     enable_a2a_server and enable_mcp_server inputs this example uses ship with the module release after 0.10.2,
 #     so until it is published the registry module has no such input.
 LAMBDA_TARGET=(--python-platform x86_64-manylinux_2_34 --python-version 3.12 --only-binary :all:)
 
@@ -99,7 +99,6 @@ rm -f ../requirements.txt
 # a2a.url / mcp.url. It contains the API's id, which exists only once the API does: apply once without it, read it from
 # the output, and apply again (the second apply changes the request handler's environment only). It is kept in
 # public_url.auto.tfvars so a later plain `terraform apply` does not lose it; a fresh deployment starts without one.
-rm -f public_url.auto.tfvars
 terraform init
 terraform apply
 echo "public_base_url = \"$(terraform output -raw public_base_url)\"" >public_url.auto.tfvars

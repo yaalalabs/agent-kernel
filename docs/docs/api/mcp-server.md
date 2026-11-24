@@ -117,8 +117,10 @@ The request-handler Lambda serves MCP through `LambdaProtocolHost`, in `rest_syn
 - **`GET /mcp` is a 405.** A stateless server has no server push.
 - **29 seconds.** The same wait budget as A2A: API Gateway stops waiting at 29 s.
 - **No streaming.** The streamed reply is buffered and returned whole.
-- **Login metadata.** `/mcp` bypasses the API Gateway authorizer, and FastMCP refuses a missing or bad token itself. Serving the
-  OAuth metadata of an OpenID provider needs a custom domain at the root of the host: a default `execute-api` URL carries a stage prefix.
+- **Authentication.** The `/mcp` routes carry no API Gateway authorizer: FastMCP, in the request handler, refuses a missing or bad
+  token, so that Lambda's `config.yaml` must carry the `identity` block.
+- **Login metadata.** The OAuth metadata an OpenID provider advertises lives at the root of the host, which neither this deployment
+  nor ECS routes, so that discovery is not supported.
 - **Public URL.** `mcp.url` has to be the API's public URL.
 
 ## Custom Tools

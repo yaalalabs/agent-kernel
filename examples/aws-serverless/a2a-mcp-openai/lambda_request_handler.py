@@ -4,10 +4,10 @@ LambdaProtocolHost runs the same FastAPI app the pipeline's IOHandler serves (th
 mount) on the API Gateway events registered below. Each call is enqueued like a REST chat request, runs on the
 agent-runner Lambda, and its reply is read back from the response store: this Lambda never runs a model.
 
-Building the host runs its checks on cold start: a REST execution mode, the sqs transport, the API_BASE_PATH,
-API_VERSION and AGENT_ENDPOINT variables Terraform sets, a shared response store, an identity provider, stateless MCP,
-a wait within API Gateway's 29 s, and public a2a.url and mcp.url. A deployment that could not work fails its init
-instead of failing calls later.
+Building the host runs its checks on cold start: a REST execution mode, the API_BASE_PATH, API_VERSION and
+AGENT_ENDPOINT variables Terraform sets, stateless MCP, the sqs transport, a shared response store and a wait within API
+Gateway's 29 s. A deployment that could not work fails its init instead of failing calls later. The public a2a.url and
+mcp.url (see config.yaml) are not checked.
 
 The agents are registered first: the host builds the A2A cards and the MCP tools from the agent registry when it is
 constructed (the in-memory registry here, so this Lambda imports the agents and needs their dependencies and memory).

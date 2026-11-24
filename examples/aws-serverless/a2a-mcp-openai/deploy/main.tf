@@ -1,6 +1,6 @@
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers            = { aws = aws, docker = docker }
   prefix               = var.prefix
@@ -27,15 +27,14 @@ module "serverless_agents" {
   enable_mcp_server = true
 
   # ---- Authorizer ----
-  # Bearer-token auth for the chat route and every A2A message route; lambda_auth.py lets /mcp, the agent cards and
-  # the catalog through. The bypass only runs with the authorizer's cache off, which applies to every route.
+  # Bearer-token auth for the chat route. The A2A and MCP routes carry no authorizer: the request handler authenticates
+  # them itself (config.yaml `identity`), as on ECS.
   authorizer = {
-    description           = "Bearer-token auth for chat and A2A; lets MCP, the agent cards and the catalog through"
-    function_name         = "gtwy-auth"
-    handler_path          = "lambda_auth.handler"
-    package_path          = "../dist_auth.zip"
-    package_type          = "LocalZip"
-    result_ttl_in_seconds = 0
+    description   = "Bearer-token auth for the chat route"
+    function_name = "gtwy-auth"
+    handler_path  = "lambda_auth.handler"
+    package_path  = "../dist_auth.zip"
+    package_type  = "LocalZip"
     environment_variables = {
       "DEMO_AUTH_TOKEN" = var.demo_auth_token
     }
@@ -59,7 +58,7 @@ module "serverless_agents" {
     security_group_id    = var.request_handler_security_group_id
     environment_variables = merge(
       {
-        # MCP and A2A authenticate the bearer token in this Lambda too (see config.yaml `identity`).
+        # MCP and A2A authenticate the bearer token in this Lambda (see config.yaml `identity`).
         DEMO_AUTH_TOKEN = var.demo_auth_token
         # This Lambda registers the agents (the cards and tools are built from them) but never runs one, so it holds no
         # session: the agent runner owns them in DynamoDB. In queue mode the module gives this Lambda no session table, and
