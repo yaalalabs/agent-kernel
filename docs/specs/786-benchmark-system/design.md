@@ -385,6 +385,9 @@ change to AK itself is a `TRACE` log level with per-stage trace points on the re
 - A standalone project in a new top-level `benchmarks/` directory with its own `pyproject.toml` (uv), like `e2e/`.
   Not part of the `agentkernel` package.
   - Depends on `agentkernel` for `TraceStage` and the trace-line parser, and for the benchmarked app.
+  - The harness and the app use only AK's public API (`agentkernel.core`, `agentkernel.identity`,
+    `agentkernel.secret`, `agentkernel.<framework>`), never AK internals such as `core/util/` or private config
+    classes (decided 2026-11-24, #912).
   - The benchmarked app (mock agent) is `benchmarks/app/`, its own uv project like `e2e/app/`, since it is deployed
     and the harness isn't (decided 2026-11-23, #912).
   - The harness's own cloud-free tests run in the repo's test workflow (decided 2026-11-23, #912).
@@ -433,6 +436,7 @@ change to AK itself is a `TRACE` log level with per-stage trace points on the re
     max_delay: 5                   # no default (seconds)
   ```
 
+  - Loaded with pydantic-settings' own YAML source, not AK's internal config loader (decided 2026-11-24, #912).
   - The other fetcher settings (`settle_window_s`, `metric_delay_s`) stay in the host code: they follow how that
     host's source behaves. See [Mock agent](#mock-agent) for the `mock_agent` rules.
   - `hosts`, `modes`, `message_types`, `test_types` and `load_steps` are also CLI arguments; see L3.
@@ -844,7 +848,8 @@ flowchart TD
     `AGENT_RECEIVED`, client sent → `REQUEST_RECEIVED`, and `CLIENT_RECEIVED`) includes the clock offset between
     them. It isn't corrected; the load-generator machine must have clock sync (NTP) on. Durations inside one component
     and end-to-end latency use one clock and aren't affected (PR #893 review).
-- **Parser** in `core/logger.py` next to `TraceStage`, so format and parser change together. The benchmark imports it.
+- **Parser** in `core/logger.py` next to `TraceStage`, so format and parser change together. The benchmark imports it through
+  `agentkernel.core` (`TraceLine`, `TraceStage`).
 - **Trace points on every code path a phase-1 host runs:** shared `pipeline/` (request handler, WS handler, agent
   runner, response handler), ECS containerized handlers, and the Lambda serverless handlers.
   - Each stage is logged exactly where named (e.g. `AGENT_DONE` before the output send, `AGENT_RECEIVED` at
