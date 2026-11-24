@@ -31,3 +31,11 @@ def run_info() -> RunInfo:
 @pytest.fixture
 def deployment() -> Deployment:
     return Deployment("ws://127.0.0.1:1", {}, {"input": {}, "output": {}}, {}, {})
+
+
+@pytest.fixture(autouse=True)
+def short_auth_grace(monkeypatch):
+    """A refused token is seen within milliseconds on 127.0.0.1; keeps each connect() short."""
+    from ak_bench.load.driver.ws_complete import WebSocketCompleteDriver
+
+    monkeypatch.setattr(WebSocketCompleteDriver, "AUTH_GRACE_S", 0.05)

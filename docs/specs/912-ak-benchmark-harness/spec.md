@@ -32,9 +32,10 @@ benchmarks/
 │   │   └── base.py             # dataclasses, InfoFetcher, the five families, Fetchers, Deployment, Host, RunInfo
 │   ├── load/
 │   │   ├── records.py          # RequestRecord, ResponseEvent, RequestStatus
-│   │   ├── driver.py           # ClientDriver ABC
-│   │   ├── ws_complete.py      # WebSocketCompleteDriver
-│   │   ├── factory.py          # DriverFactory (built-ins only)
+│   │   ├── driver/             # client drivers, one file per mode × message type (AK's base / factory / impl layout)
+│   │   │   ├── base.py         # ClientDriver ABC
+│   │   │   ├── factory.py      # DriverFactory (built-ins only)
+│   │   │   └── ws_complete.py  # WebSocketCompleteDriver
 │   │   ├── token.py            # TokenSigner
 │   │   ├── schedule.py         # BurstSchedule, SteadySchedule
 │   │   └── generator.py        # LoadGenerator, LoadResult
@@ -245,7 +246,7 @@ class HostRegistry:
 - `get()` calls `host.fetchers.validate(name)` before returning, so every command that loads a host validates it
   before deploying anything.
 
-**Driver factory (`load/factory.py`):**
+**Driver factory (`load/driver/factory.py`):**
 
 ```python
 class DriverFactory:
@@ -645,7 +646,7 @@ class MockAgent(Agent):
   point (Lambda handlers, ECS `AgentRunner.run` / `AWSWebsocketAPI.run()`), written in the deployment folder's entry
   files that `import agent`. `MockAgent` is registered when `BenchAppConfig.get().mock_delays` is set; otherwise the real agent: an
   `OpenAIModule` agent under the same `AGENT_NAME` (OpenAI key from `SecretManager`, as the AWS examples do), instructed to repeat the user's message (so the reply still
-  carries the request id, see [WebSocket complete driver](#websocket-complete-driver-loadws_completepy)). Exactly one
+  carries the request id, see [WebSocket complete driver](#websocket-complete-driver-loaddriverws_completepy)). Exactly one
   of the two set → the app raises at import (a broken deployment, not a silent real agent; `deploy` already refuses
   this case).
 - `Runtime.run` calls the runner (`core/runtime.py:546`) and saves the session after the post-hooks (`:555`), so the
@@ -739,7 +740,7 @@ class ResponseEvent:
 - Wall-clock timestamps are `datetime.now(UTC)`; every duration uses `time.monotonic()`. A wall time for windowing is
   derived as `step_start_wall + (mono - step_start_mono)`, so windows and durations share one monotonic base.
 
-**`ClientDriver` (`load/driver.py`):**
+**`ClientDriver` (`load/driver/base.py`):**
 
 ```python
 class ClientDriver(ABC):
@@ -759,7 +760,7 @@ class ClientDriver(ABC):
 - `trace_stages` gives the stage order used for the per-request durations, so a stage a mode never logs is simply not
   in its chain (see [Per-request CSV](#per-request-csv-resultsper_requestpy)).
 
-#### WebSocket complete driver (`load/ws_complete.py`)
+#### WebSocket complete driver (`load/driver/ws_complete.py`)
 
 - `connect()`: `websockets.connect(<endpoint with ?token=<token> added to its query>)`, then starts the receive task.
   A refused token closes the socket (`pipeline/ws/handler.py:192-212`); `connect()` raises in that case (see below).
@@ -768,15 +769,19 @@ class ClientDriver(ABC):
   route is taken when `route` is absent (`:226`); on API Gateway the frame goes to the `$default` route
   (`route_selection_expression = "$request.body.route"`, `ak-deployment/ak-aws/serverless/modules/websocket-api-gateway/main.tf:15`),
   which the AWS deployment folders wire to the chat handler.
-- Receive task, per JSON frame:
-  - `type == "CHAT_QUEUED"`: ignored (acknowledgement, `pipeline/ws/handler.py:275-283`).
+- Receive task, per JSON frame (only reply frames count, so an unexpected frame ends as `timeout`, never as a false `ok`):
+  - `type == "CHAT_QUEUED"`: ignored; it carries the request id but is the acknowledgement (`pipeline/ws/handler.py:275-283`).
   - `type == "CHAT_RESPONSE"`: request id = the frame's `request_id` if present, else the in-flight request id of this
     connection that appears in the frame text. A complete reply body is `{"result": str(reply), "session_id": ...}`
     with no request id (`core/chat_service.py:381,394`); the prompt is the request id and the mock agent echoes it,
-    so it appears in `result`. Emits `first_chunk` + `complete`.
-  - `type == "SYSTEM_RESPONSE"` with `status == "FAILED"` (enqueue failure, `pipeline/ws/handler.py:270,297-298`):
-    emits `error` for the request id found the same way; unmatched → logged and dropped.
-  - an unmatched `CHAT_RESPONSE` (duplicate delivery, late reply after timeout) is dropped; the first match wins.
+    so it appears in `result`. Emits `first_chunk` + `complete`, or `error` when the body has an `error` key (agent
+    error reply, `pipeline/agent_runner.py:122,166`).
+  - `type == "SYSTEM_RESPONSE"` with an `error` key (permanent delivery failure, `pipeline/response_handler.py:141-146`)
+    or `status == "FAILED"` (enqueue failure, `pipeline/ws/handler.py:270,297-298`): emits `error` for the request id
+    found the same way.
+  - every other frame (other `SYSTEM_RESPONSE`, `STREAM_CHUNK`, unknown types) is ignored; an unmatched reply
+    (duplicate delivery, late reply after timeout, an error reply without the id) is logged and dropped; the first match
+    wins.
 - `trace_stages`: every `TraceStage` except `AGENT_FIRST_CHUNK`, `RESPONSE_POLL_START`, `RESPONSE_FOUND`, in enum order
   (`core/logger.py:16-29`).
 
@@ -1179,7 +1184,7 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 | `test_step_end.py` | order (requests → checks in list order, later not fetched while earlier fails); settle window (holds only after `settle_window_s` of consecutive ok polls); a raising read and an empty read reset the run and log; empty `cooldown_checks` ends once requests settle; max cool-down with host override → `max_reached` |
 | `test_schedule.py` | burst: one offset per client; steady: gaps within [min, max], next = previous scheduled + gap, none > `load_time_s`, min = max gives a fixed interval, per-client draws differ |
 | `test_load_generator.py` (MockWsServer) | all connects finish before `run()`; burst sends one request per client, all within a few ms; N clients → N distinct users and tokens, one connection each; request ids unique and in the prompt; responses matched without request id in the frame; dropped reply → `timeout` after `client_timeout_s`; refused connect → that client's requests `error`, others `ok`; latency from monotonic clock; a late send doesn't shift later scheduled sends |
-| `test_ws_complete_driver.py` | frame shape; token in query; `CHAT_QUEUED` ignored; `SYSTEM_RESPONSE` FAILED → `error`; duplicate reply dropped |
+| `test_ws_complete_driver.py` | frame shape; token in query; `CHAT_QUEUED` ignored; `SYSTEM_RESPONSE` FAILED and `error`-key replies → `error`; duplicate reply dropped |
 | `test_step_runner.py` | connect happens before `before` starts; `during_step` windows are contiguous (last poll, now) and a final poll after stop; a hanging tracker is cancelled after the stop timeout (patched to 0.2 s); `after_step` gets (step start, step end) after the wait; a raising fetcher → empty columns + run-log entry, step completes; the missing-responses `WARNING` text and count |
 | `test_state_and_lock.py` | stale lock (dead pid, this host) taken over with log; live lock refused; other-host lock refused; `--force-unlock` prints holder, honours `--yes` / declined prompt, logs; lock released on success, exception and `KeyboardInterrupt` |
 | `test_commands.py` (mock folder + MockWsServer) | full deploy → step (steady and burst) → plot → finish → post-run produces every CSV, every graph, `run-metadata.json`, `step-metadata.json`, `cost.csv` and the cost graph; script env contains the contract variables (mock delays only with `mock_agent`); `state.json` round-trips `Deployment` unchanged and loses `auth_secret` after finish; refusals: existing step folder without `--replace` (and `--replace` replaces folder + row), step not in saved load steps, concurrent step, `run --steps 7` before any deploy, unknown `fetchers.<name>` and missing folder before any script; existing host × mode × message type in a run id refused |

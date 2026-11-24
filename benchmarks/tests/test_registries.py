@@ -4,6 +4,8 @@ from mocks.host import mock_host
 
 from ak_bench.errors import BenchConfigError, HostRefused
 from ak_bench.hosts import HostRegistry
+from ak_bench.load.driver.factory import DriverFactory
+from ak_bench.load.driver.ws_complete import WebSocketCompleteDriver
 from ak_bench.platforms.base import Fetchers, Host
 
 
@@ -30,3 +32,12 @@ def test_get_runs_validate(monkeypatch):
     monkeypatch.setitem(HostRegistry._BUILTINS, "bad", bad)
     with pytest.raises(HostRefused, match="host 'bad'.*'resource'"):
         HostRegistry.get("bad")
+
+
+def test_driver_factory_returns_ws_complete_driver():
+    assert DriverFactory.driver_class("async", "complete") is WebSocketCompleteDriver
+
+
+def test_unknown_driver_lists_builtins():
+    with pytest.raises(BenchConfigError, match=r"no client driver for sync \+ streaming; built-ins: async \+ complete"):
+        DriverFactory.driver_class("sync", "streaming")

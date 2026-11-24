@@ -69,8 +69,8 @@ Independent of Iterations 1–2; can be built in parallel.
 
 - **Goal:** N clients connect to a local mock server, send burst or steady load, and every request ends `ok`,
   `error` or `timeout` with the right timestamps.
-- **Files:** `ak_bench/load/records.py`, `driver.py`, `ws_complete.py`, `factory.py`, `token.py`, `schedule.py`,
-  `generator.py`, `tests/mocks/ws_server.py`, `tests/test_schedule.py`, `tests/test_ws_complete_driver.py`,
+- **Files:** `ak_bench/load/records.py`, `driver/base.py`, `driver/ws_complete.py`, `driver/factory.py`, `token.py`,
+  `schedule.py`, `generator.py`, `tests/mocks/ws_server.py`, `tests/test_schedule.py`, `tests/test_ws_complete_driver.py`,
   `tests/test_load_generator.py`, `tests/test_token_cross_check.py`, `tests/test_registries.py` (driver part)
 - **Steps:**
   1. Add `RequestRecord`, `ResponseEvent`, `RequestStatus` (Load generator → Records).
