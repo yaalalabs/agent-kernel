@@ -1,7 +1,7 @@
 # OpenAI Agents over WebSocket, async + delta (token streaming), no queue — agent runs inline
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { aws = aws, docker = docker }
 

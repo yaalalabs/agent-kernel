@@ -1,7 +1,7 @@
 {
   "skill": "ak-cloud-deploy",
   "description": "Evaluations for the ak-cloud-deploy (AWS/Azure/GCP/Kubernetes deployment) skill with sync/async and scalable modes",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "evals": [
     {
       "id": "deploy-aws-serverless",
@@ -123,8 +123,8 @@
       "input": "Deploy my agent to AWS ECS Fargate in scalable queue mode with two containers",
       "expected_outputs": [
         "yaalalabs/ak-containerized/aws",
-        "from agentkernel.aws import ECSIOHandler",
-        "from agentkernel.aws import ECSAgentRunner",
+        "from agentkernel.pipeline import IOHandler",
+        "from agentkernel.pipeline import AgentRunner",
         "queue_mode = true",
         "execution_mode",
         "agent_runner",

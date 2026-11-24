@@ -11,11 +11,11 @@ Three topologies are supported:
 | Mode | Containers | Selected by | Best for |
 |------|-----------|-------------|----------|
 | **Simple REST** | One (runs `RESTAPI`) | `queue_mode = false` (default) in Terraform; app entrypoint `RESTAPI.run` | Moderate traffic, simplest setup |
-| **Scalable queue mode** | Two (IO container + Agent Runner service) | `queue_mode = true`, `execution_mode = "rest_sync"` or `"rest_async"` in Terraform; entrypoints `ECSIOHandler.run` + `ECSAgentRunner.run`; `execution.queues.*` config | High throughput, long-running agents, backpressure control |
+| **Scalable queue mode** | Two (IO container + Agent Runner service) | `queue_mode = true`, `execution_mode = "rest_sync"` or `"rest_async"` in Terraform; entrypoints `IOHandler.run` + `AgentRunner.run` (both `from agentkernel.pipeline`); `execution.queues.*` config | High throughput, long-running agents, backpressure control |
 | **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` in Terraform (`message_type = "delta"` for chunks) | Real-time, bidirectional, connection-based interactions |
 
 :::note Protocol support
-ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks; `ECSIOHandler` refuses it at startup. **WebSocket mode** is also available on ECS via a WebSocket API Gateway (see [WebSocket Mode](#websocket-mode) below) as `execution_mode = "async"` with either `message_type = "complete"` (one `CHAT_RESPONSE` push per reply, the default) or `message_type = "delta"` (one `STREAM_CHUNK` push per stream event). `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"`.
+ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. In queue mode `terraform plan` rejects it, because the HTTP API buffers streamed responses; stream over WebSocket instead. **WebSocket mode** is also available on ECS via a WebSocket API Gateway (see [WebSocket Mode](#websocket-mode) below) as `execution_mode = "async"` with either `message_type = "complete"` (one `CHAT_RESPONSE` push per reply, the default) or `message_type = "delta"` (one `STREAM_CHUNK` push per stream event). `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"`.
 :::
 
 ## Simple REST Architecture
@@ -105,12 +105,12 @@ The IO container and the Agent Runner are separate ECS services sharing SQS FIFO
 graph LR
     A[Client] --> B[API Gateway]
     B --> C[ALB]
-    C --> D["IO Container<br/>(ECSIOHandler)"]
+    C --> D["IO Container<br/>(IOHandler)"]
 
     D -->|"enqueue (rest-api thread)"| E[/Input Queue<br/>SQS FIFO/]
-    E --> G["Agent Runner container<br/>(ECSAgentRunner)"]
+    E --> G["Agent Runner container<br/>(AgentRunner)"]
     G --> F[/Output Queue<br/>SQS FIFO/]
-    F -->|"output-consumer threads"| D
+    F -->|"response-handler threads"| D
     D --> H[(DynamoDB<br/>Response Store)]
     H -.->|poll| D
 
@@ -126,18 +126,18 @@ Both containers are internally multi-threaded, managed by `ThreadRunner` (one da
 
 ```mermaid
 graph TB
-    subgraph IO["Container 1 - IO container (ECSIOHandler.run, max_workers=2)"]
-        T1["Thread rest-api<br/>uvicorn + ECSQueueRequestHandler<br/>POST /api/v1/chat · GET /api/v1/chat?request_id=..."]
-        subgraph OC["Thread output-queue-consumer - ECSOutputConsumer.run()"]
-            OC1[sqs-consumer-0]
-            OC2["sqs-consumer-1<br/>(output.no_of_consumers, default 2)"]
+    subgraph IO["Container 1 - IO container (IOHandler.run, max_workers=2)"]
+        T1["Thread rest-api<br/>uvicorn + RequestHandler<br/>POST /api/v1/chat · GET /api/v1/chat?request_id=..."]
+        subgraph OC["Thread response-handler - ResponseHandler.start()"]
+            OC1[response-handler-0]
+            OC2["response-handler-1<br/>(output.no_of_consumers, default 2)"]
         end
     end
 
-    subgraph AR["Container 2 - Agent Runner (ECSAgentRunner.run, max_workers=N)"]
-        AR1[sqs-consumer-0]
-        AR2[sqs-consumer-1]
-        AR3["sqs-consumer-N<br/>(input.no_of_consumers, default 5)"]
+    subgraph AR["Container 2 - Agent Runner (AgentRunner.run, max_workers=N)"]
+        AR1[agent-runner-0]
+        AR2[agent-runner-1]
+        AR3["agent-runner-N<br/>(input.no_of_consumers, default 5)"]
     end
 
     T1 -->|SendMessage| IQ[/Input Queue/]
@@ -157,28 +157,28 @@ graph TB
     style RS fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-- Each `sqs-consumer-*` thread runs an independent blocking long-poll loop (`poll → process → delete`), checking a shared `ThreadRunner.shutdown_event` between iterations.
+- Each `agent-runner-*` and `response-handler-*` thread runs an independent blocking long-poll loop (`poll → process → delete`), checking a shared `ThreadRunner.shutdown_event` between iterations.
 - Consumer thread counts are configured per queue: `execution.queues.input.no_of_consumers` (default **5**, Agent Runner) and `execution.queues.output.no_of_consumers` (default **2**, IO container). These settings are ECS-only; Lambda ignores them.
 - `execution.queues.batch_size` controls `MaxNumberOfMessages` per SQS receive call; it is injected by Terraform and should never be set in `config.yaml`.
 
 **Failure and shutdown propagation**: if any consumer thread crashes, `ThreadRunner` triggers a graceful shutdown: it sets the shared `shutdown_event`, the sibling consumer threads finish their in-flight message and exit their loops, and then `os._exit(1)` is called so ECS restarts the task cleanly. The `rest-api` thread (uvicorn) never checks `shutdown_event` and is marked `awaited_on_shutdown=False`, so the drain doesn't wait on it; it is simply terminated when `os._exit(1)` fires. Per-message processing errors do **not** kill a consumer thread; the message is left undeleted and retried after the SQS visibility timeout.
 
-### Container 1: IO container (`ECSIOHandler`)
+### Container 1: IO container (`IOHandler`)
 
-`ECSIOHandler.run()` starts two peer tasks via `ThreadRunner`:
+`IOHandler.run()` starts two peer tasks via `ThreadRunner`:
 
-- **`rest-api` thread**: `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`, FastAPI/uvicorn.
+- **`rest-api` thread**: FastAPI/uvicorn serving the shared pipeline `RequestHandler` (`/api/v1/agents`, `/api/v1/chat`).
   - `POST /api/v1/chat`: validates `session_id` + `prompt`, generates a `request_id` (UUID), and enqueues to the Input Queue with `MessageGroupId = session_id` and `MessageDeduplicationId = request_id`. In `rest_sync` mode it then polls the response store for that `request_id` and returns the reply on the same connection (504 if it never arrives); in `rest_async` mode it returns `{"status": "ACCEPTED", "request_id": ...}` immediately.
   - `GET /api/v1/chat?request_id=...&session_id=...` (`rest_async` only, 404 otherwise): reads the response store by `request_id` and returns the body, or a `NOT_FOUND` error if nothing has been written yet; `session_id` is optional and used only for logging, not validated against the stored reply.
   - The IO container registers **no agents**; agent validation and execution happen only in the Agent Runner.
-- **`output-queue-consumer` thread**: `ECSOutputConsumer.run()` spawns `execution.queues.output.no_of_consumers` (default **2**) long-poll threads on the Output Queue, each writing `{session_id, request_id, body}` records to the response store. On permanent failure (message exceeded `max_receive_count`), it writes an error record to the store so the waiting HTTP caller gets an error instead of hanging.
+- **`response-handler` thread**: `ResponseHandler` spawns `execution.queues.output.no_of_consumers` (default **2**) long-poll threads on the Output Queue, each writing `{session_id, request_id, body}` records to the response store. On permanent failure (message exceeded `max_receive_count`), it writes an error record to the store so the waiting HTTP caller gets an error instead of hanging.
 
 **Entrypoint (`app_rest_service.py`)** (no agent definitions):
 
 ```python
-from agentkernel.aws import ECSIOHandler
+from agentkernel.pipeline import IOHandler
 
-runner = ECSIOHandler.run
+runner = IOHandler.run
 
 if __name__ == "__main__":
     runner()
@@ -186,28 +186,49 @@ if __name__ == "__main__":
 
 The REST routes authenticate through the `identity` block in `config.yaml`: the identity
 dependency is bound onto every REST route before the `rest-api` thread starts (see
-[Authentication](#authentication)), and `ECSIOHandler.run(handlers=[...])` only adds REST handlers
+[Authentication](#authentication)), and `IOHandler.run(handlers=[...])` only adds REST handlers
 beside the defaults. The same block authenticates the WebSocket `$connect` handshake when
 [WebSocket Mode](#websocket-mode) is enabled, so one configuration covers both protocols; WebSocket
 mode refuses to start without it.
 
-### Container 2: Agent Runner (`ECSAgentRunner`)
+### Container 2: Agent Runner (`AgentRunner`)
 
-Extends `ECSSQSConsumer` (which in turn extends the shared `RawQueueConsumer` base also used by Lambda's `LambdaSQSConsumer`): runs `execution.queues.input.no_of_consumers` (default **5**) independent threads, each polling the Input Queue in a blocking loop, executing the agent through the full `Runtime.run()` pipeline (hooks, guardrails, session persistence), and putting the result on the Output Queue with the same `request_id`. On permanent failure it forwards an error body to the Output Queue so the client still receives a response.
+The shared pipeline `AgentRunner` (it dispatches to `StreamAgentRunner` for `message_type: delta` and to `RealtimeAgentRunner` for `realtime`) runs `execution.queues.input.no_of_consumers` (default **5**) independent threads, each polling the Input Queue in a blocking loop, executing the agent through the full `Runtime.run()` pipeline (hooks, guardrails, session persistence), and putting the result on the Output Queue with the same `request_id`. On permanent failure it forwards an error body to the Output Queue so the client still receives a response.
 
 **Entrypoint (`app_agent_runner.py`)**:
 
 ```python
-from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
 
 OpenAIModule([...])  # register agents here only
 
-handler = ECSAgentRunner.run
+handler = AgentRunner.run
 
 if __name__ == "__main__":
     handler()
 ```
+
+### Migrating from ECSAgentRunner/ECSIOHandler
+
+The ECS-only queue classes were removed in favour of the shared pipeline classes. Container
+commands, SQS message shapes and attributes are unchanged, so rolling deploys work either way.
+
+| Removed | Use instead |
+|---------|-------------|
+| `ECSAgentRunner.run` (and `ECSStreamAgentRunner`, `ECSRealtimeAgentRunner`) | `AgentRunner.run` (`from agentkernel.pipeline import AgentRunner`) |
+| `ECSIOHandler.run` | `IOHandler.run` (`from agentkernel.pipeline import IOHandler`) in REST modes; `AWSWebsocketAPI.run` (`from agentkernel.aws import AWSWebsocketAPI`) in WebSocket mode |
+| `ECSOutputConsumer`, `AWSRestAPI`, `ECSQueueRequestHandler` | Nothing: `IOHandler.run` starts the shared `ResponseHandler` and `RequestHandler` itself |
+
+**REST 400 error body changes shape.** A chat request refused before it reaches the queue (missing
+`session_id` or prompt, or one the agent service would refuse) now returns the same body as direct mode.
+`detail` is an object, not a string. Clients that read `detail` as a string must read `detail.error` instead:
+
+| Case | Before | After |
+|------|--------|-------|
+| Missing `session_id` | `{"detail": "session_id is required"}` | `{"detail": {"error": "No session_id is provided in the request"}}` |
+| Missing prompt | `{"detail": "prompt is required"}` | `{"detail": {"error": "No prompt provided in the request", "session_id": "..."}}` |
+| Refused request | `{"detail": "<reason>"}` | `{"detail": {"error": "<reason>", "session_id": "..."}}` |
 
 ### Terraform
 
@@ -350,9 +371,11 @@ Both queue topologies from above are supported:
 - **Direct** (`queue_mode = false`): the single container authenticates `$connect`, runs the
   agent inline via `ChatService`, and pushes the reply back over the same connection.
 - **Queue** (`queue_mode = true`): the same two-container split as [Scalable Queue
-  Mode](#scalable-queue-mode): the IO container enqueues chat frames and its output-queue
-  consumer pushes replies over the socket instead of writing to a response store; the Agent
-  Runner is unchanged.
+  Mode](#scalable-queue-mode): the IO container enqueues chat frames and its Response
+  Handler pushes replies over the socket instead of writing to a response store; the Agent
+  Runner is unchanged. The IO entrypoint is `AWSWebsocketAPI.run()`: with a queue configured it
+  hands off to `IOHandler.run`, which pushes each reply through the API Gateway Management API
+  to the message's `endpoint_url`, using the connection table `$connect` writes.
 
 ```mermaid
 graph TB
@@ -364,7 +387,7 @@ graph TB
     C -->|"$connect / $disconnect"| D[(DynamoDB<br/>Connections Table)]
     C -->|"queue_mode=false: run inline"| E["ChatService"]
     C -->|"queue_mode=true: enqueue"| F[/Input Queue/]
-    F --> G["Agent Runner<br/>(ECSAgentRunner)"]
+    F --> G["Agent Runner<br/>(AgentRunner)"]
     G --> H[/Output Queue/]
     H -->|"push via PostToConnection"| C
 

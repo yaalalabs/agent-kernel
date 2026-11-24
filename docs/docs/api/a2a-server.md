@@ -86,7 +86,7 @@ separate process only in split deployments.
 | `IOHandler.run(handlers=[...])`, any transport | ✅ through the queue |
 | `CloudRun.run()` on GCP, any transport | ✅ through the queue (it starts `IOHandler`) |
 | `LambdaProtocolHost` in the AWS Lambda request handler (REST modes, `sqs` transport) | ✅ through the queue, see [On AWS Lambda](#on-aws-lambda) |
-| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
+| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSWebsocketAPI` with no queue (with one it starts `IOHandler`) | ❌ refuses to start (`AKConfigError`): these start no agent runner |
 
 - **Split deployments** (SQS, Kafka, NATS, Pub/Sub or Service Bus, with the agent runner in its own process): agent
   cards are built from the [agent registry](../core-concepts/configuration.md#agent-registry), so the IO process has

@@ -106,6 +106,17 @@ ARTICLES_PAGE_SIZE = 1000
 
 STYLE_PX_RE = r"\b{}:\s*'(\d+)px'"
 SIZED_IMG_RE = re.compile(r'<img src="(https?://[^"]+)" alt="([^"]*)"(?: width="(\d+)")?(?: height="(\d+)")? />')
+# Code (fenced blocks, inline spans) is matched first and kept, so a <video> shown as an example
+# stays as written; otherwise one <video> element: self-closing, or up to its own </video>
+# without running into another <video>.
+VIDEO_RE = re.compile(
+    r"(?P<code>^[ \t]*(?P<fence>(?P<fc>[`~])(?P=fc){2,}).*?^[ \t]*(?P=fence)(?P=fc)*[ \t]*$|`[^`\n]+`)"
+    r"|<video(?=[\s/>])(?:[^>]*/>|[^>]*>(?:(?!<video[\s/>]).)*?</video>)",
+    re.DOTALL | re.MULTILINE,
+)
+# The video's own src, or its first <source>'s (`\s` so data-src doesn't count); a JSX string
+# literal like src={"/x.mp4"} counts too.
+VIDEO_SRC_RE = re.compile(r"""\ssrc\s*=\s*\{?(?P<q>["'`])(?P<url>[^\n]+?)(?P=q)\}?""")
 
 
 class DevtoAPIError(RuntimeError):
@@ -313,10 +324,23 @@ def convert_html_blocks(body: str, static_dir: Path | None = None) -> str:
     return HTML_BLOCK_RE.sub(replace_block, body)
 
 
+def video_to_link(match: re.Match) -> str:
+    if match.group("code"):
+        return match.group(0)
+    src = VIDEO_SRC_RE.search(match.group(0))
+    if src:
+        return f"**[▶ Watch the video]({src.group('url')})**"
+    # e.g. src={importedVideo}: the URL is only known at build time, so DEV can't be given it.
+    print(f"warning: no literal src in {match.group(0)[:80]!r}; left as-is on DEV", file=sys.stderr)
+    return match.group(0)
+
+
 def strip_jsx(body: str) -> str:
     """Drop the handful of JSX-only bits our MDX posts use that DEV can't render."""
     body = re.sub(r"<!--\s*truncate\s*-->\n?", "", body)
     body = re.sub(r"\sstyle=\{\{[^}]*\}\}", "", body)
+    # DEV plays a <video> only as a muted GIF with no controls, so link to the file instead.
+    body = VIDEO_RE.sub(video_to_link, body)
     return body
 
 

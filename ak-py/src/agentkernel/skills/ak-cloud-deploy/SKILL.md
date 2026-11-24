@@ -16,7 +16,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.10.1"
+  version: "0.10.2"
   category: user
 ---
 
@@ -47,7 +47,7 @@ If missing, suggest `ak-init` first.
 - Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode; AWS serverless or containerized)
 - Asynchronous REST (`rest_async`, queue/scalable mode; AWS serverless or containerized)
 - WebSocket full-response (`async` with `message_type` unset or `complete`, works with or without queue mode — `queue_mode = false` runs the agent inline, `queue_mode = true` enqueues to a separately-scalable Agent Runner) — AWS serverless or AWS containerized/ECS
-- WebSocket token streaming (`async` with `message_type = "delta"`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: rest_sync` and `execution.message_type: delta`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container (non-queue) REST, Azure Container Apps, GCP Cloud Run — not on AWS Lambda or ECS queue mode (both refuse `rest_sync` + `delta` at startup; use `async` + `delta` there) or Azure Functions. The old `stream` mode was removed: `execution_mode = "stream"` fails at `terraform plan` and `execution.mode: stream` fails at config load
+- WebSocket token streaming (`async` with `message_type = "delta"`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: rest_sync` and `execution.message_type: delta`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container (non-queue) REST, Azure Container Apps, GCP Cloud Run — not on AWS Lambda (refused at startup), ECS queue mode (rejected at `terraform plan` only when the Terraform `message_type` variable is `delta`, so set it there as well as in `config.yaml`; use `async` + `delta` on both) or Azure Functions. The old `stream` mode was removed: `execution_mode = "stream"` fails at `terraform plan` and `execution.mode: stream` fails at config load
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: which identity provider authenticates callers (the `identity` block in `config.yaml`: `static`, `oidc` for Auth0, Keycloak, Okta or any OIDC issuer, `cognito`, `entra`, `firebase`, or your own), and on AWS serverless, is the API Gateway `authorizer` wanted (see Deploying the Identity Provider)?
@@ -63,7 +63,7 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.10.1`) unless user requests another.
+Use current module version (`0.10.2`) unless user requests another.
 
 Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
 OAK repository and is published as an OCI artifact
@@ -92,7 +92,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.10.1"
+  "agentkernel[openai,api,redis]>=0.10.2"
 ]
 ```
 
@@ -119,7 +119,7 @@ OSS engine. OAK treats it as a first-class session and response store backend on
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.10.1"
+  "agentkernel[openai,api,aws,valkey]>=0.10.2"
 ]
 ```
 
@@ -147,7 +147,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.10.1"
+  "agentkernel[openai,api,aws]>=0.10.2"
 ]
 ```
 
@@ -168,7 +168,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.10.1"
+  "agentkernel[openai,api,azure]>=0.10.2"
 ]
 ```
 
@@ -190,7 +190,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.10.1"
+  "agentkernel[openai,api,gcp]>=0.10.2"
 ]
 ```
 
@@ -281,22 +281,22 @@ always pair the flags with the matching types. The reverse is safe: declaring th
 flags fails at startup with an `AKConfigError` on the missing `group_name` / `role_arn` / `queue_arn`.
 
 The blocks above enable deferring and the agent tools. The `/api/v1/schedules` management routes are
-**not** mounted from config — on ECS queue mode, pass the handler to the IO container's entrypoint,
+**not** mounted from config — on ECS REST queue mode, pass the handler to the IO container's entrypoint,
 where it is served alongside the queue-producing chat route:
 
 ```python
 # app_rest_service.py
-from agentkernel.aws import ECSIOHandler
+from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
 
 if __name__ == "__main__":
     # the identity block in config.yaml authenticates every route; the management routes
     # refuse anonymous callers (401) and serve the caller's own tasks
-    ECSIOHandler.run(handlers=[ScheduleRESTRequestHandler()])
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
 ```
 
 Remember to list the schedule paths in `gateway_endpoints` — the gateway only proxies paths it is
-told about.
+told about. ECS WebSocket mode creates no HTTP API, so the management routes are not reachable there.
 
 On **AWS serverless** the Lambda router is not FastAPI, so `ScheduleRESTRequestHandler` cannot be
 mounted. Register the same routes with `@Lambda.register("/schedules", method="GET")` and
@@ -446,7 +446,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   product_display_name = "AK Serverless"
@@ -497,7 +497,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix             = var.prefix
   region             = var.region
@@ -632,7 +632,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.10.1"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.10.2"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -645,7 +645,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -788,7 +788,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis]>=0.10.1"   # add the auth extra for oidc, cognito, entra or firebase
+  "agentkernel[openai,api,aws,redis]>=0.10.2"   # add the auth extra for oidc, cognito, entra or firebase
 ]
 ```
 
@@ -801,7 +801,7 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -857,7 +857,7 @@ execution:
   message_type: delta
 ```
 
-`POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Under any other pair, including `async`, the direct REST handler returns JSON. With the queue pipeline (`IOHandler`), SSE works on the `in_memory` transport, and on a broker (SQS, Kafka, NATS, Service Bus) with a `redis` or `valkey` response store, the shared stores that can stream chunks; with `dynamodb` (or any store that cannot stream chunks) on a broker, `IOHandler` fails at startup. Not available on AWS Lambda (refused at REST router init), ECS queue mode (refused at `ECSIOHandler` startup) or Azure Functions — use `async` + `delta` over WebSocket on AWS.
+`POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Under any other pair, including `async`, the direct REST handler returns JSON. With the queue pipeline (`IOHandler`), SSE works on the `in_memory` transport, and on a broker (SQS, Kafka, NATS, Service Bus) with a `redis` or `valkey` response store, the shared stores that can stream chunks; with `dynamodb` (or any store that cannot stream chunks) on a broker, `IOHandler` fails at startup. Not available on AWS Lambda (refused at REST router init), ECS queue mode (rejected at `terraform plan`) or Azure Functions — use `async` + `delta` over WebSocket on AWS.
 
 ### E) API Gateway Authorizer (AWS)
 
@@ -1030,7 +1030,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -1053,15 +1053,15 @@ module "containerized_agents" {
 
 Use this for high-throughput or long-running agents. Two separate ECS services share SQS queues:
 
-- **IO container** (`ECSIOHandler`) — Thread 1: FastAPI REST API; Thread 2: output queue consumer → DynamoDB / WebSocket. Thread 2 is actually `queues.output.no_of_consumers` (default 5) parallel polling threads.
-- **Agent Runner container** (`ECSAgentRunner`) — runs `queues.input.no_of_consumers` (default 5) parallel threads, each polling the input queue, executing the agent, and putting the result on the output queue.
+- **IO container** (`IOHandler`) — Thread 1: FastAPI REST API (the shared pipeline `RequestHandler`); Thread 2: `ResponseHandler`, the output queue consumer → DynamoDB / WebSocket. Thread 2 is actually `queues.output.no_of_consumers` (default 2) parallel polling threads.
+- **Agent Runner container** (`AgentRunner`) — runs `queues.input.no_of_consumers` (default 5) parallel threads, each polling the input queue, executing the agent, and putting the result on the output queue.
 
 **`app_rest_service.py`** (IO container entrypoint — NO agent definitions here):
 
 ```python
-from agentkernel.aws import ECSIOHandler
+from agentkernel.pipeline import IOHandler
 
-runner = ECSIOHandler.run
+runner = IOHandler.run
 
 if __name__ == "__main__":
     runner()
@@ -1075,12 +1075,12 @@ without the block every request runs as the anonymous principal.
 **`app_agent_runner.py`** (Agent Runner container entrypoint):
 
 ```python
-from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
 
 OpenAIModule([...])  # register agents here only
 
-handler = ECSAgentRunner.run
+handler = AgentRunner.run
 
 if __name__ == "__main__":
     handler()
@@ -1109,7 +1109,7 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix        = var.prefix
   region        = var.region
@@ -1169,32 +1169,32 @@ module "containerized_agents" {
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.10.1"
+  "agentkernel[openai,api,aws]>=0.10.2"
 ]
 ```
 
 **Key rules:**
-- Agent definitions (`OpenAIModule([...])`) go in `app_agent_runner.py` only — never in `app_rest_service.py`.
-- `ECSIOHandler` starts two threads via `ThreadRunner`; if the output-consumer pool crashes, sibling consumer threads finish their in-flight message first (graceful drain via a shared `shutdown_event`), then the container exits (`os._exit(1)`) so ECS can restart it. The REST API thread doesn't participate in the drain — it's just terminated at that point.
-- `ECSAgentRunner` and `ECSOutputConsumer` both extend `ECSSQSConsumer` (itself a `RawQueueConsumer`, the same base `LambdaSQSConsumer` extends); extend either class to customise message processing.
+- Agent definitions (`OpenAIModule([...])`) go in `app_agent_runner.py`. When A2A or agent MCP is enabled in queue mode, import the same agent modules in `app_rest_service.py` too: the IO process builds the A2A catalog and MCP agent tools from its own agent registry.
+- `IOHandler` starts two threads via `ThreadRunner`; if the output-consumer pool crashes, sibling consumer threads finish their in-flight message first (graceful drain via a shared `shutdown_event`), then the container exits (`os._exit(1)`) so ECS can restart it. The REST API thread doesn't participate in the drain — it's just terminated at that point.
+- `AgentRunner` and `ResponseHandler` are the shared pipeline classes (`agentkernel.pipeline`), the same ones every queue transport uses; `AgentRunner.run()` dispatches to `StreamAgentRunner` (`delta`) or `RealtimeAgentRunner` (`realtime`). Extend `ECSSQSConsumer` only for your own custom SQS consumers.
 
 ### C) WebSocket Mode (`async`)
 
 A WebSocket API Gateway proxies frames to the ECS REST service via a VPC Link V1 + internal NLB
 in front of the existing ALB. Supports both **direct** (`queue_mode = false`, one ECS service,
 agent runs inline) and **queue** (`queue_mode = true`, same two-container split as section B,
-with the REST/IO service enqueueing chat frames and its output-queue consumer pushing replies
+with the REST/IO service enqueueing chat frames and its Response Handler pushing replies
 back over the socket) variants. `execution_mode = "async"` delivers the full reply as one
 `CHAT_RESPONSE` push; adding `message_type = "delta"` delivers it token-by-token as a sequence of
 `STREAM_CHUNK` pushes (terminated by a chunk with `"done": true`) — in queue mode
-`ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner`, which fans out one Output Queue
+`AgentRunner.run()` dispatches to `StreamAgentRunner`, which fans out one Output Queue
 message per chunk instead of one for the full reply; in direct mode the chat route runs
 `ChatService.process_stream_chat_async()` and broadcasts each chunk inline. See
 `examples/aws-containerized/openai-stream` (direct mode) or
 `examples/aws-containerized/openai-stream-queue-mode` (queue mode) for full streaming examples.
 `execution_mode = "stream"` was removed (fails at `terraform plan`), and `rest_sync` +
-`message_type = "delta"` is refused at `ECSIOHandler` startup (its REST container has no SSE route):
-use `async` + `delta`. Terraform injects `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and
+`message_type = "delta"` (SSE) is rejected at `terraform plan` in queue mode (the HTTP API buffers
+streamed responses): use `async` + `delta`. Terraform injects `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and
 the agent runner whenever `message_type` is set, so the two containers always agree.
 
 **`app.py`** (direct/single-container variant; register custom routes before calling `run()`):
@@ -1213,16 +1213,16 @@ async def status(ctx: dict) -> dict:
     return {"status": "OK", "subject": ctx["principal"].subject}  # dict return -> broadcast as SYSTEM_RESPONSE; None -> no broadcast
 
 if __name__ == "__main__":
-    # Direct mode calls AWSWebsocketAPI directly, NOT ECSIOHandler, which always starts a
-    # second thread polling an output queue that doesn't exist in direct (non-queue) mode.
+    # With no queue configured, AWSWebsocketAPI.run() serves the API alone (direct mode).
     # The $connect handshake validates its ?token= through the identity block in config.yaml;
     # without that block the WebSocket API refuses to start.
     AWSWebsocketAPI.run()
 ```
 
-Queue mode is different: it splits into `app_rest_service.py` (`ECSIOHandler.run()`
-— correct here, since `ECSIOHandler` also starts the output-queue consumer thread — custom routes
-registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunner.run`,
+Queue mode is different: it splits into `app_rest_service.py` (still `AWSWebsocketAPI.run()`,
+which with a queue configured hands off to `IOHandler.run` and pushes replies through API Gateway
+to each message's `endpoint_url` — custom routes registered here, no agent definitions) and
+`app_agent_runner.py` (`AgentRunner.run`,
 `OpenAIModule([...])` here only) — identical shape to section B.
 
 **Terraform:**
@@ -1230,7 +1230,7 @@ registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunne
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { aws = aws, docker = docker }
 
@@ -1293,7 +1293,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -1335,7 +1335,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.10.1"
+  version = "0.10.2"
 
   prefix               = var.prefix
   region               = var.region
@@ -1401,7 +1401,7 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1430,7 +1430,7 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1455,8 +1455,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.10.1"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.10.1"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.10.2"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.10.2"  # for Redis sessions
 ]
 ```
 
@@ -1481,7 +1481,7 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1623,8 +1623,8 @@ also cross-installs Linux wheels so builds work from macOS).
 **Install:**
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.2 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.2 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag> \

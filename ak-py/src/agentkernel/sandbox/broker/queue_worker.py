@@ -312,7 +312,7 @@ class QueueBrokerWorker:
     # -- the output loop ------------------------------------------------------- #
 
     def _process_completion(self, message: QueueMessage) -> None:
-        """Persist one ready-to-store record (the ``ECSOutputConsumer`` role). A decode or
+        """Persist one ready-to-store record (the ``ResponseHandler`` role). A decode or
         store-write failure raises: redelivery retries the persist only; the sandbox
         operation is never re-executed from here."""
         record = json.loads(message.body)
