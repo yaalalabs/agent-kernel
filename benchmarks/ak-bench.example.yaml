@@ -1,0 +1,37 @@
+# Every ak-bench.yaml key with its default. "# no default" marks a made-up value for a required key.
+hosts: [ecs, lambda]             # default: all registered hosts
+modes: [async]                   # default: all with a client driver (async)
+message_types: [complete]        # default: all with a client driver (complete)
+test_types: [steady, burst]      # default: both
+load_steps: [1, 10, 100, 1000]   # saved by deploy (state.json)
+
+step_run:
+  before_window_s: 60
+  max_cooldown_s: 2700           # 45 min
+  after_step_wait_s: 60          # wait before the after-step fetch
+  client_timeout_s: 300
+  time_window_s: 1               # no default
+  cooldown_poll_interval_s: 10   # time between two cool-down polls (step-end check)
+  cooldown_lookback_s: 180       # how far back each cooldown_checks fetch() reads
+
+steady_traffic:
+  min_send_interval_s: 1
+  max_send_interval_s: 5
+  load_time_s: 300
+
+fetchers:                        # settings per fetcher, by its registered name
+  default:
+    poll_interval_s: 5           # no default; for a during_step fetcher not listed here
+  aws.ecs_api:
+    poll_interval_s: 5           # no default
+  sqs:
+    poll_interval_s: 5           # no default
+
+host_settings:                   # per-host settings; keys other than max_cooldown_s go to deploy.sh
+  lambda:
+    lambda_insights: true        # applied by deploy
+    max_cooldown_s: 2700         # optional, overrides step_run.max_cooldown_s
+
+mock_agent:                      # left out = the real agent; read by deploy
+  min_delay: 1                   # no default (seconds)
+  max_delay: 5                   # no default (seconds)
