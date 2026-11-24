@@ -24,7 +24,7 @@ class ScriptEnv:
             "AK_BENCH_DEPLOYMENT_ID": self.deployment_id,
             "AK_BENCH_AUTH_SECRET": self.auth_secret,
             "AK_BENCH_HOST_SETTINGS": json.dumps(self.host_settings),
-            "AK_BENCH_OUTPUT": str(self.output_dir),
+            "AK_BENCH_OUTPUT": str(self.output_dir.resolve()),  # scripts run with cwd = the deployment folder
         }
         if self.mock_delays is not None:
             env["AK_BENCH_MOCK_AGENT_MIN_DELAY_S"] = str(self.mock_delays[0])
@@ -46,8 +46,9 @@ class DeploymentFolder:
     def deploy(self, env: ScriptEnv) -> Deployment:
         """Runs deploy.sh and reads the deployment.json it wrote into AK_BENCH_OUTPUT."""
         env.output_dir.mkdir(parents=True, exist_ok=True)
-        self._run("deploy.sh", env)
         output = env.output_dir / "deployment.json"
+        output.unlink(missing_ok=True)  # a leftover file must not pass for this deploy's output
+        self._run("deploy.sh", env)
         try:
             data = json.loads(output.read_text())
         except (OSError, ValueError) as e:

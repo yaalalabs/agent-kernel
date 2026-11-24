@@ -121,12 +121,21 @@ def test_failing_scripts_raise_script_failed(tmp_path, monkeypatch):
         folder.destroy(env_for(tmp_path))
 
 
-def test_deploy_without_deployment_json_fails(tmp_path):
+def test_deploy_without_deployment_json_fails_even_with_a_leftover_one(tmp_path):
     folder_path = tmp_path / "bare-async-complete"
     folder_path.mkdir()
     (folder_path / "deploy.sh").write_text("exit 0\n")
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "deployment.json").write_text('{"endpoint": "stale"}')
     with pytest.raises(ScriptFailed, match="no readable .*deployment.json"):
         DeploymentFolder(tmp_path, "bare", "async", "complete").deploy(env_for(tmp_path / "out"))
+
+
+def test_relative_output_dir_is_resolved_before_the_script_runs(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    deployment = DeploymentFolder(DEPLOY_ROOT, "mock", "async", "complete").deploy(env_for(Path("results") / "out"))
+    assert deployment.endpoint
+    assert read_env(tmp_path / "results" / "out" / "deploy-env.txt")["AK_BENCH_OUTPUT"] == str(tmp_path / "results" / "out")
 
 
 # State
