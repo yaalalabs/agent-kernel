@@ -153,14 +153,15 @@ class FetcherTypeError(BenchError): ...          # fetch() returned another type
 
 ### Configuration (`config.py`)
 
-`BenchConfig` is loaded the way `AKConfig` is: a `YamlBaseSettingsModified` subclass
-(`ak-py/src/agentkernel/core/util/config_yaml_util.py`) reading `ak-bench.yaml` in the working directory (path
+`BenchConfig` is loaded the way `AKConfig` is, without AK's internal loader: a pydantic-settings `BaseSettings` whose
+`settings_customise_sources` adds pydantic-settings' `YamlConfigSettingsSource` (UTF-8) after the environment, reading `ak-bench.yaml` in the working directory (path
 override `AK_BENCH_CONFIG_PATH_OVERRIDE`, which `--config` sets) and `AK_BENCH_`-prefixed environment variables, nested
 keys joined with `__` (e.g. `AK_BENCH_STEP_RUN__TIME_WINDOW_S`); environment variables win over the file. Read with the
 `BenchConfig.get()` singleton (`_reset()` clears it). Every sub-model has `extra="forbid"`, so an unknown key fails
 with Pydantic's error, which names the key path (e.g. `step_run.befor_window_s: Extra inputs are not permitted`);
-unknown top-level keys of the file are refused by `get()` (AK's YAML source passes on only known keys). `get()` wraps
-any `ValidationError` / `yaml.YAMLError` / missing file in `BenchConfigError`.
+unknown top-level keys of the file are named by `get()` before validation (`unknown key(s): ...`). `get()` wraps
+any `ValidationError` / `yaml.YAMLError` / missing file / path that isn't a file / top level that isn't a mapping in
+`BenchConfigError`.
 
 ```python
 class StepRunConfig(BaseModel):
@@ -195,9 +196,9 @@ class MockAgentConfig(BaseModel):
     max_delay: float | None = None
     def delays(self) -> tuple[float, float] | None: ...    # the mock_agent rules below
 
-class BenchConfig(YamlBaseSettingsModified):
+class BenchConfig(BaseSettings):
     yaml_file_env_var = "AK_BENCH_CONFIG_PATH_OVERRIDE"; yaml_file_default = "ak-bench.yaml"
-    model_config = SettingsConfigDict(env_prefix="AK_BENCH_", env_nested_delimiter="__", extra="forbid", env_ignore_empty=True)
+    model_config = SettingsConfigDict(yaml_file_encoding="utf-8", env_prefix="AK_BENCH_", env_nested_delimiter="__", extra="forbid", env_ignore_empty=True)
 
     hosts: list[str] | None = None           # None = every registered host
     modes: list[str] | None = None           # None = every mode with a driver
@@ -673,11 +674,11 @@ class BenchIdentityProvider(IdentityProvider):
     name = "bench"
     NAMESPACE = "bench"
 
-    def __init__(self, config: "_IdentityProviderConfig", secrets: SecretManager | None = None):
+    def __init__(self, config: BaseModel, secrets: SecretManager | None = None):
         key = (config.model_extra or {}).get("secret_key", "AK_BENCH_AUTH_SECRET")
         value = (secrets or SecretManager.current()).get(key, default=None)
         if not value:
-            raise AKConfigError(f"identity.provider.secret_key '{key}' has no value; the bench provider needs its signing secret")
+            raise RuntimeError(f"identity.provider.secret_key '{key}' has no value; the bench provider needs its signing secret")
         self._secret = value.encode("utf-8")
 
     async def authenticate(self, credential: str, context: RequestContext | None = None) -> Principal:
@@ -696,7 +697,8 @@ class BenchIdentityProvider(IdentityProvider):
   cache, then the configured provider. On AWS the deployment folder sets `secret.provider.type: aws_ssm`; a set
   `AK_BENCH_AUTH_SECRET` environment variable would win over the store (`core/config.py:1411`), which is why no
   component may set one (a deployment-folder rule, written in `app/deploy/README.md`).
-- Missing / empty secret → `AKConfigError` at build (startup error, not a provider refusing everyone). `SecretError`
+- `config` is typed as pydantic's `BaseModel` (AK's provider-block class is private); only `model_extra` is read.
+- Missing / empty secret → `RuntimeError` at build (startup error, not a provider refusing everyone). `SecretError`
   from the provider (store unreachable) propagates unchanged.
 - `IdentityProvider.authenticate` is the only abstract method (`identity/provider/base.py:61-62`).
 
@@ -1151,7 +1153,7 @@ For the reviewer: none changes a `design.md` requirement, but each fills a gap i
 | graph draw raises | plots | run-log `ERROR` naming the graph; other graphs drawn |
 | exception or Ctrl-C during `run` | `Run` | `Finish` runs; second Ctrl-C skips it with a run-log `ERROR`; exit ≠ 0 |
 | exception or Ctrl-C during `step` | `Step` | lock released; partial folder kept; no `summary.csv` row |
-| `BenchIdentityProvider` without a secret | app startup | `AKConfigError` at build |
+| `BenchIdentityProvider` without a secret | app startup | `RuntimeError` at build |
 | bad token | `BenchIdentityProvider.authenticate` | `AuthenticationError` → AK closes the socket (`pipeline/ws/handler.py:192-212`) |
 
 Missing optional dependencies don't apply: every harness dependency is required, and no cloud SDK is imported.
@@ -1201,7 +1203,7 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 | `test_plots.py` | every phase-1 graph file is produced from recorded data, including one with all-empty resource data (panels drawn, not skipped); cost graph only when `cost.csv` exists |
 | `test_token_cross_check.py` | a `TokenSigner` token is accepted by `BenchIdentityProvider` (imports the app module by path; the app's dependencies are a subset of the harness's) |
 | `app/tests/test_mock_agent.py` | `run()` sleeps within [min, max] (patched `asyncio.sleep` records the delay; `random.uniform` bounds over many draws), echo content, nothing added to the session, variables read once at creation; `agent.py` registers `MockAgent` with both variables, the real agent with neither, and raises with one |
-| `app/tests/test_identity.py` | signed token → `Principal(subject="bench-7", kind="user", provider="bench", namespace="bench")`; changed user, changed signature, no `.`, empty user / signature, unsigned token → `AuthenticationError`; missing / empty secret → `AKConfigError` at build; same token for the same user every time (`TokenSigner`) |
+| `app/tests/test_identity.py` | signed token → `Principal(subject="bench-7", kind="user", provider="bench", namespace="bench")`; changed user, changed signature, no `.`, empty user / signature, unsigned token → `AuthenticationError`; missing / empty secret → `RuntimeError` at build; same token for the same user every time (`TokenSigner`) |
 
 - Riskiest consumer: `Run`'s teardown path (a missed `finish` leaves cloud resources running) has its own file.
 - No existing test file changes; no AK patch targets move.

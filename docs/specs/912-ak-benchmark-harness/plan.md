@@ -22,7 +22,7 @@ No file under `ak-py/` changes in any iteration.
   1. Write `pyproject.toml` as in Dependencies and tooling (path source on `../ak-py`, `ak-bench` script, dev group);
      `uv lock`.
   2. Add the error classes (Errors).
-  3. Add `BenchConfig` (an AKConfig-style `YamlBaseSettingsModified` with `get()` / `_reset()`) and its sub-models, `FetchersConfig.poll_interval_for` /
+  3. Add `BenchConfig` (an AKConfig-style pydantic-settings `BaseSettings` on `YamlConfigSettingsSource`, with `get()` / `_reset()`) and its sub-models, `FetchersConfig.poll_interval_for` /
      `check_names`, `MockAgentConfig.delays`, `max_cooldown_for` (Configuration).
   4. Add `ak-bench.example.yaml` with every #786 key and its default plus the two new `step_run` keys.
   5. Add `BenchCli` with the global flags and the six sub-commands' arguments, and `main()` (Commands → CLI).

@@ -20,8 +20,8 @@ of restating them, and only adds what the harness build needs to pin down. Part 
 - The trace parser the `TraceCollector` family needs is in place from #911 (on this branch, not yet on `develop`):
   `TRACE` (`ak-py/src/agentkernel/core/logger.py:12`), `TraceStage` (`:16`), `TraceLine.parse()` (`:47`), which
   returns `None` for non-trace lines and unknown stages.
-- AK's factory helpers give the registry shape to reuse: `resolve_dotted()` (`core/util/factory.py:27`),
-  `AKConfigError` (`:19`).
+- The harness and the app import only AK's public API (`agentkernel.core`, `agentkernel.identity`,
+  `agentkernel.secret`, `agentkernel.<framework>`), never AK internals such as `core/util/` or private config classes.
 - The mock agent needs no AK change:
   - `Runner` ABC (`core/base.py:337`) with abstract `run()` (`:491`) and `stream()` (`:574`).
   - `Runtime.run` calls `agent.runner.run()` (`core/runtime.py:546`), then saves the session (`:555`), so hooks and
@@ -72,7 +72,7 @@ of restating them, and only adds what the harness build needs to pin down. Part 
 
 - Its own config file, not `AKConfig` (departure from the config-reuse house pattern already accepted in #786:
   benchmark settings, not AK runtime config).
-- Loaded into `BenchConfig` the way `AKConfig` is loaded (`YamlBaseSettingsModified`: the YAML file plus
+- Loaded into `BenchConfig` the way `AKConfig` is loaded (pydantic-settings' own `YamlConfigSettingsSource`, not AK's internal loader: the YAML file plus
   `AK_BENCH_`-prefixed environment variables, a `get()` singleton), with every key of the #786 example (Benchmark project) and the
   defaults listed there, plus two new keys under `step_run` (below), and no others.
 - New keys for the step-end check (were fixed values in `StepEndCheck`):
