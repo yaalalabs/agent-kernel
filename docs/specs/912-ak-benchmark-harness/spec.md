@@ -66,20 +66,21 @@ benchmarks/
 │   ├── pyproject.toml          # project "ak-bench-app", package = false, path source on ../../ak-py
 │   ├── uv.lock
 │   ├── README.md
-│   ├── app.py                  # entry: registers MockAgent or the real agent, starts AK
+│   ├── agent.py                # registers MockAgent or the real agent; starts nothing (entry files are per deployment folder)
+│   ├── bench_config.py         # BenchAppConfig: the app's own settings (mock delays), separate from AKConfig
 │   ├── config.yaml             # the app's AK config (below)
 │   ├── mock_agent.py           # MockRunner, MockAgent
 │   ├── bench_identity.py       # BenchIdentityProvider
-│   ├── tests/                  # test_mock_agent.py, test_bench_identity.py
+│   ├── tests/                  # test_mock_agent.py, test_bench_config.py, test_bench_identity.py
 │   └── deploy/                 # deployment folders: none in this issue (they come with the AWS issues)
 └── tests/
     ├── conftest.py             # fixtures below
-    ├── fakes/
-    │   ├── fetchers.py         # FakeScalingFetcher, FakeResourceFetcher, FakeTraceCollector,
-    │   │                       # FakeTransportCollector, FakeCostFetcher, RaisingFetcher, WrongTypeFetcher
-    │   ├── host.py             # fake_host(): a Host built from the fake fetchers
-    │   ├── ws_server.py        # FakeWsServer: local echo server
-    │   └── deploy/fake-async-complete/   # deploy.sh / destroy.sh writing a deployment.json for FakeWsServer
+    ├── mocks/
+    │   ├── fetchers.py         # MockScalingFetcher, MockResourceFetcher, MockTraceCollector,
+    │   │                       # MockTransportCollector, MockCostFetcher, RaisingFetcher, WrongTypeFetcher
+    │   ├── host.py             # mock_host(): a Host built from the mock fetchers
+    │   ├── ws_server.py        # MockWsServer: local echo server
+    │   └── deploy/mock-async-complete/   # deploy.sh / destroy.sh writing a deployment.json for MockWsServer
     └── test_*.py               # see Testing
 ```
 
@@ -87,9 +88,9 @@ benchmarks/
   (`platforms/base.py`, `run/commands.py`, ...) are relative to it.
 - One file per implementation. Module-level functions: only `percentiles()` (results/percentiles.py) and the console
   script entry `main()` (cli.py); see [Module-level functions](#module-level-functions).
-- The fake deployment folder lives under `tests/`, not `app/deploy/`, so a real `ak-bench run` can never pick it.
+- The mock deployment folder lives under `tests/`, not `app/deploy/`, so a real `ak-bench run` can never pick it.
   `DeploymentFolder` takes its root as a parameter (CLI `--deploy-root`, default `benchmarks/app/deploy/`), and the
-  tests point it at `tests/fakes/deploy/`.
+  tests point it at `tests/mocks/deploy/`.
 
 ### Dependencies and tooling
 
@@ -106,7 +107,7 @@ dependencies = [
     "pyyaml>=6.0.2,<7.0.0",
     "numpy>=2.0,<3.0",
     "matplotlib>=3.9,<4.0",
-    "websockets>=13.0,<16.0",               # client driver and the test fake server
+    "websockets>=13.0,<16.0",               # client driver and the test mock server
 ]
 
 [project.scripts]
@@ -239,8 +240,8 @@ class HostRegistry:
     def names(cls) -> list[str]: ...
 ```
 
-- No `register()` method and no dotted-path branch (built-ins only, `design.md` Registries). Tests add the fake host
-  with `monkeypatch.setitem(HostRegistry._BUILTINS, "fake", fake_host())`.
+- No `register()` method and no dotted-path branch (built-ins only, `design.md` Registries). Tests add the mock host
+  with `monkeypatch.setitem(HostRegistry._BUILTINS, "mock", mock_host())`.
 - `get()` calls `host.fetchers.validate(name)` before returning, so every command that loads a host validates it
   before deploying anything.
 
@@ -613,8 +614,7 @@ exit 1; `KeyboardInterrupt` → exit 130.
 class MockRunner(Runner):
     def __init__(self):
         super().__init__("MockRunner")
-        self._min = float(os.environ["AK_BENCH_MOCK_AGENT_MIN_DELAY_S"])   # read once, at creation
-        self._max = float(os.environ["AK_BENCH_MOCK_AGENT_MAX_DELAY_S"])
+        self._min, self._max = BenchAppConfig.get().mock_delays   # read once, at creation
 
     async def run(self, agent, session, requests) -> AgentReplyAny:
         await asyncio.sleep(random.uniform(self._min, self._max))
@@ -636,8 +636,15 @@ class MockAgent(Agent):
 - `Runner` (`ak-py/src/agentkernel/core/base.py:337`) has abstract `run()` (`:491`) and `stream()` (`:574`);
   `Agent` is at `:603`; the shape follows `DummyRunner` / `DummyAgent` (`ak-py/tests/test_pipeline_request_handler.py:35,51`).
 - No state on `self` besides the two delays; no timing; nothing written to the session.
-- **`app.py`:** `MockAgent` is registered when both variables are set and non-empty; otherwise the real agent: an
-  `OpenAIModule` agent under the same `AGENT_NAME`, instructed to repeat the user's message (so the reply still
+- **`BenchAppConfig` (`bench_config.py`):** a `YamlBaseSettingsModified` subclass like `AKTestConfig`
+  (`ak-py/src/agentkernel/test/config.py`) with a `get()` singleton. Fields `mock_agent_min_delay_s` /
+  `mock_agent_max_delay_s` (`float | None`, `ge=0`), env prefix `AK_BENCH_` (so the deploy contract's variable names
+  are unchanged), optional `bench-config.yaml` (override `AK_BENCH_CONFIG_PATH_OVERRIDE`), empty values ignored.
+  Validator: exactly one set, or min > max → `ValidationError`. `mock_delays` → `(min, max)` or `None`.
+- **`agent.py`:** registers the agent only; it starts nothing, since every host and tier has its own entry
+  point (Lambda handlers, ECS `AgentRunner.run` / `AWSWebsocketAPI.run()`), written in the deployment folder's entry
+  files that `import agent`. `MockAgent` is registered when `BenchAppConfig.get().mock_delays` is set; otherwise the real agent: an
+  `OpenAIModule` agent under the same `AGENT_NAME` (OpenAI key from `SecretManager`, as the AWS examples do), instructed to repeat the user's message (so the reply still
   carries the request id, see [WebSocket complete driver](#websocket-complete-driver-loadws_completepy)). Exactly one
   of the two set → the app raises at import (a broken deployment, not a silent real agent; `deploy` already refuses
   this case).
@@ -884,6 +891,8 @@ class FetcherInvoker:
     def fetch(self, f: InfoFetcher, list_name: str, start, end) -> tuple[bool, Any]: ...
 ```
 
+- `fetch()` raises the same `FetcherTypeError` when the result is not the family's type, so a cool-down read of the
+  wrong type is logged here rather than failing in `has_value()` / `is_settled()`.
 - Catches `Exception` (including `FetcherTypeError`), writes run-log `ERROR "fetcher <name> in <list> failed: <type>: <message>"`
   and returns `False`; nothing is stored, so that fetcher's columns stay empty. `KeyboardInterrupt` /
   `CancelledError` are not caught. Shared by `StepRunner`, `StepEndCheck`, `Finish` and `PostRun`.
@@ -1140,20 +1149,20 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 (`ak-dev-testing-conventions`, Async Test Patterns). Run with `cd benchmarks && uv run pytest` (and
 `cd benchmarks/app && uv run pytest` for the app).
 
-**Fixtures (`tests/conftest.py`, `tests/fakes/`):**
+**Fixtures (`tests/conftest.py`, `tests/mocks/`):**
 
-- `FakeWsServer`: `websockets.serve` on `127.0.0.1:0`; checks `token` against a `TokenSigner` secret (closes with
+- `MockWsServer`: `websockets.serve` on `127.0.0.1:0`; checks `token` against a `TokenSigner` secret (closes with
   1008 otherwise); for each chat frame replies `CHAT_QUEUED`, then after `delay_s` a `CHAT_RESPONSE`
   `{"result": "content={'echo': '<prompt>'}", "session_id": ...}` (no request id, like AK); options: `drop` (set of
   request ids never answered), `fail_connect_for` (users refused), `delay_s`; counts frames per user.
-- Fake fetchers, one per family plus `RaisingFetcher` and `WrongTypeFetcher`, each with a scripted list of results
+- Mock fetchers, one per family plus `RaisingFetcher` and `WrongTypeFetcher`, each with a scripted list of results
   (or exceptions) returned in order, and a call log of `(start, end)` windows.
-- `fake_host()`: `during_step=[scaling, transport]`, `cooldown_checks=[transport, scaling]`,
+- `mock_host()`: `during_step=[scaling, transport]`, `cooldown_checks=[transport, scaling]`,
   `after_step=[trace, resource]`, `after_all_steps=[]`, `after_teardown=[cost]`; registered with
-  `monkeypatch.setitem(HostRegistry._BUILTINS, "fake", ...)`.
-- `tests/fakes/deploy/fake-async-complete/`: `deploy.sh` writes `deployment.json` with
-  `endpoint=$FAKE_WS_URL` and fixed `resources` / `queues` / `logs` / `settings`, and records its env to a file;
-  `destroy.sh` records that it ran. `FAKE_DEPLOY_EXIT` / `FAKE_DESTROY_EXIT` make either fail.
+  `monkeypatch.setitem(HostRegistry._BUILTINS, "mock", ...)`.
+- `tests/mocks/deploy/mock-async-complete/`: `deploy.sh` writes `deployment.json` with
+  `endpoint=$MOCK_WS_URL` and fixed `resources` / `queues` / `logs` / `settings`, and records its env to a file;
+  `destroy.sh` records that it ran. `MOCK_DEPLOY_EXIT` / `MOCK_DESTROY_EXIT` make either fail.
 - `fast_config`: a `BenchConfig` with all waits scaled to tenths of a second (`before_window_s=0.2`,
   `after_step_wait_s=0.1`, `cooldown_poll_interval_s=0.05`, `time_window_s=0.1`, `client_timeout_s=1`, steady
   `load_time_s=0.5`, intervals 0.1–0.2).
@@ -1169,16 +1178,17 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 | `test_is_settled.py` | scaling: equal / higher / missing tier / `start=None`; transport: zero / waiting / in-flight / multiple queues, latest sample wins |
 | `test_step_end.py` | order (requests → checks in list order, later not fetched while earlier fails); settle window (holds only after `settle_window_s` of consecutive ok polls); a raising read and an empty read reset the run and log; empty `cooldown_checks` ends once requests settle; max cool-down with host override → `max_reached` |
 | `test_schedule.py` | burst: one offset per client; steady: gaps within [min, max], next = previous scheduled + gap, none > `load_time_s`, min = max gives a fixed interval, per-client draws differ |
-| `test_load_generator.py` (FakeWsServer) | all connects finish before `run()`; burst sends one request per client, all within a few ms; N clients → N distinct users and tokens, one connection each; request ids unique and in the prompt; responses matched without request id in the frame; dropped reply → `timeout` after `client_timeout_s`; refused connect → that client's requests `error`, others `ok`; latency from monotonic clock; a late send doesn't shift later scheduled sends |
+| `test_load_generator.py` (MockWsServer) | all connects finish before `run()`; burst sends one request per client, all within a few ms; N clients → N distinct users and tokens, one connection each; request ids unique and in the prompt; responses matched without request id in the frame; dropped reply → `timeout` after `client_timeout_s`; refused connect → that client's requests `error`, others `ok`; latency from monotonic clock; a late send doesn't shift later scheduled sends |
 | `test_ws_complete_driver.py` | frame shape; token in query; `CHAT_QUEUED` ignored; `SYSTEM_RESPONSE` FAILED → `error`; duplicate reply dropped |
 | `test_step_runner.py` | connect happens before `before` starts; `during_step` windows are contiguous (last poll, now) and a final poll after stop; a hanging tracker is cancelled after the stop timeout (patched to 0.2 s); `after_step` gets (step start, step end) after the wait; a raising fetcher → empty columns + run-log entry, step completes; the missing-responses `WARNING` text and count |
 | `test_state_and_lock.py` | stale lock (dead pid, this host) taken over with log; live lock refused; other-host lock refused; `--force-unlock` prints holder, honours `--yes` / declined prompt, logs; lock released on success, exception and `KeyboardInterrupt` |
-| `test_commands.py` (fake folder + FakeWsServer) | full deploy → step (steady and burst) → plot → finish → post-run produces every CSV, every graph, `run-metadata.json`, `step-metadata.json`, `cost.csv` and the cost graph; script env contains the contract variables (mock delays only with `mock_agent`); `state.json` round-trips `Deployment` unchanged and loses `auth_secret` after finish; refusals: existing step folder without `--replace` (and `--replace` replaces folder + row), step not in saved load steps, concurrent step, `run --steps 7` before any deploy, unknown `fetchers.<name>` and missing folder before any script; existing host × mode × message type in a run id refused |
+| `test_commands.py` (mock folder + MockWsServer) | full deploy → step (steady and burst) → plot → finish → post-run produces every CSV, every graph, `run-metadata.json`, `step-metadata.json`, `cost.csv` and the cost graph; script env contains the contract variables (mock delays only with `mock_agent`); `state.json` round-trips `Deployment` unchanged and loses `auth_secret` after finish; refusals: existing step folder without `--replace` (and `--replace` replaces folder + row), step not in saved load steps, concurrent step, `run --steps 7` before any deploy, unknown `fetchers.<name>` and missing folder before any script; existing host × mode × message type in a run id refused |
 | `test_teardown_guarantee.py` | `run` with a step that raises → `destroy.sh` ran and the error surfaces; `KeyboardInterrupt` during a step → `destroy.sh` ran; second interrupt during finish → logged skip; `deploy.sh` failure → `destroy.sh` ran, exit 1; `destroy.sh` failure → run-log `ERROR`, exit 1 |
 | `test_results.py` (recorded CSV fixtures) | percentiles match `numpy.percentile(..., method="linear")` and are empty for no data; per-request durations incl. `REQUEST_RECEIVED_s`, `CLIENT_RECEIVED_s`, empty `AGENT_FIRST_CHUNK_s`; per-window Tx / Rx / errors / timeouts / latency; carry-forward limit (poll interval, and sample gap for after-step series); declared-but-empty columns for a fetcher that stored nothing; derived scaling numbers for a scale-up-and-down series, a no-scale series (1 → 1, empty times / rates) and a no-`running` source; summary row replaced on re-run; step folder padding |
 | `test_plots.py` | every phase-1 graph file is produced from recorded data, including one with all-empty resource data (panels drawn, not skipped); cost graph only when `cost.csv` exists |
 | `test_token_cross_check.py` | a `TokenSigner` token is accepted by `BenchIdentityProvider` (imports the app module by path; the app's dependencies are a subset of the harness's) |
-| `app/tests/test_mock_agent.py` | `run()` sleeps within [min, max] (patched `asyncio.sleep` records the delay; `random.uniform` bounds over many draws), echo content, nothing added to the session, variables read once at creation; `app.py` registers `MockAgent` with both variables, the real agent with neither, and raises with one |
+| `app/tests/test_mock_agent.py` | `run()` sleeps within [min, max] (patched `asyncio.sleep` records the delay; `random.uniform` bounds over many draws), echo content, nothing added to the session, variables read once at creation; `agent.py` registers `MockAgent` with both variables, the real agent with neither, and raises with one |
+| `app/tests/test_bench_config.py` | env vars → `mock_delays`; neither / empty → `None`; YAML read and env wins over it; `get()` singleton; one set / negative / min > max → `ValidationError` |
 | `app/tests/test_bench_identity.py` | signed token → `Principal(subject="bench-7", kind="user", provider="bench", namespace="bench")`; changed user, changed signature, no `.`, empty user / signature, unsigned token → `AuthenticationError`; missing / empty secret → `AKConfigError` at build; same token for the same user every time (`TokenSigner`) |
 
 - Riskiest consumer: `Run`'s teardown path (a missed `finish` leaves cloud resources running) has its own file.

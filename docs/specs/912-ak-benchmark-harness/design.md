@@ -3,8 +3,8 @@
 Builds the shared, cloud-independent part of the #786 benchmark system: the `ak-bench` CLI in a new top-level
 `benchmarks/` project, the mock agent app, the load generator with the WebSocket complete driver, the `InfoFetcher`
 base and its five families, the step runner and step-end check, the commands and their state, the CSVs, derived
-numbers and graphs. Nothing here calls a cloud API; every part is tested with a fake host (fake deployment folder, fake
-fetchers) and a local fake WebSocket server. The AWS deployment folders and fetchers come in their own issues and plug in
+numbers and graphs. Nothing here calls a cloud API; every part is tested with a mock host (mock deployment folder, mock
+fetchers) and a local mock WebSocket server. The AWS deployment folders and fetchers come in their own issues and plug in
 without harness changes.
 
 The system design is `docs/specs/786-benchmark-system/design.md` (PR #893); this document cites its sections instead
@@ -63,8 +63,8 @@ of restating them, and only adds what the harness build needs to pin down. Part 
       (like `e2e/app/`), since it is deployed and the harness is not. One Python code base for every host.
     - `app/deploy/<host>-<mode>-<message-type>/`: one deployment folder per host × mode × message type (e.g.
       `lambda-async-complete/`), holding its Terraform files, `deploy.sh` and `destroy.sh` (see Deployment folders).
-      The real folders come with the AWS issues; this issue adds a fake one for the tests.
-    - `tests/`: fake host, fake fetchers, fake deployment folder, local fake WebSocket server.
+      The real folders come with the AWS issues; this issue adds a mock one for the tests.
+    - `tests/`: mock host, mock fetchers, mock deployment folder, local mock WebSocket server.
 - Every component is a class with one responsibility; module-level functions only for small stateless helpers
   (e.g. percentile computation), each justified in `spec.md`.
 
@@ -102,14 +102,15 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   house pattern.
   - An unknown name raises an error naming the built-ins.
 - Host registry: name → `Host`. No built-in hosts in this issue (`ecs` / `lambda` come with the AWS issues); the
-  registry and its error are tested with a fake host registered by the tests.
+  registry and its error are tested with a mock host registered by the tests.
 - Driver factory: keyed by mode × message type; one built-in, `async` + `complete` (WebSocket complete).
 
 ### Mock agent app
 
 - `MockRunner(Runner)` and `MockAgent(Agent)` in `benchmarks/app/`, registered with the runtime like any agent. No AK
   code change.
-- `MockRunner` reads `AK_BENCH_MOCK_AGENT_MIN_DELAY_S` and `AK_BENCH_MOCK_AGENT_MAX_DELAY_S` once, at creation.
+- `MockRunner` reads its delays once, at creation, from `BenchAppConfig` (the app's own settings class, separate from
+  `AKConfig`), which loads `AK_BENCH_MOCK_AGENT_MIN_DELAY_S` and `AK_BENCH_MOCK_AGENT_MAX_DELAY_S`.
 - `run()`: `await asyncio.sleep(random.uniform(min_delay, max_delay))`, drawn per request, then returns
   `AgentReplyAny(content={"echo": <prompt>})`.
 - `stream()`: the same delay, then the echo as stream events (unused by WebSocket complete; for delta later).
@@ -363,11 +364,11 @@ of restating them, and only adds what the harness build needs to pin down. Part 
 
 ### Testing
 
-- All tests run without a cloud account: a fake deployment folder (scripts that write a `deployment.json` pointing
-  at the local fake server), fake fetchers of each family, a fake host, a local fake WebSocket server that echoes by
+- All tests run without a cloud account: a mock deployment folder (scripts that write a `deployment.json` pointing
+  at the local mock server), mock fetchers of each family, a mock host, a local mock WebSocket server that echoes by
   `request_id` with a set delay (and can drop replies).
 - Covered (the issue's acceptance criteria):
-  - a full deploy → step → plot → finish → post-run cycle against the fake host;
+  - a full deploy → step → plot → finish → post-run cycle against the mock host;
   - burst sends one request per client, all N at once; steady follows the scheduled-send rule;
   - step-end order, settle window, failed read restarting the window, max cool-down, stale-lock takeover, `--force-unlock`;
   - `Fetchers.validate()` refuses an invalid host before deploy;

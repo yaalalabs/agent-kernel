@@ -30,10 +30,10 @@ No file under `ak-py/` changes in any iteration.
 
 ## Iteration 2: Platform base, CSV store, run log, host registry
 
-- **Goal:** a fake host made of one fake fetcher per family loads, validates, and each family stores its rows by key,
+- **Goal:** a mock host made of one mock fetcher per family loads, validates, and each family stores its rows by key,
   thread-safely.
 - **Files:** `ak_bench/platforms/base.py`, `results/keyed_csv.py`, `run/run_log.py`, `run/fetcher_invoker.py`,
-  `hosts.py`, `tests/fakes/fetchers.py`, `tests/fakes/host.py`, `tests/test_fetchers_base.py`,
+  `hosts.py`, `tests/mocks/fetchers.py`, `tests/mocks/host.py`, `tests/test_fetchers_base.py`,
   `tests/test_family_store.py`, `tests/test_is_settled.py`, `tests/test_registries.py` (host part)
 - **Steps:**
   1. Add the dataclasses, `RunInfo`, `Deployment` (`from_json` / `to_json`), `Host` (Platform base).
@@ -43,7 +43,7 @@ No file under `ak-py/` changes in any iteration.
   4. Add `Fetchers` (`all`, `validate`) with the three refusal rules.
   5. Add `RunLog` (Run log) and `FetcherInvoker` (Step runner → `FetcherInvoker`).
   6. Add `HostRegistry` with an empty `_BUILTINS`; `get()` runs `validate()` (Registries).
-  7. Add the fake fetchers and `fake_host()` (Testing → Fixtures).
+  7. Add the mock fetchers and `mock_host()` (Testing → Fixtures).
 - **Verify:** `uv run pytest tests/test_fetchers_base.py tests/test_family_store.py tests/test_is_settled.py tests/test_registries.py -q`
 
 ## Iteration 3: Benchmarked app (mock agent and token auth)
@@ -51,14 +51,15 @@ No file under `ak-py/` changes in any iteration.
 Independent of Iterations 1–2; can be built in parallel.
 
 - **Goal:** `benchmarks/app/` runs the mock agent or the real agent, and accepts only signed tokens.
-- **Files:** `benchmarks/app/pyproject.toml`, `uv.lock`, `README.md`, `app.py`, `config.yaml`, `mock_agent.py`,
-  `bench_identity.py`, `app/deploy/README.md`, `app/tests/test_mock_agent.py`, `app/tests/test_bench_identity.py`
+- **Files:** `benchmarks/app/pyproject.toml`, `uv.lock`, `README.md`, `agent.py`, `bench_config.py`, `config.yaml`, `mock_agent.py`,
+  `bench_identity.py`, `app/deploy/README.md`, `app/tests/test_mock_agent.py`, `app/tests/test_bench_config.py`,
+  `app/tests/test_bench_identity.py`
 - **Steps:**
   1. Write `pyproject.toml` like `e2e/app/pyproject.toml` with `agentkernel[api,openai]` from `../../ak-py`;
      `uv lock` (Dependencies and tooling).
   2. Add `MockRunner` / `MockAgent` (Mock agent app).
   3. Add `BenchIdentityProvider` (Client authentication).
-  4. Add `app.py` (mock vs real selection, raise when only one variable is set) and `config.yaml` (Mock agent app →
+  4. Add `BenchAppConfig` and `agent.py` (mock vs real selection, raise when only one variable is set) and `config.yaml` (Mock agent app →
      `config.yaml`).
   5. Write `app/deploy/README.md` with the deployment-folder script contract, including "no component sets
      `AK_BENCH_AUTH_SECRET`" (Deployment folders).
@@ -66,10 +67,10 @@ Independent of Iterations 1–2; can be built in parallel.
 
 ## Iteration 4: Load generator and WebSocket complete driver
 
-- **Goal:** N clients connect to a local fake server, send burst or steady load, and every request ends `ok`,
+- **Goal:** N clients connect to a local mock server, send burst or steady load, and every request ends `ok`,
   `error` or `timeout` with the right timestamps.
 - **Files:** `ak_bench/load/records.py`, `driver.py`, `ws_complete.py`, `factory.py`, `token.py`, `schedule.py`,
-  `generator.py`, `tests/fakes/ws_server.py`, `tests/test_schedule.py`, `tests/test_ws_complete_driver.py`,
+  `generator.py`, `tests/mocks/ws_server.py`, `tests/test_schedule.py`, `tests/test_ws_complete_driver.py`,
   `tests/test_load_generator.py`, `tests/test_token_cross_check.py`, `tests/test_registries.py` (driver part)
 - **Steps:**
   1. Add `RequestRecord`, `ResponseEvent`, `RequestStatus` (Load generator → Records).
@@ -78,26 +79,26 @@ Independent of Iterations 1–2; can be built in parallel.
   4. Add `TokenSigner` (Client authentication).
   5. Add `BurstSchedule` / `SteadySchedule` (Schedules).
   6. Add `LoadGenerator` and `LoadResult` (`connect`, `run`, timeout watcher, `all_settled`, `close`).
-  7. Add `FakeWsServer` (Testing → Fixtures).
+  7. Add `MockWsServer` (Testing → Fixtures).
 - **Verify:** `uv run pytest tests/test_schedule.py tests/test_ws_complete_driver.py tests/test_load_generator.py tests/test_token_cross_check.py tests/test_registries.py -q`
 
 ## Iteration 5: State, step lock, deployment folders, results layout
 
-- **Goal:** a fake deployment folder deploys and destroys through its scripts, `state.json` round-trips, and the step
+- **Goal:** a mock deployment folder deploys and destroys through its scripts, `state.json` round-trips, and the step
   lock follows the live / stale / other-machine rules.
 - **Files:** `ak_bench/run/state.py`, `run/deployment_folder.py`, `results/layout.py`,
-  `tests/fakes/deploy/fake-async-complete/{deploy.sh,destroy.sh}`, `tests/test_state_and_lock.py`
+  `tests/mocks/deploy/mock-async-complete/{deploy.sh,destroy.sh}`, `tests/test_state_and_lock.py`
 - **Steps:**
   1. Add `ResultsLayout` with the step-folder padding (Results layout).
   2. Add `DeploymentFolder` and `ScriptEnv` (Deployment folders).
   3. Add `DeploymentState` (`locate`, `create`, `update` with `flock`, `0600` file) (State).
   4. Add `StepLock` (`acquire`, `release`, `force_unlock`) (State → Lock rules).
-  5. Add the fake deployment folder scripts with `FAKE_DEPLOY_EXIT` / `FAKE_DESTROY_EXIT` (Testing → Fixtures).
+  5. Add the mock deployment folder scripts with `MOCK_DEPLOY_EXIT` / `MOCK_DESTROY_EXIT` (Testing → Fixtures).
 - **Verify:** `uv run pytest tests/test_state_and_lock.py -q`
 
 ## Iteration 6: Step runner and step-end check
 
-- **Goal:** one step runs connect → before → load → cool-down → wait + fetch against the fake host and server, and
+- **Goal:** one step runs connect → before → load → cool-down → wait + fetch against the mock host and server, and
   returns a `StepRecord`.
 - **Files:** `ak_bench/scaling/step_end.py`, `run/step_runner.py`, `tests/test_step_end.py`,
   `tests/test_step_runner.py`
@@ -135,7 +136,7 @@ Independent of Iterations 1–2; can be built in parallel.
 
 ## Iteration 9: Commands and the `run` teardown guarantee
 
-- **Goal:** `deploy`, `step`, `plot`, `finish`, `post-run` and `run` work end to end against the fake host, and
+- **Goal:** `deploy`, `step`, `plot`, `finish`, `post-run` and `run` work end to end against the mock host, and
   teardown always runs.
 - **Files:** `ak_bench/run/commands.py`, `cli.py` (wire each sub-command to its class, `--force-unlock` help text),
   `README.md` (command reference), `tests/test_commands.py`, `tests/test_teardown_guarantee.py`
@@ -146,7 +147,7 @@ Independent of Iterations 1–2; can be built in parallel.
   4. Add `Run` (dry check of every combination, step order, `Finish` in `finally`, second Ctrl-C handling).
   5. Wire the CLI: `BenchError` → exit 1, `KeyboardInterrupt` → exit 130.
   6. Finish `benchmarks/README.md`: commands, `ak-bench.yaml` reference, when to use `--force-unlock`.
-- **Verify:** `uv run pytest tests/test_commands.py tests/test_teardown_guarantee.py -q` (the fake host exists only
+- **Verify:** `uv run pytest tests/test_commands.py tests/test_teardown_guarantee.py -q` (the mock host exists only
   inside the tests, so there is no by-hand `ak-bench run` until the AWS issues add a real host)
 
 ## Iteration 10: Tests and CI
