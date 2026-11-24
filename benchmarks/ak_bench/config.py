@@ -88,8 +88,8 @@ class MockAgentConfig(BaseModel):
 
 
 class BenchConfig(BaseSettings):
-    """Loaded like AKConfig, without AK's internal loader: ak-bench.yaml in the working directory (path override AK_BENCH_CONFIG_PATH_OVERRIDE,
-    which `--config` sets) and `AK_BENCH_`-prefixed environment variables, nested keys joined with `__`
+    """Loaded like AKConfig (without AK's internal loader): ak-bench.yaml in the working directory (path override
+    AK_BENCH_CONFIG_PATH_OVERRIDE, which `--config` sets) and `AK_BENCH_`-prefixed environment variables, nested keys joined with `__`
     (e.g. AK_BENCH_STEP_RUN__TIME_WINDOW_S). Read it with BenchConfig.get().
     """
 
@@ -99,7 +99,9 @@ class BenchConfig(BaseSettings):
     _instance: ClassVar[Optional["BenchConfig"]] = None
     _instance_lock: ClassVar[RLock] = RLock()
 
-    model_config = SettingsConfigDict(env_prefix="AK_BENCH_", env_nested_delimiter="__", extra="forbid", env_ignore_empty=True)
+    model_config = SettingsConfigDict(
+        yaml_file_encoding="utf-8", env_prefix="AK_BENCH_", env_nested_delimiter="__", extra="forbid", env_ignore_empty=True
+    )
 
     hosts: list[str] | None = None
     modes: list[str] | None = None
