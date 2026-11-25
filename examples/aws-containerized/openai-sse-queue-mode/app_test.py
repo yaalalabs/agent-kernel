@@ -6,6 +6,7 @@ one burst, which is the bug #978 exists to remove. So the timing assertion is th
 content assertion is the sanity check.
 """
 
+import asyncio
 import json
 import os
 import time
@@ -30,6 +31,30 @@ class SSETestClient:
     def __init__(self, url: str) -> None:
         self.url = url
         self.session_id = str(uuid.uuid4())
+
+    async def wait_until_serving(self, budget: float = 180.0, interval: float = 10.0) -> None:
+        """Block until the ALB has a healthy target behind the gateway.
+
+        `terraform apply` returns when the ECS service is created, not when a task is running and
+        registered, so the first request can arrive while the target group is still empty and the
+        gateway answers 503. An empty body is used deliberately: the chat route rejects it at
+        validation with a 4xx without running an agent, so this costs nothing but proves the
+        container is serving. Done here rather than inside `stream` so retry time never lands in the
+        arrival offsets the timing assertion reads.
+        """
+        deadline = time.monotonic() + budget
+        last = None
+        while time.monotonic() < deadline:
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(self.url, json={"session_id": "", "prompt": ""})
+                if resp.status_code < 500:
+                    return
+                last = f"HTTP {resp.status_code}"
+            except httpx.TransportError as exc:
+                last = type(exc).__name__
+            await asyncio.sleep(interval)
+        raise AssertionError(f"endpoint never became ready within {budget:.0f}s (last: {last})")
 
     async def stream(self, prompt: str) -> tuple[list[dict], list[float]]:
         """POST the prompt and return (frames, arrival offsets in seconds from the first frame)."""
@@ -56,7 +81,9 @@ class SSETestClient:
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def sse_client():
-    yield SSETestClient(os.environ["AK_TEST_ENDPOINT"])
+    client = SSETestClient(os.environ["AK_TEST_ENDPOINT"])
+    await client.wait_until_serving()
+    yield client
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
