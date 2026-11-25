@@ -3,7 +3,7 @@
 Design briefs for Open Agent Kernel Studio (OAK Studio, a working name), written for Claude Design, the design
 canvas in Claude. OAK Studio is a desktop app for building projects on Open Agent Kernel (OAK).
 
-**Status:** the Phase 1 screens are designed on a Claude Design canvas (https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po), in the look the product had before the Open Agent Kernel rebrand. The briefs were revised on 25 November 2026 and the canvas has not been redrawn to match: see "Canvas is behind the briefs" below. Nothing is built as an app yet.
+**Status:** the Phase 1 screens are designed on a Claude Design canvas (https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po). The briefs, the design system and the canvas were all moved to the Open Agent Kernel identity on 25 November 2026 and are in step. The re-skinned canvas has not been looked at yet: see "Not verified" below. Nothing is built as an app yet.
 
 **Tracked in:** [issue #950](https://github.com/yaalalabs/agent-kernel/issues/950).
 
@@ -22,7 +22,7 @@ same computer with Terraform. Sign-in, dashboards and everything after deploymen
 
 ## Design canvas
 
-Every Phase 1 screen is designed on one canvas: <https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po>. It is still titled **Agent Kernel Studio** and was built on the account's earlier design system, the Agent Kernel Design System, whose real Button, Tag, Input, Card and CodeBlock it mounts. Both are renamed and re-skinned to the OAK identity in step 0 of the build plan. The canvas is private to its owner until it is shared from its Share menu.
+Every Phase 1 screen is designed on one canvas, **OAK Studio**: <https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po>. It uses the OAK Design System (<https://claude.ai/artifact/KZnMQKq86EJG2FGnxGRp35>), installs its token stylesheets and mounts its real Button and Tag. The system's bundle global keeps its earlier identifier, `AgentKernelDesignSystem_a95705`, so the artboards did not have to be rewired. The canvas is shared with the organization; the design system is private to its owner.
 
 The canvas links back to these files: each row of artboards carries a note naming its brief. These files link forward the same way: each brief's header table has a **Design** row with the canvas page and the artboards built.
 
@@ -49,26 +49,30 @@ The canvas has four pages, matching the artboard names in the briefs.
 | 08 | [08-builder-deploy.md](08-builder-deploy.md) | Builder | 9 of 11 | `Builder-Deploy-Redeploy`, `Builder-Deploy-ChangeTarget` |
 | 09 | [09-app-settings.md](09-app-settings.md) | Settings | 5 of 5 | none |
 
-**Canvas last synced with the briefs on 16 November 2026.** At that point the canvas showed the Untested rule
-state, rule tests and the three-way "Fix with AI", rule chips on spans, judge reasons, run history, the
+**Canvas synced with the briefs (25 November 2026).** The earlier sync, on 16 November, added the Untested
+rule state, rule tests and the three-way "Fix with AI", rule chips on spans, judge reasons, run history, the
 simulated user, the CI workflow, the remote state backend, the Claude sign-in lines and the usage-data
-setting. The second-pass artboards in the "Not drawn yet" column are still to do.
+setting. This one followed the develop merge (the Open Agent Kernel rebrand, the retirement of Azure
+Functions, the agent registry and authorization). The second-pass artboards in the "Not drawn yet" column are
+still to do.
 
-**Canvas is behind the briefs (since 25 November 2026).** The briefs were revised after the develop merge that
-brought the Open Agent Kernel rebrand, the retirement of Azure Functions and the agent registry. The canvas
-still shows the earlier state. To bring it back in step:
-
-| Where on the canvas | What changes | Brief |
-|---------------------|--------------|-------|
-| Every artboard | The OAK look: orange accent, flat surfaces, 8px rectangular controls, no glass or glow, Archivo and JetBrains Mono only; drawn in the light mode with a `theme` tweak for the dark mode | 00 |
-| Every artboard | The coding agent's colour: the system's blue with the sparkle icon in place of magenta | 00 |
-| Canvas title, logos | Title "OAK Studio"; the OAK lockups and mark from `branding/` in place of the earlier marks | 00, 02, 03 |
-| UI copy | "No OAK project in `~/code/notes`", "Install OAK skills for Claude Code", "Reserved by OAK", "OAK runs them side by side in one runtime." | 02, 03, 04 |
-| `System` page | Button kinds primary, secondary and text link; `GradientHeading` removed; swatches in both modes | 01 |
-| `Start-NewProject-Framework` | The Claude Agent SDK card shows streaming as yes | 03 |
-| `Builder-Config` | The dimmed section list gains identity, authorization and registry | 04 |
-| `Builder-Deploy-NoTarget` and the Change target modal | Five target cards; the Azure serverless (Functions) card is removed | 08 |
+| Where on the canvas | What changed on 25 November | Brief |
+|---------------------|-----------------------------|-------|
+| Design system | Brought to the OAK identity and renamed OAK Design System: the palette in a light and a dark mode, Archivo and JetBrains Mono, the two radii, flat surfaces, three button kinds, the OAK logo set. `GradientHeading` and the old website kit are archived inside it. | 00, 01 |
+| Every artboard | The OAK look, through the system's tokens and the app stylesheet: orange accent, flat surfaces, 8px controls and 16px cards, no glass or glow. Drawn in the light mode. | 00 |
+| Every artboard | The coding agent's colour is the system's blue with the sparkle icon, in place of magenta | 00 |
+| The ten page components | A `theme` tweak, light or dark. The state artboards beside them stay light. | 00 |
+| Canvas title, logos | Title "OAK Studio"; the Primary lockup on Welcome, the OAK Horizontal lockup in the new project bar, the mark in the top bar | 00, 02, 03 |
+| UI copy | "No OAK project in this folder", "Install OAK skills for Claude Code", "Reserved by OAK", "OAK runs them side by side in one runtime." | 02, 03, 04 |
+| `Start-NewProject-Framework` | The Claude Agent SDK card shows Streaming | 03 |
+| `Builder-Config` | The dimmed section list gains registry, identity and authorization | 04 |
+| `AgenticDev-*` | BR-013, an Access rule in the drafted state with an "Implement" button; an Access filter chip; the count line reads 13 rules with 1 drafted | 06 |
+| `Builder-TestTrace` | "Covers 9 of 13 business rules" | 07 |
+| `Builder-Deploy-NoTarget`, the Change target modal, the prerequisites | Five target cards with the Azure serverless (Functions) card removed; the business-rules check adds "1 rule is drafted" | 08 |
 | `Settings-General` | "Theme" is a choice of System, Light and Dark | 09 |
+
+Left as it was: the font link in each artboard still requests Inter, which nothing uses now; a few inline
+labels still use weight 500; the earlier logo uploads are still in the canvas's asset store, unused.
 
 **Playing the prototypes.** Artboards marked interactive have a Play button on the canvas. Press it on the main artboard of each brief and follow the links between artboards. The pieces that really work are listed under Behaviour in each brief and were built as follows:
 
@@ -85,12 +89,12 @@ still shows the earlier state. To bring it back in step:
 
 **What the design settled that the briefs left open**
 
-1. Brand mark and logos are real files. The canvas took them from `docs/static/img/` before the rebrand; the product marks there were since replaced, and the OAK set now lives in `branding/`. Where no logo file exists (AWS, Azure, Google Cloud, Microsoft, Claude and a few providers) a two or three letter mark stands in.
+1. Brand mark and logos are real files: the OAK lockups and mark from `branding/`, uploaded with their fills written as attributes because the canvas strips a style block from an uploaded SVG; partner marks from `docs/static/img/integrations/`. Where no logo file exists (AWS, Azure, Google Cloud, Microsoft, Claude and a few providers) a two or three letter mark stands in.
 2. App-layer styles (quiet buttons, status chips, canvas nodes, code lines, tables) live in one stylesheet beside the design system's tokens and use only its variables.
 3. Facts the briefs mark as unknown are shown as bracketed placeholders: `[VERSION]`, `[ACCOUNT]`, `[PATH]`, `[N]`, `[VPC ID]`, `[resource type]`, `[agent_invoke_url]`.
 4. The deploy flow's `ChangeTarget` is a modal inside the Deploy component, reached from Change target in Play, not a separate artboard.
 
-**Not verified.** The canvas was written without rendering it. Open each artboard, check the layout at 1440 and 1100 wide, and report anything clipped or off. Contrast and keyboard order were designed for but not measured.
+**Not verified.** The canvas was written without rendering it, and the move to the OAK look on 25 November was made the same way: the component scripts were checked for syntax and every token the artboards use was checked to exist, and nothing more. Open each artboard, check the layout at 1440 and 1100 wide, switch the `theme` tweak to dark on the page components, and report anything clipped, unreadable or off. Contrast and keyboard order were designed for but not measured. Two things to look at first: the coding agent's blue against the grey-blue borders in the light mode, and orange text on the tinted raised surfaces, which is about 4.2:1.
 
 ## Phase 1 files
 
@@ -124,14 +128,13 @@ target Claude Design in Claude.
 4. Hand the canvas to Claude Code when a group of screens is approved.
 
 Every request must name the **OAK Design System**. The organization default is a presentation system for
-slides, and Claude Design uses the default unless told otherwise. Until step 0 is done the account holds only
-the earlier Agent Kernel Design System, which must not be used for new screens.
+slides, and Claude Design uses the default unless told otherwise.
 
 ## Build plan and starter prompts
 
 | Step | Briefs | Starter prompt |
 |------|--------|----------------|
-| 0. Identity (new, 25 November 2026) | 00 | "Read `branding/README.md`, `docs/src/css/custom.css` and `docs/specs/950-agent-kernel-studio-phase-1/00-project-brief.md`. Update the Agent Kernel Design System in this account to the Open Agent Kernel identity and rename it OAK Design System: the palette and both colour modes as tokens, Archivo and JetBrains Mono, the two radii, flat surfaces, the three button kinds, the OAK logo set. Then re-skin the existing Agent Kernel Studio canvas with it, rename the canvas OAK Studio, and apply the changes listed under 'Canvas is behind the briefs' in the README. Change no layout." |
+| 0. Identity (done 25 November 2026) | 00 | Done, and kept as a record: the account's design system was brought to the Open Agent Kernel identity from `branding/README.md` and `docs/src/css/custom.css` and renamed OAK Design System, and the existing canvas was re-skinned with it and renamed OAK Studio, with no layout change. To repeat it after a later brand change: "Read `branding/README.md`, `docs/src/css/custom.css` and brief 00. Update the OAK Design System to match, then reinstall it on the OAK Studio canvas and re-skin the artboards. Change no layout." |
 | 1. Foundation | 00, 01 | "Read `docs/specs/950-agent-kernel-studio-phase-1/00-project-brief.md` and `01-app-components.md`. Create a design canvas named OAK Studio using the OAK Design System. Build only the System page: the desktop shell and the app components, each group on its own artboard. Do not design any screens yet." |
 | 2. Explore the builder | 04, 05, 06 | "Read briefs 04, 05 and 06. Before building them, show three layout options for the builder, each on its own artboard, differing in where the inspector, the bottom panel and the Build with AI drawer live. Static is enough." |
 | 3. Builder core | 04, 05, 06 | "Build the first-pass artboards of briefs 04, 05 and 06 on the Builder page. Make them working prototypes: everything listed under Behaviour (must work) works." |

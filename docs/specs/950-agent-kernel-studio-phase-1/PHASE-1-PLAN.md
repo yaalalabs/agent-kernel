@@ -4,8 +4,9 @@
 or a correction before design starts.
 
 **Revised 25 November 2026** after the develop merge: the Open Agent Kernel (OAK) name and identity, five
-deploy targets now that Azure Functions is retired, and the agent registry. The canvas has not been redrawn to
-match; [README.md](README.md) lists what is behind.
+deploy targets now that Azure Functions is retired, the agent registry, and access rules as a business-rule
+category. The design system and the canvas were brought to the same state that day; neither has been looked at
+since ([README.md](README.md), "Not verified").
 
 ## Summary
 
@@ -201,7 +202,7 @@ editing is its costliest part. Nothing is dropped by the order.
 | Cost and safety | Applying creates billable resources | Plan first, name the account, confirm, and always offer destroy |
 | Three operating systems | The skills generate bash scripts (`build.sh`, `deploy.sh`) and Unix-style commands. Windows paths, line endings and process handling differ. Installers need signing on macOS and Windows. | The Run and Deploy services call `uv`, `terraform` and `docker` directly with argument lists, never through a shell script. The scripts are still written for people who use a terminal, and need Git Bash or WSL on Windows. Test on all three before release. |
 | One target per project | Several environments multiply state and variables | **Assumption:** one deploy target per project in Phase 1, in `deploy/` |
-| Design drawn before the rebrand | The account's design system and all 45 artboards carry the earlier blue and magenta look and the old name | Bring the design system to the OAK identity first, then re-skin the canvas, before any handoff to implementation |
+| Re-skin not reviewed | The design system and all 45 artboards were moved to the OAK identity without rendering them | Review every artboard in the light and the dark mode before any handoff to implementation |
 
 ## Assumptions to confirm
 

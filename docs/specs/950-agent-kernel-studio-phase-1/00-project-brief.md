@@ -35,9 +35,9 @@ slides, and this is product UI.
 
 - **Source of truth.** The identity lives in the repository: the palette, the logo set and the usage rules in
   `branding/README.md`, and the tokens in `docs/src/css/custom.css`. The design system must match them.
-- **Not ready yet.** The account's design system is still the earlier one, named "Agent Kernel Design
-  System", with the blue and magenta look. Bring it to the OAK identity and rename it before designing any
-  screen (step 0 of the build plan in [README.md](README.md)).
+- **Updated 25 November 2026.** The account's design system, earlier named "Agent Kernel Design System" and
+  drawn in a blue and magenta look, was brought to the OAK identity and renamed. Its bundle global keeps the
+  earlier identifier, `AgentKernelDesignSystem_a95705`.
 - Install it on the canvas and mount its real components (Button, Badge, Tag, Card, Input, CodeBlock). Never
   draw look-alikes. `GradientHeading` is retired: headings are a solid colour.
 - Type, colour, spacing and radii come from its tokens. Do not restate or override them in an artboard.
@@ -250,8 +250,7 @@ Terraform module sources. Strings the runtime emits are quoted as emitted.
 
 ## Canvas and artboard conventions
 
-- One design canvas named "OAK Studio" (it was created as "Agent Kernel Studio" and is renamed when it is
-  re-skinned). Canvas pages: System, Start, Builder, Settings.
+- One design canvas named "OAK Studio". Canvas pages: System, Start, Builder, Settings.
 - One screen per artboard, following adaptation 8 for size.
 - Artboard names are `Area-Screen` and `Area-Screen-State`, for example `Builder-Canvas` and
   `Builder-Canvas-Empty`. Component names are PascalCase. Both become code names at handoff, so keep them
