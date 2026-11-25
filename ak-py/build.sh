@@ -7,9 +7,9 @@ else
 fi
 
 
-# `crewai` and `test` extras are declared as mutually exclusive (see pyproject.toml
-# [tool.uv.conflicts]) because they pull incompatible posthog versions transitively.
-# `test` must always be installed, so it's `crewai` that's excluded from --all-extras.
+# `crewai` conflicts with `test` (incompatible posthog versions) and with `mcp` (crewai pins mcp<2,
+# fastmcp 4 needs mcp>=2.3); see pyproject.toml [tool.uv.conflicts].
+# `test` and `mcp` must always be installed, so it's `crewai` that's excluded from --all-extras.
 uv sync --all-extras --no-extra crewai
 
 uv pip install --group dev

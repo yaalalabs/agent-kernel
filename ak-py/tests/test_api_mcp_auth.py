@@ -9,9 +9,9 @@ agent tool carries a visibility check, so the tool list is the caller's own (ite
 `TestTheToolsOfACaller`), and a refused call is `Agent not available` (`TestARefusedCall`).
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-import httpx
+import httpx2
 import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
@@ -210,7 +210,7 @@ class TestExecutorPrincipal:
         token = await AKTokenVerifier(_Provider()).verify_token("alice-secret")
         monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: token)
 
-        await MCP.Executor("triage").execute("s1", "hi", AsyncMock())
+        await MCP.Executor("triage").execute("s1", "hi")
 
         [(body, _)] = client.calls
         assert body.principal == ALICE
@@ -223,7 +223,7 @@ class TestExecutorPrincipal:
         MCP._client = client
         monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: None)
 
-        await MCP.Executor("triage").execute("s1", "hi", AsyncMock())
+        await MCP.Executor("triage").execute("s1", "hi")
 
         assert client.calls[0][0].surface == "mcp"
 
@@ -233,7 +233,7 @@ class TestExecutorPrincipal:
         MCP._client = client
         monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: None)
 
-        await MCP.Executor("triage").execute("s1", "hi", AsyncMock())
+        await MCP.Executor("triage").execute("s1", "hi")
 
         [(body, _)] = client.calls
         assert body.principal is not None and body.principal.is_anonymous
@@ -245,7 +245,7 @@ class TestExecutorPrincipal:
         MCP._client = client
         monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: AccessToken(token="t", client_id="c", scopes=[]))
 
-        await MCP.Executor("triage").execute("s1", "hi", AsyncMock())
+        await MCP.Executor("triage").execute("s1", "hi")
 
         assert client.calls[0][0].principal.is_anonymous
 
@@ -254,11 +254,11 @@ def _http_factory(app):
     """An MCP HTTP client factory that talks to the ASGI app in-process."""
 
     def factory(headers=None, timeout=None, auth=None, **kwargs):
-        return httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        return httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="http://mcp.test",
             headers=headers,
-            timeout=timeout or httpx.Timeout(30),
+            timeout=timeout or httpx2.Timeout(30),
             auth=auth,
             **kwargs,
         )
@@ -300,7 +300,7 @@ class TestThroughARealClient:
             "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}},
         }
         async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://mcp.test") as http:
+            async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://mcp.test") as http:
                 response = await http.post("/", json=initialize, headers={"Accept": "application/json, text/event-stream", **headers})
 
         assert response.status_code == 401
@@ -460,7 +460,7 @@ class TestARefusedCall:
         monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: None)
 
         with pytest.raises(ToolError) as refused:
-            await MCP.Executor("status").execute("s1", "hi", AsyncMock())
+            await MCP.Executor("status").execute("s1", "hi")
 
         assert str(refused.value) == "Agent not available"
         assert "bob" not in str(refused.value)  # the policy's reason stays in the log
@@ -473,7 +473,7 @@ class TestARefusedCall:
         monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: None)
 
         with pytest.raises(ToolError, match="^The agent could not process the request$"):
-            await MCP.Executor("status").execute("s1", "hi", AsyncMock())
+            await MCP.Executor("status").execute("s1", "hi")
 
     @pytest.mark.asyncio
     async def test_the_real_precheck_refuses_a_caller_with_no_level(self, monkeypatch, authorization, descriptor_only_registry):
@@ -491,6 +491,6 @@ class TestARefusedCall:
             with Runtime(InMemorySessionStore(), registry=descriptor_only_registry(AGENTS)):
                 MCP._client = RestHandler()
                 with pytest.raises(ToolError, match="^Agent not available$"):
-                    await MCP.Executor("status").execute("s1", "hi", AsyncMock())
+                    await MCP.Executor("status").execute("s1", "hi")
         finally:
             AKConfig._reset()
