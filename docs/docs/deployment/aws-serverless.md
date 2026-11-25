@@ -1568,7 +1568,7 @@ module "ak_serverless" {
 }
 ```
 
-Both flags need `queue_mode = true` and a REST mode: the module refuses them with `async`.
+Both flags need `queue_mode = true`, which the module checks at plan. A REST mode is checked when the request handler starts: it refuses `async`.
 
 ### Authentication
 

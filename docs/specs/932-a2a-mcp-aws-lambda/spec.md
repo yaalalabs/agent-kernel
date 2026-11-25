@@ -234,8 +234,9 @@ their defaults (`localhost`) are not checked by the guard (ECS does not check th
 New optional inputs, both off by default; with both off the plan is empty for an existing deployment.
 
 - Root `variables.tf`: `enable_a2a_server` and `enable_mcp_server` (bool, default `false`; the MCP name matches ECS's
-  `enable_mcp_server`, `containerized/variables.tf:244`, Deviation 11). Validation: both must be `false` when
-  `execution_mode == "async"` (matches `gateway_endpoints`, `variables.tf:302-305`).
+  `enable_mcp_server`, `containerized/variables.tf:244`, Deviation 11). Validation: both need `queue_mode = true`, and
+  neither may share a first segment with a `gateway_endpoints` entry. No `execution_mode` rule: the guard refuses `async` when the
+  request handler starts, so the rule is written once.
 - `state.tf:249` passes `proxy_routes = concat(var.enable_a2a_server ? ["a2a"] : [], var.enable_mcp_server ? ["mcp"] : [])` to the
   `api_gateway` module.
 - The resource templates it creates (`/a2a`, `/a2a/{proxy+}`, `/mcp`, `/mcp/{proxy+}`, under the base path) are exactly the keys
