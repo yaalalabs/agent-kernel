@@ -32,6 +32,6 @@ async def test_call_api(a2a_client):
     Test.compare(response, ["Sri Lanka"])
 
     response = await a2a_client.send(
-        "Which country hosted the tournament?, answer with only the country names and make sure to mention all the contries that hosted this tournament"
+        "Which countries hosted the tournament?, answer with only the country names and make sure to mention all the contries that hosted this tournament"
     )
     Test.compare(response, ["Sri Lanka, India and Pakistan"])

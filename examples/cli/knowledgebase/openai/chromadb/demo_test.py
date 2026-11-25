@@ -31,6 +31,6 @@ async def test_kb_descriptions_exposed(test_client):
 @pytest.mark.order(4)
 async def test_kb_schemas_available(test_client):
     await test_client.send("Summarize the knowledge base schemas you know about. Reply with one word.")
-    await test_client.expect(["ChromaDB", "semantic"])
+    await test_client.expect(["ChromaDB", "semantic", "vector"])
 
 

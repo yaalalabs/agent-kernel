@@ -322,7 +322,7 @@ async def test_cricket_knowledge():
         await test.expect(["Sri Lanka won the 1996 cricket world cup."])
         
         # Test follow-up question with multiple acceptable answers
-        await test.send("Which country hosted the tournament?")
+        await test.send("Which countries hosted the tournament?")
         await test.expect([
             "Co-hosted by India, Pakistan and Sri Lanka.",
             "India, Pakistan and Sri Lanka co-hosted the tournament."

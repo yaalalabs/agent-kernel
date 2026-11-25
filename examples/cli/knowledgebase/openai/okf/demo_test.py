@@ -82,9 +82,9 @@ async def test_consumer_reports_the_trust_signal(test_client):
         test_client,
         "kb_consumer_agent",
         "Using the knowledge base, has a human reviewed the customers table concept? "
-        "Begin your answer with exactly Yes or No.",
+        "Begin your answer with exactly REVIEWED or UNREVIEWED.",
     )
-    assert re.match(r"\W*no\b", response), response
+    assert re.match(r"\W*unreviewed\b", response), response
 
 
 @pytest.mark.order(3)
