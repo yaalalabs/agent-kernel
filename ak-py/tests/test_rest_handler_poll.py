@@ -38,6 +38,7 @@ def client_and_store():
         response_store=_ResponseStoreConfig(type="dynamodb", retry_count=1, delay=0),
     )
     config.api.max_file_size = 10_000_000
+    config.authorization = None  # read as the routes are mounted (#603): a Mock attribute would read as a configured block
 
     store = Mock()
     store.get_record = Mock(return_value=None)

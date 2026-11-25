@@ -478,6 +478,68 @@ class TestConnectionStorePrincipal:
         assert handler.get_principal("c1") == ALICE
 
 
+class TestEntryPointsNameTheSurface:
+    """Each deployment entry point that assigns the principal to a chat body also says the request entered by the
+    REST API (#603, design refinement 13), so the process that runs the agent serves only the agents on `rest`."""
+
+    def test_the_rest_lambda_router_marks_the_body(self, static_identity):
+        request = _endpoints_handler()._parse_body(_rest_event(None))
+
+        assert request.body.surface == "rest"
+
+    def test_the_rest_lambda_direct_route_runs_it_as_a_rest_request(self, static_identity):
+        handler = _endpoints_handler()
+        handler._chat_service.process_chat_request.return_value = (200, {"ok": True})
+
+        handler._handle_agent_chat(_rest_event(None), None)
+
+        assert handler._chat_service.process_chat_request.call_args.args[0].surface == "rest"
+
+    def test_the_rest_lambda_queued_body_carries_it(self, static_identity):
+        handler = _endpoints_handler()
+        request = handler._parse_body(_rest_event(None, body={**CHAT_BODY, "request_id": "r1"}))
+
+        with patch(f"{REST_LAMBDA_MODULE}.SQSHandler.send_message_to_input_queue", return_value={}) as send:
+            handler._send_to_queue(request)
+
+        assert send.call_args.kwargs["message_body"]["surface"] == "rest"
+
+    def test_a_surface_the_client_put_in_a_lambda_body_is_refused(self, static_identity):
+        handler = _endpoints_handler()
+
+        response = handler._handle_agent_chat(_rest_event(None, body={**CHAT_BODY, "surface": "a2a"}), None)
+
+        assert response["statusCode"] == 400
+        assert "surface" in response["body"]
+        handler._chat_service.process_chat_request.assert_not_called()
+
+    def test_a_lambda_websocket_frame_is_marked(self, static_identity):
+        info = _system_routes_handler()._parse_event_to_wsmessage(_ws_event(body={"request_id": "r1", "body": CHAT_BODY}))
+
+        assert info.request.body.surface == "rest"
+
+    @pytest.mark.asyncio
+    async def test_an_ecs_queued_chat_frame_carries_it(self, static_identity, config):
+        config.execution.queues.input.url = "https://sqs.test/input"
+        handler, _ = _app_handler()
+
+        with patch(f"{ECS_MODULE}.SQSHandler") as sqs:
+            await handler._handle_chat(_ecs_request(body={"request_id": "r1", "body": CHAT_BODY}))
+
+        assert sqs.send_message_to_input_queue.call_args.kwargs["message_body"]["surface"] == "rest"
+
+    @pytest.mark.asyncio
+    async def test_an_ecs_direct_chat_frame_runs_as_a_rest_request(self, static_identity):
+        handler, _ = _app_handler()
+        chat = MagicMock()
+        chat.process_async_chat_request = AsyncMock(return_value=(200, {"ok": True}))
+        handler.get_chat_service = lambda: chat
+
+        await handler._handle_chat(_ecs_request(body={"request_id": "r1", "body": CHAT_BODY}))
+
+        assert chat.process_async_chat_request.call_args.args[0].surface == "rest"
+
+
 class TestRemovedNames:
     def test_the_auth_package_is_gone(self):
         with pytest.raises(ModuleNotFoundError):

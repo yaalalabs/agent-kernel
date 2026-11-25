@@ -72,12 +72,14 @@ class ScheduleStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool) -> None:
+    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool, error: str | None = None) -> None:
         """Record that an occurrence of a task fired.
 
-        Advances ``last_triggered_at``, ``trigger_count`` and ``last_request_id``, and moves the
-        task to ``completed`` when ``completed`` is set (a one-time schedule has no further
-        occurrences). Implementations read-modify-write: concurrent occurrences are last-writer-wins,
+        Advances ``last_triggered_at``, ``trigger_count`` and ``last_request_id``, sets
+        ``last_error`` to ``error``, and moves the task to ``completed`` when ``completed`` is set
+        (a one-time schedule has no further occurrences). ``ScheduledTask.apply_trigger`` holds
+        the rule, so an implementation loads the record, applies it and writes it back.
+        Implementations read-modify-write: concurrent occurrences are last-writer-wins,
         which is acceptable because these fields are advisory. Recording against an unknown task
         is a no-op, since a cancelled-and-deleted task may still have a trigger in flight.
 
@@ -85,6 +87,9 @@ class ScheduleStore(ABC):
         :param request_id: Request id of the run the occurrence produced, when known.
         :param occurred_at: ISO-8601 UTC timestamp of the occurrence.
         :param completed: Whether this was the task's final occurrence.
+        :param error: Why the occurrence was not run (#603: its owner may no longer use the agent);
+            None when it ran. The manager passes the keyword only for an occurrence that was not
+            run, so a store written before it existed keeps recording the ones that are.
         """
         raise NotImplementedError
 

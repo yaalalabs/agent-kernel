@@ -14,7 +14,7 @@ import logging
 from collections.abc import Callable
 
 from ..config import AKConfig
-from ..model import SystemTool
+from ..model import AccessLevel, SystemTool
 from ..tool import ToolContext
 from .storage import AttachmentStorageManager
 
@@ -99,3 +99,5 @@ class AnalyzeAttachmentsTool(SystemTool):
         "inspect the file content again. Do not guess based on the summary."
     )
     func: Callable = analyze_attachments
+    # Reads what the user attached and changes nothing: the tier an authorization policy applies by default.
+    tier: AccessLevel = AccessLevel.READ

@@ -73,12 +73,12 @@ class DynamoDBScheduleStore(ScheduleStore):
         page, next_offset = paginate(items, limit, offset)
         return [ScheduledTask.model_validate_json(item["data"]) for item in page], next_offset
 
-    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool) -> None:
+    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool, error: str | None = None) -> None:
         task = self.get(task_id)
         if task is None:
             self._log.warning(f"Ignoring trigger record for unknown scheduled task {task_id}")
             return
-        self._write(task.apply_trigger(request_id, occurred_at, completed))
+        self._write(task.apply_trigger(request_id, occurred_at, completed, error))
 
     def clear(self) -> None:
         self._log.debug("Clearing all stored scheduled tasks")

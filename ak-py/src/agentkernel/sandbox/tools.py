@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from ..core.config import AKConfig
-from ..core.model import SystemTool
+from ..core.model import AccessLevel, SystemTool
 from .manager import ExecutionManager
 from .model import SandboxResult, SandboxTask
 from .packages import PackageSpecRuleFactory
@@ -442,16 +442,19 @@ def get_sandbox_tools() -> list[SystemTool]:
         f"Available workload profiles (pass as profile=):\n{_profiles_text(config, installs)}\n"
         f"stdout/stderr and file reads are truncated at {config.tool_output_max_chars} characters."
     )
+    # Every one is tiered `write` for an authorization policy: running code is not a read, and the tools that
+    # only look inside a sandbox are of no use to a principal that may not run anything in one.
+    tier = AccessLevel.WRITE
     tools = [
-        SystemTool(name="run_code", description=guidance, func=run_code),
-        SystemTool(name="run_command", description="", func=run_command),
-        SystemTool(name="write_sandbox_file", description="", func=write_sandbox_file),
-        SystemTool(name="read_sandbox_file", description="", func=read_sandbox_file),
-        SystemTool(name="check_sandbox_task", description="", func=check_sandbox_task),
-        SystemTool(name="list_sandbox_sessions", description="", func=list_sandbox_sessions),
-        SystemTool(name="new_sandbox_session", description="", func=new_sandbox_session),
-        SystemTool(name="destroy_sandbox_session", description="", func=destroy_sandbox_session),
+        SystemTool(name="run_code", description=guidance, func=run_code, tier=tier),
+        SystemTool(name="run_command", description="", func=run_command, tier=tier),
+        SystemTool(name="write_sandbox_file", description="", func=write_sandbox_file, tier=tier),
+        SystemTool(name="read_sandbox_file", description="", func=read_sandbox_file, tier=tier),
+        SystemTool(name="check_sandbox_task", description="", func=check_sandbox_task, tier=tier),
+        SystemTool(name="list_sandbox_sessions", description="", func=list_sandbox_sessions, tier=tier),
+        SystemTool(name="new_sandbox_session", description="", func=new_sandbox_session, tier=tier),
+        SystemTool(name="destroy_sandbox_session", description="", func=destroy_sandbox_session, tier=tier),
     ]
     if installs:
-        tools.append(SystemTool(name="install_packages", description="", func=install_packages))
+        tools.append(SystemTool(name="install_packages", description="", func=install_packages, tier=tier))
     return tools

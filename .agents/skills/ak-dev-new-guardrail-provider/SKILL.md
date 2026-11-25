@@ -305,3 +305,4 @@ Then check the docs-site features page (`docs/src/pages/features.tsx`): the **Gu
 - [ ] Example in `examples/cli/guardrail/<provider>/`
 - [ ] Documentation in `docs/docs/advanced/guardrails*.md`
 - [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), the Guard stage's guardrails point (`HomeSections/index.tsx`); the Guardrails capability's `more` links on the features page
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (`+<short-slug>.added.md` when the PR has no issue; `.breaking.md` only when existing code, config or deployments stop working), written for users with `ak-dev-sync-changelog-from-branch`

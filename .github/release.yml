@@ -1,0 +1,10 @@
+# Configures the PR list GitHub generates for each release (publish.yaml passes --generate-notes).
+# The curated changelog section from changelog.d/ comes first in the release body (#664); this list
+# follows it for the PR authors, New Contributors and the compare link. The CI bot's PRs are left
+# out: they are auto-sync docs follow-ups that repeat a feature PR's title, and release chores.
+# Both spellings of the app's login are listed; GitHub matches the author login exactly.
+changelog:
+  exclude:
+    authors:
+      - agent-kernel-ci[bot]
+      - agent-kernel-ci

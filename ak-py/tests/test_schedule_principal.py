@@ -3,20 +3,28 @@
 ``RESTAPI.build_app`` installs the identity dependency, so a ``static`` provider resolving two
 tokens stands in for the callers: the task a chat request created for one principal is readable,
 amendable and cancellable by that principal alone, a listing is the caller's own, and a request
-nothing authenticated is refused on every route. The fire-time level re-check joins this file in
-plan iteration 19.
+nothing authenticated is refused on every route.
+
+Plan iteration 19 adds the fire-time re-check (``TestFireTimeAccess``): an occurrence runs as the
+task's owner, so with an ``authorization`` block the owner's level is asked again when it fires, and
+an occurrence the owner may no longer run is skipped and leaves the reason on the task.
 """
+
+import json
 
 import pytest
 from fastapi.testclient import TestClient
 
 from agentkernel.api.http import RESTAPI
+from agentkernel.core.chat_service import ChatService, SkippedOccurrenceReply
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import BaseRunRequest, Principal, ScheduleSpec
+from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.identity import IdentityProviderFactory
 from agentkernel.schedule.handler import ScheduleRESTRequestHandler
 from agentkernel.schedule.manager import ScheduleManager
-from agentkernel.schedule.model import ScheduleStatus
+from agentkernel.schedule.model import TOKEN_OCCURRENCE_TIME, TOKEN_REQUEST_ID, ScheduleStatus
 from agentkernel.schedule.provider.base import ScheduleProvider
 from agentkernel.schedule.store.in_memory import InMemoryScheduleStore
 from agentkernel.secret import SecretManager
@@ -146,3 +154,111 @@ class TestAuthentication:
 
         assert response.status_code == 401
         assert response.json()["detail"] == "Unauthorized"
+
+
+class TestFireTimeAccess:
+    """An occurrence acts as the task's owner, unattended (#603, plan iteration 19). The owner's grants are read
+    when it fires, not when the task was created, so taking the grant away stops the task: the occurrence is
+    skipped, and the task the owner reads back says why.
+
+    The real manager and store, the real access gate over a static policy that the test rewrites, and the body a
+    provider would deliver, run through the chat service as the queue runner runs it."""
+
+    WEEKLY = {"subjects": ["user:alice"], "agents": ["reports"], "level": "read"}
+
+    @pytest.fixture
+    def hosting(self, served, surface_agent):
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("reports"))
+        with runtime:
+            yield served
+
+    @staticmethod
+    def _fire(manager: ScheduleManager, task_id: str, request_id: str = "r-1"):
+        """Deliver one occurrence of a task as its provider would: the frozen body, with the occurrence values in."""
+        frozen = manager._build_trigger_body(manager.get_task(task_id))
+        body = json.loads(frozen.replace(TOKEN_REQUEST_ID, request_id).replace(TOKEN_OCCURRENCE_TIME, "2030-06-03T09:00:00Z"))
+        return ChatService().process_chat_request(BaseRunRequest.model_validate(body))
+
+    @staticmethod
+    def _create(manager: ScheduleManager, principal: Principal = ALICE):
+        req = BaseRunRequest(
+            prompt="send the weekly report", agent="reports", session_id="s1", principal=principal, schedule=ScheduleSpec(cron="0 9 * * 1")
+        )
+        return manager.create_from_request(req)
+
+    def test_an_occurrence_runs_while_its_owner_holds_a_level(self, hosting, authorization):
+        client, manager = hosting
+        authorization(grants=[self.WEEKLY])
+        task = self._create(manager)
+
+        status, body = self._fire(manager, task.task_id)
+
+        assert (status, body) == (200, {"result": "reports", "session_id": "s1"})
+        stored = client.get(f"{SCHEDULES}/{task.task_id}", headers=ALICE_AUTH).json()
+        assert (stored["trigger_count"], stored["last_request_id"], stored["last_error"]) == (1, "r-1", None)
+
+    def test_an_owner_who_lost_access_is_skipped_and_the_task_says_why(self, hosting, authorization):
+        client, manager = hosting
+        authorization(grants=[self.WEEKLY])
+        task = self._create(manager)
+        authorization(grants=[])  # the operator takes the grant away
+
+        status, body = self._fire(manager, task.task_id)
+
+        assert (status, body) == (403, {"result": SkippedOccurrenceReply.TEXT, "session_id": "s1"})
+        stored = client.get(f"{SCHEDULES}/{task.task_id}", headers=ALICE_AUTH).json()
+        assert (stored["trigger_count"], stored["last_request_id"]) == (1, "r-1")
+        assert stored["last_error"] == "Agent 'reports' not found"
+        assert stored["status"] == ScheduleStatus.ACTIVE.value  # a recurring task stays armed: the next occurrence is asked again
+
+    def test_access_given_back_runs_the_next_occurrence_and_clears_the_error(self, hosting, authorization):
+        client, manager = hosting
+        authorization(grants=[self.WEEKLY])
+        task = self._create(manager)
+        authorization(grants=[])
+        self._fire(manager, task.task_id, "r-1")
+        authorization(grants=[self.WEEKLY])
+
+        status, _ = self._fire(manager, task.task_id, "r-2")
+
+        stored = client.get(f"{SCHEDULES}/{task.task_id}", headers=ALICE_AUTH).json()
+        assert (status, stored["trigger_count"], stored["last_request_id"], stored["last_error"]) == (200, 2, "r-2", None)
+
+    def test_a_skipped_one_time_task_is_closed(self, hosting, authorization):
+        client, manager = hosting
+        authorization(grants=[self.WEEKLY])
+        req = BaseRunRequest(
+            prompt="send it once", agent="reports", session_id="s1", principal=ALICE, schedule=ScheduleSpec(at="2030-06-03T09:00:00")
+        )
+        task = manager.create_from_request(req)
+        authorization(grants=[])
+
+        self._fire(manager, task.task_id)
+
+        stored = client.get(f"{SCHEDULES}/{task.task_id}", headers=ALICE_AUTH).json()
+        assert (stored["status"], stored["last_error"]) == (ScheduleStatus.COMPLETED.value, "Agent 'reports' not found")
+
+    def test_without_an_authorization_block_nothing_is_asked_and_the_occurrence_runs(self, hosting):
+        client, manager = hosting
+        task = self._create(manager, BOB)
+
+        status, body = self._fire(manager, task.task_id)
+
+        assert (status, body["result"]) == (200, "reports")
+        assert client.get(f"{SCHEDULES}/{task.task_id}", headers=BOB_AUTH).json()["last_error"] is None
+
+    def test_a_trigger_carrying_no_owner_runs_as_nobody_and_is_skipped_without_a_record(self, hosting, authorization):
+        """A body with no principal on it (a task from before principal ownership, or a forged trigger) acts as
+        the anonymous principal: the gate refuses it, and it is not the owner's occurrence to record."""
+        client, manager = hosting
+        authorization(grants=[self.WEEKLY])
+        task = self._create(manager)
+        body = json.loads(manager._build_trigger_body(manager.get_task(task.task_id)).replace(TOKEN_REQUEST_ID, "r-1"))
+        body["principal"] = None
+
+        status, reply = ChatService().process_chat_request(BaseRunRequest.model_validate(body))
+
+        assert (status, reply["result"]) == (403, SkippedOccurrenceReply.TEXT)
+        stored = client.get(f"{SCHEDULES}/{task.task_id}", headers=ALICE_AUTH).json()
+        assert (stored["trigger_count"], stored["last_error"]) == (0, None)

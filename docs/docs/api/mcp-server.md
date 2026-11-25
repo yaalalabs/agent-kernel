@@ -105,7 +105,8 @@ back from the response store. The tool's `session_id` argument is the Open Agent
   `execution.response_store.delay` (1 s without a `response_store` block), and the wait gives up
   after `retry_count` reads (about 59 s without a block).
 - **Errors**: a failed run, a timeout or any other error reaches the client as a `ToolError` with a
-  fixed message; the details go to the server logs only.
+  fixed message; the details go to the server logs only. A call for an agent that is not the caller's
+  to run is the `ToolError` `Agent not available` (see [Access](#access)).
 - **Execution mode**: MCP ignores `execution.mode` and always waits for one whole reply.
 
 ### On AWS Lambda
@@ -163,6 +164,16 @@ RFC 9728 document at the app root, naming `<mcp.url>/` as the protected resource
 authorization server. `<origin>` is the scheme and host of `mcp.url`, so set `mcp.url` to the address
 clients use (behind a proxy or load balancer, the public one); the default `http://localhost:8000/mcp`
 fits a local run only. A bearer-scheme provider such as `static` publishes no metadata.
+
+### Access
+
+An [`authorization`](../advanced/identity-and-access.md#authorization) block makes the tool list the
+caller's own. `tools/list` returns the agent tools of the agents the caller may see, and a call to the
+tool of an agent it may not see is answered like a call to a tool that does not exist. An agent the
+caller sees and holds no level on is listed, and calling it is the `ToolError` `Agent not available`,
+refused before the request is queued. The check runs on every request, for that request's caller.
+Tools your application adds itself are not agent tools and are not filtered. Without the block every
+agent exposed on `mcp` is listed to every caller.
 
 ## Configuration
 
