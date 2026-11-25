@@ -44,6 +44,7 @@ ak-deployment/           Terraform modules per cloud (aws / azure / gcp) x (serv
 examples/                Runnable sample apps per framework/deployment combo
 use-cases/               End-to-end agents built from a SPEC.md using the bundled skills
 e2e/                     Messaging integration e2e harness: deployable app + Terraform + pytest suite driven against real platform accounts (see e2e/README.md)
+benchmarks/              ak-bench benchmark harness + the benchmarked app (benchmarks/app/) it deploys (see benchmarks/README.md)
 docs/                    Docusaurus site (kernel.yaala.ai/docs) — versioned_docs/ are frozen, don't edit old versions
 .agents/skills/          Dev skills (see table above)
 ```
