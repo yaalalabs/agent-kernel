@@ -142,6 +142,38 @@ class AccessGate:
         """The synchronous form of ``visible_agents_async``."""
         return list(self._wait(self.visible_agents_async(principal)))
 
+    async def narrow_async(self, principal: Principal, descriptors: Iterable[AgentDescriptor]) -> list[AgentDescriptor]:
+        """Return descriptors as ``principal`` is shown them: each with the tools it is offered.
+
+        What a surface lists about an agent (a catalog entry, an A2A card) must not name a tool the
+        caller would be denied. ``tools`` keeps the ones the authorizer allows the principal, and
+        ``skills`` follows it: a skill whose id is one of the agent's tools stays only while that
+        tool does, since the skills default to one per tool, and a skill that names no tool (one
+        declared through ``Module.describe``) stays. A principal that sees an agent only through
+        its visibility holds no level on it and is offered no tool.
+
+        The decision is over the tools the descriptor records, so an agent another process hosts is
+        narrowed like one hosted here. The descriptors handed in are not changed.
+
+        :param principal: Who the listing is for.
+        :param descriptors: The descriptors to show, already narrowed to the ones the principal may see.
+        :return: A copy of each, in the order given.
+        """
+        shown: list[AgentDescriptor] = []
+        for descriptor in descriptors:
+            if not descriptor.tools:
+                shown.append(descriptor)
+                continue
+            offered = set(await self._authorizer.filter_tools(principal, descriptor.id, list(descriptor.tools)))
+            tools = [tool for tool in descriptor.tools if tool in offered]
+            skills = [skill for skill in descriptor.skills if skill.id not in descriptor.tools or skill.id in offered]
+            shown.append(descriptor.model_copy(update={"tools": tools, "skills": skills}))
+        return shown
+
+    def narrow(self, principal: Principal, descriptors: Iterable[AgentDescriptor]) -> list[AgentDescriptor]:
+        """The synchronous form of ``narrow_async``."""
+        return list(self._wait(self.narrow_async(principal, descriptors)))
+
     # -- which tools is the principal offered ----------------------------------------------------
 
     async def tool_filter_async(self, principal: Principal, agent: Agent, level: AccessLevel | None = None) -> ToolFilter:

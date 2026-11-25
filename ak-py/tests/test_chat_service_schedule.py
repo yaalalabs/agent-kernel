@@ -14,6 +14,8 @@ from fastapi.responses import JSONResponse
 
 from agentkernel.core.chat_service import ChatService, RequestBuilder
 from agentkernel.core.model import AgentReplyText, AgentRequestAny, BaseRunRequest, Principal, ScheduleSpec
+from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.model import ScheduledTask
 
@@ -216,6 +218,14 @@ class TestUserIdIsRefusedBeforeAnySideEffect:
 
 
 class TestTriggerRecording:
+    @pytest.fixture(autouse=True)
+    def _an_agent_to_run_on(self, surface_agent):
+        # The occurrence is asked the run's own question before it is recorded (#603), and that asks the registry.
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("reports"))
+        with runtime:
+            yield
+
     def _trigger_request(self, **overrides) -> BaseRunRequest:
         fields = {
             "prompt": "send the weekly report",
@@ -266,6 +276,182 @@ class TestTriggerRecording:
         await ChatService().execute(BaseRunRequest(prompt="hi", session_id="s1"))
 
         manager.record_trigger.assert_not_called()
+
+
+class TestAnOccurrenceTheOwnerMayNoLongerRun:
+    """#603, iteration 19: an occurrence runs as the task's owner, long after the task was created, so the owner's
+    access is checked again when it fires. One the owner may no longer run is recorded with the reason and
+    skipped: the agent never runs, and the reply says so with a 403.
+
+    Nothing below the service is mocked: a runtime hosting `reports` (private, granted to u1) and `status`
+    (public, granted to nobody), the real access gate over a static policy, and a stubbed schedule manager to
+    read what was recorded."""
+
+    SKIPPED = "scheduled task skipped: the owner no longer holds access to the agent"
+    OCCURRED_AT = "2030-06-01T09:00:00Z"
+
+    @pytest.fixture
+    def hosting(self, authorization, surface_agent):
+        authorization(grants=[{"subjects": ["user:u1"], "agents": ["reports"], "level": "read"}])
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("reports"))
+        status = surface_agent("status")
+        status._set_descriptor(status.descriptor.model_copy(update={"visibility": "public"}))
+        runtime.register(status)
+        with runtime:
+            yield runtime
+
+    def _occurrence(self, agent="reports", principal=PRINCIPAL, **overrides) -> BaseRunRequest:
+        fields = {
+            "prompt": "send the weekly report",
+            "session_id": "s1",
+            "agent": agent,
+            "principal": principal,
+            "scheduled_task_id": "t1",
+            "scheduled_time": self.OCCURRED_AT,
+            "request_id": "r1",
+        }
+        fields.update(overrides)
+        return BaseRunRequest(**fields)
+
+    def test_an_occurrence_its_owner_may_run_runs_and_is_recorded_as_it_always_was(self, hosting, manager):
+        result, _ = ChatService().execute_sync(self._occurrence())
+
+        assert str(result) == "reports"
+        manager.record_trigger.assert_called_once_with("t1", PRINCIPAL, request_id="r1", occurred_at=self.OCCURRED_AT)
+
+    def test_an_owner_who_may_no_longer_see_the_agent_is_skipped(self, hosting, manager):
+        store = hosting.sessions()
+        with patch.object(store, "load", wraps=store.load) as load:
+            result, session_id = ChatService().execute_sync(self._occurrence(principal=SOMEONE_ELSE))
+
+        assert (str(result), session_id) == (self.SKIPPED, "s1")
+        load.assert_not_called()  # the run never started
+        manager.record_trigger.assert_called_once_with(
+            "t1", SOMEONE_ELSE, request_id="r1", occurred_at=self.OCCURRED_AT, error="Agent 'reports' not found"
+        )
+
+    def test_an_owner_who_sees_the_agent_and_holds_no_level_is_skipped_too(self, hosting, manager):
+        result, _ = ChatService().execute_sync(self._occurrence(agent="status"))
+
+        assert str(result) == self.SKIPPED
+        assert manager.record_trigger.call_args.kwargs["error"] == "Principal 'u1' holds no level on agent 'status'"
+
+    def test_a_task_whose_agent_is_gone_is_skipped_as_well(self, hosting, manager):
+        # A removed agent and one the owner may not see are one answer, here as on every route.
+        result, _ = ChatService().execute_sync(self._occurrence(agent="retired"))
+
+        assert str(result) == self.SKIPPED
+        assert manager.record_trigger.call_args.kwargs["error"] == "Agent 'retired' not found"
+
+    def test_a_task_kept_to_a_surface_its_agent_has_left_is_skipped(self, manager, surface_agent):
+        # The surface the task was created over rides the trigger body; no authorization block is needed for it.
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("reports", ["a2a"]))
+
+        with runtime:
+            result, _ = ChatService().execute_sync(self._occurrence(surface="rest"))
+
+        assert str(result) == self.SKIPPED
+        assert manager.record_trigger.call_args.kwargs["error"] == "Agent 'reports' not found"
+
+    def test_a_task_whose_agent_now_runs_in_another_process_is_skipped(self, manager, descriptor_only_registry):
+        """The occurrence runs here, so the agent has to be hosted here: one the registry only knows from another
+        process cannot be run by this one, and saying so is the skip, not an error after the record is written."""
+        from agentkernel.core.model import AgentDescriptor
+
+        registry = descriptor_only_registry([AgentDescriptor(id="reports", name="reports")])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            status, body = ChatService().process_chat_request(self._occurrence())
+
+        assert (status, body) == (403, {"result": self.SKIPPED, "session_id": "s1"})
+        assert manager.record_trigger.call_args.kwargs["error"] == "Agent 'reports' not found"
+
+    @pytest.mark.asyncio
+    async def test_the_async_path_skips_it(self, hosting, manager):
+        result, session_id = await ChatService().execute(self._occurrence(principal=SOMEONE_ELSE))
+
+        assert (str(result), session_id) == (self.SKIPPED, "s1")
+        manager.record_trigger.assert_called_once()
+
+    def test_the_wrappers_answer_a_skipped_occurrence_with_a_403_and_the_reply(self, hosting, manager):
+        status, body = ChatService().process_chat_request(self._occurrence(principal=SOMEONE_ELSE))
+
+        # A reply, not an error body: the occurrence was handled, by not running it.
+        assert (status, body) == (403, {"result": self.SKIPPED, "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_the_async_wrapper_answers_the_same(self, hosting, manager):
+        status, body = await ChatService().process_async_chat_request(self._occurrence(principal=SOMEONE_ELSE))
+
+        assert (status, body) == (403, {"result": self.SKIPPED, "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_in_rest_api_mode_the_403_is_on_the_response(self, hosting, manager):
+        response = await ChatService(rest_api_mode=True).process_async_chat_request(self._occurrence(principal=SOMEONE_ELSE))
+
+        assert isinstance(response, JSONResponse)
+        assert (response.status_code, json.loads(response.body)) == (403, {"result": self.SKIPPED, "session_id": "s1"})
+
+    def test_an_occurrence_that_runs_keeps_its_200(self, hosting, manager):
+        assert ChatService().process_chat_request(self._occurrence()) == (200, {"result": "reports", "session_id": "s1"})
+
+    def test_a_reply_that_reads_like_a_skip_is_not_one(self, hosting, manager):
+        # The status follows what the service did, never the text an agent happened to answer with.
+        request = self._occurrence()
+
+        assert ChatService.success_status(request, AgentReplyText(response=self.SKIPPED)) == 200
+
+    @pytest.mark.asyncio
+    async def test_a_stream_is_one_error_chunk_and_never_opens_the_run(self, hosting, manager):
+        chunks = [chunk async for chunk in await ChatService().execute_stream(self._occurrence(principal=SOMEONE_ELSE))]
+
+        assert [(chunk.error, chunk.done, chunk.delta) for chunk in chunks] == [(self.SKIPPED, True, None)]
+        manager.record_trigger.assert_called_once()
+
+    def test_the_sync_stream_is_one_error_chunk_too(self, hosting, manager):
+        # The queue runner's streaming path: raised instead, the refusal would be retried and recorded each time.
+        chunks = list(ChatService().execute_stream_sync(self._occurrence(principal=SOMEONE_ELSE)))
+
+        assert [(chunk.error, chunk.done) for chunk in chunks] == [(self.SKIPPED, True)]
+        manager.record_trigger.assert_called_once()
+
+    def test_one_warning_names_the_task(self, hosting, manager, caplog):
+        with caplog.at_level("WARNING", logger="ak.chatservice"):
+            ChatService().execute_sync(self._occurrence(principal=SOMEONE_ELSE))
+
+        [warning] = [record.getMessage() for record in caplog.records if record.name == "ak.chatservice"]
+        assert "t1" in warning and "Agent 'reports' not found" in warning
+
+    def test_it_is_skipped_even_where_scheduling_is_not_configured(self, hosting, disabled_capability):
+        # Nothing can be recorded here, and the owner may still not run the agent.
+        result, _ = ChatService().execute_sync(self._occurrence(principal=SOMEONE_ELSE))
+
+        assert str(result) == self.SKIPPED
+
+    def test_a_store_that_cannot_take_the_record_does_not_turn_the_skip_into_a_run(self, hosting, manager):
+        manager.record_trigger.side_effect = RuntimeError("store down")
+
+        result, _ = ChatService().execute_sync(self._occurrence(principal=SOMEONE_ELSE))
+
+        assert str(result) == self.SKIPPED
+
+    def test_a_request_that_is_no_occurrence_is_refused_as_before(self, hosting, manager):
+        # The skip is for a trigger. The same refusal on an ordinary request stays the surface's 404.
+        status, body = ChatService().process_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="reports", principal=SOMEONE_ELSE))
+
+        assert (status, body) == (404, {"error": "Agent 'reports' not found", "session_id": "s1"})
+        manager.record_trigger.assert_not_called()
+
+    def test_an_occurrence_with_no_agent_to_default_to_is_recorded_with_that_and_answers_as_before(self, manager):
+        """A task naming no agent whose default is gone, or one its owner may not see: there is no name to refuse,
+        so the answer stays the 400 of any such request, and the record still says the occurrence did not run."""
+        with Runtime(InMemorySessionStore()):
+            status, body = ChatService().process_chat_request(self._occurrence(agent=None))
+
+        assert (status, body) == (400, {"error": "No agent available", "session_id": "s1"})
+        manager.record_trigger.assert_called_once_with("t1", PRINCIPAL, request_id="r1", occurred_at=self.OCCURRED_AT, error="No agent available")
 
 
 class TestAdditionalContext:

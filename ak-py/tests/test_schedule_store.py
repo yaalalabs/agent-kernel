@@ -136,6 +136,16 @@ class TestInMemoryScheduleStore:
 
         assert store.get("t1").status is ScheduleStatus.COMPLETED
 
+    def test_record_trigger_keeps_why_an_occurrence_was_not_run_until_the_next_one(self, store):
+        store.create(_task("t1"))
+
+        store.record_trigger("t1", request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False, error="Agent 'billing' not found")
+        skipped = store.get("t1")
+        store.record_trigger("t1", request_id="r-2", occurred_at="2030-02-08T09:00:00+00:00", completed=False)
+
+        assert (skipped.trigger_count, skipped.last_error) == (1, "Agent 'billing' not found")
+        assert (store.get("t1").trigger_count, store.get("t1").last_error) == (2, None)
+
     def test_record_trigger_for_an_unknown_task_is_ignored(self, store):
         # A trigger can outlive the record it came from; it must not raise into the run.
         store.record_trigger("missing", request_id="r1", occurred_at="2030-03-01T09:00:00+00:00", completed=False)
@@ -382,6 +392,16 @@ class TestRedisLikeScheduleStore:
 
         assert store.get("t1").status is ScheduleStatus.COMPLETED
 
+    def test_record_trigger_keeps_why_an_occurrence_was_not_run_until_the_next_one(self, store):
+        store.create(_task("t1"))
+
+        store.record_trigger("t1", request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False, error="Agent 'billing' not found")
+        skipped = store.get("t1")
+        store.record_trigger("t1", request_id="r-2", occurred_at="2030-02-08T09:00:00+00:00", completed=False)
+
+        assert (skipped.trigger_count, skipped.last_error) == (1, "Agent 'billing' not found")
+        assert (store.get("t1").trigger_count, store.get("t1").last_error) == (2, None)
+
     def test_record_trigger_for_an_unknown_task_is_ignored(self, store):
         store.record_trigger("missing", request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False)
 
@@ -569,6 +589,16 @@ class TestDynamoDBScheduleStore:
         store.record_trigger("t1", request_id="r-1", occurred_at="2030-06-01T09:00:00+00:00", completed=True)
 
         assert store.get("t1").status is ScheduleStatus.COMPLETED
+
+    def test_record_trigger_keeps_why_an_occurrence_was_not_run_until_the_next_one(self, store):
+        store.create(_task("t1"))
+
+        store.record_trigger("t1", request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False, error="Agent 'billing' not found")
+        skipped = store.get("t1")
+        store.record_trigger("t1", request_id="r-2", occurred_at="2030-02-08T09:00:00+00:00", completed=False)
+
+        assert (skipped.trigger_count, skipped.last_error) == (1, "Agent 'billing' not found")
+        assert (store.get("t1").trigger_count, store.get("t1").last_error) == (2, None)
 
     def test_record_trigger_for_an_unknown_task_is_ignored(self, store):
         store.record_trigger("missing", request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False)

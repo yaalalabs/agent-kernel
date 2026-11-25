@@ -351,6 +351,20 @@ class ThreadRequestHandler(RequestHandler):
             await self._record_user_message(body)
         return await super().run_chat(body, request)
 
+    async def _reject_unavailable(self, body: BaseRunRequest) -> None:
+        """Ask about the agent only for a request the recording step has not asked about.
+
+        The inherited route asks whether the agent is available to the caller before it enqueues.
+        ``_record_user_message`` has already asked that, ahead of its first thread write, for every
+        request that runs now, so asking again would read the registry's store twice for an agent
+        another process hosts. A deferred request records nothing and was not asked about.
+
+        :param body: The chat request, with the principal and surface the route assigned.
+        :raises HTTPException: 404 or 403 for a deferred request naming an agent its caller cannot have.
+        """
+        if body.schedule is not None:
+            await super()._reject_unavailable(body)
+
     async def _record_user_message(self, body: BaseRunRequest) -> None:
         """Do the pre-run thread work at the edge and rewrite the body for the queue.
 

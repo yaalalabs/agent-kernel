@@ -208,7 +208,17 @@ knowledge of conversation threads (that lives in `integration/thread/`).
   - Two scheduling checks run at the top of each entry point, before validation and agent selection:
     `_maybe_schedule` defers a request carrying a `schedule` block (returning the 202 acknowledgement
     instead of running it) and `_record_trigger` records the occurrence of a scheduled trigger. Both reach
-    `schedule/` through a lazy import inside the enabled-check — see the Scheduling section
+    `schedule/` through a lazy import inside the enabled-check (see the Scheduling section).
+    `_record_trigger` also decides whether the occurrence may run (#603, iteration 19): it asks the
+    run's own question first (`ensure_agent_available(req.agent, req.principal, hosted=True,
+    surface=req.surface)`), records the occurrence with the reason when the named agent is refused
+    (`PermissionError` or `AgentNotFoundError`, with or without an `authorization` block), and returns
+    a `SkippedOccurrenceReply`, which each `execute*` returns as it returns an acknowledgement: the
+    run never starts, `success_status` answers 403 for that reply type (a reply body, not an error
+    body), and the streaming paths yield one error chunk and never raise, since the queue's streaming
+    runner would have the refusal redelivered and recorded each time. A task naming no agent with
+    none to default to is not a skip: the reason is recorded and the run raises its `ValueError` (400)
+    as before
 - **Presentation wrappers**: `process_chat_request`, `process_async_chat_request`,
   `process_stream_chat_async`, `process_stream_chat_sync`: thin shells over the core adding the HTTP shapes
   (`ResponseBuilder` JSON dicts / `HTTPException` per `rest_api_mode`, SSE frames). Used by the REST handler
@@ -706,7 +716,7 @@ Coupling rules: `core/` reaches `schedule/` only lazily, inside enabled-checks (
 - **`ScheduleProvider`** (`provider/base.py`): ABC (`create`/`update`/`delete`/`get`) plus `ScheduleProviderFactory`. `supported_transports` (a `ClassVar`, `None` = transport-agnostic) is what the manager's fail-fast reads; `message_group_id(task)` is the shared FIFO-grouping rule (reused session → that session, per-occurrence session → the task)
 - **`EventBridgeScheduleProvider`** (`provider/eventbridge.py`, `aws` extra): the durable built-in. One AWS EventBridge Scheduler schedule per task, named `ak-<task_id>` in the configured group, with the frozen trigger body as the SQS target's static `Input` and the occurrence tokens replaced at registration by the context attributes AWS resolves per firing (`<aws.scheduler.execution-id>`, `<aws.scheduler.scheduled-time>` — the second is load-bearing, since a FIFO target Scheduler sends to must use content-based deduplication). It translates the spec itself instead of using `OccurrenceCalculator`: `at(...)` for one-time, and 5-field cron → the 6-field AWS flavor (trailing year `*`, exactly one day field wildcarded to `?`, both constrained → `ValueError`). `ActionAfterCompletion: DELETE` retires a fired one-time schedule (the store record is the audit trail, so `delete` tolerates `ResourceNotFoundException`), `State` carries pause/resume, and `update` re-sends the whole registration because Scheduler has no partial update. Group and name come from the stored `provider_ref` ARN, so renaming the configured group cannot orphan live schedules; every other `ClientError` becomes a `ScheduleError`. `supported_transports = {"sqs"}` — delivery is baked into the registration
 - **`LocalScheduleProvider`** (`provider/local.py`): the default. One daemon thread per process over a min-heap of armed occurrences guarded by a `threading.Condition`; substitutes the occurrence tokens at fire time and sends into `QueueName.INPUT`. Delivery failures skip the occurrence and leave the next one armed. Armed occurrences do not survive a process restart (documented boundary), and the heap is reachable only from this process's threads, which is what pins the provider to the single-process topology (the manager's second fail-fast)
-- **`ScheduleStore`** (`store/base.py`): ABC (`create`/`get`/`update` full-record/`delete` rollback-only/`list`/`record_trigger`/`clear`) plus `ScheduleStoreBuilder`, the `ThreadStoreBuilder` shape (built-in short names `in_memory`, `redis`, `valkey`, `dynamodb`, else a dotted path, else `AKConfigError`). A task is one document, so every write is a whole-record write and no backend needs field-level merging; `record_trigger` is a read-modify-write whose occurrence fields are advisory, so concurrent occurrences are last-writer-wins by design
+- **`ScheduleStore`** (`store/base.py`): ABC (`create`/`get`/`update` full-record/`delete` rollback-only/`list`/`record_trigger`/`clear`) plus `ScheduleStoreBuilder`, the `ThreadStoreBuilder` shape (built-in short names `in_memory`, `redis`, `valkey`, `dynamodb`, else a dotted path, else `AKConfigError`). A task is one document, so every write is a whole-record write and no backend needs field-level merging; `record_trigger` is a read-modify-write whose occurrence fields are advisory, so concurrent occurrences are last-writer-wins by design. `record_trigger(..., error=None)` (#603, iteration 19) hands the reason an occurrence was not run to `ScheduledTask.apply_trigger`, which holds the whole rule: `last_error` describes the most recent occurrence, so one that runs clears it, and a skipped occurrence is otherwise counted like any other (it closes a one-time task). `ScheduleManager.record_trigger` passes the keyword only when there is a reason, so a bring-your-own store written before it keeps recording every occurrence that runs. A task also keeps the `surface` its creating request entered by (`ScheduledTask.surface`, `None` for a schedule tool's task), and `_build_trigger_body` carries it when set, so an occurrence is served the agents that request would have been
 - **Store backends**: `in_memory` (a `ClassVar` dict, single-process, the manager's third fail-fast); `redis`/`valkey` over the shared `_RedisLikeScheduleStore` body (`{prefix}task:{task_id}` documents plus `{prefix}index:user:{user_id}` and `{prefix}index:all` sets, re-`sadd`ed on every write so a TTL-expired index cannot hide a live task, `srem`ed on delete so a rolled-back creation leaves nothing dangling; TTL defaults to **0**, unlike threads, because a task that silently expired would stop firing with no audit trail); `dynamodb` over `DynamoDBDriver` (one item per task, partition key `task_id`, no sort key, the JSON document plus denormalized `user_id`/`updated_at` so a listing can filter and sort without deserializing — listings scan with a filter expression, acceptable at schedule cardinalities)
 - **`ScheduleRESTRequestHandler`** (`handler.py`): the read-and-manage surface over tasks, extending the shared `AuthorisedRESTRequestHandler` (`api/handler.py`) so the anonymous-principal refusal lives in one place. Serves `GET /api/v1/schedules` (cursor-paginated list) and `GET`/`PUT`/`DELETE /api/v1/schedules/{task_id}` (read, amend, cancel). **No POST**: creation is the chat API's `schedule` block or the `create_schedule` tool, so callers and agents share one creation path. The manager is resolved per request (`None` → 404 `"Scheduling is not configured"`, the `ThreadRESTRequestHandler` convention), and every route maps manager errors through one `_as_http_error` helper: `PermissionError` → 403 (checked before the `None` → 404), `KeyError` → 404, `ValueError` → 400, anything else (including `ScheduleError`) → 500. Every request is authenticated by the identity dependency `RESTAPI` installs; the inherited `_resolve_user` answers 401 `Authentication required` to the anonymous principal, listings are the caller's own tasks and the single-task routes enforce ownership on the principal's subject. `PUT` takes a `ScheduleAmendment` body carrying the **full** amendable state (prompt, `at`/`cron`/`timezone`/`session_mode`, `status` limited to `active`/`paused`); an omitted occurrence field clears it. This is the only module in `schedule/` that imports FastAPI, so it is exported lazily from `schedule/__init__.py` (the `agentkernel.pipeline` `__getattr__` pattern) and runner processes never load it
 - **Mounting**: always the application's, on every surface, exactly like the Slack and thread handlers: `RESTAPI.run(handlers=[AgentRESTRequestHandler(), ScheduleRESTRequestHandler()])`, or `IOHandler.run(handlers=[ScheduleRESTRequestHandler()])` in the pipeline single-process topology, where the passed handlers are mounted **alongside** the pipeline's own `RequestHandler()` (the queue producer is not a replaceable default). Nothing is mounted from config: a `schedule` block enables deferring and the agent tools, not routes. Mounting is also where the backends are validated: `get_router()` calls `ScheduleManager.validate_configuration()` (a no-op when the capability is off), so an unusable provider/transport pairing or incomplete provider config fails the app build instead of the first request. No layer outside the capability knows the scheduling backends exist: an agent-tools-only app, mounting no routes, builds them on first use. `RESTAPI.run()`'s delegation rule is untouched (no-explicit-handlers only), so an app wanting the routes in this topology calls `IOHandler.run(handlers=[...])` directly
@@ -870,9 +880,10 @@ are in the tree: the identity contract, the providers, every surface establishin
 principal, and the agent registry (`core/registry.py`, `identity/registry/`; see Runtime).
 Phase D is in progress: the authorizer contract, the static backend, its factory and the
 **access gate** are in `identity/authz/` (the Authorization and Access gate bullets below). An
-`authorization` block now gates every run (`Runtime._admit`) and the pre-run check
-(`AgentService.ensure_agent_available`); the catalog, the pipeline edge precheck and the MCP, A2A
-and AG-UI listings do not consult it yet (iterations 19 and 20). The framework tool gates and the
+`authorization` block now gates every run (`Runtime._admit`), the pre-run check
+(`AgentService.ensure_agent_available`), the queue pipeline's precheck before anything is enqueued,
+a scheduled occurrence at fire time and the REST catalog (iteration 19); the MCP, A2A and AG-UI
+listings do not consult it yet (iteration 20). The framework tool gates and the
 credentials capability are later phases: the tool filter is published and
 `ToolContext.access_level` reads it, but no adapter enforces it at call time yet, and
 `Principal.credential_ref` is inert. Authentication is
@@ -1118,12 +1129,31 @@ deleted).
   `validate_configuration(agents, *, registry_wide=True)` (an agent reporting
   `ungated_tool_names()` is an `AKConfigError`, then `Authorizer.validate`, whose findings are
   logged once each; `Module.load` calls it with `registry_wide=False` and rolls the load back on
-  an error, since a module loaded later has not registered yet). The four questions that reach the
+  an error, since a module loaded later has not registered yet; the registry-wide call is
+  `AgentRESTRequestHandler._validate_access()`, the first statement of the three routers that serve
+  the chat and catalog routes, so a handler that builds a router of its own calls it too);
+  `narrow(principal, descriptors) -> list[AgentDescriptor]` (iteration 19: each descriptor as the
+  principal is shown it, `tools` kept to what `filter_tools` allows of the tools the descriptor
+  records and `skills` following, a skill that names no tool staying; what any listing of agents
+  publishes goes through it, after `visible_agents` and after the page is cut). The questions that
+  reach the
   authorizer have `_async` forms, which coroutines await (`Runtime`); the plain forms are for
   synchronous callers and, called from inside a coroutine (`AgentHandler.initialize` under
   `ChatService.execute`), run the question on a thread of their own. A new surface asks the gate
   before it commits anything and maps `PermissionError` to 403 and `AgentNotFoundError` to 404;
   it never asks the authorizer directly.
+- **The precheck before the queue** (`pipeline/request_handler.py`, iteration 19):
+  `RestHandler._availability_refusal(body)` asks `ensure_agent_available(body.agent,
+  body.principal, surface=body.surface)` in the registry-wide form, off the event loop, and
+  returns the status and message the runner would have answered; `_reject_unavailable` raises it
+  as `HTTPException(status, detail={"error", "session_id"})`, and `RestHandler.request` (the A2A
+  and MCP path) returns it as a `QueuedReply`. It runs once per request, before a file is
+  offloaded or anything is enqueued (`RequestHandler.run_chat`, and `_enqueue_and_wait` unless
+  its caller asked: `admitted=True`). Two requests are left to the runner, which asks in any
+  case: one naming no agent, and a named agent when this process's registry knows no agent at
+  all, so a split deployment whose accepting process loads no agent module and shares no registry
+  keeps enqueueing. A handler that asks earlier itself overrides `_reject_unavailable` so the
+  registry is not read twice (`ThreadRequestHandler` asks before its first thread write).
 - **Declared tiers**: `SystemTool.tier` is what the static backend applies when a policy's `tiers`
   names no other. Every sandbox tool and all five schedule tools are `write`, as are `write_kb` and
   `update_agui_state`; everything else keeps the `read` default. A new system tool that changes

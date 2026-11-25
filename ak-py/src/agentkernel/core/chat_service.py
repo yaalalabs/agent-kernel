@@ -3,7 +3,7 @@ import contextlib
 import json
 import logging
 from collections.abc import AsyncGenerator, Generator, Iterator
-from typing import Any
+from typing import Any, ClassVar
 
 from .config import AKConfig
 from .model import (
@@ -445,6 +445,19 @@ class ResponseBuilder:
         return f"data: {payload}\n\n" if sse_format else payload
 
 
+class SkippedOccurrenceReply(AgentReplyText):
+    """The reply of a scheduled occurrence that was not run: its owner may no longer use the agent.
+
+    A reply and not an error, because the occurrence was handled, by not running it. It is a type
+    of its own so that the status follows what the service did (``ChatService.success_status``),
+    never the text an agent happened to answer with.
+    """
+
+    TEXT: ClassVar[str] = "scheduled task skipped: the owner no longer holds access to the agent"
+
+    response: str = TEXT
+
+
 class ChatService:
     def __init__(self, rest_api_mode: bool = False):
         """Initialize ChatService.
@@ -499,7 +512,9 @@ class ChatService:
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return scheduled, req.session_id
-        self._record_trigger(req)
+        skipped = self._record_trigger(req)
+        if skipped is not None:
+            return skipped, req.session_id
         requests = await self._prepare_async(req, requests)
         handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface, principal=req.principal)
         result = await handler.run_async(requests, principal=req.principal)
@@ -520,7 +535,9 @@ class ChatService:
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return scheduled, req.session_id
-        self._record_trigger(req)
+        skipped = self._record_trigger(req)
+        if skipped is not None:
+            return skipped, req.session_id
         requests = self._prepare_sync(req, requests)
         handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface, principal=req.principal)
         result = handler.run_sync(requests, principal=req.principal)
@@ -545,7 +562,9 @@ class ChatService:
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return self._acknowledgement_stream(scheduled)
-        self._record_trigger(req)
+        skipped = self._record_trigger(req)
+        if skipped is not None:
+            return self._skipped_stream(skipped)
         requests = await self._prepare_async(req, requests)
         handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface, principal=req.principal)
 
@@ -577,7 +596,9 @@ class ChatService:
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return self._acknowledgement_stream_sync(scheduled)
-        self._record_trigger(req)
+        skipped = self._record_trigger(req)
+        if skipped is not None:
+            return self._skipped_stream_sync(skipped)
         requests = self._prepare_sync(req, requests)
         handler = self.prepare_agent_handler(req.session_id, req.agent, surface=req.surface, principal=req.principal)
 
@@ -616,35 +637,72 @@ class ChatService:
         self._log.info(f"Deferred request as scheduled task {task.task_id}")
         return AgentReplyAny(content={"status": "SCHEDULED", "scheduled_task_id": task.task_id, "session_id": task.session_id})
 
-    def _record_trigger(self, req: BaseChatRequest) -> None:
-        """Record the occurrence a scheduled trigger is running, when this request is one.
+    def _record_trigger(self, req: BaseChatRequest) -> SkippedOccurrenceReply | None:
+        """Record the occurrence a scheduled trigger is running, when this request is one, and say
+        whether it may run.
 
-        Never raises: the occurrence bookkeeping is advisory, so a store that cannot take it must
-        not fail the run the trigger started.
+        An occurrence runs as the task's owner, unattended and long after the task was created, so
+        the owner's access is checked again here (#603): the same check the run would make, asked
+        first so that the outcome is on the record. An occurrence the owner may no longer run (no
+        level on the agent, or an agent that is gone, hidden or off the task's surface) is recorded
+        with the reason and skipped, with one warning naming the task. The run never starts.
+
+        The recording never raises: the occurrence bookkeeping is advisory, so a store that cannot
+        take it must not fail the run the trigger started, and does not turn a skip into a run.
 
         :param req: The incoming chat request, carrying trigger metadata when it is an occurrence.
+        :return: The reply of an occurrence that must not run; None for one that may, and for a
+            request that is no occurrence.
         """
         task_id = getattr(req, "scheduled_task_id", None)
         if not task_id:
-            return
+            return None
+        skipped, error = self._occurrence_refusal(req)
         try:
             from ..schedule.manager import ScheduleManager
 
             manager = ScheduleManager.get()
             if manager is None:
                 self._log.warning(f"Trigger of scheduled task {task_id} arrived while scheduling is not configured")
-                return
-            # The principal is passed so the manager can reject a request that named someone
-            # else's task: the public chat routes reject this metadata, but a custom route that
-            # parses BaseRunRequest can still carry it, so it is not a channel only a provider can reach.
-            manager.record_trigger(
-                task_id,
-                req.principal,
-                request_id=getattr(req, "request_id", None),
-                occurred_at=getattr(req, "scheduled_time", None),
-            )
+            else:
+                # The principal is passed so the manager can reject a request that named someone
+                # else's task: the public chat routes reject this metadata, but a custom route that
+                # parses BaseRunRequest can still carry it, so it is not a channel only a provider can reach.
+                reason = {"error": error} if error else {}
+                manager.record_trigger(
+                    task_id,
+                    req.principal,
+                    request_id=getattr(req, "request_id", None),
+                    occurred_at=getattr(req, "scheduled_time", None),
+                    **reason,
+                )
         except Exception as e:
             self._log.error(f"Failed to record trigger of scheduled task {task_id}: {e}")
+        if not skipped:
+            return None
+        self._log.warning(f"Skipped an occurrence of scheduled task {task_id}: {error}")
+        return SkippedOccurrenceReply()
+
+    @staticmethod
+    def _occurrence_refusal(req: BaseChatRequest) -> tuple[bool, str | None]:
+        """Ask, for a scheduled occurrence, the question the run is about to be asked.
+
+        Two outcomes keep the occurrence from running, and only the first is a skip. A named agent
+        the owner cannot have is refused as it is on every surface, and the occurrence is skipped.
+        A task naming no agent while there is none to default to (none hosted on the task's surface,
+        or a default its owner may not see) has no name to refuse: the run raises that error itself
+        and the caller answers it as it always did, with the reason recorded all the same.
+
+        :param req: The occurrence's request.
+        :return: Whether the occurrence is skipped, and why it will not run (None when it will).
+        """
+        try:
+            AgentService.ensure_agent_available(req.agent, req.principal, hosted=True, surface=req.surface)
+        except (PermissionError, AgentNotFoundError) as refusal:
+            return True, str(refusal)
+        except ValueError as unavailable:
+            return False, str(unavailable)
+        return False, None
 
     @staticmethod
     async def _acknowledgement_stream(ack: AgentReplyAny) -> AsyncGenerator[StreamChunk, None]:
@@ -668,6 +726,28 @@ class ChatService:
         yield StreamChunk(delta=str(ack), done=True)
 
     @staticmethod
+    async def _skipped_stream(skipped: SkippedOccurrenceReply) -> AsyncGenerator[StreamChunk, None]:
+        """Stream a skipped occurrence as the single terminal chunk.
+
+        An error chunk, unlike a deferred request's acknowledgement: the occurrence was refused.
+        Raised instead, the refusal would reach a queue consumer as a failed message and be retried,
+        and recorded, once for each delivery.
+
+        :param skipped: The reply built by :meth:`_record_trigger`.
+        :return: Async generator yielding exactly one done chunk.
+        """
+        yield StreamChunk(error=str(skipped), done=True)
+
+    @staticmethod
+    def _skipped_stream_sync(skipped: SkippedOccurrenceReply) -> Generator[StreamChunk, None, None]:
+        """Synchronous counterpart of _skipped_stream().
+
+        :param skipped: The reply built by :meth:`_record_trigger`.
+        :return: Generator yielding exactly one done chunk.
+        """
+        yield StreamChunk(error=str(skipped), done=True)
+
+    @staticmethod
     def reject_unprocessable(req: BaseChatRequest) -> None:
         """Reject a request that must not act at all, before anything acts on it.
 
@@ -689,19 +769,25 @@ class ChatService:
 
     @staticmethod
     def success_status(req: BaseChatRequest, reply: AgentReply | None = None) -> int:
-        """Return the status a successful response carries: 202 when deferred, or when paused.
+        """Return the status a response that carries a reply has: 202 when deferred or paused, and
+        403 for a scheduled occurrence that was skipped.
 
         Two sources, deliberately not collapsed into one condition: a deferred request is knowable
-        from the request, a paused run only from the reply.
+        from the request, a paused run and a skipped occurrence only from the reply. The skipped
+        occurrence is not a success, but it is a reply and not an exception, so its status is
+        decided here beside the others.
 
         :param req: The processed chat request.
         :param reply: The reply produced, when the request ran.
-        :return: 202 for a deferred or paused request, 200 for one that completed.
+        :return: 202 for a deferred or paused request, 403 for a skipped occurrence, 200 for a
+            request that completed.
         """
         if req.schedule is not None:
             return 202
         if isinstance(reply, AgentPausedReplyAny):
             return 202
+        if isinstance(reply, SkippedOccurrenceReply):
+            return 403
         return 200
 
     async def _prepare_async(self, req: BaseChatRequest, requests: list[AgentRequest] | None) -> list[AgentRequest]:

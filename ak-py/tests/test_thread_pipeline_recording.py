@@ -345,6 +345,43 @@ class TestEdgeRecording:
         assert (manager.get_thread("s-hidden"), manager.get_thread("s-forbidden")) == (None, None)
         assert json.loads(_enqueued().body)["session_id"] == "s-u1"
 
+    def test_the_registry_is_asked_once_for_a_request_that_is_recorded(self, monkeypatch, descriptor_only_registry):
+        """The pipeline handler this one extends asks before it enqueues (#603, iteration 19). The thread handler has
+        already asked, before its first write, so an agent another process hosts costs one store read, not two."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        _configure(monkeypatch, mode="rest_async")
+        reads = []
+
+        class _Counting(descriptor_only_registry):
+            def descriptor(self, id):
+                reads.append(id)
+                return super().descriptor(id)
+
+        with Runtime(InMemorySessionStore(), registry=_Counting([AgentDescriptor(id="assistant", name="assistant")])):
+            response = _client().post(CHAT, json=_chat(agent="assistant"))
+
+        assert response.status_code == 200
+        assert reads == ["assistant"]
+
+    def test_a_deferred_request_is_asked_about_before_the_queue(self, monkeypatch, descriptor_only_registry):
+        # Nothing is recorded for a deferred request, so the recording step asked nothing: the inherited check does.
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        manager = _configure(monkeypatch, mode="rest_async")
+        schedule = ScheduleSpec(at="2999-01-01T00:00:00Z").model_dump(exclude_none=True)
+
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([AgentDescriptor(id="assistant", name="assistant")])):
+            refused = _client().post(CHAT, json=_chat(agent="ghost", schedule=schedule))
+            accepted = _client().post(CHAT, json=_chat(session_id="s2", agent="assistant", schedule=schedule))
+
+        assert (refused.status_code, refused.json()["detail"]) == (404, {"error": "Agent 'ghost' not found", "session_id": "s1"})
+        assert accepted.status_code == 200
+        assert manager.get_thread("s1") is None
+        assert json.loads(_enqueued().body)["session_id"] == "s2"
+
     def test_async_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
         """The route cannot answer in ASYNC mode, so it must refuse before opening the thread."""
         manager = _configure(monkeypatch, mode="async")

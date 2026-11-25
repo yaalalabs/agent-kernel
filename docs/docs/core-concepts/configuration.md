@@ -697,12 +697,17 @@ export AK_REGISTRY__AGENTS__BILLING__SURFACES='["rest"]'  # a per-agent field; t
   left out of the catalog (`GET /api/v1/agents`), a chat request that names it is answered with the 404 an unknown
   agent gets, and a chat request that names no agent runs the first agent that is on `rest`. That covers the chat
   and multipart routes, the thread chat routes, WebSocket chat and a chat request that schedules a task. The four
-  surfaces are all `surfaces` governs: a messaging integration, the CLI, a scheduled occurrence and another agent
-  handing off still reach an agent whatever its `surfaces`, `[]` included. Where requests are queued to an agent
-  runner in another process, the runner decides which agents a request is served, from the agent's descriptor as
-  the runner holds it. So declare a `surfaces` restriction in code or in configuration the runner reads, not only
-  in the configuration of the process that accepts the request; and the accepting process cannot add an agent to a
-  surface the runner's descriptor keeps it off. This replaces the `a2a.agents`,
+  surfaces are all `surfaces` governs: a messaging integration, the CLI, a task an agent schedules with the
+  schedule tool and another agent handing off still reach an agent whatever its `surfaces`, `[]` included. A task
+  created by a chat request keeps the surface that request came in by, and its occurrences are served the agents
+  on it. Where requests are queued to an agent runner in another process, both processes decide, each from the
+  agent's descriptor as it holds it. The process that accepts a request answers the 404 itself, before anything
+  is queued, for a named agent its registry does not know or keeps off the surface, and the runner checks again
+  when the request runs. So a restriction set in either process holds, and neither can add an agent to a surface
+  the other keeps it off. The accepting process checks only when its registry knows at least one agent: load the
+  same agent modules there as in the runner, or share the registry, since an agent it does not know is a 404
+  there. A process that knows no agent at all queues every request and leaves the answer to the runner. This
+  replaces the `a2a.agents`,
   `mcp.agents` and `agui.agents` lists. Those lists named the agents a surface served, where `surfaces` is set per
   agent, so removing a list is not enough to keep what it did: give every agent the list left out a `surfaces`
   value without that surface. There is no allow-list any more: an agent added later with no `surfaces` is on

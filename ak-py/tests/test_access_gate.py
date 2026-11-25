@@ -382,6 +382,76 @@ def _session(owner: SessionOwner | None = None) -> Session:
     return session
 
 
+class TestNarrow:
+    """A descriptor as one principal is shown it: the tools it is offered, and the skills that go with them. What
+    a surface lists (the catalog, and in iteration 20 an A2A card) never names a tool the caller would be denied."""
+
+    @staticmethod
+    def _triage() -> AgentDescriptor:
+        skills = [
+            {"id": "lookup", "name": "lookup"},
+            {"id": "create", "name": "create"},
+            {"id": "refund", "name": "refund"},
+            {"id": "purge", "name": "purge"},
+            {"id": "ticket-triage", "name": "Ticket triage", "description": "Sorts incoming tickets."},
+        ]
+        return AgentDescriptor(id="triage", name="triage", tools=["lookup", "create", "refund", "purge"], skills=skills, owner="support")
+
+    def test_the_tools_are_the_ones_the_principal_is_offered(self, runtime):
+        # alice holds write on triage: `refund` is tiered admin and `purge` is denied to everyone.
+        [shown] = _gate().narrow(ALICE, [self._triage()])
+
+        assert shown.tools == ["lookup", "create"]
+
+    def test_a_skill_backed_by_a_tool_goes_with_it_and_a_declared_one_stays(self, runtime):
+        [shown] = _gate().narrow(ALICE, [self._triage()])
+
+        assert [skill.id for skill in shown.skills] == ["lookup", "create", "ticket-triage"]
+
+    def test_nothing_else_about_the_agent_changes(self, runtime):
+        descriptor = self._triage()
+
+        [shown] = _gate().narrow(ALICE, [descriptor])
+
+        assert shown.model_dump(exclude={"tools", "skills"}) == descriptor.model_dump(exclude={"tools", "skills"})
+        assert descriptor.tools == ["lookup", "create", "refund", "purge"]  # the registry's record is not touched
+
+    def test_a_principal_that_only_sees_the_agent_is_offered_no_tool(self, runtime):
+        # Visibility lists an agent; it never confers a level, so there is no tool to offer.
+        public = self._triage().model_copy(update={"visibility": "public"})
+
+        [shown] = _gate().narrow(BOB, [public])
+
+        assert (shown.tools, [skill.id for skill in shown.skills]) == ([], ["ticket-triage"])
+
+    def test_an_agent_with_no_tools_costs_no_question(self, runtime):
+        asked = []
+
+        class _Counting(StaticAuthorizer):
+            async def filter_tools(self, principal, agent_id, tools):
+                asked.append(agent_id)
+                return await super().filter_tools(principal, agent_id, tools)
+
+        gate = AccessGate(_Counting(grants=GRANTS, tools=TOOLS, descriptor_lookup=lambda: Runtime.current().registry.descriptors()))
+
+        shown = gate.narrow(ALICE, [AgentDescriptor(id="faq", name="faq"), self._triage()])
+
+        assert ([descriptor.id for descriptor in shown], asked) == (["faq", "triage"], ["triage"])
+
+    def test_the_order_handed_in_is_kept(self, runtime):
+        billing = AgentDescriptor(id="billing", name="billing", tools=["invoice"], tags=["finance"])
+
+        shown = _gate().narrow(ALICE, [self._triage(), billing])
+
+        assert [(descriptor.id, descriptor.tools) for descriptor in shown] == [("triage", ["lookup", "create"]), ("billing", ["invoice"])]
+
+    @pytest.mark.asyncio
+    async def test_the_async_form_answers_inside_a_coroutine(self, runtime):
+        [shown] = await _gate().narrow_async(ALICE, [self._triage()])
+
+        assert shown.tools == ["lookup", "create"]
+
+
 class TestAuthorizeSession:
     """A session belongs to the principal that first ran in it; a shared-channel session to its platform scope."""
 

@@ -139,8 +139,9 @@ class ScheduleManager:
         :param session_id: Originating session of the task.
         :param surface: The surface the creating request entered by, or None when no surface governs
             it (a schedule tool). A named agent must be served on it: a request that could not run
-            the agent now cannot schedule it either. The task does not keep it, since an occurrence
-            enters by no surface.
+            the agent now cannot schedule it either. The task keeps it and every occurrence carries
+            it, so an occurrence is served the agents the creating request would have been: a task
+            naming no agent runs the first agent on that surface, not one kept off it.
         :return: The created task, carrying its provider reference.
         :raises PermissionError: If the principal is missing or anonymous, or the access gate gives it
             no level on an agent it may see.
@@ -179,6 +180,7 @@ class ScheduleManager:
             prompt=prompt,
             agent=agent,
             session_id=session_id,
+            surface=surface,
             spec=spec,
             created_at=now,
             updated_at=now,
@@ -296,18 +298,30 @@ class ScheduleManager:
         self._log.info(f"Cancelled scheduled task {task_id}")
         return cancelled
 
-    def record_trigger(self, task_id: str, principal: Principal | None, request_id: str | None = None, occurred_at: str | None = None) -> None:
+    def record_trigger(
+        self,
+        task_id: str,
+        principal: Principal | None,
+        request_id: str | None = None,
+        occurred_at: str | None = None,
+        error: str | None = None,
+    ) -> None:
         """Record that an occurrence of a task fired, and complete a one-time task.
 
         Never raises: the occurrence fields are advisory bookkeeping, and a store that cannot
         take them must not fail the run the trigger started. A rejected owner is the same kind of
         non-event — the run itself is legitimate, only its claim to be someone's occurrence is not.
 
+        An occurrence that was not run (``error``) is recorded like one that was, with the reason
+        in the task's ``last_error``: it fired, and for a one-time task it was the only occurrence.
+
         :param task_id: Identifier of the task that fired.
         :param principal: The principal the run acts as; its subject must own the task or nothing
             is recorded.
         :param request_id: Request id of the run the occurrence produced, when known.
         :param occurred_at: Occurrence timestamp reported by the provider; now when omitted.
+        :param error: Why the occurrence was not run (its owner may no longer use the agent); None
+            when it ran.
         """
         try:
             task = self._store.get(task_id)
@@ -316,12 +330,16 @@ class ScheduleManager:
                 return
             if not self._owns_occurrence(task, principal):
                 return
+            # The reason is handed over only when there is one: a bring-your-own store written before
+            # the keyword existed keeps recording every occurrence that runs.
+            reason = {"error": error} if error else {}
             # A one-time schedule has no further occurrences, so the trigger closes it.
             self._store.record_trigger(
                 task_id,
                 request_id=request_id,
                 occurred_at=occurred_at or utc_now_iso(),
                 completed=task.spec.at is not None,
+                **reason,
             )
         except Exception as exc:
             self._log.error(f"Failed to record trigger of scheduled task {task_id}: {exc}")
@@ -530,4 +548,8 @@ class ScheduleManager:
             "request_id": TOKEN_REQUEST_ID,
             "scheduled_time": TOKEN_OCCURRENCE_TIME,
         }
+        if task.surface is not None:
+            # The occurrence is served the agents of the surface its task was created over. A task no
+            # surface governs (a schedule tool's) keeps the body it always had, with no key at all.
+            body["surface"] = task.surface
         return json.dumps(body)

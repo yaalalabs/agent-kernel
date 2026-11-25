@@ -668,7 +668,9 @@ execution pipeline. The block also injects five agent tools (`create_schedule`, 
 and the handler requires an `identity` block. Every scheduling request needs an authenticated principal:
 it is the owner the task is stored under and that later reads and changes are checked against (an
 anonymous management request is a 401, an anonymous chat request with a `schedule` block a 403; there is
-no `user_id` field). A bare `schedule:` block works for local development: its defaults are the
+no `user_id` field). An occurrence is checked before it runs: when the task's agent is gone, or no longer
+served on the surface the task was created by, the occurrence is skipped and the task's `last_error` says
+why. A bare `schedule:` block works for local development: its defaults are the
 `local` provider and the `in_memory` store. See `examples/api/schedule-openai`.
 
 - **Provider Type**
@@ -1146,7 +1148,8 @@ served on, in code (`Module.describe`) or in this block.
     `Module.describe(agent, ...)`. `surfaces` lists where the agent is served (`rest`, `a2a`, `mcp`, `agui`); an
     agent that declares none is on every surface, and `[]` puts it on none. An agent kept off `rest` is left out of
     the catalog, a chat request that names it is a 404, and a chat request that names no agent runs the first agent
-    on `rest`. Messaging integrations, the CLI and scheduled occurrences are not governed by `surfaces`.
+    on `rest`. Messaging integrations, the CLI and a task an agent schedules itself are not governed by
+    `surfaces`; a task created by a chat request keeps that request's surface for its occurrences.
     `description` is the text an A2A card
     and an MCP tool publish; an agent's instructions are never published, and when none is declared the
     description the agent's framework keeps for it (OpenAI `handoff_description`, the `description` of ADK,

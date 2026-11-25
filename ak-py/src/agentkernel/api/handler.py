@@ -105,11 +105,19 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         self._max_file_size = Config.get().api.max_file_size
         self.chat_service = ChatService(rest_api_mode=True)
 
-    def list_agents(self, cursor: str | None = None, limit: int | None = None, tags: Annotated[list[str] | None, Query()] = None) -> dict[str, Any]:
+    def list_agents(
+        self, request: Request, cursor: str | None = None, limit: int | None = None, tags: Annotated[list[str] | None, Query()] = None
+    ) -> dict[str, Any]:
         """
         The agent catalog: one page of the descriptors of the agents exposed on the REST surface, ordered by id.
         Served from the registry, so it lists agents this process does not host. An entry is the agent's
         descriptor without its `identity`, which is the agent's own and not a caller's to read.
+
+        With an `authorization` block the catalog is the caller's own: the agents its principal holds a level
+        on or whose visibility admits it, each entry's `tools` the ones it is offered and its `skills`
+        narrowed with them. An agent the caller may not see is left out before the page is cut, so a page is
+        never short because of it. Without the block every agent on the surface is listed whole.
+        :param request: The incoming request; the identity dependency put the caller's principal on it.
         :param cursor: The `next_cursor` of the page before; omitted for the first page.
         :param limit: The page size, clamped to the shared maximum.
         :param tags: Keep only the agents carrying every one of these tags (repeat the parameter for several).
@@ -121,8 +129,15 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             decode_cursor(cursor)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        exposed = [descriptor for descriptor in Runtime.current().registry.descriptors() if descriptor.exposed_on("rest")]
-        return AgentDescriptorPage.of(exposed, cursor=cursor, limit=limit, tags=tags).catalog()
+        gate = Runtime.access_gate()
+        # A router mounted on a bare app has no principal on the request: the caller is nobody.
+        principal = getattr(request.state, "principal", None) or Principal.anonymous()
+        known = Runtime.current().registry.descriptors() if gate is None else gate.visible_agents(principal)
+        page = AgentDescriptorPage.of([descriptor for descriptor in known if descriptor.exposed_on("rest")], cursor=cursor, limit=limit, tags=tags)
+        if gate is not None:
+            # Only what the page shows: narrowing asks the authorizer about each agent's tools.
+            page = page.model_copy(update={"agents": gate.narrow(principal, page.agents)})
+        return page.catalog()
 
     async def run(self, body: ChatRunRequest, request: Request):
         # The surface decides who is calling: a principal the client put in the body is overwritten
@@ -199,10 +214,30 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self.chat_service.process_async_chat_request(req=req)
 
+    @staticmethod
+    def _validate_access() -> None:
+        """
+        Check the `authorization` policy against the agents this process hosts and the registry, as the
+        routes are mounted. A no-op without the block.
+
+        Mounting is where a process starts serving its agents with every module loaded, so this is the
+        check that can compare the policy with the whole registry (`Module.load` checks each module's own
+        agents as it loads, when later modules have not registered): a grant naming an agent or a tag no
+        descriptor carries is warned about here. A process that hosts no agent, the accepting side of a
+        split deployment, makes only those registry-wide findings.
+        :raises AKConfigError: If the policy cannot be enforced for a hosted agent: a tool policy naming a
+            tool the agent does not have, or an agent with tools Agent Kernel cannot gate.
+        """
+        gate = Runtime.access_gate()
+        if gate is not None:
+            gate.validate_configuration(Runtime.current().registry.agents().values())
+
     def get_router(self) -> APIRouter:
         """
         Returns the APIRouter instance.
+        :raises AKConfigError: If an `authorization` block cannot be enforced for an agent this process hosts.
         """
+        self._validate_access()
         router = APIRouter()
         router.add_api_route(self.AGENTS_PATH, self.list_agents, methods=["GET"])
         router.add_api_route(self.CHAT_PATH, self.run, methods=["POST"])

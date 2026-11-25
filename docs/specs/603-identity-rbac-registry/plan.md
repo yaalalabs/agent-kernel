@@ -991,6 +991,49 @@ adds the caller to a check that already knows the surface.
   `test_pipeline_request_handler` (the riskiest consumer: the precheck on a store-backed
   registry with no local agents); the fire-time skip in `test_schedule_principal`; visibility
   and the `tools` and `skills` narrowing in `test_api_catalog`.
+- **As built (2026-11-23):** the three steps, with what was settled along the way written into
+  spec 6, 7, 8.1, 8.3 and 8.11 and gathered as refinement 17.
+  - **A task keeps the surface of the request that created it** (step 2's decision, 17b's open
+    point): `ScheduledTask.surface`, carried by the trigger body when set. An occurrence is
+    served the agents the creating request would have been, so a task naming no agent no longer
+    reaches an agent kept off `rest`, and a named agent taken off the surface later is skipped
+    at fire time. A schedule tool's task has no surface, as before.
+  - **The precheck is not made by an accepting process whose registry knows no agent.** Such a
+    process (no agent module loaded, no shared registry: `examples/aws-containerized/
+    openai-dynamodb-scalable` is one) enqueued every request before, and would have answered
+    every one 404. It leaves the answer to the runner. The precheck covers a named agent only;
+    a request naming none is the runner's as well. One registry read per request, off the event
+    loop. The producers outside `RestHandler` (WebSocket chat frames, the messaging and realtime
+    edges, the deployment adapters' entry points) enqueue as before and are refused by the
+    runner.
+  - **A refusal on the protocol path is a reply, not an error.** `RestHandler.request` returns
+    the `QueuedReply` the runner would have stored (404 or 403 with `{"error", "session_id"}`),
+    which the A2A and MCP executors already read through `is_error`. How each protocol words it
+    is iteration 20.
+  - **The skip follows the availability check, with or without an `authorization` block.** A
+    task whose agent was removed, or taken off the task's surface, was recorded as fired and
+    answered 404; it is now skipped, recorded with `last_error` and answered 403, like one whose
+    owner lost its level. A task naming no agent with none to default to keeps its 400, with
+    the reason recorded. `_record_trigger` makes the check before it records, so a scheduled
+    run is asked twice (there and in `AgentHandler.initialize`); a stream is one error chunk,
+    since a raised refusal would be redelivered by the queue and recorded each time.
+  - **`last_error` is the last occurrence's**, cleared by the next one that runs. The manager
+    hands `error` to the store only when there is one, so a bring-your-own store written before
+    the keyword keeps recording every occurrence that runs.
+  - **The catalog** narrows each entry over the tools its descriptor records
+    (`AccessGate.narrow`, by `filter_tools`), hosted or not, and only the entries of the page.
+    `list_agents` takes the request. The three chat routers validate the policy at mount
+    (`_validate_access`), which is where the registry-wide warnings are made; a registry that
+    cannot be read then stops the mount.
+  - Files beyond the list: `schedule/model.py` (the two fields), `identity/authz/gate.py`
+    (`narrow`), `integration/thread/thread_chat.py` (the thread queue route asks once, not
+    twice). `schedule/handler.py` needed no change (a task is returned whole, `last_error`
+    included). `test_agui_handler` in the verify line needed no change: the AG-UI handler was
+    handed the principal in iteration 18 and its own listing and refusals are iteration 20.
+  - User documentation: the changes to documented behaviour are in the scheduling page (the
+    kept surface, `last_error`, skipped occurrences), the configuration page (both processes
+    of a split deployment decide), the README and the bundled skill. The `authorization` block
+    itself, and what it does to the catalog, stay for iteration 27.
 
 ### Iteration 20: Protocol surface enforcement
 
@@ -1000,7 +1043,11 @@ adds the caller to a check that already knows the surface.
 - **Steps:**
   1. MCP per-tool `AuthCheck` and list filtering (spec 8.6).
   2. A2A `get_cards(principal)` filtering, a served card's skills narrowed to the caller with
-     `Vary: Authorization` and an ETag of the card as served, and the 403 (spec 8.7).
+     `Vary: Authorization` and an ETag of the card as served, and the 403 (spec 8.7). The
+     narrowing is `AccessGate.narrow` (iteration 19), which the catalog already uses.
+  Since iteration 19 `RestHandler.request` refuses before the queue and returns the refusal as a
+  `QueuedReply` (404 or 403), so both executors already stop an unauthorized call; what steps 1
+  and 2 add on the call path is each protocol's own wording of it.
   3. AG-UI `/agents` narrowed by `visible_agents` and the 403 (spec 8.5). The handler already
      hands the caller's principal to `prepare_agent_handler` (iteration 18); its own check in
      `_resolve_agent` is what turns a refusal into a 403 or 404 where it is a 500 today.

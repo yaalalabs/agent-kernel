@@ -546,6 +546,12 @@ and `research/design-options.md` section 4).
   (`Authorizer.validate`, which the gate calls), `Module.load` leaves the registry-wide warnings to
   the `get_router()` call, a shared-channel session is matched on provider and namespace alone, and
   a request naming no agent is decided for the default agent where the agent runs.
+- As built (spec refinement 17): a scheduled task keeps the surface of the request that created
+  it and its occurrences are served the agents on it; the precheck at the accepting process
+  covers a named agent and is skipped by a process whose registry knows no agent, which leaves
+  the answer to the runner; an occurrence is skipped whenever the availability check refuses its
+  named agent, with or without an `authorization` block; and a catalog entry is narrowed over
+  the tools its descriptor records (`AccessGate.narrow`).
 - Startup validation (`AccessGate.validate_configuration()`, called from `Module.load` for the
   agents it loads and from the handlers' `get_router()`): an `allow`, `deny` or `tiers` entry naming
   a tool the loaded agent does not have raises `AKConfigError`; a grant naming an unknown agent id

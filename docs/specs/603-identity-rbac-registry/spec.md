@@ -833,8 +833,10 @@ edge's `_record_user_message`. The schedule routes need none: a task is created 
 request, which the chat mapping answers, and `update` cannot change a task's agent, so no
 schedule route reaches the check. AG-UI's `_resolve_agent` (8.5) answers 404 with this text from
 its own descriptor lookup and does not call the check, so it needs no mapping. The pipeline
-precheck arrives with the gate in iteration 19 and maps the error then; until then a queued
-request for an unknown agent makes the round trip and is answered 404 by the runner. The schedule
+precheck (8.3, iteration 19) answers the same 404 and 403 before anything is enqueued, in the
+body a queued refusal arrives in, so the edge's answer and the runner's are one; until it landed
+a queued request for an unknown agent made the round trip and was answered 404 by the runner,
+which still happens where the edge knows no agent at all. The schedule
 tools already turn any error into `{"error": ...}` and now carry this text; MCP keeps
 `ToolError("Agent not available")`.
 
@@ -874,7 +876,16 @@ the stored list filtered by `check_tool` through the authorizer (the io-handler 
 when that tool does, and a skill that names no tool (declared through `Module.describe`) stays;
 otherwise a denied tool's name would still be listed, since the skills default to one per tool.
 With no gate nothing is filtered by caller; the narrowing to the `rest` surface still applies.
-The narrowing (surface, and later the caller)
+As built (iteration 19): `list_agents(request, cursor, limit, tags)` reads the principal the
+identity dependency put on the request (a router mounted with none is the anonymous principal),
+and each entry is narrowed by one gate method, `AccessGate.narrow(principal, descriptors)`
+(section 7), over the tools the descriptor records. A hosted agent and one another process
+hosts are therefore narrowed the same way, by `filter_tools` and not by a full `tool_filter`
+(the catalog has no use for the refusal reasons, which cost a question per denied tool), and
+only the entries of the page are narrowed, after the cut: which tools an entry shows does not
+change which agents the page holds. A principal that sees an agent through its visibility alone
+holds no level and is shown no tool.
+The narrowing of the listing (surface, and the caller)
 happens before the page is cut, by handing the narrowed list to `AgentDescriptorPage.of(
 descriptors, cursor, limit, tags)`, so a page is never short because of an agent it may not show;
 `tags` is a repeated query parameter and keeps the agents carrying every one. `limit` is clamped
@@ -908,22 +919,30 @@ it (Availability, above). Who sets what:
   hands on. Their routes already serve only the agents on their surface; the body says so too,
   so the process that runs the agent applies that surface and never `rest`. `RestHandler.request`
   enqueues the body as its executor built it.
-- none: `IntegrationProducer` (messaging and the realtime edges), the CLI, the trigger body of a
-  scheduled occurrence, and the schedule tools. `surfaces` does not govern them.
+- the surface of the creating request: the trigger body of a scheduled occurrence (iteration
+  19, below).
+- none: `IntegrationProducer` (messaging and the realtime edges), the CLI, the schedule tools,
+  and the occurrences of a task a schedule tool created. `surfaces` does not govern them.
 
 A task's agent is checked when the task is created, against the surface of the request that
 creates it: `ScheduleManager.create(..., surface=)`, which `create_from_request` fills from the
-request, so a REST request cannot schedule an agent it could not run. The task does not keep the
-surface. Two limits follow from where the check runs, and both are stated in the user docs:
+request, so a REST request cannot schedule an agent it could not run. Since iteration 19 the
+task keeps that surface (`ScheduledTask.surface`) and the trigger body carries it, so an
+occurrence is served the agents the creating request would have been (design refinement 17):
+a task naming no agent runs the first agent on that surface, where it ran the firing process's
+default whatever its `surfaces`, and a named agent taken off the surface after the task was
+created is refused at fire time and the occurrence skipped (8.1). A task created with no surface
+(a schedule tool, or a record from before the field) fires with none, in the body it always had.
 
-- A queued request is checked by the process that runs the agent, against the descriptor that
-  process holds (what the code declared and its own `registry.agents` overlay). An overlay set
-  only in the process that accepts the request narrows the catalog and the thread route there
-  and what it mounts on A2A, MCP and AG-UI, but not a queued REST chat request: that takes the
-  edge precheck of iteration 19. For A2A, MCP and AG-UI the runner's check comes on top of the
-  edge's, so an overlay at the edge can narrow what the hosting process declares, not widen it.
-- An occurrence enters by no surface, so a task naming no agent runs the firing process's
-  default whatever its `surfaces`.
+Where the check runs, as built in iteration 19:
+
+- A queued request is checked twice, by each process against the descriptor it holds (what the
+  code declared and its own `registry.agents` overlay): by the process that accepts it, before
+  anything is enqueued (8.3), and by the process that runs the agent. An overlay set in either
+  narrows what the other declares and neither widens it, on REST as on A2A, MCP and AG-UI.
+- The accepting process checks a named agent only, and only when its registry knows some agent.
+  A process whose registry is empty (it loads no agent module and shares no registry) has
+  nothing to judge a name by, and enqueues as it did before the precheck (design refinement 17).
 
 An entry is `AgentDescriptor.catalog_entry()`, the descriptor without its `identity`, and the
 response is `AgentDescriptorPage.catalog()` (added 2026-11-18, before phase C merged). `identity`
@@ -931,8 +950,8 @@ says how the agent authenticates itself (its subject, its client id, the name of
 registry stores it for the process that hosts the agent, and any caller can read the catalog, so
 it is left out of what is published and kept in what is stored. The endpoint returns the dict
 itself rather than relying on a response model, so no mount of the route can publish the field.
-Until the gate filters the listing by caller (iteration 19), every agent exposed on `rest` is
-listed to every caller, whatever its `visibility`.
+Without an `authorization` block every agent exposed on `rest` is listed to every caller,
+whatever its `visibility`; with one the listing is the caller's own (iteration 19, above).
 
 **A2A card** (`core/builder.py:40-74`): `A2ACardBuilder.build(descriptor: AgentDescriptor) ->
 AgentCard` replaces `build(name, description, skills)`: `name = descriptor.name`, `description =
@@ -1171,6 +1190,24 @@ As built (iteration 18), where the gate differs from the outline above:
   with the whole registry are made by the call from `get_router()` (iteration 19). A failed
   validation rolls the load back like a failed registration.
 
+Added in iteration 19:
+
+- `narrow(principal, descriptors) -> list[AgentDescriptor]` (and `narrow_async`): each descriptor
+  as the principal is shown it. `tools` keeps what `authorizer.filter_tools` allows of the tools
+  the descriptor records, and `skills` follows by the catalog's rule (section 6): a skill whose
+  id is one of the agent's tools stays only while the tool does, a skill that names no tool
+  stays. A descriptor with no tools costs no question, the order handed in is kept, and the
+  registry's records are not changed (copies). The catalog calls it for one page; the A2A card
+  of iteration 20 is the same call for one descriptor.
+- `validate_configuration` is called with `registry_wide=True` by
+  `AgentRESTRequestHandler._validate_access()`, the first statement of the three routers that
+  serve the chat and catalog routes (`AgentRESTRequestHandler.get_router`, `RestHandler`'s
+  queue-mode router and `RequestHandler.get_router`), with the agents the process hosts. The
+  accepting side of a split deployment hosts none and makes only the registry-wide findings. A
+  registry that cannot be read then raises its own error and the app is not built, as at the
+  A2A and MCP mounts. A process that mounts none of these routers (a bare agent runner) makes
+  the per-module checks of `Module.load` only.
+
 **`AuthorizerContract`** (`authz/testing.py`): level resolution across the six subject forms,
 highest level wins, `*` and `tag:` agent entries, tier gating, `allow`/`deny` precedence,
 anonymous handling, `provider:` prefix matching, and `visible_agents` equivalence with the
@@ -1221,6 +1258,32 @@ is.
   (a new keyword the store records on the occurrence) and returns `(AgentReplyText(response=
   "scheduled task skipped: the owner no longer holds access to the agent"), session_id)` with
   status 403 through `success_status`; one warning names the task. The run never starts.
+  As built (iteration 19):
+  - `_record_trigger(req)` makes the check itself, before it records, and returns the reply of
+    an occurrence that must not run (None otherwise); each `execute*` returns it as it returns a
+    deferred request's acknowledgement. The check is the run's own,
+    `ensure_agent_available(req.agent, req.principal, hosted=True, surface=req.surface)`, asked
+    first so the outcome is on the one record of the occurrence; an occurrence that runs is then
+    asked again by `AgentHandler.initialize`, which is one more question for a scheduled run and
+    none for any other request.
+  - The reply is `SkippedOccurrenceReply`, an `AgentReplyText` whose text is the sentence above
+    (`SkippedOccurrenceReply.TEXT`). `success_status` answers 403 for that type, so the status
+    follows what the service did and never the text an agent replied with. The body is
+    `{"result": <text>, "session_id": ...}`: a reply, not an error body.
+  - The streaming paths yield one `StreamChunk(error=<text>, done=True)` and never raise: the
+    queue's streaming runner reads the stream inside its consumer, where a raised refusal is a
+    failed message, redelivered and recorded once per delivery.
+  - The skip does not depend on an `authorization` block. `AgentNotFoundError` is also what a
+    removed agent and one taken off the task's surface raise, with no gate at all, and a hidden
+    agent is not to be told apart from them: such an occurrence was recorded as fired and
+    answered 404, and is now skipped with the reason and answered 403.
+  - A task naming no agent while there is none to default to (no agent hosted on the task's
+    surface, or a default its owner may not see, section 6) is not a skip: there is no name to
+    refuse, the run raises `ValueError("No agent available")` as before and the caller answers
+    400. The record carries that reason too, so `last_error` says why an occurrence did not run
+    in every case the check decides.
+  - It is skipped whether or not it can be recorded: with no `schedule` block in the process
+    (the existing warning), or a store that fails, the reply is the same.
 
 #### 8.2 REST (`api/http.py`, `api/handler.py`)
 
@@ -1266,6 +1329,37 @@ is.
   `run_multipart_chat` (`476-513`) drops the `user_id` form field (line 481, 507).
 - `RestHandler.request(body, protocol)` (`163-189`) requires `body.principal` to be set by the
   caller (the MCP and A2A executors) and runs the same precheck before enqueueing.
+- As built (iteration 19). `RestHandler._availability_refusal(body)` asks
+  `ensure_agent_available(body.agent, body.principal, surface=body.surface)` in the
+  registry-wide form, off the event loop, and returns the status and message of the refusal or
+  None. `_reject_unavailable(body)` raises it as `HTTPException(status, detail={"error": ...,
+  "session_id": ...})`, the detail a queued refusal carries (`_build_sync_response`) and the
+  direct route answers with, so the edge's 404 and 403 are the runner's, byte for byte.
+  - Where it runs: `RequestHandler.run_chat` after the last refusal that reads no store and
+    before `_offload_attachments`, so no file is saved for a refused request and the SSE path
+    is covered (it enqueues without `enqueue_and_wait`); `enqueue_and_wait`, now the route
+    alone, hands on to `_enqueue_and_wait(body, admitted=False)`, which asks unless its caller
+    did (`run_chat` passes `admitted=True`), so the registry is read once for a request.
+    `ThreadRequestHandler` overrides `_reject_unavailable` to ask only for a deferred request:
+    `_record_user_message` has asked for every other, before its first thread write (8.10).
+  - `request` returns a `QueuedReply` with the refusal's status and
+    `{"error": ..., "session_id": ...}`, the reply the runner would have stored: this path
+    raises no HTTP error and the A2A and MCP executors already read `is_error`. Nothing is
+    sent and the response store is not read. How each protocol words the refusal is iteration 20.
+  - What is left to the runner: a request naming no agent (the registry-wide form would only
+    ask `is_empty()`, and the default is the runner's to pick), and a named agent when this
+    process's registry knows no agent at all (`is_empty()`, read only after a not-found). The
+    second is what keeps a split deployment working whose accepting process neither loads the
+    agent modules nor shares a registry: it enqueued every request before, and would otherwise
+    answer every one of them 404 (design refinement 17). A process that knows some agents and
+    not the one named answers 404, as its A2A and MCP mounts already leave that agent out.
+  - A deferred request (a `schedule` block) is asked the same way, so a task is not enqueued
+    for an agent its creator cannot have; one naming no agent is not asked, as
+    `ScheduleManager.create` does not check it either.
+  - Not covered: the producers that do not go through `RestHandler`. The WebSocket gateway's
+    chat frames (`pipeline/ws/handler.py`), the messaging and realtime edges
+    (`IntegrationProducer`) and the deployment adapters' own entry points enqueue as before, and
+    the runner refuses what their caller cannot have, after the queue trip.
 - `PipelineWebSocketHandler` (`pipeline/ws/handler.py:41-270`): `__init__` loses `auth_validator`,
   takes an optional `authenticator: RequestAuthenticator` (tests inject one; `from_config()` when
   omitted) and raises `AKConfigError("the WebSocket route requires an identity block: the
@@ -1616,7 +1710,11 @@ is.
   and `ensure_agent_available(body.agent, surface=body.surface)` at the queue-mode edge), so an
   agent kept off `rest` is refused before the thread is opened (iteration 17b; section 6,
   Catalog). Both prechecks also hand over `body.principal` (iteration 18), so with an
-  `authorization` block the gate's 403 and 404 come before any thread write too.
+  `authorization` block the gate's 403 and 404 come before any thread write too. The pipeline
+  handler the queue-mode one extends asks the same question before it enqueues (iteration 19,
+  8.3); `ThreadRequestHandler` overrides `_reject_unavailable` to ask there only for a deferred
+  request, which records nothing and was not asked about, so a recorded request reads the
+  registry once.
   `ThreadRESTRequestHandler`
   (312-384) keeps its 403 and 404 rules with the principal's subject in place of the resolved
   user (351, 368); the listing route's `user_id` query parameter (365) is removed, since every
@@ -1632,10 +1730,12 @@ is.
   `principal=principal.model_copy(update={"actor": None, "credential_ref": None}).model_dump(mode="json")`.
   `create_from_request` (95-111) passes `req.principal or Principal.anonymous()`. Since
   iteration 17b `create` also takes `surface` (`create_from_request` passes `req.surface`) and
-  hands it to the named agent's availability check; a schedule tool passes none. The task
-  record and the trigger body carry no surface (section 6, Catalog). The same check is handed
-  the owner (iteration 18), so with an `authorization` block a task is not created for an agent
-  its owner may not use; the fire-time re-check and skip are iteration 19.
+  hands it to the named agent's availability check; a schedule tool passes none. Since
+  iteration 19 the task keeps it (`ScheduledTask.surface`, None for a tool's task and for a
+  record from before the field) and `_build_trigger_body` adds `"surface"` when the task has
+  one, so the body of a task with none is unchanged (section 6, Catalog). The same check is
+  handed the owner (iteration 18), so with an `authorization` block a task is not created for
+  an agent its owner may not use; the fire-time re-check and skip are iteration 19 (8.1).
 - `_build_trigger_body` (469-490): `"user_id"` is replaced by `"principal": task.principal`
   (`None` only on a task created before the change, whose frozen body also still carries
   `user_id` and is therefore refused at fire time; such tasks are recreated, not migrated, and
@@ -1644,7 +1744,16 @@ is.
   `_owns_occurrence` (296-316) compare the stored `task.principal`'s namespace and subject with
   the principal's (an anonymous principal is a mismatch; a task without a stored principal falls
   back to `task.user_id` against the subject); `error` is recorded on the occurrence by the
-  store's `record_trigger` (a new optional column `last_error`).
+  store's `record_trigger` (a new optional column `last_error`). As built (iteration 19):
+  `ScheduledTask.last_error` describes the most recent occurrence, as `last_request_id` does,
+  so `apply_trigger(..., error=None)` sets it on every occurrence and one that runs clears it.
+  A skipped occurrence is otherwise recorded like any other: counted, and the last of a
+  one-time task. The three stores hand `error` to `apply_trigger`; the documents they store are
+  the task as JSON, so no table or key layout changes. `ScheduleStore.record_trigger` gains
+  `error: str | None = None`, and the manager passes the keyword only when there is a reason,
+  so a bring-your-own store written against the old signature keeps recording every occurrence
+  that runs (a skipped one fails to record there, which is logged and never raised). A forged
+  trigger records no reason, as it records nothing.
 - `get_task`, `list_tasks`, `update`, `cancel` keep their `user_id` parameter; the handler
   (`schedule/handler.py:90-140`) passes `principal.subject`, and its listing route drops the
   `user_id` query parameter (93) for the reason 8.10 gives for the thread listing (iteration 10).
@@ -1906,6 +2015,9 @@ Each is intentional; the justification is design section 10 unless stated.
    messaging and realtime.
 8. A HITL resume by a different non-anonymous subject than the one that paused is refused (403).
 9. A scheduled trigger whose owner lost access is recorded with an error and skipped, never run.
+   The same holds with no `authorization` block for a task whose agent was removed or taken off
+   the task's surface: its occurrence was recorded as fired and answered 404, and is now
+   recorded with `last_error` and answered 403 with the skip text (iteration 19; section 8.1).
 10. Threads: an existing thread is appended to only by its owner (403); the chat routes answer
     401 to anonymous callers instead of 400 "user_id is required".
 11. Schedules: creation requires an authenticated principal (401 on the chat route, an error
@@ -2008,9 +2120,24 @@ Each is intentional; the justification is design section 10 unless stated.
     pre-hooks as additional context. `AgentService.select`, `AgentHandler.initialize`,
     `ChatService.prepare_agent_handler` and `ScheduleManager.create` take an optional
     `surface`; a double or subclass that overrides one with the old signature must accept it.
+40. A queued chat request naming an agent its caller cannot have is answered by the process that
+    accepts it, before anything is enqueued, with the status and body the runner answered with
+    (iteration 19; section 8.3). The answer changes only where the two processes disagree: an
+    accepting process that knows some agents and not the one named answers 404 for an agent the
+    runner would have served (it already left that agent off A2A and MCP), and one whose
+    registry knows no agent enqueues as before. `RequestHandler.run_chat` now goes on to
+    `_enqueue_and_wait(body, admitted=True)` and no longer through the `enqueue_and_wait` route
+    method, so a subclass that overrode `enqueue_and_wait` to change the pipeline chat route
+    overrides `run_chat` or `_enqueue_and_wait`. `AgentRESTRequestHandler.list_agents` takes the
+    request as its first parameter.
+41. A scheduled task created by a chat request keeps that request's surface, and its occurrences
+    are served the agents on it (iteration 19; section 6, Catalog): a task naming no agent runs
+    the first agent on the surface, where it ran the first agent registered. Tasks created
+    before the change, and by a schedule tool, are unaffected. A task record gains `surface`
+    and `last_error`, and `ScheduleStore.record_trigger` an optional `error`.
 
-**Non-changes:** session, thread, schedule, attachment and response-store layouts (one optional
-`last_error` on schedule occurrences and `principal` on tasks aside); the queue envelope
+**Non-changes:** session, thread, schedule, attachment and response-store layouts (the optional
+`last_error`, `surface` and `principal` on a task's document aside); the queue envelope
 attributes and `ATTR_USER_ID` as the WS-entered marker; `RequestProducer`, `IntegrationProducer`
 attribute stamping; every native framework call when no `authorization` block is present
 (keyword-for-keyword, the #754 invariant); `AgentService.select` for a request with no surface
@@ -2028,6 +2155,9 @@ for the two caches and the framework context; public exports other than those na
 | Agent named in a request is unknown to the registry, or not visible to the caller | `AgentService.ensure_agent_available`, `AccessGate.authorize_agent` → `AgentNotFoundError` | 404 `"Agent '<name>' not found"`, one status and body for both, on REST chat (direct and queued, a request that schedules included), the thread chat routes and AG-UI; `ToolError("Agent not available")` on MCP; `{"error": ...}` from the schedule tools |
 | Agent named in a request is kept off the surface the request entered by | `AgentService.ensure_agent_available(..., surface=)` → `AgentNotFoundError` | The unknown agent's 404 and body on REST chat (direct and queued, a request that schedules included), the thread chat routes before any write, and WebSocket chat |
 | No agent named and the registry knows none, or none hosted here is on the request's surface, or the default agent is one the caller may not see | `AgentService.ensure_agent_available` → `ValueError` | 400 `"No agent available"` |
+| A queued request naming an agent its caller cannot have | `RestHandler._availability_refusal` (the same check, at the accepting process) | The 404 or 403 above with `{"error", "session_id"}`, nothing enqueued, no file saved; from `request` a `QueuedReply` with that status and body. Left to the runner when the request names no agent, or this process's registry knows none |
+| A scheduled occurrence whose named agent its owner cannot have (no level, hidden, removed, off the task's surface) | `ChatService._record_trigger` | Not run: `{"result": "scheduled task skipped: the owner no longer holds access to the agent"}` with 403, one error chunk on a stream; the occurrence recorded with the reason in `last_error`; one warning naming the task |
+| A scheduled occurrence naming no agent, with none to default to | `ChatService._record_trigger`, then the run | 400 `"No agent available"` as before; the reason recorded in `last_error` |
 | `surface` sent by a client | `ChatRunRequest` (`INTERNAL_FIELDS`) | 422 naming the field on the FastAPI chat routes; an invalid-request frame on the WebSocket gateway; on the Lambda and ECS entry points, what each answers for the other internal fields (#884) |
 | Session owned by another principal | `authorize_session` → `PermissionError` | 403 at the choke point (`Runtime._admit`, after the agent check and before any pre-hook); one error chunk on a stream; thread path 403 before any write |
 | Resume by another subject | `_validate_resume` → `PermissionError` | 403; record kept |
@@ -2204,6 +2334,32 @@ New files under `ak-py/tests/`:
   `test_pipeline_agent_runner` (the runner forwarding the 404 the queued route answers with).
   In iteration 19 `test_api_http` gains the parity case: an unknown agent and a hidden one answer
   with the same status and body.
+- As built in iteration 19. `test_api_http` (`TestTheAccessGateOnTheChatRoute`): the parity on
+  the chat and multipart routes, JSON and SSE (the two answers differ in nothing but the name
+  the caller sent), the 403, a served caller, the anonymous caller, and a hidden default answered
+  `No agent available`. `test_pipeline_request_handler` (`TestThePrecheckBeforeTheQueue`, over
+  an `edge` fixture whose registry knows descriptors, hosts nothing and counts its reads): 404
+  and 403 with nothing enqueued on the JSON, multipart, SSE and base queue routes, the hidden
+  and unknown parity, the edge's own `surfaces`, a grant not putting an agent on a surface, no
+  file saved for a refused request, one registry read per request and off the event loop, the
+  unnamed request and the empty registry left to the runner, a deferred request, and the single
+  process with nothing mocked; `TestThePrecheckOnAProtocolRequest`: the refusal as a
+  `QueuedReply` with no queue or store touched, the body's surface and principal applied.
+  `test_thread_pipeline_recording`: one registry read for a recorded request, and a deferred
+  request asked before the queue. `test_api_catalog` (`TestTheCatalogOfACaller`,
+  `TestMountingValidatesThePolicy`): the listing per principal, a hidden agent named nowhere in
+  the answer, tools and skills narrowed (hosted and stored), an agent listed by visibility alone
+  naming no tool, the page cut after the caller's filter and only its entries narrowed, the
+  malformed cursor refused before any read, the listing whole without the block; the three
+  routers validating the policy at mount, the registry-wide warning made there, and an
+  unreadable registry stopping the mount. `test_access_gate` (`TestNarrow`). The scheduled
+  skip: `test_schedule_model`, `test_schedule_store` (all three backends) and
+  `test_schedule_manager` for `last_error`, the keyword handed over only when set and the kept
+  surface; `test_chat_service_schedule` (`TestAnOccurrenceTheOwnerMayNoLongerRun`: every
+  execution path, the wrappers' 403 with a reply body, the one error chunk, the one warning, a
+  reply that reads like a skip, the unnamed task's 400); `test_schedule_principal`
+  (`TestFireTimeAccess`: the real manager, store and gate, a grant taken away and given back,
+  `last_error` read through the management route, a trigger carrying no owner).
 - With the request's surface (iteration 17b), two shared fixtures in `conftest.py`:
   `surface_agent`, the class of an agent served on the surfaces it is built with whose reply is
   its own name, and `kept_off_rest`, a runtime hosting `internal` (on `a2a` only, registered
@@ -2284,8 +2440,8 @@ New files under `ak-py/tests/`:
   manager-level cases (`create` requiring a principal, the frozen `principal` in the trigger
   body, `record_trigger` ownership by namespace and subject) landed in `test_schedule_manager.py`
   in iteration 3 and the tools reading `Session.get_principal()` in `test_schedule_tools.py`; a
-  pre-change task body (no principal) firing anonymous and the fire-time level re-check skipping
-  with `last_error` join this file in iteration 19.
+  trigger body carrying no principal firing anonymous and the fire-time level re-check skipping
+  with `last_error` joined this file in iteration 19 (`TestFireTimeAccess`).
 - `test_deployment_identity.py`: `APIGatewayAuthorizer` policy context carrying the serialized
   principal and the REST router rebuilding it (a client-sent `principal` replaced, the direct chat
   and queued bodies carrying it); the ECS and Lambda `$connect` handlers keyed by subject, refusing
@@ -2678,3 +2834,29 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    `ChatService.execute`. The alternative was an `async` twin of the check and of everything
    between it and the routes; the cost of this one is that a remote engine holds the event loop
    for the length of that one question, where `Runtime` awaits it (sections 3, 6 and 7).
+17. **The edge, the catalog and the occurrence, where building them settled the outline**
+   (iteration 19, 2026-11-23). Five points, each written into the section it belongs to.
+   A task keeps the surface of the request that created it, which closes the point refinement 13
+   left open: `surfaces` is strict since iteration 17b, and a chat request that scheduled a task
+   without naming an agent reached, when the task fired, an agent kept off the surface it came
+   in by. The occurrence is now served what the request would have been. A task a schedule tool
+   creates has no surface and is governed by none, as before.
+   The precheck at the accepting process is not made by a process whose registry knows no agent.
+   Design section 6 has the edge refuse before it enqueues; a split deployment whose accepting
+   process neither loads the agent modules nor shares a registry (shipped examples do this for
+   plain REST chat) would have answered every request 404. Such a process leaves the answer to
+   the runner, which asks in any case, so nothing is admitted that would run. The precheck is
+   an early answer and the edge's own view of `surfaces`; the boundary is the process that runs
+   the agent. A request naming no agent is left to the runner as well.
+   The skip of a scheduled occurrence follows the availability check, with or without an
+   `authorization` block, because a removed agent and a hidden one raise one error and must stay
+   one answer. A task naming no agent with none to default to keeps its 400, and its reason is
+   recorded too. The skipped reply is a type of its own so the 403 cannot be triggered by what
+   an agent says.
+   A catalog entry is narrowed over the tools its descriptor records, for hosted agents as for
+   those hosted elsewhere, by `filter_tools`; section 6's outline took a hosted agent's from a
+   full `tool_filter`. One rule for both, and no question per denied tool for reasons a listing
+   never shows.
+   `ScheduleStore.record_trigger` gains `error`, and the manager passes it only for an
+   occurrence that was not run, so a bring-your-own store written before it keeps working for
+   every occurrence that is (sections 6, 7, 8.1, 8.3 and 8.11).

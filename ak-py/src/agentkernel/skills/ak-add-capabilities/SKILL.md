@@ -1408,6 +1408,12 @@ if __name__ == "__main__":
 Listings are scoped to the authenticated principal, reading or changing another user's task is
 refused (403), an anonymous caller is a 401, and the handler refuses to build without the block.
 
+**When an occurrence is skipped:** each occurrence is checked before it runs. If the task's agent
+is gone from the process that runs it, or no longer served on the surface the task was created
+by, the occurrence is not run. It is still counted, a one-time task is completed by it, and the
+task's `last_error` says why (`Agent 'reports' not found`) until the next occurrence that runs.
+Read it back with `GET /api/v1/schedules/{task_id}`.
+
 See `examples/api/schedule-openai`.
 
 ---
@@ -1746,7 +1752,8 @@ registry:
    `mcp` and `agui` decides whether the agent can be reached that way. An agent kept off `rest` is
    left out of the catalog, a chat request naming it is a 404 (the answer an unknown agent gets), and
    a chat request naming no agent runs the first agent on `rest`. Messaging integrations, the CLI and
-   scheduled occurrences are not governed by `surfaces`. `visibility` (`private`, `internal`,
+   a task an agent schedules itself are not governed by `surfaces`; a task created by a chat request
+   keeps that request's surface for its occurrences. `visibility` (`private`, `internal`,
    `public`) is recorded and not enforced yet.
 
 3. Read the catalog: `GET /api/v1/agents?limit=50&tags=support` returns
@@ -1764,8 +1771,10 @@ registry:
    - Every agent runner on the input queue must host every agent the IO process serves.
    - Each process applies its own `registry.agents` block to what it reads, so put `surfaces`
      restrictions in one file both processes read (or declare them in code with
-     `Module.describe`). The IO process decides what it lists and mounts; the agent runner decides
-     which agents a queued chat request is served, from its own copy of the descriptor.
+     `Module.describe`). The IO process decides what it lists and mounts, and answers the 404
+     itself for a chat request naming an agent its registry does not know or keeps off `rest`;
+     the agent runner checks again from its own copy of the descriptor. An IO process whose
+     registry knows no agent at all queues every request and leaves the answer to the runner.
    - Descriptors do not expire and a `ttl` is refused at startup. After a deployment that renames
      or removes an agent, delete its record from the store.
 

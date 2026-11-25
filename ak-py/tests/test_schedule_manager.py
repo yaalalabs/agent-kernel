@@ -291,7 +291,7 @@ class TestCreation:
         assert task.agent == "billing"
 
     @staticmethod
-    def _rest_request(agent: str, surface: str | None = "rest") -> BaseRunRequest:
+    def _rest_request(agent: str | None, surface: str | None = "rest") -> BaseRunRequest:
         return BaseRunRequest(
             prompt="send the weekly report",
             agent=agent,
@@ -335,12 +335,36 @@ class TestCreation:
 
         assert task.agent == "internal"
 
-    def test_an_occurrence_is_triggered_with_no_surface(self, manager, provider, kept_off_rest):
-        # The check is made once, when the task is created: what fires later entered by no surface.
+    def test_a_task_keeps_the_surface_of_the_request_that_created_it(self, manager, provider, store, kept_off_rest):
+        """Decided in iteration 19: an occurrence is served the agents the creating request would have been, so a
+        task naming no agent does not reach, when it fires, an agent kept off the surface it was created over."""
         with kept_off_rest:
-            manager.create_from_request(self._rest_request("public"))
+            task = manager.create_from_request(self._rest_request("public"))
 
+        assert store.get(task.task_id).surface == "rest"
+        assert json.loads(provider.created[0][1])["surface"] == "rest"
+
+    def test_a_task_naming_no_agent_keeps_it_too(self, manager, provider, kept_off_rest):
+        # The case the surface is kept for: nothing is checked when the task is created, so the occurrence must be.
+        with kept_off_rest:
+            manager.create_from_request(self._rest_request(None))
+
+        assert json.loads(provider.created[0][1])["surface"] == "rest"
+
+    def test_a_task_created_by_no_surface_fires_with_none(self, manager, provider, store, kept_off_rest):
+        # A schedule tool: the trigger body is the one it always was, with no `surface` key at all.
+        with kept_off_rest:
+            task = _create(manager, agent="internal")
+
+        assert store.get(task.task_id).surface is None
         assert "surface" not in json.loads(provider.created[0][1])
+
+    def test_an_amended_task_fires_with_the_surface_it_was_created_by(self, manager, provider, kept_off_rest):
+        with kept_off_rest:
+            task = manager.create_from_request(self._rest_request("public"))
+            manager.update(task.task_id, {"prompt": "send the daily report"}, user_id="u1")
+
+        assert json.loads(provider.updated[0][1])["surface"] == "rest"
 
     def test_with_authorization_a_task_is_created_only_for_an_agent_its_owner_may_use(self, manager, store, authorization, surface_agent):
         """The owner's principal is what the access gate decides on (#603, iteration 18): a task every occurrence of
@@ -711,6 +735,49 @@ class TestTriggerRecording:
         manager.record_trigger(task.task_id, principal, request_id="r1")
 
         assert store.get(task.task_id).trigger_count == 0
+
+    def test_an_occurrence_that_was_not_run_is_recorded_with_the_reason(self, manager, store):
+        """#603: the access gate refused the owner at fire time. The occurrence is counted and says why it did not run."""
+        task = _create(manager)
+
+        manager.record_trigger(task.task_id, _principal(), request_id="r1", error="Principal 'u1' holds no level on agent 'planner'")
+
+        recorded = store.get(task.task_id)
+        assert (recorded.trigger_count, recorded.last_request_id) == (1, "r1")
+        assert recorded.last_error == "Principal 'u1' holds no level on agent 'planner'"
+
+    def test_a_skipped_occurrence_closes_a_one_time_task(self, manager, store):
+        # A one-time task has no later occurrence to run instead: skipped or not, the trigger was its only one.
+        task = _create(manager, spec=ScheduleSpec(at=FUTURE_AT))
+
+        manager.record_trigger(task.task_id, _principal(), request_id="r1", error="Agent 'planner' not found")
+
+        recorded = store.get(task.task_id)
+        assert (recorded.status, recorded.last_error) == (ScheduleStatus.COMPLETED, "Agent 'planner' not found")
+
+    def test_a_forged_trigger_records_no_reason_either(self, manager, store):
+        task = _create(manager)
+
+        manager.record_trigger(task.task_id, _principal("u2"), request_id="r1", error="Agent 'planner' not found")
+
+        assert (store.get(task.task_id).trigger_count, store.get(task.task_id).last_error) == (0, None)
+
+    def test_a_store_written_before_the_reason_existed_still_records_an_occurrence_that_runs(self, provider):
+        """A bring-your-own store implements the `record_trigger` it was written against. The reason is handed
+        over only when there is one, so such a store keeps recording every occurrence that runs."""
+
+        class _OlderStore(InMemoryScheduleStore):
+            def record_trigger(self, task_id, request_id, occurred_at, completed):
+                super().record_trigger(task_id, request_id, occurred_at, completed)
+
+        store = _OlderStore()
+        manager = ScheduleManager(provider=provider, store=store)
+        task = _create(manager)
+
+        manager.record_trigger(task.task_id, _principal(), request_id="r1")
+        manager.record_trigger(task.task_id, _principal(), request_id="r2", error="skipped")  # refused by the store: logged, not raised
+
+        assert (store.get(task.task_id).trigger_count, store.get(task.task_id).last_request_id) == (1, "r1")
 
     def test_recording_an_unknown_task_is_ignored(self, manager):
         manager.record_trigger("missing", _principal(), request_id="r1")
