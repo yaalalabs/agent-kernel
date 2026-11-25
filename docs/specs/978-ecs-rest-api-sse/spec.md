@@ -116,10 +116,16 @@ with the path join lifted into its own local so the key and the field cannot dri
 
 ```hcl
   user_endpoint_paths = {
-    for ep in var.gateway_endpoints :
-    ep.path => join("/", compact([local.api_base_segment_with_version, trim(try(ep["path"], ""), "/")]))
+    for raw in distinct([for ep in var.gateway_endpoints : try(ep["path"], "")]) :
+    raw => join("/", compact([local.api_base_segment_with_version, trim(raw, "/")]))
   }
 ```
+
+`distinct()` is **required, not tidiness.** Iterating `var.gateway_endpoints` directly and keying on
+`ep.path` fails whenever two endpoints share a path with different methods, which is legal input the
+`gateway_endpoints` validation does not forbid: Terraform rejects it with `Duplicate object key:
+duplicates are expected, use the ellipsis (...) after the value expression`. Verified by evaluating
+both forms in `terraform console` against two endpoints on one path (`GET` and `POST /reports`).
 
 and `mcp_gateway_map`'s `path` set to `local.mcp_endpoint_path` rather than `"mcp"`.
 
