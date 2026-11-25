@@ -1157,6 +1157,22 @@ the spec section it changes.
   - Stale text: the two dev skills still said nothing consults the authorizer, the spec
     counted sixteen refinements, and the design's mirrors of refinements 16 to 18 were
     paragraphs. The mirrors are one point per decision now.
+- **Changelog.** `develop` gained changelog fragments (#664) while the pull request was open, so
+  phase D carries its own under `changelog.d/`, written with `ak-dev-sync-changelog-from-branch`
+  against the last release (0.10.2, which holds phases A to C):
+  - `603.added.md`: the `authorization` block, and that a tool policy does not stop a call yet.
+  - `603.breaking.md`: the unknown agent's 404, `surfaces` governing the chat routes, the
+    reserved `surface` key (spec behavioural changes 34, 38 and 39).
+  - `603.breaking.1.md`: what code that extends OAK has to change (`AgentNotFoundError`,
+    `list_agents`, `run_chat`, the `surface` argument; changes 34, 39 and 40).
+  - `603.breaking.2.md`: the precheck at the accepting process, for a split deployment whose
+    accepting process loads only some agent modules (change 40).
+  - `603.changed.md`: skipped occurrences, `last_error` and a task's surface (change 41).
+  - `603.changed.1.md`: MCP's `Agent not available` (change 42).
+  - `603.fixed.md`: a realtime call for an agent the runner does not host (change 42).
+  - No fragment: AG-UI's bare route (change 42) and the A2A answers of change 43, which exist
+    only with the new block and are described on its page.
+  - Phases E and F add their own fragments under the next free counter (`603.added.1.md`).
 - **Stated in every one of those places:** a tool policy (`tiers`, `allow`, `deny`) is published
   for each run and narrows what the catalog and an A2A card list, and no framework adapter stops
   a call by it until phase E. Agent access, visibility and session ownership are enforced.
