@@ -109,7 +109,7 @@ every stream would die at 29 seconds and look exactly like the old buffering bug
     ```bash
     curl -N -X POST "$(terraform output -raw agent_invoke_url)" \
       -H 'Content-Type: application/json' \
-      -d '{"session_id":"demo-1","prompt":"Explain the Battle of Hastings in detail."}' \
+      -d '{"session_id":"demo-1","prompt":"Explain the tank-and-canal irrigation of ancient Anuradhapura and Polonnaruwa in detail."}' \
       | python3 -u -c 'import sys,time
 start=None
 for line in sys.stdin:

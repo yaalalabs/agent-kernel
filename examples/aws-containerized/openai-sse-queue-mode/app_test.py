@@ -21,8 +21,8 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 # A reply has to take long enough to actually stream. A one-line answer arrives in a single frame
 # whether or not the gateway buffers, and proves nothing either way.
 LONG_PROMPT = (
-    "Explain the causes, course and consequences of the Battle of Hastings in at least "
-    "six sentences, covering the claimants to the English throne."
+    "Explain the tank-and-canal irrigation system of ancient Anuradhapura and Polonnaruwa in at "
+    "least six sentences, covering how the reservoirs were fed and what the bisokotuwa sluice did."
 )
 
 
@@ -97,4 +97,4 @@ async def test_streamed_text_answers_the_question(streamed):
     frames, _ = streamed
     text = "".join(f.get("delta", "") for f in frames)
     assert text.strip(), "frames carried no delta text"
-    Test.compare(text, ["An account of the Battle of Hastings in 1066, mentioning William and Harold"])
+    Test.compare(text, ["An explanation of ancient Sri Lankan reservoir and canal irrigation at Anuradhapura and Polonnaruwa"])
