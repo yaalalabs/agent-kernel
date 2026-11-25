@@ -163,6 +163,15 @@ Declare realtime tools on the native `RealtimeAgent` or ADK `LlmAgent`. The SDK 
 
 A schedule created during a call (`create_schedule`) works and acts as the caller. When it fires, though, it is a chat request with no caller listening, so a realtime deployment is not the place for it to run: it is not recorded as an occurrence there, and it either opens a native session whose output nobody reads or, with `session_mode: reuse` and a live call on the same session, is sent into that call as text. Deliver scheduled occurrences to a text-mode deployment's queue.
 
+### Who may call
+
+A caller reaches the agent as a `realtime:livekit` principal: the participant's identity as the subject,
+the LiveKit API key as the namespace. With an
+[`authorization`](../advanced/identity-and-access.md#authorization) block that principal needs a grant,
+for example `subjects: [provider:realtime:livekit]`. A caller without one gets no native session: the
+room is sent one error (`Realtime session could not start: ...`), and what the caller says next is
+dropped for a moment (one second, doubling up to thirty) before OAK checks again.
+
 ## The opening prompt
 
 When a caller joins the room, whether or not their microphone is published yet, the edge asks the conversation to say a short hello. A caller who was already in the room when the edge joined is greeted too. Override `opening_prompt(participant_identity)` to open with words of your own, or return `None` to send nothing. The edge greets each caller once, so a duplicate join event does not send the hello twice; it forgets a caller when they leave, so a rejoin is greeted again.

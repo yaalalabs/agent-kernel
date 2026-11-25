@@ -86,6 +86,7 @@ def _install_schedule_cfg(monkeypatch, schedule, multimodal_agents=None) -> None
         sandbox = None
         identity = None
         registry = None
+        authorization = None
 
     _Cfg.schedule = schedule
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
@@ -203,6 +204,17 @@ class TestRegistration:
 
         assert tools[0].name == "create_schedule" and tools[0].description
         assert [tool.description for tool in tools[1:]] == ["", "", "", ""]
+
+    def test_every_schedule_tool_declares_the_write_tier(self, monkeypatch):
+        """A task runs unattended as its owner, so a principal held to `read` on an agent is offered none of them
+        (#603): the tier is what an authorization policy applies when its `tiers` names no other."""
+        from agentkernel.core.model import AccessLevel
+
+        _install_schedule_cfg(monkeypatch, _ScheduleConfig())
+
+        assert {tool.name: tool.tier for tool in get_schedule_tools()} == dict.fromkeys(
+            ["create_schedule", "list_schedules", "get_schedule", "update_schedule", "delete_schedule"], AccessLevel.WRITE
+        )
 
 
 class TestCronFlavor:
@@ -370,7 +382,7 @@ class TestToolContracts:
         # every unattended fire time.
         result = json.loads(await create_schedule("send the weekly report", cron="0 9 * * 1", agent="not-an-agent"))
 
-        assert result == {"error": "No agent available"}
+        assert result == {"error": "Agent 'not-an-agent' not found"}
 
     @pytest.mark.asyncio
     async def test_create_accepts_a_one_time_timestamp(self, manager, acting_session):

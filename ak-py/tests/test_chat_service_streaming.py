@@ -20,7 +20,7 @@ class _FakeHandler:
         self.service = service
         self.initialized_with = None
 
-    def initialize(self, session_id, agent):
+    def initialize(self, session_id, agent, surface=None, principal=None):
         self.initialized_with = (session_id, agent)
 
     async def run_stream_async(self, requests, principal=None):
@@ -128,10 +128,10 @@ class _StreamingAgentService:
     def __init__(self, stream_multi):
         self._stream_multi = stream_multi
 
-    def ensure_agent_available(self, agent, *, hosted=False):
+    def ensure_agent_available(self, agent, principal=None, *, hosted=False, surface=None):
         pass
 
-    def select(self, session_id, agent):
+    def select(self, session_id, agent, surface=None):
         pass
 
     def get_response_session_id(self, session_id):
@@ -236,7 +236,10 @@ def test_execute_stream_sync_closes_its_inner_iterator_by_contract(monkeypatch):
         lambda self, requests, principal=None: held,
     )
     _install_agent_service(monkeypatch, None)
-    monkeypatch.setattr("agentkernel.core.chat_service.ChatService.prepare_agent_handler", lambda self, session_id, agent: AgentHandler())
+    monkeypatch.setattr(
+        "agentkernel.core.chat_service.ChatService.prepare_agent_handler",
+        lambda self, session_id, agent, surface=None, principal=None: AgentHandler(),
+    )
 
     stream = ChatService().execute_stream_sync(BaseRunRequest(prompt="Hi", session_id="session-1", agent="test-agent"))
     next(stream)

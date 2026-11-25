@@ -121,15 +121,14 @@ def _environment(monkeypatch):
     InMemoryTransport.reset()
     InMemoryResponseStore.reset()
     CountingRunner.runs = []
-    saved_a2a = (dict(A2A._cards), dict(A2A._executors), A2A._built, A2A._client)
     saved_mcp = (MCP._fastmcp, MCP._built, dict(MCP._executors), MCP._client)
-    A2A._cards, A2A._executors, A2A._built, A2A._client = {}, {}, False, None
+    A2A.reset()
     MCP._fastmcp, MCP._built, MCP._executors, MCP._client = None, False, {}, None
     agent = CountingAgent()
     Runtime.current().register(agent)
     yield
     Runtime.current().deregister(agent)
-    A2A._cards, A2A._executors, A2A._built, A2A._client = saved_a2a
+    A2A.reset()
     MCP._fastmcp, MCP._built, MCP._executors, MCP._client = saved_mcp
     InMemoryResponseStore.reset()
     InMemoryTransport.reset()

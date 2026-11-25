@@ -1,0 +1,55 @@
+# Changelog fragments (#664). Every PR with a user-visible change adds one file under changelog.d/,
+# named <issue>.<type>.md (or <issue>.<type>.<n>.md for a second entry). publish.yaml compiles the
+# fragments into a new CHANGELOG.md section at release time and deletes them. Rules for writing a
+# fragment: CONTRIBUTING.md, "Changelog entries". scripts/changelog_fragments.py reads this file to
+# validate fragment names, so a type added here is accepted everywhere.
+#
+# Preview the next release locally: uvx towncrier@26.9.0 build --draft --version next
+
+[tool.towncrier]
+directory = "changelog.d"
+filename = "CHANGELOG.md"
+start_string = "<!-- towncrier release notes start -->\n"
+title_format = "## [{version}](https://github.com/yaalalabs/agent-kernel/releases/tag/v{version}) - {project_date}"
+issue_format = "[#{issue}](https://github.com/yaalalabs/agent-kernel/issues/{issue})"
+orphan_prefix = "+"
+underlines = ["", "", ""]
+ignore = ["README.md"]
+
+# Rendered in this order. Keep "breaking" first: while a breaking fragment is pending, publish.yaml
+# also refuses a version that does not raise the minor version over the last release.
+
+[[tool.towncrier.type]]
+directory = "breaking"
+name = "Breaking changes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "added"
+name = "Added"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "changed"
+name = "Changed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "deprecated"
+name = "Deprecated"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "removed"
+name = "Removed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "fixed"
+name = "Fixed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "security"
+name = "Security"
+showcontent = true

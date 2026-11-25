@@ -257,6 +257,7 @@ Minimum validation:
 4. Search for stale names, old counts, removed examples, or outdated setup/version references introduced by the branch delta, including inside `docs/src/pages/*.tsx`.
 5. Confirm example references in the docs site still point to examples that exist.
 6. If a `.tsx` page was edited, confirm the docs site still builds (`cd docs && NODE_ENV=production NODE_OPTIONS=--max-old-space-size=6144 npm run build`; TypeScript is not installed in `docs/`, so the production build is the compile check, and `NODE_ENV=production` keeps the debug plugin out of the client bundle) and that every new `link` resolves to an existing `docs/docs/` page.
+7. The changelog is part of the same end-of-branch pass: run `ak-dev-sync-changelog-from-branch` so a user-visible change also carries its `changelog.d/<issue>.<type>.md` fragment. Never edit `CHANGELOG.md` directly.
 
 ## Output Expectations
 

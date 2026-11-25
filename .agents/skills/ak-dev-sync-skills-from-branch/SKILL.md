@@ -202,6 +202,7 @@ Minimum validation:
 3. Check edited markdown/JSON files for diagnostics.
 4. Verify skill inventory counts and tables in docs/specs match the actual `.agents/skills/` directory.
 5. Search for stale capability names, old counts, or old version references introduced by the branch delta.
+6. The changelog is part of the same end-of-branch pass: run `ak-dev-sync-changelog-from-branch` so a user-visible change also carries its `changelog.d/<issue>.<type>.md` fragment. A change to a bundled user skill that users would notice gets a fragment too.
 
 ## Output Expectations
 

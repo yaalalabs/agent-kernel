@@ -175,12 +175,11 @@ class _Agent(Agent):
 
 @pytest.fixture
 def _fresh_a2a(monkeypatch):
-    """A2A enabled, with nothing built yet; what was built before is put back afterwards."""
+    """A2A enabled, with nothing built yet, and nothing built here left behind."""
     _configure(monkeypatch, AK_A2A__ENABLED="true")
-    saved = (dict(A2A._cards), dict(A2A._executors), A2A._built)
-    A2A._cards, A2A._executors, A2A._built = {}, {}, False
+    A2A.reset()
     yield
-    A2A._cards, A2A._executors, A2A._built = saved
+    A2A.reset()
 
 
 class TestRoutes:
@@ -369,3 +368,32 @@ class TestCardsFromTheRegistry:
 
         assert card is not None  # the ADK adapter built no card before
         assert [(skill.id, skill.description) for skill in card.skills] == [("refund", "Refund the customer.")]
+
+
+class TestReset:
+    """`A2A` keeps what it built in class state, and `reset()` forgets all of it together: a descriptor left
+    behind by an earlier build, with its card gone, is listed to a caller and has no card to show."""
+
+    def test_what_was_built_for_one_registry_is_not_served_from_the_next(self, _fresh_a2a, descriptor_only_registry, authorization):
+        authorization(grants=[{"subjects": "*", "agents": "*", "level": "read"}])
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([_descriptor(id="first", name="first")])):
+            assert [card.name for card in A2A.get_cards()] == ["first"]
+
+        A2A.reset()
+
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([_descriptor(id="second", name="second")])):
+            assert [card.name for card in A2A.get_cards()] == ["second"]
+            assert A2A.get_agent_names() == ["second"]
+            assert A2A.get_descriptor("first") is None
+
+    def test_the_executors_and_the_queue_client_are_built_again(self, _fresh_a2a, monkeypatch):
+        from agentkernel.pipeline import request_handler
+
+        monkeypatch.setattr(request_handler, "RestHandler", type("_Client", (), {}))
+        A2A.reset()
+        executor, client = A2A.get_executor(AGENT), A2A.get_client()
+
+        A2A.reset()
+
+        assert A2A.get_executor(AGENT) is not executor
+        assert A2A.get_client() is not client

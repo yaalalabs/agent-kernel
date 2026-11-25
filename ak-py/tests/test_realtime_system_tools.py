@@ -228,7 +228,7 @@ class TestOpenAIRealtime:
                 )
                 agent = _openai_agent(model)
                 handler = SimpleNamespace(service=SimpleNamespace(agent=agent, runtime=runtime, session=Session("call-2")))
-                chat_service = SimpleNamespace(prepare_agent_handler=lambda session_id, agent_name: handler)
+                chat_service = SimpleNamespace(prepare_agent_handler=lambda session_id, agent_name, principal=None: handler)
 
                 def dispatch(principal, text):
                     body = BaseRunRequest(prompt="", session_id="call-2", requests=[AgentRequestText(prompt=text)], principal=principal)

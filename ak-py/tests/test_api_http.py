@@ -1,7 +1,8 @@
+import json
 from unittest.mock import Mock, patch
 
 import pytest
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 from test_secret_manager import _DictSecretProvider
@@ -9,6 +10,7 @@ from test_secret_manager import _DictSecretProvider
 from agentkernel.api.handler import RESTRequestHandler
 from agentkernel.api.http import RESTAPI
 from agentkernel.core.config import _IdentityConfig, _IdentityProviderConfig, _StaticPrincipalConfig, _StaticProviderConfig
+from agentkernel.core.model import Principal
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.identity import IdentityProviderFactory
 from agentkernel.pipeline.transport.base import QueueTransportFactory
@@ -668,3 +670,264 @@ class TestIdentityDependency:
 
         assert len(dependencies) == 1
         assert dependencies[0].dependency.__name__ == "identity_dependency"
+
+
+class TestUnknownAgentOnTheChatRoute:
+    """A chat request naming an agent the registry does not know is a 404 `Agent '<name>' not found` (#603): the
+    answer an agent the caller may not see gets, so the status does not say whether a name exists. Nothing is
+    mocked: the real handler and chat service over a runtime of the test's own."""
+
+    @pytest.fixture(autouse=True)
+    def _config(self, monkeypatch):
+        from agentkernel.core.config import AKConfig
+
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.delenv("AK_EXECUTION__MODE", raising=False)
+        monkeypatch.delenv("AK_EXECUTION__MESSAGE_TYPE", raising=False)
+        AKConfig._reset()
+        yield
+        AKConfig._reset()
+
+    @staticmethod
+    def _post(route: str, fields: dict, sse: bool = False):
+        """One chat request to an app serving a runtime that hosts no agent."""
+        from agentkernel.api.handler import AgentRESTRequestHandler
+        from agentkernel.core.config import AKConfig, _ExecutionConfig
+        from agentkernel.core.model import ExecutionMode
+        from agentkernel.core.runtime import Runtime
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        if sse:
+            AKConfig.get().execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta")
+        app = FastAPI()
+        with Runtime(InMemorySessionStore()):
+            app.include_router(AgentRESTRequestHandler().get_router())
+            client = TestClient(app, raise_server_exceptions=False)
+            if route == "json":
+                return client.post(AgentRESTRequestHandler.CHAT_PATH, json=fields)
+            return client.post(AgentRESTRequestHandler.CHAT_MULTIPART_PATH, data=fields)
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_a_named_unknown_agent_is_404(self, route):
+        response = self._post(route, {"prompt": "hello", "session_id": "s-1", "agent": "ghost"})
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": {"error": "Agent 'ghost' not found", "session_id": "s-1"}}
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_it_is_404_on_the_sse_path_before_the_stream_opens(self, route):
+        response = self._post(route, {"prompt": "hello", "session_id": "s-1", "agent": "ghost"}, sse=True)
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Agent 'ghost' not found"}
+        assert not response.headers["content-type"].startswith("text/event-stream")
+
+    @pytest.mark.parametrize("sse", [False, True], ids=["json", "sse"])
+    def test_a_request_naming_no_agent_while_none_exists_stays_a_400(self, sse):
+        response = self._post("json", {"prompt": "hello", "session_id": "s-1"}, sse=sse)
+
+        assert response.status_code == 400
+        assert "No agent available" in response.text
+
+
+class TestAnAgentKeptOffRestOnTheChatRoute:
+    """`surfaces` governs the chat routes, not only the catalog (#603, design refinement 13): a request that enters
+    by the REST API for an agent whose descriptor leaves `rest` out is answered like one for an agent that does not
+    exist, and a request naming no agent runs the first agent that is on `rest`. Nothing is mocked: the real handler
+    and chat service over the `kept_off_rest` runtime: `internal` (on `a2a` only, registered first) and `public`."""
+
+    @pytest.fixture(autouse=True)
+    def _config(self, monkeypatch):
+        from agentkernel.core.config import AKConfig
+
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.delenv("AK_EXECUTION__MODE", raising=False)
+        monkeypatch.delenv("AK_EXECUTION__MESSAGE_TYPE", raising=False)
+        AKConfig._reset()
+        yield
+        AKConfig._reset()
+
+    @pytest.fixture
+    def post(self, kept_off_rest):
+        """Sends one chat request to an app serving the `kept_off_rest` runtime."""
+        from agentkernel.api.handler import AgentRESTRequestHandler
+        from agentkernel.core.config import AKConfig, _ExecutionConfig
+        from agentkernel.core.model import ExecutionMode
+
+        def _post(route: str, fields: dict, sse: bool = False):
+            if sse:
+                AKConfig.get().execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta")
+            app = FastAPI()
+            with kept_off_rest:
+                app.include_router(AgentRESTRequestHandler().get_router())
+                client = TestClient(app, raise_server_exceptions=False)
+                if route == "json":
+                    return client.post(AgentRESTRequestHandler.CHAT_PATH, json=fields)
+                return client.post(AgentRESTRequestHandler.CHAT_MULTIPART_PATH, data=fields)
+
+        return _post
+
+    @staticmethod
+    def _streamed_text(response) -> str:
+        frames = [json.loads(line[len("data: ") :]) for line in response.text.splitlines() if line.startswith("data: ")]
+        return "".join(frame.get("delta", "") for frame in frames)
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_naming_it_is_answered_with_the_unknown_agents_404(self, route, post):
+        kept_off = post(route, {"prompt": "hello", "session_id": "s-1", "agent": "internal"})
+        unknown = post(route, {"prompt": "hello", "session_id": "s-1", "agent": "ghost"})
+
+        assert kept_off.status_code == unknown.status_code == 404
+        assert kept_off.json() == {"detail": {"error": "Agent 'internal' not found", "session_id": "s-1"}}
+        # One status and one body shape: nothing in the answer says the name exists on another surface.
+        assert unknown.json() == {"detail": {"error": "Agent 'ghost' not found", "session_id": "s-1"}}
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_it_is_404_on_the_sse_path_before_the_stream_opens(self, route, post):
+        response = post(route, {"prompt": "hello", "session_id": "s-1", "agent": "internal"}, sse=True)
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Agent 'internal' not found"}
+        assert not response.headers["content-type"].startswith("text/event-stream")
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_a_request_naming_no_agent_runs_the_first_agent_on_rest(self, route, post):
+        response = post(route, {"prompt": "hello", "session_id": "s-1"})
+
+        assert response.status_code == 200
+        assert response.json() == {"result": "public", "session_id": "s-1"}
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_the_sse_default_skips_it_too(self, route, post):
+        response = post(route, {"prompt": "hello", "session_id": "s-1"}, sse=True)
+
+        assert response.status_code == 200
+        assert self._streamed_text(response) == "public"
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_an_agent_on_rest_is_served_by_name(self, route, post):
+        response = post(route, {"prompt": "hello", "session_id": "s-1", "agent": "public"})
+
+        assert response.json() == {"result": "public", "session_id": "s-1"}
+
+    @pytest.mark.parametrize("value", ["a2a", "rest"])
+    def test_a_client_cannot_say_which_surface_it_entered_by(self, value, post):
+        # The entry point names the surface. A body claiming `a2a`, where `internal` is served, runs nothing.
+        response = post("json", {"prompt": "hello", "session_id": "s-1", "agent": "internal", "surface": value})
+
+        assert response.status_code == 422
+        assert "surface" in response.text
+
+    def test_a_surface_form_field_changes_nothing(self, post):
+        # FastAPI drops a form field the route does not declare; the route's own `rest` stands.
+        response = post("multipart", {"prompt": "hello", "session_id": "s-1", "agent": "internal", "surface": "a2a"})
+
+        assert response.status_code == 404
+
+
+class TestTheAccessGateOnTheChatRoute:
+    """With an `authorization` block the chat routes answer for the caller (#603, plan iteration 19): an agent
+    it may not see is the unknown agent's 404, one status and one body, so the answer never says the name
+    exists; one it may see and holds no level on is a 403. Nothing is mocked: the real handler, chat service and
+    access gate over a runtime hosting `assistant` (private, granted to alice) and `status` (public, granted to
+    nobody)."""
+
+    ALICE = Principal(subject="alice", provider="static", namespace="static")
+    BOB = Principal(subject="bob", provider="static", namespace="static")
+
+    @pytest.fixture(autouse=True)
+    def _config(self, monkeypatch):
+        from agentkernel.core.config import AKConfig
+
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.delenv("AK_EXECUTION__MODE", raising=False)
+        monkeypatch.delenv("AK_EXECUTION__MESSAGE_TYPE", raising=False)
+        AKConfig._reset()
+        yield
+        AKConfig._reset()
+
+    @pytest.fixture
+    def post(self, authorization, surface_agent):
+        """Sends one chat request as a principal to an app serving the gated runtime."""
+        from agentkernel.api.handler import AgentRESTRequestHandler
+        from agentkernel.core.config import AKConfig, _ExecutionConfig
+        from agentkernel.core.model import ExecutionMode
+        from agentkernel.core.runtime import Runtime
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("assistant"))
+        status = surface_agent("status")
+        status._set_descriptor(status.descriptor.model_copy(update={"visibility": "public"}))
+        runtime.register(status)
+
+        def _post(principal, route: str, fields: dict, sse: bool = False):
+            if sse:
+                AKConfig.get().execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta")
+            authorization(grants=[{"subjects": ["user:alice"], "agents": ["assistant"], "level": "read"}])
+
+            async def _identity(request: Request):
+                request.state.principal = principal
+
+            app = FastAPI()
+            with runtime:
+                app.include_router(AgentRESTRequestHandler().get_router(), dependencies=[Depends(_identity)])
+                client = TestClient(app, raise_server_exceptions=False)
+                if route == "json":
+                    return client.post(AgentRESTRequestHandler.CHAT_PATH, json=fields)
+                return client.post(AgentRESTRequestHandler.CHAT_MULTIPART_PATH, data=fields)
+
+        return _post
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_a_hidden_agent_and_an_unknown_one_answer_with_one_status_and_body(self, route, post):
+        hidden = post(self.BOB, route, {"prompt": "hello", "session_id": "s-1", "agent": "assistant"})
+        unknown = post(self.BOB, route, {"prompt": "hello", "session_id": "s-1", "agent": "ghost"})
+
+        assert hidden.status_code == unknown.status_code == 404
+        assert hidden.json() == {"detail": {"error": "Agent 'assistant' not found", "session_id": "s-1"}}
+        assert unknown.json() == {"detail": {"error": "Agent 'ghost' not found", "session_id": "s-1"}}
+        # The two answers differ in nothing but the name the caller itself sent.
+        assert hidden.text.replace("assistant", "ghost") == unknown.text
+        assert dict(hidden.headers) == {**dict(unknown.headers), "content-length": hidden.headers["content-length"]}
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_they_are_one_answer_on_the_sse_path_too(self, route, post):
+        hidden = post(self.BOB, route, {"prompt": "hello", "session_id": "s-1", "agent": "assistant"}, sse=True)
+        unknown = post(self.BOB, route, {"prompt": "hello", "session_id": "s-1", "agent": "ghost"}, sse=True)
+
+        assert hidden.status_code == unknown.status_code == 404
+        assert (hidden.json(), unknown.json()) == ({"detail": "Agent 'assistant' not found"}, {"detail": "Agent 'ghost' not found"})
+        assert not hidden.headers["content-type"].startswith("text/event-stream")
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_an_agent_the_caller_sees_and_may_not_use_is_a_403(self, route, post):
+        response = post(self.BOB, route, {"prompt": "hello", "session_id": "s-1", "agent": "status"})
+
+        assert response.status_code == 403
+        assert response.json() == {"detail": {"error": "Principal 'bob' holds no level on agent 'status'", "session_id": "s-1"}}
+
+    def test_the_403_is_sent_before_a_stream_opens(self, post):
+        response = post(self.BOB, "json", {"prompt": "hello", "session_id": "s-1", "agent": "status"}, sse=True)
+
+        assert response.status_code == 403
+        assert response.json() == {"detail": "Principal 'bob' holds no level on agent 'status'"}
+
+    @pytest.mark.parametrize("sse", [False, True], ids=["json", "sse"])
+    def test_a_caller_with_a_level_is_served(self, sse, post):
+        response = post(self.ALICE, "json", {"prompt": "hello", "session_id": "s-1", "agent": "assistant"}, sse=sse)
+
+        assert response.status_code == 200
+        assert "assistant" in response.text
+
+    def test_a_caller_nothing_authenticated_is_the_anonymous_principal(self, post):
+        response = post(Principal.anonymous(), "json", {"prompt": "hello", "session_id": "s-1", "agent": "assistant"})
+
+        assert response.status_code == 404
+
+    def test_a_default_agent_the_caller_may_not_see_is_not_named(self, post):
+        # `assistant` is registered first, so it is the default: bob gave no name and is given none.
+        response = post(self.BOB, "json", {"prompt": "hello", "session_id": "s-1"})
+
+        assert response.status_code == 400
+        assert response.json() == {"detail": {"error": "No agent available", "session_id": "s-1"}}
