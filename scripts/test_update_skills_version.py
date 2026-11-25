@@ -97,3 +97,16 @@ dependencies = ["agentkernel[openai]>=0.4.0"]
         modified_files, replacements = update_skills_versions(skills_dir, "0.4.0")
         assert modified_files == 0
         assert replacements == 0
+
+
+if __name__ == "__main__":
+    # CI runs this file directly (test-reusable.yaml, script-tests). Collect every test_* function so
+    # a new test cannot be left out of the run; an assertion failure exits non-zero.
+    print("Running tests for update_skills_version.py...\n")
+
+    tests = [fn for name, fn in sorted(globals().items()) if name.startswith("test_") and callable(fn)]
+    for test in tests:
+        test()
+        print(f"✅ {test.__name__} passed")
+
+    print(f"\n✅ All {len(tests)} tests passed!")
