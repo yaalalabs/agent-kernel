@@ -630,7 +630,7 @@ What changed in phase C after iteration 16, before it merged (2026-11-18). Each 
 the spec section it changes.
 
 - **Unknown agents (decision).** A request naming an agent the registry does not know will answer
-  like a hidden one, a 404 `LookupError`, from iteration 17a (spec 6, design refinement 9). It
+  like a hidden one, a 404 `AgentNotFoundError`, from iteration 17a (spec 6, design refinement 9). It
   was planned as the first two steps of iteration 19 and moved ahead of iteration 18 on
   2026-11-19: see iteration 17a.
 - **Empty surface warning.** `A2A._build` and `MCP._build` warn once when agents are known and
@@ -737,18 +737,41 @@ the spec section it changes.
 
 - **Goal:** an `authorization` block parses and the static authorizer answers every decision;
   nothing consults it yet.
-- **Files:** `core/config.py`, `identity/authz/base.py`, `identity/authz/factory.py`,
-  `identity/authz/static.py`, `identity/authz/testing.py`.
+- **Files:** `core/config.py`, `identity/__init__.py` (the lazy exports), `identity/authz/base.py`,
+  `identity/authz/factory.py`, `identity/authz/static.py`, `identity/authz/testing.py`.
 - **Steps:**
-  1. `_AuthorizationConfig`, `_GrantConfig`, `_ToolPolicyConfig`;
+  1. `_AuthorizationConfig` (`type` and one section per built-in backend), the static section
+     `_StaticAuthorizerConfig` with `_GrantConfig` and `_ToolPolicyConfig`, each refusing a key it
+     does not take (the block itself only for a built-in type, so a bring-your-own authorizer
+     keeps its own settings); the static type refused without its section;
      `AKConfig.authorization: Optional = None` (spec Config changes).
   2. `Decision`, `AuthorizerCapabilities`, the `Authorizer` ABC (spec 7).
-  3. `StaticAuthorizer` with `GrantTable` and `SubjectMatcher` (the six subject forms,
-     `tag:<name>`, `tiers`/`allow`/`deny`), the reason strings (spec 7).
-  4. `AuthorizerFactory` with the reserved engine names raising `AKConfigError`;
-     `AuthorizerContract` (spec 7).
+  3. `StaticAuthorizer` with `GrantTable`, `ToolPolicyTable` and `SubjectMatcher` (the six
+     subject forms, `tag:<name>`, `tiers`/`allow`/`deny`), the reason strings (spec 7).
+  4. `AuthorizerFactory`, building every backend from the block alone, with the reserved engine
+     names raising `AKConfigError`; `StaticAuthorizer.from_config` supplying the two lookups the
+     static backend takes (the current runtime's registry, the tiers the system tools of an agent
+     declare); `AuthorizerContract` (spec 7).
 - **Verify:** new `tests/test_authorizer_static.py`; `test_config` authorization cases; the
   `FakeCfg` stubs gain `authorization = None`.
+- **As built (2026-11-19):** settled along the way and written into spec 7 and the config
+  section: the system tool tiers reach the static backend as a per-agent lookup handed over by
+  the factory, not by the gate; `user:` never matches the anonymous principal; a `tag:` entry
+  reads the registry only for a principal one of whose grants selects by tag, off the event
+  loop, and once per question or listing (since 2026-11-25 not at all for a hosted agent,
+  spec refinement 19); a second tool policy for one agent is refused. The
+  gate of iteration 18 takes its authorizer from `AuthorizerFactory.get()` and lists through
+  `authorizer.visible_agents`. No user documentation yet: the block does nothing until the gate
+  consults it.
+- **Amended (2026-11-23):** the static authorizer became one backend among several (spec
+  refinement 15), before anything consults the block. Its policy moved from the block's own keys
+  to a section named after it, `authorization.static.grants` and `authorization.static.tools`;
+  `AuthorizerFactory.create` takes the block and nothing else, and the lookups moved from the
+  factory into `StaticAuthorizer.from_config` as its defaults; a block of type `static` with no
+  section is refused at load. The decisions themselves (subject forms, levels, tiers, allow and
+  deny, the reasons) are unchanged. A `static` section left under another type is not refused,
+  as an unselected provider's section is not; whether an engine should refuse it is a question
+  for the iteration that ships the first engine.
 
 ### Iteration 17a: An unknown agent answers 404
 
@@ -782,12 +805,32 @@ gate's `LookupError` is already a 404 the day it is wired in. It depends on noth
   `test_chat_service_core`, `test_schedule_manager`, `test_schedule_tools` and
   `test_thread_integration` (the unknown agent and the one another process hosts); an unknown
   agent answering 404 on the chat route, JSON and SSE, in `test_api_http`.
+- **As built (2026-11-23):** three things settled along the way, each written into spec 6 and
+  refinement 9.
+  - The error is `AgentNotFoundError` (`core/registry.py`, exported from `agentkernel.core`), a
+    `LookupError` subclass carrying the one text, and every surface maps that class and not
+    `LookupError`. The wrappers and the thread handlers catch around the whole run, where the
+    `KeyError` a strict session load or a thread store raises, or one out of a hook, is a
+    `LookupError` too: mapped by the base class those would have turned from a 500 into a 404
+    reading as a missing agent. The gate of iteration 18 raises the same class.
+  - `schedule/handler.py` is unchanged, against this entry's file list. No schedule route
+    reaches the check: a task is created by a chat request, which the chat mapping answers
+    (404), and an amendment cannot change a task's agent. A branch in `_as_http_error` would
+    have been code no route runs.
+  - Mapped beyond the list in step 2: the multipart chat route's SSE branch and the direct
+    thread handler's two SSE branches, which raise before the stream opens like the chat
+    route's; and the queue-mode thread edge (`_record_user_message`). The queue pipeline's
+    runner and the deployment adapters answer through the wrappers and needed nothing: a
+    queued request for an unknown agent makes the round trip and comes back 404, until the
+    precheck of iteration 19 stops it at the edge.
+  The user-facing change is in `rest-api.md` (Error Handling), `scheduling.md` and the
+  `ak-py` README's status list.
 
 ### Iteration 17b: An agent off `rest` is not served over REST
 
 Decided 2026-11-19 from the phase C review (design refinement 13). It builds on 17a, whose
-`LookupError` and 404 mapping it reuses, and lands before the gate so that iteration 18 adds
-the caller to a check that already knows the surface.
+`AgentNotFoundError` and 404 mapping it reuses, and lands before the gate so that iteration 18
+adds the caller to a check that already knows the surface.
 
 - **Goal:** a chat request that enters by the REST API and names an agent whose `surfaces`
   leaves out `rest` is answered like one for an unknown agent, and a request naming no agent
@@ -796,14 +839,14 @@ the caller to a check that already knows the surface.
 - **Files:** `core/model.py`, `core/service.py`, `core/chat_service.py`, `api/handler.py`,
   `pipeline/request_handler.py`, `pipeline/ws/handler.py`,
   `integration/thread/thread_chat.py`, `schedule/manager.py`, and the deployment entry points
-  that set the principal on a chat body (the Lambda routers, the ECS WebSocket API, the Azure
-  handler).
+  that set the principal on a chat body (the Lambda routers and the ECS WebSocket API; the Azure
+  Functions handler this list named was removed by #984).
 - **Steps:**
   1. `BaseChatRequest.surface: Optional[AgentSurface] = None`: the surface a request entered
      by. Set by the entry point where it sets `principal`, overwritten when a client sends one
      and kept out of the public schema like the other internal fields, and carried in the queued
      body to the runner.
-  2. `ensure_agent_available(name, *, hosted, surface)` raises the unknown-agent `LookupError`
+  2. `ensure_agent_available(name, *, hosted, surface)` raises the unknown-agent `AgentNotFoundError`
      for a named agent not exposed on the surface; `AgentService.select(..., surface=)` defaults
      an unnamed request to the first hosted agent exposed on it, and the check raises
      `ValueError("No agent available")` when there is none. `ChatService.execute*` and
@@ -820,6 +863,41 @@ the caller to a check that already knows the surface.
   `a2a` or `mcp` only still runs when the request comes from that surface, queued and direct);
   `test_integration_roundtrip` and `test_cli_token` (unaffected). `rest-api.md` and
   `configuration.md` drop the sentence saying a named agent off `rest` is still served.
+- **As built (2026-11-23):** the mechanism is the one above. What was settled along the way is
+  written into spec 6 (Availability, Catalog) and refinement 13.
+  - A client that sends `surface` is refused, not overwritten: the field joined
+    `ChatRunRequest.INTERNAL_FIELDS`, so it is a 422 on the FastAPI chat routes and is left out
+    of the published schema by the mechanism the other internal fields use. A chat body may
+    carry any extra key as context for the pre-hooks and `surface` is a likely one; dropping it
+    in silence would have changed what an agent sees. The entry points still assign it
+    unconditionally.
+  - `AgentService.select` applies the surface to a named agent as well as to the default, so it
+    cannot select what the check would refuse. The unnamed request in the registry-wide form
+    (the queue-mode thread edge) still asks only `is_empty()`: the default is the runner's to
+    pick, and a per-request listing of the store was ruled out in phase C.
+  - Files beyond the list: `pipeline/agent_runner.py` (the AG-UI branch prepares the handler
+    itself and hands the body's surface on), `api/a2a/a2a.py`, `api/mcp/akmcp.py` and both
+    AG-UI handlers (each names its own surface). `realtime/pool.py` is unchanged: a realtime
+    edge names no surface. The Lambda runners needed nothing, since they answer through the
+    wrappers.
+  - The check runs where the agent runs. For a queued request that is the runner, judging by
+    the descriptor the runner holds, so a `surfaces` overlay set only in the process that
+    accepts requests narrows the catalog and the thread route but not a queued REST chat
+    request, until the edge precheck of iteration 19. For A2A, MCP and AG-UI the runner's check
+    is added to the edge's: an overlay at the edge can narrow what the hosting process declares
+    and no longer widen it. The docs tell operators to declare a restriction in code or in
+    configuration both processes read.
+  - A queued streaming request for an agent kept off `rest` fails as one for an unknown agent
+    does today: retries, then an error chunk. The edge precheck of iteration 19 turns both into
+    a 404.
+  - Open, for iteration 19: a task that names no agent, created by a REST request, runs the
+    firing process's default whatever its `surfaces`, because an occurrence carries no surface.
+    Keeping the creating surface on the task record would close it.
+  - Tests: two shared fixtures (`surface_agent`, `kept_off_rest`) carry the cases across the
+    suites; `test_chat_internal_fields` runs the client refusal over the five chat handlers.
+    The CLI needed no new case: it selects with no surface, which `TestSelectionOnASurface`
+    pins. User docs: `rest-api.md`, `configuration.md`, `module.md`, `scheduling.md`, the
+    `ak-py` README and the `ak-add-capabilities` skill.
 
 ### Iteration 18: Access gate and Runtime enforcement
 
@@ -828,7 +906,7 @@ the caller to a check that already knows the surface.
 - **Files:** `identity/authz/gate.py`, `core/runtime.py`, `core/module.py`, `core/service.py`.
 - **Steps:**
   1. `AccessGate` with its sync and async twins: `authorize_agent` (`PermissionError`,
-     `LookupError`), `visible`, `visible_agents`, `tool_filter`, `authorize_session`,
+     `AgentNotFoundError`), `visible`, `visible_agents`, `tool_filter`, `authorize_session`,
      `validate_configuration` (the Q12 check reads `ungated_tool_names`, empty until phase E)
      (spec 7).
   2. `Runtime` gate sequence before the pre-hooks, the tool filter publication,
@@ -840,6 +918,53 @@ the caller to a check that already knows the surface.
      `update_agui_state` at `WRITE`, the rest at the `READ` default (spec 2).
 - **Verify:** new `tests/test_access_gate.py`; the gate cases in `test_runtime_principal`;
   changed `test_module`, `test_schedule_tools`, `test_sandbox_tools`.
+- **As built (2026-11-23):** the four steps, with what was settled along the way written into
+  spec 3, 6 and 7 and gathered as refinement 16.
+  - **The caller's principal reaches the availability check in this iteration.** Step 3 gives
+    `ensure_agent_available` the principal and the gate, and a missing principal is read as the
+    anonymous one (it fails closed). With only the signature changed, every request through
+    `ChatService` would have been checked as nobody and an authorized caller refused until
+    iteration 19. So the callers pass it now: `AgentHandler.initialize` and
+    `ChatService.prepare_agent_handler` take `principal`, `execute*` pass `req.principal`, and
+    the thread handlers, `ScheduleManager.create`, the AG-UI handler, the queue runner's AG-UI
+    branch and the realtime pool pass theirs. Files beyond the list: `core/chat_service.py`,
+    `integration/thread/thread_chat.py`, `schedule/manager.py`, `integration/agui/handler.py`,
+    `pipeline/agent_runner.py`, `realtime/pool.py`. What stays for 19 and 20 is each surface's
+    own handling: the pipeline precheck, the catalog, AG-UI's and MCP's and A2A's listings and
+    refusals. Until iteration 20 an AG-UI run the gate refuses surfaces as a 500 from
+    `prepare_agent_handler`, since that route maps no refusal yet.
+  - **The policy checks are the backend's** (`Authorizer.validate`, a no-op by default); the gate
+    keeps the ungated-tools refusal, which it makes for any agent that reports ungated tools
+    and not by runner class. The static backend learns whether roles are mapped through a third
+    lookup, `roles_mapped`, filled from the `identity` block in `from_config`.
+  - **`Module.load` validates with `registry_wide=False`.** The warnings about a grant naming an
+    agent or a tag nothing carries need every module loaded; they are made by the
+    `get_router()` call of iteration 19. A failed validation rolls the load back.
+  - **A shared-channel session is matched on provider and namespace alone**, where the outline
+    tried namespace and subject first for every owner.
+  - **A request naming no agent** is decided for the default agent in the `hosted` form of the
+    check; a default the caller may not see is `No agent available` (400), so the answer does
+    not name an agent the request did not. The default is not chosen per caller.
+  - **The gate's synchronous forms answer inside a coroutine** by running the question on a
+    thread of their own (the check is synchronous under `ChatService.execute`). `Runtime`
+    awaits the `async` forms. A remote engine therefore holds the event loop for the pre-run
+    question on the direct async path; an authorizer may be awaited on more than one loop.
+  - **`Runtime`** asks through `_admit`, with the descriptor of the agent in hand, so a run does
+    not depend on the agent being registered in the current runtime; a stream the gate refuses
+    is one error chunk for `AgentNotFoundError` as for `PermissionError`.
+  - **Cost to revisit with the first engine:** building a run's filter asks the authorizer for
+    the level, the allowed list and then once per denied tool for its reason. Over the static
+    backend each is cheap, but a policy with `tag:` grants lists the registry for each.
+    Amended 2026-11-25 (spec refinement 19): not for a run, whose agent is hosted and
+    answers from its own descriptor. The listing per question remains for an agent hosted
+    elsewhere; see Phase D as shipped.
+  - **Tiers:** every sandbox tool and all five schedule tools are `write`, the reading ones
+    included; `write_kb` and `update_agui_state` are `write`; the rest keep `read`.
+  - No user documentation yet. The block now gates runs, but the catalog, the pipeline edge and
+    the protocol surfaces do not consult it until iterations 19 and 20; the page is written in
+    iteration 27 against the finished phase. `test_sandbox_tools` in the verify line is
+    `test_sandbox.py`, and `test_module` needed no change (the load cases sit in
+    `test_access_gate.py`).
 
 ### Iteration 19: Service, pipeline and schedule enforcement
 
@@ -853,14 +978,66 @@ the caller to a check that already knows the surface.
 - **Steps:**
   1. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
      403 reply and the warning (spec 8.1, 8.11).
-  2. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
+  2. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3). It
+     passes the request's surface, so the edge's own view of `surfaces` holds for a queued REST
+     chat request (left to the runner by iteration 17b), and decides whether a task keeps the
+     surface of the request that created it (the unnamed scheduled request, 17b's open point).
   3. The catalog filtered by `visible_agents`, each entry's `tools` and tool-backed `skills`
-     narrowed to the caller; `get_router()` calls `validate_configuration` (spec 6, 7).
+     narrowed to the caller; `get_router()` calls `validate_configuration` (spec 6, 7), with the
+     hosted agents and the default `registry_wide=True`: this is the call that makes the
+     warnings about grants `Module.load` leaves out (iteration 18).
+  The caller's principal already reaches `ensure_agent_available` through `ChatService`, the
+  thread handlers and `ScheduleManager.create` (iteration 18), so the direct routes answer 403
+  and 404 before a session loads; what this iteration adds on the request path is the edge
+  precheck of step 2 and the fire-time skip of step 1.
 - **Verify:** 403/404 cases in `test_api_http`, with the parity case (an unknown agent and a
   hidden one answer with one status and body); `test_agui_handler`;
   `test_pipeline_request_handler` (the riskiest consumer: the precheck on a store-backed
   registry with no local agents); the fire-time skip in `test_schedule_principal`; visibility
   and the `tools` and `skills` narrowing in `test_api_catalog`.
+- **As built (2026-11-23):** the three steps, with what was settled along the way written into
+  spec 6, 7, 8.1, 8.3 and 8.11 and gathered as refinement 17.
+  - **A task keeps the surface of the request that created it** (step 2's decision, 17b's open
+    point): `ScheduledTask.surface`, carried by the trigger body when set. An occurrence is
+    served the agents the creating request would have been, so a task naming no agent no longer
+    reaches an agent kept off `rest`, and a named agent taken off the surface later is skipped
+    at fire time. A schedule tool's task has no surface, as before.
+  - **The precheck is not made by an accepting process whose registry knows no agent.** Such a
+    process (no agent module loaded, no shared registry: `examples/aws-containerized/
+    openai-dynamodb-scalable` is one) enqueued every request before, and would have answered
+    every one 404. It leaves the answer to the runner. The precheck covers a named agent only;
+    a request naming none is the runner's as well. One registry read per request, off the event
+    loop. The producers outside `RestHandler` (WebSocket chat frames, the messaging and realtime
+    edges, the deployment adapters' entry points) enqueue as before and are refused by the
+    runner.
+  - **A refusal on the protocol path is a reply, not an error.** `RestHandler.request` returns
+    the `QueuedReply` the runner would have stored (404 or 403 with `{"error", "session_id"}`),
+    which the A2A and MCP executors already read through `is_error`. How each protocol words it
+    is iteration 20.
+  - **The skip follows the availability check, with or without an `authorization` block.** A
+    task whose agent was removed, or taken off the task's surface, was recorded as fired and
+    answered 404; it is now skipped, recorded with `last_error` and answered 403, like one whose
+    owner lost its level. A task naming no agent with none to default to keeps its 400, with
+    the reason recorded. `_record_trigger` makes the check before it records, so a scheduled
+    run is asked twice (there and in `AgentHandler.initialize`); a stream is one error chunk,
+    since a raised refusal would be redelivered by the queue and recorded each time.
+  - **`last_error` is the last occurrence's**, cleared by the next one that runs. The manager
+    hands `error` to the store only when there is one, so a bring-your-own store written before
+    the keyword keeps recording every occurrence that runs.
+  - **The catalog** narrows each entry over the tools its descriptor records
+    (`AccessGate.narrow`, by `filter_tools`), hosted or not, and only the entries of the page.
+    `list_agents` takes the request. The three chat routers validate the policy at mount
+    (`_validate_access`), which is where the registry-wide warnings are made; a registry that
+    cannot be read then stops the mount.
+  - Files beyond the list: `schedule/model.py` (the two fields), `identity/authz/gate.py`
+    (`narrow`), `integration/thread/thread_chat.py` (the thread queue route asks once, not
+    twice). `schedule/handler.py` needed no change (a task is returned whole, `last_error`
+    included). `test_agui_handler` in the verify line needed no change: the AG-UI handler was
+    handed the principal in iteration 18 and its own listing and refusals are iteration 20.
+  - User documentation: the changes to documented behaviour are in the scheduling page (the
+    kept surface, `last_error`, skipped occurrences), the configuration page (both processes
+    of a split deployment decide), the README and the bundled skill. The `authorization` block
+    itself, and what it does to the catalog, stay for iteration 27.
 
 ### Iteration 20: Protocol surface enforcement
 
@@ -870,12 +1047,137 @@ the caller to a check that already knows the surface.
 - **Steps:**
   1. MCP per-tool `AuthCheck` and list filtering (spec 8.6).
   2. A2A `get_cards(principal)` filtering, a served card's skills narrowed to the caller with
-     `Vary: Authorization` and an ETag of the card as served, and the 403 (spec 8.7).
-  3. AG-UI `/agents` narrowed by `visible_agents` and the 403 (spec 8.5).
+     `Vary: Authorization` and an ETag of the card as served, and the 403 (spec 8.7). The
+     narrowing is `AccessGate.narrow` (iteration 19), which the catalog already uses.
+  Since iteration 19 `RestHandler.request` refuses before the queue and returns the refusal as a
+  `QueuedReply` (404 or 403), so both executors already stop an unauthorized call; what steps 1
+  and 2 add on the call path is each protocol's own wording of it.
+  3. AG-UI `/agents` narrowed by `visible_agents` and the 403 (spec 8.5). The handler already
+     hands the caller's principal to `prepare_agent_handler` (iteration 18); its own check in
+     `_resolve_agent` is what turns a refusal into a 403 or 404 where it is a 500 today.
   4. `RealtimeConnectionPool.dispatch` runs `ensure_agent_available(body.agent, body.principal)`
-     on first connect (spec 8.4).
+     on first connect (spec 8.4). The check is already made, through `prepare_agent_handler`
+     with the input's principal (iteration 18); what remains is how a refusal reaches the edge.
 - **Verify:** list filtering and `AuthCheck` in `test_api_mcp_auth`; card filtering and skill
   narrowing in `test_api_a2a_auth`; the 403 in `test_agui_handler`; the realtime pool tests.
+- **As built (2026-11-25):** the four steps, with what was settled along the way written into
+  spec 7, 8.4, 8.5, 8.6 and 8.7 and gathered as refinement 18.
+  - **MCP.** Each agent tool carries an `async` check (`MCP._visible_to_the_caller`) that asks
+    the gate at each request whether the caller may see the agent: FastMCP leaves the tool out
+    of `tools/list` and answers a call to it as it answers an unknown tool. A call the precheck
+    or the runner refuses (a 403 or 404 reply, since iteration 19 a reply and not an exception)
+    is `ToolError("Agent not available")`.
+  - **A2A.** `A2A` keeps the descriptors its cards were mounted with and decides from them, with
+    no registry read per request. `get_cards(principal)` is the caller's catalog, narrowed by
+    `AccessGate.narrow`; the card route is the SDK's with a `card_modifier`, so the ETag is the
+    SDK's own, over the card as served; both answers say `Vary: Authorization`. Every protocol
+    route carries a dependency that asks the gate before the SDK runs: a hidden agent is the
+    bare 404 of a path that is not mounted, on all of its routes, and a visible agent the caller
+    holds no level on is a 403. The a2a-sdk has no permission error, so the 403 could not come
+    from the executor.
+  - **AG-UI.** `_resolve_agent(agent_name, principal)` asks the gate with the descriptor it
+    read, before the streaming check; `/agents` is `visible_agents` among what the handler
+    serves; the bare route does not name a default the caller cannot have; `get_router()`
+    validates the policy, for an app that mounts no chat router. Both handlers share it, so the
+    queue-mode edge refuses before it enqueues.
+  - **Realtime.** `dispatch` no longer raises the gate's refusal: `_refuse` sends the edge one
+    terminal error chunk and holds the session back with the reconnect back-off. Raised, the
+    refusal was retried by the queue for every audio frame of the call.
+  - **Outside the file list:** `identity/authz/gate.py` (`visible_agents` takes the candidates
+    to choose among) and `api/handler.py` (`_validate_access` moved to the handler base, so
+    AG-UI can call it). `pipeline/realtime_pool.py` in the list is `realtime/pool.py` since the
+    develop merge of #941.
+  - **Changes with no `authorization` block:** the MCP wording of a 404 or 403 reply, the
+    realtime refusal for an agent the runner does not host (told once, where each input was
+    retried), and the bare AG-UI route's 404 for a default agent that has gone.
+  - **Follow-up, 2026-11-25, after the commit:** what the router answered before any check ran.
+    A2A routes are mounted per agent, so a method a route does not serve (405), a credential
+    the provider refuses (401) and a trailing slash (a redirect) each told a mounted name from
+    one that is not, the first and last for any caller; the iteration's own account named only
+    the 401. `get_agent_routers()` now ends with one fallback route (`UnservedA2ARoute`), behind
+    the identity dependency, which answers every request under `/a2a/<name>/` that no A2A route
+    served with the 404 of an unmounted path. It stands aside without an `authorization` block.
+    With the block, a wrong method on a real A2A route is a 404 where it was a 405 naming the
+    method (refinement 18; `api/a2a/handler.py`, `test_api_a2a_auth`).
+  - **Not covered, as after iteration 19:** WebSocket chat frames, the messaging edges and the
+    deployment adapters' own entry points enqueue without an edge check; the runner refuses.
+  - User documentation: the realtime internals page gains the refused call. The `authorization`
+    block, and what it does on each surface, are still to be written (iteration 27's part for
+    this phase), and the pages that say visibility is "not enforced yet" stand until then.
+  - **Phase end:** the full `ak-py` suite ran with this iteration, as the test cadence asks at
+    the end of a phase (7825 passed, 134 skipped; `test_the_auth_package_is_gone` fails on the
+    leftover untracked `auth/__pycache__` of this checkout, as before), with the three checks of
+    `make lint-check` (isort, black, ruff) run without syncing the environment, all clean, and
+    the docs site built.
+
+### Phase D as shipped
+
+What changed in phase D after iteration 20, before it merged (2026-11-25). Each is recorded in
+the spec section it changes.
+
+- **The A2A fallback route.** A method a route does not serve, a credential the provider
+  refuses and a trailing slash each told a mounted agent from a name that is not mounted. One
+  route behind the agents' own (`UnservedA2ARoute`) answers them all alike; see the follow-up in
+  iteration 20 and spec refinement 18.
+- **Docs.** The phase D part of iteration 27 landed here, run with
+  `ak-dev-sync-docs-from-branch`:
+  - `advanced/identity-and-access.md` gains the Authorization section: the `authorization`
+    block, grants (the six subject forms, agent ids, `*` and `tag:`), levels, visibility, what
+    each surface answers, session ownership, scheduled tasks, the tool policy, the startup
+    checks, split deployments and a bring-your-own authorizer.
+  - The pages that said visibility is "not enforced yet" say what enforces it:
+    `api/rest-api.md` (the caller's catalog, the 403), `api/a2a-server.md`, `api/mcp-server.md`,
+    `api/agui-server.md`, `integrations/agui.md`, `core-concepts/configuration.md` (the block in
+    the reference configuration, its environment form, the Visibility note) and
+    `core-concepts/module.md`; `advanced/scheduling.md` says an occurrence is asked about its
+    owner's level again when it fires. `architecture/execution-flow.md` gains the admission
+    step, `advanced/queue-mode-guide.md` the block in both processes, and
+    `integrations/overview.md` and `integrations/livekit.md` the grant a messaging sender or a
+    realtime caller needs (`provider:messaging:<platform>`, `provider:realtime:livekit`).
+  - Three leftovers of phase A that the iteration 27 check found, on `develop` as well: the
+    human-in-the-loop, Slack and Telegram pages (and the bundled skill) still said the presser
+    of an approval button reaches the run as `acting_user_id`. It is the run's principal.
+  - `whats-new.md`, the tip in `intro.md`, an Authorization capability on the features page
+    (linking into the unreleased docs, `/docs/next/`, until a release carries the section) and
+    the Guard stage of the landing page; `ak-py/README.md` (the block's fields) and the root
+    `README.md`. The landing page's announcement line is left on the released identity
+    capability: it announces what a release carries.
+  - The bundled user skill `ak-add-capabilities`, where it said visibility is not enforced.
+- **From the review of the phase D pull request (#1011).**
+  - A `tag:` grant listed the whole registry for each question, and on the direct chat path
+    the first of them holds the server's event loop. `StaticAuthorizer` takes a
+    `hosted_descriptor` lookup and asks it first, so a run reads the registry for no tag
+    (spec refinement 19). `from_config` defaults it together with `descriptor_lookup`.
+  - Still a cost: a process that hosts none of the agents it serves lists the registry once
+    per agent it is asked about, for a caller holding a `tag:` grant (a narrowed catalog
+    page, the A2A catalog, MCP `tools/list`).
+  - `A2A.reset()` drops the cards, their descriptors, the executors and the client together.
+    Five test fixtures reset the cards and left the descriptors of an earlier build behind,
+    which a gate then listed with no card to show (`KeyError`).
+  - Stale text: the two dev skills still said nothing consults the authorizer, the spec
+    counted sixteen refinements, and the design's mirrors of refinements 16 to 18 were
+    paragraphs. The mirrors are one point per decision now.
+- **Changelog.** `develop` gained changelog fragments (#664) while the pull request was open, so
+  phase D carries its own under `changelog.d/`, written with `ak-dev-sync-changelog-from-branch`
+  against the last release (0.10.2, which holds phases A to C):
+  - `603.added.md`: the `authorization` block, and that a tool policy does not stop a call yet.
+  - `603.breaking.md`: the unknown agent's 404, `surfaces` governing the chat routes, the
+    reserved `surface` key (spec behavioural changes 34, 38 and 39).
+  - `603.breaking.1.md`: what code that extends OAK has to change (`AgentNotFoundError`,
+    `list_agents`, `run_chat`, the `surface` argument; changes 34, 39 and 40).
+  - `603.breaking.2.md`: the precheck at the accepting process, for a split deployment whose
+    accepting process loads only some agent modules (change 40).
+  - `603.changed.md`: skipped occurrences, `last_error` and a task's surface (change 41).
+  - `603.changed.1.md`: MCP's `Agent not available` (change 42).
+  - `603.fixed.md`: a realtime call for an agent the runner does not host (change 42).
+  - No fragment: AG-UI's bare route (change 42) and the A2A answers of change 43, which exist
+    only with the new block and are described on its page.
+  - Phases E and F add their own fragments under the next free counter (`603.added.1.md`).
+- **Stated in every one of those places:** a tool policy (`tiers`, `allow`, `deny`) is published
+  for each run and narrows what the catalog and an A2A card list, and no framework adapter stops
+  a call by it until phase E. Agent access, visibility and session ownership are enforced.
+- **Not done here, left to iteration 28:** the `ak-dev-new-authorizer` dev skill, the evals of
+  the bundled skills, and the user skills' own walk through an `authorization` block.
 
 ## Phase E: Framework tool gates (iterations 21 to 23)
 
@@ -990,8 +1292,10 @@ objects in `tests/test_tool_<adapter>.py`:
 
 The docs and skills for phases A and B landed with phase B itself (PR #937: the identity page,
 the docs-site and README updates, the landing-page tiles, `ak-dev-new-identity-provider` and the
-user-skill updates), and those for phase C with phase C (see "Phase C as shipped"), so iterations
-27 and 28 cover what phases D to F add and re-verify the rest.
+user-skill updates), those for phase C with phase C (see "Phase C as shipped"), and the docs for
+phase D with phase D (see "Phase D as shipped", decided 2026-11-25: a phase is not merged with
+its user documentation behind it), so iterations 27 and 28 cover what phases E and F add, the
+one dev skill phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
 
 ### Iteration 26: Test walk
 
@@ -1023,10 +1327,11 @@ user-skill updates), and those for phase C with phase C (see "Phase C as shipped
      `Module.describe` and `registry.agents.<id>.description` as the way to give a card its
      description and version, and notes that an agent registered after a process mounted its A2A
      routes is served there after a restart (spec 6, A2A card); `api/mcp-server.md` says the same
-     of an agent's MCP tool (spec 8.6). Still to write: what the access gate changes on each of
-     these pages (caller filtering, the 403 and 404), and what phases D to F add to the landing
-     and feature pages (the registry card, the store tiles and the What's New entry landed with
-     phase C).
+     of an agent's MCP tool (spec 8.6). What the access gate changes on each of these pages
+     (caller filtering, the 403 and 404) landed with phase D, with the Authorization section of
+     the identity page, the What's New entry and the features-page capability. Still to write:
+     the call-time tool gates of phase E (the pages say today that a tool policy narrows what is
+     listed and does not stop a call, which phase E reverses) and the credentials of phase F.
 - **Verify:** `grep -rnF -e AuthValidator -e Authoriser -e acting_user_id -e mcp.agents
   -e a2a.agents -e agui.agents -e userId -e get_a2a_card docs/docs ak-py/README.md README.md
   ak-deployment` (fixed strings, one `-e` per term, so no term is lost to a line break in the

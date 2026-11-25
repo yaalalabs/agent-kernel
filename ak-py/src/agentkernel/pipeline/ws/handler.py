@@ -249,6 +249,8 @@ class PipelineWebSocketHandler(RESTRequestHandler):
 
         # The connection's principal is the run's: `from_payload` dropped anything the frame named.
         body.principal = principal
+        # A chat frame is a REST-family request: the runner serves it only the agents on `rest`.
+        body.surface = "rest"
         user_id = principal.subject
         request_id = request.request_id or str(uuid.uuid4())
         # USER_ID doubles as the WS-entered marker (spec §2 invariant): the Response Handler

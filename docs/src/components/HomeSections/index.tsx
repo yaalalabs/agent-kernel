@@ -142,7 +142,7 @@ if __name__ == "__main__":
     summary: 'Decide what goes in and what comes out. The runtime enforces policy, so it is not left to each agent.',
     points: [
       'Input and output guardrails from OpenAI, Bedrock or Walled AI',
-      'One identity provider for every surface',
+      'One identity provider for every surface, and grants that decide who runs which agent',
       'Secrets resolved from a managed store, and sandboxed code execution',
     ],
     file: 'config.yaml',

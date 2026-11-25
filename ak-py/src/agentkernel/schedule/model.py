@@ -14,7 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ..core.model import ScheduleSpec
+from ..core.model import AgentSurface, ScheduleSpec
 
 # Placeholders the manager freezes into a trigger body at create/amend time. Each provider
 # substitutes them with its own occurrence values (EventBridge with its context attributes,
@@ -51,6 +51,10 @@ class ScheduledTask(BaseModel):
     agent: str | None : the agent each occurrence runs on, or None for the default
     session_id: str : originating session (``session_mode`` reuse) or the base for
         per-occurrence session ids (``session_mode`` new)
+    surface: AgentSurface | None : the agent surface the creating request entered by (``rest`` for a
+        chat request), delivered on every occurrence so the occurrence is served the agents that
+        request would have been; None for a task a schedule tool created, and for one created
+        before the field existed, whose occurrences no surface governs
     spec: ScheduleSpec : the occurrence rule this task was created from
     status: ScheduleStatus : lifecycle state
     provider_ref: str | None : handle the provider registered the task under (an EventBridge
@@ -60,6 +64,9 @@ class ScheduledTask(BaseModel):
     trigger_count: int : number of occurrences fired so far
     last_request_id: str | None : request id of the most recent occurrence, for correlating
         the task with the run it produced
+    last_error: str | None : why the most recent occurrence was not run (its owner may no longer
+        use the agent, or the agent is gone); None when it ran, so the next occurrence that runs
+        clears it
     """
 
     task_id: str
@@ -68,6 +75,7 @@ class ScheduledTask(BaseModel):
     prompt: str
     agent: str | None = None
     session_id: str
+    surface: AgentSurface | None = None
     spec: ScheduleSpec
     status: ScheduleStatus = ScheduleStatus.ACTIVE
     provider_ref: str | None = None
@@ -76,8 +84,9 @@ class ScheduledTask(BaseModel):
     last_triggered_at: str | None = None
     trigger_count: int = 0
     last_request_id: str | None = None
+    last_error: str | None = None
 
-    def apply_trigger(self, request_id: str | None, occurred_at: str, completed: bool) -> "ScheduledTask":
+    def apply_trigger(self, request_id: str | None, occurred_at: str, completed: bool, error: str | None = None) -> "ScheduledTask":
         """Advance the occurrence bookkeeping after one of this task's triggers fired.
 
         What an occurrence records, and when it closes the task, is the same on every backend —
@@ -85,13 +94,19 @@ class ScheduledTask(BaseModel):
         here rather than once per store. A cancellation outranks a completion: a task cancelled
         between the fire and the record must not come back as completed.
 
+        An occurrence that was not run is an occurrence all the same: it is counted, it closes a
+        one-time task, and it leaves the reason in ``last_error``, which describes the most recent
+        occurrence as ``last_request_id`` does.
+
         :param request_id: Request id of the run the occurrence produced, when known.
         :param occurred_at: ISO-8601 UTC timestamp of the occurrence.
         :param completed: Whether this was the task's final occurrence.
+        :param error: Why the occurrence was not run; None when it ran.
         :return: This task, advanced in place, so a store can write it back in one expression.
         """
         self.last_triggered_at = occurred_at
         self.last_request_id = request_id
+        self.last_error = error
         self.trigger_count += 1
         self.updated_at = utc_now_iso()
         if completed and self.status is not ScheduleStatus.CANCELLED:

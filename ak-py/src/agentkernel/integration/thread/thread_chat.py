@@ -24,7 +24,8 @@ from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
 from ...core import Config
 from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
 from ...core.event import RunPaused
-from ...core.model import AgentPausedReplyAny, BaseChatRequest, BaseRunRequest, ChatRunRequest, StreamChunk
+from ...core.model import AgentPausedReplyAny, AgentSurface, BaseChatRequest, BaseRunRequest, ChatRunRequest, Principal, StreamChunk
+from ...core.registry import AgentNotFoundError
 from ...core.service import AgentService
 from ...pipeline.envelope import ATTR_THREAD
 from ...pipeline.producer import RequestProducer
@@ -80,6 +81,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         # route, a request nothing authenticated is refused here (401), since a thread is keyed on
         # its caller.
         body.principal = self._read_handler._resolve_user(request)
+        body.surface = "rest"
         if Config.get().execution.is_sse:
             try:
                 gen = await self._stream_with_recording(body)
@@ -88,6 +90,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
                 raise HTTPException(status_code=400, detail=str(e))
             except PermissionError as e:
                 raise HTTPException(status_code=403, detail=str(e))
+            except AgentNotFoundError as e:
+                raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self._run_with_recording(body)
@@ -117,6 +121,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             files=files,
             images=images,
             principal=principal,
+            surface="rest",
         )
         if Config.get().execution.is_sse:
             try:
@@ -126,6 +131,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
                 raise HTTPException(status_code=400, detail=str(e))
             except PermissionError as e:
                 raise HTTPException(status_code=403, detail=str(e))
+            except AgentNotFoundError as e:
+                raise HTTPException(status_code=404, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self._run_with_recording(req)
@@ -138,7 +145,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         """
         try:
             self._validate_chat_request(req)
-            self._check_agent_available(req.agent)
+            self._check_agent_available(req.agent, req.surface, req.principal)
             if req.schedule is not None:
                 # A deferred request produces no conversation: the thread and its messages are
                 # recorded when an occurrence actually runs, not when the schedule is created.
@@ -155,6 +162,9 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         except PermissionError as pe:
             self._log.warning(f"Refused request: {pe}")
             return ResponseBuilder.build_response(403, req.session_id, True, error=pe)
+        except AgentNotFoundError as nf:
+            self._log.warning(f"Agent not found: {nf}")
+            return ResponseBuilder.build_response(404, req.session_id, True, error=nf)
         except HTTPException:
             raise
         except Exception as e:
@@ -175,10 +185,11 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
 
         :param req: The chat request
         :return: Async generator yielding SSE-formatted frames
-        :raises ValueError: If validation fails, no agent is available, or pre_run rejects
+        :raises ValueError: If validation fails, the request names no agent and none is hosted, or pre_run rejects
+        :raises AgentNotFoundError: If the request names an agent this process does not host
         """
         self._validate_chat_request(req)
-        self._check_agent_available(req.agent)
+        self._check_agent_available(req.agent, req.surface, req.principal)
         if req.schedule is not None:
             return self._acknowledgement_frames(await self.chat_service.execute_stream(req), req.session_id)
         requests = await RequestBuilder.from_base_request_async(req)
@@ -245,19 +256,25 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             raise ValueError("No prompt provided in the request")
 
     @staticmethod
-    def _check_agent_available(name: str | None) -> None:
+    def _check_agent_available(name: str | None, surface: AgentSurface | None = None, principal: Principal | None = None) -> None:
         """Agent-availability precheck before any thread write, keeping a missing agent
         from leaving a phantom thread with an unanswered user message. The rule itself is
         shared with the other commit-before-running surfaces (AgentService.ensure_agent_available).
 
         This handler runs the agent in its own process, so the agent must be hosted here: one a
         shared registry knows from another process would pass a registry-wide check, have its user
-        message recorded, and then fail to be selected.
+        message recorded, and then fail to be selected. An agent kept off the request's surface is
+        refused the same way, and for the same reason, and so is one the access gate refuses the caller.
 
         :param name: The requested agent name, or None for the default agent
-        :raises ValueError: If no matching agent is available
+        :param surface: The surface the request entered by
+        :param principal: The caller, for the access gate
+        :raises AgentNotFoundError: If the request names an agent this process does not host, one kept off its
+            surface, or one the caller may not see
+        :raises PermissionError: If the caller may see the agent and holds no level on it
+        :raises ValueError: If the request names no agent and this process hosts none on its surface
         """
-        AgentService.ensure_agent_available(name, hosted=True)
+        AgentService.ensure_agent_available(name, principal, hosted=True, surface=surface)
 
 
 class ThreadRequestHandler(RequestHandler):
@@ -321,6 +338,8 @@ class ThreadRequestHandler(RequestHandler):
         # overwritten, and a request nothing authenticated is refused since a thread is keyed on
         # its caller.
         body.principal = self._read_handler._resolve_user(request)
+        # Before the availability check reads it: the request entered by the REST API.
+        body.surface = "rest"
         if not body.session_id:
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
         if not body.prompt and body.resume is None:
@@ -332,6 +351,20 @@ class ThreadRequestHandler(RequestHandler):
             await self._record_user_message(body)
         return await super().run_chat(body, request)
 
+    async def _reject_unavailable(self, body: BaseRunRequest) -> None:
+        """Ask about the agent only for a request the recording step has not asked about.
+
+        The inherited route asks whether the agent is available to the caller before it enqueues.
+        ``_record_user_message`` has already asked that, ahead of its first thread write, for every
+        request that runs now, so asking again would read the registry's store twice for an agent
+        another process hosts. A deferred request records nothing and was not asked about.
+
+        :param body: The chat request, with the principal and surface the route assigned.
+        :raises HTTPException: 404 or 403 for a deferred request naming an agent its caller cannot have.
+        """
+        if body.schedule is not None:
+            await super()._reject_unavailable(body)
+
     async def _record_user_message(self, body: BaseRunRequest) -> None:
         """Do the pre-run thread work at the edge and rewrite the body for the queue.
 
@@ -342,13 +375,15 @@ class ThreadRequestHandler(RequestHandler):
         once `requests` is set.
 
         :param body: The chat request, mutated in place into its queue-ready form.
-        :raises HTTPException: 400 when the agent is unavailable or the attachment configuration
-            rejects the request, 403 when another principal owns the thread, all of them before
-            any thread write, so an unanswerable request leaves no phantom thread behind.
+        :raises HTTPException: 404 when the request names an agent the registry does not know or one
+            kept off the `rest` surface, 400
+            when it names none and there is none or the attachment configuration rejects the
+            request, 403 when another principal owns the thread, all of them before any thread
+            write, so an unanswerable request leaves no phantom thread behind.
         """
         try:
             # Off the event loop: for an agent another process hosts this reads the registry's store.
-            await asyncio.to_thread(AgentService.ensure_agent_available, body.agent)
+            await asyncio.to_thread(AgentService.ensure_agent_available, body.agent, body.principal, surface=body.surface)
             requests = await RequestBuilder.from_base_request_async(body)
             requests, _ = self._recorder.pre_run(body, requests)
         except ValueError as e:
@@ -357,6 +392,9 @@ class ThreadRequestHandler(RequestHandler):
         except PermissionError as e:
             self._log.warning(f"Refused before recording: {e}")
             raise HTTPException(status_code=403, detail={"error": str(e), "session_id": body.session_id})
+        except AgentNotFoundError as e:
+            self._log.warning(f"Agent not found, nothing recorded: {e}")
+            raise HTTPException(status_code=404, detail={"error": str(e), "session_id": body.session_id})
         body.requests = requests
         body.files = None
         body.images = None

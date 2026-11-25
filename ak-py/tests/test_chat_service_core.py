@@ -18,6 +18,7 @@ from agentkernel.core.model import (
     Principal,
     StreamChunk,
 )
+from agentkernel.core.registry import AgentNotFoundError
 from agentkernel.core.runtime import Runtime
 
 ACTING_USER_AGENT = "acting-user-agent"
@@ -63,7 +64,7 @@ class TestExecute:
             result, session_id = await service.execute(BaseRunRequest(prompt="hi", session_id="s1", agent="a1"))
         assert result is reply
         assert session_id == "s1"
-        handler.initialize.assert_called_once_with("s1", "a1")
+        handler.initialize.assert_called_once_with("s1", "a1", surface=None, principal=None)
         built = handler.run_async.call_args.args[0]
         assert isinstance(built[0], AgentRequestText)
         assert built[0].prompt == "hi"
@@ -110,6 +111,14 @@ class TestExecute:
             service = ChatService()
             with pytest.raises(ValueError, match="No agent available"):
                 await service.execute(BaseRunRequest(prompt="hi", session_id="s1"))
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_agent_propagates_as_not_found(self):
+        handler = _mock_handler()
+        handler.initialize.side_effect = AgentNotFoundError("ghost")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(AgentNotFoundError, match="Agent 'ghost' not found"):
+                await ChatService().execute(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
 
     @pytest.mark.asyncio
     async def test_handler_exceptions_propagate_unmodified(self):
@@ -286,6 +295,345 @@ class TestProcessWrappers:
         assert status == 400
         assert body["error"] == "No agent available"
 
+    @pytest.mark.asyncio
+    async def test_process_async_chat_request_unknown_agent_maps_to_404(self):
+        handler = _mock_handler()
+        handler.initialize.side_effect = AgentNotFoundError("ghost")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            status, body = await ChatService().process_async_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+        assert status == 404
+        assert body == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+
+    def test_process_chat_request_unknown_agent_maps_to_404(self):
+        handler = _mock_handler()
+        handler.initialize.side_effect = AgentNotFoundError("ghost")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            status, body = ChatService().process_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+        assert status == 404
+        assert body == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+
+    @pytest.mark.asyncio
+    async def test_the_rest_form_of_an_unknown_agent_is_an_http_404(self):
+        from fastapi import HTTPException
+
+        handler = _mock_handler()
+        handler.initialize.side_effect = AgentNotFoundError("ghost")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(HTTPException) as exc:
+                await ChatService(rest_api_mode=True).process_async_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+        assert exc.value.status_code == 404
+        assert exc.value.detail == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("failure", [KeyError("customer_id"), IndexError("list index out of range")], ids=["key", "index"])
+    async def test_a_lookup_failure_inside_the_run_stays_a_500(self, failure):
+        """A KeyError or IndexError a hook or a session store raises is a failure of the run. Both are LookupErrors,
+        and reported as 404 they would read as an agent that does not exist."""
+        handler = _mock_handler()
+        handler.run_async = AsyncMock(side_effect=failure)
+        handler.run_sync.side_effect = failure
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            service = ChatService()
+            async_status, _ = await service.process_async_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
+            sync_status, _ = service.process_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
+        assert (async_status, sync_status) == (500, 500)
+
+
+class TestUnknownAgentThroughTheService:
+    """Nothing mocked: a request naming an agent the runtime does not have, answered by the service itself."""
+
+    def test_a_named_unknown_agent_is_404_and_loads_no_session(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        store = InMemorySessionStore()
+        with Runtime(store):
+            with patch.object(store, "load", wraps=store.load) as load:
+                status, body = ChatService().process_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+            load.assert_not_called()
+        assert (status, body) == (404, {"error": "Agent 'ghost' not found", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_the_async_wrapper_answers_the_same(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        with Runtime(InMemorySessionStore()):
+            status, body = await ChatService().process_async_chat_request(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+        assert (status, body) == (404, {"error": "Agent 'ghost' not found", "session_id": "s1"})
+
+    def test_a_request_naming_no_agent_while_none_exists_stays_a_400(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        with Runtime(InMemorySessionStore()):
+            status, body = ChatService().process_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
+        assert (status, body) == (400, {"error": "No agent available", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_a_stream_for_an_unknown_agent_raises_before_it_opens(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        with Runtime(InMemorySessionStore()):
+            with pytest.raises(AgentNotFoundError, match="Agent 'ghost' not found"):
+                await ChatService().process_stream_chat_async(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"), sse_format=True)
+            with pytest.raises(AgentNotFoundError, match="Agent 'ghost' not found"):
+                ChatService().process_stream_chat_sync(BaseRunRequest(prompt="hi", session_id="s1", agent="ghost"))
+
+
+class _WhoRanRunner(Runner):
+    """Replies with the name of the agent that ran, so a test reads which agent a request reached."""
+
+    def __init__(self):
+        super().__init__("WhoRanRunner")
+
+    async def run(self, agent, session, requests):
+        return AgentReplyText(response=agent.name)
+
+    async def stream(self, agent, session, requests):
+        yield MessageStart(message_id="who-1")
+        yield TextDelta(message_id="who-1", content=agent.name)
+        yield MessageEnd(message_id="who-1")
+
+
+class _WhoRanAgent(Agent):
+    """An agent served on the given surfaces: every surface when None."""
+
+    def __init__(self, name: str, surfaces: list[str] | None = None):
+        super().__init__(name, _WhoRanRunner())
+        self._set_descriptor(self.descriptor.model_copy(update={"surfaces": surfaces}))
+
+    def get_description(self) -> str:
+        return "Surface test agent"
+
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
+
+class TestSurfaceThroughTheService:
+    """An agent kept off the surface a request entered by is not served to it (#603, design refinement 13). Nothing
+    mocked: a runtime hosting an agent that is on `a2a` only, registered first, beside one on every surface."""
+
+    @staticmethod
+    def _runtime(store=None) -> Runtime:
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        runtime = Runtime(store or InMemorySessionStore())
+        runtime.register(_WhoRanAgent("internal", ["a2a"]))
+        runtime.register(_WhoRanAgent("public"))
+        return runtime
+
+    @staticmethod
+    def _request(agent=None, surface=None) -> BaseRunRequest:
+        return BaseRunRequest(prompt="hi", session_id="s1", agent=agent, surface=surface)
+
+    def test_a_rest_request_naming_it_is_answered_like_one_for_an_unknown_agent(self):
+        with self._runtime():
+            kept_off = ChatService().process_chat_request(self._request("internal", "rest"))
+            unknown = ChatService().process_chat_request(self._request("ghost", "rest"))
+
+        assert kept_off == (404, {"error": "Agent 'internal' not found", "session_id": "s1"})
+        assert unknown == (404, {"error": "Agent 'ghost' not found", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_the_async_wrapper_answers_the_same(self):
+        with self._runtime():
+            status, body = await ChatService().process_async_chat_request(self._request("internal", "rest"))
+
+        assert (status, body) == (404, {"error": "Agent 'internal' not found", "session_id": "s1"})
+
+    def test_no_session_is_loaded_for_it(self):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        store = InMemorySessionStore()
+        with self._runtime(store):
+            with patch.object(store, "load", wraps=store.load) as load:
+                ChatService().process_chat_request(self._request("internal", "rest"))
+            load.assert_not_called()
+
+    def test_a_rest_request_naming_no_agent_runs_the_first_agent_on_rest(self):
+        with self._runtime():
+            status, body = ChatService().process_chat_request(self._request(surface="rest"))
+
+        assert (status, body) == (200, {"result": "public", "session_id": "s1"})
+
+    def test_a_request_from_a_surface_it_is_on_runs_it(self):
+        with self._runtime():
+            named = ChatService().process_chat_request(self._request("internal", "a2a"))
+            default = ChatService().process_chat_request(self._request(surface="a2a"))
+
+        assert named == default == (200, {"result": "internal", "session_id": "s1"})
+
+    def test_a_request_with_no_surface_is_served_as_before(self):
+        # Messaging, the CLI and a scheduled occurrence: named or not, the descriptor's surfaces do not apply.
+        with self._runtime():
+            named = ChatService().process_chat_request(self._request("internal"))
+            default = ChatService().process_chat_request(self._request())
+
+        assert named == default == (200, {"result": "internal", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_the_async_core_and_stream_refuse_it_before_anything_runs(self):
+        with self._runtime():
+            service = ChatService()
+            with pytest.raises(AgentNotFoundError, match="Agent 'internal' not found"):
+                await service.execute(self._request("internal", "rest"))
+            with pytest.raises(AgentNotFoundError, match="Agent 'internal' not found"):
+                await service.execute_stream(self._request("internal", "rest"))
+
+    def test_the_sync_stream_refuses_it_before_it_opens(self):
+        with self._runtime():
+            with pytest.raises(AgentNotFoundError, match="Agent 'internal' not found"):
+                ChatService().execute_stream_sync(self._request("internal", "rest"))
+
+    @pytest.mark.asyncio
+    async def test_the_async_core_and_stream_default_to_the_first_agent_on_the_surface(self):
+        with self._runtime():
+            service = ChatService()
+            reply, _ = await service.execute(self._request(surface="rest"))
+            streamed = [chunk.delta async for chunk in await service.execute_stream(self._request(surface="rest")) if chunk.delta]
+
+        assert (str(reply), streamed) == ("public", ["public"])
+
+    def test_the_sync_stream_defaults_to_the_first_agent_on_the_surface(self):
+        with self._runtime():
+            streamed = [chunk.delta for chunk in ChatService().execute_stream_sync(self._request(surface="rest")) if chunk.delta]
+
+        assert streamed == ["public"]
+
+    def test_a_request_naming_no_agent_while_none_is_on_its_surface_stays_a_400(self):
+        with self._runtime():
+            status, body = ChatService().process_chat_request(self._request(surface="mcp"))
+            Runtime.current().deregister(Runtime.current().agents()["public"])
+            emptied = ChatService().process_chat_request(self._request(surface="mcp"))
+
+        assert (status, body) == (200, {"result": "public", "session_id": "s1"})
+        assert emptied == (400, {"error": "No agent available", "session_id": "s1"})
+
+    def test_prepare_agent_handler_takes_the_surface(self):
+        # AG-UI and the queue runner prepare the handler themselves, between loading the session and running.
+        with self._runtime():
+            with pytest.raises(AgentNotFoundError, match="Agent 'internal' not found"):
+                ChatService().prepare_agent_handler("s1", "internal", surface="rest")
+            assert ChatService().prepare_agent_handler("s1", None, surface="rest").service.agent.name == "public"
+            assert ChatService().prepare_agent_handler("s1", "internal").service.agent.name == "internal"
+
+
+class TestTheGateThroughTheService:
+    """With an `authorization` block the service refuses a request its principal may not make before a session
+    is loaded, with the status the surfaces answer: 403 for an agent the caller sees and may not use, and the
+    unknown agent's 404 for one it may not see (#603, iteration 18). Nothing mocked: `assistant` is private and
+    granted to alice, `status` is public and granted to nobody."""
+
+    ALICE = Principal(subject="alice", provider="static", namespace="static")
+    BOB = Principal(subject="bob", provider="static", namespace="static")
+
+    @pytest.fixture
+    def gated(self, authorization, surface_agent):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        authorization(grants=[{"subjects": ["user:alice"], "agents": ["assistant"], "level": "read"}])
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("assistant"))
+        status = surface_agent("status")
+        status._set_descriptor(status.descriptor.model_copy(update={"visibility": "public"}))
+        runtime.register(status)
+        return runtime
+
+    @staticmethod
+    def _request(agent, principal=None) -> BaseRunRequest:
+        return BaseRunRequest(prompt="hi", session_id="s1", agent=agent, principal=principal)
+
+    def test_a_principal_with_a_level_is_served(self, gated):
+        with gated:
+            assert ChatService().process_chat_request(self._request("assistant", self.ALICE)) == (200, {"result": "assistant", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_it_is_served_on_the_async_path_too(self, gated):
+        # The check is synchronous and is reached here from inside the event loop.
+        with gated:
+            status, body = await ChatService().process_async_chat_request(self._request("assistant", self.ALICE))
+
+        assert (status, body) == (200, {"result": "assistant", "session_id": "s1"})
+
+    def test_an_agent_the_caller_may_not_see_is_the_unknown_agents_404_and_loads_no_session(self, gated):
+        store = gated.sessions()
+        with gated:
+            with patch.object(store, "load", wraps=store.load) as load:
+                hidden = ChatService().process_chat_request(self._request("assistant", self.BOB))
+                unknown = ChatService().process_chat_request(self._request("ghost", self.BOB))
+            load.assert_not_called()
+
+        assert hidden == (404, {"error": "Agent 'assistant' not found", "session_id": "s1"})
+        assert unknown == (404, {"error": "Agent 'ghost' not found", "session_id": "s1"})
+
+    def test_an_agent_the_caller_sees_and_may_not_use_is_a_403(self, gated):
+        store = gated.sessions()
+        with gated:
+            with patch.object(store, "load", wraps=store.load) as load:
+                status, body = ChatService().process_chat_request(self._request("status", self.BOB))
+            load.assert_not_called()
+
+        assert (status, body) == (403, {"error": "Principal 'bob' holds no level on agent 'status'", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_the_async_wrapper_answers_the_same_two_statuses(self, gated):
+        with gated:
+            hidden, _ = await ChatService().process_async_chat_request(self._request("assistant", self.BOB))
+            forbidden, _ = await ChatService().process_async_chat_request(self._request("status", self.BOB))
+
+        assert (hidden, forbidden) == (404, 403)
+
+    def test_a_request_nobody_authenticated_is_the_anonymous_principal(self, gated):
+        with gated:
+            status, body = ChatService().process_chat_request(self._request("assistant"))
+
+        assert (status, body) == (404, {"error": "Agent 'assistant' not found", "session_id": "s1"})
+
+    @pytest.mark.asyncio
+    async def test_a_stream_is_refused_before_it_opens(self, gated):
+        with gated:
+            with pytest.raises(AgentNotFoundError, match="Agent 'assistant' not found"):
+                await ChatService().execute_stream(self._request("assistant", self.BOB))
+            with pytest.raises(PermissionError, match="holds no level on agent 'status'"):
+                await ChatService().execute_stream(self._request("status", self.BOB))
+
+    def test_the_sync_stream_is_refused_before_it_opens(self, gated):
+        with gated:
+            with pytest.raises(AgentNotFoundError, match="Agent 'assistant' not found"):
+                ChatService().execute_stream_sync(self._request("assistant", self.BOB))
+
+    @pytest.mark.asyncio
+    async def test_a_stream_opens_for_a_principal_with_a_level(self, gated):
+        # Checked as nobody, alice would be refused the agent only she is granted.
+        with gated:
+            chunks = [chunk async for chunk in await ChatService().execute_stream(self._request("assistant", self.ALICE))]
+
+        assert ([chunk.error for chunk in chunks if chunk.error], [chunk.delta for chunk in chunks if chunk.delta]) == ([], ["assistant"])
+
+    def test_the_sync_stream_opens_for_a_principal_with_a_level(self, gated):
+        with gated:
+            chunks = list(ChatService().execute_stream_sync(self._request("assistant", self.ALICE)))
+
+        assert ([chunk.error for chunk in chunks if chunk.error], [chunk.delta for chunk in chunks if chunk.delta]) == ([], ["assistant"])
+
+    def test_a_request_naming_no_agent_is_decided_for_the_default_agent(self, gated):
+        # `assistant` is the default. Alice runs it; to Bob, who may not see it, there is no agent to default to.
+        with gated:
+            alice = ChatService().process_chat_request(self._request(None, self.ALICE))
+            bob = ChatService().process_chat_request(self._request(None, self.BOB))
+
+        assert alice == (200, {"result": "assistant", "session_id": "s1"})
+        assert bob == (400, {"error": "No agent available", "session_id": "s1"})
+
+    def test_prepare_agent_handler_takes_the_principal(self, gated):
+        with gated:
+            assert ChatService().prepare_agent_handler("s1", "assistant", principal=self.ALICE).service.agent.name == "assistant"
+            with pytest.raises(AgentNotFoundError):
+                ChatService().prepare_agent_handler("s1", "assistant", principal=self.BOB)
+            with pytest.raises(AgentNotFoundError):
+                ChatService().prepare_agent_handler("s1", "assistant")
+
 
 class _ActingUserRunner(Runner):
     """Records the run principal's subject visible from inside the run, the way a hook or tool would
@@ -390,13 +738,26 @@ class TestPrepareAgentHandler:
         with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
             prepared = ChatService().prepare_agent_handler("s1", "a1")
         assert prepared is handler
-        handler.initialize.assert_called_once_with("s1", "a1")
+        handler.initialize.assert_called_once_with("s1", "a1", surface=None, principal=None)
+
+    def test_the_surface_of_the_request_reaches_the_handler(self):
+        handler = _mock_handler(AgentReplyText(response="ok"))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            ChatService().execute_sync(BaseRunRequest(prompt="hi", session_id="s1", agent="a1", surface="rest"))
+        handler.initialize.assert_called_once_with("s1", "a1", surface="rest", principal=None)
+
+    def test_the_principal_of_the_request_reaches_the_handler(self):
+        alice = Principal(subject="alice", provider="static", namespace="static")
+        handler = _mock_handler(AgentReplyText(response="ok"))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            ChatService().execute_sync(BaseRunRequest(prompt="hi", session_id="s1", agent="a1", principal=alice))
+        handler.initialize.assert_called_once_with("s1", "a1", surface=None, principal=alice)
 
     def test_unknown_agent_raises(self):
         handler = _mock_handler()
-        handler.initialize.side_effect = ValueError("No agent available")
+        handler.initialize.side_effect = AgentNotFoundError("missing")
         with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
-            with pytest.raises(ValueError, match="No agent available"):
+            with pytest.raises(AgentNotFoundError, match="Agent 'missing' not found"):
                 ChatService().prepare_agent_handler("s1", "missing")
 
 
@@ -407,7 +768,7 @@ class TestEnsureAgentAvailable:
 
         runtime = Runtime(InMemorySessionStore())
         with runtime:
-            with pytest.raises(ValueError, match="No agent available"):
+            with pytest.raises(AgentNotFoundError, match="Agent 'missing' not found"):
                 AgentService().ensure_agent_available("missing")
 
     def test_unnamed_with_empty_registry_raises(self):
@@ -435,8 +796,8 @@ class TestEnsureAgentAvailable:
 
     def test_initialize_refuses_an_agent_only_the_registry_knows_before_selecting(self, descriptor_only_registry):
         """`initialize` is where the agent runs. One a shared registry knows from another process cannot be selected
-        here, so the request fails as `No agent available` (a 400) rather than opening a stream that can only carry
-        an error, for a named agent and for a request naming none."""
+        here, so the request fails before a session is loaded rather than opening a stream that can only carry an
+        error: as the unknown agent it is to this process when it is named, as `No agent available` when none is."""
         from agentkernel.core.chat_service import AgentHandler
         from agentkernel.core.model import AgentDescriptor
         from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -445,9 +806,10 @@ class TestEnsureAgentAvailable:
         registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
         with Runtime(store, registry=registry):
             with patch.object(store, "load", wraps=store.load) as load:
-                for agent in ("billing", None):
-                    with pytest.raises(ValueError, match="No agent available"):
-                        AgentHandler().initialize("s1", agent)
+                with pytest.raises(AgentNotFoundError, match="Agent 'billing' not found"):
+                    AgentHandler().initialize("s1", "billing")
+                with pytest.raises(ValueError, match="No agent available"):
+                    AgentHandler().initialize("s1", None)
                 load.assert_not_called()
 
     def test_initialize_does_not_load_a_session_for_an_unknown_agent(self):
@@ -458,7 +820,7 @@ class TestEnsureAgentAvailable:
         runtime = Runtime(store)
         with runtime:
             with patch.object(store, "load", wraps=store.load) as load:
-                with pytest.raises(ValueError, match="No agent available"):
+                with pytest.raises(AgentNotFoundError, match="Agent 'missing' not found"):
                     AgentHandler().initialize("s1", "missing")
                 load.assert_not_called()
 

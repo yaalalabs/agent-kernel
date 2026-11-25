@@ -29,6 +29,7 @@ def _mounted(mode=ExecutionMode.REST_SYNC, message_type=None):
     config = Mock()
     config.api.max_file_size = 10_000_000
     config.execution = _ExecutionConfig(mode=mode, message_type=message_type)
+    config.authorization = None  # read as the routes are mounted (#603): a Mock attribute would read as a configured block
 
     async def _sse(req, sse_format):
         captured.append(req)
@@ -137,6 +138,7 @@ class TestPrincipalComesFromTheSurface:
         config = Mock()
         config.api.max_file_size = 10_000_000
         config.execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta")
+        config.authorization = None
         chat_service = Mock()
         chat_service.process_stream_chat_async = AsyncMock(side_effect=PermissionError("scheduling requires an authenticated principal"))
 

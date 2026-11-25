@@ -85,6 +85,8 @@ class LambdaWSHandler(AWSWebSocketHandler):
         principal = self._connection_principal(event)
         if request.body is not None:
             request.body.principal = principal
+            # A chat frame is a REST-family request: only an agent on `rest` is served to it.
+            request.body.surface = "rest"
         return self.WSMessageInfo(user_id=principal.subject, request=request, principal=principal)
 
     def _connection_principal(self, event: dict[str, Any]) -> Principal:

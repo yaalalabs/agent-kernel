@@ -34,7 +34,13 @@ HANDLERS = {
     "thread-pipeline": ThreadRequestHandler,
 }
 
-INTERNAL_VALUES = {"requests": [{"type": "text", "prompt": "x"}], "scheduled_task_id": "t1", "scheduled_time": "2026-01-01T00:00:00Z"}
+INTERNAL_VALUES = {
+    "requests": [{"type": "text", "prompt": "x"}],
+    "scheduled_task_id": "t1",
+    "scheduled_time": "2026-01-01T00:00:00Z",
+    # The surface a request entered by is the entry point's to set (#603): a client naming one is refused.
+    "surface": "a2a",
+}
 AUTH = {"Authorization": "Bearer u1-token"}
 
 

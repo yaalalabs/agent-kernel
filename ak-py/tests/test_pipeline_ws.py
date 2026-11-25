@@ -81,6 +81,7 @@ def _use_config(
 
     _Cfg.identity = identity
     _Cfg.registry = None
+    _Cfg.authorization = None
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
     return _Cfg
@@ -532,6 +533,28 @@ class TestWebSocketChat:
 
         [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)
         assert json.loads(message.body)["principal"]["subject"] == "user-1"
+
+    def test_a_chat_frame_is_queued_as_a_request_that_entered_by_rest(self, monkeypatch):
+        """The gateway is a REST-family entry point: the runner serves its frames only the agents on `rest` (#603)."""
+        app, _, transport, _ = _ws_app(monkeypatch)
+        client = TestClient(app)
+        with client.websocket_connect(f"{WS_PATH}?token=good") as websocket:
+            websocket.send_json({"route": "chat", "body": {"prompt": "hi", "session_id": "s1"}})
+            assert websocket.receive_json()["type"] == "CHAT_QUEUED"
+
+        [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)
+        assert json.loads(message.body)["surface"] == "rest"
+
+    def test_a_frame_naming_its_own_surface_is_refused_before_the_queue(self, monkeypatch):
+        app, _, transport, _ = _ws_app(monkeypatch)
+        client = TestClient(app)
+        with client.websocket_connect(f"{WS_PATH}?token=good") as websocket:
+            websocket.send_json({"route": "chat", "body": {"prompt": "hi", "session_id": "s1", "surface": "a2a"}})
+            reply = websocket.receive_json()
+
+        assert reply["status"] == "FAILED"
+        assert "surface" in reply["message"]
+        assert transport.create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
 
     def test_configured_chat_route_is_honored(self, monkeypatch):
         app, _, _, _ = _ws_app(monkeypatch, chat_route="converse")
