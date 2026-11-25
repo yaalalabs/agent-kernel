@@ -9,7 +9,7 @@ import inspect
 import json
 import logging
 import typing
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 from uuid import uuid4
@@ -30,7 +30,7 @@ from pydantic import Field, create_model
 from ...core import Agent as BaseAgent
 from ...core import Module
 from ...core import Runner as BaseRunner
-from ...core import Runtime, Session, ToolBuilder, ToolContext
+from ...core import Runtime, Session, ToolBuilder, ToolContext, ToolGate
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -401,19 +401,42 @@ class ClaudeRunner(BaseRunner):
         """
         return frozenset(ClaudeToolBuilder.mcp_tool_name(tool.name) for tool in spec.tools if getattr(tool, "ak_needs_approval", False))
 
-    def _decision_hook(self, gated: frozenset[str], resume_decision: tuple[str, ResumeDecision] | None) -> Any:
+    @staticmethod
+    def _refused_tools(session: Session | None, served: Iterable[str]) -> dict[str, str]:
         """
-        Builds the one `PreToolUse` hook that both gates approval-required tools and resolves the one deferred
-        call a resume answers. One hook, not two: two hooks matching the same tool would race under the SDK's
-        `deny > defer > ask > allow` precedence, where the still-standing gate's `defer` would override an
-        `allow` the resume hook just granted for that call.
+        Returns the tools the agent serves that the run's tool filter does not allow.
+        :param session: The session of the run, or None where there is none to read a filter from.
+        :param served: The names of the tools the in-process server serves, as the agent declares them.
+        :return: The reason each such tool is refused, by its fully-qualified `mcp__ak__<name>` name. Empty when
+            the run is not gated or every tool is allowed.
+        """
+        if session is None:
+            return {}
+        return {ClaudeToolBuilder.mcp_tool_name(name): reason for name in served if (reason := ToolGate.refusal(name, session)) is not None}
+
+    def _decision_hook(
+        self, gated: frozenset[str], resume_decision: tuple[str, ResumeDecision] | None, refused: Mapping[str, str] | None = None
+    ) -> Any:
+        """
+        Builds the one `PreToolUse` hook that refuses the tools the run's tool filter denies, gates
+        approval-required tools and resolves the one deferred call a resume answers. One hook, not several: two
+        hooks matching the same tool would race under the SDK's `deny > defer > ask > allow` precedence, where
+        the still-standing gate's `defer` would override an `allow` the resume hook just granted for that call.
+
+        A refused tool is answered first, with the reason: it never pauses for an approval, and an approval
+        given while the run was paused does not run it once the filter denies it.
 
         :param gated: The tool names (see `_gated_tools`) that defer on their first attempt.
         :param resume_decision: The `(tool_use_id, decision)` a resume is answering, or None on an ordinary run.
+        :param refused: The reason each tool the run's tool filter denies is denied, by `mcp__ak__<name>` name.
         :return: The hook callback.
         """
+        refused = refused or {}
 
         async def hook(input_data: dict[str, Any], tool_use_id: str | None, context: dict[str, Any]) -> dict[str, Any]:
+            reason = refused.get(input_data.get("tool_name", ""))
+            if reason is not None:
+                return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}
             if resume_decision is not None and tool_use_id == resume_decision[0]:
                 decision = resume_decision[1]
                 name = input_data.get("tool_name")
@@ -458,6 +481,7 @@ class ClaudeRunner(BaseRunner):
         *,
         stream: bool,
         resume_decision: tuple[str, ResumeDecision] | None = None,
+        session: Session | None = None,
     ) -> ClaudeAgentOptions:
         """
         Builds the options for one run: the agent's options, the resolved run options over them, and the fields
@@ -465,11 +489,19 @@ class ClaudeRunner(BaseRunner):
         approved by name, except one bound with `needs_approval=True`, which a merged `PreToolUse` hook gates
         instead; declared hooks are merged into, never replaced. Native `agents=` definitions are reached
         through the `Agent` tool.
+
+        In a gated run, a served tool the run's tool filter denies is not approved: it is left out of
+        `allowed_tools`, added to `disallowed_tools` so the SDK does not offer it, and refused by the
+        `PreToolUse` hook with the reason should a call reach it. Only the tools this adapter serves are
+        gated: Claude Code's built-in tools and the tools of other `mcp_servers` stay with the SDK's own
+        permission settings. A run that is not gated, or one in which nothing is denied, gets the options it
+        always got.
         :param agent: The ClaudeAgent being run.
         :param options: The run options resolved for this run.
         :param claude_session: The ClaudeSession holding the agent's conversation.
         :param stream: Whether this is a streamed run.
         :param resume_decision: The `(tool_use_id, decision)` a resume answers, or None on an ordinary run.
+        :param session: The Agent Kernel session of the run, for its tool filter; nothing is gated without it.
         :return: A new ClaudeAgentOptions; the agent's own is untouched.
         """
         spec: ClaudeAgentSpec = agent.agent
@@ -494,7 +526,8 @@ class ClaudeRunner(BaseRunner):
         # Native subagents can use the tools served in the parent's session.
         served = {tool.name: tool for tool in spec.tools}
         gated = self._gated_tools(spec)
-        approved = [ClaudeToolBuilder.mcp_tool_name(name) for name in served if ClaudeToolBuilder.mcp_tool_name(name) not in gated]
+        refused = self._refused_tools(session, served)
+        approved = [name for tool in served if (name := ClaudeToolBuilder.mcp_tool_name(tool)) not in gated and name not in refused]
         if served:
             server = create_sdk_mcp_server(ClaudeToolBuilder.MCP_SERVER, tools=list(served.values()))
             # A dict whenever the agent has tools: ClaudeAgent rejects a config-file path at declaration.
@@ -504,11 +537,15 @@ class ClaudeRunner(BaseRunner):
             if isinstance(declared.tools, list) and "Agent" not in declared.tools:
                 ak_owned["tools"] = [*declared.tools, "Agent"]
             approved.append("Agent")
-        if approved:
-            ak_owned["allowed_tools"] = declared.allowed_tools + [name for name in approved if name not in declared.allowed_tools]
-        if gated or resume_decision is not None:
+        if approved or refused:
+            # A refused tool the application approved by name itself is not approved for this run either.
+            allowed = [name for name in declared.allowed_tools if name not in refused]
+            ak_owned["allowed_tools"] = allowed + [name for name in approved if name not in allowed]
+        if refused:
+            ak_owned["disallowed_tools"] = declared.disallowed_tools + [name for name in refused if name not in declared.disallowed_tools]
+        if gated or resume_decision is not None or refused:
             hooks = {event: list(matchers) for event, matchers in (declared.hooks or {}).items()}
-            hooks.setdefault("PreToolUse", []).append(HookMatcher(matcher=None, hooks=[self._decision_hook(gated, resume_decision)]))
+            hooks.setdefault("PreToolUse", []).append(HookMatcher(matcher=None, hooks=[self._decision_hook(gated, resume_decision, refused)]))
             ak_owned["hooks"] = hooks
         native: ClaudeAgentOptions = dataclasses.replace(spec.options, **self._native_kwargs(options, **ak_owned))
         return native
@@ -670,7 +707,7 @@ class ClaudeRunner(BaseRunner):
 
             texts: list[str] = []
             result: ResultMessage | None = None
-            async with ClaudeSDKClient(options=self._native_options(agent, options, claude_session, stream=False)) as client:
+            async with ClaudeSDKClient(options=self._native_options(agent, options, claude_session, stream=False, session=session)) as client:
                 await client.query(self._prompt(content))
                 async for message in client.receive_response():
                     if isinstance(message, ResultMessage):
@@ -743,7 +780,7 @@ class ClaudeRunner(BaseRunner):
 
             texts: list[str] = []
             result: ResultMessage | None = None
-            native_options = self._native_options(agent, options, claude_session, stream=False, resume_decision=resume_decision)
+            native_options = self._native_options(agent, options, claude_session, stream=False, resume_decision=resume_decision, session=session)
             async with ClaudeSDKClient(options=native_options) as client:
                 await client.query(self._prompt(content))
                 async for message in client.receive_response():
@@ -805,7 +842,7 @@ class ClaudeRunner(BaseRunner):
             mapper = _ClaudeStreamMapper()  # local — the runner is shared across sessions
 
             result: ResultMessage | None = None
-            async with ClaudeSDKClient(options=self._native_options(agent, options, claude_session, stream=True)) as client:
+            async with ClaudeSDKClient(options=self._native_options(agent, options, claude_session, stream=True, session=session)) as client:
                 await client.query(self._prompt(content))
                 async for message in client.receive_response():
                     if isinstance(message, ResultMessage):
@@ -880,7 +917,7 @@ class ClaudeRunner(BaseRunner):
             resume_decision = (record.payload["tool_use_id"], decisions[0])
 
             result: ResultMessage | None = None
-            native_options = self._native_options(agent, options, claude_session, stream=True, resume_decision=resume_decision)
+            native_options = self._native_options(agent, options, claude_session, stream=True, resume_decision=resume_decision, session=session)
             async with ClaudeSDKClient(options=native_options) as client:
                 await client.query(self._prompt(content))
                 async for message in client.receive_response():

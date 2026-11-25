@@ -714,6 +714,20 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 | smolagents | none | `Tool.forward` wrapped on every tool in `agent.tools` at wrap time, native ones included | tools added to `agent.tools` after wrap time: refused at startup with `authorization` configured, as for LangGraph (settled, Q12; spec refinement 4) |
 | Claude Agent SDK (`framework/claude/`, #833) | per run: a denied `mcp__ak__<name>` is left out of the `allowed_tools` the runner builds and added to `disallowed_tools` on the run's `ClaudeAgentOptions`, so the SDK never offers it | the per-run `PreToolUse` matcher the HITL gate already installs (`framework/claude/claude.py:512`) answers `permissionDecision: "deny"` with the reason in `permissionDecisionReason`; AK's check runs ahead of the approval branch, so a denied tool never pauses | Claude Code's built-in tools and tools from other `mcp_servers`: `get_tool_names` lists only the tools the in-process `ak` server serves, and the gate leaves the rest to the SDK's own permission settings |
 
+- As built (spec refinement 20), for OpenAI, Pydantic AI, MAF and Claude:
+  - A gate refuses a tool the filter never listed, so an adapter declares every tool its gate
+    can see.
+  - OpenAI: the tools of the agents a run hands off to, or uses as tools, are declared under
+    the agent the run started with and gated by its filter.
+    - A policy for that agent states their tiers; the other agent's policy is not consulted.
+  - OpenAI: an MCP server, and a handoff that does not hold its agent, are ungated and refused
+    at startup under `authorization` (the Q12 rule). A hosted tool is declared and not gated.
+  - OpenAI: the gate is put on the native tools only when the block is configured.
+  - Pydantic AI: a denied call is answered with the reason as its result, not with a retry.
+  - Pydantic AI: a tool behind a prefixed or renamed toolset is declared under the name the
+    model calls.
+  - A call approved while paused is decided again by the filter of the resume.
+  - A gate that cannot answer refuses the tool.
 - Every adapter resolves nothing itself: it reads `TOOL_FILTER_CACHE_KEY` from the session's
   volatile cache (set by `Runtime`), so with no `authorization` block the filter is absent and the
   native calls are keyword-for-keyword what they are today (the #754 invariant).

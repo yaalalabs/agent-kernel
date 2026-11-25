@@ -10,14 +10,16 @@ from uuid import uuid4
 
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai import BinaryContent, DeferredToolRequests, DeferredToolResults, DocumentUrl, FunctionToolset, ImageUrl, Tool
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessagesTypeAdapter, UserContent
-from pydantic_ai.tools import ToolApproved, ToolDenied
+from pydantic_ai.tools import ToolApproved, ToolDefinition, ToolDenied
+from pydantic_ai.toolsets import CombinedToolset, PrefixedToolset, RenamedToolset, WrapperToolset
 from pydantic_core import to_jsonable_python
 
 from ...core import Agent as BaseAgent
 from ...core import Module
 from ...core import Runner as BaseRunner
-from ...core import Runtime, Session, ToolBuilder, ToolContext
+from ...core import Runtime, Session, ToolBuilder, ToolContext, ToolGate
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -85,6 +87,35 @@ class PydanticAISession:
         self._messages = value
 
 
+class AKToolGateCapability(AbstractCapability[Any]):
+    """
+    The tool gate of one Pydantic AI run (#603).
+
+    A capability the runner adds to a gated run, ahead of any the run options carry. The SDK hands it every
+    function tool definition before each model step and every tool call before it runs, whichever toolset the
+    tool comes from, so both answers come from the run's ToolFilter: a tool the filter does not allow is left out
+    of the step, and a call that reaches one all the same (approved while the run was paused, under a policy that
+    has changed since) is answered with the reason in place of the tool's result. The function is not run.
+
+    A definition is matched by the name the model calls it by, which is the name the agent declares it under.
+    """
+
+    def __init__(self, session: Session):
+        """
+        :param session: The session of the run, which holds the filter Runtime published for it.
+        """
+        self._session = session
+
+    async def prepare_tools(self, ctx: Any, tool_defs: list[ToolDefinition]) -> list[ToolDefinition]:
+        return [definition for definition in tool_defs if ToolGate.refusal(definition.name, self._session) is None]
+
+    async def wrap_tool_execute(self, ctx: Any, *, call: Any, tool_def: ToolDefinition, args: Any, handler: Any) -> Any:
+        reason = ToolGate.refusal(tool_def.name, self._session)
+        if reason is not None:
+            return reason
+        return await handler(args)
+
+
 class PydanticAIRunner(BaseRunner):
     """
     PydanticAIRunner class provides a runner for Pydantic AI-based agents.
@@ -114,6 +145,20 @@ class PydanticAIRunner(BaseRunner):
             )
             self._event_stream_handler_warned = True
         return filtered
+
+    @staticmethod
+    def _gated(session: Session, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """
+        Adds the tool gate to the native keyword arguments of a gated run, ahead of the capabilities the run
+        options carry. A run that is not gated gets its arguments back as they are, so the native call is
+        keyword-for-keyword what it is without an `authorization` block.
+        :param session: The session of the run.
+        :param kwargs: The native keyword arguments built for this run; a per-run copy.
+        :return: The same dict.
+        """
+        if ToolGate.current(session) is not None:
+            kwargs["capabilities"] = [AKToolGateCapability(session), *(kwargs.get("capabilities") or [])]
+        return kwargs
 
     @staticmethod
     def _session(session: Session) -> PydanticAISession | None:
@@ -197,7 +242,7 @@ class PydanticAIRunner(BaseRunner):
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
             # Resolved run options (usage_limits, model_settings, ...) first; the keys AK owns are written last.
-            kwargs = self._native_kwargs(options, message_history=history, deps=produced)
+            kwargs = self._gated(session, self._native_kwargs(options, message_history=history, deps=produced))
             result = await agent.agent.run(content, **kwargs)
 
             if fw_session is not None:
@@ -359,7 +404,7 @@ class PydanticAIRunner(BaseRunner):
                 f"as a deferred tool call instead, where any value is passed through."
             )
 
-    def _deferred_results(self, decisions: list[ResumeDecision], record: PausedRun) -> DeferredToolResults:
+    def _deferred_results(self, decisions: list[ResumeDecision], record: PausedRun, session: Session | None = None) -> DeferredToolResults:
         """
         Renders the decisions onto the two channels the framework takes.
 
@@ -368,15 +413,25 @@ class PydanticAIRunner(BaseRunner):
         refusal. A deferred call becomes a **value** — whatever the human supplied is what the tool
         appears to have returned, so a list arrives as a list and a string as a string.
 
+        An approval of a tool the run's tool filter no longer allows (the policy, or the caller's level,
+        changed while the run was paused) is handed over as a denial carrying the filter's reason: the
+        framework gives the model that reason as the call's result and the tool is not run. Left as an
+        approval, the call would find its tool gone from the step and fail the run.
+
         :param decisions: The human's decisions.
         :param record: The record naming which interruption is which kind.
+        :param session: The session of the run being resumed, for its tool filter; nothing is gated without it.
         :return: The results to hand the framework.
         """
         kinds = {i.id: i.kind for i in record.interruptions}
+        tools = {i.id: i.tool_name for i in record.interruptions}
         results = DeferredToolResults()
         for decision in decisions:
             if kinds.get(decision.id) == "tool_call":
-                results.approvals[decision.id] = self._approval(decision)
+                approval = self._approval(decision)
+                tool = tools.get(decision.id)
+                reason = ToolGate.refusal(tool, session) if session is not None and tool and isinstance(approval, ToolApproved) else None
+                results.approvals[decision.id] = ToolDenied(message=reason) if reason is not None else approval
             else:
                 results.calls[decision.id] = decision.payload if decision.payload is not None else decision.message
         return results
@@ -436,9 +491,9 @@ class PydanticAIRunner(BaseRunner):
                 options,
                 message_history=history,
                 deps=produced,
-                deferred_tool_results=self._deferred_results(decisions, record),
+                deferred_tool_results=self._deferred_results(decisions, record, session),
             )
-            result = await agent.agent.run(content or "", **kwargs)
+            result = await agent.agent.run(content or "", **self._gated(session, kwargs))
 
             if fw_session is not None:
                 fw_session.messages = to_jsonable_python(result.all_messages())
@@ -496,7 +551,7 @@ class PydanticAIRunner(BaseRunner):
             carried: dict[str, str] = {}  # kind -> id when a stream continues across a part boundary
             run_result: Any = None
 
-            kwargs = self._native_kwargs(self._stream_run_options(options), message_history=history, deps=produced)
+            kwargs = self._gated(session, self._native_kwargs(self._stream_run_options(options), message_history=history, deps=produced))
             async with agent.agent.run_stream_events(content, **kwargs) as events:
                 async for event in events:
                     kind = getattr(event, "event_kind", None)
@@ -575,9 +630,9 @@ class PydanticAIRunner(BaseRunner):
                 self._stream_run_options(options),
                 message_history=history,
                 deps=produced,
-                deferred_tool_results=self._deferred_results(decisions, record),
+                deferred_tool_results=self._deferred_results(decisions, record, session),
             )
-            async with agent.agent.run_stream_events(content or "", **kwargs) as events:
+            async with agent.agent.run_stream_events(content or "", **self._gated(session, kwargs)) as events:
                 async for event in events:
                     kind = getattr(event, "event_kind", None)
                     if kind == "agent_run_result":
@@ -873,10 +928,13 @@ class PydanticAIAgent(BaseAgent):
 
     def get_tool_names(self) -> list[str]:
         """
-        Returns the names of the native agent's function tools.
+        Returns the names of the native agent's function tools, each as the model calls it: a tool behind a
+        prefixing or a renaming toolset is reported under the name that wrapper serves it by, which is the name
+        the tool gate matches and a policy has to use.
 
-        Not reported: the tools of a toolset that lists them only inside a run (an MCP server). A tool behind a
-        prefixing or renaming wrapper toolset is reported under its own name, not the one the wrapper exposes.
+        Not reported: the tools of a toolset that lists them only inside a run (an MCP server, a toolset handed
+        over in the run options). With an `authorization` block the gate still sees them, and because no policy
+        could have offered a tool the agent does not declare, it leaves them out of every run.
         """
         return list(self._function_tools())
 
@@ -888,23 +946,39 @@ class PydanticAIAgent(BaseAgent):
 
     def _function_tools(self) -> dict[str, Any]:
         """
-        Returns the native agent's function tools by name, across all of its toolsets.
+        Returns the native agent's function tools by the name the model calls them, across all of its toolsets.
         """
         found: dict[str, Any] = {}
-
-        def visitor(ts: Any) -> None:
-            # Only FunctionToolset (and subclasses) expose a public synchronous ``tools`` dict; the
-            # general async ``get_tools(ctx)`` path needs a RunContext that isn't available here, so
-            # non-FunctionToolset leaves (e.g. MCP servers) are silently skipped. AK never attaches
-            # those to a wrapped agent, so this is complete in practice.
-            if isinstance(ts, FunctionToolset):
-                found.update(ts.tools)
-
-        # ``apply()`` recurses into CombinedToolset/WrapperToolset members, so every real leaf
-        # toolset is reached regardless of nesting. Do not index ``[0]`` — the toolset count varies.
+        # Every toolset is walked, however many there are and however they are nested: do not index `[0]`.
         for toolset in self.agent.toolsets:
-            toolset.apply(visitor)
+            found.update(self._served_tools(toolset))
         return found
+
+    @classmethod
+    def _served_tools(cls, toolset: Any) -> dict[str, Any]:
+        """
+        Returns the function tools of one toolset by the names it serves them under.
+
+        The names are worked out from the toolset objects, with no run: the SDK's own listing
+        (`get_tools(ctx)`) needs a RunContext. A prefixing toolset serves `<prefix>_<name>` and a renaming one the
+        new name of each tool its map names, exactly as their `get_tools` do; any other wrapper (approval,
+        filtering, preparation) keeps the names of what it wraps.
+        :param toolset: A toolset of the native agent, or one nested in it.
+        :return: The tools by served name. A toolset that lists its tools only inside a run (an MCP server) has
+            none to report.
+        """
+        if isinstance(toolset, FunctionToolset):
+            return dict(toolset.tools)
+        if isinstance(toolset, CombinedToolset):
+            return {name: tool for member in toolset.toolsets for name, tool in cls._served_tools(member).items()}
+        if isinstance(toolset, PrefixedToolset):
+            return {f"{toolset.prefix}_{name}": tool for name, tool in cls._served_tools(toolset.wrapped).items()}
+        if isinstance(toolset, RenamedToolset):
+            renamed = {original: new for new, original in toolset.name_map.items()}
+            return {renamed.get(name, name): tool for name, tool in cls._served_tools(toolset.wrapped).items()}
+        if isinstance(toolset, WrapperToolset):
+            return cls._served_tools(toolset.wrapped)
+        return {}
 
 
 class PydanticAIModule(Module):

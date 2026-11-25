@@ -5,15 +5,15 @@ import contextlib
 import copy
 import json
 import logging
-from collections.abc import AsyncGenerator, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from typing import Any, ClassVar
 from uuid import uuid4
 
-from agent_framework import Agent, AgentResponse, AgentResponseUpdate, AgentSession, Content, Message
+from agent_framework import Agent, AgentResponse, AgentResponseUpdate, AgentSession, Content, FunctionInvocationContext, FunctionMiddleware, Message
 from agent_framework import tool as maf_tool
 
 from ...core import Agent as BaseAgent
-from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
+from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext, ToolGate
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -72,6 +72,34 @@ class MAFSession:
         :param state: The serialized native session to persist.
         """
         self._state = state
+
+
+class AKToolGateMiddleware(FunctionMiddleware):
+    """
+    The tool gate of one Microsoft Agent Framework run (#603).
+
+    A function middleware the runner puts first on a gated run, ahead of any the run options carry. The framework
+    runs it around every function the model calls, so a call to a tool the run's ToolFilter does not allow is
+    answered with the reason as the function's result: the function is not run, the middleware after this one
+    never sees the call, and the model reads the reason and carries on. The framework has no hook for what a
+    turn offers (the tool list is static on the agent), so a denied tool is still shown to the model.
+
+    Not gated: a hosted or provider-executed tool, which runs where no function middleware is called.
+    """
+
+    def __init__(self, session: Session):
+        """
+        :param session: The session of the run, which holds the filter Runtime published for it.
+        """
+        self._session = session
+
+    async def process(self, context: FunctionInvocationContext, call_next: Callable[[], Awaitable[None]]) -> None:
+        reason = ToolGate.refusal(context.function.name, self._session)
+        if reason is not None:
+            # Returning without `call_next()` is the framework's way to answer a call without running it.
+            context.result = reason
+            return
+        await call_next()
 
 
 class MAFRunner(Runner):
@@ -158,7 +186,9 @@ class MAFRunner(Runner):
         self, session: Session | None, options: Mapping[str, Any], state: dict[str, Any] | None = None
     ) -> tuple[dict[str, Any], AgentSession | None, dict | None]:
         """
-        Restores the native MAF session and injects the framework context for one run.
+        Restores the native MAF session and injects the framework context for one run. A gated run also gets the
+        tool gate as its first function middleware, ahead of any the run options carry; a run that is not gated
+        gets no `middleware` argument it did not have.
         :param session: The AK session, or None for a stateless run.
         :param options: The run options resolved for this run.
         :param state: A serialized native session to restore instead of the stored one: a paused run's snapshot.
@@ -181,7 +211,10 @@ class MAFRunner(Runner):
             # Deep copy so in-place tool mutations do not alter `incoming`.
             native_session.state["ak_context"] = copy.deepcopy(incoming)
 
-        return self._native_kwargs(options, session=native_session), native_session, incoming
+        kwargs = self._native_kwargs(options, session=native_session)
+        if ToolGate.current(session) is not None:
+            kwargs["middleware"] = [AKToolGateMiddleware(session), *(options.get("middleware") or [])]
+        return kwargs, native_session, incoming
 
     def _finalize_session(
         self, session: Session | None, native_session: AgentSession | None, incoming: dict | None, record: PausedRun | None = None

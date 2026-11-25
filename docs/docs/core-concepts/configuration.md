@@ -689,7 +689,9 @@ export AK_AUTHORIZATION__STATIC__TOOLS='[{"agent": "support-triage", "deny": ["p
   holds the highest level its grants give. The policy denies by default: an agent nobody is granted is run by
   nobody, a caller without a credential included, unless a grant names `*`.
 - **Tool policy.** `tiers`, `allow` and `deny` decide which tools each level is offered. The decision is published
-  for every run and narrows the tools and skills the catalog and A2A cards list. It does not stop a tool call yet.
+  for every run and narrows the tools and skills the catalog and A2A cards list. A denied tool is kept from the
+  model on the OpenAI Agents SDK, Pydantic AI, Microsoft Agent Framework and the Claude Agent SDK; on Google ADK, CrewAI, LangGraph and smolagents, and on realtime calls it is not stopped yet
+  ([where a denied tool is stopped](../advanced/identity-and-access.md#where-a-denied-tool-is-stopped)).
 - **Every process.** Put the same block in the configuration of the process that accepts requests and of the
   process that runs the agents: the first answers early and filters the listings, the second enforces every run.
 - **Startup checks.** An unusable grant or policy, and a tool policy naming a tool its agent does not have, stop the

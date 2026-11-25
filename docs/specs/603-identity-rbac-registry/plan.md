@@ -1221,6 +1221,40 @@ objects in `tests/test_tool_<adapter>.py`:
      its approval branch (spec 9).
 - **Verify:** `test_tool_gates_openai.py`, `test_tool_gates_pydanticai.py`,
   `test_tool_gates_maf.py`, `test_tool_gates_claude.py`.
+- **As built (2026-11-25):** on `feature/603-tool-gates`. Settled along the way and written
+  into spec 9 and refinement 20:
+  - **`ToolGate.refusal(name, session=None)`** is the one question every hook asks, beside
+    `current` and `deny_result`. It fails closed (`tool gate failed: <type>`) and gates nothing
+    outside a run. New `tests/test_tool_gate.py`.
+  - **A tool the filter never listed is refused**, so the undeclared tools the phase C review
+    listed had to be closed here or refused:
+    - OpenAI handoff targets and agents used as tools: closed. Their tools are declared under
+      the agent the run starts with and gated (`OpenAIToolGate.reachable`).
+    - OpenAI MCP servers, and a handoff that does not hold its agent: `ungated_tool_names`,
+      so the agent does not load under `authorization`.
+    - Pydantic AI prefixed and renamed toolsets: closed (`_served_tools`). A toolset listed
+      only inside a run is left out of a gated run.
+    - MAF: the functions of an MCP tool are refused. Not seen: the calls a nested agent makes
+      inside a tool.
+  - **OpenAI:** the gate goes on the native tools only when the block is configured, at wrap
+    and in `attach_tool`; it is first among the tool's input guardrails.
+  - **Pydantic AI:** step 3 named `before_tool_execute`; the call is answered through
+    `wrap_tool_execute` with the reason as its result. A resumed approval of a tool denied by
+    then becomes `ToolDenied(reason)`.
+  - **Claude:** a denied tool the application approved by name leaves the run's
+    `allowed_tools`; `_native_options` takes the session.
+  - **Not run by a test:** an OpenAI call approved while paused and denied by the resume. The
+    SDK runs a tool's input guardrails right before the function on every invocation
+    (`run_internal/tool_execution.py`), which is where the gate answers.
+  - **Left to iteration 23:** the warning for tools a provider runs (OpenAI hosted tools,
+    Claude's built-in tools), and the realtime runners, which set no `ToolContext`, so the
+    OpenAI gate stands aside on a realtime call.
+  - **Docs and changelog, in step:** the Tool policy part of `advanced/identity-and-access.md`
+    says which framework stops a denied tool and what is outside the gate; the short mentions
+    in `core-concepts/configuration.md`, `ak-py/README.md` and the bundled
+    `ak-add-capabilities` skill name the four frameworks. `changelog.d/603.added.md` (pending)
+    is corrected the same way and `603.changed.2.md` records what the catalog now lists
+    (spec behavioural change 44). Iterations 22 and 23 update both again.
 
 ### Iteration 22: ADK and CrewAI
 

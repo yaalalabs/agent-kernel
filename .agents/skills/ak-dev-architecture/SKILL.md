@@ -324,6 +324,7 @@ Pydantic-based configuration:
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
 
 - **`ToolContext`**: Execution context available inside tool functions via `ToolContext.get()`. Provides access to `runtime`, `agent`, `session`, `requests`, and `principal` (the run's principal as `Runtime` published it, read through `session.get_principal()`: the authenticated caller with the agent as `actor`, or the anonymous principal when the surface authenticated nobody).
+- **`ToolGate`** (#603, iteration 21): what a framework adapter asks before it offers or runs a tool. It decides nothing: with an `authorization` block `Runtime` publishes one `ToolFilter` per run, and the gate reads it. `current(session=None)` returns the run's filter (the session handed in, else the one of the current `ToolContext`; `None` when the run is not gated or no run is in progress), `deny_result(name, filter)` the reason string, and `refusal(name, session=None)` is the one question every hook asks: the reason, or `None` when the run is not gated or the tool is allowed. `refusal` never raises (a native hook has no place for an exception) and fails closed: a filter that cannot be read or asked refuses the tool with `tool gate failed: <type>`. An adapter adds its hook, or lets it act, only when `current()` returns a filter, which is what keeps the native call keyword-for-keyword unchanged without the block. The filter is over `Agent.get_tool_names()` and `allows(name)` is false for a name it never listed, so **what an adapter declares must be what its gate matches**: the name the model calls, and every tool the gate can see.
 - **`ToolBuilder`**: Base class for framework-specific tool builders. Each framework implements `bind(funcs)` to wrap plain Python functions into framework-native tool objects. An adapter may accept more than `funcs`: OpenAI, Google ADK, Pydantic AI and MAF each take `**options` and forward them to the native wrapper (`function_tool`, `FunctionTool`, `Tool`, `tool()`), which is how a gated tool is declared without the native decorator — `needs_approval`, `require_confirmation` and `requires_approval` are each that framework's human-in-the-loop flag. Options apply to every function in the call, so tools wanting different ones are bound separately. LangGraph's `bind` takes `agent_name` instead; smolagents' native wrapper takes nothing but the function, so it has nothing to forward.
 - Write plain Python functions → bind via the framework's ToolBuilder → tools work across frameworks
 - **Gotcha: every `ToolBuilder.bind()` derives the bound tool's name from `func.__name__`, not from `SystemTool.name`.** A `SystemTool` whose `func` has a different `__name__` than `SystemTool.name` binds under the function's name, silently: the model schema advertises the mismatched name while any injected prompt text (and the tool's own `description`) may still reference the `SystemTool.name` spelling, so the model can't find the tool it was told to call. This bit `AnalyzeAttachmentsTool` for every multimodal deployment until `tools.py`'s `_analyze_attachments` was renamed to `analyze_attachments` (#657) — when adding a new `SystemTool`, keep `func.__name__` and `SystemTool.name` identical.
@@ -883,10 +884,10 @@ authorization: the authorizer contract, the static backend, its factory and the
 `authorization` block gates every run (`Runtime._admit`), the pre-run check
 (`AgentService.ensure_agent_available`), the queue pipeline's precheck before anything is enqueued,
 a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
-realtime surfaces (iteration 20, the Protocol surfaces bullet below). The framework tool gates and the
-credentials capability are later phases: the tool filter is published and
-`ToolContext.access_level` reads it, but no adapter enforces it at call time yet, and
-`Principal.credential_ref` is inert. Authentication is
+realtime surfaces (iteration 20, the Protocol surfaces bullet below). Phase E gates tools from the published tool filter (the Tool gates bullet below): the OpenAI,
+Pydantic AI, MAF and Claude adapters since iteration 21; ADK, CrewAI, LangGraph, smolagents and
+the realtime runners follow in iterations 22 and 23, and until then enforce nothing at call
+time. The credentials capability is a later phase: `Principal.credential_ref` is inert. Authentication is
 configuration: one identity provider per deployment, named by the `identity` block, and no
 handler or entry point takes a validator or authoriser argument any more (`agentkernel.auth` is
 deleted).
@@ -1152,6 +1153,33 @@ deleted).
   `ChatService.execute`), run the question on a thread of their own. A new surface asks the gate
   before it commits anything and maps `PermissionError` to 403 and `AgentNotFoundError` to 404;
   it never asks the authorizer directly.
+- **Tool gates** (phase E, iteration 21 so far; spec section 9 and refinement 20). Shape is consistent,
+  behaviour is not: each adapter applies the run's filter through `ToolGate` at list time where its
+  framework has a hook and at call time through a hook, AK's check first and the application's own
+  hook, guardrail, middleware or capability kept behind it. A refused call is answered with the
+  reason as the tool's result, never with an exception into the framework. A call approved while
+  its run was paused is decided again by the filter of the resume.
+  **OpenAI** (`OpenAIToolGate`): `is_enabled` becomes the gate AND the application's value, and an
+  `ak_tool_gate` input guardrail goes first on every `FunctionTool`. Installed at wrap and in
+  `attach_tool`, and only when the block is configured (`Runtime.access_gate()`), so no native
+  object changes without it. A run keeps the filter of the agent it started with, so
+  `reachable(root)` walks the agents it hands off to (`handoffs`, `handoff(agent)` through its
+  `_agent_ref`) and uses as tools (`_agent_instance`): their tools are declared under the first
+  agent and gated. `ungated_tool_names()` names an `mcp_servers` entry and a handoff that does not
+  hold its agent, which the access gate refuses at load. A hosted tool is declared and not gated.
+  **Pydantic AI** (`AKToolGateCapability`): a per-run capability added by `PydanticAIRunner._gated`
+  at all four native calls, ahead of the run options' `capabilities`; `prepare_tools` drops what
+  the filter refuses and `wrap_tool_execute` returns the reason without running the handler.
+  `_served_tools` reports each tool under the name its toolset serves it by (`<prefix>_<name>`,
+  a renamed name). `_deferred_results` hands an approval of a tool denied by the resume to the
+  SDK as `ToolDenied(reason)`. A toolset listed only inside a run is left out of a gated run.
+  **MAF** (`AKToolGateMiddleware`): first in the per-run `middleware` list built in
+  `_prepare_session`, for a gated run only; it sets `context.result` to the reason and returns
+  without `call_next()`. No list-time hook: a denied tool is still shown to the model.
+  **Claude**: in `_native_options(..., session=)` a refused `mcp__ak__<name>` leaves
+  `allowed_tools` (the application's own entry included), joins `disallowed_tools` once, and the
+  one `PreToolUse` hook denies it with the reason ahead of its approval and resume branches. Only
+  the tools the adapter serves are gated.
 - **Protocol surfaces** (iteration 20). Each answers for the caller in its own protocol's terms,
   and a hidden agent is never told apart from one the surface does not serve.
   **MCP** (`api/mcp/akmcp.py`): every agent tool is registered with

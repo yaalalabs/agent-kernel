@@ -4,13 +4,16 @@ import asyncio
 import base64
 import contextlib
 import copy
+import inspect
 import logging
-from collections.abc import AsyncGenerator, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from typing import Any, ClassVar
 
 from agents import Agent, FunctionTool, Runner, function_tool
+from agents.handoffs import Handoff
 from agents.realtime import RealtimeAgent, RealtimeRunner, RealtimeSession
 from agents.run_state import RunState
+from agents.tool_guardrails import ToolGuardrailFunctionOutput, ToolInputGuardrail, ToolInputGuardrailData
 from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
 from openai.types.responses.response_output_item_done_event import ResponseOutputItemDoneEvent
 from openai.types.responses.response_reasoning_summary_text_delta_event import ResponseReasoningSummaryTextDeltaEvent
@@ -19,7 +22,7 @@ from openai.types.responses.response_text_delta_event import ResponseTextDeltaEv
 from ...core import Agent as BaseAgent
 from ...core import Module
 from ...core import Runner as BaseRunner
-from ...core import Runtime, Session, ToolBuilder, ToolContext
+from ...core import Runtime, Session, ToolBuilder, ToolContext, ToolGate
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -831,6 +834,134 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
             await session.close()
 
 
+class OpenAIToolGate:
+    """
+    Puts the tool decision of a run on the function tools of an OpenAI agent (#603).
+
+    The SDK asks a function tool two things, and this class answers both from the run's ToolFilter: `is_enabled`,
+    once a turn, for whether the model is offered the tool, and its input guardrails, once a call, before the
+    function runs. A denied tool is therefore not offered, and a call that reaches it all the same is answered
+    with the reason instead of being run. The gate answers first, and the application's own `is_enabled` value
+    and guardrails are kept behind it. In a run that is not gated both let everything through.
+
+    The filter of a run is that of the agent the run started with, while the run can end up calling the tools of
+    another agent: one it hands off to, or one it uses as a tool. `reachable` walks those, so their function
+    tools are declared under the first agent and carry the gate too.
+
+    What this leaves out: a hosted tool (web search, file search, code interpreter) is run by the provider, which
+    asks the SDK neither question, so it is declared and cannot be gated. And `ungated` names what the
+    application bound that can be neither declared nor gated.
+    """
+
+    GUARDRAIL_NAME: ClassVar[str] = "ak_tool_gate"
+
+    @classmethod
+    def install(cls, agents: Iterable[Any]) -> None:
+        """
+        Puts the gate on every function tool of the agents given. A tool that carries it already is left alone.
+        :param agents: The native agents whose tools a run can call.
+        """
+        for agent in agents:
+            for tool in getattr(agent, "tools", None) or []:
+                if isinstance(tool, FunctionTool):
+                    cls._gate(tool)
+
+    @classmethod
+    def reachable(cls, root: Any) -> list[Any]:
+        """
+        Returns the native agents a run of `root` can call the tools of.
+        :param root: The native agent a run starts with.
+        :return: `root` first, then the agents it hands off to and the agents it uses as tools, and theirs in
+            turn, nearest first and each once.
+        """
+        reached = [root]
+        seen = {id(root)}
+        for agent in reached:
+            for delegate in cls._delegates(agent):
+                if id(delegate) not in seen:
+                    seen.add(id(delegate))
+                    reached.append(delegate)
+        return reached
+
+    @classmethod
+    def ungated(cls, root: Any) -> list[str]:
+        """
+        Names what a run of `root` can call that the adapter can neither declare nor gate: the tools of an MCP
+        server, which are listed only once a run connects to it, and the tools of an agent a handoff names
+        without holding it (a `Handoff` built by hand, a `realtime_handoff`).
+        :param root: The native agent a run starts with.
+        :return: One entry for each such source, on `root` or on an agent it can reach.
+        """
+        names: list[str] = []
+        for agent in cls.reachable(root):
+            for server in getattr(agent, "mcp_servers", None) or []:
+                names.append(f"the tools of MCP server '{server.name}' on agent '{agent.name}'")
+            for item in getattr(agent, "handoffs", None) or []:
+                if isinstance(item, Handoff) and cls._handoff_target(item) is None:
+                    names.append(f"the tools of agent '{item.agent_name}', which agent '{agent.name}' hands off to")
+        return names
+
+    @classmethod
+    def _delegates(cls, agent: Any) -> list[Any]:
+        """Returns the agents one agent can pass a run to: those it hands off to, then those it uses as tools."""
+        delegates = [target for item in getattr(agent, "handoffs", None) or [] if (target := cls._handoff_target(item)) is not None]
+        for tool in getattr(agent, "tools", None) or []:
+            nested = getattr(tool, "_agent_instance", None) if getattr(tool, "_is_agent_tool", False) else None
+            if nested is not None:
+                delegates.append(nested)
+        return delegates
+
+    @staticmethod
+    def _handoff_target(item: Any) -> Any | None:
+        """Returns the agent a `handoffs` entry leads to, or None for a handoff object that does not hold it."""
+        if not isinstance(item, Handoff):
+            return item
+        # `handoff(agent)` keeps a weak reference to its agent; a Handoff built another way keeps none.
+        reference = item._agent_ref
+        return reference() if reference is not None else None
+
+    @classmethod
+    def _gate(cls, tool: FunctionTool) -> None:
+        guardrails = list(tool.tool_input_guardrails or [])
+        if any(guardrail.get_name() == cls.GUARDRAIL_NAME for guardrail in guardrails):
+            return
+        tool.is_enabled = cls._enabled(tool, tool.is_enabled)
+        tool.tool_input_guardrails = [ToolInputGuardrail(guardrail_function=cls._guard(tool), name=cls.GUARDRAIL_NAME), *guardrails]
+
+    @staticmethod
+    def _enabled(tool: FunctionTool, native: Any) -> Callable[[Any, Any], Awaitable[bool]]:
+        """
+        Returns the `is_enabled` check of a gated tool: the run's filter, and then what the application set.
+        :param tool: The tool; its name is read when the check runs.
+        :param native: The `is_enabled` the tool had, a bool or a callable the SDK would have asked.
+        """
+
+        async def enabled(run_context: Any, agent: Any) -> bool:
+            if ToolGate.refusal(tool.name) is not None:
+                return False
+            if isinstance(native, bool):
+                return native
+            answer = native(run_context, agent)
+            return bool(await answer) if inspect.isawaitable(answer) else bool(answer)
+
+        return enabled
+
+    @staticmethod
+    def _guard(tool: FunctionTool) -> Callable[[ToolInputGuardrailData], ToolGuardrailFunctionOutput]:
+        """
+        Returns the input guardrail of a gated tool: a call to a denied tool is answered with the reason.
+        :param tool: The tool; its name is read when the guardrail runs.
+        """
+
+        def ak_tool_gate(data: ToolInputGuardrailData) -> ToolGuardrailFunctionOutput:
+            reason = ToolGate.refusal(tool.name)
+            if reason is None:
+                return ToolGuardrailFunctionOutput.allow()
+            return ToolGuardrailFunctionOutput.reject_content(reason)
+
+        return ak_tool_gate
+
+
 class OpenAIAgent(BaseAgent):
     """
     OpenAIAgent class provides an agent wrapping for OpenAI Agent SDK-based agents.
@@ -858,6 +989,7 @@ class OpenAIAgent(BaseAgent):
         self._agent = agent
         self._attach_system_tools()
         self._setup_system_prompt()
+        self._gate_tools()
 
     @property
     def agent(self) -> Agent | RealtimeAgent:
@@ -889,6 +1021,15 @@ class OpenAIAgent(BaseAgent):
         """
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, OpenAIToolBuilder.bind([tool]))
+        self._gate_tools()
+
+    def _gate_tools(self) -> None:
+        """
+        Puts the tool gate on the function tools a run of this agent can call, when an `authorization` block is
+        configured. Without the block the native tools are left exactly as the application built them.
+        """
+        if Runtime.access_gate() is not None:
+            OpenAIToolGate.install(OpenAIToolGate.reachable(self._agent))
 
     def _native_description(self) -> str:
         """
@@ -899,18 +1040,39 @@ class OpenAIAgent(BaseAgent):
 
     def get_tool_names(self) -> list[str]:
         """
-        Returns the names of the native agent's tools, hosted tools included.
+        Returns the names of the tools a run of the agent can call: the native agent's own, hosted tools
+        included, then those of the agents it hands off to and of the agents it uses as tools, and theirs in
+        turn. A run's tool filter is this agent's whichever of them ends up calling a tool, so a policy for this
+        agent names their tools too.
 
-        Not reported: the tools of the agent's `mcp_servers`, which are listed only when a run connects, and the
-        tools of an agent it hands off to, which that agent's own descriptor reports.
+        Not reported: the tools of an `mcp_servers` entry, which are listed only when a run connects, and the
+        tools of an agent a handoff names without holding it. `ungated_tool_names` reports both.
         """
-        return [tool.name for tool in self.agent.tools]
+        return list(self._declared_tools())
 
     def _tool_descriptions(self) -> dict[str, str]:
         """
-        Returns the description of each native tool by name. A hosted tool carries none.
+        Returns the description of each declared tool by name. A hosted tool carries none.
         """
-        return {tool.name: getattr(tool, "description", None) or "" for tool in self.agent.tools}
+        return {name: getattr(tool, "description", None) or "" for name, tool in self._declared_tools().items()}
+
+    def ungated_tool_names(self) -> list[str]:
+        """
+        Returns what a run of the agent can call that is neither declared nor gated: the tools of an MCP server
+        and of an agent a handoff does not hold, on this agent or on one it can reach. A hosted tool is not
+        among them: it is declared, and the provider runs it where no gate reaches.
+        """
+        return OpenAIToolGate.ungated(self.agent)
+
+    def _declared_tools(self) -> dict[str, Any]:
+        """
+        Returns the tools a run can call by name, the agent's own first; a name two agents share is kept once.
+        """
+        declared: dict[str, Any] = {}
+        for agent in OpenAIToolGate.reachable(self.agent):
+            for tool in getattr(agent, "tools", None) or []:
+                declared.setdefault(tool.name, tool)
+        return declared
 
 
 class OpenAIModule(Module):
