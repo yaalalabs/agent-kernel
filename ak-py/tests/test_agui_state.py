@@ -215,3 +215,19 @@ class TestFrameworkBinding:
 
         funcs = [tool.func for tool in AGUIState.state_tools() + AGUIState.client_context_tools()]
         assert len(OpenAIToolBuilder.bind(funcs)) == 4
+
+
+class TestDeclaredTiers:
+    """What an authorization policy applies to these tools when its `tiers` names no other (#603)."""
+
+    def test_only_the_tool_that_changes_the_shared_state_is_above_read(self):
+        from agentkernel.core.model import AccessLevel
+
+        tiers = {tool.name: tool.tier for tool in AGUIState.state_tools() + AGUIState.client_context_tools()}
+
+        assert tiers == {
+            "get_agui_state": AccessLevel.READ,
+            "update_agui_state": AccessLevel.WRITE,
+            "get_forwarded_props": AccessLevel.READ,
+            "get_agui_context": AccessLevel.READ,
+        }

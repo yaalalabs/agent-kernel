@@ -222,6 +222,11 @@ When you write or update documentation, READMEs, skills or website copy:
   and `ak-dev-sync-skills-from-branch` describe how root docs, `ak-py` docs, and the bundled
   skills get kept in sync with code — this repo has automation (`auto-sync-skills-docs.yaml`) that
   expects docs/skills to track implementation, not drift.
+- **Changelog**: a PR with a user-visible change adds a fragment under `changelog.d/`
+  (`<issue>.<type>.md`), never an edit to `CHANGELOG.md`; the Publish workflow compiles fragments
+  at release time and `changelog-check.yaml` enforces them. Rules are in CONTRIBUTING.md,
+  "Changelog entries"; `.agents/skills/ak-dev-sync-changelog-from-branch` writes the fragment at
+  the end of a branch, alongside the docs and skills sync.
 
 ## Terraform (`ak-deployment/`)
 

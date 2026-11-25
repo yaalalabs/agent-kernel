@@ -250,6 +250,8 @@ class PipelineWebSocketHandler(RESTRequestHandler):
 
         # The connection's principal is the run's: `from_payload` dropped anything the frame named.
         body.principal = principal
+        # A chat frame is a REST-family request: the runner serves it only the agents on `rest`.
+        body.surface = "rest"
         user_id = principal.subject
         request_id = request.request_id or str(uuid.uuid4())
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)

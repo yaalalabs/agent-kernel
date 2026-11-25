@@ -263,6 +263,18 @@ const STAGES: StageGroup[] = [
         guide: { label: 'Identity and access', to: '/docs/advanced/identity-and-access' },
       },
       {
+        title: 'Authorization',
+        summary:
+          'Grants in configuration decide which agents each caller may run and see. A caller is listed only its own agents, and an agent hidden from it answers like one that does not exist.',
+        points: [
+          'Grants for users, groups, roles and messaging senders, at read, write or admin',
+          'Private, internal and public agents',
+          'The same answer on REST, A2A, MCP and AG-UI',
+        ],
+        // Drop `next` from the path once a release carries the Authorization section.
+        guide: { label: 'Authorization', to: '/docs/next/advanced/identity-and-access#authorization' },
+      },
+      {
         title: 'Secret resolution',
         summary:
           'Code asks for a key by name. It comes from the environment on a laptop, from AWS SSM Parameter Store on AWS, and from Kubernetes Secrets in a cluster, with only the configuration changing.',

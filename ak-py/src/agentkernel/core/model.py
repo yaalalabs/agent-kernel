@@ -680,6 +680,12 @@ class BaseChatRequest(BaseModel):
     user_id is not a request field: a body or envelope carrying one is refused, since the acting
     user comes from the credential the surface authenticated.
 
+    surface is the agent surface the request entered by, assigned by the entry point where it
+    assigns the principal and carried in the queued body to the process that runs the agent: an
+    agent whose descriptor leaves that surface out is not served to the request. None for a
+    request that entered by none of them (a messaging integration, the CLI, a scheduled
+    occurrence), which the descriptor's surfaces do not govern.
+
     A resume block answers a paused run instead of starting a new turn, so prompt
     defaults to empty rather than being required. ChatService rejects a request
     carrying neither, with the same error a missing prompt has always raised.
@@ -690,6 +696,8 @@ class BaseChatRequest(BaseModel):
     session_id: str | None = None
     principal: Principal | None = None
     """Assigned by the surface after authentication; a value arriving from a client is overwritten, never read."""
+    surface: AgentSurface | None = None
+    """Assigned by the entry point beside the principal; the client-facing body (ChatRunRequest) refuses one."""
     group_id: str | None = None
     thread_name: str | None = None
     schedule: ScheduleSpec | None = None
@@ -734,8 +742,9 @@ class BaseRunRequest(BaseChatRequest):
     for the same reason as the scheduling fields: an extra would reach the agent as
     AgentRequestAny context.
 
-    requests, scheduled_task_id and scheduled_time are for internal producers only;
-    client-facing routes parse ChatRunRequest, which rejects them.
+    requests, scheduled_task_id and scheduled_time are for internal producers only, and the
+    inherited surface is the entry point's to set; client-facing routes parse ChatRunRequest,
+    which rejects them.
     """
 
     files: list[FileData] | None = None
@@ -754,9 +763,13 @@ class ChatRunRequest(BaseRunRequest):
     fields are also dropped from its JSON schema, so the API docs do not advertise them.
     A null value is accepted, since it means "not set" and a client generated from an
     older schema may send one for every optional field.
+
+    surface is among them: the entry point names the surface a request entered by, and a
+    client that sent the key as context of its own is told so, where dropping it would change
+    what its agent sees without a word.
     """
 
-    INTERNAL_FIELDS: ClassVar[frozenset[str]] = frozenset({"requests", "scheduled_task_id", "scheduled_time"})
+    INTERNAL_FIELDS: ClassVar[frozenset[str]] = frozenset({"requests", "scheduled_task_id", "scheduled_time", "surface"})
 
     @staticmethod
     def _hide_internal_fields(schema: dict[str, Any]) -> None:

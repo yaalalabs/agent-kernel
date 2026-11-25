@@ -268,8 +268,8 @@ and travels the same queue, so the agent cannot tell the two apart. See
 
 :::caution Anyone who can see the message can press it
 OAK ships no approver policy. Group membership is not an approval list — if it matters who
-decides, enforce it yourself: the presser's Telegram user id reaches the run as `acting_user_id`,
-and a `PreHook` is where you check it.
+decides, enforce it yourself: the presser's Telegram user id reaches the run as the subject of its
+principal (`session.get_principal()`), and a `PreHook` is where you check it.
 :::
 
 :::note Telegram's 64-byte button budget

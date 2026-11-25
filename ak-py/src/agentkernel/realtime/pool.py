@@ -11,6 +11,7 @@ from ..core.base import Agent as BaseAgent
 from ..core.base import Session
 from ..core.config import AKConfig
 from ..core.model import StreamChunk
+from ..core.registry import AgentNotFoundError
 from ..core.runtime import Runtime
 from ..pipeline.envelope import (
     ATTR_REALTIME,
@@ -45,7 +46,11 @@ class RealtimeConnectionPool:
     2. ``dispatch()`` is the one path both realtime runners (pipeline and ECS) take, on a consumer thread, per
        input message. During shutdown the input is dropped. A message carrying ``ATTR_REALTIME_END`` ends the
        session (step 5). Otherwise it goes to the session's live connection; with none, it opens one (step 3),
-       unless the session is backing off (step 4), in which case the input is dropped.
+       unless the session is backing off (step 4), in which case the input is dropped. Before a connection is
+       opened the agent is resolved for the input's caller: with an ``authorization`` block a caller the access
+       gate refuses gets no native session (``_refuse``). Its edge is sent one terminal error chunk, the input
+       is not raised back to the queue, and the session backs off as after a failed connect, so the caller's
+       next frames are dropped and it is asked about again at the retry time.
     3. Connect: ``get_or_create()`` registers a new connection under the lock, then connects it on the loop
        outside the lock, waiting up to ``CONNECT_TIMEOUT_SECONDS``. If the connect fails, times out or the
        call ended meanwhile, ``_discard_failed`` removes that connection's entry (a replacement registered
@@ -419,7 +424,13 @@ class RealtimeConnectionPool:
         if conn is None:
             # Before the load: the session the previous call stored must be the one this call starts from.
             self._wait_for_close(body.session_id)
-            handler = chat_service.prepare_agent_handler(body.session_id, body.agent)
+            # The agent check is made for the caller of this input: with an authorization block the access
+            # gate would otherwise decide for nobody.
+            try:
+                handler = chat_service.prepare_agent_handler(body.session_id, body.agent, principal=body.principal)
+            except (PermissionError, AgentNotFoundError) as refusal:
+                self._refuse(body.session_id, request_id, attributes, refusal)
+                return
             conn = self.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session, **delivery)
 
         conn.update_delivery_context(**delivery)
@@ -429,6 +440,39 @@ class RealtimeConnectionPool:
                 conn.append_audio(request)
             elif getattr(request, "type", None) == "text":
                 conn.send_text(request)
+
+    def _refuse(self, session_id: str, request_id: str, attributes: Mapping[str, Any], refusal: Exception) -> None:
+        """Tell a call's edge that its caller may not have the agent, and hold the session back.
+
+        The access gate's answer does not change by asking again at once, and every audio frame is an
+        input: raised, the refusal would be redelivered by the queue up to its retry limit for each
+        of them. So it ends here. The session is recorded as failed, with the back-off of a connect
+        that failed, which drops the frames that follow and asks about the caller again at the retry
+        time (a grant given meanwhile then opens the call). The edge is sent one terminal error
+        chunk, worded like a session that could not start, which is what happened.
+
+        Never raises: an output queue that cannot take the chunk must not turn the refusal into a retry.
+
+        :param session_id: The session the input belongs to.
+        :param request_id: The input's request id, which the chunk is stamped and deduplicated with.
+        :param attributes: The input message's attributes, carrying the edge's return address.
+        :param refusal: What the agent check raised: no level on the agent, or an agent the caller may not see.
+        """
+        with self._conn_lock:
+            count = self._failures.get(session_id, (0, 0.0))[0] + 1
+            delay = min(self.RECONNECT_MAX_SECONDS, self.RECONNECT_BASE_SECONDS * 2 ** (count - 1))
+            self._failures[session_id] = (count, time.time() + delay)
+        self._log.warning(f"Realtime session {session_id}: refused ({refusal}); not asking again for {delay:.0f}s")
+        try:
+            self.send_permanent_failure(
+                self._transport,
+                {**attributes, ATTR_REQUEST_ID: request_id},
+                session_id,
+                f"{request_id}-refused-{count}",
+                f"Realtime session could not start: {refusal}",
+            )
+        except Exception:
+            self._log.exception(f"Realtime session {session_id}: could not tell its edge that the caller was refused")
 
     @staticmethod
     def send_permanent_failure(

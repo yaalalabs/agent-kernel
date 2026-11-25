@@ -13,6 +13,7 @@ from ...core.chat_service import AgentHandler, ChatService
 from ...core.config import AKConfig
 from ...core.event import RunPaused
 from ...core.model import AgentDescriptor, Principal
+from ...core.registry import AgentNotFoundError
 from ...core.runtime import Runtime
 from .mapping import AGUIMapper
 from .run_input import AGUIRunInput
@@ -20,7 +21,12 @@ from .state import AGUIState
 
 
 class AGUIRequestHandler(AuthorisedRESTRequestHandler):
-    """AG-UI routes: GET /agents, POST /{agent_name}, and POST / when `agui.default_agent` is set."""
+    """AG-UI routes: GET /agents, POST /{agent_name}, and POST / when `agui.default_agent` is set.
+
+    With an `authorization` block the routes answer for the caller (#603): the listing is the agents it may
+    see, a run for an agent it may not see is the unknown agent's 404, and a run for one it sees and holds no
+    level on is a 403, each decided before a session is loaded, a run enqueued or the stream opened.
+    """
 
     serves_hosted_agents_only: ClassVar[bool] = True
     """
@@ -130,8 +136,9 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
                 f"and the value is ignored. Set {flag}.enabled to expose it."
             )
 
-    def _resolve_agent(self, agent_name: str) -> AgentDescriptor:
-        """Resolve a path agent name to the descriptor of a streaming-capable agent exposed on AG-UI.
+    def _resolve_agent(self, agent_name: str, principal: Principal | None = None) -> AgentDescriptor:
+        """Resolve a path agent name to the descriptor of a streaming-capable agent exposed on AG-UI
+        that the caller may run.
 
         Everything checked here is on the descriptor (that the agent exists, its surfaces, whether its
         runner streams), so the queue-mode handler resolves an agent its process does not host and
@@ -141,15 +148,31 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         The descriptor is read once (`_descriptor`). For an agent hosted elsewhere that is a store read,
         which blocks, which is why the caller runs this off the event loop.
 
+        With an `authorization` block the access gate is asked with that same descriptor, so the
+        decision costs no second read. It is asked before the streaming check: the 400 names the
+        agent's framework, which is not for a caller who may not see the agent.
+
         :param agent_name: Agent id taken from the route path.
+        :param principal: Who the run is for; the anonymous principal when omitted.
         :return: The agent's descriptor: the hosted agent's own, else the registry's record.
-        :raises HTTPException: 404 when the agent is unknown, not served by this handler *or* not
-                               exposed: deliberately indistinguishable, so the surface never confirms
-                               that a hidden name exists. 400 when the agent's runner cannot stream.
+        :raises HTTPException: 404 when the agent is unknown, not served by this handler, not
+                               exposed *or* one the caller may not see: deliberately
+                               indistinguishable, so the surface never confirms that a hidden name
+                               exists. 403 when the caller sees the agent and holds no level on it.
+                               400 when the agent's runner cannot stream.
         """
+        not_found = HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
         descriptor = self._descriptor(agent_name)
         if descriptor is None or not descriptor.exposed_on("agui"):
-            raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+            raise not_found
+        gate = Runtime.access_gate()
+        if gate is not None:
+            try:
+                gate.authorize_agent(principal or Principal.anonymous(), descriptor.id, descriptor=descriptor)
+            except AgentNotFoundError:
+                raise not_found from None
+            except PermissionError as refusal:
+                raise HTTPException(status_code=403, detail=str(refusal)) from None
         if not descriptor.supports_streaming:
             raise HTTPException(
                 status_code=400,
@@ -166,8 +189,13 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         The bare-prefix route is registered only when `agui.default_agent` is configured, so an
         unconfigured deployment returns 404 there rather than serving an arbitrary agent.
 
+        With an `authorization` block the policy is checked against the hosted agents and the registry
+        first, as the chat routers do: an app that serves its agents over AG-UI alone mounts none of those.
+
         :return: Router carrying the discovery and run routes.
+        :raises AKConfigError: If an `authorization` block cannot be enforced for an agent this process hosts.
         """
+        self._validate_access()
         config = AKConfig.get().agui
         router = APIRouter(prefix=config.prefix)
 
@@ -181,10 +209,15 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             :param request: Incoming request, for authorisation.
             :return: {"agents": [name, ...]}.
             """
-            self._resolve_user(request)
+            principal = self._resolve_user(request)
             # From the descriptors, which carry whether the runner streams: the hosted agents' for this handler,
             # everything the registry knows for the queue-mode one. In id order, the same from every process.
-            descriptors = sorted(self._descriptors(), key=lambda descriptor: descriptor.id)
+            served = self._descriptors()
+            gate = Runtime.access_gate()
+            if gate is not None:
+                # Among what this handler serves, so the direct one never lists the registry's store for it.
+                served = gate.visible_agents(principal, served)
+            descriptors = sorted(served, key=lambda descriptor: descriptor.id)
             return {"agents": [descriptor.id for descriptor in descriptors if descriptor.supports_streaming and descriptor.exposed_on("agui")]}
 
         @router.post("/{agent_name}")
@@ -204,10 +237,18 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             async def run_default_agent(request: Request) -> StreamingResponse:
                 """Run `agui.default_agent`.
 
+                The caller named no agent, so a default it cannot have is not named to it either: the
+                answer is the 404 this route gives when no default agent is configured.
+
                 :param request: Incoming request carrying the RunAgentInput body.
                 :return: The AG-UI event stream.
                 """
-                return await self._run(default_agent, request)
+                try:
+                    return await self._run(default_agent, request)
+                except HTTPException as refused:
+                    if refused.status_code == 404:
+                        raise HTTPException(status_code=404) from None
+                    raise
 
         return router
 
@@ -222,11 +263,11 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         :param request: Incoming request carrying the RunAgentInput body.
         :return: The caller's principal, the agent's descriptor, the parsed run input, and the mapped requests.
         :raises HTTPException: 401 for a request nothing authenticated, 400 for an unparsable or
-            unusable body, 404/400 from agent resolution.
+            unusable body, 404/403/400 from agent resolution.
         """
         principal = self._resolve_user(request)
         # Off the event loop: over a shared registry, resolving an agent hosted elsewhere reads the store.
-        agent = await asyncio.to_thread(self._resolve_agent, agent_name)
+        agent = await asyncio.to_thread(self._resolve_agent, agent_name, principal)
 
         try:
             body = await request.json()
@@ -257,7 +298,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         principal, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
 
-        handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name)
+        handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name, surface="agui", principal=principal)
         session = handler.service.session if handler.service is not None else None
         if session is None:
             self._log.error(f"Agent '{agent_name}' was resolved but AgentService could not select it, so no session was created.")

@@ -94,6 +94,11 @@ agui:
 - **`default_agent`** must name an agent the handler serves and that is exposed on `agui` when the handler is
   built: loaded in this process for `AGUIRequestHandler`, loaded or known through a shared registry for
   `AGUIPipelineRequestHandler`. Otherwise construction fails, rather than leaving a route that always answers 404.
+- **Who may run and see an agent** is decided by an optional
+  [`authorization`](../advanced/identity-and-access.md#authorization) block. With one, `GET {prefix}/agents`
+  lists the agents the caller may see, a run for an agent it may not see is the `404` an unknown agent gets, and
+  a run for one it sees and holds no level on is a `403`, each answered before the stream opens. `POST {prefix}`
+  answers a plain `404` when the caller may not see the default agent, so the agent is not named to it.
 - **`state`** opts agents into shared JSON state: the frontend sends `state` on a run, the model
   amends it with `update_agui_state`, and the surface streams a `StateSnapshot` back only when the
   state actually changed.

@@ -16,6 +16,9 @@ from ..core.config import AKConfig
 from ..core.logger import TRACE, TraceStage
 from ..core.model import BaseRunRequest, ChatRunRequest, ExecutionMode, FileData, ImageData
 from ..core.multimodal.storage import AttachmentStorageManager
+from ..core.registry import AgentNotFoundError
+from ..core.runtime import Runtime
+from ..core.service import AgentService
 from ..core.util.factory import AKConfigError
 from .envelope import ATTR_PROTOCOL
 from .producer import RequestProducer
@@ -174,16 +177,25 @@ class RestHandler(AgentRESTRequestHandler):
         store in every mode. A reply with an error status is returned, not raised: the caller
         checks ``is_error``.
 
+        A request for an agent its caller cannot have is not sent (#603): the reply is the one the
+        runner would have stored, with its status and body, built here (see ``_availability_refusal``).
+
         :param body: The chat request; ``session_id`` and ``prompt`` are required. Its ``principal`` is the
             caller's to establish (the executors authenticate their own protocol): this path never reads
-            one from a client and never overwrites one, so an unset principal runs anonymous.
+            one from a client and never overwrites one, so an unset principal runs anonymous. Its
+            ``surface`` is the executor's to name, and is the one the agent must be served on.
         :param protocol: The surface's name, stamped as the ``protocol`` attribute.
-        :return: The stored reply.
+        :return: The stored reply, or the refusal the runner would have answered with.
         :raises ValueError: If ``session_id``, ``prompt`` or ``protocol`` is empty; nothing is sent.
         :raises ReplyTimeoutError: If the budget runs out before the reply is stored.
         """
         self._validate_protocol_request(body, protocol)
         request_id = str(uuid.uuid4())
+        refusal = await self._availability_refusal(body)
+        if refusal is not None:
+            status_code, error = refusal
+            self._log.warning(f"[REFUSED] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}")
+            return QueuedReply(request_id=request_id, status_code=status_code, body={"error": error, "session_id": body.session_id})
         self._log.info(f"[ENQUEUE] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
         # Offload the sync send so it doesn't block the event loop.
         await asyncio.to_thread(RequestProducer(self.get_transport()).enqueue, body, request_id, {ATTR_PROTOCOL: protocol})
@@ -209,6 +221,52 @@ class RestHandler(AgentRESTRequestHandler):
             raise ValueError("No prompt provided in the request")
         if not protocol:
             raise ValueError("protocol is required")
+
+    async def _availability_refusal(self, body: BaseRunRequest) -> tuple[int, str] | None:
+        """Decide, before anything is enqueued, whether the request names an agent its caller cannot have.
+
+        The question the process that runs the agent asks on arrival (``AgentService.ensure_agent_available``),
+        asked here of the registry this process reads, with the request's principal and surface: an
+        agent the registry does not know, one kept off the surface, and with an ``authorization``
+        block one the caller may not see are the unknown agent's 404, and one it may see and holds
+        no level on is a 403. The answer is the status and message the runner would have sent back,
+        so a refusal costs no queue trip, and what this process's own registry says about
+        ``surfaces`` (a ``registry.agents`` overlay set only here) holds for a queued request. The
+        runner asks again when the request runs.
+
+        Two requests are left to the runner. One naming no agent: the default is the runner's to
+        pick, and listing the registry here to second-guess it would cost a store read per request.
+        And one naming an agent while this process's registry knows no agent at all: a process that
+        neither loads the agent modules nor shares a registry has nothing to judge a name by.
+
+        :param body: The chat request, with the principal and surface its entry point assigned.
+        :return: The status and message of the refusal, or None when the request may be enqueued.
+        """
+        if not body.agent:
+            return None
+        try:
+            # Off the event loop: for an agent another process hosts this reads the registry's store.
+            await asyncio.to_thread(AgentService.ensure_agent_available, body.agent, body.principal, surface=body.surface)
+        except PermissionError as e:
+            return 403, str(e)
+        except AgentNotFoundError as e:
+            if await asyncio.to_thread(Runtime.current().registry.is_empty):
+                return None
+            return 404, str(e)
+        return None
+
+    async def _reject_unavailable(self, body: BaseRunRequest) -> None:
+        """Refuse a request for an agent its caller cannot have, in the shape the runner's refusal arrives in.
+
+        :param body: The chat request, with the principal and surface its entry point assigned.
+        :raises HTTPException: 404 or 403 with ``{"error": ..., "session_id": ...}``, the detail a
+            queued refusal carries (``_build_sync_response``) and the direct chat route answers with.
+        """
+        refusal = await self._availability_refusal(body)
+        if refusal is not None:
+            status_code, error = refusal
+            self._log.warning(f"Refused before the queue: {error}")
+            raise HTTPException(status_code=status_code, detail={"error": error, "session_id": body.session_id})
 
     def _build_sync_response(self, record: Any) -> Any:
         """Map a stored response record to the HTTP response, honoring its stored status.
@@ -242,6 +300,20 @@ class RestHandler(AgentRESTRequestHandler):
         # with the one the identity dependency RESTAPI installs put on the request (the anonymous
         # principal without an identity block). The default covers a router mounted on a bare app.
         body.principal = getattr(request.state, "principal", None)
+        # The surface rides the queued body, so the process that runs the agent serves only the agents on `rest`.
+        body.surface = "rest"
+        return await self._enqueue_and_wait(body)
+
+    async def _enqueue_and_wait(self, body: BaseRunRequest, admitted: bool = False) -> Any:
+        """Validate, enqueue and answer one chat request whose principal and surface are assigned.
+
+        :param body: The chat request.
+        :param admitted: True when the caller has already asked whether the agent is available to the
+            request's principal (``RequestHandler.run_chat`` asks before it saves any file), so the
+            registry is read once for a request.
+        :return: The reply (REST_SYNC) or the acknowledgement carrying the request id (REST_ASYNC).
+        :raises HTTPException: For a request this route refuses, a wait that timed out, or a failed run.
+        """
         try:
             if not body.session_id:
                 raise HTTPException(status_code=400, detail="session_id is required")
@@ -252,6 +324,8 @@ class RestHandler(AgentRESTRequestHandler):
                 ChatService.reject_unprocessable(body)
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+            if not admitted:
+                await self._reject_unavailable(body)
 
             # Unique request_id, distinct from session_id.
             request_id = str(uuid.uuid4())
@@ -345,6 +419,7 @@ class RestHandler(AgentRESTRequestHandler):
         if not self._is_queue_mode():
             return super().get_router()
 
+        self._validate_access()
         router = APIRouter()
         router.add_api_route(self.AGENTS_PATH, self.list_agents, methods=["GET"])
         router.add_api_route(self.CHAT_PATH, self.enqueue_and_wait, methods=["POST"])
@@ -408,6 +483,7 @@ class RequestHandler(RestHandler):
     # -- routes ----------------------------------------------------------------------------
 
     def get_router(self) -> APIRouter:
+        self._validate_access()
         router = APIRouter()
         router.add_api_route(self.AGENTS_PATH, self.list_agents, methods=["GET"])
         router.add_api_route(self.CHAT_PATH, self.run_chat, methods=["POST"])
@@ -418,8 +494,9 @@ class RequestHandler(RestHandler):
 
     async def run_chat(self, body: ChatRunRequest, request: Request):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
-        # The surface assigns the principal; a client value is overwritten (see enqueue_and_wait).
+        # The surface assigns the principal and names itself; a client value is overwritten (see enqueue_and_wait).
         body.principal = getattr(request.state, "principal", None)
+        body.surface = "rest"
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
@@ -429,10 +506,12 @@ class RequestHandler(RestHandler):
         self._reject_unprocessable(body)
         self._reject_unroutable(body)
         self._reject_unqueueable_attachments(body)
+        # The last refusal, and the first that may read a store: after it files are saved and the request is enqueued.
+        await self._reject_unavailable(body)
         await self._offload_attachments(body)
         if self._config.execution.is_sse:
             return await self._run_chat_stream(body)
-        return await self.enqueue_and_wait(body, request)
+        return await self._enqueue_and_wait(body, admitted=True)
 
     def _reject_unqueueable_attachments(self, body: BaseRunRequest) -> None:
         """Refuse files that cannot cross a broker, before anything is saved, recorded or enqueued.

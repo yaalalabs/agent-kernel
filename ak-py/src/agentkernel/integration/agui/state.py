@@ -4,7 +4,7 @@ import json
 from copy import deepcopy
 
 from ...core.base import Session
-from ...core.model import SystemTool
+from ...core.model import AccessLevel, SystemTool
 from ...core.tool import ToolContext
 
 AGUI_STATE_KEY = "agui_state"
@@ -199,7 +199,8 @@ class AGUIState:
         """Shared-state tools, attached when `agui.state` is enabled."""
         return [
             SystemTool(name="get_agui_state", description=cls._STATE_GUIDANCE, func=cls.get_agui_state),
-            SystemTool(name="update_agui_state", description="", func=cls.update_agui_state),
+            # Changes what the frontend shows: tiered `write` for an authorization policy; the reads keep the default.
+            SystemTool(name="update_agui_state", description="", func=cls.update_agui_state, tier=AccessLevel.WRITE),
         ]
 
     @classmethod

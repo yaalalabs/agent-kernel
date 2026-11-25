@@ -51,7 +51,7 @@ from .model import (
 )
 from .config import AKConfig as Config
 from .logger import TRACE, TraceLine, TraceStage
-from .registry import AgentRegistrationError, AgentRegistry
+from .registry import AgentNotFoundError, AgentRegistrationError, AgentRegistry
 from .module import Module
 from .runtime import Runtime
 from .service import AgentService
