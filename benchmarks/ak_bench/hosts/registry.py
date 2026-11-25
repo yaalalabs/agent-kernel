@@ -1,7 +1,7 @@
 from typing import ClassVar
 
 from ak_bench.errors import BenchConfigError
-from ak_bench.platforms.base import Host
+from ak_bench.hosts.host import Host
 
 
 class HostRegistry:

@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from ak_bench.errors import BenchConfigError, StepRefused
-from ak_bench.hosts import HostRegistry
-from ak_bench.platforms.base import Deployment, RunInfo
-from ak_bench.results.keyed_csv import KeyedCsv
-from ak_bench.results.layout import ResultsLayout
+from ak_bench.hosts.host import Deployment, RunInfo
+from ak_bench.hosts.registry import HostRegistry
+from ak_bench.results.common.keyed_csv import KeyedCsv
+from ak_bench.results.common.layout import ResultsLayout
 from ak_bench.run.run_log import RunLog
 
 

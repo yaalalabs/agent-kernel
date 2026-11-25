@@ -7,7 +7,7 @@ from agentkernel.core import TraceStage
 
 from ak_bench.load.driver.base import ClientDriver
 from ak_bench.load.records import RequestRecord
-from ak_bench.results.keyed_csv import KeyedCsv
+from ak_bench.results.common.keyed_csv import KeyedCsv
 
 REQUEST_PATH_STAGES = [s for s in TraceStage if s not in (TraceStage.RESPONSE_POLL_START, TraceStage.RESPONSE_FOUND)]
 CLIENT_RECEIVED = "CLIENT_RECEIVED"

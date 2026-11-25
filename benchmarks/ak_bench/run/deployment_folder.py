@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ak_bench.errors import BenchConfigError, ScriptFailed
-from ak_bench.platforms.base import Deployment
+from ak_bench.hosts.host import Deployment
 
 
 @dataclass(frozen=True)

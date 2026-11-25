@@ -44,7 +44,7 @@ Host (registered by built-in name, e.g. "ecs", "lambda", later "cloud_run", "aca
     [Scaling info fetchers](#scaling-info-fetchers-pluggable)). Deploying isn't a fetcher's job: the deployment
     folders do it.
 - **Where each fetcher runs is set by the host, not the fetcher** (decided 2026-11-06, replaces the `live_track`
-  parameter): the host's `Fetchers` holds five lists. A fetcher never knows which list it's in; the list picks the
+  parameter): the host's `StageFetchers` holds five lists. A fetcher never knows which list it's in; the list picks the
   time window passed to `fetch()`, and one fetcher can be in several lists.
 
   | List | When it runs | Window passed to `fetch()` |

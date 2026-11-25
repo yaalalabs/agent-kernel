@@ -1,16 +1,12 @@
 from datetime import datetime
 from typing import Any
 
-from ak_bench.platforms.base import (
-    CostFetcher,
-    Deployment,
-    ResourceUsageFetcher,
-    RunInfo,
-    ScalingInfo,
-    ScalingInfoFetcher,
-    TraceCollector,
-    TransportCollector,
-)
+from ak_bench.fetchers.core.cost import CostFetcher
+from ak_bench.fetchers.core.resources import ResourceUsageFetcher
+from ak_bench.fetchers.core.scaling import ScalingInfo, ScalingInfoFetcher
+from ak_bench.fetchers.core.trace import TraceCollector
+from ak_bench.fetchers.core.transport import TransportCollector
+from ak_bench.hosts.host import Deployment, RunInfo
 
 
 class Scripted:

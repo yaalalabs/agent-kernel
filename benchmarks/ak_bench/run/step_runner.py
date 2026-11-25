@@ -7,12 +7,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ak_bench.config import BenchConfig
+from ak_bench.fetchers.core.info_fetcher import InfoFetcher
+from ak_bench.hosts.host import Deployment, Host, RunInfo
 from ak_bench.load.driver.factory import DriverFactory
 from ak_bench.load.generator import LoadGenerator, LoadResult
 from ak_bench.load.records import RequestStatus
 from ak_bench.load.schedule import BurstSchedule, SteadySchedule
 from ak_bench.load.token import TokenSigner
-from ak_bench.platforms.base import Deployment, Host, InfoFetcher, RunInfo
 from ak_bench.run.fetcher_invoker import FetcherInvoker
 from ak_bench.run.run_log import RunLog
 from ak_bench.run.step_end_check import StepEndCheck

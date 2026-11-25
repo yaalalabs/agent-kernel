@@ -3,10 +3,11 @@ from mocks.fetchers import MockResourceFetcher
 from mocks.host import mock_host
 
 from ak_bench.errors import BenchConfigError, HostRefused
-from ak_bench.hosts import HostRegistry
+from ak_bench.fetchers.core.stage_fetchers import StageFetchers
+from ak_bench.hosts.host import Host
+from ak_bench.hosts.registry import HostRegistry
 from ak_bench.load.driver.factory import DriverFactory
 from ak_bench.load.driver.ws_complete import WebSocketCompleteDriver
-from ak_bench.platforms.base import Fetchers, Host
 
 
 def test_unknown_host_lists_builtins(monkeypatch):
@@ -28,7 +29,7 @@ def test_get_returns_validated_host(monkeypatch):
 
 
 def test_get_runs_validate(monkeypatch):
-    bad = Host("mock", Fetchers(cooldown_checks=[MockResourceFetcher("resource")]))
+    bad = Host("mock", StageFetchers(cooldown_checks=[MockResourceFetcher("resource")]))
     monkeypatch.setitem(HostRegistry._BUILTINS, "bad", bad)
     with pytest.raises(HostRefused, match="host 'bad'.*'resource'"):
         HostRegistry.get("bad")

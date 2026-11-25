@@ -8,22 +8,23 @@ import pytest
 from mocks.fetchers import MockResourceFetcher, MockScalingFetcher, MockTraceCollector, MockTransportCollector, RaisingFetcher
 
 from ak_bench.config import BenchConfig
+from ak_bench.fetchers.core.stage_fetchers import StageFetchers
+from ak_bench.hosts.host import Deployment, Host
 from ak_bench.load.driver.ws_complete import WebSocketCompleteDriver
 from ak_bench.load.generator import LoadResult
 from ak_bench.load.records import RequestRecord, RequestStatus
-from ak_bench.platforms.base import Deployment, Fetchers, Host
-from ak_bench.resources.collector import ResourceCollector
-from ak_bench.results.keyed_csv import KeyedCsv
-from ak_bench.results.layout import ResultsLayout
+from ak_bench.results.common.keyed_csv import KeyedCsv
+from ak_bench.results.common.layout import ResultsLayout
+from ak_bench.results.common.percentiles import PERCENTILES, percentiles
+from ak_bench.results.csv.per_request import PerRequestWriter
+from ak_bench.results.csv.per_window import PerWindowWriter, WindowGrid
+from ak_bench.results.csv.resource_columns import ResourceCollector
+from ak_bench.results.csv.scaling_numbers import ScalingDerivation
+from ak_bench.results.csv.summary import SummaryWriter
 from ak_bench.results.metadata import RunMetadataWriter, StepMetadataWriter
-from ak_bench.results.per_request import PerRequestWriter
-from ak_bench.results.per_window import PerWindowWriter, WindowGrid
-from ak_bench.results.percentiles import PERCENTILES, percentiles
-from ak_bench.results.summary import SummaryWriter
 from ak_bench.run.step_runner import StepRecord
-from ak_bench.scaling.derived import ScalingDerivation
 
-FIXTURES = Path(__file__).parent / "fixtures" / "step"
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "step"
 T = datetime(2026, 11, 24, 10, tzinfo=UTC)
 
 
@@ -52,7 +53,7 @@ def host() -> Host:
     broken.metrics = frozenset({("cpu_pct", "max")})
     return Host(
         "mock",
-        Fetchers(during_step=[scaling, transport], cooldown_checks=[transport, scaling], after_step=[MockTraceCollector("trace"), resource, broken]),
+        StageFetchers(during_step=[scaling, transport], cooldown_checks=[transport, scaling], after_step=[MockTraceCollector("trace"), resource, broken]),
     )
 
 

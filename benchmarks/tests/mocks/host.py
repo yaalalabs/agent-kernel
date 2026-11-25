@@ -1,4 +1,5 @@
-from ak_bench.platforms.base import Fetchers, Host
+from ak_bench.fetchers.core.stage_fetchers import StageFetchers
+from ak_bench.hosts.host import Host
 from mocks.fetchers import MockCostFetcher, MockResourceFetcher, MockScalingFetcher, MockTraceCollector, MockTransportCollector
 
 
@@ -8,7 +9,7 @@ def mock_host() -> Host:
     transport = MockTransportCollector("transport")
     return Host(
         platform="mock",
-        fetchers=Fetchers(
+        fetchers=StageFetchers(
             during_step=[scaling, transport],
             cooldown_checks=[transport, scaling],
             after_step=[MockTraceCollector("trace"), MockResourceFetcher("resource")],

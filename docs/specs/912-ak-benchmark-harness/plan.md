@@ -32,19 +32,20 @@ No file under `ak-py/` changes in any iteration.
 
 - **Goal:** a mock host made of one mock fetcher per family loads, validates, and each family stores its rows by key,
   thread-safely.
-- **Files:** `ak_bench/platforms/base.py`, `results/keyed_csv.py`, `run/run_log.py`, `run/fetcher_invoker.py`,
-  `hosts.py`, `tests/mocks/fetchers.py`, `tests/mocks/host.py`, `tests/test_fetchers_base.py`,
-  `tests/test_family_store.py`, `tests/test_is_settled.py`, `tests/test_registries.py` (host part)
+- **Files:** `ak_bench/fetchers/core/{info_fetcher,scaling,resources,trace,transport,cost,fetchers}.py`,
+  `hosts/host.py`, `hosts/registry.py`, `results/common/keyed_csv.py`, `run/run_log.py`, `run/fetcher_invoker.py`,
+  `tests/mocks/fetchers.py`, `tests/mocks/host.py`, `tests/fetchers/core/test_stage_fetchers.py`,
+  `tests/fetchers/core/test_family_store.py`, `tests/fetchers/core/test_is_settled.py`, `tests/test_registries.py` (host part)
 - **Steps:**
   1. Add the dataclasses, `RunInfo`, `Deployment` (`from_json` / `to_json`), `Host` (Platform base).
   2. Add `KeyedCsv` with the per-path lock and temp-file write (Platform base → `KeyedCsv`).
   3. Add `InfoFetcher` (`fetch_and_store`, `is_settled`, `has_value`) and the five family bases with their `store()`
      and `is_settled()` (Platform base → family table).
-  4. Add `Fetchers` (`all`, `validate`) with the three refusal rules.
+  4. Add `StageFetchers` (`all`, `validate`) with the three refusal rules.
   5. Add `RunLog` (Run log) and `FetcherInvoker` (Step runner → `FetcherInvoker`).
   6. Add `HostRegistry` with an empty `_BUILTINS`; `get()` runs `validate()` (Registries).
   7. Add the mock fetchers and `mock_host()` (Testing → Fixtures).
-- **Verify:** `uv run pytest tests/test_fetchers_base.py tests/test_family_store.py tests/test_is_settled.py tests/test_registries.py -q`
+- **Verify:** `uv run pytest tests/fetchers/core tests/test_registries.py -q`
 
 ## Iteration 3: Benchmarked app (mock agent and token auth)
 
@@ -70,8 +71,8 @@ Independent of Iterations 1–2; can be built in parallel.
 - **Goal:** N clients connect to a local mock server, send burst or steady load, and every request ends `ok`,
   `error` or `timeout` with the right timestamps.
 - **Files:** `ak_bench/load/records.py`, `driver/base.py`, `driver/ws_complete.py`, `driver/factory.py`, `token.py`,
-  `schedule.py`, `generator.py`, `tests/mocks/ws_server.py`, `tests/test_schedule.py`, `tests/test_ws_complete_driver.py`,
-  `tests/test_load_generator.py`, `tests/test_token_cross_check.py`, `tests/test_registries.py` (driver part)
+  `schedule.py`, `generator.py`, `tests/mocks/ws_server.py`, `tests/load/test_schedule.py`, `tests/load/test_ws_complete_driver.py`,
+  `tests/load/test_load_generator.py`, `tests/load/test_token_cross_check.py`, `tests/test_registries.py` (driver part)
 - **Steps:**
   1. Add `RequestRecord`, `ResponseEvent`, `RequestStatus` (Load generator → Records).
   2. Add `ClientDriver` and `WebSocketCompleteDriver` (frame, receive task, reply matching, `trace_stages`).
@@ -80,40 +81,40 @@ Independent of Iterations 1–2; can be built in parallel.
   5. Add `BurstSchedule` / `SteadySchedule` (Schedules).
   6. Add `LoadGenerator` and `LoadResult` (`connect`, `run`, timeout watcher, `all_settled`, `close`).
   7. Add `MockWsServer` (Testing → Fixtures).
-- **Verify:** `uv run pytest tests/test_schedule.py tests/test_ws_complete_driver.py tests/test_load_generator.py tests/test_token_cross_check.py tests/test_registries.py -q`
+- **Verify:** `uv run pytest tests/load tests/test_registries.py -q`
 
 ## Iteration 5: State, step lock, deployment folders, results layout
 
 - **Goal:** a mock deployment folder deploys and destroys through its scripts, `state.json` round-trips, and the step
   lock follows the live / stale / other-machine rules.
-- **Files:** `ak_bench/run/state.py`, `run/deployment_folder.py`, `results/layout.py`,
-  `tests/mocks/deploy/mock-async-complete/{deploy.sh,destroy.sh}`, `tests/test_state_and_lock.py`
+- **Files:** `ak_bench/run/state.py`, `run/deployment_folder.py`, `results/common/layout.py`,
+  `tests/mocks/deploy/mock-async-complete/{deploy.sh,destroy.sh}`, `tests/run/test_state_and_lock.py`
 - **Steps:**
   1. Add `ResultsLayout` with the step-folder padding (Results layout).
   2. Add `DeploymentFolder` and `ScriptEnv` (Deployment folders).
   3. Add `DeploymentState` (`locate`, `create`, `update` with `flock`, `0600` file) (State).
   4. Add `StepLock` (`acquire`, `release`, `force_unlock`) (State → Lock rules).
   5. Add the mock deployment folder scripts with `MOCK_DEPLOY_EXIT` / `MOCK_DESTROY_EXIT` (Testing → Fixtures).
-- **Verify:** `uv run pytest tests/test_state_and_lock.py -q`
+- **Verify:** `uv run pytest tests/run/test_state_and_lock.py -q`
 
 ## Iteration 6: Step runner and step-end check
 
 - **Goal:** one step runs connect → before → load → cool-down → wait + fetch against the mock host and server, and
   returns a `StepRecord`.
-- **Files:** `ak_bench/scaling/step_end.py`, `run/step_runner.py`, `tests/test_step_end.py`,
-  `tests/test_step_runner.py`
+- **Files:** `ak_bench/run/step_end_check.py`, `run/step_runner.py`, `tests/run/test_step_end_check.py`,
+  `tests/run/test_step_runner.py`
 - **Steps:**
   1. Add `StepEnd` / `StepEndCheck` (`start`, `poll`, settle window, max cool-down first) (Step-end check).
   2. Add `StepRecord` / `StepRunner` with the tracking tasks, the 30 s stop timeout and the missing-responses
      `WARNING` (Step runner).
-- **Verify:** `uv run pytest tests/test_step_end.py tests/test_step_runner.py -q`
+- **Verify:** `uv run pytest tests/run/test_step_end_check.py tests/run/test_step_runner.py -q`
 
 ## Iteration 7: CSVs and derived numbers
 
 - **Goal:** from a `StepRecord` and the raw fetcher files, every step CSV and the `summary.csv` row are written.
-- **Files:** `ak_bench/results/percentiles.py`, `per_request.py`, `per_window.py`, `summary.py`, `metadata.py`,
-  `scaling/collector.py`, `scaling/derived.py`, `resources/collector.py`, recorded CSV fixtures under `tests/`,
-  `tests/test_results.py`
+- **Files:** `ak_bench/results/common/percentiles.py`, `results/csv/{per_request,per_window,summary}.py`,
+  `results/csv/{scaling_columns,scaling_numbers,resource_columns}.py`, `results/metadata.py`, recorded CSV fixtures
+  under `tests/fixtures/`, `tests/results/test_results.py`
 - **Steps:**
   1. Add `percentiles()` (Percentiles).
   2. Add `PerRequestWriter` (Per-request CSV).
@@ -122,24 +123,24 @@ Independent of Iterations 1–2; can be built in parallel.
   4. Add `ScalingDerivation` (Derived scaling numbers).
   5. Add `SummaryWriter` (`upsert`, `remove`) (Summary CSV).
   6. Add `RunMetadataWriter` / `StepMetadataWriter` (Metadata).
-- **Verify:** `uv run pytest tests/test_results.py -q`
+- **Verify:** `uv run pytest tests/results/test_results.py -q`
 
 ## Iteration 8: Graphs
 
 - **Goal:** every phase-1 graph and the cost graph are drawn from CSVs alone, empty data included.
-- **Files:** `ak_bench/results/plots.py`, `cost/report.py`, `tests/test_plots.py`
+- **Files:** `ak_bench/results/graphs/{step_graphs,test_type_graphs,cost_graph}.py`, `tests/results/test_plots.py`
 - **Steps:**
   1. Add `StepPlots` and `TestTypePlots` with the #786 drawing rules, `Agg` backend, temp-file write, per-graph error
      logging (Graphs); use `Scratches/25.Benchmarking-Design/graph-examples/plot_examples.py` for layout only.
   2. Add `CostReport`.
-- **Verify:** `uv run pytest tests/test_plots.py -q`
+- **Verify:** `uv run pytest tests/results/test_plots.py -q`
 
 ## Iteration 9: Commands and the `run` teardown guarantee
 
 - **Goal:** `deploy`, `step`, `plot`, `finish`, `post-run` and `run` work end to end against the mock host, and
   teardown always runs.
 - **Files:** `ak_bench/run/commands.py`, `cli.py` (wire each sub-command to its class, `--force-unlock` help text),
-  `README.md` (command reference), `tests/test_commands.py`, `tests/test_teardown_guarantee.py`
+  `README.md` (command reference), `tests/run/test_commands.py`, `tests/run/test_teardown_guarantee.py`
 - **Steps:**
   1. Add `Deploy` (checks 1–6 before any script, cleanup on `ScriptFailed`) (Commands).
   2. Add `Step` and `Step.force_unlock` (lock in `try / finally`, `--replace`, `summary.csv` row written last).
@@ -147,7 +148,7 @@ Independent of Iterations 1–2; can be built in parallel.
   4. Add `Run` (dry check of every combination, step order, `Finish` in `finally`, second Ctrl-C handling).
   5. Wire the CLI: `BenchError` → exit 1, `KeyboardInterrupt` → exit 130.
   6. Finish `benchmarks/README.md`: commands, `ak-bench.yaml` reference, when to use `--force-unlock`.
-- **Verify:** `uv run pytest tests/test_commands.py tests/test_teardown_guarantee.py -q` (the mock host exists only
+- **Verify:** `uv run pytest tests/run/test_commands.py tests/run/test_teardown_guarantee.py -q` (the mock host exists only
   inside the tests, so there is no by-hand `ak-bench run` until the AWS issues add a real host)
 
 ## Iteration 10: Tests and CI

@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from ak_bench.config import BenchConfig
-from ak_bench.platforms.base import Deployment, Host, RunInfo
-from ak_bench.results.keyed_csv import KeyedCsv
-from ak_bench.results.percentiles import METHOD
+from ak_bench.hosts.host import Deployment, Host, RunInfo
+from ak_bench.results.common.keyed_csv import KeyedCsv
+from ak_bench.results.common.percentiles import METHOD
 from ak_bench.run.step_runner import StepRecord
 
 

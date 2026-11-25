@@ -27,9 +27,18 @@ benchmarks/
 │   ├── cli.py                  # BenchCli: argparse front end, one sub-command per command class
 │   ├── config.py               # BenchConfig and its sub-models, BenchConfigError
 │   ├── errors.py               # BenchError and its subclasses
-│   ├── hosts.py                # HostRegistry (built-in names only; empty in this issue)
-│   ├── platforms/
-│   │   └── base.py             # dataclasses, InfoFetcher, the five families, Fetchers, Deployment, Host, RunInfo
+│   ├── fetchers/               # the only code that calls a cloud / platform SDK (none in this issue)
+│   │   └── core/               # the contracts and their result types
+│   │       ├── info_fetcher.py # InfoFetcher
+│   │       ├── scaling.py      # ScalingInfoFetcher, ScalingInfo, CountSample, WorkerSpan
+│   │       ├── resources.py    # ResourceUsageFetcher, ResourceUsage, ResourceSample
+│   │       ├── trace.py        # TraceCollector, TraceInfo
+│   │       ├── transport.py    # TransportCollector, QueueInfo, QueueDepth
+│   │       ├── cost.py         # CostFetcher, CostInfo, CostItem
+│   │       └── stage_fetchers.py # StageFetchers: the five lists + validate()
+│   ├── hosts/
+│   │   ├── host.py             # Host, Deployment, RunInfo
+│   │   └── registry.py         # HostRegistry (built-in names only; empty in this issue)
 │   ├── load/
 │   │   ├── records.py          # RequestRecord, ResponseEvent, RequestStatus
 │   │   ├── driver/             # client drivers, one file per mode × message type (AK's base / factory / impl layout)
@@ -44,25 +53,26 @@ benchmarks/
 │   │   ├── state.py            # DeploymentState, StepLock, StepWindow
 │   │   ├── deployment_folder.py  # DeploymentFolder: finds and runs deploy.sh / destroy.sh
 │   │   ├── step_runner.py      # StepRunner, StepRecord
+│   │   ├── step_end_check.py   # StepEndCheck, StepEnd
 │   │   ├── fetcher_invoker.py  # FetcherInvoker: fetch_and_store with failure → run log
 │   │   └── run_log.py          # RunLog
-│   ├── scaling/
-│   │   ├── collector.py        # ScalingCollector (per-window worker / queue columns)
-│   │   ├── derived.py          # ScalingDerivation (summary scaling numbers)
-│   │   └── step_end.py         # StepEndCheck, StepEnd
-│   ├── resources/
-│   │   └── collector.py        # ResourceCollector (per-window and summary CPU / memory)
-│   ├── cost/
-│   │   └── report.py           # CostReport (billed cost graph)
 │   └── results/
-│       ├── layout.py           # ResultsLayout: every path under results/
-│       ├── keyed_csv.py        # KeyedCsv: thread-safe upsert-by-key CSV file
-│       ├── percentiles.py      # PERCENTILES + percentiles() helper
-│       ├── per_request.py      # PerRequestWriter
-│       ├── per_window.py       # PerWindowWriter, WindowGrid
-│       ├── summary.py          # SummaryWriter
+│       ├── common/
+│       │   ├── layout.py       # ResultsLayout: every path under results/
+│       │   ├── keyed_csv.py    # KeyedCsv: thread-safe upsert-by-key CSV file
+│       │   └── percentiles.py  # PERCENTILES + percentiles() helper
+│       ├── csv/
+│       │   ├── per_request.py  # PerRequestWriter
+│       │   ├── per_window.py   # PerWindowWriter, WindowGrid
+│       │   ├── scaling_columns.py   # ScalingCollector (per-window worker / queue columns)
+│       │   ├── scaling_numbers.py   # ScalingDerivation (summary scaling numbers)
+│       │   ├── resource_columns.py  # ResourceCollector (per-window and summary CPU / memory)
+│       │   └── summary.py      # SummaryWriter
 │       ├── metadata.py         # RunMetadataWriter, StepMetadataWriter
-│       └── plots.py            # StepPlots, TestTypePlots
+│       └── graphs/
+│           ├── step_graphs.py       # StepPlots
+│           ├── test_type_graphs.py  # TestTypePlots
+│           └── cost_graph.py        # CostReport (billed cost graph)
 ├── app/
 │   ├── pyproject.toml          # project "ak-bench-app", package = false, path source on ../../ak-py
 │   ├── uv.lock
@@ -81,12 +91,16 @@ benchmarks/
     │   ├── host.py             # mock_host(): a Host built from the mock fetchers
     │   ├── ws_server.py        # MockWsServer: local echo server
     │   └── deploy/mock-async-complete/   # deploy.sh / destroy.sh writing a deployment.json for MockWsServer
-    └── test_*.py               # see Testing
+    ├── fetchers/core/          # mirrors ak_bench/; test files: see Testing
+    ├── load/
+    ├── run/
+    ├── results/
+    └── test_config.py, test_registries.py
 ```
 
 - The harness package is `ak_bench` (importable name of the `ak-bench` project). `design.md`'s module paths
-  (`platforms/base.py`, `run/commands.py`, ...) are relative to it.
-- One file per implementation. Module-level functions: only `percentiles()` (results/percentiles.py) and the console
+  (`fetchers/core/scaling.py`, `run/commands.py`, ...) are relative to it.
+- One file per implementation. Module-level functions: only `percentiles()` (results/common/percentiles.py) and the console
   script entry `main()` (cli.py); see [Module-level functions](#module-level-functions).
 - The mock deployment folder lives under `tests/`, not `app/deploy/`, so a real `ak-bench run` can never pick it.
   `DeploymentFolder` takes its root as a parameter (CLI `--deploy-root`, default `benchmarks/app/deploy/`), and the
@@ -129,7 +143,7 @@ line-length = 150
 - `agentkernel` without extras: `core/logger.py` imports only `core/config.py` (`ak-py/src/agentkernel/core/logger.py:1-9`),
   so no optional SDK is pulled in. No cloud SDK; the AWS issues add `boto3` to this file.
 - Pins match ak-py where both use a library (`pydantic`, `pyyaml`, `pytest-asyncio`, `ruff`; `ak-py/pyproject.toml:16,18,194,242`).
-- matplotlib is used with the `Agg` backend (set in `plots.py` before `pyplot` is imported), so plotting works headless
+- matplotlib is used with the `Agg` backend (set in `results/graphs/` before `pyplot` is imported), so plotting works headless
   in CI.
 
 `benchmarks/app/pyproject.toml`: like `e2e/app/pyproject.toml` (`package = false`, `requires-python = ">=3.12"`), with
@@ -142,7 +156,7 @@ packaging needs (`aws`, ...).
 ```python
 class BenchError(Exception): ...                 # every refusal / failure the CLI turns into exit code 1
 class BenchConfigError(BenchError): ...          # ak-bench.yaml and CLI argument problems
-class HostRefused(BenchError): ...               # Fetchers.validate() failures
+class HostRefused(BenchError): ...               # StageFetchers.validate() failures
 class StepRefused(BenchError): ...               # lock held, folder exists, unknown step, torn-down deployment
 class ScriptFailed(BenchError): ...              # deploy.sh / destroy.sh exit code != 0, or missing deployment.json
 class FetcherTypeError(BenchError): ...          # fetch() returned another type than the family's
@@ -240,7 +254,7 @@ class BenchConfig(BaseSettings):
 
 ### Registries
 
-**Host registry (`hosts.py`):**
+**Host registry (`hosts/registry.py`):**
 
 ```python
 class HostRegistry:
@@ -272,7 +286,7 @@ class DriverFactory:
 
 - `BUILTINS` supplies the `modes` / `message_types` defaults. A later driver is one more branch and one more tuple.
 
-### Platform base (`platforms/base.py`)
+### Fetcher contracts and host types (`fetchers/core/`, `hosts/host.py`)
 
 Dataclasses (fields as in #786 and `Scratches/25.Benchmarking-Design/implementation/code-layout.md`; all timestamps are
 timezone-aware UTC `datetime`s):
@@ -378,7 +392,7 @@ class InfoFetcher(ABC, Generic[T]):
 - Value formats in every CSV: datetimes as ISO 8601 UTC with milliseconds and `Z`
   (`2026-11-23T10:04:00.000Z`, the AK trace-line format); `None` as an empty cell; `extra` as compact JSON.
 
-**`KeyedCsv` (`results/keyed_csv.py`):**
+**`KeyedCsv` (`results/common/keyed_csv.py`):**
 
 ```python
 class KeyedCsv:
@@ -400,11 +414,11 @@ class KeyedCsv:
 - **Per-operation cost:** each upsert rewrites the file. A `during_step` poll adds a handful of rows to a file that
   grows to (step seconds ÷ poll interval) × tiers rows, i.e. thousands, not millions; accepted.
 
-**`Fetchers` and `Host`:**
+**`StageFetchers` and `Host`:**
 
 ```python
 @dataclass
-class Fetchers:
+class StageFetchers:
     during_step: list[InfoFetcher] = field(default_factory=list)
     cooldown_checks: list[InfoFetcher] = field(default_factory=list)
     after_step: list[InfoFetcher] = field(default_factory=list)
@@ -417,10 +431,10 @@ class Fetchers:
 @dataclass(frozen=True)
 class Host:
     platform: str
-    fetchers: Fetchers
+    fetchers: StageFetchers
 ```
 
-`Fetchers.validate(host)` raises `HostRefused` naming the host and fetcher when:
+`StageFetchers.validate(host)` raises `HostRefused` naming the host and fetcher when:
 
 1. a fetcher in `cooldown_checks` doesn't override `is_settled()` (`type(f).is_settled is InfoFetcher.is_settled`);
 2. a `ScalingInfoFetcher` in `cooldown_checks` doesn't have `"running"` in `count_types`;
@@ -441,7 +455,7 @@ class RunLog:
   through `logging.getLogger("ak_bench")`.
 - Thread-safe (one lock per instance); fetcher failures are logged from worker threads.
 
-### Results layout (`results/layout.py`)
+### Results layout (`results/common/layout.py`)
 
 ```python
 class ResultsLayout:
@@ -864,6 +878,7 @@ class StepRecord:
     cooldown_max_reached: bool
     load: LoadResult
     timed_out: int
+    seed: int | None                    # steady schedule seed (secrets.randbits(64)), for step-metadata.json; None for burst
 
 class StepRunner:
     def __init__(self, config: BenchConfig, host: Host, invoker: FetcherInvoker, run_log: RunLog): ...
@@ -912,7 +927,7 @@ class FetcherInvoker:
   and returns `False`; nothing is stored, so that fetcher's columns stay empty. `KeyboardInterrupt` /
   `CancelledError` are not caught. Shared by `StepRunner`, `StepEndCheck`, `Finish` and `PostRun`.
 
-### Step-end check (`scaling/step_end.py`)
+### Step-end check (`run/step_end_check.py`)
 
 ```python
 @dataclass(frozen=True)
@@ -946,7 +961,7 @@ class StepEndCheck:
 
 ### Results
 
-#### Percentiles (`results/percentiles.py`)
+#### Percentiles (`results/common/percentiles.py`)
 
 ```python
 PERCENTILES = (0, 25, 50, 75, 99, 100)
@@ -956,7 +971,7 @@ def percentiles(values: Sequence[float]) -> dict[str, float | None]: ...
 
 Always over requests (or raw samples), never over per-worker results.
 
-#### Per-request CSV (`results/per_request.py`)
+#### Per-request CSV (`results/csv/per_request.py`)
 
 `PerRequestWriter(driver_cls).write(step_dir, records)` reads `stage-timestamps.csv` and writes `per-request.csv`:
 
@@ -970,7 +985,7 @@ previous point → this point, so `REQUEST_RECEIVED_s` = sent → `REQUEST_RECEI
 `AGENT_START` → `AGENT_DONE` in complete, and `CLIENT_RECEIVED_s` = `RESPONSE_DELIVERED` → complete. A stage not in
 the driver's chain (`AGENT_FIRST_CHUNK_s` for complete) stays empty; a missing point on either side → empty.
 
-#### Per-time-window CSV (`results/per_window.py`)
+#### Per-time-window CSV (`results/csv/per_window.py`)
 
 `WindowGrid(started, ended, time_window_s)`: window `k` covers `[started + k·w, started + (k+1)·w)`, the last window
 ends at or after `ended`. Columns:
@@ -995,7 +1010,7 @@ failed every time still has its (empty) columns: queues from `deployment.queues`
 `deployment.resources` × `metrics` of every `ResourceUsageFetcher` in them. Series found in the files but not
 declared are added after the declared ones.
 
-#### Derived scaling numbers (`scaling/derived.py`)
+#### Derived scaling numbers (`results/csv/scaling_numbers.py`)
 
 `ScalingDerivation.derive(samples, spans, queue_samples, t_load_up, t_load_down, ended)` per tier × fetcher, from raw
 sample times (definitions: `docs/specs/786-benchmark-system/research/platform-scaling-and-cost.md:363-401`):
@@ -1019,7 +1034,7 @@ sample times (definitions: `docs/specs/786-benchmark-system/research/platform-sc
 - No `running` source → every `running`-based column empty. A step that didn't scale: from → to counts filled
   (e.g. 1 → 1), times and rates empty.
 
-#### Summary CSV (`results/summary.py`)
+#### Summary CSV (`results/csv/summary.py`)
 
 `summary.csv` per test type; `SummaryWriter.upsert(test_type_dir, row)` keyed by `step` (a `KeyedCsv`), so each step
 writes or replaces its own row, and `remove(step)` serves `--replace`. Columns:
@@ -1044,7 +1059,7 @@ writes or replaces its own row, and `remove(step)` serves `--replace`. Columns:
   fetcher name, client timeout, time window, percentile method (`linear`), the schedule seed, and the step window
   times.
 
-#### Graphs (`results/plots.py`, `cost/report.py`)
+#### Graphs (`results/graphs/`)
 
 ```python
 class StepPlots:      def draw(self, step_dir: Path, test_type: str, host: Host, deployment: Deployment) -> None: ...
@@ -1065,7 +1080,7 @@ class CostReport:     def draw(self, deployment_dir: Path) -> None: ...      # o
 
 ### Module-level functions
 
-- `percentiles()` (`results/percentiles.py`): stateless numeric helper used by the per-request, per-window, summary,
+- `percentiles()` (`results/common/percentiles.py`): stateless numeric helper used by the per-request, per-window, summary,
   resource and plot code; no single owning class.
 - `main()` (`cli.py`): the console-script entry point (`[project.scripts]` needs a callable); one line,
   `sys.exit(BenchCli().run(sys.argv[1:]))`.
@@ -1115,7 +1130,7 @@ For the reviewer: none changes a `design.md` requirement, but each fills a gap i
    harness reading a result type.
 2. **`ResourceUsageFetcher.metrics`** (`(metric, stat)` pairs), parallel to `count_types`, so a resource fetcher that
    failed every time still gets empty columns.
-3. **`Fetchers.validate()` also refuses a fetcher without a `name`.**
+3. **`StageFetchers.validate()` also refuses a fetcher without a `name`.**
 4. **Carry-forward limit for non-polled series** = the series' smallest sample gap (no new fetcher parameter).
 5. **`REQUEST_RECEIVED_s`** = client sent → `REQUEST_RECEIVED` (the chain starts at the client), and the stage chain
    comes from `ClientDriver.trace_stages`.
@@ -1135,7 +1150,7 @@ For the reviewer: none changes a `design.md` requirement, but each fills a gap i
 |---|---|---|
 | `ak-bench.yaml` missing / invalid YAML / unknown key / missing required key | `BenchConfig.get()` | `BenchConfigError` naming the key path; exit 1; nothing runs |
 | unknown host / no driver for mode × message type | `HostRegistry.get`, `DriverFactory` | `BenchConfigError` naming the built-ins |
-| invalid host fetcher lists | `Fetchers.validate` | `HostRefused` naming host and fetcher, before deploy |
+| invalid host fetcher lists | `StageFetchers.validate` | `HostRefused` naming host and fetcher, before deploy |
 | unknown `fetchers.<name>` | `FetchersConfig.check_names` | `BenchConfigError` naming key and known names, before deploy |
 | `mock_agent` half set / negative / min > max | `MockAgentConfig.delays` | `BenchConfigError` naming the key, before deploy |
 | missing deployment folder or script | `DeploymentFolder.check` | `BenchConfigError` naming the path, before deploy |
@@ -1188,20 +1203,20 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 |---|---|
 | `test_config.py` | defaults equal the #786 example; env vars override the file; other `AK_BENCH_` variables ignored; `get()` singleton; `--config` sets the path; unknown top-level key named; missing `step_run.time_window_s` / `fetchers.default` named; unknown key named; `host_settings.x.anything` accepted; `max_cooldown_for` override; `check_names` refuses `aws.ecs-api` listing known names; `mock_agent` table (both / neither / one / negative / min > max) |
 | `test_registries.py` | unknown host / driver error lists built-ins; `HostRegistry.get` runs `validate` |
-| `test_fetchers_base.py` | `validate` refuses: cooldown fetcher without `is_settled`, scaling without `running`, nameless fetcher (message names host + fetcher); `fetch_and_store` wrong type → `FetcherTypeError` naming fetcher, expected, returned |
-| `test_family_store.py` | each family writes its file and columns; a second store with the same key replaces the row (all five families, incl. spans latest-wins); two threads storing 500 rows each into one file lose none |
-| `test_is_settled.py` | scaling: equal / higher / missing tier / `start=None`; transport: zero / waiting / in-flight / multiple queues, latest sample wins |
-| `test_step_end.py` | order (requests → checks in list order, later not fetched while earlier fails); settle window (holds only after `settle_window_s` of consecutive ok polls); a raising read and an empty read reset the run and log; empty `cooldown_checks` ends once requests settle; max cool-down with host override → `max_reached` |
-| `test_schedule.py` | burst: one offset per client; steady: gaps within [min, max], next = previous scheduled + gap, none > `load_time_s`, min = max gives a fixed interval, per-client draws differ |
-| `test_load_generator.py` (MockWsServer) | all connects finish before `run()`; burst sends one request per client, all within a few ms; N clients → N distinct users and tokens, one connection each; request ids unique and in the prompt; responses matched without request id in the frame; dropped reply → `timeout` after `client_timeout_s`; refused connect → that client's requests `error`, others `ok`; latency from monotonic clock; a late send doesn't shift later scheduled sends |
-| `test_ws_complete_driver.py` | frame shape; token in query; `CHAT_QUEUED` ignored; `SYSTEM_RESPONSE` FAILED and `error`-key replies → `error`; duplicate reply dropped |
-| `test_step_runner.py` | connect happens before `before` starts; `during_step` windows are contiguous (last poll, now) and a final poll after stop; a hanging tracker is cancelled after the stop timeout (patched to 0.2 s); `after_step` gets (step start, step end) after the wait; a raising fetcher → empty columns + run-log entry, step completes; the missing-responses `WARNING` text and count |
-| `test_state_and_lock.py` | stale lock (dead pid, this host) taken over with log; live lock refused; other-host lock refused; `--force-unlock` prints holder, honours `--yes` / declined prompt, logs; lock released on success, exception and `KeyboardInterrupt` |
-| `test_commands.py` (mock folder + MockWsServer) | full deploy → step (steady and burst) → plot → finish → post-run produces every CSV, every graph, `run-metadata.json`, `step-metadata.json`, `cost.csv` and the cost graph; script env contains the contract variables (mock delays only with `mock_agent`); `state.json` round-trips `Deployment` unchanged and loses `auth_secret` after finish; refusals: existing step folder without `--replace` (and `--replace` replaces folder + row), step not in saved load steps, concurrent step, `run --steps 7` before any deploy, unknown `fetchers.<name>` and missing folder before any script; existing host × mode × message type in a run id refused |
-| `test_teardown_guarantee.py` | `run` with a step that raises → `destroy.sh` ran and the error surfaces; `KeyboardInterrupt` during a step → `destroy.sh` ran; second interrupt during finish → logged skip; `deploy.sh` failure → `destroy.sh` ran, exit 1; `destroy.sh` failure → run-log `ERROR`, exit 1 |
-| `test_results.py` (recorded CSV fixtures) | percentiles match `numpy.percentile(..., method="linear")` and are empty for no data; per-request durations incl. `REQUEST_RECEIVED_s`, `CLIENT_RECEIVED_s`, empty `AGENT_FIRST_CHUNK_s`; per-window Tx / Rx / errors / timeouts / latency; carry-forward limit (poll interval, and sample gap for after-step series); declared-but-empty columns for a fetcher that stored nothing; derived scaling numbers for a scale-up-and-down series, a no-scale series (1 → 1, empty times / rates) and a no-`running` source; summary row replaced on re-run; step folder padding |
-| `test_plots.py` | every phase-1 graph file is produced from recorded data, including one with all-empty resource data (panels drawn, not skipped); cost graph only when `cost.csv` exists |
-| `test_token_cross_check.py` | a `TokenSigner` token is accepted by `BenchIdentityProvider` (imports the app module by path; the app's dependencies are a subset of the harness's) |
+| `fetchers/core/test_stage_fetchers.py` | `validate` refuses: cooldown fetcher without `is_settled`, scaling without `running`, nameless fetcher (message names host + fetcher); `fetch_and_store` wrong type → `FetcherTypeError` naming fetcher, expected, returned |
+| `fetchers/core/test_family_store.py` | each family writes its file and columns; a second store with the same key replaces the row (all five families, incl. spans latest-wins); two threads storing 500 rows each into one file lose none |
+| `fetchers/core/test_is_settled.py` | scaling: equal / higher / missing tier / `start=None`; transport: zero / waiting / in-flight / multiple queues, latest sample wins |
+| `run/test_step_end_check.py` | order (requests → checks in list order, later not fetched while earlier fails); settle window (holds only after `settle_window_s` of consecutive ok polls); a raising read and an empty read reset the run and log; empty `cooldown_checks` ends once requests settle; max cool-down with host override → `max_reached` |
+| `load/test_schedule.py` | burst: one offset per client; steady: gaps within [min, max], next = previous scheduled + gap, none > `load_time_s`, min = max gives a fixed interval, per-client draws differ |
+| `load/test_load_generator.py` (MockWsServer) | all connects finish before `run()`; burst sends one request per client, all within a few ms; N clients → N distinct users and tokens, one connection each; request ids unique and in the prompt; responses matched without request id in the frame; dropped reply → `timeout` after `client_timeout_s`; refused connect → that client's requests `error`, others `ok`; latency from monotonic clock; a late send doesn't shift later scheduled sends |
+| `load/test_ws_complete_driver.py` | frame shape; token in query; `CHAT_QUEUED` ignored; `SYSTEM_RESPONSE` FAILED and `error`-key replies → `error`; duplicate reply dropped |
+| `run/test_step_runner.py` | connect happens before `before` starts; `during_step` windows are contiguous (last poll, now) and a final poll after stop; a hanging tracker is cancelled after the stop timeout (patched to 0.2 s); `after_step` gets (step start, step end) after the wait; a raising fetcher → empty columns + run-log entry, step completes; the missing-responses `WARNING` text and count |
+| `run/test_state_and_lock.py` | stale lock (dead pid, this host) taken over with log; live lock refused; other-host lock refused; `--force-unlock` prints holder, honours `--yes` / declined prompt, logs; lock released on success, exception and `KeyboardInterrupt` |
+| `run/test_commands.py` (mock folder + MockWsServer) | full deploy → step (steady and burst) → plot → finish → post-run produces every CSV, every graph, `run-metadata.json`, `step-metadata.json`, `cost.csv` and the cost graph; script env contains the contract variables (mock delays only with `mock_agent`); `state.json` round-trips `Deployment` unchanged and loses `auth_secret` after finish; refusals: existing step folder without `--replace` (and `--replace` replaces folder + row), step not in saved load steps, concurrent step, `run --steps 7` before any deploy, unknown `fetchers.<name>` and missing folder before any script; existing host × mode × message type in a run id refused |
+| `run/test_teardown_guarantee.py` | `run` with a step that raises → `destroy.sh` ran and the error surfaces; `KeyboardInterrupt` during a step → `destroy.sh` ran; second interrupt during finish → logged skip; `deploy.sh` failure → `destroy.sh` ran, exit 1; `destroy.sh` failure → run-log `ERROR`, exit 1 |
+| `results/test_results.py` (recorded CSV fixtures) | percentiles match `numpy.percentile(..., method="linear")` and are empty for no data; per-request durations incl. `REQUEST_RECEIVED_s`, `CLIENT_RECEIVED_s`, empty `AGENT_FIRST_CHUNK_s`; per-window Tx / Rx / errors / timeouts / latency; carry-forward limit (poll interval, and sample gap for after-step series); declared-but-empty columns for a fetcher that stored nothing; derived scaling numbers for a scale-up-and-down series, a no-scale series (1 → 1, empty times / rates) and a no-`running` source; summary row replaced on re-run; step folder padding |
+| `results/test_plots.py` | every phase-1 graph file is produced from recorded data, including one with all-empty resource data (panels drawn, not skipped); cost graph only when `cost.csv` exists |
+| `load/test_token_cross_check.py` | a `TokenSigner` token is accepted by `BenchIdentityProvider` (imports the app module by path; the app's dependencies are a subset of the harness's) |
 | `app/tests/test_mock_agent.py` | `run()` sleeps within [min, max] (patched `asyncio.sleep` records the delay; `random.uniform` bounds over many draws), echo content, nothing added to the session, variables read once at creation; `agent.py` registers `MockAgent` with both variables, the real agent with neither, and raises with one |
 | `app/tests/test_identity.py` | signed token → `Principal(subject="bench-7", kind="user", provider="bench", namespace="bench")`; changed user, changed signature, no `.`, empty user / signature, unsigned token → `AuthenticationError`; missing / empty secret → `RuntimeError` at build; same token for the same user every time (`TokenSigner`) |
 

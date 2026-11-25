@@ -3,9 +3,9 @@ from statistics import fmean
 from typing import Any
 
 from ak_bench.load.records import RequestStatus
-from ak_bench.results.keyed_csv import KeyedCsv
-from ak_bench.results.per_request import DURATION_STAGES
-from ak_bench.results.percentiles import percentiles
+from ak_bench.results.common.keyed_csv import KeyedCsv
+from ak_bench.results.common.percentiles import percentiles
+from ak_bench.results.csv.per_request import DURATION_STAGES
 from ak_bench.run.step_runner import StepRecord
 
 

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from ak_bench.platforms.base import InfoFetcher
+from ak_bench.fetchers.core.info_fetcher import InfoFetcher
 from ak_bench.run.fetcher_invoker import FetcherInvoker
 
 

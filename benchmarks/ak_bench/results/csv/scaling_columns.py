@@ -3,11 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ak_bench.platforms.base import Deployment, Host, ScalingInfoFetcher
-from ak_bench.results.keyed_csv import KeyedCsv
+from ak_bench.fetchers.core.scaling import ScalingInfoFetcher
+from ak_bench.hosts.host import Deployment, Host
+from ak_bench.results.common.keyed_csv import KeyedCsv
 
 if TYPE_CHECKING:
-    from ak_bench.results.per_window import WindowGrid
+    from ak_bench.results.csv.per_window import WindowGrid
 
 
 class ScalingCollector:

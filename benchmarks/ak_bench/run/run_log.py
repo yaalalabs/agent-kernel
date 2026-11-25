@@ -3,7 +3,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ak_bench.results.keyed_csv import KeyedCsv
+from ak_bench.results.common.keyed_csv import KeyedCsv
 
 _logger = logging.getLogger("ak_bench")
 

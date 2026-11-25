@@ -5,19 +5,12 @@ from datetime import UTC, datetime, timedelta
 from agentkernel.core import TraceStage
 from mocks.fetchers import MockCostFetcher, MockResourceFetcher, MockScalingFetcher, MockTraceCollector, MockTransportCollector
 
-from ak_bench.platforms.base import (
-    CostInfo,
-    CostItem,
-    CountSample,
-    QueueDepth,
-    QueueInfo,
-    ResourceSample,
-    ResourceUsage,
-    ScalingInfo,
-    TraceInfo,
-    WorkerSpan,
-)
-from ak_bench.results.keyed_csv import KeyedCsv
+from ak_bench.fetchers.core.cost import CostInfo, CostItem
+from ak_bench.fetchers.core.resources import ResourceSample, ResourceUsage
+from ak_bench.fetchers.core.scaling import CountSample, ScalingInfo, WorkerSpan
+from ak_bench.fetchers.core.trace import TraceInfo
+from ak_bench.fetchers.core.transport import QueueDepth, QueueInfo
+from ak_bench.results.common.keyed_csv import KeyedCsv
 
 T0 = datetime(2026, 11, 23, 10, 4, tzinfo=UTC)
 T1 = T0 + timedelta(seconds=1, milliseconds=5)

@@ -7,7 +7,7 @@ from agentkernel.secret import EnvSecretProvider, SecretManager
 
 from ak_bench.load.token import TokenSigner
 
-APP_MODULE = Path(__file__).resolve().parent.parent / "app" / "identity.py"
+APP_MODULE = Path(__file__).resolve().parents[2] / "app" / "identity.py"
 
 
 def identity():

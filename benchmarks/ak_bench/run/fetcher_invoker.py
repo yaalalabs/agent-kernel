@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import Any
 
 from ak_bench.errors import FetcherTypeError
-from ak_bench.platforms.base import Deployment, InfoFetcher, RunInfo
+from ak_bench.fetchers.core.info_fetcher import InfoFetcher
+from ak_bench.hosts.host import Deployment, RunInfo
 from ak_bench.run.run_log import RunLog
 
 

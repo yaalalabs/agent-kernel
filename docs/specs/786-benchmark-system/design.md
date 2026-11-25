@@ -392,6 +392,14 @@ change to AK itself is a `TRACE` log level with per-stage trace points on the re
     and the harness isn't (decided 2026-11-23, #912).
   - The harness's own cloud-free tests run in the repo's test workflow (decided 2026-11-23, #912).
   - Cloud SDKs (`boto3`), data and plotting libraries are dependencies of this project only.
+  - Code split by role, not by topic (decided 2026-11-24, #912):
+    - `fetchers/`: the only code that calls a cloud or platform SDK. `fetchers/core/` holds the `InfoFetcher`
+      contracts; then one folder per platform called (`aws/`, later `gcp/`, `kubernetes/`, ...), each with one
+      subfolder per fetcher family (`scaling/`, `resources/`, `trace/`, `transport/`, `cost/`).
+    - `hosts/`: the host bundles and the registry; `load/`: talks to the deployed app; `run/`: the commands and the
+      step; `results/`: the CSVs, metadata and graphs, from the stored files only.
+    - A `core/` folder only where there are contracts, a `common/` folder for shared helpers that aren't contracts
+      (e.g. `fetchers/aws/common/`); neither is created empty.
 - Components are classes with one responsibility each.
 - **Its own config file**, `ak-bench.yaml`, not `AKConfig`. Departure from the "reuse existing configuration" house
   pattern, because these are benchmark settings, not AK runtime config. Example with every key (decided 2026-11-06;
@@ -629,7 +637,7 @@ flowchart TD
 ### Hosts
 
 - A `Host` is a bundle: platform name and `fetchers` (no deployer, see [Deployment folders](#deployment-folders)): a
-  `Fetchers` object with five lists that say where each fetcher runs (decided 2026-11-06, replaces the `live_track` parameter, the "first scaling fetcher is the
+  `StageFetchers` object with five lists that say where each fetcher runs (decided 2026-11-06, replaces the `live_track` parameter, the "first scaling fetcher is the
   primary" rule and the separate billing reader):
 
   | List | When it runs | Time window passed to `fetch()` |
@@ -648,9 +656,9 @@ flowchart TD
   - **Start-up check** (when the host is loaded, before anything is deployed): every fetcher in `cooldown_checks` has
     `is_settled()`, and a scaling fetcher there gives `running`.
 - A host registry maps names to bundles; a new host or platform is a registration, not a harness change.
-- Code is grouped in folders by cloud (`platforms/aws/`, later `platforms/gcp/`, ...), one file per implementation. No
-  per-cloud "benchmarker" classes (`AWSBenchmarker`, `GCPBenchmarker`), because cloud, compute type and
-  transport vary independently:
+- Fetchers are grouped in folders by the platform they call (`fetchers/aws/`, later `fetchers/gcp/`, ...), one file
+  per implementation. No per-cloud "benchmarker" classes (`AWSBenchmarker`, `GCPBenchmarker`), because cloud, compute
+  type and transport vary independently:
   - `lambda` and `ecs` are both AWS but read worker counts from different places; one AWS class would fill up with
     `if variant == ...` branches.
   - A later Kubernetes host on EKS would read worker counts from Kubernetes but its bill from AWS, so it would belong
@@ -668,7 +676,7 @@ flowchart TD
     HOSTS = {
         "lambda": Host(
             platform="aws",
-            fetchers=Fetchers(
+            fetchers=StageFetchers(
                 during_step=[sqs],
                 cooldown_checks=[sqs, concurrent],             # after the built-in "all requests settled"
                 after_step=[traces, concurrent, LambdaInsightsResourceFetcher(),
@@ -679,7 +687,7 @@ flowchart TD
         ),
         "ecs": Host(
             platform="aws",
-            fetchers=Fetchers(
+            fetchers=StageFetchers(
                 during_step=[ecs_api, sqs],
                 cooldown_checks=[sqs, ecs_api],
                 after_step=[traces, EcsScalingActivitiesScalingInfoFetcher(),

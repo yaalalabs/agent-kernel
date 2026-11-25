@@ -4,7 +4,8 @@ import pytest
 from mocks.fetchers import MockResourceFetcher, MockScalingFetcher, MockTraceCollector, RaisingFetcher, WrongTypeFetcher
 
 from ak_bench.errors import FetcherTypeError, HostRefused, ScriptFailed
-from ak_bench.platforms.base import Deployment, Fetchers
+from ak_bench.fetchers.core.stage_fetchers import StageFetchers
+from ak_bench.hosts.host import Deployment
 from ak_bench.run.fetcher_invoker import FetcherInvoker
 from ak_bench.run.run_log import RunLog
 
@@ -14,28 +15,28 @@ T1 = datetime(2026, 11, 24, 10, 1, tzinfo=UTC)
 
 def test_validate_refuses_cooldown_fetcher_without_is_settled():
     with pytest.raises(HostRefused, match="host 'h'.*'resource'.*is_settled"):
-        Fetchers(cooldown_checks=[MockResourceFetcher("resource")]).validate("h")
+        StageFetchers(cooldown_checks=[MockResourceFetcher("resource")]).validate("h")
 
 
 def test_validate_refuses_scaling_cooldown_fetcher_without_running():
     scaling = MockScalingFetcher("scaling")
     scaling.count_types = frozenset({"desired"})
     with pytest.raises(HostRefused, match="host 'h'.*'scaling'.*running"):
-        Fetchers(cooldown_checks=[scaling]).validate("h")
+        StageFetchers(cooldown_checks=[scaling]).validate("h")
 
 
 def test_validate_refuses_nameless_fetcher():
     with pytest.raises(HostRefused, match="host 'h'.*MockTraceCollector has no name"):
-        Fetchers(after_step=[MockTraceCollector("")]).validate("h")
+        StageFetchers(after_step=[MockTraceCollector("")]).validate("h")
 
 
 def test_validate_accepts_scaling_in_cooldown_and_any_fetcher_elsewhere():
-    Fetchers(during_step=[MockResourceFetcher("resource")], cooldown_checks=[MockScalingFetcher("scaling")]).validate("h")
+    StageFetchers(during_step=[MockResourceFetcher("resource")], cooldown_checks=[MockScalingFetcher("scaling")]).validate("h")
 
 
 def test_all_returns_distinct_fetchers_in_first_seen_order():
     a, b = MockScalingFetcher("a"), MockTraceCollector("b")
-    assert Fetchers(during_step=[a], cooldown_checks=[a], after_step=[b, a]).all() == [a, b]
+    assert StageFetchers(during_step=[a], cooldown_checks=[a], after_step=[b, a]).all() == [a, b]
 
 
 def test_fetch_and_store_wrong_type_names_fetcher_and_types(tmp_path, run_info, deployment):

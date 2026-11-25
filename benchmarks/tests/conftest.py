@@ -1,7 +1,7 @@
 import pytest
 
 from ak_bench.config import BenchConfig
-from ak_bench.platforms.base import Deployment, RunInfo
+from ak_bench.hosts.host import Deployment, RunInfo
 
 
 @pytest.fixture

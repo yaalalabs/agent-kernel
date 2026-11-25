@@ -3,7 +3,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from mocks.fetchers import MockScalingFetcher, MockTransportCollector
 
-from ak_bench.platforms.base import CountSample, QueueDepth, QueueInfo, ScalingInfo
+from ak_bench.fetchers.core.scaling import CountSample, ScalingInfo
+from ak_bench.fetchers.core.transport import QueueDepth, QueueInfo
 
 T0 = datetime(2026, 11, 23, 10, 0, tzinfo=UTC)
 T1 = T0 + timedelta(seconds=10)

@@ -4,7 +4,8 @@ import pytest
 from mocks.fetchers import MockScalingFetcher, MockTransportCollector
 
 from ak_bench.config import HostSettings
-from ak_bench.platforms.base import CountSample, QueueDepth, QueueInfo, ScalingInfo
+from ak_bench.fetchers.core.scaling import CountSample, ScalingInfo
+from ak_bench.fetchers.core.transport import QueueDepth, QueueInfo
 from ak_bench.run.fetcher_invoker import FetcherInvoker
 from ak_bench.run.run_log import RunLog
 from ak_bench.run.step_end_check import StepEnd, StepEndCheck

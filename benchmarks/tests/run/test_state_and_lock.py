@@ -8,14 +8,14 @@ import pytest
 from mocks.host import mock_host
 
 from ak_bench.errors import BenchConfigError, ScriptFailed, StepRefused
-from ak_bench.hosts import HostRegistry
-from ak_bench.platforms.base import Deployment
-from ak_bench.results.layout import ResultsLayout
+from ak_bench.hosts.host import Deployment
+from ak_bench.hosts.registry import HostRegistry
+from ak_bench.results.common.layout import ResultsLayout
 from ak_bench.run.deployment_folder import DeploymentFolder, ScriptEnv
 from ak_bench.run.run_log import RunLog
 from ak_bench.run.state import DeploymentState, StepLock
 
-DEPLOY_ROOT = Path(__file__).parent / "mocks" / "deploy"
+DEPLOY_ROOT = Path(__file__).parent.parent / "mocks" / "deploy"
 RUN_ID = "20261124T100000Z"
 DEPLOYMENT_ID = f"{RUN_ID}-mock-async-complete"
 

@@ -7,7 +7,7 @@ class BenchConfigError(BenchError):
 
 
 class HostRefused(BenchError):
-    """Fetchers.validate() failures."""
+    """StageFetchers.validate() failures."""
 
 
 class StepRefused(BenchError):

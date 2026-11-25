@@ -51,20 +51,26 @@ of restating them, and only adds what the harness build needs to pin down. Part 
     harness and its CI tests always use the parser that matches the branch's log format. Data and plotting libraries
     (numpy, matplotlib) are this project's dependencies only. No cloud SDK is needed by anything in this issue.
   - Layout (one file per implementation, per #786 Hosts and `Scratches/25.Benchmarking-Design/implementation/code-layout.md`):
-    - `platforms/base.py`: `InfoFetcher`, the five family bases and their dataclasses, `Fetchers`, `Deployment`,
-      `Host`.
-    - `hosts.py`: the host registry.
+    - Split by role (`Scratches/25.Benchmarking-Design/implementation/code-layout.md` Folder rules): `fetchers/` is
+      the only code that calls a cloud SDK, `results/` only reads and writes files. A `core/` folder only where there
+      are contracts, a `common/` folder for shared helpers that aren't contracts; neither is created empty.
+    - `fetchers/core/`: `info_fetcher.py` (`InfoFetcher`), one file per family with its dataclasses (`scaling.py`,
+      `resources.py`, `trace.py`, `transport.py`, `cost.py`), `stage_fetchers.py` (`StageFetchers`). No platform folder
+      (`fetchers/aws/`, ...) in this issue; they come with the AWS issues.
+    - `hosts/`: `host.py` (`Host`, `Deployment`, `RunInfo`), `registry.py` (the host registry).
     - `load/`: load generator, `ClientDriver`, the WebSocket complete driver, the driver factory.
     - `run/`: `commands.py` (one class per command), `state.py` (`DeploymentState`), `step_runner.py`
-      (`StepRunner`), the run log.
-    - `scaling/`: `collector.py`, `derived.py`, `step_end.py` (`StepEndCheck`).
-    - `resources/collector.py`; `cost/report.py`; results writers and plots.
+      (`StepRunner`), `step_end_check.py` (`StepEndCheck`), the deployment folder runner, the run log.
+    - `results/`: `common/` (results layout, keyed CSV, percentiles); `csv/`, the per-step CSV generators
+      (per-request, per-window, `scaling_columns.py`, `scaling_numbers.py`, `resource_columns.py`, summary);
+      `metadata.py`; `graphs/` (step, test type and cost graphs).
     - `app/`: the benchmarked AK app with the mock agent, a separate uv project with its own `pyproject.toml`
       (like `e2e/app/`), since it is deployed and the harness is not. One Python code base for every host.
     - `app/deploy/<host>-<mode>-<message-type>/`: one deployment folder per host × mode × message type (e.g.
       `lambda-async-complete/`), holding its Terraform files, `deploy.sh` and `destroy.sh` (see Deployment folders).
       The real folders come with the AWS issues; this issue adds a mock one for the tests.
-    - `tests/`: mock host, mock fetchers, mock deployment folder, local mock WebSocket server.
+    - `tests/`: mirrors `ak_bench/`; plus the mock host, mock fetchers, mock deployment folder, local mock WebSocket
+      server and recorded CSV fixtures.
 - Every component is a class with one responsibility; module-level functions only for small stateless helpers
   (e.g. percentile computation), each justified in `spec.md`.
 
@@ -216,12 +222,12 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   - resource usage: `ts, tier, worker, metric, stat, fetcher`; queue depth: `ts, queue, fetcher`;
   - stage timestamps: `request_id, stage`; cost: `period_start, period_end, service, metric, fetcher`.
 - `store()` is safe when two fetchers write the same file at once (`during_step` tasks run in parallel threads).
-- `Fetchers`: the five lists `during_step`, `cooldown_checks`, `after_step`, `after_all_steps`, `after_teardown`; one
+- `StageFetchers`: the five lists `during_step`, `cooldown_checks`, `after_step`, `after_all_steps`, `after_teardown`; one
   fetcher object can be in several. Each list passes its own window to `fetch()`:
   - `during_step`: (last poll, now); `cooldown_checks`: (now − `cooldown_lookback_s`, now);
   - `after_step`: (step start, step end); `after_all_steps`: (deploy start, now);
     `after_teardown`: (deploy start, teardown end).
-- `Fetchers.validate(host)`, run when the host is loaded, before anything is deployed; refuses the host, naming the
+- `StageFetchers.validate(host)`, run when the host is loaded, before anything is deployed; refuses the host, naming the
   host and the fetcher, when:
   - a fetcher in `cooldown_checks` doesn't override `is_settled()`;
   - a `ScalingInfoFetcher` in `cooldown_checks` doesn't have `"running"` in `count_types`.
@@ -246,7 +252,7 @@ of restating them, and only adds what the harness build needs to pin down. Part 
     folder never share state.
 - `Deployment` dataclass, read from `deployment.json`: `endpoint` (URL only; tokens come from Client
   authentication), `resources`, `queues`, `logs`, `settings`; saved in `state.json` and read back unchanged.
-- `Host` dataclass: `platform`, `fetchers` (`Fetchers`). The harness never branches on host kind.
+- `Host` dataclass: `platform`, `fetchers` (`StageFetchers`). The harness never branches on host kind.
 - The harness imports no cloud SDK; it only runs the scripts and reads `deployment.json`.
 
 ### Step runner (`StepRunner`)
@@ -289,7 +295,7 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   start and teardown time.
 - `deploy --host --mode --message-type [--run-id]`:
   - new run id unless `--run-id`; refuses a host × mode × message type that already has a deployment in that run;
-  - checks the `mock_agent` rules, `Fetchers.validate()` and the deployment folder before deploying;
+  - checks the `mock_agent` rules, `StageFetchers.validate()` and the deployment folder before deploying;
   - makes the signing secret, runs `deploy.sh`, reads `deployment.json`;
   - writes `run-metadata.json` and `state.json`; prints the deployment id `<run-id>-<host>-<mode>-<message-type>`;
   - if `deploy.sh` fails, runs `destroy.sh` for what it may have created, records the failure in the run log, and
@@ -359,7 +365,7 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   - per test type: `01-latency-per-step`, `02-stage-times-per-step`, `03-resource-usage-per-step`;
   - per step: `01-stage-times`, `02-stage-breakdown`, `03-timeline`, `04-every-request` (steady only),
     `05-resource-usage`;
-  - billed cost per run by service (`cost/report.py`), drawn when `cost.csv` exists.
+  - billed cost per run by service (`results/graphs/cost_graph.py`), drawn when `cost.csv` exists.
   - A graph whose data is all empty (e.g. no CPU source) is still drawn with empty panels, not skipped.
 - `Scratches/25.Benchmarking-Design/graph-examples/plot_examples.py` is the reference for layout, not production
   code.
@@ -373,7 +379,7 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   - a full deploy → step → plot → finish → post-run cycle against the mock host;
   - burst sends one request per client, all N at once; steady follows the scheduled-send rule;
   - step-end order, settle window, failed read restarting the window, max cool-down, stale-lock takeover, `--force-unlock`;
-  - `Fetchers.validate()` refuses an invalid host before deploy;
+  - `StageFetchers.validate()` refuses an invalid host before deploy;
   - a failing fetcher → empty columns, run-log entry, run carries on;
   - the missing-responses `WARNING`;
   - `step` refusals (existing folder without `--replace`, step not in saved load steps, concurrent step);

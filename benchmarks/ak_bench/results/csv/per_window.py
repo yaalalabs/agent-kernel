@@ -5,13 +5,14 @@ from pathlib import Path
 from typing import Any
 
 from ak_bench.config import BenchConfig
+from ak_bench.fetchers.core.transport import TransportCollector
+from ak_bench.hosts.host import Deployment, Host
 from ak_bench.load.records import RequestStatus
-from ak_bench.platforms.base import Deployment, Host, TransportCollector
-from ak_bench.resources.collector import ResourceCollector
-from ak_bench.results.keyed_csv import KeyedCsv
-from ak_bench.results.percentiles import percentiles
+from ak_bench.results.common.keyed_csv import KeyedCsv
+from ak_bench.results.common.percentiles import percentiles
+from ak_bench.results.csv.resource_columns import ResourceCollector
+from ak_bench.results.csv.scaling_columns import ScalingCollector
 from ak_bench.run.step_runner import StepRecord
-from ak_bench.scaling.collector import ScalingCollector
 
 
 class WindowGrid:
