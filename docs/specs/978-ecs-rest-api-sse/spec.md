@@ -275,7 +275,7 @@ one builder:
         type                 = "http_proxy"
         httpMethod           = "ANY"
         connectionType       = "VPC_LINK"
-        connectionId         = aws_apigatewayv2_vpc_link.ecs_alb[0].id
+        connectionId         = one(aws_apigatewayv2_vpc_link.ecs_alb[*].id)
         integrationTarget    = module.rest_service.alb_arn
         uri                  = "http://${module.rest_service.alb_dns_name}${ep.backend_path}"
         responseTransferMode = "STREAM"
@@ -293,6 +293,12 @@ one builder:
   nothing else needs it removed.
 - `httpMethod = "ANY"` is the **integration's** method, meaning "forward whatever the caller used". It
   is unrelated to the operation's own key and is required on every operation including `get`.
+- `connectionId` uses `one(...[*].id)`, not `[0].id`. In a WebSocket mode the link has `count = 0`,
+  and `[0]` on it raises `Invalid index` the moment anything evaluates the local. Every consumer is
+  itself `count = 0` there, so Terraform's laziness *should* mean it is never evaluated — but a
+  plan-time crash in WebSocket mode is the one failure this change must not have (`design.md:284`),
+  and with no state it cannot be reproduced locally. `one()` returns `null` for an empty collection,
+  so the hazard is removed rather than reasoned about.
 - `timeoutInMillis` is **not optional** (§0). The variable is in seconds for consistency with
   `alb_idle_timeout`; the `* 1000` lives here, at the one place the millisecond unit is required.
 - `operationId` must be unique across the document. `replace(ep.method, "any", "any-method")` keeps the
@@ -348,7 +354,7 @@ preflight (`ak-py/src/agentkernel/api/http.py:55-61`).
         type                = "http_proxy"
         httpMethod          = "OPTIONS"
         connectionType      = "VPC_LINK"
-        connectionId        = aws_apigatewayv2_vpc_link.ecs_alb[0].id
+        connectionId        = one(aws_apigatewayv2_vpc_link.ecs_alb[*].id)
         integrationTarget   = module.rest_service.alb_arn
         uri                 = "http://${module.rest_service.alb_dns_name}${eps[0].backend_path}"
         passthroughBehavior = "when_no_match"
@@ -358,6 +364,12 @@ preflight (`ak-py/src/agentkernel/api/http.py:55-61`).
     if var.enable_cors
   }
 ```
+
+**As implemented, the grouping local holds keys rather than endpoints** — `_non_any_keys_by_path`
+with `key...` in place of `_non_any_by_path` with `ep...`. The version above has to recover the key a
+second time for `requestParameters`, by re-running the same filter inside `keys({...})[0]`; grouping
+the keys to begin with yields both the endpoint (`local._eps[ep_keys[0]]`) and its request parameters
+from one lookup. Same result, same stable key ordering, one filter.
 
 This is `ak-gcp/containerized/api_gateway.tf:42-59` with AWS extension keys. Two deliberate
 differences from the sibling operations: `httpMethod` is `OPTIONS` rather than `ANY`, since this

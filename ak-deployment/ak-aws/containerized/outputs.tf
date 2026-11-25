@@ -7,28 +7,28 @@ output "cluster_arn" {
 }
 
 output "api_gateway_id" {
-  description = "HTTP API Gateway ID (REST/queue modes only; null in WebSocket modes)"
-  value       = try(aws_apigatewayv2_api.http_api[0].id, null)
+  description = "REST API Gateway ID (REST/queue modes only; null in WebSocket modes)"
+  value       = try(aws_api_gateway_rest_api.rest_api[0].id, null)
 }
 
 output "api_gateway_stage" {
-  description = "HTTP API Gateway stage name (REST/queue modes only; null in WebSocket modes)"
-  value       = try(aws_apigatewayv2_stage.stage[0].name, null)
+  description = "REST API Gateway stage name (REST/queue modes only; null in WebSocket modes)"
+  value       = try(aws_api_gateway_stage.agents[0].stage_name, null)
 }
 
 output "api_gateway_cloudwatch_log_group_arn" {
   description = "ARN of the CloudWatch log group for API Gateway (null when access logging is disabled, or in WebSocket modes)"
-  value       = var.enable_api_gateway_logs && !local.is_websocket_mode ? aws_cloudwatch_log_group.http_api[0].arn : null
+  value       = var.enable_api_gateway_logs && !local.is_websocket_mode ? aws_cloudwatch_log_group.rest_api[0].arn : null
 }
 
 output "api_gateway_cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group for API Gateway (null when access logging is disabled, or in WebSocket modes)"
-  value       = var.enable_api_gateway_logs && !local.is_websocket_mode ? aws_cloudwatch_log_group.http_api[0].name : null
+  value       = var.enable_api_gateway_logs && !local.is_websocket_mode ? aws_cloudwatch_log_group.rest_api[0].name : null
 }
 
 output "agent_invoke_url" {
   description = "HTTP agent invoke URL (REST/queue modes only; null in WebSocket modes)"
-  value       = local.is_websocket_mode ? null : "${try(aws_apigatewayv2_stage.stage[0].invoke_url, format("%s/%s", aws_apigatewayv2_api.http_api[0].api_endpoint, aws_apigatewayv2_stage.stage[0].name))}/api/${var.api_version}/${var.agent_endpoint}"
+  value       = local.is_websocket_mode ? null : "${aws_api_gateway_stage.agents[0].invoke_url}/api/${var.api_version}/${var.agent_endpoint}"
 }
 
 output "vpc_id" {
