@@ -3,15 +3,16 @@
 This design rests on five claims about AWS and the Terraform provider that were taken from the issue
 and from AWS announcements. None of them could be verified by reading this repository.
 
-**Two have since been confirmed. Three are tested on the first real deployment**, before time goes
-into the rest of the acceptance criteria — they are the claims that decide whether the change is
-possible at all.
+**Four are now confirmed. Claim 4 is deliberately deferred**: it sets two timeout defaults rather
+than deciding whether the change is possible, so it is measured when someone needs the real
+ceilings. Claims 2 and 3 — the two that decided whether this was possible at all — were confirmed on
+a real deployment on 2026-11-26.
 
 | # | Claim | How it is checked | If it fails |
 | --- | --- | --- | --- |
 | 1 | AWS provider `6.70.0` exposes `response_transfer_mode` and `integration_target` | provider schema, locally | **Confirmed — see below** |
-| 2 | A REST API integrates directly with an ALB over VPC link V2, no NLB | the stack applies and serves one request end to end | Diagnose first (below). The issue closes only on a confirmed AWS limitation |
-| 3 | With `responseTransferMode = "STREAM"`, SSE chunks arrive **incrementally** | `curl -N`, timestamping each chunk | Diagnose first (below). The issue closes only on a confirmed AWS limitation |
+| 2 | A REST API integrates directly with an ALB over VPC link V2, no NLB | the stack applies and serves one request end to end | **Confirmed — see below** |
+| 3 | With `responseTransferMode = "STREAM"`, SSE chunks arrive **incrementally** | `curl -N`, timestamping each chunk | **Confirmed — see below** |
 | 4 | The REST API's real limits on a Regional endpoint: the **idle** timeout, and the **total** stream duration `timeoutInMillis` permits under `STREAM` | a route that stays silent then emits; and a route that emits steadily past 5 and 15 minutes | The `alb_idle_timeout` and integration-timeout **defaults** follow the measurements, not the documentation, which contradicts itself (5 min vs 15 min) |
 | 5 | `x-amazon-apigateway-integration` accepts `responseTransferMode` **and** `integrationTarget` | the OpenAPI extension reference, which enumerates every supported key | **Confirmed — see below** |
 
@@ -116,7 +117,8 @@ is killed by the integration timeout. This is folded into claim 4 below.
 
 ## 2–4. What to test on the first deployment
 
-Test these before working through the rest of the acceptance criteria.
+**Claims 2 and 3 were run on 2026-11-26 and passed** — results below. This section is kept as the
+method, for repeating the measurements or for claim 4, which is still unmeasured.
 
 1. Deploy an ECS example whose framework supports token streaming, configured
    `execution.mode: rest_sync` and `execution.message_type: delta`, with a **Redis or Valkey**
@@ -164,12 +166,56 @@ Claims 2 and 3 close the issue only on a **confirmed AWS limitation**, never on 
 | # | Result | Evidence |
 | --- | --- | --- |
 | 1 | **Confirmed** | provider schema, above |
-| 2 | — | — |
-| 3 | — | — |
-| 4 | — | — |
+| 2 | **Confirmed** 2026-11-26 | the stack applies and serves; see below |
+| 3 | **Confirmed** 2026-11-26 | 162 incremental frames over 3.78 s; see below |
+| 4 | Deferred | not measured — both timeout defaults remain provisional |
 | 5 | **Confirmed** | OpenAPI extension reference, above |
 
-Record claims 2 to 4 here once the first deployment has been tested, along with anything that should
-change in `design.md` — in particular the `alb_idle_timeout` and `gateway_integration_timeout`
-defaults, which claim 4a and 4b set between them. The documentation cannot: it gives 5 minutes and 15
-minutes for the same cap.
+## 2 and 3. The first real deployment — confirmed 2026-11-26
+
+Verified twice over, in CI and by hand, against
+`examples/aws-containerized/openai-sse-queue-mode` (added by this change) in `us-east-2`.
+
+**Claim 2 — the REST API reaches the ALB over VPC link V2, with no NLB.** The stack applies and serves.
+The WebSocket example's state confirms the arrangement from the other side: in a WebSocket mode only
+`aws_api_gateway_vpc_link.ws[0]` exists, so the V2 link really is absent there and the REST path is
+the only consumer of it.
+
+**Claim 3 — `responseTransferMode: "STREAM"` delivers chunks incrementally.**
+
+| Measured | Value |
+| --- | --- |
+| Frames | 162 |
+| First frame | +2.20 s |
+| Span, first to last | 3.78 s |
+| Reply length | 963 characters |
+
+Roughly 25 frames every half second, steadily. `content-type: text/event-stream` with
+`x-amzn-remapped-server: uvicorn`, so the container answered through the proxy. The weekly
+integration test asserts the same property independently (`3 passed`, including an assertion that
+the span between first and last frame exceeds 0.5 s, which a buffered reply cannot satisfy).
+
+**Two unrelated defects blocked this verification and will block anyone repeating it.** Neither is
+caused by this change; both are filed:
+
+- [#1015](https://github.com/yaalalabs/agent-kernel/issues/1015) — chunk fan-out sends no
+  `MessageDeduplicationId` when the inbound message has none, so no chunk reaches the response store
+  and SSE returns `Stream delivery failed`. Not reproducible on demand: CI passed on the same code
+  and queue configuration minutes earlier.
+- [#1016](https://github.com/yaalalabs/agent-kernel/issues/1016) — the chunk wait issues one `BLPOP`
+  for the whole budget against a client with a short read deadline, so "no chunk yet" surfaces as a
+  redis socket traceback at ~5 s instead of the designed `Stream timed out`. This is what made #1015
+  look like a Redis connectivity problem.
+
+A third, smaller trap: a local deployment on Apple Silicon cannot build these images at all, because
+`ak-deployment/ak-aws/common/modules/ecr/main.tf:37` hardcodes `platform = "linux/amd64"` and the
+classic Docker builder cannot cross-build. Deploy from an amd64 host or from CI.
+
+## 4. Still to measure
+
+Claim 4 was deliberately skipped: it tunes two defaults rather than deciding feasibility, and SSE
+works without it. Until it is measured, **`alb_idle_timeout = 300` and
+`gateway_integration_timeout = 900` remain provisional** — chosen from documentation that gives both
+5 minutes and 15 minutes for the same cap. Record 4a and 4b here when someone needs the real
+ceilings, and correct the two defaults and their descriptions from the measurements rather than from
+the documentation.
