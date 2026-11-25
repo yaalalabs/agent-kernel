@@ -277,12 +277,17 @@ Written only after `design.md` and `spec.md` are complete. `plan.md` breaks the 
 <From spec.md's Testing section: new test files, changed patch targets,
 the command to run the suite.>
 
-## Iteration N: Sync docs and skills
+## Iteration N: Sync docs, skills and changelog
 
 <Which `.agents/skills/` files and docs surfaces the change invalidates —
 name file and line. State explicitly (and verify) when a surface needs no
 update, and confirm with the ak-dev-sync-docs-from-branch /
-ak-dev-sync-skills-from-branch flows before merge.>
+ak-dev-sync-skills-from-branch flows before merge. Name the changelog
+fragment files (`changelog.d/<issue>.<type>.md`) and their types: each
+user-visible item in spec.md's "Behavioural changes" needs a `breaking` or
+`changed` fragment, or `fixed` when it corrects a bug users could hit
+(several items can share one); internal items need none. Write them with
+ak-dev-sync-changelog-from-branch.>
 ```
 
 - Each iteration should leave the branch in a working, testable state.

@@ -7,7 +7,8 @@ description: The latest capabilities added to Open Agent Kernel (OAK), newest fi
 # What's new
 
 The latest capabilities added to Open Agent Kernel (OAK), newest first. Each entry links to its guide.
-For the full history of every release, see the [GitHub releases](https://github.com/yaalalabs/agent-kernel/releases).
+For every user-visible change by release, including breaking changes and how to migrate, see the
+[changelog](https://github.com/yaalalabs/agent-kernel/blob/develop/CHANGELOG.md).
 
 - **Authorization**: An `authorization` block grants users, groups, roles and messaging senders a level on agents. A caller then runs only the agents it is granted and is listed only the ones it may see, on REST, A2A, MCP and AG-UI alike, and an agent hidden from it answers like one that does not exist. [Learn more →](./advanced/identity-and-access.md#authorization)
 - **Agent Registry**: Every agent carries one descriptor (name, version, description, owner, tags, skills and tools), and the agent catalog (`GET /api/v1/agents`), A2A cards, MCP agent tools and the AG-UI listing are all built from it. Describe an agent with `Module.describe` or `registry.agents.<id>`, choose the surfaces it is served on, and share the registry across processes with Redis, Valkey or DynamoDB. [Learn more →](./core-concepts/configuration.md#agent-registry)
