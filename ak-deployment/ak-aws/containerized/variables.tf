@@ -44,7 +44,7 @@ variable "api_base_path" {
 }
 
 variable "gateway_endpoints" {
-  description = "List of HTTP API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} endpoint is created."
+  description = "List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} endpoint is created."
   type = list(object({
     path           = string # The URL path segment that clients will access (e.g., "chat", "users", "webhook"). This becomes part of the full URL: https://your-domain.com/{api_base_path}/{api_version}/{path}
     method         = string # HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE", "ANY"). "ANY" accepts all HTTP methods. "$default" is a special catch-all route.
@@ -178,10 +178,11 @@ variable "container_type" {
   }
 }
 
-# CORS configuration for HTTP API (API Gateway v2)
+# CORS configuration. The REST API proxies preflight to the container, which answers it from its own
+# CORSMiddleware policy, so these values no longer reach the gateway.
 variable "enable_cors" {
   type        = bool
-  description = "Enable CORS on the HTTP API"
+  description = "When true, emits a CORS pre-flight (OPTIONS) operation on every REST API path that has no ANY method. The cors_allow_* values below are not applied: the container answers preflight itself."
   default     = true
 }
 
@@ -249,7 +250,7 @@ variable "gateway_integration_timeout" {
 
 variable "enable_api_gateway_logs" {
   type        = bool
-  description = "When true, creates the API Gateway CloudWatch log group and enables access logging on the HTTP API stage (or the WebSocket API stage, in WebSocket modes). Off by default."
+  description = "When true, creates the API Gateway CloudWatch log group and enables access logging on the REST API stage (or the WebSocket API stage, in WebSocket modes). Off by default."
   default     = false
 }
 
@@ -287,15 +288,11 @@ variable "execution_mode" {
 
 variable "message_type" {
   type        = string
-  description = "Reply delivery: 'complete' (whole reply) or 'delta' (chunks: SSE under rest_sync, WebSocket under async). SSE is rejected with queue_mode = true. null leaves it to Agent Kernel's default (delta for realtime, complete otherwise). Injected as AK_EXECUTION__MESSAGE_TYPE."
+  description = "Reply delivery: 'complete' (whole reply) or 'delta' (chunks: SSE under rest_sync, WebSocket under async). null leaves it to Agent Kernel's default (delta for realtime, complete otherwise). Injected as AK_EXECUTION__MESSAGE_TYPE."
   default     = null
   validation {
     condition     = contains(["complete", "delta"], coalesce(var.message_type, "complete")) # null passes
     error_message = "message_type must be null, 'complete' or 'delta'."
-  }
-  validation {
-    condition     = !(var.queue_mode && var.execution_mode == "rest_sync" && var.message_type == "delta")
-    error_message = "rest_sync with message_type = \"delta\" (SSE) is not supported with queue_mode = true: the HTTP API buffers streamed responses. Use execution_mode = \"async\" with message_type = \"delta\" (WebSocket)."
   }
 }
 
