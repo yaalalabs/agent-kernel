@@ -17,7 +17,7 @@ starts a new one, and sees at a glance whether this computer has what the app ne
 ## Layout
 
 - Two columns: actions and recent projects on the left, the toolchain check on the right.
-- The Agent Kernel logo lockup at the top. No marketing copy.
+- The Open Agent Kernel primary lockup at the top. No marketing copy.
 
 ## Content
 
@@ -41,7 +41,7 @@ starts a new one, and sees at a glance whether this computer has what the app ne
 | uv | Everything | found |
 | Claude Code | Build with AI | found |
 | Terraform | Deploy | found |
-| Docker | Containerized deploy targets | found |
+| Docker | Deploy targets that ship a container image | found |
 | AWS CLI, profile `default` | Deploy to AWS | signed in |
 | git | Optional | found |
 
@@ -60,7 +60,7 @@ starts a new one, and sees at a glance whether this computer has what the app ne
 |----------|------|-------|
 | `Start-Welcome-FirstLaunch` | first | No recent projects. The left column leads with "New project" and one line: "A project is a folder on this computer. Everything the app creates stays in it." |
 | `Start-Welcome-ToolchainMissing` | first | uv and Terraform missing. Their rows are in the failed state with install links. A banner: "Install uv to create or run a project". "New project" is disabled; "Open folder" still works. The Terraform row notes that only deploying is affected. |
-| `Start-Welcome-NotAProject` | first | After choosing a folder with no Agent Kernel project in it. A modal: "No Agent Kernel project in `~/code/notes`", with "Create a project here", "Choose another folder" and "Cancel". |
+| `Start-Welcome-NotAProject` | first | After choosing a folder with no OAK project in it. A modal: "No OAK project in `~/code/notes`", with "Create a project here", "Choose another folder" and "Cancel". |
 
 ## Tweaks
 
@@ -68,6 +68,6 @@ starts a new one, and sees at a glance whether this computer has what the app ne
 
 ## Handoff notes
 
-- The app recognises a project by the presence of `config.yaml` and a Python file that registers an Agent
-  Kernel module. An existing project made without the app opens the same way.
+- The app recognises a project by the presence of `config.yaml` and a Python file that registers an OAK
+  module. An existing project made without the app opens the same way.
 - Tool detection reads the user's own shell environment. The app installs nothing by itself.

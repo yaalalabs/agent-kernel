@@ -5,9 +5,9 @@ it are in [PHASE-1-PLAN.md](PHASE-1-PLAN.md).
 
 ## Product (Phase 1)
 
-Agent Kernel Studio (working name) is a desktop app for building projects on Agent Kernel, the open-source
-runtime by Yaala Labs that takes AI agents from prototype to production. It is an Electron app that works on
-one folder on the user's computer, the **working directory**, the way a code editor does.
+Open Agent Kernel Studio (OAK Studio, a working name) is a desktop app for building projects on Open Agent
+Kernel (OAK), the open-source runtime that takes AI agents from prototype to production. It is an Electron app
+that works on one folder on the user's computer, the **working directory**, the way a code editor does.
 
 1. **It writes real project files** into that folder: the agents (`app.py`), the tools, `config.yaml`, the
    Python project and the Terraform files under `deploy/`. The canvas is a view of those files, never a
@@ -29,50 +29,78 @@ keyboard.
 
 ## Design system
 
-Use the **Agent Kernel Design System** from this account's design systems. Do not use the organization
-default: that one is a presentation system for slides, and this is product UI.
+The app wears the Open Agent Kernel identity (decided 25 November 2026). Use the **OAK Design System** from
+this account's design systems. Do not use the organization default: that one is a presentation system for
+slides, and this is product UI.
 
-- Install it on the canvas and mount its real components (Button, Badge, Tag, Card, Input, CodeBlock,
-  GradientHeading). Never draw look-alikes.
+- **Source of truth.** The identity lives in the repository: the palette, the logo set and the usage rules in
+  `branding/README.md`, and the tokens in `docs/src/css/custom.css`. The design system must match them.
+- **Not ready yet.** The account's design system is still the earlier one, named "Agent Kernel Design
+  System", with the blue and magenta look. Bring it to the OAK identity and rename it before designing any
+  screen (step 0 of the build plan in [README.md](README.md)).
+- Install it on the canvas and mount its real components (Button, Badge, Tag, Card, Input, CodeBlock). Never
+  draw look-alikes. `GradientHeading` is retired: headings are a solid colour.
 - Type, colour, spacing and radii come from its tokens. Do not restate or override them in an artboard.
-- Fonts as the system defines them: Archivo for display, headings and button labels; Inter for body and UI;
-  JetBrains Mono for code, paths, identifiers and numbers in tables.
-- Logos are real marks, never redrawn. Product marks are in `docs/static/img/branding/`, partner and
-  framework marks in `docs/static/img/integrations/`. Upload the ones a screen needs as assets.
-- Icons: the system's line icon set. No emoji anywhere in the product UI.
+- Fonts as the system defines them: Archivo for headings, body and UI; JetBrains Mono for code, paths,
+  identifiers and numbers in tables. There is no third typeface.
+- Two colour modes, light (the default) and dark, share one set of token names. A component never branches on
+  the mode.
+- Logos are real files, never redrawn, recoloured or given effects. Product marks are in `branding/`: the
+  Primary lockup (`primary/`) where the full name should be read, the OAK Horizontal lockup
+  (`oak-horizontal/`) in compact bars, and the mark alone (`logo-mark/`) for the app icon and inline use.
+  Lockups use the `color` file on light surfaces and the `white-orange` file on dark ones; the mark is the
+  `orange` file. Partner and framework marks are in `docs/static/img/integrations/`. Upload the ones a screen
+  needs as assets.
+- Icons: Tabler outline icons, the set the website uses. No emoji anywhere in the product UI.
 
 ## Product-app adaptations (assumptions, confirm before the first screen)
 
-The design system was derived from the marketing site. A tool used for hours is denser, so these briefs assume
-the adaptations below. Everything not listed follows the system unchanged.
+The identity was drawn for the website. A tool used for hours is denser, so these briefs assume the
+adaptations below. Everything not listed follows the system unchanged.
 
-1. **Density.** 8px grid, 14px Inter as the base size, 40px rows and controls, 48px top bar. Marketing-scale
-   spacing and hero type sizes are not used in the app.
-2. **Marketing-only effects stay on the marketing site.** No spectrum-gradient words, particle or plant motif,
-   cosmic-wave fields, section glow dividers or scroll and entrance animation. The logo mark keeps its gradient.
-3. **Glass is for floating layers.** Menus, popovers, drawers, modals and toasts use the system's glass panel.
-   Docked panels, tables and page surfaces are solid, with the system's card fill and hairline border.
-4. **Glow and lift are reserved.** They mark selection and the primary action: a selected canvas node, a
-   focused input, the primary button on hover. Rows and static cards do not lift or glow.
-5. **Shape follows the system.** Pill buttons, badges and tags; cards, inputs and menus at the system's radii.
-6. **Casing.** App copy is sentence case, exactly as written in these briefs. The system's Title Case rule is
-   kept for marketing headlines and calls to action.
+1. **Density.** 8px grid, 14px Archivo as the base size, 40px rows and controls, 48px top bar. This is below
+   the website's 15px floor for running text, on purpose. The website's display sizes and section spacing are
+   not used in the app.
+2. **Website-only pieces stay on the website.** No dot fields, moving line-art illustrations, display
+   headlines, numbered section labels or entrance animation. The brand gradients are for covers and print and
+   are not used in the app.
+3. **Surfaces are flat.** No gradient fills, glass blur or glows. Docked panels, tables and page surfaces are
+   solid fills with hairline borders. Floating layers (menus, popovers, drawers, modals and toasts) are solid
+   too and carry the system's one shadow.
+4. **Selection and focus are drawn, not lit.** A selected canvas node, a focused input and the active tab take
+   an accent border or ring. Nothing glows, and rows and static cards do not lift.
+5. **Shape follows the system.** Two radii: 8px for buttons, inputs, tags, badges and chips, 16px for cards
+   and panels. Buttons are rectangular, not pills.
+6. **Casing.** App copy is sentence case, exactly as written in these briefs.
 7. **Motion.** 150ms on hover and focus, 250ms for panels. The only ambient motion is a soft pulse on items the
    coding agent has just added, and progress on a running command. Respect reduced-motion settings.
 8. **Desktop app.** Draw the window's content area only, with no operating-system window frame. Screens are
    fluid pages drawn at 1440 by 900 and must hold at 1100 wide. There are no phone layouts.
+9. **Colour modes.** Draw every artboard in the light mode, the system default. The canvas carries a `theme`
+   tweak, and each main artboard must also hold in the dark mode. The app follows the operating system by
+   default and lets the user choose (brief 09).
 
 ## Colour semantics
 
+Roles map to the system's tokens, so both colour modes work. Never write a literal colour.
+
 | Role | Colour | Used for |
 |------|--------|----------|
-| Primary | Electric blue | Primary action, links, focus ring, the active tab, selection |
-| AI | Magenta | Anything authored or offered by the coding agent: the Build with AI entry, its avatar, "Added by Claude Code" badges, generated nodes and edges, "with AI" buttons. Nothing else. |
-| Success | Success token | Passed, running, connected, in sync, applied |
-| Needs a person | Warning token | Pending approval, out-of-sync rule, untested rule, a plan waiting for confirmation, a change on disk |
-| Failure | Danger token | Failed, blocked, destroy and other destructive actions |
+| Primary | Tiger Flame Orange (`--ak-primary` for fills, `--ak-primary-text` for text and thin lines) | The one primary action in a view, links, focus ring, the active tab, selection |
+| AI | The system's blue (`--ak-blue`: Baby Blue Ice in the dark mode, Dusk Blue in the light mode), always with the sparkle icon | Anything authored or offered by the coding agent: the Build with AI entry, its avatar, "Added by Claude Code" badges, generated nodes and edges, "with AI" buttons. Nothing else. |
+| Success | `--ak-green` | Passed, running, connected, in sync, applied |
+| Needs a person | `--ak-warning` | Pending approval, out-of-sync rule, untested rule, a plan waiting for confirmation, a change on disk |
+| Failure | `--ak-red` | Failed, blocked, destroy and other destructive actions |
 
-- All text meets 4.5:1 contrast, including secondary labels and 12px captions.
+- **Assumption: the AI colour.** The brand palette has no colour reserved for AI, so these briefs give the
+  coding agent the system's blue. The app uses that blue for nothing else: borders use `--ak-border` and
+  secondary text uses `--ak-text-secondary`. In the light mode the blue has the same value as secondary
+  text, so an AI mark is never text colour alone: it is an outline or a tint with the sparkle icon and a label.
+- Orange is for the one thing to notice in a view. A view has one primary button.
+- The warning amber sits close to the accent orange. A warning always carries its icon and label and is never
+  a filled button.
+- All text meets 4.5:1 contrast in both modes, including secondary labels and 12px captions. Orange text uses
+  `--ak-primary-text`; text on an orange fill uses `--ak-on-primary`, never white.
 - State is never colour alone: a dot or icon plus a label.
 - Paths, commands, code, YAML, durations, token counts and money are JetBrains Mono, with tabular figures.
 
@@ -141,7 +169,7 @@ given is a placeholder in square brackets, never an invented fact.
   app.py               agents and module wiring
   tool.py              custom tools
   hooks.py             pre- and post-hooks
-  config.yaml          Agent Kernel configuration
+  config.yaml          OAK configuration
   app_test.py          tests
   test-config.yaml     test harness settings
   pyproject.toml       Python project
@@ -149,7 +177,7 @@ given is a placeholder in square brackets, never an invented fact.
   build.sh
   README.md
   .env                 local secrets, ignored by git
-  .claude/commands/    Agent Kernel skills for Claude Code
+  .claude/commands/    OAK skills for Claude Code
   .akstudio/           studio data: canvas layout, business rules, test scenarios, deploy history;
                        runs/ holds the local test run history and is ignored by git
   deploy/
@@ -197,23 +225,31 @@ Screens show one of two moments. Keep each screen in its moment so linked protot
 
 ## Real names come from the repository
 
-When Claude Design runs inside the Agent Kernel repository, read these instead of guessing a name, a config
-key or a logo:
+When Claude Design runs inside the OAK repository, read these instead of guessing a name, a config key or a
+logo:
 
 - `README.md`: positioning and the feature list.
-- `docs/src/components/IntegrationsMarquee/data.tsx`: the inventory of frameworks, channels, stores, clouds
-  and providers, with their logo file names.
+- `branding/README.md`: the name rules, the logo set, the palette and the website design system.
+- `docs/src/css/custom.css`: the theme tokens for both colour modes.
+- `docs/src/components/HomeSections/integrations.data.tsx`: the inventory of frameworks, channels, stores,
+  clouds and providers, with their logo file or icon names.
 - `ak-py/src/agentkernel/core/config.py`: `AKConfig`, the real configuration sections and keys.
 - `ak-py/src/agentkernel/skills/`: the bundled skills. `ak-init` and `ak-cloud-deploy` define the project and
   `deploy/` layouts; `ak-cloud-deploy` lists the Terraform modules and their variables.
 - `examples/aws-containerized/`: a complete example of a project with its `deploy/` folder.
 
-Use Agent Kernel's own vocabulary in labels: handoff, pre-hook, post-hook, session store, guardrail, execution
-mode, message type, sandbox profile.
+Use OAK's own vocabulary in labels: handoff, pre-hook, post-hook, session store, guardrail, execution mode,
+message type, sandbox profile.
+
+Naming in app copy: "Open Agent Kernel" where the full name is read (the lockup, window and installer titles),
+"OAK" everywhere else. The company is not named in the app. Identifiers keep their form: the `agentkernel`
+package, the `ak` CLI, `AKConfig`, `AK_*` variables, `.akstudio/`, the `ak-*` skills and the `yaalalabs/...`
+Terraform module sources. Strings the runtime emits are quoted as emitted.
 
 ## Canvas and artboard conventions
 
-- One design canvas named "Agent Kernel Studio". Canvas pages: System, Start, Builder, Settings.
+- One design canvas named "OAK Studio" (it was created as "Agent Kernel Studio" and is renamed when it is
+  re-skinned). Canvas pages: System, Start, Builder, Settings.
 - One screen per artboard, following adaptation 8 for size.
 - Artboard names are `Area-Screen` and `Area-Screen-State`, for example `Builder-Canvas` and
   `Builder-Canvas-Empty`. Component names are PascalCase. Both become code names at handoff, so keep them
@@ -235,7 +271,8 @@ Unless a brief says otherwise:
 - Invent features, integrations, metrics, versions, account numbers or copy beyond these briefs and the
   repository.
 - Design sign-in, accounts, dashboards or any view of a deployed system.
-- Redraw a logo, restyle a design-system component, or use magenta for anything that is not the coding agent.
+- Redraw a logo, restyle a design-system component, or use the AI colour for anything that is not the coding
+  agent.
 - Show a secret value.
 
 ## Handoff

@@ -5,6 +5,16 @@ kept so the work is not lost. Do not design from them yet. Each one needs a revi
 [project brief](../00-project-brief.md) first: the shell, the fixture data and the navigation all changed when
 Phase 1 became a local desktop app.
 
+They also predate the Open Agent Kernel rebrand and the develop merge of 25 November 2026, and were left as
+written. When a brief is revived, expect to change at least this:
+
+- The name and the look: they say "Agent Kernel" and describe the earlier blue and magenta design system.
+- `L20`: its target cards include Azure Functions, which is retired (issue #957).
+- `L10` and `L12`: which agents MCP and A2A expose is now `registry.agents.<id>.surfaces`, not a list on the
+  protocol.
+- `L13` and `L21`: authentication, roles and access now have real counterparts in the runtime, the `identity`
+  and `authorization` blocks of `config.yaml`.
+
 | File | Screen | Why it is parked | What Phase 1 offers instead |
 |------|--------|------------------|-----------------------------|
 | [L01-sign-in.md](L01-sign-in.md) | Sign in, sign up, SSO | No accounts in a local app | The Welcome screen opens a folder |

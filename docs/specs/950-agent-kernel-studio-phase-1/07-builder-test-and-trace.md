@@ -113,16 +113,16 @@ nothing leaves the computer.
 - If neither source has span detail for a framework, the trace column says so instead of showing an empty
   tree.
 - Span kinds are mapped from both the OpenTelemetry GenAI attributes and OpenLLMetry's own
-  (`traceloop.span.kind`), as Agent Kernel's trace fetcher already does
+  (`traceloop.span.kind`), as OAK's trace fetcher already does
   (`ak-py/src/agentkernel/trace/fetch.py`). The GenAI conventions are still in development, so the mapping
   tolerates both.
 - Cost is an estimate from token counts and a model price table in the app, and is labelled as one.
 - Rule chips come from the rule links: a span whose guardrail, tool or hook is a rule's enforcing element
   carries that rule's id.
-- Stream events are Agent Kernel's real types: message start and end, text delta, reasoning, tool call start,
+- Stream events are OAK's real types: message start and end, text delta, reasoning, tool call start,
   args, end and result, step start and end.
 - Tests run with `uv run pytest`, using `test-config.yaml` for the comparison mode and judge model. A failing
-  case shows the evaluator's score and its `reason`; Agent Kernel's evaluators return both
+  case shows the evaluator's score and its `reason`; OAK's evaluators return both
   (`ak-py/src/agentkernel/test/core/evaluator/base.py`).
 - Each test run is recorded in `.akstudio/runs/`, which is ignored by git: time, commit, and per case the
   result, score and reason. History and comparison read only from there.
@@ -135,8 +135,17 @@ nothing leaves the computer.
   `uv run pytest` and `uv run ak rules check`. The app writes the file only; it does not commit, push, open pull
   requests or run CI.
 - During a local test the person at the keyboard is the approver.
+- The agent select lists the project's catalog, `GET /api/v1/agents`, which returns one descriptor per agent.
+- A project may set `identity` or `authorization` in `config.yaml`. The fixture sets neither, so every local
+  call is the anonymous principal and nothing is restricted. When a project does set them, the catalog and
+  the chat route answer per caller: with no credential the Test column still acts as the anonymous principal,
+  so it lists and reaches only the agents and tools that the project's grants and each agent's visibility
+  allow an anonymous caller. A refused call is shown as refused, with the status the runtime returns, never as
+  an empty reply.
 
 ## Open details
 
 - Where the model price table comes from and how it is kept current.
 - CI systems other than GitHub Actions.
+- How the Test column sends a credential for a project that sets `identity`, so a test can run as a named
+  caller. A principal of the `static` identity provider is the likely answer.

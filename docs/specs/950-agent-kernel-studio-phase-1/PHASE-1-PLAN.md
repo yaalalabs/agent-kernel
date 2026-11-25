@@ -3,10 +3,14 @@
 **Status:** planned, and the screens are designed on the [design canvas](https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po) (see the artboard map in [README.md](README.md)). Nothing is built as an app yet. Items marked **Assumption** are my defaults and need a yes
 or a correction before design starts.
 
+**Revised 25 November 2026** after the develop merge: the Open Agent Kernel (OAK) name and identity, five
+deploy targets now that Azure Functions is retired, and the agent registry. The canvas has not been redrawn to
+match; [README.md](README.md) lists what is behind.
+
 ## Summary
 
 Phase 1 is an Electron desktop app that works on one folder on the user's computer, the **working directory**,
-the way a code editor does. The app generates the Agent Kernel project in that folder (the agents, the Python
+the way a code editor does. The app generates the OAK project in that folder (the agents, the Python
 project and the Terraform files), runs and tests it locally, and deploys it from the same computer by running
 Terraform in that folder with the user's own cloud credentials.
 
@@ -47,7 +51,7 @@ Later phases are not planned here. Their briefs are parked in [later-phases/](la
 
 1. **Start.** Launch the app. Open a folder, or start a new project. The app checks the local toolchain.
 2. **Create.** Choose the folder, the agent framework, a model provider and a starting template. The app writes
-   the project files, creates the Python environment and installs the Agent Kernel skills for the coding agent.
+   the project files, creates the Python environment and installs the OAK skills for the coding agent.
 3. **Build.** On the canvas: add agents, tools, handoffs, channels, guardrails and stores. In the Config tab:
    every `config.yaml` section as a form. In the Code tab: the files themselves.
 4. **Build with AI.** Ask the coding agent for a change. It edits the files in the folder. The canvas shows
@@ -62,18 +66,18 @@ Later phases are not planned here. Their briefs are parked in [later-phases/](la
 ## What ends up in the working directory
 
 The layout follows what the bundled `ak-init` and `ak-cloud-deploy` skills already generate, so a project made
-by the app is an ordinary Agent Kernel project that works without the app.
+by the app is an ordinary OAK project that works without the app.
 
 | Path | What it is | Written by | Seen in |
 |------|------------|-----------|---------|
 | `app.py` | The agents and the module wiring | App scaffold, coding agent | Canvas, Code |
 | `tool.py` | Custom tools as plain Python functions | App scaffold, coding agent | Canvas (tool nodes), Code |
-| `config.yaml` | Agent Kernel configuration | Config tab, canvas, coding agent | Config, Code |
+| `config.yaml` | OAK configuration | Config tab, canvas, coding agent | Config, Code |
 | `app_test.py`, `test-config.yaml` | Tests and the test harness settings | Coding agent, Test & Trace | Test & Trace, Code |
 | `pyproject.toml`, `uv.lock`, `build.sh` | The Python project | App scaffold | Code |
 | `deploy/main.tf`, `variables.tf`, `outputs.tf`, `providers.tf`, `terraform.tfvars` | Terraform for the chosen target | Deploy tab, coding agent | Deploy, Code |
 | `deploy/Dockerfile`, `deploy/deploy.sh` | Packaging for containerized targets | Deploy tab | Deploy, Code |
-| `.claude/commands/` | Agent Kernel skills for Claude Code (`ak skill install --assistant claude`) | App | Settings |
+| `.claude/commands/` | OAK skills for Claude Code (`ak skill install --assistant claude`) | App | Settings |
 | `.env` | Local secrets. Ignored by git. The app shows names only. | New project, Settings | Settings |
 | `.akstudio/` | **Assumption.** What code cannot hold: canvas layout, business rules, saved test scenarios, deploy history. Documented, versioned plain-text formats. `.akstudio/runs/` (test run history) is ignored by git. | App | Canvas, Rules, Test & Trace, Deploy |
 | `.github/workflows/ak-checks.yml` | CI workflow: install, run the tests, run `ak rules check`. Written only when the user asks. | Test & Trace | Code |
@@ -107,7 +111,7 @@ Phase 1 builds neither, but its seams are shaped so that both are additions, not
 3. **Files a server can read.** `.akstudio/` uses documented, versioned plain-text formats with no absolute
    paths or machine-specific values in committed files. A hosted Studio reads the same files from the
    repository.
-4. **Secrets by name.** A secret is a key name plus the Agent Kernel secret provider that resolves it
+4. **Secrets by name.** A secret is a key name plus the OAK secret provider that resolves it
    (`secret.provider.type` in `config.yaml`). `.env` is the local store of the `env` provider, not the model,
    so a hosted Studio can resolve the same names from its own store.
 5. **Rule checks outside the app.** The business-rule checks live in the `ak` CLI (`ak rules check`), which
@@ -117,9 +121,9 @@ Phase 1 builds neither, but its seams are shaped so that both are additions, not
 
 | Part | Reads | Writes | Runs |
 |------|-------|--------|------|
-| Canvas | `app.py`, `tool.py`, `config.yaml`, `.akstudio/` layout | Config deterministically; Python through scaffold templates and the coding agent | A Python helper that loads the project and reports its agents, tools, handoffs and hooks |
+| Canvas | `app.py`, `tool.py`, `config.yaml`, `.akstudio/` layout | Config deterministically; Python through scaffold templates and the coding agent | A Python helper that loads the project and reports its agents and tools (from the agent registry), handoffs and hooks |
 | Code | All project files | Light edits; "Open in editor" for real work | Nothing |
-| Config | `config.yaml` | `config.yaml`, keeping comments and order | Agent Kernel's own config validation |
+| Config | `config.yaml` | `config.yaml`, keeping comments and order | OAK's own config validation |
 | Build with AI | The whole folder | Any project file, through the coding agent | Claude Code in the working directory, with its permission requests shown as approval cards |
 | Rules | `.akstudio/` rules, the code they link to | Rules; code and tests through the coding agent | The test file, for coverage; the same checks as `ak rules check` |
 | Test & Trace | The local run's stream and its OpenTelemetry spans | Saved scenarios, simulated-user scenarios, new test cases, run history, the CI workflow | The project as a local server; a local OTLP receiver; `uv run pytest` |
@@ -150,7 +154,7 @@ All commands run inside the working directory. The renderer cannot start a proce
 | Python 3.12 or 3.13, `uv` | Everything | The Welcome screen blocks project creation and links to install steps |
 | Claude Code | Build with AI, business rules | The rest of the app works; the drawer explains how to connect |
 | Terraform | Deploy | The Deploy tab shows the prerequisite as failed |
-| Docker | Containerized targets | Same; serverless targets do not need it |
+| Docker | Targets that ship a container image: both containerized targets and Google Cloud serverless | Same; AWS serverless with a zip package does not need it |
 | Cloud command-line tool and a signed-in profile (AWS, Azure or Google Cloud) | Deploy | Same |
 | git | Optional: branch display, change lists, reverting agent turns | The app falls back to its own snapshots |
 
@@ -172,7 +176,7 @@ All commands run inside the working directory. The renderer cannot start a proce
 
 | Milestone | Outcome |
 |-----------|---------|
-| 1. Open and read | Open a folder, detect an Agent Kernel project, show it on a read-only canvas and in Code and Config |
+| 1. Open and read | Open a folder, detect an OAK project, show it on a read-only canvas and in Code and Config |
 | 2. Coding agent | Build with AI drawer over local Claude Code, through the coding-agent interface; accept and revert; business rules, rule tests and `ak rules check` |
 | 3. Create and edit | New project wizard; config editing; adding nodes through scaffold templates |
 | 4. Run and test | Local server, chat, trace from the run's events and the local OTLP receiver, test file with judge reasons, run history and comparison, simulated users, the CI workflow |
@@ -197,6 +201,7 @@ editing is its costliest part. Nothing is dropped by the order.
 | Cost and safety | Applying creates billable resources | Plan first, name the account, confirm, and always offer destroy |
 | Three operating systems | The skills generate bash scripts (`build.sh`, `deploy.sh`) and Unix-style commands. Windows paths, line endings and process handling differ. Installers need signing on macOS and Windows. | The Run and Deploy services call `uv`, `terraform` and `docker` directly with argument lists, never through a shell script. The scripts are still written for people who use a terminal, and need Git Bash or WSL on Windows. Test on all three before release. |
 | One target per project | Several environments multiply state and variables | **Assumption:** one deploy target per project in Phase 1, in `deploy/` |
+| Design drawn before the rebrand | The account's design system and all 45 artboards carry the earlier blue and magenta look and the old name | Bring the design system to the OAK identity first, then re-skin the canvas, before any handoff to implementation |
 
 ## Assumptions to confirm
 
@@ -204,13 +209,17 @@ editing is its costliest part. Nothing is dropped by the order.
    Config tab and the coding agent.
 2. Claude Code is the only coding agent wired up in Phase 1, as the only adapter of an agent-neutral
    coding-agent interface. Others appear as "not set up".
-3. One deploy target per project, Terraform only. The targets are the six Terraform modules: AWS serverless,
-   AWS containerized, Azure serverless, Azure containerized, Google Cloud serverless and containerized.
+3. One deploy target per project, Terraform only. The targets are the five supported Terraform modules: AWS
+   serverless, AWS containerized, Azure containerized, Google Cloud serverless and containerized. Azure
+   Functions is retired (issue #957) and is not offered.
 4. The app keeps its own data in `.akstudio/` inside the working directory, and that folder can be committed.
 5. Windows, Linux and macOS are all supported in Phase 1, from one codebase. Differences are handled in the main
    process: paths, line endings, shell and command lookup, installers, signing and window controls.
 6. Electron with a React and TypeScript renderer. Where the app's source lives (this repository or a new one)
    is open.
+7. The app wears the Open Agent Kernel identity, in a light and a dark mode (decided 25 November 2026). Two
+   points in brief 00 are still my defaults: the coding agent is marked with the system's blue, and artboards
+   are drawn in the light mode.
 
 ## Phase 1 is done when
 

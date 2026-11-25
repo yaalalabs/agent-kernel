@@ -12,19 +12,20 @@
 
 ## Job
 
-The Agent Kernel Design System covers brand, tokens and seven primitives. A desktop builder needs more. This
+The OAK Design System covers brand, tokens and six primitives. A desktop builder needs more. This
 brief inventories the components to build once on the System page and import into every screen. It comes
 first, because Claude Design reuses components across artboards.
 
 ## From the design system (mount, do not redraw)
 
-Button (primary, secondary, outline, ghost), Badge, Tag, Card, Input, CodeBlock, GradientHeading.
+Button (primary in solid orange, secondary as an outline, tertiary as a text link), Badge, Tag, Card, Input,
+CodeBlock. All are rectangular with the system's 8px control radius; none is a pill.
 
 ## To build (names are the intended code names)
 
 **Foundations** (`System-Foundations`)
 - The app density scale from brief 00: type sizes, row heights, spacing steps.
-- The colour roles table from brief 00 as swatches with their token names.
+- The colour roles table from brief 00 as swatches with their token names, in the light and the dark mode.
 
 **Shell** (`System-Shell`)
 - `DesktopShell`, `TopBar`, `ProjectSwitcher` (closed, open), `AppTabs` (each tab active once),
@@ -34,7 +35,7 @@ Button (primary, secondary, outline, ghost), Badge, Tag, Card, Input, CodeBlock,
 - `Tabs` (underline, for use inside a screen).
 
 **Controls** (`System-Controls`)
-- Button variants the system lacks: `AIButton` (magenta outline, sparkle icon), `IconButton`, a danger
+- Button variants the system lacks: `AIButton` (an outline in the AI colour, sparkle icon), `IconButton`, a danger
   button. Each in default, hover, focus, disabled.
 - `Select`, `Textarea`, `Toggle`, `Checkbox`, `Radio`, `Slider`, `SegmentedControl`, `KeyValueEditor`,
   `FolderField` (a path with a "Choose" control), `CodeEditor` (line numbers, gutter markers, inline
@@ -92,8 +93,10 @@ Button (primary, secondary, outline, ghost), Badge, Tag, Card, Input, CodeBlock,
 ## Tweaks
 
 - `density`: comfortable or compact, applied across all specimen artboards.
+- `theme`: light (default) or dark, applied across all specimen artboards.
 
 ## Handoff notes
 
-- Once approved, these are candidates to add to the Agent Kernel Design System so later designs reuse them.
+- Once approved, these are candidates to add to the OAK Design System so later designs reuse them.
+- `AnnotationPill` keeps its code name. It is drawn with the 8px control radius like every other chip.
 - A component that appears on no Phase 1 screen should be removed before handoff.

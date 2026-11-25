@@ -14,8 +14,8 @@
 
 The chat through which a coding agent builds the system. The agent is Claude Code, running on this computer in
 the working directory. It edits the real files through the bundled skills, the canvas shows each change as it
-lands, and anything that runs a command waits for the user's approval. Magenta marks everything the agent made
-until the user accepts it.
+lands, and anything that runs a command waits for the user's approval. The AI colour marks everything the agent
+made until the user accepts it.
 
 ## Layout
 

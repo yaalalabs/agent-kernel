@@ -68,7 +68,7 @@ expects.
 **`Settings-General`**
 - "Default location for new projects" as a `FolderField`: `~/code`.
 - "Open files with": the system default editor.
-- "Theme": dark.
+- "Theme": a choice of "System" (selected), "Light" and "Dark".
 - "Usage data": a toggle "Send anonymous usage data to help improve the app", off, with the line "Off by
   default. With it off, the app sends nothing of its own."
 
@@ -84,7 +84,7 @@ expects.
 
 - Toolchain and cloud settings belong to the computer. Coding-agent permissions and secrets belong to the
   project and live in the working directory.
-- Local keys use Agent Kernel's `env` secret provider. A cloud secret store is chosen per deploy target, in
+- Local keys use OAK's `env` secret provider. A cloud secret store is chosen per deploy target, in
   `config.yaml`.
 - A secret is a key name plus the provider that resolves it (`secret.provider.type` in `config.yaml`: `env`,
   `aws_ssm`, `kubernetes`, or a dotted path). The Secrets table reads the provider from `config.yaml` and shows

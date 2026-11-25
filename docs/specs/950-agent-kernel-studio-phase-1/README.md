@@ -1,8 +1,9 @@
-# Agent Kernel Studio: Claude Design brief pack
+# Open Agent Kernel Studio: Claude Design brief pack
 
-Design briefs for Agent Kernel Studio (working name), written for Claude Design, the design canvas in Claude.
+Design briefs for Open Agent Kernel Studio (OAK Studio, a working name), written for Claude Design, the design
+canvas in Claude. OAK Studio is a desktop app for building projects on Open Agent Kernel (OAK).
 
-**Status:** the Phase 1 screens are designed on a Claude Design canvas (https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po). Nothing is built as an app yet.
+**Status:** the Phase 1 screens are designed on a Claude Design canvas (https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po), in the look the product had before the Open Agent Kernel rebrand. The briefs were revised on 25 November 2026 and the canvas has not been redrawn to match: see "Canvas is behind the briefs" below. Nothing is built as an app yet.
 
 **Tracked in:** [issue #950](https://github.com/yaalalabs/agent-kernel/issues/950).
 
@@ -12,7 +13,7 @@ The product is built in phases. **Only Phase 1 is planned and briefed here.**
 
 | Phase | Theme | State |
 |-------|-------|-------|
-| **1** | A local desktop app: build, test and deploy an Agent Kernel project from one folder on one computer | Planned in [PHASE-1-PLAN.md](PHASE-1-PLAN.md); briefs 00 to 09 |
+| **1** | A local desktop app: build, test and deploy an OAK project from one folder on one computer | Planned in [PHASE-1-PLAN.md](PHASE-1-PLAN.md); briefs 00 to 09 |
 | Later | Deep configuration pages; operating a deployed system; a hosted Studio (cloud SaaS) with teams and sign-in; coding agents other than Claude Code | Not planned. Earlier briefs are parked in [later-phases/](later-phases/). Phase 1 is shaped for them: see "Built for the next phases" in [PHASE-1-PLAN.md](PHASE-1-PLAN.md). |
 
 Phase 1 in one paragraph: an Electron app opens a working directory, generates the project files in it (the
@@ -21,7 +22,7 @@ same computer with Terraform. Sign-in, dashboards and everything after deploymen
 
 ## Design canvas
 
-Every Phase 1 screen is designed on one canvas, **Agent Kernel Studio**: <https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po>. It uses the Agent Kernel Design System and mounts its real Button, Tag, Input, Card and CodeBlock. The canvas is private to its owner until it is shared from its Share menu.
+Every Phase 1 screen is designed on one canvas: <https://claude.ai/artifact/VSewdGFtfYAQe4zGFVt3po>. It is still titled **Agent Kernel Studio** and was built on the account's earlier design system, the Agent Kernel Design System, whose real Button, Tag, Input, Card and CodeBlock it mounts. Both are renamed and re-skinned to the OAK identity in step 0 of the build plan. The canvas is private to its owner until it is shared from its Share menu.
 
 The canvas links back to these files: each row of artboards carries a note naming its brief. These files link forward the same way: each brief's header table has a **Design** row with the canvas page and the artboards built.
 
@@ -46,12 +47,28 @@ The canvas has four pages, matching the artboard names in the briefs.
 | 06 | [06-agentic-development.md](06-agentic-development.md) | Builder | 4 of 5 | `AgenticDev-Diff` |
 | 07 | [07-builder-test-and-trace.md](07-builder-test-and-trace.md) | Builder | 8 of 9 | `Builder-TestTrace-Compare` |
 | 08 | [08-builder-deploy.md](08-builder-deploy.md) | Builder | 9 of 11 | `Builder-Deploy-Redeploy`, `Builder-Deploy-ChangeTarget` |
-
-**Canvas synced with the briefs (16 November 2026).** The canvas shows the Untested rule state, rule tests and
-the three-way "Fix with AI", rule chips on spans, judge reasons, run history, the simulated user, the CI
-workflow, the remote state backend, the Claude sign-in lines and the usage-data setting. The second-pass
-artboards in the "Not drawn yet" column are still to do.
 | 09 | [09-app-settings.md](09-app-settings.md) | Settings | 5 of 5 | none |
+
+**Canvas last synced with the briefs on 16 November 2026.** At that point the canvas showed the Untested rule
+state, rule tests and the three-way "Fix with AI", rule chips on spans, judge reasons, run history, the
+simulated user, the CI workflow, the remote state backend, the Claude sign-in lines and the usage-data
+setting. The second-pass artboards in the "Not drawn yet" column are still to do.
+
+**Canvas is behind the briefs (since 25 November 2026).** The briefs were revised after the develop merge that
+brought the Open Agent Kernel rebrand, the retirement of Azure Functions and the agent registry. The canvas
+still shows the earlier state. To bring it back in step:
+
+| Where on the canvas | What changes | Brief |
+|---------------------|--------------|-------|
+| Every artboard | The OAK look: orange accent, flat surfaces, 8px rectangular controls, no glass or glow, Archivo and JetBrains Mono only; drawn in the light mode with a `theme` tweak for the dark mode | 00 |
+| Every artboard | The coding agent's colour: the system's blue with the sparkle icon in place of magenta | 00 |
+| Canvas title, logos | Title "OAK Studio"; the OAK lockups and mark from `branding/` in place of the earlier marks | 00, 02, 03 |
+| UI copy | "No OAK project in `~/code/notes`", "Install OAK skills for Claude Code", "Reserved by OAK", "OAK runs them side by side in one runtime." | 02, 03, 04 |
+| `System` page | Button kinds primary, secondary and text link; `GradientHeading` removed; swatches in both modes | 01 |
+| `Start-NewProject-Framework` | The Claude Agent SDK card shows streaming as yes | 03 |
+| `Builder-Config` | The dimmed section list gains identity, authorization and registry | 04 |
+| `Builder-Deploy-NoTarget` and the Change target modal | Five target cards; the Azure serverless (Functions) card is removed | 08 |
+| `Settings-General` | "Theme" is a choice of System, Light and Dark | 09 |
 
 **Playing the prototypes.** Artboards marked interactive have a Play button on the canvas. Press it on the main artboard of each brief and follow the links between artboards. The pieces that really work are listed under Behaviour in each brief and were built as follows:
 
@@ -68,7 +85,7 @@ artboards in the "Not drawn yet" column are still to do.
 
 **What the design settled that the briefs left open**
 
-1. Brand mark and logos are the real files from `docs/static/img/`. Where no logo file exists (AWS, Azure, Google Cloud, Microsoft, Claude and a few providers) a two or three letter mark stands in.
+1. Brand mark and logos are real files. The canvas took them from `docs/static/img/` before the rebrand; the product marks there were since replaced, and the OAK set now lives in `branding/`. Where no logo file exists (AWS, Azure, Google Cloud, Microsoft, Claude and a few providers) a two or three letter mark stands in.
 2. App-layer styles (quiet buttons, status chips, canvas nodes, code lines, tables) live in one stylesheet beside the design system's tokens and use only its variables.
 3. Facts the briefs mark as unknown are shown as bracketed placeholders: `[VERSION]`, `[ACCOUNT]`, `[PATH]`, `[N]`, `[VPC ID]`, `[resource type]`, `[agent_invoke_url]`.
 4. The deploy flow's `ChangeTarget` is a modal inside the Deploy component, reached from Change target in Play, not a separate artboard.
@@ -94,9 +111,9 @@ artboards in the "Not drawn yet" column are still to do.
 
 ## How to use the briefs
 
-Claude Design runs in any Claude conversation and in Claude Code. Running it in Claude Code inside the Agent
-Kernel repository is the better fit, because it can read the repository for real names, config keys, Terraform
-variables and logo files. The standalone site at claude.ai/design closes on 14 December 2026; these briefs
+Claude Design runs in any Claude conversation and in Claude Code. Running it in Claude Code inside the OAK
+repository is the better fit, because it can read the repository for real names, config keys, Terraform
+variables, brand tokens and logo files. The standalone site at claude.ai/design closes on 14 December 2026; these briefs
 target Claude Design in Claude.
 
 1. Confirm the assumptions in [PHASE-1-PLAN.md](PHASE-1-PLAN.md) and the adaptations in brief 00.
@@ -106,14 +123,16 @@ target Claude Design in Claude.
    an alternative.
 4. Hand the canvas to Claude Code when a group of screens is approved.
 
-Every request must name the **Agent Kernel Design System**. The organization default is a presentation system
-for slides, and Claude Design uses the default unless told otherwise.
+Every request must name the **OAK Design System**. The organization default is a presentation system for
+slides, and Claude Design uses the default unless told otherwise. Until step 0 is done the account holds only
+the earlier Agent Kernel Design System, which must not be used for new screens.
 
 ## Build plan and starter prompts
 
 | Step | Briefs | Starter prompt |
 |------|--------|----------------|
-| 1. Foundation | 00, 01 | "Read `docs/specs/950-agent-kernel-studio-phase-1/00-project-brief.md` and `01-app-components.md`. Create a design canvas named Agent Kernel Studio using the Agent Kernel Design System. Build only the System page: the desktop shell and the app components, each group on its own artboard. Do not design any screens yet." |
+| 0. Identity (new, 25 November 2026) | 00 | "Read `branding/README.md`, `docs/src/css/custom.css` and `docs/specs/950-agent-kernel-studio-phase-1/00-project-brief.md`. Update the Agent Kernel Design System in this account to the Open Agent Kernel identity and rename it OAK Design System: the palette and both colour modes as tokens, Archivo and JetBrains Mono, the two radii, flat surfaces, the three button kinds, the OAK logo set. Then re-skin the existing Agent Kernel Studio canvas with it, rename the canvas OAK Studio, and apply the changes listed under 'Canvas is behind the briefs' in the README. Change no layout." |
+| 1. Foundation | 00, 01 | "Read `docs/specs/950-agent-kernel-studio-phase-1/00-project-brief.md` and `01-app-components.md`. Create a design canvas named OAK Studio using the OAK Design System. Build only the System page: the desktop shell and the app components, each group on its own artboard. Do not design any screens yet." |
 | 2. Explore the builder | 04, 05, 06 | "Read briefs 04, 05 and 06. Before building them, show three layout options for the builder, each on its own artboard, differing in where the inspector, the bottom panel and the Build with AI drawer live. Static is enough." |
 | 3. Builder core | 04, 05, 06 | "Build the first-pass artboards of briefs 04, 05 and 06 on the Builder page. Make them working prototypes: everything listed under Behaviour (must work) works." |
 | 4. Test and deploy | 07, 08 | "Build the first-pass artboards of briefs 07 and 08 as working prototypes." |
@@ -135,7 +154,7 @@ state and a loading state. Put each on its own artboard next to the current one.
 | Behaviour | Prototype links, and for working prototypes what must work |
 | States and variants | Each further artboard, marked first pass or second pass |
 | Tweaks | Levers Claude Design should expose on the artboard |
-| Handoff notes | The Agent Kernel concepts, files and commands behind the screen |
+| Handoff notes | The OAK concepts, files and commands behind the screen |
 | Open details | What is undecided for that screen |
 
 ## Decisions waiting on you
@@ -148,16 +167,24 @@ the code is real files in the working directory. What remains:
    coding agent. Say if any of them should come back into Phase 1.
 2. **How canvas edits become Python.** The plan writes config deterministically and writes Python only through
    scaffold templates and the coding agent. This is the main technical risk of Phase 1.
-3. **Deploy scope.** One Terraform target per project; the six Terraform modules; no Kubernetes with Helm.
+3. **Deploy scope.** One Terraform target per project; the five supported Terraform modules (Azure Functions
+   is retired, issue #957); no Kubernetes with Helm.
 4. **Coding agents.** Claude Code only in Phase 1, as the only adapter of an agent-neutral (ACP-shaped)
    coding-agent interface; the others appear as "Not set up" and arrive later as adapters.
 5. **The app's own folder.** Canvas layout, business rules, test scenarios and deploy history live in
    `.akstudio/` inside the working directory and can be committed.
 6. **Platform and stack.** Windows, Linux and macOS from the first release (decided). A React and TypeScript renderer, and where the app's source lives, are still open.
-7. **The look.** The briefs defer to the Agent Kernel Design System (Inter for body text, pill-shaped buttons
-   and tags, glass for floating layers) and add the adaptations in brief 00. Say if you want a flatter, denser
-   look.
-8. **Name.** "Agent Kernel Studio" and `.akstudio/` are working names.
+7. **The look.** Decided on 25 November 2026: the app takes the Open Agent Kernel identity (orange accent on
+   Prussian Blue, flat surfaces, rectangular controls, a light and a dark mode), with the adaptations in
+   brief 00. Two points there are still my defaults and need a yes or a correction:
+   - **The coding agent's colour.** The brand palette reserves no colour for AI, so the briefs use the
+     system's blue with the sparkle icon. Say if the coding agent should get a colour of its own outside the
+     five brand colours.
+   - **The colour mode.** Artboards are drawn in the light mode, the brand default, and the app follows the
+     operating system. Say if the app should be drawn dark first.
+8. **Name.** Decided on 25 November 2026: the runtime is Open Agent Kernel (OAK) and the company is not named.
+   "OAK Studio" (in full, Open Agent Kernel Studio) and `.akstudio/` are still working names. I chose
+   "OAK Studio" by the brand's naming rule; say if the Studio should be called something else.
 9. **Licence and price.** Recommended: free to use locally, ideally open source, since every local agent dev
    tool it competes with is free. Charging belongs to the hosted Studio.
 10. **Claude Code terms.** Confirm with Anthropic that the app may launch the user's own signed-in Claude

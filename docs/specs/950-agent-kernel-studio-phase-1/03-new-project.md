@@ -17,7 +17,7 @@ agent instead.
 
 ## Layout (all steps)
 
-- A minimal top bar: logo lockup and "Cancel".
+- A minimal top bar: the OAK horizontal lockup and "Cancel".
 - A centered column with a four-step stepper.
 - A wide main area and a narrow right column.
 - A sticky footer with "Back", a primary "Continue" and "Step n of 4".
@@ -31,7 +31,7 @@ agent instead.
 - A checkbox "Initialise a git repository", checked.
 
 **Step 2, `Start-NewProject-Framework`**
-- Heading "Which framework do your agents use?", helper "Agent Kernel runs them side by side in one runtime.
+- Heading "Which framework do your agents use?", helper "OAK runs them side by side in one runtime.
   You can mix frameworks later."
 - Eight selectable cards, each with the framework's real mark, name, one line and capability chips. The chips
   are facts; check them against the repository when it is available.
@@ -45,7 +45,7 @@ agent instead.
 | Smolagents | Lightweight code agents from Hugging Face | no | no | yes |
 | Pydantic AI | Type-safe agents with Pydantic | yes | yes | yes |
 | Microsoft Agent Framework | Agents for the Microsoft ecosystem | yes | yes | yes |
-| Claude Agent SDK | Claude Code as an agent runtime | no | yes | yes |
+| Claude Agent SDK | Claude Code as an agent runtime | yes | yes | yes |
 
 - Right column, card "What gets created": the file list `app.py`, `tool.py`, `config.yaml`, `app_test.py`,
   `test-config.yaml`, `pyproject.toml`, `build.sh`, `README.md`.
@@ -70,7 +70,7 @@ agent instead.
   1. "Write project files" (done), with the files listed.
   2. "Create the Python environment" · `uv venv` (done).
   3. "Install dependencies" · `uv sync` (running, with its output streaming).
-  4. "Install Agent Kernel skills for Claude Code" · `ak skill install --assistant claude` (pending).
+  4. "Install OAK skills for Claude Code" · `ak skill install --assistant claude` (pending).
   5. "Initialise git" · `git init` (pending).
 - A `PathChip` for `~/code/support-triage` with "Reveal".
 
@@ -102,5 +102,7 @@ Two further states are described here and share artboards with the steps through
 ## Handoff notes
 
 - The scaffold is what the bundled `ak-init` skill generates. The app must not invent a different layout.
-- The capability matrix is per framework adapter and changes between releases. Drive it from data.
+- The capability matrix is per framework adapter and changes between releases. Drive it from data. Streaming
+  was checked against the runner table in `docs/docs/core-concepts/runner.md` on 25 November 2026: only CrewAI
+  and Smolagents do not stream.
 - Local key storage is the `env` secret provider. Cloud secret stores are a deployment concern (brief 08).

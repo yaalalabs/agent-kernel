@@ -93,7 +93,7 @@ the fixture.
 
 | Artboard | Pass | Shows |
 |----------|------|-------|
-| `Builder-Deploy-NoTarget` | first | No `deploy/` folder yet. "Choose where to deploy", with six target cards, one per Terraform module: AWS serverless (Lambda and API Gateway), AWS containerized (ECS Fargate), Azure serverless (Functions), Azure containerized (Container Apps), Google Cloud serverless (Cloud Run, scale to zero), Google Cloud containerized (Cloud Run, always on). Each card says whether it needs Docker. The AI button "Ask Claude Code to set up the deploy". Choosing a card writes `deploy/` and opens the main artboard. |
+| `Builder-Deploy-NoTarget` | first | No `deploy/` folder yet. "Choose where to deploy", with five target cards, one per supported Terraform module: AWS serverless (Lambda and API Gateway), AWS containerized (ECS Fargate), Azure containerized (Container Apps), Google Cloud serverless (Cloud Run, scale to zero), Google Cloud containerized (Cloud Run, always on). Each card says whether it needs Docker. The AI button "Ask Claude Code to set up the deploy". Choosing a card writes `deploy/` and opens the main artboard. |
 | `Builder-Deploy-StateBackend` | first | A first deploy, before the steps. A card "Where Terraform keeps its state" with two choices. "Remote (recommended)", selected: "Create S3 bucket `[BUCKET]` in AWS account `[ACCOUNT]`, region eu-west-1, with versioning, encryption and state locking, and write `deploy/backend.tf`." "Local file": "For a scratch deploy only. State stays in `deploy/` on this computer and is lost with it." The literal command the app will run as a `CommandRow`, and a primary "Create backend" that names the account. |
 | `Builder-Deploy-Prerequisites` | first | Step 1 open with two failed checks: "Docker is not running" and "AWS profile `default` is not signed in", each with what to do, and "Recheck". Steps 2 to 5 are locked. |
 | `Builder-Deploy-Confirm` | first | A `ConfirmModal`: "Apply this plan?", "This creates `[N]` resources in AWS account `[ACCOUNT]`, region eu-west-1, using profile `default`. Cloud resources cost money until you destroy them.", a checkbox "I have reviewed the plan", "Cancel" and "Apply". |
@@ -102,7 +102,7 @@ the fixture.
 | `Builder-Deploy-Failed` | first | Step 4 failed. The error excerpt from Terraform, "Show log", "Run plan again" and the AI button "Ask Claude Code to diagnose". A note: "Some resources may have been created. A new plan shows the current state." |
 | `Builder-Deploy-Destroy` | first | A destructive `ConfirmModal`: "Destroy the deployment?", "This removes every resource this project created in AWS account `[ACCOUNT]`.", a field to type the project name, "Cancel" and "Destroy". It runs `terraform destroy`. A note: "The state bucket `[BUCKET]` is kept. Delete it when you retire the project." |
 | `Builder-Deploy-Redeploy` | second | After a first deploy. A card "Changed since the last deploy" lists the changed files. The plan reads "0 to add · `[N]` to change · 0 to destroy". |
-| `Builder-Deploy-ChangeTarget` | second | A modal with the six target cards and a warning: "Changing the target replaces the files in `deploy/`. Destroy the current deployment first." |
+| `Builder-Deploy-ChangeTarget` | second | A modal with the five target cards and a warning: "Changing the target replaces the files in `deploy/`. Destroy the current deployment first." |
 
 ## Tweaks
 
@@ -117,10 +117,16 @@ the fixture.
   list.
 - Model keys are passed to Terraform as variables at run time. They must never be written to
   `terraform.tfvars`.
-- "Configuration fits the target" encodes real Agent Kernel rules. For example, AWS Lambda rejects
-  `rest_sync` with `delta`. A combination the runtime would reject must fail here, before anything is applied.
-- Docker is needed for containerized targets only.
+- "Configuration fits the target" encodes real OAK rules. For example, AWS Lambda rejects `rest_sync` with
+  `delta`, and so does AWS ECS in queue mode. A combination the runtime or the Terraform module would reject
+  must fail here, before anything is applied.
+- Docker is needed by every target that ships a container image: both containerized targets and Google Cloud
+  serverless (Cloud Run). AWS serverless needs it only when the Lambda is packaged as an image, not for a zip
+  package.
 - One deploy target per project in Phase 1. Kubernetes with Helm is not a Terraform target and is not offered.
+- Azure Functions is not a target. OAK retired it (issue #957): the `AzureFunctions` handler is gone from
+  the package, and the `yaalalabs/ak-serverless/azurerm` module is being withdrawn. Azure deploys go to
+  Container Apps.
 - The coding agent can write the `deploy/` files through `ak-cloud-deploy`, but it never applies or destroys.
 - Remote state is the default. The app creates the backend with the cloud's own command-line tool, in the
   target's account and region, only after a confirmation that names the account, because the backend is real

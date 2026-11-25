@@ -61,7 +61,7 @@ Five tabs:
 | Properties | Name; Framework (LangGraph); Model (claude-sonnet-4-5); Handoff description ("Handles refunds, invoices and payment questions"); Instructions (a few lines of system prompt in the code editor, with the AI button "Improve with AI"); toggle "Human in the loop" with helper "Pause on refund_payment above $200"; toggle "Streaming" with helper "LangGraph supports token streaming" |
 | Tools | `lookup_order` and `refund_payment`, each with its signature and a "Requires approval" toggle; `refund_payment` is on, with the condition `amount > 200`. A "Bind tool" control. |
 | Hooks | Two ordered lists. System hooks are locked: input guardrail, multimodal, sandbox (pre); output guardrail, A2UI labelling (post). No agent hooks are registered on billing. An `InlineBanner`: "BR-009 expects the Signature footer post-hook here", with the AI button "Fix with AI". |
-| Run options | A `KeyValueEditor` with `config.recursion_limit = 50`, and a locked row `config.configurable.thread_id` noted "Reserved by Agent Kernel" |
+| Run options | A `KeyValueEditor` with `config.recursion_limit = 50`, and a locked row `config.configurable.thread_id` noted "Reserved by OAK" |
 | Output schema | A Pydantic class in the code editor, its JSON Schema beside it, and the note "Structured output replies are not streamed" |
 
 Inspector footer: "Show in app.py" and a danger "Remove".
@@ -93,7 +93,7 @@ knowledge node, routing from a channel); pan, zoom and the mini-map; undo and re
 |----------|------|-------|
 | `Builder-Canvas-Empty` | first | A new blank project. An `EmptyState`: "Drop a node to start, or describe your system", with "Add agent" and the AI button "Describe it with AI". The inspector reads "Select a node to edit it". |
 | `Builder-Code` | first | The Code tab. A `FileTree` of the fixture's project files, with markers on the files changed since the last commit. The code editor on `app.py`, where an OpenAI module, a LangGraph module and a Google ADK module are created. Actions: "Open in editor" and "Reveal in file manager". |
-| `Builder-Config` | first | The Config tab. Left: the `AKConfig` sections as a list, with a mark on the ones this project sets (session, execution, api, slack, whatsapp, gmail, multimodal, okf, trace, guardrail, sandbox, secret, logging; unset ones such as a2a, mcp, agui, thread and schedule are listed dimmed). Middle: a form for the selected section, "execution": mode `rest_sync`, message type `delta`, queue transport `in_memory`. Right: the same section as live YAML with the validation result. |
+| `Builder-Config` | first | The Config tab. Left: the `AKConfig` sections as a list, with a mark on the ones this project sets (session, execution, api, slack, whatsapp, gmail, multimodal, okf, trace, guardrail, sandbox, secret, logging; unset ones such as a2a, mcp, agui, thread, schedule, identity, authorization and registry are listed dimmed). Middle: a form for the selected section, "execution": mode `rest_sync`, message type `delta`, queue transport `in_memory`. Right: the same section as live YAML with the validation result. |
 | `Builder-Canvas-ChangedOnDisk` | first | A `ChangeOnDiskBanner` over the canvas: "app.py changed on disk. The canvas was updated.", with "Show changes". The affected node pulses once. The status bar reads "1 change from outside the app". |
 | `Builder-Canvas-Unreadable` | first | The canvas shows its last good view, dimmed, under a banner: "Cannot read app.py: syntax error at line 42", with "Open in Code" and the AI button "Ask Claude Code to fix". The inspector is disabled. |
 | `Builder-Canvas-Dragging` | second | A frozen frame of a drag: the "Guardrail" tile floats over the canvas and a `DropTarget` on kb-researcher's input port reads "Attach input guardrail". |
@@ -101,15 +101,15 @@ knowledge node, routing from a channel); pan, zoom and the mini-map; undo and re
 
 ## How nodes map to files
 
-| Group | Node | Agent Kernel concept | Written to |
-|-------|------|----------------------|------------|
-| Build | Agent | Native framework agent wrapped by a `Module` | `app.py` |
+| Group | Node | OAK concept | Written to |
+|-------|------|-------------|------------|
+| Build | Agent | Native framework agent wrapped by a `Module` | `app.py`; its catalog details (version, description, owner, tags, visibility), when set, in `registry.agents.<id>` in `config.yaml` |
 | Build | Tool | Plain Python function bound through a tool builder | `tool.py`, bound in `app.py` |
 | Build | Handoff edge | Agent-to-agent handoff | `app.py` |
 | Build | Hook | Pre- or post-hook on an agent | `hooks.py`, registered in `app.py` |
 | Build | Output schema | Structured output (Pydantic) | `app.py` |
 | Connect | Channel | Messaging integration adapter | The channel's block in `config.yaml`, its handler in `app.py` |
-| Connect | Protocol | REST, WebSocket, MCP, A2A, AG-UI | `api`, `mcp`, `a2a`, `agui` blocks in `config.yaml` |
+| Connect | Protocol | REST, WebSocket, MCP, A2A, AG-UI | `api`, `websocket_api`, `mcp`, `a2a`, `agui` blocks in `config.yaml`; the agents a protocol serves in `registry.agents.<id>.surfaces` |
 | Remember | Stores | Session, thread and attachment stores | `session`, `thread`, `multimodal` blocks |
 | Remember | Knowledge base | Knowledge backend | Knowledge wiring in `app.py`, roles in `config.yaml` |
 | Guard | Guardrail | Input or output guardrail provider | `guardrail` block |
@@ -132,6 +132,16 @@ Node positions are the only thing the canvas stores outside these files, in `.ak
   take a moment. A node being written shows a short "Writing app.py" state, and the command appears in the
   Commands panel.
 - The Deploy frame is not a node. It shows the single deploy target of the project.
+- Which protocols serve an agent is part of that agent's registry entry: `registry.agents.<id>.surfaces` in
+  `config.yaml`, a list from `rest`, `a2a`, `mcp` and `agui`, and every surface when unset. The earlier
+  `a2a.agents`, `mcp.agents` and `agui.agents` lists were removed, and a config that still sets one fails to
+  load. The canvas writes the registry entry and never those lists.
+- The agent registry already describes each loaded agent: id, name, version, description, owner, tags,
+  visibility, surfaces, tools, runner and whether it streams (`AgentDescriptor` in
+  `ak-py/src/agentkernel/core/model.py`). The introspection helper can start from it and add what it lacks:
+  handoffs and hooks.
+- `identity`, `authorization` and `registry` are optional blocks. A project without them runs with no
+  restriction and an in-memory registry, which is the state of the fixture.
 
 ## Open details
 
