@@ -28,6 +28,28 @@ class AgentRegistrationError(Exception):
     """An agent could not be registered because another agent already holds its id."""
 
 
+class AgentNotFoundError(LookupError):
+    """A request named an agent it cannot have: one that does not exist, or one the caller may not see.
+
+    One error, with one text, for both, so no surface can be used to learn whether a name exists. An
+    HTTP route answers it with a 404 carrying that text.
+
+    It is a class of its own, and not a bare ``LookupError``, so that a surface maps it exactly: the
+    ``KeyError`` and ``IndexError`` a hook, a tool or a session store may raise in the middle of a run
+    are lookup errors too, and are failures of the run, not a missing agent.
+    """
+
+    def __init__(self, agent: str):
+        """
+        :param agent: The name the request gave.
+        """
+        super().__init__(agent)
+        self.agent = agent
+
+    def __str__(self) -> str:
+        return f"Agent '{self.agent}' not found"
+
+
 class AgentDescriptorPage(BaseModel):
     """One page of a registry listing.
 

@@ -132,9 +132,13 @@ class _FakeChatService:
     def __init__(self, session, chunks, during_run=None):
         self._handler = _FakeHandler(session, chunks, during_run)
         self.prepared = []
+        self.surfaces = []
+        self.principals = []
 
-    def prepare_agent_handler(self, session_id, agent):
+    def prepare_agent_handler(self, session_id, agent, surface=None, principal=None):
         self.prepared.append((session_id, agent))
+        self.surfaces.append(surface)
+        self.principals.append(principal)
         return self._handler
 
 
@@ -238,6 +242,35 @@ class TestMarkerDispatchIsStructural:
         assert body["done"] is True, "an AG-UI error chunk without `done` never ends the client's stream"
         assert body["error"]
         assert ATTR_AGUI in outputs[0].attributes
+
+
+class TestTheRunnerAppliesTheSurfaceTheBodyCarries:
+    """The runner prepares the handler itself for an AG-UI run, so it hands the body's surface on itself (#603)."""
+
+    @pytest.mark.parametrize("surface", ["agui", None])
+    def test_the_agent_is_selected_for_the_surface_the_edge_named(self, surface):
+        transport = InMemoryTransport()
+        chat_service = _FakeChatService(Session("t-1"), _text_run())
+        body = AGUIRunRequest(session_id="t-1", agent="planner", requests=[], surface=surface)
+        message = _agui_message()
+        message.body = body.model_dump_json(exclude_none=True)
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(message)
+
+        assert (chat_service.prepared, chat_service.surfaces) == ([("t-1", "planner")], [surface])
+
+    @pytest.mark.parametrize("principal", [PRINCIPAL, None], ids=["authenticated", "nobody"])
+    def test_the_agent_is_checked_for_the_principal_the_body_carries(self, principal):
+        """The access gate is asked at the pre-run check for whoever the run will act as (#603, iteration 18)."""
+        transport = InMemoryTransport()
+        chat_service = _FakeChatService(Session("t-1"), _text_run())
+        body = AGUIRunRequest(session_id="t-1", agent="planner", requests=[], principal=principal)
+        message = _agui_message()
+        message.body = body.model_dump_json(exclude_none=True)
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(message)
+
+        assert chat_service.principals == [principal]
 
 
 class TestTheMarkerSurvivesTheRunnerHop:
@@ -511,6 +544,106 @@ class TestTheEdgeServesAgentsItDoesNotHost:
         assert refused.value.status_code == 404
 
 
+class TestTheEdgeAnswersForTheCaller:
+    """With an `authorization` block the edge decides for the caller before it enqueues (#603, plan iteration 20),
+    for agents another process hosts: the registry says what exists, the access gate what this caller may have.
+    `planner` is private and granted to u1; `status` is public and granted to nobody; `vault` is private."""
+
+    GRANTS = [{"subjects": ["user:u1"], "agents": ["planner"], "level": "read"}]
+
+    @pytest.fixture
+    def registry(self, descriptor_only_registry):
+        return descriptor_only_registry(
+            [
+                AgentDescriptor(id="planner", name="planner", runner="openai", supports_streaming=True),
+                AgentDescriptor(id="status", name="status", runner="openai", supports_streaming=True, visibility="public"),
+                AgentDescriptor(id="vault", name="vault", runner="openai", supports_streaming=True),
+            ]
+        )
+
+    @staticmethod
+    def _as(subject: str):
+        request = _AuthenticatedRunRequest()
+        request.state = SimpleNamespace(principal=Principal(subject=subject, provider="test", namespace="test"))
+        return request
+
+    def test_discovery_lists_what_the_caller_may_see_of_the_registry(self, registry, authorization):
+        def _listing_for(subject: str) -> dict:
+            async def _authenticated(request: Request) -> None:
+                request.state.principal = Principal(subject=subject, provider="test", namespace="test")
+
+            app = FastAPI()
+            app.include_router(handler.get_router(), dependencies=[Depends(_authenticated)])
+            return TestClient(app).get("/agui/agents").json()
+
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        authorization(grants=self.GRANTS)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            assert _listing_for("u1") == {"agents": ["planner", "status"]}
+            assert _listing_for("u2") == {"agents": ["status"]}
+
+    @pytest.mark.asyncio
+    async def test_a_hidden_agent_is_the_unknown_agents_404_and_nothing_is_enqueued(self, registry, authorization):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        authorization(grants=self.GRANTS)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as hidden:
+                await handler._run("vault", self._as("u2"))
+            with pytest.raises(HTTPException) as unknown:
+                await handler._run("ghost", self._as("u2"))
+
+        assert (hidden.value.status_code, hidden.value.detail) == (404, "Agent 'vault' not found")
+        assert (unknown.value.status_code, unknown.value.detail) == (404, "Agent 'ghost' not found")
+        assert handler._producer.requests == []
+
+    @pytest.mark.asyncio
+    async def test_an_agent_the_caller_sees_and_may_not_use_is_a_403_and_nothing_is_enqueued(self, registry, authorization):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        authorization(grants=self.GRANTS)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as refused:
+                await handler._run("status", self._as("u2"))
+
+        assert (refused.value.status_code, refused.value.detail) == (403, "Principal 'u2' holds no level on agent 'status'")
+        assert handler._producer.requests == []
+
+    @pytest.mark.asyncio
+    async def test_a_caller_with_a_level_is_enqueued_as_itself(self, registry, authorization):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        authorization(grants=self.GRANTS)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            await handler._run("planner", self._as("u1"))
+
+        [queued] = handler._producer.requests
+        assert (queued.agent, queued.principal.subject) == ("planner", "u1")
+
+    @pytest.mark.asyncio
+    async def test_the_agent_is_decided_from_the_one_descriptor_read(self, authorization, descriptor_only_registry):
+        reads = []
+
+        class _Counting(descriptor_only_registry):
+            def descriptor(self, id):
+                reads.append(id)
+                return super().descriptor(id)
+
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        authorization(grants=self.GRANTS)
+        registry = _Counting([AgentDescriptor(id="planner", name="planner", runner="openai", supports_streaming=True)])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            await handler._run("planner", self._as("u1"))
+
+        assert reads == ["planner"]
+
+
 class TestTheEdgeNeverBlocksTheEventLoop:
     """The edge holds the caller's SSE socket, so a blocking call there stalls every request.
 
@@ -652,6 +785,18 @@ class TestAPauseIsTheRunsTerminalOutcome:
 
         [request] = handler._producer.requests
         assert request.principal == PRINCIPAL
+
+    @pytest.mark.asyncio
+    async def test_the_queued_request_says_it_entered_by_agui(self, monkeypatch):
+        """The edge resolved the agent as one on `agui`; the body carries that surface to the runner, which applies
+        it, and never `rest`, when it selects the agent (#603, design refinement 13)."""
+        handler = _edge_handler(monkeypatch)
+
+        # The enqueue happens before the response begins: the stream is not read, since nothing answers it here.
+        await handler._run("planner", _StubRequest())
+
+        [request] = handler._producer.requests
+        assert request.surface == "agui"
 
     @pytest.mark.asyncio
     async def test_the_queued_request_names_the_agent_by_its_id(self, monkeypatch):

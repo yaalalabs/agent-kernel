@@ -52,7 +52,7 @@ Which capability would you like to add?
 13. **Secret Resolution** — Read API keys through `SecretManager` (environment first, then AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider)
 14. **Human in the Loop** — Pause a run for a person's approval or answer and resume from their decision (a gated tool or an interrupt, a `resume` block on the next request)
 15. **A2UI** — Let an agent answer with an interface instead of prose: its JSON reply is labelled so the client receives a document, not a string
-16. **Identity** - Authenticate callers through a configured identity provider (static credentials, any OIDC issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft Entra ID, Firebase, or your own) and read the caller as a `Principal` in tools and hooks
+16. **Identity** - Authenticate callers through a configured identity provider (static credentials, any OIDC issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft Entra ID, Firebase, or your own) and read the caller as a `Principal` in tools and hooks; an optional `authorization` block then grants principals a level on agents, so each caller runs and is listed only the agents it may
 17. **Agent Registry** - Describe each agent for the catalog (`GET /api/v1/agents`), A2A cards and MCP tools, choose the surfaces it is served on, and share the registry between processes (Redis, Valkey or DynamoDB)
 
 ### Step 3: Generate Changes
@@ -1408,6 +1408,12 @@ if __name__ == "__main__":
 Listings are scoped to the authenticated principal, reading or changing another user's task is
 refused (403), an anonymous caller is a 401, and the handler refuses to build without the block.
 
+**When an occurrence is skipped:** each occurrence is checked before it runs. If the task's agent
+is gone from the process that runs it, or no longer served on the surface the task was created
+by, the occurrence is not run. It is still counted, a one-time task is completed by it, and the
+task's `last_error` says why (`Agent 'reports' not found`) until the next occurrence that runs.
+Read it back with `GET /api/v1/schedules/{task_id}`.
+
 See `examples/api/schedule-openai`.
 
 ---
@@ -1477,7 +1483,7 @@ button** — no extra code and no config: a press becomes the same decision the 
 Slack's Deny opens a short form for the reason. Say two things when you set that up: Slack needs
 **Interactivity & Shortcuts** turned on with the same Request URL as its event subscription, or the
 buttons do nothing; and anyone who can see the message can press, since OAK ships no
-approver policy (the presser's id reaches the run as `acting_user_id`, for a `PreHook` to check).
+approver policy (the presser is the run's principal, `session.get_principal()`, for a `PreHook` to check).
 Every other platform gets the pause as readable text.
 
 A decision takes `status` (`approved` | `denied` | `cancelled` — "nobody decided", which never reaches
@@ -1664,8 +1670,8 @@ and/or `pass_through: <claim path>`; or a dotted path to a `RoleMapper`, whose o
 `config.model_extra`). `mapping` looks up only the principal's groups by default; list the claim paths
 whose values it should also look up in `claims: [...]` (e.g. `claims: [permissions]` for Auth0 RBAC).
 Map only claims the issuer controls: a user sets many of their own (a display name, a username, an
-email), and matching those would let one of them grant a role. Nothing enforces roles yet; read them
-in a hook or tool if you need them now.
+email), and matching those would let one of them grant a role. A grant of the `authorization` block
+names a role as `role:<name>` (see "Granting access" below); a hook or a tool can read them too.
 
 ```yaml
 identity:
@@ -1709,6 +1715,46 @@ suite. See `examples/api/thread-openai` (two users), `examples/api/agui` (one cr
 `examples/aws-serverless/openai-auth` (the static block and an Auth0 block in its README) and the
 `ak-cloud-deploy` skill for where the block lives on each deployment target.
 
+**Granting access (optional):** authenticating a caller does not limit which agents it runs. An
+`authorization` block does. Without it nothing is restricted; with it the policy denies by default,
+so a caller runs an agent only when a grant gives it a level on that agent.
+
+```yaml
+authorization:
+  type: static                       # static, or a dotted path to an Authorizer subclass
+  static:
+    grants:
+      - subjects: [group:support]    # '*' | authenticated | user:<subject> | group:<name> | role:<name> | provider:<name>
+        agents: [support-triage]     # an agent id | '*' | tag:<name>
+        level: write                 # read | write | admin; the highest level granted wins
+      - subjects: [provider:messaging:slack]   # a Slack sender is not a user:<subject>
+        agents: [support-triage]
+        level: read
+    tools:
+      - agent: support-triage
+        tiers: {refund_order: admin} # the lowest level that is offered the tool
+        deny: [purge_queue]
+```
+
+Tell the user what changes once the block exists:
+- An agent a caller may not see answers like one that does not exist (a 404 on REST chat, AG-UI and
+  every A2A route of the agent; an MCP tool that is not listed). An agent it sees and holds no level
+  on is a 403 (`Agent not available` on MCP). Who sees an agent without a grant is its `visibility`:
+  `private` (default) nobody, `internal` every authenticated caller, `public` everyone.
+- The catalog (`GET /api/v1/agents`), `/a2a/catalog`, MCP `tools/list` and AG-UI's `/agents` list
+  only the agents the caller may see.
+- A session is continued only by the principal that owns it, and a scheduled occurrence whose owner
+  lost access is skipped, with the reason in the task's `last_error`.
+- Every caller needs a grant: a messaging sender through `provider:messaging:<platform>`, a LiveKit
+  caller through `provider:realtime:livekit`, a caller with no credential (and a CLI run without
+  `--token`) through `*`.
+- The tool policy is published for each run (`ToolContext.get().access_level`) and narrows the tools
+  and skills the listings show. It does not stop a tool call yet, so do not rely on `deny` or `tiers`
+  alone to keep a caller away from a tool: check `access_level` inside the tool, or do not grant the
+  agent.
+- Put the same block in the configuration of every process (the one that accepts requests and the
+  one that runs agents).
+
 ---
 
 #### Agent Registry
@@ -1742,9 +1788,14 @@ registry:
 ```
    An unknown key under an agent, or under `registry`, stops the application at startup.
 
-2. Choose the surfaces. An agent with no `surfaces` is on every surface. `a2a`, `mcp` and `agui`
-   decide whether the agent can be reached on that protocol; `rest` decides whether it is listed in
-   the catalog. `visibility` (`private`, `internal`, `public`) is recorded and not enforced yet.
+2. Choose the surfaces. An agent with no `surfaces` is on every surface. Each of `rest`, `a2a`,
+   `mcp` and `agui` decides whether the agent can be reached that way. An agent kept off `rest` is
+   left out of the catalog, a chat request naming it is a 404 (the answer an unknown agent gets), and
+   a chat request naming no agent runs the first agent on `rest`. Messaging integrations, the CLI and
+   a task an agent schedules itself are not governed by `surfaces`; a task created by a chat request
+   keeps that request's surface for its occurrences. `visibility` (`private`, `internal`,
+   `public`) says who may see an agent without holding a level on it once an `authorization`
+   block exists (see Identity, "Granting access"); without that block it changes nothing.
 
 3. Read the catalog: `GET /api/v1/agents?limit=50&tags=support` returns
    `{"agents": [<descriptor>...], "next_cursor": ...}`, ordered by id.
@@ -1760,8 +1811,11 @@ registry:
    - Start the runner first: A2A cards and MCP tools are built when the IO process starts.
    - Every agent runner on the input queue must host every agent the IO process serves.
    - Each process applies its own `registry.agents` block to what it reads, so put `surfaces`
-     restrictions in the configuration of the process that serves the surface (or in one file
-     both processes read).
+     restrictions in one file both processes read (or declare them in code with
+     `Module.describe`). The IO process decides what it lists and mounts, and answers the 404
+     itself for a chat request naming an agent its registry does not know or keeps off `rest`;
+     the agent runner checks again from its own copy of the descriptor. An IO process whose
+     registry knows no agent at all queues every request and leaves the answer to the runner.
    - Descriptors do not expire and a `ttl` is refused at startup. After a deployment that renames
      or removes an agent, delete its record from the store.
 

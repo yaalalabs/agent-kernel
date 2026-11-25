@@ -73,7 +73,12 @@ class Module(ABC):
     def load(self, agents: list[Any]) -> "Module":
         """
         Loads and registers all agents to the runtime by replacing the current agents.
+
+        With an `authorization` block the access gate then checks its policy against the agents just loaded: a
+        tool policy naming a tool one of them does not have, or an agent with tools that cannot be gated, fails
+        the load, and the agents it registered are deregistered again.
         :param agents: List of agents to load.
+        :raises AKConfigError: If the authorization policy cannot be enforced for one of the agents.
         """
         self.unload()
         registered = []
@@ -87,7 +92,26 @@ class Module(ABC):
                 self._roll_back()
                 raise
         self._agents = registered
+        try:
+            self._validate_access(registered)
+        except Exception:
+            self._roll_back()
+            raise
         return self
+
+    @staticmethod
+    def _validate_access(agents: list[Agent]) -> None:
+        """
+        Asks the access gate whether its policy fits the agents just loaded; a no-op without an `authorization` block.
+
+        Another module may load after this one, so only what concerns these agents is checked here: what compares
+        the policy with every registered agent is left to the check made once they have all loaded.
+        :param agents: The agents this load registered.
+        :raises AKConfigError: If the policy cannot be enforced for one of the agents.
+        """
+        gate = Runtime.access_gate()
+        if gate is not None:
+            gate.validate_configuration(agents, registry_wide=False)
 
     def _roll_back(self) -> None:
         """

@@ -8,7 +8,7 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's new
-The agent registry and identity and access are the latest additions.
+Authorization, the agent registry and identity and access are the latest additions.
 [See everything that is new](./whats-new.md).
 :::
 

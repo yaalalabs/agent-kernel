@@ -3,12 +3,13 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server.auth import AuthCheck, AuthContext
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.tools.tool import ToolResult
 
 from ...core.config import AKConfig
-from ...core.model import BaseRunRequest
+from ...core.model import AgentDescriptor, BaseRunRequest
 from ...core.runtime import Runtime
 from .auth import AKAccessToken, AKMCPAuthProvider
 
@@ -26,6 +27,10 @@ class MCP:
     store (#780). One is registered per agent the registry knows, named by the agent's id and
     described by its descriptor's catalog text. Tools an application adds to ``MCP.get()`` are its
     own code and still run here.
+
+    With an ``authorization`` block the agent tools are the caller's own (#603): each carries a
+    check FastMCP runs per request, so a caller is listed, and can call, only the agents it may
+    see, and a call the access gate refuses is answered ``Agent not available``.
     """
 
     PROTOCOL = "mcp"
@@ -59,6 +64,15 @@ class MCP:
     class Executor:
         ERROR_MESSAGE = "The agent could not process the request"
         TIMEOUT_MESSAGE = "Timed out waiting for the agent's reply"
+        UNAVAILABLE_MESSAGE = "Agent not available"
+        """
+        What a caller is told when the agent is not its to run: no level on it, hidden from it, or
+        gone. One text for all three, so the answer says nothing about which
+        """
+        REFUSED_STATUSES = (403, 404)
+        """
+        The reply statuses that are the access gate's refusal, made before the queue or by the runner
+        """
 
         def __init__(self, agent_name: str):
             self.agent_name = agent_name
@@ -86,7 +100,8 @@ class MCP:
             naming the attached image.
 
             A failed run, a timeout or any other error raises ``ToolError`` with a fixed message;
-            the details go to this executor's log only.
+            the details go to this executor's log only. A call the access gate refuses (the caller
+            holds no level on the agent, or may not see it) raises ``ToolError("Agent not available")``.
             """
             from ...pipeline.request_handler import ReplyTimeoutError
 
@@ -94,7 +109,9 @@ class MCP:
             # The principal the verifier put on this call's access token; a server built without
             # auth, or a token another verifier minted, authenticated nobody we know.
             principal = AKAccessToken.principal_of(get_access_token())
-            body = BaseRunRequest(prompt=prompt, agent=self.agent_name, session_id=session_id, principal=principal)
+            # The body names the surface it entered by: the runner serves the call the agents on `mcp`, whatever the
+            # agent's descriptor says of `rest`.
+            body = BaseRunRequest(prompt=prompt, agent=self.agent_name, session_id=session_id, principal=principal, surface="mcp")
             try:
                 reply = await MCP.get_client().request(body, protocol=MCP.PROTOCOL)
             except ReplyTimeoutError as e:
@@ -104,6 +121,10 @@ class MCP:
                 self.log.exception(f"Agent request failed: {e}")
                 raise ToolError(self.ERROR_MESSAGE) from e
 
+            if reply.status_code in self.REFUSED_STATUSES:
+                # The policy's reason names the principal and the agent: it is the operator's to read, not the caller's.
+                self.log.warning(f"Refused: request_id={reply.request_id}, status_code={reply.status_code}, reason={reply.error}")
+                raise ToolError(self.UNAVAILABLE_MESSAGE)
             if reply.is_error or reply.result is None:
                 self.log.error(f"Agent reply failed: request_id={reply.request_id}, status_code={reply.status_code}, error={reply.error}")
                 raise ToolError(self.ERROR_MESSAGE)
@@ -129,6 +150,32 @@ class MCP:
 
             cls._client = RestHandler()
         return cls._client
+
+    @staticmethod
+    def _visible_to_the_caller(descriptor: AgentDescriptor) -> AuthCheck:
+        """The check an agent's tool is registered with: whether the caller of a request may see the agent.
+
+        FastMCP runs it for every listing and every call, with that request's access token. A tool
+        whose check fails is left out of ``tools/list`` and a call to it is answered like a call to
+        a tool that does not exist, so a hidden agent is not told apart from an unknown one. Without
+        an ``authorization`` block the check admits everyone. The access gate is read at each
+        request, and a check that raises is FastMCP's denial: an authorizer that cannot answer
+        hides the tool.
+
+        Visibility is what lists a tool, not a level: an agent the caller sees and may not use is
+        listed, and calling it is refused by the precheck before the queue (``Agent not available``).
+
+        :param descriptor: The agent's descriptor as it was when the tool was registered.
+        :return: The check to pass as the tool's ``auth``.
+        """
+
+        async def visible(context: AuthContext) -> bool:
+            gate = Runtime.access_gate()
+            if gate is None:
+                return True
+            return await gate.visible_async(AKAccessToken.principal_of(context.token), descriptor)
+
+        return visible
 
     @classmethod
     def get(cls) -> FastMCP:
@@ -167,6 +214,7 @@ class MCP:
                     name=descriptor.id,
                     # Always given: left out, FastMCP would publish the executor's own docstring.
                     description=descriptor.description or cls.UNDESCRIBED_TOOL_TEXT.format(agent=descriptor.id),
+                    auth=cls._visible_to_the_caller(descriptor),
                 )
             if descriptors and not cls._executors:
                 # Agents exist and none became a tool: without this the tool list just has no agents in it.

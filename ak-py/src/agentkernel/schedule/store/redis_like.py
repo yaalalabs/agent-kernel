@@ -88,12 +88,12 @@ class _RedisLikeScheduleStore(ScheduleStore):
         tasks.sort(key=lambda task: task.updated_at, reverse=True)
         return paginate(tasks, limit, offset)
 
-    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool) -> None:
+    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool, error: str | None = None) -> None:
         task = self.get(task_id)
         if task is None:
             self._log.warning(f"Ignoring trigger record for unknown scheduled task {task_id}")
             return
-        self._write(task.apply_trigger(request_id, occurred_at, completed))
+        self._write(task.apply_trigger(request_id, occurred_at, completed, error))
 
     def clear(self) -> None:
         self._log.debug(f"Clearing all scheduled task keys with prefix {self._prefix}")
