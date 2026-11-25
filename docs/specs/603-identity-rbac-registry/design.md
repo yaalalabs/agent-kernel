@@ -542,25 +542,36 @@ and `research/design-options.md` section 4).
   `tool_filter(principal, agent) -> ToolFilter` (the per-run allow set over
   `agent.get_tool_names()`, with `reason` per denied tool and the resolved `level`, which
   `ToolContext.access_level` exposes).
-- As built (spec refinement 16): the policy checks below are the backend's own
-  (`Authorizer.validate`, which the gate calls), `Module.load` leaves the registry-wide warnings to
-  the `get_router()` call, a shared-channel session is matched on provider and namespace alone, and
-  a request naming no agent is decided for the default agent where the agent runs.
-- As built (spec refinement 17): a scheduled task keeps the surface of the request that created
-  it and its occurrences are served the agents on it; the precheck at the accepting process
-  covers a named agent and is skipped by a process whose registry knows no agent, which leaves
-  the answer to the runner; an occurrence is skipped whenever the availability check refuses its
-  named agent, with or without an `authorization` block; and a catalog entry is narrowed over
-  the tools its descriptor records (`AccessGate.narrow`).
-- As built (spec refinement 18): A2A answers a refusal in front of the SDK, which has no
-  permission error (a hidden agent is the bare 404 of an unmounted path on every route, a
-  visible one with no level a 403); a card's ETag is the SDK's, over the card as served; A2A
-  and the direct AG-UI handler decide among the agents they serve without reading the registry
-  per request; and a realtime call whose caller is refused is told once and held back. A2A's
-  routes are mounted per agent, so one fallback route behind them answers every request no A2A
-  route served (a name that is not mounted, a wrong method, a refused credential, a trailing
-  slash) the same for every name; with an `authorization` block a wrong method is therefore a
-  404, not a 405.
+- As built (spec refinement 16):
+  - The policy checks below are the backend's own (`Authorizer.validate`, which the gate calls).
+  - `Module.load` leaves the registry-wide warnings to the `get_router()` call.
+  - A shared-channel session is matched on provider and namespace alone.
+  - A request naming no agent is decided for the default agent where the agent runs.
+- As built (spec refinement 17):
+  - A scheduled task keeps the surface of the request that created it, and its occurrences are
+    served the agents on it.
+  - The precheck at the accepting process covers a named agent.
+    - A process whose registry knows no agent skips it, which leaves the answer to the runner.
+  - An occurrence is skipped whenever the availability check refuses its named agent, with or
+    without an `authorization` block.
+  - A catalog entry is narrowed over the tools its descriptor records (`AccessGate.narrow`).
+- As built (spec refinement 18):
+  - A2A answers a refusal in front of the SDK, which has no permission error.
+    - A hidden agent is the bare 404 of an unmounted path, on every route.
+    - A visible agent the caller holds no level on is a 403.
+  - A card's ETag is the SDK's, over the card as served.
+  - A2A and the direct AG-UI handler decide among the agents they serve, without reading the
+    registry per request.
+  - A realtime call whose caller is refused is told once and held back.
+  - A2A's routes are mounted per agent, so one fallback route behind them answers every request
+    no A2A route served the same for every name: a name that is not mounted, a wrong method, a
+    refused credential, a trailing slash.
+    - Cost: with an `authorization` block a wrong method is a 404, not a 405.
+- As built (spec refinement 19):
+  - A `tag:` entry is matched against a hosted agent's own descriptor, so no run reads the
+    registry for a tag.
+  - The registry is listed only for an agent hosted elsewhere, at most once per question or
+    listing.
 - Startup validation (`AccessGate.validate_configuration()`, called from `Module.load` for the
   agents it loads and from the handlers' `get_router()`): an `allow`, `deny` or `tiers` entry naming
   a tool the loaded agent does not have raises `AKConfigError`; a grant naming an unknown agent id

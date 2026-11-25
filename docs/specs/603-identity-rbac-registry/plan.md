@@ -758,7 +758,8 @@ the spec section it changes.
   section: the system tool tiers reach the static backend as a per-agent lookup handed over by
   the factory, not by the gate; `user:` never matches the anonymous principal; a `tag:` entry
   reads the registry only for a principal one of whose grants selects by tag, off the event
-  loop, and once per question or listing; a second tool policy for one agent is refused. The
+  loop, and once per question or listing (since 2026-11-25 not at all for a hosted agent,
+  spec refinement 19); a second tool policy for one agent is refused. The
   gate of iteration 18 takes its authorizer from `AuthorizerFactory.get()` and lists through
   `authorizer.visible_agents`. No user documentation yet: the block does nothing until the gate
   consults it.
@@ -954,6 +955,9 @@ adds the caller to a check that already knows the surface.
   - **Cost to revisit with the first engine:** building a run's filter asks the authorizer for
     the level, the allowed list and then once per denied tool for its reason. Over the static
     backend each is cheap, but a policy with `tag:` grants lists the registry for each.
+    Amended 2026-11-25 (spec refinement 19): not for a run, whose agent is hosted and
+    answers from its own descriptor. The listing per question remains for an agent hosted
+    elsewhere; see Phase D as shipped.
   - **Tiers:** every sandbox tool and all five schedule tools are `write`, the reading ones
     included; `write_kb` and `update_agui_state` are `write`; the rest keep `read`.
   - No user documentation yet. The block now gates runs, but the catalog, the pipeline edge and
@@ -1139,6 +1143,20 @@ the spec section it changes.
     `README.md`. The landing page's announcement line is left on the released identity
     capability: it announces what a release carries.
   - The bundled user skill `ak-add-capabilities`, where it said visibility is not enforced.
+- **From the review of the phase D pull request (#1011).**
+  - A `tag:` grant listed the whole registry for each question, and on the direct chat path
+    the first of them holds the server's event loop. `StaticAuthorizer` takes a
+    `hosted_descriptor` lookup and asks it first, so a run reads the registry for no tag
+    (spec refinement 19). `from_config` defaults it together with `descriptor_lookup`.
+  - Still a cost: a process that hosts none of the agents it serves lists the registry once
+    per agent it is asked about, for a caller holding a `tag:` grant (a narrowed catalog
+    page, the A2A catalog, MCP `tools/list`).
+  - `A2A.reset()` drops the cards, their descriptors, the executors and the client together.
+    Five test fixtures reset the cards and left the descriptors of an earlier build behind,
+    which a gate then listed with no card to show (`KeyError`).
+  - Stale text: the two dev skills still said nothing consults the authorizer, the spec
+    counted sixteen refinements, and the design's mirrors of refinements 16 to 18 were
+    paragraphs. The mirrors are one point per decision now.
 - **Stated in every one of those places:** a tool policy (`tiers`, `allow`, `deny`) is published
   for each run and narrows what the catalog and an A2A card list, and no framework adapter stops
   a call by it until phase E. Agent access, visibility and session ownership are enforced.

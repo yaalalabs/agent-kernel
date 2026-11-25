@@ -13,7 +13,7 @@ Evidence is cited against `feature/603-identity-rbac-registry` at `d9d0d18bc` (a
 over the develop merge `287ec7485`; every `.py` cited is identical in both). The change ships as a
 breaking change with no compatibility window (design section 10).
 
-Sixteen places where detailing refined the design are listed in [Design refinements](#design-refinements)
+The places where detailing refined the design are listed in [Design refinements](#design-refinements)
 at the end; each is a mechanism change inside a settled decision, not a new decision, and each is
 reflected in `design.md`.
 
@@ -1042,9 +1042,11 @@ class Authorizer(ABC):
 object every instance of a backend shares.
 
 **`StaticAuthorizer`** (`authz/static.py`), constructed with `grants`, `tools`, a
-`descriptor_lookup: Callable[[], list[AgentDescriptor]]` and an optional `system_tiers:
+`descriptor_lookup: Callable[[], list[AgentDescriptor]]`, an optional `hosted_descriptor:
+Callable[[str], AgentDescriptor | None]` and an optional `system_tiers:
 Callable[[str], Mapping[str, AccessLevel]]`, its only dependencies, for `tag:` and for tier
-defaults. `from_config(authorization_config, descriptor_lookup=None, system_tiers=None)` builds it
+defaults. `from_config(authorization_config, descriptor_lookup=None, system_tiers=None,
+hosted_descriptor=None)` builds it
 from the block's `static` section (`AKConfigError` when the section is missing) and supplies each
 lookup that is omitted (below); the constructor reads no configuration and keeps no copy of the
 registry:
@@ -1064,10 +1066,16 @@ registry:
   `groups`; `role:<name>` on `roles`. `SubjectMatcher.is_valid(form)` is the grammar check the
   table uses.
 - Agent entries: an id (matched exactly), `*`, or `tag:<name>` resolved at evaluation time against
-  `descriptor_lookup()` (every descriptor whose `tags` contains the name; none matches nothing).
-  The lookup is a registry listing, which over a shared registry is a blocking store read, so it
-  runs through `asyncio.to_thread`, and only for a principal one of whose grants selects by tag:
-  a policy without `tag:` entries never reads the registry.
+  the agent's `tags` (a tag no descriptor carries matches nothing), and only for a principal one
+  of whose grants selects by tag: a policy without `tag:` entries never reads the registry.
+  - An agent the process hosts answers with the tags of its own descriptor
+    (`hosted_descriptor(agent_id)`, no read). Every run is of a hosted agent, so no question a
+    run asks reads the registry for a tag (design refinement 19).
+  - An agent hosted elsewhere is looked up in `descriptor_lookup()`, a registry listing, which
+    over a shared registry is a blocking store read: it runs through `asyncio.to_thread`, at
+    most once per question or listing. When a listing reads the registry for one candidate,
+    a hosted candidate still answers from its own descriptor.
+  - Without a `hosted_descriptor` every agent's tags come from `descriptor_lookup()`.
 - `agent_level`: the maximum `level` over grants where any subject matches and any agent entry
   matches `agent_id`; `None` when none.
 - `ToolPolicyTable` holds the section's `tools` by agent, each entry a `_ToolPolicyConfig` or the
@@ -1096,8 +1104,11 @@ block and nothing else (design refinement 15): a built-in one through its `from_
 reads the section named after it, and a dotted path to an `Authorizer` subclass by handing the
 whole block to its constructor, since it owns its policy. What the static backend looks up it
 supplies itself, in `StaticAuthorizer.from_config` and not in the factory or the gate:
-`descriptor_lookup` defaults to `Runtime.current().registry.descriptors`, resolved when a decision
-asks (so the shared authorizer follows a context-managed runtime), and `system_tiers` to
+`descriptor_lookup` defaults to `Runtime.current().registry.descriptors` and `hosted_descriptor`
+to the descriptor of `Runtime.current().registry.get(agent_id)`, both resolved when a decision
+asks (so the shared authorizer follows a context-managed runtime) and defaulted together: a
+caller that hands in its own `descriptor_lookup` and no `hosted_descriptor` is answered from
+that lookup alone. `system_tiers` defaults to
 `{tool.name: tool.tier for tool in SystemToolFactory.get_all(agent_id)}`, the factory an agent's
 system tools are attached from, so it answers for an agent the process does not host as long as
 both read the same configuration. Branches, the type matched whatever its case: `static`;
@@ -1645,7 +1656,9 @@ is.
   served. Authenticated extended cards stay a non-goal (design, Non-goals).
 - As built (iteration 20, a2a-sdk 1.2.3). `A2A` keeps the descriptor each card was built from
   (`A2A._descriptors`) and decides from it, so no request reads the registry for a card or a
-  guard; like the cards, the descriptors are those of mount time.
+  guard; like the cards, the descriptors are those of mount time. The two are one record:
+  `A2A.reset()` (for tests) drops them together with the executors and the client, since a
+  descriptor left without its card would be listed to a caller with no card to show.
   - `A2A.get_cards(principal=None)`: without a gate every mounted card; with one,
     `gate.visible_agents(principal, mounted descriptors)` then `gate.narrow`, one question for
     the listing. A missing principal is the anonymous one. `A2A.card_for(principal, name)`
@@ -2338,6 +2351,8 @@ hot paths: for an agent the process hosts, no registry read at all (`ensure_agen
 AG-UI's resolution answer from the hosted agent); for one hosted elsewhere, one store read per
 request (`descriptor(id)`, or `is_empty()` for a request naming no agent), off the event loop on
 the `async` paths, plus one `AgentDescriptor` validation when the overlay names the agent;
+for a principal holding a `tag:` grant, no registry read for a hosted agent and one listing per
+question for an agent hosted elsewhere (design refinement 19);
 one `authorize_agent` at the surface and one at the choke point per request (accepted, design
 section 6), one `filter_tools` per run, one cache read per tool call in the adapter gates, one
 store `put` and one `delete` per authenticated request when `identity.credentials` is configured.
@@ -2384,12 +2399,16 @@ New files under `ak-py/tests/`:
   list defaults; `SubjectMatcher` form by form (the shared-channel and anonymous exclusions of
   `user:`, the `provider:` prefix); grant normalization errors, each naming the grant's index;
   the static backend's corners (a tag resolved when asked, no registry read without a tag
-  grant, one read per question and per listing, the read off the event loop); the three reason
+  grant, a hosted agent's tags read from its own descriptor with no registry read for its
+  level, its tool decisions or a listing among hosted agents, one read per question and per
+  listing for an agent hosted elsewhere, the read off the event loop); the three reason
   strings and deny and allow decided before the level; one policy per agent; tier defaults from
   system tools (per agent, overridden by a `tiers` entry); the empty-grants warning;
-  `StaticAuthorizer.from_config` (the section as the policy, the lookups it is given, a block
-  with no section refused); the factory (a static authorizer built from the block alone reading
-  the current runtime's registry, reserved names, dotted path with the whole block, `get()`
+  `StaticAuthorizer.from_config` (the section as the policy, the lookups it is given, a
+  `descriptor_lookup` of the caller's being its only source of tags, a block with no section
+  refused); the factory (a static authorizer built from the block alone asking the current
+  runtime's hosted agent first, never listing the registry for it, and listing the registry
+  for an agent hosted elsewhere, reserved names, dotted path with the whole block, `get()`
   built once, following the current runtime's registry and reading system tool tiers); the lazy
   exports.
 - `test_config.py` (`TestAuthorizationConfig`): the block absent by default, parsed from YAML and
@@ -2411,7 +2430,9 @@ New files under `ak-py/tests/`:
   read as anonymous, the surface decided first, the default agent in the hosted form);
   `Module.load` validating and rolling back; and `TestTheConfiguredGate`, over the real factory
   and the static backend's own lookups (a tier a system tool declares reaching the filter, a
-  policy tier overriding it, the role mapper read from the `identity` block). The gate through
+  policy tier overriding it, the role mapper read from the `identity` block, and a `tag:`
+  grant deciding the check before a run, the gate's answer and the tool filter of a hosted
+  agent without listing the registry, from inside a running event loop as well). The gate through
   each surface that hands it the caller's principal is pinned beside that surface:
   `test_chat_service_core` (`TestTheGateThroughTheService`: 403, the unknown agent's 404, no
   session loaded, the default agent), `test_thread_integration` and
@@ -3060,3 +3081,23 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    aside without an `authorization` block. The cost, with the block: a wrong method on a real
    route is a 404 where it was a 405 naming the method. Deciding the 401 per agent, the other
    way considered, would have closed the 401 alone (sections 7, 8.4, 8.5, 8.6 and 8.7).
+19. **A hosted agent's tags are read from its own descriptor** (decided 2026-11-25, from the
+   phase D review). Section 7 resolved a `tag:` entry against a listing of the registry for
+   every question. Over a shared registry that listing is a scan of the store, made for the
+   tags of the one agent asked about, and a run asked it several times: the check before the
+   run, `Runtime._admit`, the allowed list, and once more for each tool denied by its tier.
+   On the direct chat path the first of those is the gate's synchronous form, which holds the
+   server's event loop until its answer is in (refinement 16), so with a `tag:` grant the loop
+   waited on a store read for every request. Refinement 16 had accepted that for a remote
+   engine, not for the backend that ships.
+   The static backend now takes a second lookup, `hosted_descriptor`, and asks it first: an
+   agent the process hosts answers from its own descriptor, as it already does for its
+   visibility (`AccessGate._descriptor`). Every run is of a hosted agent, so no run reads the
+   registry for a tag. The registry is still listed for an agent hosted elsewhere, at most once
+   per question or listing, and the edge that asks about one asks off the event loop. The
+   `Authorizer` contract is unchanged.
+   Left as it is: a process that hosts none of the agents it serves, the accepting side of a
+   split deployment, lists the registry once for each agent it is asked about on behalf of a
+   caller holding a `tag:` grant (a catalog page or the A2A catalog narrowed entry by entry,
+   MCP `tools/list`). Reading the one descriptor, or one listing per request, would cut that;
+   it waits for a deployment that shows the cost (section 7).

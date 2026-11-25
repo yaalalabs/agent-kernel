@@ -875,12 +875,12 @@ cache for the life of the process. The weekly CI seeds the parameters before the
 
 ## Identity and Access (`ak-py/src/agentkernel/identity/`)
 
-Who a request acts as (#603, spec set `docs/specs/603-identity-rbac-registry/`). Phases A to C
+Who a request acts as (#603, spec set `docs/specs/603-identity-rbac-registry/`). Phases A to D
 are in the tree: the identity contract, the providers, every surface establishing the
-principal, and the agent registry (`core/registry.py`, `identity/registry/`; see Runtime).
-Phase D is in progress: the authorizer contract, the static backend, its factory and the
-**access gate** are in `identity/authz/` (the Authorization and Access gate bullets below). An
-`authorization` block now gates every run (`Runtime._admit`), the pre-run check
+principal, the agent registry (`core/registry.py`, `identity/registry/`; see Runtime), and
+authorization: the authorizer contract, the static backend, its factory and the
+**access gate** in `identity/authz/` (the Authorization and Access gate bullets below). An
+`authorization` block gates every run (`Runtime._admit`), the pre-run check
 (`AgentService.ensure_agent_available`), the queue pipeline's precheck before anything is enqueued,
 a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
 realtime surfaces (iteration 20, the Protocol surfaces bullet below). The framework tool gates and the
@@ -1061,7 +1061,7 @@ deleted).
   `GCPAuthorizer` is deleted: the GCP examples authenticate at the API Gateway.
   Sync handlers reach the async authenticator through `run_async_sync`
   (`core/util/async_bridge.py`).
-- **Authorization** (`identity/authz/`, #603 phase D; not consulted by any run or surface yet).
+- **Authorization** (`identity/authz/`, #603 phase D).
   `Authorizer` (`base.py`) is the ABC: `async agent_level(principal, agent_id) -> AccessLevel |
   None` and `async check_tool(principal, agent_id, tool) -> Decision` (`allowed`, `reason`) are
   abstract; `filter_tools` and `visible_agents` default to asking those per tool and per candidate,
@@ -1076,19 +1076,27 @@ deleted).
   subject grammar: `*`, `authenticated`, `user:<subject>` (never a `messaging:` / `realtime:`
   sender, never the anonymous principal), `group:<name>`, `role:<name>`, `provider:<name>` (a
   name ending in `:` matches by prefix). An agent entry is an id, `*`, or `tag:<name>`, resolved
-  against the registry's descriptors **when the question is asked**: only for a principal one of
-  whose grants selects by tag, once per question or listing, and through `asyncio.to_thread`,
-  since over a shared registry the listing is a blocking store read. Tools: `ToolPolicyTable`
+  **when the question is asked** and only for a principal one of whose grants selects by tag.
+  An agent the process hosts answers with the tags of its own descriptor (the
+  `hosted_descriptor` lookup), so no run reads the registry for a tag: over a shared registry
+  the listing is a blocking store read, and the gate's synchronous form holds the event loop
+  for its answer on the direct chat path. Only an agent hosted elsewhere is looked up in the
+  registry's listing, at most once per question or listing and through `asyncio.to_thread`. Tools: `ToolPolicyTable`
   holds one policy per agent (`tiers`, `allow`, `deny`; a second policy for an agent is an
   `AKConfigError`); a tool is offered when it is not denied, is in the allow-list when there is
   one, and its tier is at or below the level; the tier is the policy's entry, else the tier the
   `SystemTool` of that name on that agent declares, else `read`. The deny list and the allow-list
   are decided before the level, so their reason is the same whoever asks. The static backend's
-  constructor takes two lookups and reads no configuration: `descriptor_lookup` and `system_tiers`
-  (agent id to tool name to tier). `StaticAuthorizer.from_config(block, descriptor_lookup=None,
-  system_tiers=None)` reads the `static` section and supplies each lookup that is omitted: the
-  current runtime's registry (resolved when asked, so it follows a context-managed runtime) and
-  `SystemToolFactory.get_all(agent_id)` for the declared tiers. `AuthorizerFactory` (`factory.py`)
+  constructor takes its lookups and reads no configuration: `descriptor_lookup` (every descriptor
+  the registry knows), `hosted_descriptor` (agent id to the descriptor of an agent hosted here,
+  else None) and `system_tiers` (agent id to tool name to tier).
+  `StaticAuthorizer.from_config(block, descriptor_lookup=None, system_tiers=None,
+  roles_mapped=None, hosted_descriptor=None)` reads the `static` section and supplies each lookup
+  that is omitted: the current runtime's registry (resolved when asked, so it follows a
+  context-managed runtime), its hosted agents for `hosted_descriptor` and its listing for
+  `descriptor_lookup`, and `SystemToolFactory.get_all(agent_id)` for the declared tiers. The two
+  registry lookups default together: a caller that hands in its own `descriptor_lookup` and no
+  `hosted_descriptor` is answered from that lookup alone. `AuthorizerFactory` (`factory.py`)
   is the `core/util/factory.py` shape and builds **every backend from the block alone**:
   `create(authorization_config)` resolves `static` through its `from_config`, refuses the reserved
   engine names (`casbin`, `openfga`, `cedar`, `authzen`: "not shipped yet; use a dotted path"),
@@ -1153,7 +1161,9 @@ deleted).
   refusal status (`Executor.REFUSED_STATUSES`, 403 and 404, from the precheck or the runner) is
   `ToolError("Agent not available")`.
   **A2A** (`api/a2a/`): `A2A._descriptors` keeps the descriptor each card was mounted with and
-  everything is decided from it, with no registry read per request. `get_cards(principal)` and
+  everything is decided from it, with no registry read per request. The cards and their
+  descriptors are one record: `A2A.reset()` (for tests) drops them together with the executors
+  and the client, and a fixture never clears one of them alone. `get_cards(principal)` and
   `card_for(principal, name)` are the caller's catalog and card (`gate.visible_agents` among
   the mounted descriptors, then `gate.narrow`; a narrowed card is a copy without the skills the
   caller is not offered). The card route is the SDK's with a `card_modifier`, so the SDK's own
@@ -1238,7 +1248,7 @@ identity:                      # optional: absent means every request is anonymo
     pass_through: null
     mapping: {ops: [admin]}    # group name, or a value of a listed claim -> roles
     claims: []                 # claim paths looked up beside the groups; only groups by default
-authorization:                 # optional: absent means nothing is restricted (not enforced yet, see above)
+authorization:                 # optional: absent means nothing is restricted
   type: static                 # static, or a dotted path to an Authorizer
   static:                      # the static authorizer's policy; required by type static
     grants:                    # subjects and agents take one entry or a list

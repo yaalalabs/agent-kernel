@@ -1,9 +1,9 @@
 """The authorizer contract, the static backend and the factory that selects one (#603).
 
-Nothing consults an authorizer yet: these tests drive it directly. `AuthorizerContract` holds what every
-backend must answer; the rest is what only the static backend has (its grant grammar, its tool tiers, its
-reasons), how it is built from its own `authorization.static` block, and how the factory builds an
-authorizer from the `authorization` block alone.
+These tests drive an authorizer directly; `test_access_gate.py` and the surface tests cover what consults
+one. `AuthorizerContract` holds what every backend must answer; the rest is what only the static backend has
+(its grant grammar, its tool tiers, its reasons), how it is built from its own `authorization.static` block,
+and how the factory builds an authorizer from the `authorization` block alone.
 """
 
 import threading
@@ -32,8 +32,15 @@ def _no_descriptors() -> list[AgentDescriptor]:
     return []
 
 
-def _authorizer(grants=(), tools=(), descriptors=_no_descriptors, system_tiers=None) -> StaticAuthorizer:
-    return StaticAuthorizer(grants=grants, tools=tools, descriptor_lookup=descriptors, system_tiers=system_tiers)
+def _authorizer(grants=(), tools=(), descriptors=_no_descriptors, system_tiers=None, hosted=None) -> StaticAuthorizer:
+    return StaticAuthorizer(grants=grants, tools=tools, descriptor_lookup=descriptors, system_tiers=system_tiers, hosted_descriptor=hosted)
+
+
+def _host(registry: InMemoryAgentRegistry, descriptor: AgentDescriptor) -> None:
+    """Host an agent the way a runtime does: the descriptor the registry holds is the one the agent carries."""
+    agent = ContractAgent(descriptor.id)
+    agent._set_descriptor(descriptor)
+    registry.register(descriptor, agent)
 
 
 class TestStaticAuthorizerContract(AuthorizerContract):
@@ -286,6 +293,58 @@ class TestStaticAgentLevels:
         assert read_on and read_on[0] != loop_thread
 
     @pytest.mark.asyncio
+    async def test_the_tags_of_an_agent_this_process_hosts_are_its_own_and_cost_no_registry_read(self):
+        # Every run is of a hosted agent, whose descriptor is at hand; the listing is a store read over a shared registry.
+        reads = []
+
+        def descriptors():
+            reads.append(1)
+            return []
+
+        hosted = {"billing": AgentDescriptor(id="billing", name="billing", tags=["support"])}
+        authorizer = _authorizer(grants=[{"subjects": "*", "agents": "tag:support", "level": "read"}], descriptors=descriptors, hosted=hosted.get)
+
+        assert await authorizer.agent_level(ALICE, "billing") == READ
+        assert reads == []
+
+    @pytest.mark.asyncio
+    async def test_an_agent_hosted_elsewhere_is_looked_up_in_the_registry(self):
+        reads = []
+
+        def descriptors():
+            reads.append(1)
+            return [AgentDescriptor(id="billing", name="billing", tags=["support"])]
+
+        authorizer = _authorizer(
+            grants=[{"subjects": "*", "agents": "tag:support", "level": "read"}], descriptors=descriptors, hosted=lambda agent_id: None
+        )
+
+        assert await authorizer.agent_level(ALICE, "billing") == READ
+        assert reads == [1]
+
+    @pytest.mark.asyncio
+    async def test_the_tool_decisions_of_a_hosted_agent_read_no_registry_either(self):
+        # A run's filter is the level, the allowed list and a reason per denied tool, and each asks for the level.
+        reads = []
+
+        def descriptors():
+            reads.append(1)
+            return []
+
+        hosted = {"billing": AgentDescriptor(id="billing", name="billing", tags=["support"])}
+        authorizer = _authorizer(
+            grants=[{"subjects": "*", "agents": "tag:support", "level": "read"}],
+            tools=[{"agent": "billing", "tiers": {"refund": "admin"}}],
+            descriptors=descriptors,
+            hosted=hosted.get,
+        )
+
+        assert await authorizer.filter_tools(ALICE, "billing", ["lookup", "refund"]) == ["lookup"]
+        assert (await authorizer.check_tool(ALICE, "billing", "lookup")).allowed
+        assert not (await authorizer.check_tool(ALICE, "billing", "refund")).allowed
+        assert reads == []
+
+    @pytest.mark.asyncio
     async def test_a_listing_reads_the_registry_once_however_many_candidates_it_is_given(self):
         reads = []
 
@@ -315,6 +374,40 @@ class TestStaticAgentLevels:
 
         assert await authorizer.visible_agents(ALICE, ["faq", "billing"]) == ["faq"]
         assert reads == []
+
+    @pytest.mark.asyncio
+    async def test_a_listing_among_hosted_agents_reads_no_registry(self):
+        reads = []
+
+        def descriptors():
+            reads.append(1)
+            return []
+
+        hosted = {f"agent-{n}": AgentDescriptor(id=f"agent-{n}", name=f"agent-{n}", tags=["support"] if n % 2 else []) for n in range(4)}
+        authorizer = _authorizer(grants=[{"subjects": "*", "agents": "tag:support", "level": "read"}], descriptors=descriptors, hosted=hosted.get)
+
+        assert await authorizer.visible_agents(ALICE, list(hosted)) == ["agent-1", "agent-3"]
+        assert reads == []
+
+    @pytest.mark.asyncio
+    async def test_a_listing_reads_the_registry_once_when_a_candidate_is_hosted_elsewhere(self):
+        # `here` is hosted by this process and tagged; the registry's record of it is one another process wrote
+        # without the tag. `there` runs elsewhere, so only the registry knows its tags.
+        reads = []
+
+        def descriptors():
+            reads.append(1)
+            return [
+                AgentDescriptor(id="here", name="here"),
+                AgentDescriptor(id="there", name="there", tags=["support"]),
+                AgentDescriptor(id="other", name="other"),
+            ]
+
+        hosted = {"here": AgentDescriptor(id="here", name="here", tags=["support"])}
+        authorizer = _authorizer(grants=[{"subjects": "*", "agents": "tag:support", "level": "read"}], descriptors=descriptors, hosted=hosted.get)
+
+        assert await authorizer.visible_agents(ALICE, ["here", "there", "other", "unknown"]) == ["here", "there"]
+        assert reads == [1]
 
 
 class TestStaticToolDecisions:
@@ -520,6 +613,28 @@ class TestStaticFromConfig:
         assert await authorizer.agent_level(ALICE, "coder") == READ
         assert not (await authorizer.check_tool(ALICE, "coder", "execute_code")).allowed
 
+    @pytest.mark.asyncio
+    async def test_a_descriptor_lookup_it_is_given_is_its_only_source_of_tags(self):
+        # The agents the current runtime hosts are asked only when that runtime's registry is the lookup: a
+        # caller that names its own source of descriptors is answered from it alone.
+        block = _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:sandboxed", "level": "read"}]}})
+        registry = InMemoryAgentRegistry()
+        _host(registry, AgentDescriptor(id="coder", name="coder"))  # hosted here, and not tagged
+        authorizer = StaticAuthorizer.from_config(block, descriptor_lookup=lambda: [AgentDescriptor(id="coder", name="coder", tags=["sandboxed"])])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            assert await authorizer.agent_level(ALICE, "coder") == READ
+
+    @pytest.mark.asyncio
+    async def test_a_hosted_lookup_it_is_given_is_asked_before_the_descriptor_lookup(self):
+        block = _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:sandboxed", "level": "read"}]}})
+        hosted = {"coder": AgentDescriptor(id="coder", name="coder", tags=["sandboxed"])}
+
+        authorizer = StaticAuthorizer.from_config(block, descriptor_lookup=_no_descriptors, hosted_descriptor=hosted.get)
+
+        assert await authorizer.agent_level(ALICE, "coder") == READ
+        assert await authorizer.agent_level(ALICE, "reviewer") is None
+
     def test_a_block_with_no_static_section_is_a_configuration_error(self):
         # The configuration refuses this when it is loaded; a block built some other way is refused here.
         block = _AuthorizationConfig.model_construct(type="static", static=None)
@@ -593,11 +708,39 @@ class TestAuthorizerFactory:
         # The factory hands a backend the block and nothing else: what the static one looks up, it finds itself.
         block = _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}})
         registry = InMemoryAgentRegistry()
-        registry.register(AgentDescriptor(id="billing", name="billing", tags=["support"]), ContractAgent("billing"))
+        _host(registry, AgentDescriptor(id="billing", name="billing", tags=["support"]))
         authorizer = AuthorizerFactory.create(block)
 
         with Runtime(InMemorySessionStore(), registry=registry):
             assert await authorizer.agent_level(ALICE, "billing") == WRITE
+
+    @pytest.mark.asyncio
+    async def test_a_static_authorizer_built_from_the_block_alone_does_not_list_the_registry_for_a_hosted_agent(self):
+        # Over a shared registry the listing is a scan of the store; a run is always of an agent hosted here.
+        class _NeverListed(InMemoryAgentRegistry):
+            def descriptors(self):
+                raise AssertionError("the registry was listed for the tags of an agent this process hosts")
+
+        block = _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}})
+        registry = _NeverListed()
+        _host(registry, AgentDescriptor(id="billing", name="billing", tags=["support"]))
+        _host(registry, AgentDescriptor(id="faq", name="faq"))
+        authorizer = AuthorizerFactory.create(block)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            assert await authorizer.agent_level(ALICE, "billing") == WRITE
+            assert await authorizer.agent_level(ALICE, "faq") is None
+            assert await authorizer.visible_agents(ALICE, ["billing", "faq"]) == ["billing"]
+
+    @pytest.mark.asyncio
+    async def test_a_static_authorizer_built_from_the_block_alone_lists_the_registry_for_an_agent_hosted_elsewhere(self, descriptor_only_registry):
+        block = _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}})
+        registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing", tags=["support"]), AgentDescriptor(id="faq", name="faq")])
+        authorizer = AuthorizerFactory.create(block)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            assert await authorizer.agent_level(ALICE, "billing") == WRITE
+            assert await authorizer.agent_level(ALICE, "faq") is None
 
     @pytest.mark.parametrize("name", ["casbin", "openfga", "cedar", "authzen"])
     def test_a_reserved_engine_name_says_it_is_not_shipped_yet(self, name):
@@ -669,8 +812,8 @@ class TestAuthorizerFactory:
             monkeypatch, _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}})
         )
         registry = InMemoryAgentRegistry()
-        registry.register(AgentDescriptor(id="billing", name="billing", tags=["support"]), ContractAgent("billing"))
-        registry.register(AgentDescriptor(id="faq", name="faq"), ContractAgent("faq"))
+        _host(registry, AgentDescriptor(id="billing", name="billing", tags=["support"]))
+        _host(registry, AgentDescriptor(id="faq", name="faq"))
 
         with Runtime(InMemorySessionStore(), registry=registry):
             authorizer = AuthorizerFactory.get()
@@ -684,8 +827,8 @@ class TestAuthorizerFactory:
             monkeypatch, _AuthorizationConfig.model_validate({"static": {"grants": [{"subjects": "*", "agents": "tag:support", "level": "write"}]}})
         )
         tagged, untagged = InMemoryAgentRegistry(), InMemoryAgentRegistry()
-        tagged.register(AgentDescriptor(id="billing", name="billing", tags=["support"]), ContractAgent("billing"))
-        untagged.register(AgentDescriptor(id="billing", name="billing"), ContractAgent("billing"))
+        _host(tagged, AgentDescriptor(id="billing", name="billing", tags=["support"]))
+        _host(untagged, AgentDescriptor(id="billing", name="billing"))
         authorizer = AuthorizerFactory.get()
 
         with Runtime(InMemorySessionStore(), registry=tagged):

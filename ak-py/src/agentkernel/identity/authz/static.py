@@ -199,8 +199,10 @@ class StaticAuthorizer(Authorizer):
     own, else ``read``.
 
     The authorizer keeps no copy of the registry: a ``tag:`` entry is resolved when the question is asked,
-    through ``descriptor_lookup``, and only for a principal one of whose grants selects by tag. Over a
-    shared registry that lookup is a blocking store read, so it runs off the event loop.
+    and only for a principal one of whose grants selects by tag. An agent this process hosts answers with
+    the tags of its own descriptor (``hosted_descriptor``), so no run reads the registry for them: every run
+    is of a hosted agent. The tags of an agent hosted elsewhere come from ``descriptor_lookup``, a listing
+    of the registry, which over a shared registry is a blocking store read and runs off the event loop.
     """
 
     _log: ClassVar[logging.Logger] = logging.getLogger("ak.identity.authz.static")
@@ -212,16 +214,20 @@ class StaticAuthorizer(Authorizer):
         descriptor_lookup: Callable[[], list[AgentDescriptor]],
         system_tiers: Callable[[str], Mapping[str, AccessLevel]] | None = None,
         roles_mapped: Callable[[], bool] | None = None,
+        hosted_descriptor: Callable[[str], AgentDescriptor | None] | None = None,
     ):
         """
         :param grants: The ``authorization.static.grants`` entries, as configuration models or mappings.
         :param tools: The ``authorization.static.tools`` entries, as configuration models or mappings.
         :param descriptor_lookup: Returns every descriptor the registry knows; what ``tag:`` entries are
-            resolved against.
+            resolved against for an agent ``hosted_descriptor`` does not answer for.
         :param system_tiers: Returns, for an agent id, the tier each of Agent Kernel's own tools on that
             agent declares, by tool name. Omitted, no tool declares a tier.
         :param roles_mapped: Returns whether a role mapper is configured, which ``validate`` asks before it
             warns about a ``role:`` subject. Omitted, it is not known and no such warning is made.
+        :param hosted_descriptor: Returns the descriptor of an agent this process hosts, by its id and
+            without reading a store, or None for an agent it does not host. Asked first for an agent's tags.
+            Omitted, every agent's tags are read through ``descriptor_lookup``.
         :raises AKConfigError: If a grant or a tool policy cannot be used.
         """
         self._grants = GrantTable(grants)
@@ -229,6 +235,7 @@ class StaticAuthorizer(Authorizer):
         self._descriptor_lookup = descriptor_lookup
         self._system_tiers = system_tiers
         self._roles_mapped = roles_mapped
+        self._hosted_descriptor = hosted_descriptor
         if not len(self._grants):
             self._log.warning(
                 "authorization.static.grants is empty: every agent is denied to every principal. "
@@ -242,6 +249,7 @@ class StaticAuthorizer(Authorizer):
         descriptor_lookup: Callable[[], list[AgentDescriptor]] | None = None,
         system_tiers: Callable[[str], Mapping[str, AccessLevel]] | None = None,
         roles_mapped: Callable[[], bool] | None = None,
+        hosted_descriptor: Callable[[str], AgentDescriptor | None] | None = None,
     ) -> "StaticAuthorizer":
         """Build the authorizer from an ``authorization`` block of type ``static``.
 
@@ -251,17 +259,25 @@ class StaticAuthorizer(Authorizer):
         :param system_tiers: The tiers Agent Kernel's own tools declare, by agent id; those of the system
             tools the configuration attaches to the agent, when omitted.
         :param roles_mapped: Whether a role mapper is configured; read from the ``identity`` block when omitted.
+        :param hosted_descriptor: The descriptor of an agent this process hosts, asked before
+            ``descriptor_lookup``. With both omitted it is the agents the current runtime hosts; with
+            ``descriptor_lookup`` given and this omitted there is none, so a caller that names its own
+            source of descriptors is answered from it alone.
         :return: The authorizer.
         :raises AKConfigError: If the block has no ``static`` section, or as the constructor.
         """
         if config.static is None:
             raise AKConfigError("authorization.type static requires the authorization.static block")
+        if descriptor_lookup is None and hosted_descriptor is None:
+            # The two default together: both are the current runtime's registry, the hosted side of it first.
+            hosted_descriptor = cls._hosted_agent_descriptor
         return cls(
             grants=config.static.grants,
             tools=config.static.tools,
             descriptor_lookup=descriptor_lookup if descriptor_lookup is not None else cls._registry_descriptors,
             system_tiers=system_tiers if system_tiers is not None else cls._system_tool_tiers,
             roles_mapped=roles_mapped if roles_mapped is not None else cls._role_mapper_configured,
+            hosted_descriptor=hosted_descriptor,
         )
 
     @staticmethod
@@ -271,6 +287,14 @@ class StaticAuthorizer(Authorizer):
         from ...core.runtime import Runtime
 
         return Runtime.current().registry.descriptors()
+
+    @staticmethod
+    def _hosted_agent_descriptor(agent_id: str) -> AgentDescriptor | None:
+        """The descriptor of an agent the current runtime hosts, read from the agent itself; None for any other."""
+        from ...core.runtime import Runtime
+
+        hosted = Runtime.current().registry.get(agent_id)
+        return None if hosted is None else hosted.descriptor
 
     @staticmethod
     def _system_tool_tiers(agent_id: str) -> dict[str, AccessLevel]:
@@ -357,7 +381,7 @@ class StaticAuthorizer(Authorizer):
         held = self._grants.held_by(principal)
         tags: Collection[str] = ()
         if self._needs_tags(held):
-            tags = (await self._tags_by_agent()).get(agent_id, ())
+            tags = (await self._tags_of([agent_id])).get(agent_id, ())
         return self._level(held, agent_id, tags)
 
     async def check_tool(self, principal: Principal, agent_id: str, tool: str) -> Decision:
@@ -385,8 +409,8 @@ class StaticAuthorizer(Authorizer):
 
     async def visible_agents(self, principal: Principal, candidates: list[str]) -> list[str]:
         held = self._grants.held_by(principal)
-        # One registry read for the whole list, where the default would read it for each candidate.
-        tags_by_agent = await self._tags_by_agent() if self._needs_tags(held) else {}
+        # At most one registry read for the whole list, where the default would read it for each candidate.
+        tags_by_agent = await self._tags_of(candidates) if self._needs_tags(held) else {}
         return [agent_id for agent_id in candidates if self._level(held, agent_id, tags_by_agent.get(agent_id, ())) is not None]
 
     @staticmethod
@@ -399,7 +423,28 @@ class StaticAuthorizer(Authorizer):
         """The highest level over the principal's grants that cover an agent, or None when none does."""
         return max((grant.level for grant in held if GrantTable.covers(grant, agent_id, tags)), default=None)
 
-    async def _tags_by_agent(self) -> dict[str, list[str]]:
+    async def _tags_of(self, agent_ids: Iterable[str]) -> Mapping[str, Collection[str]]:
+        """Return the tags of the agents asked about, by id; an agent with none, or not known, may be left out.
+
+        An agent this process hosts answers from its own descriptor. The registry is read, once and off the
+        event loop, only when one of the agents is not hosted here; what it records of a hosted agent is then
+        set aside for the agent's own descriptor, as it is when the hosted agent is asked about alone.
+
+        :param agent_ids: The agents whose tags a grant is to be matched against.
+        """
+        hosted: dict[str, Collection[str]] = {}
+        elsewhere = False
+        for agent_id in agent_ids:
+            descriptor = self._hosted_descriptor(agent_id) if self._hosted_descriptor is not None else None
+            if descriptor is None:
+                elsewhere = True
+            else:
+                hosted[agent_id] = descriptor.tags
+        if not elsewhere:
+            return hosted
+        return {**await self._tags_by_agent(), **hosted}
+
+    async def _tags_by_agent(self) -> dict[str, Collection[str]]:
         """Read the registry, off the event loop, and return each known agent's tags by its id."""
         descriptors = await asyncio.to_thread(self._descriptor_lookup)
         return {descriptor.id: descriptor.tags for descriptor in descriptors}

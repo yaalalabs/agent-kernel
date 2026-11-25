@@ -157,6 +157,20 @@ class A2A:
         return cls._client
 
     @classmethod
+    def reset(cls) -> None:
+        """
+        Forgets everything built: the cards, the descriptors they were mounted with, the executors and the
+        queue client, so the next call builds from the current registry. The cards and their descriptors are
+        one record and are dropped together: a descriptor left without its card would be listed to a caller
+        with no card to show. Intended for testing.
+        """
+        cls._cards = {}
+        cls._descriptors = {}
+        cls._executors = {}
+        cls._built = False
+        cls._client = None
+
+    @classmethod
     def _build(cls):
         if cls._built:
             return

@@ -902,3 +902,52 @@ class TestTheConfiguredGate:
 
         assert len(without_a_mapper) == 1 and "'role:admin'" in without_a_mapper[0]
         assert with_a_mapper == []
+
+    @staticmethod
+    def _hosting_billing() -> tuple[Runtime, _Agent]:
+        """A runtime hosting `billing`, tagged `finance`, over a registry that fails the test if it is listed."""
+
+        class _NeverListed(InMemoryAgentRegistry):
+            def descriptors(self):
+                raise AssertionError("the registry was listed for the tags of an agent this process hosts")
+
+        billing = _Agent("billing", tools=["invoice", "refund"], tags=["finance"])
+        runtime = Runtime(InMemorySessionStore(), registry=_NeverListed())
+        runtime.register(billing)
+        return runtime, billing
+
+    TAG_POLICY = {
+        "grants": [{"subjects": ["user:alice"], "agents": ["tag:finance"], "level": "write"}],
+        "tools": [{"agent": "billing", "tiers": {"refund": "admin"}}],
+    }
+
+    def test_a_tag_grant_decides_a_run_of_a_hosted_agent_without_listing_the_registry(self, authorization):
+        # Over a shared registry a listing is a scan of the store. A run is of a hosted agent, whose tags are its
+        # own descriptor's: the check before the run, the gate's decision and the run's tool filter list nothing.
+        from agentkernel.core.service import AgentService
+
+        authorization(**self.TAG_POLICY)
+        runtime, billing = self._hosting_billing()
+
+        with runtime:
+            AgentService.ensure_agent_available("billing", ALICE, hosted=True)
+            level = AccessGate.get().authorize_agent(ALICE, "billing")
+            tool_filter = AccessGate.get().tool_filter(ALICE, billing, level)
+
+        assert level == WRITE
+        assert tool_filter.allowed == frozenset({"invoice"})
+        assert tool_filter.reasons == {"refund": "Tool 'refund' requires level admin; the current principal has write"}
+
+    @pytest.mark.asyncio
+    async def test_the_check_before_a_run_holds_the_event_loop_for_no_store_read(self, authorization):
+        # `ChatService.execute` reaches the synchronous check from the server's loop, which waits for the answer:
+        # for a hosted agent that answer takes no read of the registry.
+        from agentkernel.core.service import AgentService
+
+        authorization(**self.TAG_POLICY)
+        runtime, _ = self._hosting_billing()
+
+        with runtime:
+            AgentService.ensure_agent_available("billing", ALICE, hosted=True)
+            with pytest.raises(AgentNotFoundError, match="^Agent 'billing' not found$"):
+                AgentService.ensure_agent_available("billing", BOB, hosted=True)
