@@ -120,8 +120,12 @@ async def test_session_continues_across_turns(client):
     response = await client.send("I was extremely happy")
     Test.compare(
         response,
-        ["That's great to hear! What did you like most about the mobile check deposit process?"],
+        ["That's great to hear!"],
         threshold=0.1,
+        criteria=(
+            "The reply must warmly acknowledge that the customer was happy. "
+            "Any follow-up question about their experience is acceptable and must not be penalized."
+        ),
     )
 
 

@@ -77,7 +77,13 @@ async def test_support_agent(http_client):
 
     response = await http_client.send("I was extremely happy")
     Test.compare(
-        response, ["That's great to hear! What specifically made the experience enjoyable for you?"], threshold=0.1
+        response,
+        ["That's great to hear!"],
+        threshold=0.1,
+        criteria=(
+            "The reply must warmly acknowledge that the customer was happy. "
+            "Any follow-up question about their experience is acceptable and must not be penalized."
+        ),
     )
 
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})

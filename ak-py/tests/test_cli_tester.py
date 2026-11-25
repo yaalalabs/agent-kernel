@@ -48,7 +48,9 @@ class _FakeEvaluator(AKEvaluator):
         if not case.expected:
             raise AKMissingInput("evaluate_by_llm requires AKEvaluationCase.expected")
         score = 1.0 if _normalize(case.expected) in _normalize(case.actual) else 0.2
-        return AKEvaluationResult(metric="fake_llm", evaluator="fake", score=score, reason="fake reason", passed=score >= case.threshold)
+        return AKEvaluationResult(
+            metric="fake_llm", evaluator="fake", score=score, reason="fake reason", passed=score >= case.threshold
+        )
 
 
 class _CountingFakeEvaluator(_FakeEvaluator):
@@ -59,6 +61,18 @@ class _CountingFakeEvaluator(_FakeEvaluator):
     def __init__(self, config):
         super().__init__(config)
         type(self).construction_count += 1
+
+
+class _CriteriaRecordingEvaluator(_FakeEvaluator):
+    """Same behaviour as _FakeEvaluator; keeps the criteria each llm evaluation received, per instance."""
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.criteria_seen: list[str | None] = []
+
+    def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult:
+        self.criteria_seen.append(case.criteria)
+        return super().evaluate_by_llm(case)
 
 
 class _FailingLlmEvaluator(AKEvaluator):
@@ -95,6 +109,7 @@ _FAKE_MODULE_NAME = "tests._fake_evaluator"
 _fake_module = types.ModuleType(_FAKE_MODULE_NAME)
 _fake_module._FakeEvaluator = _FakeEvaluator
 _fake_module._CountingFakeEvaluator = _CountingFakeEvaluator
+_fake_module._CriteriaRecordingEvaluator = _CriteriaRecordingEvaluator
 _fake_module._FailingLlmEvaluator = _FailingLlmEvaluator
 _fake_module._ScoreUnsupportedEvaluator = _ScoreUnsupportedEvaluator
 _fake_module._NotAnEvaluator = _NotAnEvaluator
@@ -429,6 +444,18 @@ def test_opik_module_does_not_shadow_third_party_package():
 
     assert ak_opik_module.GEval is opik.evaluation.metrics.GEval
     assert ak_opik_module.LevenshteinRatio is opik.evaluation.metrics.LevenshteinRatio
+
+
+# --- criteria passthrough --------------------------------------------------------------------#
+
+
+@pytest.mark.parametrize("criteria", ["be warm", None])
+def test_compare_hands_criteria_to_the_llm_judge(monkeypatch, criteria):
+    _use_evaluator(monkeypatch, "_CriteriaRecordingEvaluator")
+
+    CliTest.compare("That's great to hear! Anything else?", ["That's great to hear!"], mode=Mode.LLM, criteria=criteria)
+
+    assert CliTest._resolve_evaluator().criteria_seen == [criteria]
 
 
 # --- evaluator caching -----------------------------------------------------------------------#
