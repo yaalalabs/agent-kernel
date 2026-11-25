@@ -556,8 +556,11 @@ and `research/design-options.md` section 4).
   permission error (a hidden agent is the bare 404 of an unmounted path on every route, a
   visible one with no level a 403); a card's ETag is the SDK's, over the card as served; A2A
   and the direct AG-UI handler decide among the agents they serve without reading the registry
-  per request; and a realtime call whose caller is refused is told once and held back. One
-  point is left open: on A2A a refused credential tells whether an agent id is mounted.
+  per request; and a realtime call whose caller is refused is told once and held back. A2A's
+  routes are mounted per agent, so one fallback route behind them answers every request no A2A
+  route served (a name that is not mounted, a wrong method, a refused credential, a trailing
+  slash) the same for every name; with an `authorization` block a wrong method is therefore a
+  404, not a 405.
 - Startup validation (`AccessGate.validate_configuration()`, called from `Module.load` for the
   agents it loads and from the handlers' `get_router()`): an `allow`, `deny` or `tiers` entry naming
   a tool the loaded agent does not have raises `AKConfigError`; a grant naming an unknown agent id

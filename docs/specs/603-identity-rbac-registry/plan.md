@@ -1086,9 +1086,15 @@ adds the caller to a check that already knows the surface.
   - **Changes with no `authorization` block:** the MCP wording of a 404 or 403 reply, the
     realtime refusal for an agent the runner does not host (told once, where each input was
     retried), and the bare AG-UI route's 404 for a default agent that has gone.
-  - **Open point:** on A2A a credential the provider refuses is a 401 on a mounted agent's
-    routes and a 404 elsewhere, so it tells whether an agent id is served there. A caller with
-    no credential, or a valid one, cannot tell. Not closed here (refinement 18).
+  - **Follow-up, 2026-11-25, after the commit:** what the router answered before any check ran.
+    A2A routes are mounted per agent, so a method a route does not serve (405), a credential
+    the provider refuses (401) and a trailing slash (a redirect) each told a mounted name from
+    one that is not, the first and last for any caller; the iteration's own account named only
+    the 401. `get_agent_routers()` now ends with one fallback route (`UnservedA2ARoute`), behind
+    the identity dependency, which answers every request under `/a2a/<name>/` that no A2A route
+    served with the 404 of an unmounted path. It stands aside without an `authorization` block.
+    With the block, a wrong method on a real A2A route is a 404 where it was a 405 naming the
+    method (refinement 18; `api/a2a/handler.py`, `test_api_a2a_auth`).
   - **Not covered, as after iteration 19:** WebSocket chat frames, the messaging edges and the
     deployment adapters' own entry points enqueue without an edge check; the runner refuses.
   - User documentation: the realtime internals page gains the refused call. The `authorization`

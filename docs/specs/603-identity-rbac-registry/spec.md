@@ -1675,12 +1675,30 @@ is.
     level, the task routes too, since reading a task is using the agent.
   - The executor still answers a refusal that reaches it as `InternalError`: with the guard in
     front, that is a runner whose policy or registry disagrees with this process's.
-  - One difference remains between a hidden agent and one that is not mounted. A request with a
-    credential the provider refuses is a 401 from the identity dependency on any mounted
-    agent's routes and a 404 where nothing is mounted, so a refused credential tells whether an
-    agent id is served on `a2a`. A caller with no credential, or a valid one, cannot tell.
-    Closing it needs the 401 decided per agent or a catch-all behind the dependency, and is
-    left as an open point (design refinement 18).
+  - What the router itself answered, closed on 2026-11-25 (design refinement 18). The routes
+    are mounted per agent, so three answers were made before any check of ours ran, and each
+    told a mounted name from one that is not, hidden or not. A method the route does not serve
+    was a 405 with an `Allow` header where an unmounted name is a 404, for every caller,
+    credential or none. A credential the provider refuses was a 401 from the identity
+    dependency, where an unmounted name has no route to refuse it and is a 404. And a trailing
+    slash on a route's path was a redirect only a mounted name got. The first account of this
+    point (iteration 20) named only the 401 and said a caller with no credential, or a valid
+    one, could not tell.
+    `get_agent_routers()` now returns one more router after the agents' own, holding one route,
+    `UnservedA2ARoute` at `/a2a/{agent_name}/{rest:path}`: every request under a name that no
+    A2A route served falls through to it and is answered `HTTPException(404)`, the answer of a
+    path that is not mounted. It is an ordinary route, so the identity dependency runs first and
+    a refused credential is a 401 for every name. Its `matches` claims the request whatever the
+    method (a route that matched the path and not the method is the router's second choice, and
+    an agent's own route that matched the same way would be preferred, with its own 405), so a
+    method outside its list, one that is no HTTP method, is this route's 405, the same for every
+    name. It stands aside (`Match.NONE`) without an `authorization` block, so a deployment
+    without one keeps the router's answers, and for a path with nothing after the name, so the
+    catalog's trailing-slash redirect is untouched.
+    What it costs, with the block only: a wrong method on a real A2A route is a 404 and no
+    longer a 405 naming the method to use, for an agent the caller may use as for any other. A
+    route that named no method at all would have been simpler and was not possible: FastAPI
+    0.141 builds a route's operation id from its first method and asserts there is one.
 
 #### 8.8 CLI (`cli/cli.py`)
 
@@ -2243,6 +2261,11 @@ Each is intentional; the justification is design section 10 unless stated.
     naming an agent the runner does not host is told once, with a terminal error chunk, and
     held back, where each of its inputs was retried and failed. And AG-UI's bare route answers
     a default agent that has since gone with a bare 404, where it named the agent.
+43. With an `authorization` block, a request with the wrong method on an A2A route is a 404
+    (`{"detail": "Not Found"}`), where it was a 405 naming the methods the route serves, and a
+    credential the provider refuses is a 401 on every path under `/a2a/<name>/`, where a name
+    that is not mounted answered 404 (2026-11-25; section 8.7). Without the block both are as
+    they were.
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (the optional
 `last_error`, `surface` and `principal` on a task's document aside); the queue envelope
@@ -2262,6 +2285,7 @@ for the two caches and the framework context; public exports other than those na
 | No level on the agent | `AccessGate.authorize_agent` → `PermissionError` | 403 with the message; `StreamChunk(error, done=True)` on a stream; `ToolError("Agent not available")` on MCP; on A2A a 403 `{"detail": <message>}` from the route's guard (`InternalError` only when the runner refuses what this process let through); on AG-UI a 403 `{"detail": <message>}`; on a realtime call one terminal error chunk and no native session |
 | Agent named in a request is unknown to the registry, or not visible to the caller | `AgentService.ensure_agent_available`, `AccessGate.authorize_agent` → `AgentNotFoundError` | 404 `"Agent '<name>' not found"`, one status and body for both, on REST chat (direct and queued, a request that schedules included), the thread chat routes and AG-UI; `ToolError("Agent not available")` on MCP; `{"error": ...}` from the schedule tools |
 | Agent hidden from the caller, on a surface that addresses it by its own path or tool | the surface's check: `A2ARESTRequestHandler._usable_by_the_caller` and the card wrapper, `MCP._visible_to_the_caller`, the AG-UI bare route | A2A: 404 `{"detail": "Not Found"}` on every route of the agent, the answer of a path that is not mounted, and no card in the catalog. MCP: the tool is not listed and a call is FastMCP's `Unknown tool`. AG-UI's bare route (`agui.default_agent`): the bare 404 of a route with no default |
+| A request under `/a2a/<name>/` that no A2A route serves (a name that is not mounted, an unserved path, a method the route does not take, a trailing slash), with an `authorization` block | `UnservedA2ARoute`, behind the identity dependency | 404 `{"detail": "Not Found"}` for every name; 401 first for a credential the provider refuses; 405 from this one route for a method that is no HTTP method. Without the block the router's own answers stand (405 for a wrong method on a mounted route) |
 | A realtime call whose caller cannot have the agent | `RealtimeConnectionPool._refuse` | One terminal error chunk to the edge (`"Realtime session could not start: <reason>"`), nothing raised to the queue, the session held back with the reconnect back-off |
 | Agent named in a request is kept off the surface the request entered by | `AgentService.ensure_agent_available(..., surface=)` → `AgentNotFoundError` | The unknown agent's 404 and body on REST chat (direct and queued, a request that schedules included), the thread chat routes before any write, and WebSocket chat |
 | No agent named and the registry knows none, or none hosted here is on the request's surface, or the default agent is one the caller may not see | `AgentService.ensure_agent_available` → `ValueError` | 400 `"No agent available"` |
@@ -2553,7 +2577,13 @@ New files under `ak-py/tests/`:
   with nothing sent, a caller naming nobody listed as the anonymous principal, a card with no
   descriptor served to nobody, the card decided once for a request, and the surface unchanged
   without the block; `TestTheCallerOfARequest`: the request's principal before its context,
-  and `Vary` keeping what a response already varies by.
+  and `Vary` keeping what a response already varies by. The fallback route (2026-11-25), in
+  `TestAgentAccessOverA2A`: for a hidden agent and a name that is not mounted, one answer byte
+  for byte to a method the route does not serve (eight method and path pairs, with no
+  credential and with a valid one), to a refused credential on every one of them, to a method
+  that is no HTTP method, to a trailing slash and to an unserved path; a wrong method answered
+  404 for an agent the caller may use; the 405 kept without the block; the catalog, its
+  trailing-slash redirect and the API document untouched.
 - The other two surfaces of iteration 20. `test_agui_handler` (`TestAgentAccessOverAGUI`): the
   listing per caller, among the hosted agents without listing the registry, the hidden agent's
   404 with the unknown agent's body and headers, the 403 before a session is loaded, a hidden
@@ -3016,9 +3046,13 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    call naming an agent the runner does not host.
    A default agent the caller may not see is not named on AG-UI's bare route, the rule
    refinement 16 set for a request naming no agent.
-   Left open: on A2A a credential the provider refuses is a 401 on a mounted agent's routes and
-   a 404 where nothing is mounted, so it tells whether an agent id is served there (an
-   anonymous or an authenticated caller cannot tell). The routes are mounted per agent behind
-   one identity dependency; closing it means deciding the 401 per agent, or a catch-all route
-   behind the dependency, which would also turn the SDK's 405 for a wrong method into a 404
-   (sections 7, 8.4, 8.5, 8.6 and 8.7).
+   Closed on 2026-11-25, after the iteration was committed: what the router answers before any
+   check runs. Because A2A routes are mounted per agent, a method a route does not serve (405),
+   a credential the provider refuses (401) and a trailing slash (a redirect) each told a mounted
+   name from one that is not, the first and the last for any caller. The first account here
+   named only the 401. One route behind the agents' own (`UnservedA2ARoute`) now takes every
+   request under `/a2a/<name>/` that no A2A route served and answers the 404 of an unmounted
+   path, behind the identity dependency, so all three are one answer for every name. It stands
+   aside without an `authorization` block. The cost, with the block: a wrong method on a real
+   route is a 404 where it was a 405 naming the method. Deciding the 401 per agent, the other
+   way considered, would have closed the 401 alone (sections 7, 8.4, 8.5, 8.6 and 8.7).

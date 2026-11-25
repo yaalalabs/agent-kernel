@@ -10,9 +10,11 @@ from a2a.server.routes import create_agent_card_routes, create_rest_routes
 from a2a.server.routes.common import DefaultServerCallContextBuilder
 from a2a.types import AgentCard
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.routing import APIRoute
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.routing import BaseRoute, Route
+from starlette.routing import BaseRoute, Match, Route
+from starlette.types import Scope
 
 from ...core.model import Principal
 from ...core.registry import AgentNotFoundError
@@ -34,6 +36,42 @@ class AKCallContextBuilder(DefaultServerCallContextBuilder):
         context = super().build(request)
         context.state["principal"] = getattr(request.state, "principal", None)
         return context
+
+
+class UnservedA2ARoute(APIRoute):
+    """The route behind every agent's own: it takes whatever under ``/a2a/<name>/`` no A2A route served.
+
+    An agent's routes are mounted under its own id, so the router itself answers differently for a
+    name that is mounted and one that is not, before any check of Agent Kernel's runs: a method a
+    route does not serve is a 405 naming the methods it does, and a credential the provider refuses
+    is a 401 from the identity dependency, where an unmounted name is a 404 either way. With an
+    ``authorization`` block those answers tell anyone whether a hidden agent exists. This route is
+    what an unmounted name, an unserved path and an unserved method all fall through to, so they
+    get one answer, and being an ordinary route it sits behind the identity dependency like the rest.
+
+    It claims the request whatever the method. A route that matched the path and not the method is
+    only a second choice, and the router would prefer an agent's own route that matched the same
+    way, whose 405 names that route's methods. A method outside ``METHODS`` (one that is no HTTP
+    method) is then this route's own 405, the same for every name.
+
+    It stands aside without an ``authorization`` block, where nothing is hidden and the router's
+    own answers are the ones a client should get, and for a path with nothing after the name, so
+    the catalog's trailing-slash redirect is left alone.
+    """
+
+    METHODS: ClassVar[tuple[str, ...]] = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE")
+    """
+    The methods the route answers with its 404: every method an HTTP client sends
+    """
+
+    def matches(self, scope: Scope) -> tuple[Match, Scope]:
+        match, child_scope = super().matches(scope)
+        if match is Match.NONE:
+            return match, child_scope
+        # The path is under /a2a/<name>/ from here on, so the gate is asked about for those requests alone.
+        if not child_scope["path_params"].get("rest") or Runtime.access_gate() is None:
+            return Match.NONE, {}
+        return Match.FULL, child_scope
 
 
 class A2ARESTRequestHandler:
@@ -60,7 +98,10 @@ class A2ARESTRequestHandler:
     offered. An agent the caller may not see answers 404 on all of its routes, card included, with
     the response of a path that is not mounted, so a hidden agent is not told apart from one that
     does not exist. An agent it may see and holds no level on serves its card and answers 403 on
-    the protocol routes, before the SDK or the executor is reached. Without the block nothing here
+    the protocol routes, before the SDK or the executor is reached. Every other request under
+    ``/a2a/<name>/`` (a name that is not mounted, a path or a method no route serves) gets that same
+    404 from one route behind the agents' own (``UnservedA2ARoute``), so neither a wrong method nor a
+    refused credential tells a mounted name from one that is not. Without the block nothing here
     changes what is served.
     """
 
@@ -125,7 +166,29 @@ class A2ARESTRequestHandler:
             for route in create_agent_card_routes(card, card_modifier=cls._card_of_the_caller(agent)):
                 cls._add_route(router, route, endpoint=cls._card_endpoint(route.endpoint))
             routers.append(router)
+        # Last, so every route above is tried first: what none of them served, whatever the name.
+        routers.append(cls._unserved_router())
         return routers
+
+    @classmethod
+    def _unserved_router(cls) -> APIRouter:
+        """
+        The router that answers for every A2A path and method the agents' routers did not serve.
+
+        One route, ``UnservedA2ARoute``, which answers the 404 of a path that is not mounted. It is
+        returned after the agents' routers and must be included after them. Included like them, it
+        runs the identity dependency first, so a refused credential is a 401 for every name.
+
+        :return: The router.
+        """
+        router = APIRouter(prefix="/a2a", route_class=UnservedA2ARoute)
+
+        @router.api_route("/{agent_name}/{rest:path}", methods=list(UnservedA2ARoute.METHODS), include_in_schema=False)
+        async def unserved(agent_name: str, rest: str) -> None:
+            """Answer as a path that is not mounted, with no detail of our own."""
+            raise HTTPException(status_code=404)
+
+        return router
 
     @classmethod
     def _usable_by_the_caller(cls, agent: str) -> Callable[[Request], Awaitable[None]]:

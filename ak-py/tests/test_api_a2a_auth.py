@@ -545,6 +545,131 @@ class TestAgentAccessOverA2A:
         assert (hidden.status_code, forbidden.status_code) == (404, 403)
         assert hidden.content == unknown.content
 
+    # -- every other path and method ---------------------------------------------------------------
+
+    @staticmethod
+    async def _request(app, method: str, path: str, headers: dict | None = None) -> httpx.Response:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://ak.test") as http:
+            return await http.request(method, path, headers=headers or {})
+
+    # A method the route at that path does not serve, and the ones no A2A route serves.
+    OTHER_METHODS = [
+        ("POST", CARD),
+        ("DELETE", CARD),
+        ("HEAD", CARD),
+        ("GET", "/message:send"),
+        ("PATCH", "/message:send"),
+        ("OPTIONS", "/message:send"),
+        ("PUT", "/tasks/t-1"),
+        ("TRACE", "/tasks/t-1"),
+    ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method, tail", OTHER_METHODS)
+    @pytest.mark.parametrize("headers", [{}, BOB_AUTH], ids=["no-credential", "no-grant"])
+    async def test_a_method_a_route_does_not_serve_does_not_say_the_agent_is_mounted(self, served, method, tail, headers):
+        """The router answers a method mismatch on a mounted path 405, with the methods it does serve, before any
+        check runs: left alone, that answer tells anyone, credential or none, that a hidden agent is there."""
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        hidden = await self._request(app, method, f"/a2a/vault{tail}", headers)
+        unknown = await self._request(app, method, f"/a2a/ghost{tail}", headers)
+
+        assert hidden.status_code == unknown.status_code == 404
+        assert hidden.content == unknown.content
+        assert dict(hidden.headers) == dict(unknown.headers)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method, tail", [("GET", CARD), ("POST", "/message:send"), *OTHER_METHODS])
+    async def test_a_refused_credential_is_refused_the_same_way_whatever_the_name(self, served, method, tail):
+        """A credential the provider refuses is a 401 on a mounted agent's route. Where nothing was mounted there
+        was no route to refuse it, so the 404 told the same caller which names are served."""
+        app, client, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+        refused = {"Authorization": "Bearer garbage"}
+
+        hidden = await self._request(app, method, f"/a2a/vault{tail}", refused)
+        unknown = await self._request(app, method, f"/a2a/ghost{tail}", refused)
+
+        assert hidden.status_code == unknown.status_code == 401
+        assert hidden.content == unknown.content
+        assert dict(hidden.headers) == dict(unknown.headers)
+        assert client.calls == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("headers", [{}, BOB_AUTH, {"Authorization": "Bearer garbage"}], ids=["no-credential", "no-grant", "refused"])
+    async def test_a_method_that_is_no_http_method_is_one_answer_for_every_name(self, served, headers):
+        # Refused by the router as a method no route takes, before anything else: the same refusal whatever the name.
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        hidden = await self._request(app, "FOO", "/a2a/vault/message:send", headers)
+        unknown = await self._request(app, "FOO", "/a2a/ghost/message:send", headers)
+
+        assert hidden.status_code == unknown.status_code == 405
+        assert hidden.content == unknown.content
+        assert dict(hidden.headers) == dict(unknown.headers)
+
+    @pytest.mark.asyncio
+    async def test_a_trailing_slash_on_a_route_does_not_say_the_agent_is_mounted(self, served):
+        # The router redirects a path that matches a route once the slash is dropped: a redirect only a mounted name gets.
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        hidden = await self._request(app, "POST", "/a2a/vault/message:send/", BOB_AUTH)
+        unknown = await self._request(app, "POST", "/a2a/ghost/message:send/", BOB_AUTH)
+
+        assert hidden.status_code == unknown.status_code == 404
+        assert dict(hidden.headers) == dict(unknown.headers)
+
+    @pytest.mark.asyncio
+    async def test_a_path_no_route_serves_is_one_answer_for_every_name(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        answers = [await self._request(app, "GET", f"/a2a/{name}/no/such/path", BOB_AUTH) for name in ("vault", "ghost", "triage", "catalog")]
+
+        assert {answer.status_code for answer in answers} == {404}
+        assert len({answer.content for answer in answers}) == 1
+
+    @pytest.mark.asyncio
+    async def test_an_agent_the_caller_may_use_answers_a_wrong_method_the_same_way(self, served):
+        # The price of the rule: with an authorization block a wrong method is not told "use POST", whoever asks.
+        app, client, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        wrong_method = await self._request(app, "GET", "/a2a/triage/message:send", ALICE_AUTH)
+
+        assert (wrong_method.status_code, wrong_method.json(), "allow" in wrong_method.headers) == (404, {"detail": "Not Found"}, False)
+        assert (await self._send(app, "triage", ALICE_AUTH)).status_code == 200  # the route itself is untouched
+        assert len(client.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_without_an_authorization_block_a_wrong_method_is_still_a_405(self, served):
+        app, _, _, _ = served
+
+        mounted = await self._request(app, "GET", "/a2a/vault/message:send", BOB_AUTH)
+        unknown = await self._request(app, "GET", "/a2a/ghost/message:send", BOB_AUTH)
+        refused = await self._request(app, "GET", f"/a2a/ghost{CARD}", {"Authorization": "Bearer garbage"})
+
+        assert (mounted.status_code, mounted.headers["allow"]) == (405, "POST")
+        assert (unknown.status_code, refused.status_code) == (404, 404)  # nothing is hidden, so nothing answers for it
+
+    @pytest.mark.asyncio
+    async def test_the_catalog_and_the_api_document_are_untouched(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        catalog = await self._get(app, "/a2a/catalog", ALICE_AUTH)
+        trailing_slash = await self._request(app, "GET", "/a2a/catalog/", ALICE_AUTH)
+        document = await self._get(app, "/openapi.json")
+
+        assert catalog.status_code == 200
+        assert (trailing_slash.status_code, trailing_slash.headers["location"]) == (307, "http://ak.test/a2a/catalog")
+        assert document.status_code == 200
+        assert not [path for path in document.json()["paths"] if "{rest" in path or "{agent_name}" in path]
+
     # -- failing closed -------------------------------------------------------------------------
 
     @pytest.mark.asyncio

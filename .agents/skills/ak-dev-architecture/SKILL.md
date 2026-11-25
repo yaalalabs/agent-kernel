@@ -1161,7 +1161,14 @@ deleted).
   `Vary: Authorization`. Each protocol route carries `_usable_by_the_caller(agent)`, a
   dependency that asks `authorize_agent_async` before the SDK runs: 404 with the body of an
   unmounted path, or 403 (the a2a-sdk has no permission error, so the executor could not
-  answer it). **AG-UI** (`integration/agui/handler.py`): `_resolve_agent(agent_name,
+  answer it). A2A is the one surface whose routes are mounted per agent, so the router itself
+  answers a mounted name differently before any check runs (405 for a wrong method, 401 for a
+  refused credential, a redirect for a trailing slash). `get_agent_routers()` therefore ends
+  with a fallback router: `UnservedA2ARoute`, at `/a2a/{agent_name}/{rest:path}`, claims
+  whatever no A2A route served, whatever the method, and answers the bare 404 behind the
+  identity dependency; it stands aside without an `authorization` block and for a path with
+  nothing after the name. Include that router last, and give any new surface that mounts routes
+  per agent the same fallback. **AG-UI** (`integration/agui/handler.py`): `_resolve_agent(agent_name,
   principal)` asks the gate with the descriptor it read, before the streaming check; `/agents`
   is `gate.visible_agents(principal, self._descriptors())`; the bare route does not name a
   default the caller cannot have; both handlers share it. **Realtime** (`realtime/pool.py`):
