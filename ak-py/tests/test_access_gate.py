@@ -297,6 +297,26 @@ class TestVisibility:
         assert sorted(descriptor.id for descriptor in visible) == ["faq", "staff", "status", "triage"]
         assert [sorted(candidates) for candidates in authorizer.listings] == [["billing", "faq", "staff", "status", "triage", "vault"]]
 
+    def test_a_surface_can_list_among_the_agents_it_serves_without_reading_the_registry(self, descriptor_only_registry):
+        """A surface that serves a fixed set (the agents it hosts, the cards it mounted) hands that set in: the
+        authorizer is still asked once, and the registry's store is not listed again for it."""
+
+        class _NotListed(descriptor_only_registry):
+            def descriptors(self):
+                raise AssertionError("the registry was listed although the candidates were handed in")
+
+        served = [
+            AgentDescriptor(id="triage", name="triage"),
+            AgentDescriptor(id="status", name="status", visibility="public"),
+            AgentDescriptor(id="vault", name="vault"),
+        ]
+        gate = AccessGate(StaticAuthorizer(grants=GRANTS, tools=TOOLS, descriptor_lookup=lambda: served))
+
+        with Runtime(InMemorySessionStore(), registry=_NotListed([])):
+            assert [descriptor.id for descriptor in gate.visible_agents(ALICE, served)] == ["triage", "status"]
+            assert [descriptor.id for descriptor in gate.visible_agents(ANONYMOUS, served)] == ["status"]
+            assert gate.visible_agents(ALICE, []) == []
+
     def test_agents_another_process_hosts_are_listed_from_the_registry(self, descriptor_only_registry):
         registry = descriptor_only_registry([AgentDescriptor(id="triage", name="triage"), AgentDescriptor(id="vault", name="vault")])
 

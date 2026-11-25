@@ -271,3 +271,369 @@ class TestCardSecurity:
 
         assert "securitySchemes" not in served and "securityRequirements" not in served
         assert "securityRequirements" not in served["skills"][0]
+
+
+# -- agent access for the caller (#603, plan iteration 20) -----------------------------------------
+
+
+# `triage` is private, with two tools and a skill that names no tool; `status` is public and granted to nobody;
+# `vault` is private and granted to nobody.
+TRIAGE = AgentDescriptor(
+    id="triage",
+    name="triage",
+    description="Triages tickets",
+    tools=["lookup", "refund"],
+    skills=[
+        AgentSkillDescriptor(id="lookup", name="lookup", description="Looks a ticket up"),
+        AgentSkillDescriptor(id="refund", name="refund", description="Refunds an order"),
+        AgentSkillDescriptor(id="ticket-triage", name="Ticket triage", description="Sorts incoming tickets"),
+    ],
+)
+STATUS = AgentDescriptor(id="status", name="status", description="Reports the service status", visibility="public")
+VAULT = AgentDescriptor(id="vault", name="vault", description="Keeps secrets")
+READ_FOR_ALICE = {"subjects": ["user:alice"], "agents": ["triage"], "level": "read"}
+WRITE_FOR_BOB = {"subjects": ["user:bob"], "agents": ["triage"], "level": "write"}
+REFUND_NEEDS_WRITE = [{"agent": "triage", "tiers": {"refund": "write"}}]
+ALICE_AUTH = {"Authorization": "Bearer alice-secret"}
+BOB_AUTH = {"Authorization": "Bearer bob-secret"}
+CARD = "/.well-known/agent-card.json"
+
+
+class TestAgentAccessOverA2A:
+    """With an `authorization` block the A2A surface answers for the caller (spec 8.7): the catalog and a card
+    are the caller's own, a hidden agent's routes answer like the routes of an agent that is not mounted, and an
+    agent the caller sees and holds no level on is a 403 before the executor is reached.
+
+    Through `RESTAPI.build_app`: the identity dependency over a static provider with two callers, the real access
+    gate over a static policy, a registry that knows the three agents and hosts none, and the queue client faked."""
+
+    @pytest.fixture
+    def served(self, monkeypatch, tmp_path, authorization, descriptor_only_registry):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "a2a:\n  enabled: true\n  url: http://ak.test/a2a\n"
+            "identity:\n  provider:\n    type: static\n    static:\n      principals:\n"
+            "        ALICE_TOKEN:\n          subject: alice\n        BOB_TOKEN:\n          subject: bob\n"
+        )
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+        monkeypatch.setenv("ALICE_TOKEN", "alice-secret")
+        monkeypatch.setenv("BOB_TOKEN", "bob-secret")
+        AKConfig._reset()
+        SecretManager.reset()
+        IdentityProviderFactory.reset()
+        A2A._cards, A2A._descriptors, A2A._executors, A2A._built = {}, {}, {}, False
+        client = FakeClient(_reply("triaged"))
+        A2A._client = client
+
+        class _Counting(descriptor_only_registry):
+            reads = 0
+
+            def descriptor(self, id):
+                type(self).reads += 1
+                return super().descriptor(id)
+
+            def descriptors(self):
+                type(self).reads += 1
+                return super().descriptors()
+
+        registry = _Counting([TRIAGE, STATUS, VAULT])
+        try:
+            with Runtime(InMemorySessionStore(), registry=registry):
+                app = RESTAPI.build_app(handlers=[])
+                _Counting.reads = 0  # the mount read the registry once; what follows counts the requests
+                yield app, client, authorization, _Counting
+        finally:
+            A2A._descriptors = {}
+            IdentityProviderFactory.reset()
+            SecretManager.reset()
+            AKConfig._reset()
+
+    @staticmethod
+    async def _get(app, path: str, headers: dict | None = None) -> httpx.Response:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://ak.test") as http:
+            return await http.get(path, headers=headers or {})
+
+    @staticmethod
+    async def _send(app, agent: str, headers: dict) -> httpx.Response:
+        message = {"messageId": str(uuid.uuid4()), "contextId": "ctx-1", "role": "ROLE_USER", "parts": [{"text": "hello"}]}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://ak.test") as http:
+            return await http.post(f"/a2a/{agent}/message:send", json={"message": message}, headers={"A2A-Version": "1.0", **headers})
+
+    @staticmethod
+    def _names(response: httpx.Response) -> list[str]:
+        return [card["name"] for card in response.json()["cards"]]
+
+    @staticmethod
+    def _skills(card: dict) -> list[str]:
+        return [skill["id"] for skill in card.get("skills", [])]
+
+    @staticmethod
+    def _varies_by(response: httpx.Response) -> list[str]:
+        """What a response says it varies by. The app's CORS middleware adds `Origin` to every one."""
+        return [value.strip() for value in response.headers.get("vary", "").split(",") if value.strip()]
+
+    # -- the catalog ----------------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_the_catalog_is_the_cards_the_caller_may_see(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        assert self._names(await self._get(app, "/a2a/catalog", ALICE_AUTH)) == ["status", "triage"]
+        assert self._names(await self._get(app, "/a2a/catalog", BOB_AUTH)) == ["status"]
+        assert self._names(await self._get(app, "/a2a/catalog")) == ["status"]  # nobody authenticated: the anonymous principal
+
+    @pytest.mark.asyncio
+    async def test_a_hidden_agent_is_named_nowhere_in_the_catalog(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        listing = await self._get(app, "/a2a/catalog", BOB_AUTH)
+
+        assert "vault" not in listing.text and "triage" not in listing.text
+
+    @pytest.mark.asyncio
+    async def test_a_cards_skills_are_the_ones_the_caller_is_offered(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE, WRITE_FOR_BOB], tools=REFUND_NEEDS_WRITE)
+
+        for_alice = next(card for card in (await self._get(app, "/a2a/catalog", ALICE_AUTH)).json()["cards"] if card["name"] == "triage")
+        for_bob = next(card for card in (await self._get(app, "/a2a/catalog", BOB_AUTH)).json()["cards"] if card["name"] == "triage")
+
+        # `refund` needs write; the skill that names no tool is what the agent does and stays for both.
+        assert self._skills(for_alice) == ["lookup", "ticket-triage"]
+        assert self._skills(for_bob) == ["lookup", "refund", "ticket-triage"]
+        assert {key: value for key, value in for_alice.items() if key != "skills"} == {
+            key: value for key, value in for_bob.items() if key != "skills"
+        }
+
+    @pytest.mark.asyncio
+    async def test_an_agent_seen_by_its_visibility_alone_offers_no_tool_backed_skill(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[])
+        public_triage = TRIAGE.model_copy(update={"visibility": "public"})
+        A2A._descriptors["triage"] = public_triage  # the mounted descriptor, as a public agent's would be
+
+        [card] = [card for card in (await self._get(app, "/a2a/catalog", BOB_AUTH)).json()["cards"] if card["name"] == "triage"]
+
+        assert self._skills(card) == ["ticket-triage"]
+
+    @pytest.mark.asyncio
+    async def test_the_catalog_says_it_varies_by_caller(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        assert "Authorization" in self._varies_by(await self._get(app, "/a2a/catalog", ALICE_AUTH))
+
+    @pytest.mark.asyncio
+    async def test_the_catalog_is_decided_from_the_mounted_cards_without_reading_the_registry(self, served):
+        app, _, authorization, registry = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        await self._get(app, "/a2a/catalog", ALICE_AUTH)
+
+        assert registry.reads == 0
+
+    # -- the well-known card ----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_a_hidden_agents_card_is_the_404_of_an_agent_that_is_not_mounted(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        hidden = await self._get(app, f"/a2a/vault{CARD}", BOB_AUTH)
+        unknown = await self._get(app, f"/a2a/ghost{CARD}", BOB_AUTH)
+
+        assert hidden.status_code == unknown.status_code == 404
+        assert hidden.content == unknown.content
+        assert dict(hidden.headers) == dict(unknown.headers)
+
+    @pytest.mark.asyncio
+    async def test_a_card_is_served_to_a_caller_who_sees_the_agent_and_holds_no_level(self, served):
+        # A card says what an agent is; using it is the 403 below.
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        card = await self._get(app, f"/a2a/status{CARD}", BOB_AUTH)
+
+        assert (card.status_code, card.json()["name"]) == (200, "status")
+
+    @pytest.mark.asyncio
+    async def test_a_served_card_is_narrowed_and_its_etag_is_of_the_card_as_served(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE, WRITE_FOR_BOB], tools=REFUND_NEEDS_WRITE)
+
+        for_alice = await self._get(app, f"/a2a/triage{CARD}", ALICE_AUTH)
+        for_bob = await self._get(app, f"/a2a/triage{CARD}", BOB_AUTH)
+
+        assert (self._skills(for_alice.json()), self._skills(for_bob.json())) == (["lookup", "ticket-triage"], ["lookup", "refund", "ticket-triage"])
+        assert for_alice.headers["etag"] != for_bob.headers["etag"]
+        assert "Authorization" in self._varies_by(for_alice) and "Authorization" in self._varies_by(for_bob)
+
+    @pytest.mark.asyncio
+    async def test_a_conditional_request_is_answered_for_the_card_its_caller_is_served(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE, WRITE_FOR_BOB], tools=REFUND_NEEDS_WRITE)
+        alices = (await self._get(app, f"/a2a/triage{CARD}", ALICE_AUTH)).headers["etag"]
+
+        same_caller = await self._get(app, f"/a2a/triage{CARD}", {**ALICE_AUTH, "If-None-Match": alices})
+        other_caller = await self._get(app, f"/a2a/triage{CARD}", {**BOB_AUTH, "If-None-Match": alices})
+
+        # A cache holding alice's card must not be told it is still good for bob.
+        assert same_caller.status_code == 304 and "Authorization" in self._varies_by(same_caller)
+        assert other_caller.status_code == 200
+
+    # -- the protocol routes ---------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_a_message_for_a_hidden_agent_is_the_404_of_an_agent_that_is_not_mounted(self, served):
+        app, client, authorization, registry = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        hidden = await self._send(app, "vault", BOB_AUTH)
+        unknown = await self._send(app, "ghost", BOB_AUTH)
+
+        assert hidden.status_code == unknown.status_code == 404
+        assert hidden.content == unknown.content
+        assert dict(hidden.headers) == dict(unknown.headers)
+        assert client.calls == []
+        assert registry.reads == 0  # decided from the descriptor the route was mounted with
+
+    @pytest.mark.asyncio
+    async def test_a_message_for_an_agent_the_caller_sees_and_may_not_use_is_a_403(self, served):
+        app, client, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        response = await self._send(app, "status", BOB_AUTH)
+
+        assert response.status_code == 403
+        assert response.json() == {"detail": "Principal 'bob' holds no level on agent 'status'"}
+        assert client.calls == []
+
+    @pytest.mark.asyncio
+    async def test_a_caller_with_a_level_is_served_as_itself(self, served):
+        app, client, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        response = await self._send(app, "triage", ALICE_AUTH)
+
+        assert response.status_code == 200, response.text
+        [(body, _)] = client.calls
+        assert (body.agent, body.principal.subject) == ("triage", "alice")
+
+    @pytest.mark.asyncio
+    async def test_a_request_nobody_authenticated_is_the_anonymous_principal(self, served):
+        app, client, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        assert (await self._send(app, "triage", {})).status_code == 404
+        assert (await self._send(app, "status", {})).status_code == 403
+        assert client.calls == []
+
+    @pytest.mark.asyncio
+    async def test_every_route_of_an_agent_is_behind_the_same_answer(self, served):
+        # Tasks are the agent's too: reading one is using the agent.
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        hidden = await self._get(app, "/a2a/vault/tasks/t-1", {**BOB_AUTH, "A2A-Version": "1.0"})
+        forbidden = await self._get(app, "/a2a/status/tasks/t-1", {**BOB_AUTH, "A2A-Version": "1.0"})
+        unknown = await self._get(app, "/a2a/ghost/tasks/t-1", {**BOB_AUTH, "A2A-Version": "1.0"})
+
+        assert (hidden.status_code, forbidden.status_code) == (404, 403)
+        assert hidden.content == unknown.content
+
+    # -- failing closed -------------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_a_caller_that_names_nobody_is_listed_as_the_anonymous_principal(self, served):
+        _, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+
+        # A caller of `get_cards` that forgets the principal is listed less, never more.
+        assert [card.name for card in A2A.get_cards()] == ["status"]
+        assert await A2A.card_for(None, "triage") is None
+
+    @pytest.mark.asyncio
+    async def test_a_card_with_no_descriptor_to_decide_by_is_served_to_nobody(self, served):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+        del A2A._descriptors["triage"]  # a card mounted some other way: there is nothing to judge visibility by
+
+        assert await A2A.card_for(ALICE, "triage") is None
+        assert (await self._get(app, f"/a2a/triage{CARD}", ALICE_AUTH)).status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_the_card_is_decided_once_for_a_request(self, served, monkeypatch):
+        app, _, authorization, _ = served
+        authorization(grants=[READ_FOR_ALICE])
+        asked = []
+        card_for = A2A.card_for.__func__
+
+        async def _counting(cls, principal, name):
+            asked.append(name)
+            return await card_for(cls, principal, name)
+
+        monkeypatch.setattr(A2A, "card_for", classmethod(_counting))
+
+        await self._get(app, f"/a2a/triage{CARD}", ALICE_AUTH)
+
+        assert asked == ["triage"]
+
+    # -- without the block -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_without_an_authorization_block_the_surface_is_as_it_was(self, served):
+        app, client, _, _ = served
+
+        listing = await self._get(app, "/a2a/catalog", BOB_AUTH)
+        card = await self._get(app, f"/a2a/vault{CARD}", BOB_AUTH)
+
+        assert self._names(listing) == ["status", "triage", "vault"]
+        assert self._skills(next(c for c in listing.json()["cards"] if c["name"] == "triage")) == ["lookup", "refund", "ticket-triage"]
+        assert "Authorization" not in self._varies_by(listing) and "Authorization" not in self._varies_by(card)
+        assert (card.status_code, "etag" in card.headers) == (200, True)
+        assert (await self._send(app, "vault", BOB_AUTH)).status_code == 200
+        assert client.calls[0][0].agent == "vault"
+
+
+class TestTheCallerOfARequest:
+    """Who an A2A request acts as: the principal the identity dependency put on the request, else the one it
+    left in the request's context, else nobody."""
+
+    def test_the_principal_on_the_request_is_the_caller(self):
+        from agentkernel.api.a2a.handler import A2ARESTRequestHandler
+
+        token = RequestAuthenticator._current.set(Principal(subject="someone-else", provider="static", namespace="static"))
+        try:
+            assert A2ARESTRequestHandler._caller(_request(ALICE)) == ALICE
+        finally:
+            RequestAuthenticator._current.reset(token)
+
+    def test_the_request_context_is_the_fallback_and_then_nobody(self):
+        from agentkernel.api.a2a.handler import A2ARESTRequestHandler
+
+        token = RequestAuthenticator._current.set(ALICE)
+        try:
+            assert A2ARESTRequestHandler._caller(_request()) == ALICE
+        finally:
+            RequestAuthenticator._current.reset(token)
+        assert A2ARESTRequestHandler._caller(_request()).is_anonymous
+
+    @pytest.mark.parametrize(
+        "already, expected",
+        [(None, "Authorization"), ("Origin", "Origin, Authorization"), ("Origin, authorization", "Origin, authorization")],
+        ids=["none", "kept", "not-repeated"],
+    )
+    def test_a_response_that_varies_by_caller_keeps_what_it_already_varies_by(self, already, expected):
+        from starlette.responses import Response
+
+        from agentkernel.api.a2a.handler import A2ARESTRequestHandler
+
+        response = Response(headers={"Vary": already} if already else None)
+
+        A2ARESTRequestHandler._vary_by_caller(response)
+
+        assert response.headers["vary"] == expected

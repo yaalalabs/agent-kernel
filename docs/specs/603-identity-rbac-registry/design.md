@@ -552,6 +552,12 @@ and `research/design-options.md` section 4).
   the answer to the runner; an occurrence is skipped whenever the availability check refuses its
   named agent, with or without an `authorization` block; and a catalog entry is narrowed over
   the tools its descriptor records (`AccessGate.narrow`).
+- As built (spec refinement 18): A2A answers a refusal in front of the SDK, which has no
+  permission error (a hidden agent is the bare 404 of an unmounted path on every route, a
+  visible one with no level a 403); a card's ETag is the SDK's, over the card as served; A2A
+  and the direct AG-UI handler decide among the agents they serve without reading the registry
+  per request; and a realtime call whose caller is refused is told once and held back. One
+  point is left open: on A2A a refused credential tells whether an agent id is mounted.
 - Startup validation (`AccessGate.validate_configuration()`, called from `Module.load` for the
   agents it loads and from the handlers' `get_router()`): an `allow`, `deny` or `tiers` entry naming
   a tool the loaded agent does not have raises `AKConfigError`; a grant naming an unknown agent id

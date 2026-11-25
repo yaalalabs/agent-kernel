@@ -544,6 +544,106 @@ class TestTheEdgeServesAgentsItDoesNotHost:
         assert refused.value.status_code == 404
 
 
+class TestTheEdgeAnswersForTheCaller:
+    """With an `authorization` block the edge decides for the caller before it enqueues (#603, plan iteration 20),
+    for agents another process hosts: the registry says what exists, the access gate what this caller may have.
+    `planner` is private and granted to u1; `status` is public and granted to nobody; `vault` is private."""
+
+    GRANTS = [{"subjects": ["user:u1"], "agents": ["planner"], "level": "read"}]
+
+    @pytest.fixture
+    def registry(self, descriptor_only_registry):
+        return descriptor_only_registry(
+            [
+                AgentDescriptor(id="planner", name="planner", runner="openai", supports_streaming=True),
+                AgentDescriptor(id="status", name="status", runner="openai", supports_streaming=True, visibility="public"),
+                AgentDescriptor(id="vault", name="vault", runner="openai", supports_streaming=True),
+            ]
+        )
+
+    @staticmethod
+    def _as(subject: str):
+        request = _AuthenticatedRunRequest()
+        request.state = SimpleNamespace(principal=Principal(subject=subject, provider="test", namespace="test"))
+        return request
+
+    def test_discovery_lists_what_the_caller_may_see_of_the_registry(self, registry, authorization):
+        def _listing_for(subject: str) -> dict:
+            async def _authenticated(request: Request) -> None:
+                request.state.principal = Principal(subject=subject, provider="test", namespace="test")
+
+            app = FastAPI()
+            app.include_router(handler.get_router(), dependencies=[Depends(_authenticated)])
+            return TestClient(app).get("/agui/agents").json()
+
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        authorization(grants=self.GRANTS)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            assert _listing_for("u1") == {"agents": ["planner", "status"]}
+            assert _listing_for("u2") == {"agents": ["status"]}
+
+    @pytest.mark.asyncio
+    async def test_a_hidden_agent_is_the_unknown_agents_404_and_nothing_is_enqueued(self, registry, authorization):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        authorization(grants=self.GRANTS)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as hidden:
+                await handler._run("vault", self._as("u2"))
+            with pytest.raises(HTTPException) as unknown:
+                await handler._run("ghost", self._as("u2"))
+
+        assert (hidden.value.status_code, hidden.value.detail) == (404, "Agent 'vault' not found")
+        assert (unknown.value.status_code, unknown.value.detail) == (404, "Agent 'ghost' not found")
+        assert handler._producer.requests == []
+
+    @pytest.mark.asyncio
+    async def test_an_agent_the_caller_sees_and_may_not_use_is_a_403_and_nothing_is_enqueued(self, registry, authorization):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        authorization(grants=self.GRANTS)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as refused:
+                await handler._run("status", self._as("u2"))
+
+        assert (refused.value.status_code, refused.value.detail) == (403, "Principal 'u2' holds no level on agent 'status'")
+        assert handler._producer.requests == []
+
+    @pytest.mark.asyncio
+    async def test_a_caller_with_a_level_is_enqueued_as_itself(self, registry, authorization):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        authorization(grants=self.GRANTS)
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            await handler._run("planner", self._as("u1"))
+
+        [queued] = handler._producer.requests
+        assert (queued.agent, queued.principal.subject) == ("planner", "u1")
+
+    @pytest.mark.asyncio
+    async def test_the_agent_is_decided_from_the_one_descriptor_read(self, authorization, descriptor_only_registry):
+        reads = []
+
+        class _Counting(descriptor_only_registry):
+            def descriptor(self, id):
+                reads.append(id)
+                return super().descriptor(id)
+
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        authorization(grants=self.GRANTS)
+        registry = _Counting([AgentDescriptor(id="planner", name="planner", runner="openai", supports_streaming=True)])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            await handler._run("planner", self._as("u1"))
+
+        assert reads == ["planner"]
+
+
 class TestTheEdgeNeverBlocksTheEventLoop:
     """The edge holds the caller's SSE socket, so a blocking call there stalls every request.
 

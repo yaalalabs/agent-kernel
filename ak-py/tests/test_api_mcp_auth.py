@@ -4,8 +4,9 @@ MCP authentication over the configured identity provider (spec `docs/specs/603-i
 FastMCP owns the HTTP side: `AKTokenVerifier` turns a bearer token into an access token that
 carries the `Principal`, FastMCP answers 401 for a token the provider refuses, and the executor
 reads the principal off the request's access token onto the queued body. Without an identity
-block `auth` is None and MCP stays open, every call anonymous. The per-tool visibility check
-arrives with the access gate.
+block `auth` is None and MCP stays open, every call anonymous. With an `authorization` block each
+agent tool carries a visibility check, so the tool list is the caller's own (iteration 20,
+`TestTheToolsOfACaller`), and a refused call is `Agent not available` (`TestARefusedCall`).
 """
 
 from unittest.mock import AsyncMock, patch
@@ -20,8 +21,10 @@ from mcp.server.auth.provider import AccessToken
 from agentkernel.api.mcp.akmcp import MCP
 from agentkernel.api.mcp.auth import PRINCIPAL_CLAIM, AKAccessToken, AKMCPAuthProvider, AKTokenVerifier
 from agentkernel.core.chat_service import ResponseBuilder
-from agentkernel.core.config import _MCPConfig
-from agentkernel.core.model import AgentReplyText, Principal
+from agentkernel.core.config import AKConfig, _MCPConfig
+from agentkernel.core.model import AgentDescriptor, AgentReplyText, Principal
+from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory
 from agentkernel.pipeline.request_handler import QueuedReply
 
@@ -303,3 +306,191 @@ class TestThroughARealClient:
         assert response.status_code == 401
         assert "bearer" in response.headers.get("www-authenticate", "").lower()
         assert queue_client.calls == []
+
+
+# -- agent access for the caller (#603, plan iteration 20) -----------------------------------------
+
+
+BOB = Principal(subject="bob", provider="test", namespace="test")
+
+# `assistant` is private and granted to alice, `status` is public and granted to nobody, `vault` is private and
+# granted to nobody, `ledger` is granted to alice and kept off the MCP surface.
+AGENTS = [
+    AgentDescriptor(id="assistant", name="assistant", description="Answers questions"),
+    AgentDescriptor(id="status", name="status", description="Reports the service status", visibility="public"),
+    AgentDescriptor(id="vault", name="vault", description="Keeps secrets"),
+    AgentDescriptor(id="ledger", name="ledger", description="Keeps the books", surfaces=["rest"]),
+]
+GRANTS = [{"subjects": ["user:alice"], "agents": ["assistant", "ledger"], "level": "read"}]
+
+
+class _TwoCallers(_Provider):
+    async def authenticate(self, credential, context=None):
+        if credential == "bob-secret":
+            return BOB
+        return await super().authenticate(credential, context)
+
+
+def _refused(status_code: int, error: str) -> QueuedReply:
+    return QueuedReply(request_id="r1", status_code=status_code, body={"error": error, "session_id": "s1"})
+
+
+class TestTheToolsOfACaller:
+    """With an `authorization` block each agent tool carries a visibility check (spec 8.6): FastMCP leaves a tool
+    the caller may not see out of `tools/list` and answers a call to it like a call to a tool that does not exist.
+    Nothing below FastMCP is mocked but the queue client: the server `MCP` builds, its real HTTP layer, the real
+    access gate over a static policy, and a registry that knows the agents and hosts none of them."""
+
+    @pytest.fixture
+    def served(self, monkeypatch, authorization, descriptor_only_registry):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_MCP__ENABLED", "true")
+        monkeypatch.setenv("AK_MCP__EXPOSE_AGENTS", "true")
+        AKConfig._reset()
+        provider = _TwoCallers()
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
+        queue_client = FakeClient(_reply("done"))
+        MCP._client = queue_client
+        try:
+            with Runtime(InMemorySessionStore(), registry=descriptor_only_registry(AGENTS)):
+                yield MCP.get_http_app(), queue_client, authorization
+        finally:
+            AKConfig._reset()
+
+    @staticmethod
+    async def _tools(app, token: str) -> list[str]:
+        async with app.router.lifespan_context(app):
+            transport = StreamableHttpTransport("http://mcp.test/", auth=token, httpx_client_factory=_http_factory(app))
+            async with Client(transport) as client:
+                return sorted(tool.name for tool in await client.list_tools())
+
+    @staticmethod
+    async def _call(app, token: str, tool: str):
+        async with app.router.lifespan_context(app):
+            transport = StreamableHttpTransport("http://mcp.test/", auth=token, httpx_client_factory=_http_factory(app))
+            async with Client(transport) as client:
+                return await client.call_tool(tool, {"session_id": "s1", "prompt": "hi"}, raise_on_error=False)
+
+    @pytest.mark.asyncio
+    async def test_a_caller_is_listed_the_agents_it_may_see(self, served):
+        app, _, authorization = served
+        authorization(grants=GRANTS)
+
+        assert await self._tools(app, "alice-secret") == ["assistant", "status"]  # her grant, and the public agent
+        assert await self._tools(app, "bob-secret") == ["status"]
+
+    @pytest.mark.asyncio
+    async def test_a_grant_does_not_list_an_agent_kept_off_mcp(self, served):
+        app, _, authorization = served
+        authorization(grants=GRANTS)
+
+        assert "ledger" not in await self._tools(app, "alice-secret")
+
+    @pytest.mark.asyncio
+    async def test_without_an_authorization_block_every_agent_on_mcp_is_listed(self, served):
+        app, _, _ = served
+
+        assert await self._tools(app, "bob-secret") == ["assistant", "status", "vault"]
+
+    @pytest.mark.asyncio
+    async def test_a_call_to_a_hidden_agent_is_a_call_to_a_tool_that_does_not_exist(self, served):
+        app, queue_client, authorization = served
+        authorization(grants=GRANTS)
+
+        hidden = await self._call(app, "bob-secret", "vault")
+        unknown = await self._call(app, "bob-secret", "ghost")
+
+        assert hidden.is_error and unknown.is_error
+        # One answer but for the name the caller sent: nothing says `vault` is a tool someone else can call.
+        assert hidden.content[0].text.replace("vault", "ghost") == unknown.content[0].text
+        assert queue_client.calls == []
+
+    @pytest.mark.asyncio
+    async def test_a_caller_with_a_level_runs_the_agent_as_itself(self, served):
+        app, queue_client, authorization = served
+        authorization(grants=GRANTS)
+
+        result = await self._call(app, "alice-secret", "assistant")
+
+        assert (result.is_error, result.content[0].text) == (False, "done")
+        [(body, _)] = queue_client.calls
+        assert (body.agent, body.principal.subject) == ("assistant", "alice")
+
+    @pytest.mark.asyncio
+    async def test_the_policy_is_read_at_each_request_not_when_the_tools_were_registered(self, served):
+        app, _, authorization = served
+        authorization(grants=GRANTS)
+        assert await self._tools(app, "bob-secret") == ["status"]
+
+        authorization(grants=[{"subjects": ["user:bob"], "agents": ["vault"], "level": "read"}])
+
+        assert await self._tools(app, "bob-secret") == ["status", "vault"]
+
+    @pytest.mark.asyncio
+    async def test_a_check_that_fails_hides_the_tool(self, served, monkeypatch):
+        # An authorizer that cannot answer is a denial, never a listing of everything.
+        from agentkernel.identity.authz.gate import AccessGate
+
+        app, _, authorization = served
+        authorization(grants=GRANTS)
+
+        async def _down(self, principal, descriptor):
+            raise ConnectionError("the policy engine is unreachable")
+
+        monkeypatch.setattr(AccessGate, "visible_async", _down)
+
+        assert await self._tools(app, "alice-secret") == []
+
+
+class TestARefusedCall:
+    """An agent the caller sees and holds no level on is listed, and calling it is refused before the queue
+    (`RestHandler.request`, iteration 19). The executor words every such refusal the same way, whichever process
+    made it and whether the agent was hidden, unknown or not the caller's to use."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "status_code, error",
+        [(403, "Principal 'bob' holds no level on agent 'status'"), (404, "Agent 'status' not found")],
+        ids=["no-level", "not-found"],
+    )
+    async def test_a_refusal_is_agent_not_available(self, monkeypatch, status_code, error):
+        from fastmcp.exceptions import ToolError
+
+        MCP._client = FakeClient(_refused(status_code, error))
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: None)
+
+        with pytest.raises(ToolError) as refused:
+            await MCP.Executor("status").execute("s1", "hi", AsyncMock())
+
+        assert str(refused.value) == "Agent not available"
+        assert "bob" not in str(refused.value)  # the policy's reason stays in the log
+
+    @pytest.mark.asyncio
+    async def test_a_failed_run_keeps_its_own_message(self, monkeypatch):
+        from fastmcp.exceptions import ToolError
+
+        MCP._client = FakeClient(_refused(500, "the agent crashed"))
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: None)
+
+        with pytest.raises(ToolError, match="^The agent could not process the request$"):
+            await MCP.Executor("status").execute("s1", "hi", AsyncMock())
+
+    @pytest.mark.asyncio
+    async def test_the_real_precheck_refuses_a_caller_with_no_level(self, monkeypatch, authorization, descriptor_only_registry):
+        """End to end below the executor: the real queue client over a registry that knows the agent, the real gate."""
+        from fastmcp.exceptions import ToolError
+
+        from agentkernel.pipeline.request_handler import RestHandler
+
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+        authorization(grants=GRANTS)
+        token = AKAccessToken(token="t", client_id="bob", scopes=[], principal=BOB)
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: token)
+        try:
+            with Runtime(InMemorySessionStore(), registry=descriptor_only_registry(AGENTS)):
+                MCP._client = RestHandler()
+                with pytest.raises(ToolError, match="^Agent not available$"):
+                    await MCP.Executor("status").execute("s1", "hi", AsyncMock())
+        finally:
+            AKConfig._reset()

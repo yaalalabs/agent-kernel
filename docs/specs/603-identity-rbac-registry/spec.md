@@ -1208,6 +1208,17 @@ Added in iteration 19:
   A2A and MCP mounts. A process that mounts none of these routers (a bare agent runner) makes
   the per-module checks of `Module.load` only.
 
+Added in iteration 20:
+
+- `visible_agents(principal, descriptors=None)` (and the `async` form): the listing among
+  candidates the caller hands in, where it was always among everything the registry knows. A
+  surface that serves a fixed set asks about that set: the direct AG-UI handler the agents its
+  process hosts, A2A the descriptors its cards were mounted with. The authorizer is still asked
+  once, and the registry's store is not listed for it.
+- `_validate_access()` moved from `AgentRESTRequestHandler` to the base `RESTRequestHandler`, and
+  `AGUIRequestHandler.get_router()` calls it too: an app that serves its agents over AG-UI alone
+  mounts no chat router and would never have made the registry-wide check.
+
 **`AuthorizerContract`** (`authz/testing.py`): level resolution across the six subject forms,
 highest level wins, `*` and `tag:` agent entries, tier gating, `allow`/`deny` precedence,
 anonymous handling, `provider:` prefix matching, and `visible_agents` equivalence with the
@@ -1467,6 +1478,25 @@ is.
   the WebSocket edge's delivery; the principal rides beside it, and the callers
   (`pipeline/agent_runner.py:391`, `deployment/aws/containerized/akagentrunner.py:329-331`) keep
   passing the attribute.
+- As built (iteration 20), how a refusal reaches the edge. `dispatch` catches the
+  `PermissionError` and `AgentNotFoundError` of the agent check made for a new connection
+  (`realtime/pool.py`, the file `pipeline/realtime_pool.py` became at the develop merge of #941)
+  and calls `_refuse(session_id, request_id, attributes, refusal)`:
+  - The edge is sent one terminal error chunk through `send_permanent_failure`, marked realtime
+    and addressed by the input's routing attributes: `StreamChunk(error="Realtime session could
+    not start: <the refusal>", done=True)`, the wording of a connect that failed.
+  - Nothing is raised. Raised, the refusal went back to the queue, was redelivered up to
+    `max_receive_count` times and ended as a "failed after N retries" chunk, once for every
+    audio frame of the call, since each frame is an input.
+  - The session is recorded in `_failures` with the back-off of a failed connect (1 s, 2 s, 4 s
+    up to 30 s for each refusal in a row). The frames that follow are dropped without asking the
+    gate again, and the caller is asked about at the retry time, so a grant given meanwhile
+    opens the call. The end-of-session control forgets the record, as it forgets a failure.
+  - A chunk the output queue cannot take is logged and not raised, so the refusal never becomes
+    a retry. Any other error of the check (`ValueError("No agent available")`, a store failure)
+    is raised as before.
+  - It applies without an `authorization` block too: a call naming an agent the runner does not
+    host is the same `AgentNotFoundError` and was retried the same way.
 
 #### 8.5 AG-UI (`integration/agui/`)
 
@@ -1508,6 +1538,20 @@ is.
   The direct handler never reads the store here: an agent it does not host is not
   served (above), so its `_descriptor` returns `None` and the route answers 404. The "could not
   be selected" 500 stays as the guard for a resolved agent whose session cannot be created.
+- As built (iteration 20). `_resolve_agent(agent_name, principal)` asks
+  `gate.authorize_agent(principal, descriptor.id, descriptor=descriptor)` with the one
+  descriptor it read, after the surface check and before the streaming check: the 400 names the
+  agent's framework, which is not for a caller who may not see the agent. A hidden agent raises
+  the very `HTTPException` an unknown one does (one status, one detail), and a visible agent the
+  caller holds no level on is a 403 with the gate's reason. `_resolve_run_inputs` hands it the
+  caller's principal; it runs on a worker thread, where the gate's synchronous form applies.
+  Both handlers inherit it, so the queue-mode edge refuses before it enqueues.
+  `/agents` asks `gate.visible_agents(principal, self._descriptors())`: among what the handler
+  serves, so the direct handler does not list the registry's store for it (section 7).
+  The bare route (`agui.default_agent`) answers a 404 from the run with a bare 404, the answer
+  of the route when no default is configured: the caller named no agent, so a default it cannot
+  have is not named to it (the rule of section 6 for a request naming no agent).
+  `get_router()` validates the policy at mount (section 7).
 - `_resolve_run_inputs` (178-201) returns the `Principal`; `_events` passes
   `principal=principal` at line 280; `AGUIPipelineRequestHandler._run` (`queue_handler.py:112-151`)
   enqueues `AGUIRunRequest(..., principal=principal, ...)` instead of `user_id=user_id` (143).
@@ -1560,6 +1604,22 @@ is.
   reads the field in process, the claim over HTTP, and is anonymous otherwise. `body =
   BaseRunRequest(prompt, agent, session_id, principal=principal)`; a `PermissionError`/`AgentNotFoundError` from `RestHandler.request`'s precheck
   becomes `ToolError("Agent not available")`.
+- As built (iteration 20, FastMCP 3.4.11). Every agent tool is registered with
+  `auth=MCP._visible_to_the_caller(descriptor)`, an `async` `AuthCheck` that reads the request's
+  token (`AuthContext.token`, through `AKAccessToken.principal_of`) and answers
+  `gate.visible_async(principal, descriptor)`, with the descriptor the tool was registered with
+  (`exposed_on("mcp")` already decided whether it was registered at all). The gate is read at
+  each request, not at build, and without one the check admits everyone. FastMCP leaves a tool
+  whose check fails out of `tools/list` and answers a call to it `Unknown tool`, its answer for
+  a name it does not know, so a hidden agent is not told apart from an unknown one. A check that
+  raises is FastMCP's denial: an authorizer that cannot answer hides the tool. FastMCP skips
+  component checks on the stdio transport, which Agent Kernel does not serve.
+  Visibility lists a tool, a level runs it: a call to an agent the caller sees and holds no
+  level on reaches the executor, whose precheck refuses it before the queue. Since iteration 19
+  that refusal is a reply (`QueuedReply` 403 or 404), not an exception, so the executor maps the
+  status: `Executor.REFUSED_STATUSES` raise `ToolError(Executor.UNAVAILABLE_MESSAGE)` ("Agent
+  not available"), whichever process refused and for whichever reason, and the reason goes to
+  the log. A failed run keeps "The agent could not process the request".
 
 #### 8.7 A2A (`api/a2a/`)
 
@@ -1583,6 +1643,44 @@ is.
   with no gate the card is served as built. Because a card then varies by caller, the catalog and
   well-known card responses carry `Vary: Authorization`, and an ETag is computed over the card as
   served. Authenticated extended cards stay a non-goal (design, Non-goals).
+- As built (iteration 20, a2a-sdk 1.2.3). `A2A` keeps the descriptor each card was built from
+  (`A2A._descriptors`) and decides from it, so no request reads the registry for a card or a
+  guard; like the cards, the descriptors are those of mount time.
+  - `A2A.get_cards(principal=None)`: without a gate every mounted card; with one,
+    `gate.visible_agents(principal, mounted descriptors)` then `gate.narrow`, one question for
+    the listing. A missing principal is the anonymous one. `A2A.card_for(principal, name)`
+    (`async`) is one card as a caller is served it, or None for an agent it may not see, and
+    for a card with no descriptor to decide by, which is served to nobody.
+    A narrowed card is a copy of the mounted one without the skills the caller is not offered
+    (`_card_as_shown`); a caller offered every skill gets the mounted card itself.
+  - The catalog route reads the request's principal and, with a gate, marks the response
+    `Vary: Authorization` (added to what it already varies by; the app's CORS middleware adds
+    `Origin`).
+  - The well-known card route is the SDK's, built with a `card_modifier` (the SDK's hook for a
+    per-request card), so the SDK's own `ETag` and `If-None-Match` handling are over the card
+    as served and two callers offered different skills never share a tag. The modifier is
+    handed the card and not the request, so the endpoint is wrapped: the wrapper puts the
+    caller in a context variable for the modifier and marks the answer (a 304 included)
+    `Vary: Authorization`. The modifier is the one place the card is decided, once for a
+    request: it serves `card_for`'s card, and raises the bare 404 when there is none for the
+    caller. Without a gate the wrapper is the SDK's endpoint, untouched.
+  - The protocol routes (`message:send`, the task and push-notification routes, the extended
+    card) each carry a dependency, `_usable_by_the_caller(agent)`, which asks
+    `gate.authorize_agent_async(principal, agent, descriptor=<mounted>)` before the SDK parses
+    anything: a hidden agent is `HTTPException(404)` with no detail of its own, byte for byte
+    the answer of a path that is not mounted, and a visible agent the caller holds no level on
+    is `HTTPException(403, detail=<the gate's reason>)`. The a2a-sdk has no permission error
+    (its REST errors map to 400, 404 and 500), so the 403 is made in front of it, in the shape
+    of the identity dependency's 401. The card needs only visibility; the other routes need a
+    level, the task routes too, since reading a task is using the agent.
+  - The executor still answers a refusal that reaches it as `InternalError`: with the guard in
+    front, that is a runner whose policy or registry disagrees with this process's.
+  - One difference remains between a hidden agent and one that is not mounted. A request with a
+    credential the provider refuses is a 401 from the identity dependency on any mounted
+    agent's routes and a 404 where nothing is mounted, so a refused credential tells whether an
+    agent id is served on `a2a`. A caller with no credential, or a valid one, cannot tell.
+    Closing it needs the 401 decided per agent or a catch-all behind the dependency, and is
+    left as an open point (design refinement 18).
 
 #### 8.8 CLI (`cli/cli.py`)
 
@@ -2008,7 +2106,11 @@ Each is intentional; the justification is design section 10 unless stated.
    id order too, where it followed the registration order; the queue-mode handler also lists
    agents another process hosts, while the direct handler lists the ones its process hosts.
 6. MCP `tools/list` and `/a2a/catalog` return only the agents the caller may see; a hidden
-   agent's A2A card is 404; calling a hidden MCP tool is refused by FastMCP.
+   agent's A2A card is 404; calling a hidden MCP tool is refused by FastMCP. As built
+   (iteration 20), with an `authorization` block: every route of a hidden A2A agent is that
+   404, a visible agent the caller holds no level on is a 403 on A2A's protocol routes and on
+   AG-UI, a card and the catalog carry `Vary: Authorization` and the skills the caller is
+   offered, and AG-UI's `/agents` is the caller's own.
 7. With an `authorization` block, an agent run is refused before pre-hooks (403), a hidden agent
    is 404, denied tools are hidden where the framework allows and refused at call time with a
    reason string everywhere, and a session is continued only by its owner (403) outside
@@ -2135,6 +2237,12 @@ Each is intentional; the justification is design section 10 unless stated.
     the first agent on the surface, where it ran the first agent registered. Tasks created
     before the change, and by a schedule tool, are unaffected. A task record gains `surface`
     and `last_error`, and `ScheduleStore.record_trigger` an optional `error`.
+42. Three answers change with no `authorization` block (iteration 20). An MCP call the runner
+    answers 404 or 403 (an agent the runner does not serve) is `ToolError("Agent not
+    available")`, where it was "The agent could not process the request". A realtime call
+    naming an agent the runner does not host is told once, with a terminal error chunk, and
+    held back, where each of its inputs was retried and failed. And AG-UI's bare route answers
+    a default agent that has since gone with a bare 404, where it named the agent.
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (the optional
 `last_error`, `surface` and `principal` on a task's document aside); the queue envelope
@@ -2151,8 +2259,10 @@ for the two caches and the framework context; public exports other than those na
 | Invalid, expired, wrong-audience credential | `RequestAuthenticator` | 401 `"Unauthorized"` (HTTP), 1008 `"Authentication failed"` (WS), `ToolError` (MCP via FastMCP's own 401), `AuthenticationError` logged at INFO with the reason |
 | Malformed `Authorization` header | same | 401 `"Invalid authorization header"` when a provider is configured; without one the header is ignored unparsed and the request runs anonymous |
 | Anonymous caller on a surface that needs a user | `AuthorisedRESTRequestHandler._resolve_user` | 401 `"Authentication required"` |
-| No level on the agent | `AccessGate.authorize_agent` → `PermissionError` | 403 with the message; `StreamChunk(error, done=True)` on a stream; `ToolError("Agent not available")` on MCP; A2A `InternalError` |
+| No level on the agent | `AccessGate.authorize_agent` → `PermissionError` | 403 with the message; `StreamChunk(error, done=True)` on a stream; `ToolError("Agent not available")` on MCP; on A2A a 403 `{"detail": <message>}` from the route's guard (`InternalError` only when the runner refuses what this process let through); on AG-UI a 403 `{"detail": <message>}`; on a realtime call one terminal error chunk and no native session |
 | Agent named in a request is unknown to the registry, or not visible to the caller | `AgentService.ensure_agent_available`, `AccessGate.authorize_agent` → `AgentNotFoundError` | 404 `"Agent '<name>' not found"`, one status and body for both, on REST chat (direct and queued, a request that schedules included), the thread chat routes and AG-UI; `ToolError("Agent not available")` on MCP; `{"error": ...}` from the schedule tools |
+| Agent hidden from the caller, on a surface that addresses it by its own path or tool | the surface's check: `A2ARESTRequestHandler._usable_by_the_caller` and the card wrapper, `MCP._visible_to_the_caller`, the AG-UI bare route | A2A: 404 `{"detail": "Not Found"}` on every route of the agent, the answer of a path that is not mounted, and no card in the catalog. MCP: the tool is not listed and a call is FastMCP's `Unknown tool`. AG-UI's bare route (`agui.default_agent`): the bare 404 of a route with no default |
+| A realtime call whose caller cannot have the agent | `RealtimeConnectionPool._refuse` | One terminal error chunk to the edge (`"Realtime session could not start: <reason>"`), nothing raised to the queue, the session held back with the reconnect back-off |
 | Agent named in a request is kept off the surface the request entered by | `AgentService.ensure_agent_available(..., surface=)` → `AgentNotFoundError` | The unknown agent's 404 and body on REST chat (direct and queued, a request that schedules included), the thread chat routes before any write, and WebSocket chat |
 | No agent named and the registry knows none, or none hosted here is on the request's surface, or the default agent is one the caller may not see | `AgentService.ensure_agent_available` → `ValueError` | 400 `"No agent available"` |
 | A queued request naming an agent its caller cannot have | `RestHandler._availability_refusal` (the same check, at the accepting process) | The 404 or 403 above with `{"error", "session_id"}`, nothing enqueued, no file saved; from `request` a `QueuedReply` with that status and body. Left to the runner when the request names no agent, or this process's registry knows none |
@@ -2423,11 +2533,38 @@ New files under `ak-py/tests/`:
 - `test_api_mcp_auth.py`: `AKTokenVerifier` through a real `fastmcp.Client` with a bearer token,
   401 on a bad token, `tools/list` filtered by the per-tool check, the principal on the enqueued
   body, open MCP without identity; `RemoteAuthProvider` metadata served for an OIDC provider.
+  As built (iteration 20): `TestTheToolsOfACaller`, through the server `MCP` builds and
+  FastMCP's HTTP layer with two callers: the list per caller, an agent kept off `mcp` not listed
+  by a grant, every agent listed without the block, a call to a hidden tool answered like a call
+  to an unknown one with nothing sent, the policy read at each request, and a check that raises
+  hiding the tool; `TestARefusedCall`: a 403 or 404 reply worded `Agent not available`, a failed
+  run keeping its own message, and the real queue client's precheck refusing a caller.
 - `test_api_a2a_auth.py`: the context builder putting the principal on the call context, the
   executor setting it on the body, cards carrying `security_schemes` and per-skill requirements
   for `static` and `oidc`, none without identity, a hidden card 404, `/a2a/catalog` filtered, a
   card's skills narrowed to the caller with `Vary: Authorization` and an ETag of the card as
-  served.
+  served. As built (iteration 20): `TestAgentAccessOverA2A`, through `RESTAPI.build_app` with a
+  static provider of two callers and a registry that hosts nothing and counts its reads: the
+  catalog per caller with a hidden agent named nowhere, skills narrowed (and none tool-backed
+  for an agent seen by visibility alone), `Vary` on the catalog and the card, no registry read
+  per request, a hidden agent's card and its message and task routes byte for byte the answer
+  of an agent that is not mounted, a card served to a caller with no level, the ETag of the
+  card as served and a conditional request not answered 304 for another caller's card, the 403
+  with nothing sent, a caller naming nobody listed as the anonymous principal, a card with no
+  descriptor served to nobody, the card decided once for a request, and the surface unchanged
+  without the block; `TestTheCallerOfARequest`: the request's principal before its context,
+  and `Vary` keeping what a response already varies by.
+- The other two surfaces of iteration 20. `test_agui_handler` (`TestAgentAccessOverAGUI`): the
+  listing per caller, among the hosted agents without listing the registry, the hidden agent's
+  404 with the unknown agent's body and headers, the 403 before a session is loaded, a hidden
+  agent that cannot stream still a 404, the bare route not naming a hidden default, the mount
+  validating the policy; `test_agui_queue_handler` (`TestTheEdgeAnswersForTheCaller`): the same
+  answers at the queue-mode edge with nothing enqueued and one descriptor read.
+  `test_realtime_pool` (`TestRealtimeRefusedCaller`): one terminal error chunk addressed to the
+  room and nothing raised, the next inputs dropped without asking again, the doubling delay, a
+  grant given meanwhile opening the call, the end of the call forgetting the refusal, another
+  call not held back, any other error still raised, and the real gate through the real chat
+  service. `test_access_gate`: the listing among candidates handed in.
 - `test_cli_token.py`: `--token` and `AK_CLI_TOKEN` through the `static` provider; the principal
   on `run_multi`; an invalid token exits.
 - `test_principal_messaging.py`: `IntegrationProducer.enqueue` building the `messaging:` and
@@ -2860,3 +2997,28 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    `ScheduleStore.record_trigger` gains `error`, and the manager passes it only for an
    occurrence that was not run, so a bring-your-own store written before it keeps working for
    every occurrence that is (sections 6, 7, 8.1, 8.3 and 8.11).
+18. **The protocol surfaces, where building them settled the outline** (iteration 20,
+   2026-11-25). Five points, each written into the section it belongs to.
+   A2A answers a refusal in front of the SDK. The a2a-sdk has no permission error and its REST
+   errors are 400, 404 and 500, so the design's "403" cannot come out of the executor: each
+   protocol route carries a dependency that asks the gate first, and a hidden agent gets the
+   bare 404 of a path that is not mounted, on every one of its routes and not on its card
+   alone. Seeing an agent serves its card; a level is needed for everything else.
+   A card's ETag is the SDK's, over the card as served. Section 8.7 planned to compute one; SDK
+   1.2.3 does it for a card built by `card_modifier`, with the conditional request handled, so
+   the narrowing is that modifier and nothing is hashed here.
+   The surfaces that serve a fixed set decide from it. A2A keeps the descriptors its cards were
+   mounted with and the direct AG-UI handler asks about the agents it hosts
+   (`visible_agents(principal, descriptors)`), so neither lists nor reads the registry per
+   request, and what a caller is shown agrees with what is mounted until the next start.
+   A realtime refusal is told once and held back, because raising it handed every audio frame
+   of the call to the queue's retries. The same holds, without an `authorization` block, for a
+   call naming an agent the runner does not host.
+   A default agent the caller may not see is not named on AG-UI's bare route, the rule
+   refinement 16 set for a request naming no agent.
+   Left open: on A2A a credential the provider refuses is a 401 on a mounted agent's routes and
+   a 404 where nothing is mounted, so it tells whether an agent id is served there (an
+   anonymous or an authenticated caller cannot tell). The routes are mounted per agent behind
+   one identity dependency; closing it means deciding the 401 per agent, or a catch-all route
+   behind the dependency, which would also turn the SDK's 405 for a wrong method into a 404
+   (sections 7, 8.4, 8.5, 8.6 and 8.7).

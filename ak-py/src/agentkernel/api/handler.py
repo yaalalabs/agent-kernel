@@ -43,6 +43,25 @@ class RESTRequestHandler(ABC):
         """
         pass
 
+    @staticmethod
+    def _validate_access() -> None:
+        """
+        Check the `authorization` policy against the agents this process hosts and the registry, as the
+        routes are mounted. A no-op without the block. A handler whose routes run agents calls it first
+        in `get_router()`: the chat handlers and the AG-UI handlers do.
+
+        Mounting is where a process starts serving its agents with every module loaded, so this is the
+        check that can compare the policy with the whole registry (`Module.load` checks each module's own
+        agents as it loads, when later modules have not registered): a grant naming an agent or a tag no
+        descriptor carries is warned about here. A process that hosts no agent, the accepting side of a
+        split deployment, makes only those registry-wide findings.
+        :raises AKConfigError: If the policy cannot be enforced for a hosted agent: a tool policy naming a
+            tool the agent does not have, or an agent with tools Agent Kernel cannot gate.
+        """
+        gate = Runtime.access_gate()
+        if gate is not None:
+            gate.validate_configuration(Runtime.current().registry.agents().values())
+
 
 class AuthorisedRESTRequestHandler(RESTRequestHandler):
     """
@@ -213,24 +232,6 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self.chat_service.process_async_chat_request(req=req)
-
-    @staticmethod
-    def _validate_access() -> None:
-        """
-        Check the `authorization` policy against the agents this process hosts and the registry, as the
-        routes are mounted. A no-op without the block.
-
-        Mounting is where a process starts serving its agents with every module loaded, so this is the
-        check that can compare the policy with the whole registry (`Module.load` checks each module's own
-        agents as it loads, when later modules have not registered): a grant naming an agent or a tag no
-        descriptor carries is warned about here. A process that hosts no agent, the accepting side of a
-        split deployment, makes only those registry-wide findings.
-        :raises AKConfigError: If the policy cannot be enforced for a hosted agent: a tool policy naming a
-            tool the agent does not have, or an agent with tools Agent Kernel cannot gate.
-        """
-        gate = Runtime.access_gate()
-        if gate is not None:
-            gate.validate_configuration(Runtime.current().registry.agents().values())
 
     def get_router(self) -> APIRouter:
         """

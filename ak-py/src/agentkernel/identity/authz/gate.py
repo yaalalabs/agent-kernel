@@ -124,23 +124,29 @@ class AccessGate:
         """The synchronous form of ``visible_async``."""
         return bool(self._wait(self.visible_async(principal, descriptor)))
 
-    async def visible_agents_async(self, principal: Principal) -> list[AgentDescriptor]:
+    async def visible_agents_async(self, principal: Principal, descriptors: Iterable[AgentDescriptor] | None = None) -> list[AgentDescriptor]:
         """Return the descriptors of the agents ``principal`` may see, out of everything the registry knows.
 
-        The authorizer is asked once for the whole registry (a backend that lists resources answers natively),
+        The authorizer is asked once for the whole list (a backend that lists resources answers natively),
         and the agents a visibility admits are added.
 
-        :param principal: Who is asking.
-        :return: The visible descriptors, in the registry's order.
-        """
-        # A listing of the registry: over a shared store it is a blocking read.
-        descriptors = await asyncio.to_thread(Runtime.current().registry.descriptors)
-        held = set(await self._authorizer.visible_agents(principal, [descriptor.id for descriptor in descriptors]))
-        return [descriptor for descriptor in descriptors if descriptor.id in held or self._admitted_by_visibility(principal, descriptor)]
+        A surface that serves a fixed set of agents (the ones its process hosts, the cards it mounted)
+        hands that set in as ``descriptors``: the listing is then among those, and the registry is not read.
 
-    def visible_agents(self, principal: Principal) -> list[AgentDescriptor]:
+        :param principal: Who is asking.
+        :param descriptors: The agents to choose among; everything the registry knows when omitted.
+        :return: The visible descriptors, in the order of the candidates (the registry's, when omitted).
+        """
+        if descriptors is None:
+            # A listing of the registry: over a shared store it is a blocking read.
+            descriptors = await asyncio.to_thread(Runtime.current().registry.descriptors)
+        candidates = list(descriptors)
+        held = set(await self._authorizer.visible_agents(principal, [descriptor.id for descriptor in candidates]))
+        return [descriptor for descriptor in candidates if descriptor.id in held or self._admitted_by_visibility(principal, descriptor)]
+
+    def visible_agents(self, principal: Principal, descriptors: Iterable[AgentDescriptor] | None = None) -> list[AgentDescriptor]:
         """The synchronous form of ``visible_agents_async``."""
-        return list(self._wait(self.visible_agents_async(principal)))
+        return list(self._wait(self.visible_agents_async(principal, descriptors)))
 
     async def narrow_async(self, principal: Principal, descriptors: Iterable[AgentDescriptor]) -> list[AgentDescriptor]:
         """Return descriptors as ``principal`` is shown them: each with the tools it is offered.

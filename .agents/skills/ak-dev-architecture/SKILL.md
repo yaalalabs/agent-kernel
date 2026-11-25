@@ -882,8 +882,8 @@ Phase D is in progress: the authorizer contract, the static backend, its factory
 **access gate** are in `identity/authz/` (the Authorization and Access gate bullets below). An
 `authorization` block now gates every run (`Runtime._admit`), the pre-run check
 (`AgentService.ensure_agent_available`), the queue pipeline's precheck before anything is enqueued,
-a scheduled occurrence at fire time and the REST catalog (iteration 19); the MCP, A2A and AG-UI
-listings do not consult it yet (iteration 20). The framework tool gates and the
+a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
+realtime surfaces (iteration 20, the Protocol surfaces bullet below). The framework tool gates and the
 credentials capability are later phases: the tool filter is published and
 `ToolContext.access_level` reads it, but no adapter enforces it at call time yet, and
 `Principal.credential_ref` is inert. Authentication is
@@ -1120,9 +1120,10 @@ deleted).
   an agent the registry does not know or the principal may not see, one text for both;
   `PermissionError` for one it sees and holds no level on; hand over the descriptor when you hold
   it, otherwise the hosted agent's own answers and only an agent hosted elsewhere reads the store);
-  `visible(principal, descriptor)` and `visible_agents(principal)` (a level, or `public`, or
-  `internal` when signed in; visibility never confers a level; one authorizer listing for the
-  whole registry); `tool_filter(principal, agent, level=None) -> ToolFilter` (allowed names over
+  `visible(principal, descriptor)` and `visible_agents(principal, descriptors=None)` (a level, or
+  `public`, or `internal` when signed in; visibility never confers a level; one authorizer listing
+  for the whole registry, or among the candidates a surface that serves a fixed set hands in, in
+  which case the registry is not read); `tool_filter(principal, agent, level=None) -> ToolFilter` (allowed names over
   `agent.get_tool_names()`, a reason per denied tool, the level; no level, no filter);
   `authorize_session(principal, session)` (no owner: open; a direct-channel owner: namespace and
   subject; a `messaging:` / `realtime:` owner: provider and namespace alone);
@@ -1130,8 +1131,9 @@ deleted).
   `ungated_tool_names()` is an `AKConfigError`, then `Authorizer.validate`, whose findings are
   logged once each; `Module.load` calls it with `registry_wide=False` and rolls the load back on
   an error, since a module loaded later has not registered yet; the registry-wide call is
-  `AgentRESTRequestHandler._validate_access()`, the first statement of the three routers that serve
-  the chat and catalog routes, so a handler that builds a router of its own calls it too);
+  `RESTRequestHandler._validate_access()`, the first statement of the routers that run agents (the
+  three that serve the chat and catalog routes, and AG-UI's), so a handler that builds a router of
+  its own calls it too);
   `narrow(principal, descriptors) -> list[AgentDescriptor]` (iteration 19: each descriptor as the
   principal is shown it, `tools` kept to what `filter_tools` allows of the tools the descriptor
   records and `skills` following, a skill that names no tool staying; what any listing of agents
@@ -1142,6 +1144,33 @@ deleted).
   `ChatService.execute`), run the question on a thread of their own. A new surface asks the gate
   before it commits anything and maps `PermissionError` to 403 and `AgentNotFoundError` to 404;
   it never asks the authorizer directly.
+- **Protocol surfaces** (iteration 20). Each answers for the caller in its own protocol's terms,
+  and a hidden agent is never told apart from one the surface does not serve.
+  **MCP** (`api/mcp/akmcp.py`): every agent tool is registered with
+  `auth=MCP._visible_to_the_caller(descriptor)`, an `async` FastMCP `AuthCheck` that reads the
+  request's token and asks `gate.visible_async` at each request; FastMCP leaves a tool whose
+  check fails out of `tools/list` and answers a call to it `Unknown tool`. A reply with a
+  refusal status (`Executor.REFUSED_STATUSES`, 403 and 404, from the precheck or the runner) is
+  `ToolError("Agent not available")`.
+  **A2A** (`api/a2a/`): `A2A._descriptors` keeps the descriptor each card was mounted with and
+  everything is decided from it, with no registry read per request. `get_cards(principal)` and
+  `card_for(principal, name)` are the caller's catalog and card (`gate.visible_agents` among
+  the mounted descriptors, then `gate.narrow`; a narrowed card is a copy without the skills the
+  caller is not offered). The card route is the SDK's with a `card_modifier`, so the SDK's own
+  `ETag` is over the card as served; the wrapper adds the bare 404 for a hidden agent and
+  `Vary: Authorization`. Each protocol route carries `_usable_by_the_caller(agent)`, a
+  dependency that asks `authorize_agent_async` before the SDK runs: 404 with the body of an
+  unmounted path, or 403 (the a2a-sdk has no permission error, so the executor could not
+  answer it). **AG-UI** (`integration/agui/handler.py`): `_resolve_agent(agent_name,
+  principal)` asks the gate with the descriptor it read, before the streaming check; `/agents`
+  is `gate.visible_agents(principal, self._descriptors())`; the bare route does not name a
+  default the caller cannot have; both handlers share it. **Realtime** (`realtime/pool.py`):
+  `dispatch` catches the refusal of the agent check and calls `_refuse`, which sends the edge
+  one terminal error chunk and holds the session back with the reconnect back-off; it is never
+  raised, since every audio frame is an input and the queue would retry each. A new surface
+  follows the same three rules: ask the gate before committing anything, answer a hidden agent
+  exactly as an agent it does not serve, and decide among the agents it serves
+  (`visible_agents(principal, descriptors)`) when that set is fixed.
 - **The precheck before the queue** (`pipeline/request_handler.py`, iteration 19):
   `RestHandler._availability_refusal(body)` asks `ensure_agent_available(body.agent,
   body.principal, surface=body.surface)` in the registry-wide form, off the event loop, and

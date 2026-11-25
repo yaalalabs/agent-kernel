@@ -1056,6 +1056,49 @@ adds the caller to a check that already knows the surface.
      with the input's principal (iteration 18); what remains is how a refusal reaches the edge.
 - **Verify:** list filtering and `AuthCheck` in `test_api_mcp_auth`; card filtering and skill
   narrowing in `test_api_a2a_auth`; the 403 in `test_agui_handler`; the realtime pool tests.
+- **As built (2026-11-25):** the four steps, with what was settled along the way written into
+  spec 7, 8.4, 8.5, 8.6 and 8.7 and gathered as refinement 18.
+  - **MCP.** Each agent tool carries an `async` check (`MCP._visible_to_the_caller`) that asks
+    the gate at each request whether the caller may see the agent: FastMCP leaves the tool out
+    of `tools/list` and answers a call to it as it answers an unknown tool. A call the precheck
+    or the runner refuses (a 403 or 404 reply, since iteration 19 a reply and not an exception)
+    is `ToolError("Agent not available")`.
+  - **A2A.** `A2A` keeps the descriptors its cards were mounted with and decides from them, with
+    no registry read per request. `get_cards(principal)` is the caller's catalog, narrowed by
+    `AccessGate.narrow`; the card route is the SDK's with a `card_modifier`, so the ETag is the
+    SDK's own, over the card as served; both answers say `Vary: Authorization`. Every protocol
+    route carries a dependency that asks the gate before the SDK runs: a hidden agent is the
+    bare 404 of a path that is not mounted, on all of its routes, and a visible agent the caller
+    holds no level on is a 403. The a2a-sdk has no permission error, so the 403 could not come
+    from the executor.
+  - **AG-UI.** `_resolve_agent(agent_name, principal)` asks the gate with the descriptor it
+    read, before the streaming check; `/agents` is `visible_agents` among what the handler
+    serves; the bare route does not name a default the caller cannot have; `get_router()`
+    validates the policy, for an app that mounts no chat router. Both handlers share it, so the
+    queue-mode edge refuses before it enqueues.
+  - **Realtime.** `dispatch` no longer raises the gate's refusal: `_refuse` sends the edge one
+    terminal error chunk and holds the session back with the reconnect back-off. Raised, the
+    refusal was retried by the queue for every audio frame of the call.
+  - **Outside the file list:** `identity/authz/gate.py` (`visible_agents` takes the candidates
+    to choose among) and `api/handler.py` (`_validate_access` moved to the handler base, so
+    AG-UI can call it). `pipeline/realtime_pool.py` in the list is `realtime/pool.py` since the
+    develop merge of #941.
+  - **Changes with no `authorization` block:** the MCP wording of a 404 or 403 reply, the
+    realtime refusal for an agent the runner does not host (told once, where each input was
+    retried), and the bare AG-UI route's 404 for a default agent that has gone.
+  - **Open point:** on A2A a credential the provider refuses is a 401 on a mounted agent's
+    routes and a 404 elsewhere, so it tells whether an agent id is served there. A caller with
+    no credential, or a valid one, cannot tell. Not closed here (refinement 18).
+  - **Not covered, as after iteration 19:** WebSocket chat frames, the messaging edges and the
+    deployment adapters' own entry points enqueue without an edge check; the runner refuses.
+  - User documentation: the realtime internals page gains the refused call. The `authorization`
+    block, and what it does on each surface, are still to be written (iteration 27's part for
+    this phase), and the pages that say visibility is "not enforced yet" stand until then.
+  - **Phase end:** the full `ak-py` suite ran with this iteration, as the test cadence asks at
+    the end of a phase (7825 passed, 134 skipped; `test_the_auth_package_is_gone` fails on the
+    leftover untracked `auth/__pycache__` of this checkout, as before), with the three checks of
+    `make lint-check` (isort, black, ruff) run without syncing the environment, all clean, and
+    the docs site built.
 
 ## Phase E: Framework tool gates (iterations 21 to 23)
 
