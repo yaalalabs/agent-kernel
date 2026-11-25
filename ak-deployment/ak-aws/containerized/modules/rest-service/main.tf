@@ -222,6 +222,7 @@ resource "aws_lb" "app" {
   load_balancer_type = "application"
   subnets            = var.subnet_ids
   security_groups    = [local.alb_security_group_id]
+  idle_timeout       = var.alb_idle_timeout
 
   tags = var.tags
 }

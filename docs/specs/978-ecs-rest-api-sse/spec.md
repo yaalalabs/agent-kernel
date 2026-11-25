@@ -559,6 +559,11 @@ variable "gateway_integration_timeout" {
 }
 ```
 
+Both this description and §6.1's ship as **single-line strings**, not heredocs. The heredocs here are
+for readability in this document only: `ak-deployment/` contains no `description = <<` anywhere, and
+its single-line descriptions already run to 573 characters, so a heredoc would be a new convention
+introduced for two variables.
+
 Consumed only as `var.gateway_integration_timeout * 1000` in the operation builder (§2.2). No
 validation block: AWS rejects an out-of-range value at import, and the documented range under `STREAM`
 is exactly what claim 4b exists to establish — a `validation` written against today's contradictory

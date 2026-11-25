@@ -235,6 +235,18 @@ variable "throttling_burst_limit" {
   default     = null
 }
 
+variable "alb_idle_timeout" {
+  type        = number
+  description = "Seconds the ALB holds a connection open with no bytes in either direction, before closing it. Raise it when an agent can stay silent mid-stream for longer than the default, such as a long tool call under SSE. The gateway's integration timeout caps the total stream length separately, so raising this alone does not extend a stream past what API Gateway allows."
+  default     = 300
+}
+
+variable "gateway_integration_timeout" {
+  type        = number
+  description = "Seconds API Gateway allows one integration request to run in total, including a streamed response. Caps the length of an SSE stream. Distinct from alb_idle_timeout, which bounds a silent gap rather than the total: a stream emitting steadily for longer than this is cut even though the ALB never sees an idle period."
+  default     = 900
+}
+
 variable "enable_api_gateway_logs" {
   type        = bool
   description = "When true, creates the API Gateway CloudWatch log group and enables access logging on the HTTP API stage (or the WebSocket API stage, in WebSocket modes). Off by default."
