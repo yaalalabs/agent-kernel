@@ -96,7 +96,9 @@ async def streamed(sse_client):
 @pytest.mark.order(1)
 async def test_reply_arrives_as_multiple_frames(streamed):
     frames, _ = streamed
-    assert len(frames) > 1, f"expected several SSE frames, got {len(frames)}: a single frame means the reply was buffered"
+    assert (
+        len(frames) > 1
+    ), f"expected several SSE frames, got {len(frames)}: a single frame means the reply was buffered"
     assert any(f.get("done") for f in frames), "no terminal frame with done=true"
     assert not any("error" in f for f in frames), f"error frame in stream: {[f for f in frames if 'error' in f]}"
 
@@ -124,4 +126,6 @@ async def test_streamed_text_answers_the_question(streamed):
     frames, _ = streamed
     text = "".join(f.get("delta", "") for f in frames)
     assert text.strip(), "frames carried no delta text"
-    Test.compare(text, ["An explanation of ancient Sri Lankan reservoir and canal irrigation at Anuradhapura and Polonnaruwa"])
+    Test.compare(
+        text, ["An explanation of ancient Sri Lankan reservoir and canal irrigation at Anuradhapura and Polonnaruwa"]
+    )

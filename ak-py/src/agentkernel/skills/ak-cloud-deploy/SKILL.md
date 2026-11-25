@@ -47,7 +47,7 @@ If missing, suggest `ak-init` first.
 - Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode; AWS serverless or containerized)
 - Asynchronous REST (`rest_async`, queue/scalable mode; AWS serverless or containerized)
 - WebSocket full-response (`async` with `message_type` unset or `complete`, works with or without queue mode — `queue_mode = false` runs the agent inline, `queue_mode = true` enqueues to a separately-scalable Agent Runner) — AWS serverless or AWS containerized/ECS
-- WebSocket token streaming (`async` with `message_type = "delta"`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: rest_sync` and `execution.message_type: delta`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container (non-queue) REST, AWS ECS queue mode (#978: the gateway is a REST API that streams; needs a Redis or Valkey `execution.response_store`, since DynamoDB cannot stream chunks), Azure Container Apps, GCP Cloud Run — not on AWS Lambda (refused at startup) or Azure Functions. The old `stream` mode was removed: `execution_mode = "stream"` fails at `terraform plan` and `execution.mode: stream` fails at config load
+- WebSocket token streaming (`async` with `message_type = "delta"`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: rest_sync` and `execution.message_type: delta`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container (non-queue) REST, AWS ECS queue mode (the gateway is a REST API that streams; needs a Redis or Valkey `execution.response_store`, since DynamoDB cannot stream chunks), Azure Container Apps, GCP Cloud Run — not on AWS Lambda (refused at startup) or Azure Functions. The old `stream` mode was removed: `execution_mode = "stream"` fails at `terraform plan` and `execution.mode: stream` fails at config load
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: which identity provider authenticates callers (the `identity` block in `config.yaml`: `static`, `oidc` for Auth0, Keycloak, Okta or any OIDC issuer, `cognito`, `entra`, `firebase`, or your own), and on AWS serverless, is the API Gateway `authorizer` wanted (see Deploying the Identity Provider)?
@@ -1158,8 +1158,8 @@ message per chunk instead of one for the full reply; in direct mode the chat rou
 `examples/aws-containerized/openai-stream` (direct mode) or
 `examples/aws-containerized/openai-stream-queue-mode` (queue mode) for full streaming examples.
 `execution_mode = "stream"` was removed (fails at `terraform plan`), and `rest_sync` +
-`message_type = "delta"` (SSE) works in ECS queue mode since #978, where the gateway is a REST API
-with `responseTransferMode: STREAM`; it needs a Redis or Valkey `execution.response_store`, because
+`message_type = "delta"` (SSE) works in ECS queue mode, where the gateway is a REST API with
+`responseTransferMode: STREAM`; it needs a Redis or Valkey `execution.response_store`, because
 DynamoDB cannot stream chunks. Terraform injects `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and
 the agent runner whenever `message_type` is set, so the two containers always agree.
 

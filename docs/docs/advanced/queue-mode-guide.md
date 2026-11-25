@@ -743,8 +743,7 @@ graph TB
 `delta`**: see [WebSocket (Async) Mode in ECS](#websocket-async-mode-in-ecs) below. `rest_sync` and
 `rest_async` always deliver replies through the response store; `async` always pushes over
 the WebSocket connection instead. **`rest_sync` with `message_type: delta` (SSE) also works in queue
-mode since #978**, where the ECS gateway is a REST API that streams rather than an HTTP API that
-buffers; it needs a Redis or Valkey response store, because DynamoDB cannot stream chunks.
+mode**, because the ECS gateway is a REST API that streams rather than an HTTP API that buffers; it needs a Redis or Valkey response store, because DynamoDB cannot stream chunks.
 :::
 
 ### Python Class Hierarchy

@@ -5,10 +5,10 @@ streaming over **plain HTTP with `rest_sync` + `delta`** — the agent's reply a
 `text/event-stream` on the ordinary chat route, token by token, with no WebSocket connection and no
 client library.
 
-This is the configuration that `#978` made possible. Before it, the ECS gateway was an API Gateway
-HTTP API, which buffers a whole response before sending any of it, so `terraform plan` rejected
-these settings outright. The gateway is now a REST API with `responseTransferMode: STREAM`, which
-forwards partial responses as they arrive.
+Earlier releases fronted the ECS ingress service with an API Gateway HTTP API, which buffers a whole
+response before sending any of it, so `terraform plan` rejected these settings outright. The gateway
+is now a REST API with `responseTransferMode: STREAM`, which forwards partial responses as they
+arrive.
 
 Related examples:
 
@@ -84,13 +84,13 @@ every stream would die at 29 seconds and look exactly like the old buffering bug
     The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the app reads the key from SSM at startup; no secret passes through Terraform.
 
 2. **Point the example at the local module.** `deploy/main.tf` pins the published module
-   (`yaalalabs/ak-containerized/aws` `0.10.2`), which predates #978 and has neither
-   `alb_idle_timeout` nor `gateway_integration_timeout`, so a plain `terraform init` against it
-   fails on unknown variables. Rewrite the source to this repo's copy:
+   (`yaalalabs/ak-containerized/aws` `0.10.2`), which predates the streaming REST gateway and has
+   neither `alb_idle_timeout` nor `gateway_integration_timeout`, so a plain `terraform init` against
+   it fails on unknown variables. Rewrite the source to this repo's copy:
     ```bash
     python3 scripts/deploy/inject_dependencies.py            # --revert to put the registry source back
     ```
-    Skip this step only once a release containing #978 is published and the pin is raised to it.
+    Skip this step only once a release containing the streaming REST gateway is published and the pin is raised to it.
 
 3. Update `deploy/terraform.tfvars` if you want different naming (`prefix`, `region`).
 

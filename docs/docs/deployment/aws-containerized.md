@@ -15,7 +15,7 @@ Three topologies are supported:
 | **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` in Terraform (`message_type = "delta"` for chunks) | Real-time, bidirectional, connection-based interactions |
 
 :::note Protocol support
-ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. It is also available in **queue mode** since #978, where the gateway is a REST API with `responseTransferMode: STREAM` rather than an HTTP API that buffers; queue-mode SSE needs a Redis or Valkey response store, because DynamoDB cannot stream chunks. **WebSocket mode** is also available on ECS via a WebSocket API Gateway (see [WebSocket Mode](#websocket-mode) below) as `execution_mode = "async"` with either `message_type = "complete"` (one `CHAT_RESPONSE` push per reply, the default) or `message_type = "delta"` (one `STREAM_CHUNK` push per stream event). `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"`.
+ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. It is also available in **queue mode**, where the gateway is a REST API with `responseTransferMode: STREAM` rather than an HTTP API that buffers; queue-mode SSE needs a Redis or Valkey response store, because DynamoDB cannot stream chunks. **WebSocket mode** is also available on ECS via a WebSocket API Gateway (see [WebSocket Mode](#websocket-mode) below) as `execution_mode = "async"` with either `message_type = "complete"` (one `CHAT_RESPONSE` push per reply, the default) or `message_type = "delta"` (one `STREAM_CHUNK` push per stream event). `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"`.
 :::
 
 ## Simple REST Architecture
@@ -773,7 +773,7 @@ See [examples/aws-containerized/crewai-auth](https://github.com/yaalalabs/agent-
 
 ## Upgrading to the streaming REST gateway
 
-Release #978 replaces this module's HTTP API (`aws_apigatewayv2_api`) with a REST API
+This release replaces the module's API Gateway HTTP API (`aws_apigatewayv2_api`) with a REST API
 (`aws_api_gateway_rest_api`), so that SSE can stream instead of being buffered. Two things change for
 an existing deployment.
 
