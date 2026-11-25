@@ -42,6 +42,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Here, not in test-reusable.yaml's script-tests: that job also runs from privileged triggers on a
+      # checkout_ref, which CodeQL flags (actions/cache-poisoning/poisonable-step); this workflow runs only on
+      # pull_request with a read-only token. Testing first also means a broken script fails the check
+      # instead of deciding it.
+      - name: Test the changelog fragment script
+        working-directory: scripts
+        run: python test_changelog_fragments.py
+
       - name: Check the changelog fragment
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
