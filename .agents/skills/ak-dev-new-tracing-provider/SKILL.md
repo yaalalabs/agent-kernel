@@ -391,3 +391,4 @@ This means tracing is **transparent** — users don't change their agent code, t
 - [ ] Tests for factory creation and span wrapping
 - [ ] Documentation in `docs/docs/advanced/tracing-<provider>.md`
 - [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), the Observe stage's tracing point (`HomeSections/index.tsx`); the Tracing capability's provider list on the features page
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (`+<short-slug>.added.md` when the PR has no issue; `.breaking.md` only when existing code, config or deployments stop working), written for users with `ak-dev-sync-changelog-from-branch`

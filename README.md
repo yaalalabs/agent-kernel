@@ -235,7 +235,7 @@ The site also has a guided tour for each kind of reader:
 | A developer | [The code](https://kernel.yaala.ai/developer) | The route from an empty folder to an agent that is deployed and tested |
 | An AI engineer | [The runtime](https://kernel.yaala.ai/ai-engineer) | How OAK compares, where it sits in a request, and the memory, hook and queue machinery |
 
-[Use cases](https://kernel.yaala.ai/use-cases) shows what teams build with OAK, [What's new](https://kernel.yaala.ai/docs/whats-new) lists the latest capabilities, and the [blog](https://kernel.yaala.ai/blog) covers each release in depth.
+[Use cases](https://kernel.yaala.ai/use-cases) shows what teams build with OAK, [What's new](https://kernel.yaala.ai/docs/whats-new) lists the latest capabilities, the [changelog](CHANGELOG.md) lists every user-visible change by release, and the [blog](https://kernel.yaala.ai/blog) covers each release in depth.
 
 ## Examples
 

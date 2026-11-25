@@ -383,3 +383,4 @@ Validate that your backend works with `KnowledgeBuilder.build()` and tools:
 - [ ] Unit tests added under `ak-py/tests/` for connect, each declared operation, and constraints
 - [ ] `ak-py/tests/test_knowledgebase_exports.py` extended if the name is exported
 - [ ] Backend verified through `KnowledgeBuilder` tools, including which gated tools appear
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (`+<short-slug>.added.md` when the PR has no issue; `.breaking.md` only when existing code, config or deployments stop working), written for users with `ak-dev-sync-changelog-from-branch`
