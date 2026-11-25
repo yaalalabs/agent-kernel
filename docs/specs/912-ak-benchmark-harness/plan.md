@@ -83,7 +83,7 @@ Independent of Iterations 1–2; can be built in parallel.
   7. Add `MockWsServer` (Testing → Fixtures).
 - **Verify:** `uv run pytest tests/load tests/test_registries.py -q`
 
-## Iteration 5: State, step lock, deployment folders, results layout
+## Iteration 5: State, deployment lock, deployment folders, results layout
 
 - **Goal:** a mock deployment folder deploys and destroys through its scripts, `state.json` round-trips, and the step
   lock follows the live / stale / other-machine rules.
@@ -93,7 +93,7 @@ Independent of Iterations 1–2; can be built in parallel.
   1. Add `ResultsLayout` with the step-folder padding (Results layout).
   2. Add `DeploymentFolder` and `ScriptEnv` (Deployment folders).
   3. Add `DeploymentState` (`locate`, `create`, `update` with `flock`, `0600` file) (State).
-  4. Add `StepLock` (`acquire`, `release`, `force_unlock`) (State → Lock rules).
+  4. Add `DeploymentLock` (`acquire`, `release`, `force_unlock`) (State → Lock rules).
   5. Add the mock deployment folder scripts with `MOCK_DEPLOY_EXIT` / `MOCK_DESTROY_EXIT` (Testing → Fixtures).
 - **Verify:** `uv run pytest tests/run/test_state_and_lock.py -q`
 
@@ -109,28 +109,27 @@ Independent of Iterations 1–2; can be built in parallel.
      `WARNING` (Step runner).
 - **Verify:** `uv run pytest tests/run/test_step_end_check.py tests/run/test_step_runner.py -q`
 
-## Iteration 7: CSVs and derived numbers
+## Iteration 7: CSVs
 
-- **Goal:** from a `StepRecord` and the raw fetcher files, every step CSV and the `summary.csv` row are written.
-- **Files:** `ak_bench/results/common/percentiles.py`, `results/csv/{per_request,per_window,summary}.py`,
-  `results/csv/{scaling_columns,scaling_numbers,resource_columns}.py`, `results/metadata.py`, recorded CSV fixtures
+- **Goal:** from a `StepRecord` and the raw fetcher files, every step CSV is written (no summary CSV: #786 Later).
+- **Files:** `ak_bench/results/common/percentiles.py`, `results/csv/{per_request,per_window}.py`,
+  `results/csv/{scaling_columns,resource_columns}.py`, `results/metadata.py`, recorded CSV fixtures
   under `tests/fixtures/`, `tests/results/test_results.py`
 - **Steps:**
   1. Add `percentiles()` (Percentiles).
   2. Add `PerRequestWriter` (Per-request CSV).
   3. Add `WindowGrid`, `PerWindowWriter`, `ScalingCollector`, `ResourceCollector` with the fill rule and the
      declared empty columns (Per-time-window CSV).
-  4. Add `ScalingDerivation` (Derived scaling numbers).
-  5. Add `SummaryWriter` (`upsert`, `remove`) (Summary CSV).
-  6. Add `RunMetadataWriter` / `StepMetadataWriter` (Metadata).
+  4. Add `RunMetadataWriter` / `StepMetadataWriter` (Metadata).
 - **Verify:** `uv run pytest tests/results/test_results.py -q`
 
 ## Iteration 8: Graphs
 
-- **Goal:** every phase-1 graph and the cost graph are drawn from CSVs alone, empty data included.
-- **Files:** `ak_bench/results/graphs/{step_graphs,test_type_graphs,cost_graph}.py`, `tests/results/test_plots.py`
+- **Goal:** every per-step graph and the cost graph are drawn from CSVs alone, empty data included (no graphs
+  comparing the steps: #786 Later).
+- **Files:** `ak_bench/results/graphs/{plots,step_graphs,cost_graph}.py`, `tests/results/test_plots.py`
 - **Steps:**
-  1. Add `StepPlots` and `TestTypePlots` with the #786 drawing rules, `Agg` backend, temp-file write, per-graph error
+  1. Add `StepPlots` with the #786 drawing rules, `Agg` backend, temp-file write, per-graph error
      logging (Graphs); use `Scratches/25.Benchmarking-Design/graph-examples/plot_examples.py` for layout only.
   2. Add `CostReport`.
 - **Verify:** `uv run pytest tests/results/test_plots.py -q`
@@ -143,7 +142,8 @@ Independent of Iterations 1–2; can be built in parallel.
   `README.md` (command reference), `tests/run/test_commands.py`, `tests/run/test_teardown_guarantee.py`
 - **Steps:**
   1. Add `Deploy` (checks 1–6 before any script, cleanup on `ScriptFailed`) (Commands).
-  2. Add `Step` and `Step.force_unlock` (lock in `try / finally`, `--replace`, `summary.csv` row written last).
+  2. Add `Step` and `Step.force_unlock` (deployment lock held for the whole command, `--replace`); every other
+     command on a deployment holds the same lock.
   3. Add `Plot`, `Finish` (deletes `auth_secret` after a good teardown), `PostRun`.
   4. Add `Run` (dry check of every combination, step order, `Finish` in `finally`, second Ctrl-C handling).
   5. Wire the CLI: `BenchError` → exit 1, `KeyboardInterrupt` → exit 130.

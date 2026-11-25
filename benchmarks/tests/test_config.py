@@ -188,6 +188,7 @@ def test_cli_config_flag_sets_the_path(tmp_path):
     from ak_bench.cli import BenchCli
 
     path = write(tmp_path, REQUIRED)
-    with pytest.raises(NotImplementedError):
-        BenchCli().run(["--config", str(path), "plot", "--run-id", "r"])
+    # The config loads from --config; the plot is then refused (no deployments) with exit code 1
+    assert BenchCli().run(["--config", str(path), "--results-dir", str(tmp_path), "plot", "--run-id", "r"]) == 1
+    assert BenchConfig.get().step_run.time_window_s
     assert os.environ["AK_BENCH_CONFIG_PATH_OVERRIDE"] == str(path)

@@ -3,7 +3,7 @@
 Builds the cloud-independent part of the #786 benchmark system: a new top-level `benchmarks/` uv project with the
 `ak_bench` package and its `ak-bench` console script, plus the benchmarked app in `benchmarks/app/` (its own uv
 project). The design idea: every platform-specific read is an `InfoFetcher` placed in one of a host's five lists, every
-deployment is a folder of scripts, and everything else (load, timing, step flow, CSVs, derived numbers, graphs) is
+deployment is a folder of scripts, and everything else (load, timing, step flow, CSVs, graphs) is
 shared code that only sees the ABCs, so the AWS issues under #917 add fetchers, a registry entry and deployment folders
 with no harness change.
 
@@ -50,7 +50,7 @@ benchmarks/
 │   │   └── generator.py        # LoadGenerator, LoadResult
 │   ├── run/
 │   │   ├── commands.py         # Deploy, Step, Plot, Finish, PostRun, Run
-│   │   ├── state.py            # DeploymentState, StepLock, StepWindow
+│   │   ├── state.py            # DeploymentState, DeploymentLock
 │   │   ├── deployment_folder.py  # DeploymentFolder: finds and runs deploy.sh / destroy.sh
 │   │   ├── step_runner.py      # StepRunner, StepRecord
 │   │   ├── step_end_check.py   # StepEndCheck, StepEnd
@@ -65,13 +65,11 @@ benchmarks/
 │       │   ├── per_request.py  # PerRequestWriter
 │       │   ├── per_window.py   # PerWindowWriter, WindowGrid
 │       │   ├── scaling_columns.py   # ScalingCollector (per-window worker / queue columns)
-│       │   ├── scaling_numbers.py   # ScalingDerivation (summary scaling numbers)
-│       │   ├── resource_columns.py  # ResourceCollector (per-window and summary CPU / memory)
-│       │   └── summary.py      # SummaryWriter
+│       │   └── resource_columns.py  # ResourceCollector (per-window CPU / memory)
 │       ├── metadata.py         # RunMetadataWriter, StepMetadataWriter
 │       └── graphs/
+│           ├── plots.py             # Plots (shared base)
 │           ├── step_graphs.py       # StepPlots
-│           ├── test_type_graphs.py  # TestTypePlots
 │           └── cost_graph.py        # CostReport (billed cost graph)
 ├── app/
 │   ├── pyproject.toml          # project "ak-bench-app", package = false, path source on ../../ak-py
@@ -157,7 +155,8 @@ packaging needs (`aws`, ...).
 class BenchError(Exception): ...                 # every refusal / failure the CLI turns into exit code 1
 class BenchConfigError(BenchError): ...          # ak-bench.yaml and CLI argument problems
 class HostRefused(BenchError): ...               # StageFetchers.validate() failures
-class StepRefused(BenchError): ...               # lock held, folder exists, unknown step, torn-down deployment
+class StepRefused(BenchError): ...               # folder exists, unknown step, torn-down deployment, post-run before finish
+class DeploymentLocked(BenchError): ...          # another command holds the deployment lock
 class ScriptFailed(BenchError): ...              # deploy.sh / destroy.sh exit code != 0, or missing deployment.json
 class FetcherTypeError(BenchError): ...          # fetch() returned another type than the family's
 ```
@@ -217,7 +216,7 @@ class BenchConfig(BaseSettings):
     hosts: list[str] | None = None           # None = every registered host
     modes: list[str] | None = None           # None = every mode with a driver
     message_types: list[str] | None = None   # None = every message type with a driver
-    test_types: list[Literal["steady", "burst"]] = ["steady", "burst"]
+    test_types: list[TestType] = list(TestType)   # TestType(StrEnum): STEADY, BURST; the one definition (CLI, Step, graphs)
     load_steps: list[int] = [1, 10, 100, 1000]   # validator: non-empty, each >= 1, no duplicates
     step_run: StepRunConfig
     steady_traffic: SteadyTrafficConfig = SteadyTrafficConfig()
@@ -407,8 +406,8 @@ class KeyedCsv:
 - **Concurrency contract:** one `threading.Lock` per resolved path, shared by every `KeyedCsv` in the process, held for
   the whole read-modify-write. `during_step` tasks run in parallel worker threads (`asyncio.to_thread`) and two
   fetchers of the same family write the same file, so this is the guarantee `design.md` asks for ("safe when two
-  fetchers write the same file at once"). Cross-process safety is not needed: the step lock allows one step process
-  per deployment.
+  fetchers write the same file at once"). Cross-process safety is not needed: the deployment lock allows one command
+  process per deployment.
 - Writes go to `<file>.tmp` then `os.replace`, so a run stopped mid-write leaves the previous complete file.
 - Row order: rows keep their first-insert order; new rows are appended.
 - **Per-operation cost:** each upsert rewrites the file. A `during_step` poll adds a handful of rows to a file that
@@ -463,7 +462,7 @@ class ResultsLayout:
     def run_dir(self) -> Path: ...                                   # <root>/<run-id>/
     def run_log(self) -> Path: ...                                   # <run-id>/run.log
     def deployment_dir(self, platform, host, mode, message_type) -> Path: ...  # state.json, run-metadata.json, cost.csv
-    def test_type_dir(self, ..., test_type) -> Path: ...             # summary.csv, graphs/
+    def test_type_dir(self, ..., test_type) -> Path: ...             # the test type's step folders
     def step_dir(self, ..., test_type, step: int, load_steps: list[int]) -> Path: ...
 ```
 
@@ -515,6 +514,7 @@ class ScriptEnv:
   "deployment": { "endpoint": "...", "resources": {}, "queues": {}, "logs": {}, "settings": {} },
   "auth_secret": "<hex>",
   "load_steps": [1, 10, 100, 1000],
+  "mock_delays": null, "host_settings": {},
   "deploy_started": "...", "deploy_finished": "...",
   "steps": { "steady/1": { "started": "...", "before_end": "...", "t_load_up": "...", "t_load_down": "...",
                            "ended": "...", "cooldown_max_reached": false } },
@@ -535,9 +535,9 @@ class DeploymentState:
     def deployment(self) -> Deployment: ...
     def run_info(self) -> RunInfo: ...
 
-class StepLock:
+class DeploymentLock:                   # one command at a time per deployment; also a context manager
     def __init__(self, state: DeploymentState, run_log: RunLog, command: str): ...
-    def acquire(self) -> None: ...      # StepRefused if held by a live process; takes over a stale one
+    def acquire(self) -> None: ...      # DeploymentLocked if held by a live process; takes over a stale one
     def release(self) -> None: ...      # only if this process holds it
     def force_unlock(self, confirm: Callable[[str], bool]) -> None: ...
 ```
@@ -547,17 +547,22 @@ class StepLock:
   parts, gets the platform from `HostRegistry.get(host)`, and opens
   `<root>/<run-id>/<platform>/<host>/<mode>/<message-type>/state.json`. Not found → `BenchConfigError`.
 - **File safety:** `update()` takes an exclusive `fcntl.flock` on a sibling `state.json.lock` for the whole
-  read-modify-write, so `step` and `--force-unlock` from two terminals can't interleave. `state.json` is created with
+  read-modify-write, so two commands (or `--force-unlock`) from two terminals can't interleave. `state.json` is created with
   mode `0600` because it holds the auth secret. (`fcntl`: Linux / macOS only; the benchmark is not run from Windows.)
-- **Lock rules** (`StepLock.acquire`, inside one `update()`):
+- **Lock rules** (`DeploymentLock.acquire`, inside one `update()`; taken by `deploy`, `step`, `plot`, `finish` and
+  `post-run` for the whole command, with `with DeploymentLock(...)`):
   - no lock → take it (`pid`, `socket.gethostname()`, command, now);
   - lock from this machine whose process is gone (`os.kill(pid, 0)` raises `ProcessLookupError`) → stale: take it over
-    and log `WARNING took over stale step lock of pid <pid> since <since>`;
-  - lock from this machine with a live process, or from another machine → `StepRefused` naming holder and since.
-- **`force_unlock`:** prints `step lock held by pid <pid> on <host> since <since> (<command>)`, asks
+    and log `WARNING took over stale deployment lock of pid <pid> since <since>`;
+  - lock held by this same process (a release cut short by Ctrl-C) → taken over the same way, so `run`'s `finish` is
+    never refused by the process's own leftover lock;
+  - lock from this machine with a live process, or from another machine → `DeploymentLocked` naming holder, since and its command.
+- **`force_unlock`:** prints `deployment lock held by pid <pid> on <host> since <since> (<command>)`, asks
   `confirm()` (`input()` y/N; `--yes` passes `lambda _: True`), clears the lock, logs a run-log `WARNING`. On a lock
   from this machine with a live process it refuses (that process can be stopped instead); with no lock it says so and
   exits 0.
+- **Script inputs:** `mock_delays` and `host_settings` are the values `deploy.sh` got, saved so `destroy.sh` gets the
+  same inputs even when `ak-bench.yaml` changed since.
 - **Secret lifetime:** `auth_secret` is written by `deploy` and deleted from `state.json` by `finish` once
   `destroy.sh` exits 0 (`design.md`: not kept after the run).
 
@@ -585,27 +590,28 @@ class Run:      def execute(self, hosts, modes, message_types, steps) -> None: .
 5. Run id: `--run-id` or a new one; refuse (`BenchConfigError`) when `<run-id>/.../<mode>/<message-type>/state.json`
    already exists.
 6. Secret: `secrets.token_hex(32)` (32 random bytes).
-7. Record `deploy_started`, create `state.json` (no `deployment` yet), run `deploy.sh`.
+7. Record `deploy_started`, create `state.json` (no `deployment` yet), take the deployment lock, run `deploy.sh`.
 8. On `ScriptFailed`: run-log `ERROR`, run `destroy.sh` (its own failure is logged, not raised over the first one),
    record `teardown_at`, then raise.
 9. Save `deployment`, `deploy_finished`; write `run-metadata.json`; print the deployment id.
 
 **`Step.execute`**:
 
-1. Load the state; refuse if `teardown_at` is set.
-2. Refuse a `step` not in the saved `load_steps` (message lists them) or a test type other than `steady` / `burst`.
-3. `StepLock.acquire()`; everything after runs in `try / finally: lock.release()` (done, error, `KeyboardInterrupt`).
-4. Step folder exists: refuse without `--replace`; with it, delete the folder and the step's `summary.csv` row.
+1. Take the deployment lock; everything after runs inside it and it is released on every exit (done, error,
+   `KeyboardInterrupt`).
+2. Read the state under the lock; refuse if `teardown_at` is set or `deploy.sh` never finished.
+3. Refuse a `step` not in the saved `load_steps` (message lists them) or a test type other than `steady` / `burst`.
+4. Step folder exists: refuse without `--replace`; with it, delete the folder.
 5. `StepRunner.run(...)` → `StepRecord`.
-6. Save the step window to `state.json`; write `per-request.csv`, `per-time-window.csv`, the `summary.csv` row,
-   `step-metadata.json`; plot the step.
-7. A failure in 5–6 leaves the partial folder and no `summary.csv` row (the row is written last).
+6. Save the step window to `state.json`; write `per-request.csv`, `per-time-window.csv`, `step-metadata.json`. No
+   graphs: every graph is drawn by `plot` (and the `finish` / `post-run` re-plots).
+7. A failure in 5–6 leaves the partial folder.
 
 **`Plot.execute`:** for one deployment, or every deployment under `results/<run-id>/` (found by globbing
-`state.json`), draws every step's graphs from its CSVs, every test type's per-step graphs, and the cost graph when
+`state.json`), under each deployment's lock, draws every step's graphs from its CSVs, and the cost graph when
 `cost.csv` exists.
 
-**`Finish.execute`:** `FetcherInvoker` runs `after_all_steps` for (deploy start, now) into the deployment directory;
+**`Finish.execute`:** under the deployment lock, `FetcherInvoker` runs `after_all_steps` for (deploy start, now) into the deployment directory;
 re-plots if any of them stored without error; runs `destroy.sh`; on success records `teardown_at` and deletes
 `auth_secret`; prints `post-run needed: <list of after_teardown fetcher names>` or `post-run not needed`. A
 `ScriptFailed` is logged as run-log `ERROR "destroy.sh failed (exit <n>): resources may be left running"` and
@@ -613,7 +619,9 @@ re-raised (exit code 1). A second `finish` after a failure runs `destroy.sh` aga
 
 **`PostRun.execute`:** for each deployment (one, or every one of the run) with `teardown_at` set: runs
 `after_teardown` for (deploy start, teardown end) into the deployment directory, re-plots. Refuses a deployment with
-no `teardown_at` (`finish` first). Re-running is safe: rows replace by key.
+no `teardown_at` (`finish` first), checked for every deployment before any runs (a set `teardown_at` is never
+cleared, so no lock is needed for it); each deployment then runs under its lock. Re-running is safe: rows replace by
+key.
 
 **`Run.execute`**:
 
@@ -631,7 +639,7 @@ no `teardown_at` (`finish` first). Re-running is safe: rows replace by key.
 **CLI (`cli.py`):** `argparse` with sub-commands `deploy`, `step`, `plot`, `finish`, `post-run`, `run` and the flags of
 `design.md` Commands, plus global `--config`, `--results-dir`, `--deploy-root`. `step` has a mutually exclusive
 group: (`--test-type`, `--step`, `--replace`) or `--force-unlock [--yes]`; its `--help` text says when to use
-`--force-unlock` (only once the step on the other machine is known to be dead). `BenchError` → message on stderr,
+`--force-unlock` (only once the command on the other machine is known to be dead). `BenchError` → message on stderr,
 exit 1; `KeyboardInterrupt` → exit 130.
 
 ### Mock agent app (`benchmarks/app/`)
@@ -842,7 +850,6 @@ class LoadResult:
     records: list[RequestRecord]
     t_load_up: datetime                 # first send
     t_load_down: datetime               # steady: t_load_up + load_time_s; burst: last response or timeout
-    time_to_answer_all_s: float | None  # burst only
 ```
 
 - **Clients:** client `i` (1..N) has user `bench-i`, token `signer.token("bench-i")`, its own driver and a session id
@@ -859,8 +866,8 @@ class LoadResult:
   - one timeout watcher task: every 0.5 s marks `timeout` any request with `sent_mono + client_timeout_s` passed and
     no status;
   - `on_event` (receive side) fills `first_chunk` / `complete` and status `ok` / `error` for a pending request only;
-  - `t_load_up` = the earliest `sent`; burst `t_load_down` = when every request is settled (`run()` awaits that),
-    `time_to_answer_all_s` = last settle − first send (monotonic); steady `t_load_down` = `t_load_up + load_time_s`,
+  - `t_load_up` = the earliest `sent`; burst `t_load_down` = when every request is settled (`run()` awaits that);
+    steady `t_load_down` = `t_load_up + load_time_s`,
     and `run()` returns then, while late replies and timeouts keep updating the records in the background until
     `close()`.
 - Connections stay open through the cool-down; `StepRunner` calls `close()` when the step ends.
@@ -909,7 +916,7 @@ class StepRunner:
   poll covers (last poll, now), so nothing is fetched twice.
 - **Threads:** every `fetch()` / `store()` runs via `asyncio.to_thread` (default executor), so a slow cloud call never
   blocks the event loop that drives the sends and receives. `asyncio.run()` is called once per `step` command.
-- The step's CSVs, `summary.csv` row and `step-metadata.json` are written by the `Step` command from the
+- The step's CSVs and `step-metadata.json` are written by the `Step` command from the
   `StepRecord` (see Commands), then the lock is released.
 
 **`FetcherInvoker` (`run/fetcher_invoker.py`):**
@@ -1010,43 +1017,8 @@ failed every time still has its (empty) columns: queues from `deployment.queues`
 `deployment.resources` × `metrics` of every `ResourceUsageFetcher` in them. Series found in the files but not
 declared are added after the declared ones.
 
-#### Derived scaling numbers (`results/csv/scaling_numbers.py`)
-
-`ScalingDerivation.derive(samples, spans, queue_samples, t_load_up, t_load_down, ended)` per tier × fetcher, from raw
-sample times (definitions: `docs/specs/786-benchmark-system/research/platform-scaling-and-cost.md:363-401`):
-
-| Column | Rule (times in seconds from the reference) |
-|---|---|
-| `decision_delay_s` | first `desired` sample after `t_load_up` greater than `workers_before_up` (desired) − `t_load_up`; empty without `desired` |
-| `first_new_worker_s` | first `running` increase after `t_load_up`, or the first span `started` after it, whichever is earlier − `t_load_up` |
-| `scale_up_done_s` | first time `running` reaches `workers_peak` − `t_load_up` |
-| `scale_down_start_s` | first decrease of `desired` (else `running`) after `t_load_down` − `t_load_down` |
-| `scale_down_done_s` | first time after `t_load_down` `running` is back to `workers_before_up` − `t_load_down` |
-| `workers_before_up` | latest `running` at or before `t_load_up` |
-| `workers_peak` | max `running` in `[started, ended]` |
-| `workers_before_down` | latest `running` at or before `t_load_down` |
-| `workers_after_down` | latest `running` at or before `ended` |
-| `scale_up_rate_per_min` | (`peak − before_up`) ÷ (`scale_up_done_s` / 60); empty when no increase or done time is 0 / empty |
-| `scale_down_rate_per_min` | (`before_down − after_down`) ÷ (`scale_down_done_s` / 60); same rule |
-
-- `backlog_drained_s` is per queue × transport fetcher: first time after `t_load_up` the queue's `waiting` is back to
-  its latest value at or before `t_load_up` − `t_load_up`, considering only samples after the first one above it.
-- No `running` source → every `running`-based column empty. A step that didn't scale: from → to counts filled
-  (e.g. 1 → 1), times and rates empty.
-
-#### Summary CSV (`results/csv/summary.py`)
-
-`summary.csv` per test type; `SummaryWriter.upsert(test_type_dir, row)` keyed by `step` (a `KeyedCsv`), so each step
-writes or replaces its own row, and `remove(step)` serves `--replace`. Columns:
-
-- `step, started, ended, cooldown_max_reached, requests, ok, errors, timeouts, time_to_answer_all_s` (burst; empty
-  for steady);
-- `latency_p0 … latency_p100, latency_n`; per stage `<STAGE>_p0 … _p100, <STAGE>_n` (incl. `CLIENT_RECEIVED`);
-- `tx_min, tx_avg, tx_max, rx_min, rx_avg, rx_max` over the `load` and `cooldown` windows;
-- per tier × fetcher the derived scaling columns (`<tier>.<column>.<fetcher>`); per queue × fetcher
-  `backlog_drained_s`;
-- per tier × metric × fetcher: `stat == value` series → `p0 … p100` over all raw samples in `[started, ended]`;
-  `min` / `avg` / `max` series → the min of `min`, the mean of `avg`, the max of `max` samples.
+No summary CSV, derived scaling numbers or graphs comparing the steps: #786 moved them to its "Later: summary CSV
+and graphs comparing the steps" section (decided 2026-11-25).
 
 #### Metadata (`results/metadata.py`)
 
@@ -1062,14 +1034,13 @@ writes or replaces its own row, and `remove(step)` serves `--replace`. Columns:
 #### Graphs (`results/graphs/`)
 
 ```python
+class Plots:          def __init__(self, run_log: RunLog): ...               # base: style, temp-file write, per-graph ERROR
 class StepPlots:      def draw(self, step_dir: Path, test_type: str, host: Host, deployment: Deployment) -> None: ...
-class TestTypePlots:  def draw(self, test_type_dir: Path, step_dirs: list[Path]) -> None: ...
-class CostReport:     def draw(self, deployment_dir: Path) -> None: ...      # only when cost.csv exists
+class CostReport:     def draw(self, deployment_dir: Path) -> None: ...      # graphs/cost-by-service.png, only when cost.csv exists
 ```
 
 - Files and content as #786 Graphs: per step `01-stage-times`, `02-stage-breakdown`, `03-timeline`,
-  `04-every-request` (steady only), `05-resource-usage`; per test type `01-latency-per-step`,
-  `02-stage-times-per-step`, `03-resource-usage-per-step`; billed cost by service. Drawing rules (six percentiles,
+  `04-every-request` (steady only), `05-resource-usage`; billed cost by service. Drawing rules (six percentiles,
   `whis=(0, 100)` boxes with a p99 marker, bands with p50 and dashed p99 lines, one panel per tier / stage / queue, no
   twin axes, no threshold lines) are #786's; `Scratches/25.Benchmarking-Design/graph-examples/plot_examples.py` is the
   layout reference.
@@ -1080,7 +1051,7 @@ class CostReport:     def draw(self, deployment_dir: Path) -> None: ...      # o
 
 ### Module-level functions
 
-- `percentiles()` (`results/common/percentiles.py`): stateless numeric helper used by the per-request, per-window, summary,
+- `percentiles()` (`results/common/percentiles.py`): stateless numeric helper used by the per-request, per-window,
   resource and plot code; no single owning class.
 - `main()` (`cli.py`): the console-script entry point (`[project.scripts]` needs a callable); one line,
   `sys.exit(BenchCli().run(sys.argv[1:]))`.
@@ -1156,8 +1127,8 @@ For the reviewer: none changes a `design.md` requirement, but each fills a gap i
 | missing deployment folder or script | `DeploymentFolder.check` | `BenchConfigError` naming the path, before deploy |
 | `deploy.sh` exits ≠ 0 or writes no valid `deployment.json` | `Deploy` | run-log `ERROR`, `destroy.sh` runs, `ScriptFailed`, exit 1 |
 | `destroy.sh` exits ≠ 0 | `Finish`, `Deploy` cleanup | run-log `ERROR` ("resources may be left running"), exit 1 (in `Deploy` cleanup: logged, original error raised) |
-| step lock held (live / other machine) | `StepLock.acquire` | `StepRefused` naming holder and since |
-| stale lock (same machine, dead pid) | `StepLock.acquire` | taken over, run-log `WARNING` |
+| deployment lock held (live / other machine) | `DeploymentLock.acquire`, every command on a deployment | `DeploymentLocked` naming holder, since and command |
+| stale lock (same machine, dead pid) | `DeploymentLock.acquire` | taken over, run-log `WARNING` |
 | step folder exists, step not in saved load steps, torn-down deployment | `Step` | `StepRefused`, nothing runs |
 | client connect fails | `LoadGenerator.connect` | client's requests `status = error`; step continues |
 | `send()` raises | sender task | that request `status = error`; step continues |
@@ -1167,7 +1138,7 @@ For the reviewer: none changes a `design.md` requirement, but each fills a gap i
 | tracking task hangs at stop | `StepRunner` | cancelled after 30 s, run-log `WARNING` |
 | graph draw raises | plots | run-log `ERROR` naming the graph; other graphs drawn |
 | exception or Ctrl-C during `run` | `Run` | `Finish` runs; second Ctrl-C skips it with a run-log `ERROR`; exit ≠ 0 |
-| exception or Ctrl-C during `step` | `Step` | lock released; partial folder kept; no `summary.csv` row |
+| exception or Ctrl-C during any command | every command | deployment lock released; a failed step keeps its partial folder |
 | `BenchIdentityProvider` without a secret | app startup | `RuntimeError` at build |
 | bad token | `BenchIdentityProvider.authenticate` | `AuthenticationError` → AK closes the socket (`pipeline/ws/handler.py:192-212`) |
 
@@ -1212,9 +1183,9 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 | `load/test_ws_complete_driver.py` | frame shape; token in query; `CHAT_QUEUED` ignored; `SYSTEM_RESPONSE` FAILED and `error`-key replies → `error`; duplicate reply dropped |
 | `run/test_step_runner.py` | connect happens before `before` starts; `during_step` windows are contiguous (last poll, now) and a final poll after stop; a hanging tracker is cancelled after the stop timeout (patched to 0.2 s); `after_step` gets (step start, step end) after the wait; a raising fetcher → empty columns + run-log entry, step completes; the missing-responses `WARNING` text and count |
 | `run/test_state_and_lock.py` | stale lock (dead pid, this host) taken over with log; live lock refused; other-host lock refused; `--force-unlock` prints holder, honours `--yes` / declined prompt, logs; lock released on success, exception and `KeyboardInterrupt` |
-| `run/test_commands.py` (mock folder + MockWsServer) | full deploy → step (steady and burst) → plot → finish → post-run produces every CSV, every graph, `run-metadata.json`, `step-metadata.json`, `cost.csv` and the cost graph; script env contains the contract variables (mock delays only with `mock_agent`); `state.json` round-trips `Deployment` unchanged and loses `auth_secret` after finish; refusals: existing step folder without `--replace` (and `--replace` replaces folder + row), step not in saved load steps, concurrent step, `run --steps 7` before any deploy, unknown `fetchers.<name>` and missing folder before any script; existing host × mode × message type in a run id refused |
+| `run/test_commands.py` (mock folder + MockWsServer) | full deploy → step (steady and burst) → plot → finish → post-run produces every CSV, every graph, `run-metadata.json`, `step-metadata.json`, `cost.csv` and the cost graph; script env contains the contract variables (mock delays only with `mock_agent`); `state.json` round-trips `Deployment` unchanged and loses `auth_secret` after finish; refusals: existing step folder without `--replace` (and `--replace` replaces folder + row), step not in saved load steps, every command refused while another holds the deployment lock, `run --steps 7` before any deploy, unknown `fetchers.<name>` and missing folder before any script; existing host × mode × message type in a run id refused |
 | `run/test_teardown_guarantee.py` | `run` with a step that raises → `destroy.sh` ran and the error surfaces; `KeyboardInterrupt` during a step → `destroy.sh` ran; second interrupt during finish → logged skip; `deploy.sh` failure → `destroy.sh` ran, exit 1; `destroy.sh` failure → run-log `ERROR`, exit 1 |
-| `results/test_results.py` (recorded CSV fixtures) | percentiles match `numpy.percentile(..., method="linear")` and are empty for no data; per-request durations incl. `REQUEST_RECEIVED_s`, `CLIENT_RECEIVED_s`, empty `AGENT_FIRST_CHUNK_s`; per-window Tx / Rx / errors / timeouts / latency; carry-forward limit (poll interval, and sample gap for after-step series); declared-but-empty columns for a fetcher that stored nothing; derived scaling numbers for a scale-up-and-down series, a no-scale series (1 → 1, empty times / rates) and a no-`running` source; summary row replaced on re-run; step folder padding |
+| `results/test_results.py` (recorded CSV fixtures) | percentiles match `numpy.percentile(..., method="linear")` and are empty for no data; per-request durations incl. `REQUEST_RECEIVED_s`, `CLIENT_RECEIVED_s`, empty `AGENT_FIRST_CHUNK_s`; per-window Tx / Rx / errors / timeouts / latency; carry-forward limit (poll interval, and sample gap for after-step series); declared-but-empty columns for a fetcher that stored nothing; step folder padding |
 | `results/test_plots.py` | every phase-1 graph file is produced from recorded data, including one with all-empty resource data (panels drawn, not skipped); cost graph only when `cost.csv` exists |
 | `load/test_token_cross_check.py` | a `TokenSigner` token is accepted by `BenchIdentityProvider` (imports the app module by path; the app's dependencies are a subset of the harness's) |
 | `app/tests/test_mock_agent.py` | `run()` sleeps within [min, max] (patched `asyncio.sleep` records the delay; `random.uniform` bounds over many draws), echo content, nothing added to the session, variables read once at creation; `agent.py` registers `MockAgent` with both variables, the real agent with neither, and raises with one |
@@ -1238,5 +1209,5 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 | Step runner | Step runner |
 | Step-end check | Step-end check |
 | Commands and state | Commands; State; Run log |
-| Results, derived numbers and graphs | Results |
+| Results and graphs | Results |
 | Testing | Testing; Consumer changes |

@@ -4,7 +4,7 @@ Benchmark harness for Agent Kernel (`ak-bench`). It deploys the benchmarked app,
 throughput, latency, scaling, resource usage and cost, and draws graphs. See
 [docs/specs/786-benchmark-system/design.md](../docs/specs/786-benchmark-system/design.md) for the system design.
 
-> Status: the command-line options are in place; the commands themselves are still being built (#912).
+> Status: no built-in host yet; the AWS hosts and their deployment folders come with the AWS issues (#917).
 
 ## Install
 
@@ -25,7 +25,7 @@ plot, tear down), or all at once with `run`.
 |---|---|
 | `deploy --host <h> --mode <m> --message-type <t> [--run-id <id>]` | Deploys one host × mode × message type by running its deployment folder's `deploy.sh`. Writes `run-metadata.json` and `state.json`, and prints the **deployment id** `<run-id>-<host>-<mode>-<message-type>`. Starts a new run id unless `--run-id` is given; refuses a host × mode × message type that already has a deployment in that run. If `deploy.sh` fails, runs `destroy.sh` and exits with an error. |
 | `step --deployment <id> --test-type steady\|burst --step <N> [--replace]` | Runs one step: before window → load → cool-down → wait and fetch. `--step` must be one of the load steps saved at deploy. Writes `step-<N>/`. Refuses an existing step folder unless `--replace` is given. |
-| `step --deployment <id> --force-unlock [--yes]` | Clears a step lock held from **another machine** and runs no step. Use it only once the step on that machine is known to be dead. Prints who held the lock and since when, and asks for confirmation (`--yes` skips the prompt). |
+| `step --deployment <id> --force-unlock [--yes]` | Clears a deployment lock held from **another machine** and runs no step. Use it only once the command on that machine is known to be dead. Prints who held the lock and since when, and asks for confirmation (`--yes` skips the prompt). |
 | `plot --deployment <id>` or `--run-id <id>` | Draws every graph from the CSVs of the steps run so far. Run it any time, as often as you like. |
 | `finish --deployment <id>` | Runs the host's after-all-steps fetchers, tears down (`destroy.sh`), records the teardown time and says whether `post-run` is needed. If `destroy.sh` fails, exits with an error: resources may be left running. |
 | `post-run --deployment <id>` or `--run-id <id>` | Runs the after-teardown fetchers (on AWS: the billed cost, about a day after teardown) and re-plots. Safe to run again. |
@@ -38,6 +38,14 @@ Global options (before the command):
 | `--config` | `$AK_BENCH_CONFIG_PATH_OVERRIDE`, else `./ak-bench.yaml` | Benchmark config file |
 | `--results-dir` | `./results` | Where results go: `results/<run-id>/...`, plus `run.log` per run |
 | `--deploy-root` | `benchmarks/app/deploy/` | Folder holding the deployment folders (`<host>-<mode>-<message-type>/`) |
+
+One command at a time per deployment: `deploy`, `step`, `plot`, `finish` and `post-run` each hold the deployment's
+lock in `state.json` while they work, and another command on the same deployment is refused until it ends. A lock
+left by a killed command on the same machine is taken over by the next command; one left on another machine needs
+`step --force-unlock`.
+
+Exit codes: `0` done, `1` refused or failed (the message says why; nothing is deployed when a check fails), `130`
+interrupted with Ctrl-C.
 
 Example, one deployment by hand:
 

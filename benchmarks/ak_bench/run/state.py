@@ -7,9 +7,9 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
-from ak_bench.errors import BenchConfigError, StepRefused
+from ak_bench.errors import BenchConfigError, DeploymentLocked
 from ak_bench.hosts.host import Deployment, RunInfo
 from ak_bench.hosts.registry import HostRegistry
 from ak_bench.results.common.keyed_csv import KeyedCsv
@@ -71,8 +71,9 @@ class DeploymentState:
         return RunInfo(data["run_id"], data["deployment_id"], data["host"], data["platform"], data["mode"], data["message_type"])
 
 
-class StepLock:
-    """The one-step-at-a-time lock in state.json: process id + machine."""
+class DeploymentLock:
+    """One command at a time per deployment: the lock in state.json (process id + machine), taken by every command
+    that works on a deployment. Also a context manager: acquire on enter, release on every exit."""
 
     def __init__(self, state: DeploymentState, run_log: RunLog, command: str):
         self.state = state
@@ -80,13 +81,15 @@ class StepLock:
         self.command = command
 
     def acquire(self) -> None:
-        """StepRefused while a live process (or another machine) holds it; a dead local holder is taken over."""
+        """DeploymentLocked while another live process (or another machine) holds it. A dead local holder is taken over,
+        and so is one left by this process (a release cut short by Ctrl-C), so `run` can still tear down."""
         with self.state.update() as data:
             held = data.get("lock")
             if held:
-                if held["host"] != socket.gethostname() or self._alive(held["pid"]):
-                    raise StepRefused(self._describe(held))
-                self.run_log.warning(f"took over stale step lock of pid {held['pid']} since {held['since']}")
+                mine = held["host"] == socket.gethostname() and held["pid"] == os.getpid()
+                if not mine and (held["host"] != socket.gethostname() or self._alive(held["pid"])):
+                    raise DeploymentLocked(self._describe(held))
+                self.run_log.warning(f"took over stale deployment lock of pid {held['pid']} since {held['since']}")
             data["lock"] = {"pid": os.getpid(), "host": socket.gethostname(), "command": self.command, "since": KeyedCsv.cell(datetime.now(UTC))}
 
     def release(self) -> None:
@@ -100,24 +103,31 @@ class StepLock:
         """Clears a lock this machine can't check (another machine's, or a dead local process) after confirm()."""
         held = self.state.read().get("lock")
         if not held:
-            print("no step lock held")
+            print("no deployment lock held")
             return
         if held["host"] == socket.gethostname() and self._alive(held["pid"]):
-            raise StepRefused(f"{self._describe(held)}; that process is running on this machine, stop it instead")
+            raise DeploymentLocked(f"{self._describe(held)}; that process is running on this machine, stop it instead")
         print(self._describe(held))
         # Asked outside the file lock, so a prompt left open doesn't block other commands.
-        if not confirm("clear this step lock? [y/N] "):
-            print("step lock kept")
+        if not confirm("clear this deployment lock? [y/N] "):
+            print("deployment lock kept")
             return
         with self.state.update() as data:
             if data.get("lock") != held:
-                raise StepRefused("step lock changed while confirming; run --force-unlock again")
+                raise DeploymentLocked("deployment lock changed while confirming; run --force-unlock again")
             data["lock"] = None
         self.run_log.warning(f"force-unlocked {self._describe(held)}")
 
+    def __enter__(self) -> Self:
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.release()
+
     @staticmethod
     def _describe(held: dict[str, Any]) -> str:
-        return f"step lock held by pid {held['pid']} on {held['host']} since {held['since']} ({held['command']})"
+        return f"deployment lock held by pid {held['pid']} on {held['host']} since {held['since']} ({held['command']})"
 
     @staticmethod
     def _alive(pid: int) -> bool:

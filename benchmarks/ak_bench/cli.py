@@ -3,13 +3,15 @@ import os
 import sys
 from pathlib import Path
 
-from ak_bench.config import BenchConfig
+from ak_bench.config import BenchConfig, TestType
+from ak_bench.errors import BenchError
+from ak_bench.run.commands import Deploy, Finish, Plot, PostRun, Run, Step
 
 DEFAULT_DEPLOY_ROOT = Path(__file__).resolve().parent.parent / "app" / "deploy"
 
 FORCE_UNLOCK_HELP = (
-    "clear a step lock held from another machine and run no step. Use it only once the step on that machine is known to be dead "
-    "(its process was killed or the machine is gone); prints who held the lock and since when, and asks for confirmation"
+    "clear a deployment lock held from another machine and run no step. Use it only once the command on that machine is known to be "
+    "dead (its process was killed or the machine is gone); prints who held the lock and since when, and asks for confirmation"
 )
 
 
@@ -26,7 +28,33 @@ class BenchCli:
             os.environ[BenchConfig.yaml_file_env_var] = str(args.config)
         if args.command == "step":
             self._check_step_args(args)
-        raise NotImplementedError(f"ak-bench {args.command}: not implemented yet")
+        try:
+            self._execute(args, (BenchConfig.get(), args.results_dir, args.deploy_root))
+        except BenchError as e:
+            print(f"ak-bench {args.command}: {e}", file=sys.stderr)
+            return 1
+        except KeyboardInterrupt:
+            print(f"ak-bench {args.command}: interrupted", file=sys.stderr)
+            return 130
+        return 0
+
+    @staticmethod
+    def _execute(args: argparse.Namespace, ctx: tuple) -> None:
+        match args.command:
+            case "deploy":
+                Deploy(*ctx).execute(args.host, args.mode, args.message_type, args.run_id)
+            case "step" if args.force_unlock:
+                Step(*ctx).force_unlock(args.deployment, args.yes)
+            case "step":
+                Step(*ctx).execute(args.deployment, args.test_type, args.step, args.replace)
+            case "plot":
+                Plot(*ctx).execute(args.deployment, args.run_id)
+            case "finish":
+                Finish(*ctx).execute(args.deployment)
+            case "post-run":
+                PostRun(*ctx).execute(args.deployment, args.run_id)
+            case "run":
+                Run(*ctx).execute(args.host, args.mode, args.message_type, args.steps)
 
     def _check_step_args(self, args: argparse.Namespace) -> None:
         if args.force_unlock:
@@ -53,7 +81,7 @@ class BenchCli:
 
         step = sub.add_parser("step", help="run one step on a deployment")
         step.add_argument("--deployment", required=True)
-        step.add_argument("--test-type", choices=["steady", "burst"])
+        step.add_argument("--test-type", choices=list(TestType))
         step.add_argument("--step", type=int, help="one of the deployment's load steps")
         step.add_argument("--replace", action="store_true", help="replace an existing step folder")
         step.add_argument("--force-unlock", action="store_true", help=FORCE_UNLOCK_HELP)

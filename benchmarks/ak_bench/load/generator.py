@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from ak_bench.config import TestType
 from ak_bench.load.driver.base import ClientDriver
 from ak_bench.load.records import RequestRecord, RequestStatus, ResponseEvent
 from ak_bench.load.schedule import BurstSchedule, SteadySchedule
@@ -64,7 +65,7 @@ class LoadGenerator:
         self._tasks = [asyncio.create_task(self._send_all(i, plan)) for i, plan in enumerate(plans)]
         self._tasks.append(asyncio.create_task(self._watch_timeouts()))
 
-        if test_type == "burst":
+        if test_type == TestType.BURST:
             await self._all_settled.wait()
             first_mono = self._first_sent_mono()
             t_load_up = self._wall(first_mono if first_mono is not None else self._base_mono)

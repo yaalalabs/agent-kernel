@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 from mocks.host import mock_host
 
-from ak_bench.errors import BenchConfigError, ScriptFailed, StepRefused
+from ak_bench.errors import BenchConfigError, DeploymentLocked, ScriptFailed
 from ak_bench.hosts.host import Deployment
 from ak_bench.hosts.registry import HostRegistry
 from ak_bench.results.common.layout import ResultsLayout
 from ak_bench.run.deployment_folder import DeploymentFolder, ScriptEnv
 from ak_bench.run.run_log import RunLog
-from ak_bench.run.state import DeploymentState, StepLock
+from ak_bench.run.state import DeploymentLock, DeploymentState
 
 DEPLOY_ROOT = Path(__file__).parent.parent / "mocks" / "deploy"
 RUN_ID = "20261124T100000Z"
@@ -174,11 +174,11 @@ def test_locate_finds_state_from_deployment_id(state, layout):
         DeploymentState.locate(layout.root, "bad-id")
 
 
-# Step lock
+# Deployment lock
 
 
 def test_acquire_and_release(state, run_log):
-    lock = StepLock(state, run_log, "step steady 1")
+    lock = DeploymentLock(state, run_log, "step steady 1")
     lock.acquire()
     held = state.read()["lock"]
     assert (held["pid"], held["host"], held["command"]) == (os.getpid(), socket.gethostname(), "step steady 1")
@@ -188,55 +188,61 @@ def test_acquire_and_release(state, run_log):
 
 def test_release_leaves_another_holders_lock(state, run_log):
     other = set_lock(state, os.getpid(), "other-box")
-    StepLock(state, run_log, "step steady 1").release()
+    DeploymentLock(state, run_log, "step steady 1").release()
     assert state.read()["lock"] == other
 
 
 def test_live_local_lock_refused(state, run_log):
-    StepLock(state, run_log, "step steady 1").acquire()
-    with pytest.raises(StepRefused, match=f"pid {os.getpid()} on {socket.gethostname()} since"):
-        StepLock(state, run_log, "step burst 1").acquire()
+    set_lock(state, os.getppid(), socket.gethostname())  # another live process on this machine
+    with pytest.raises(DeploymentLocked, match=f"pid {os.getppid()} on {socket.gethostname()} since"):
+        DeploymentLock(state, run_log, "step burst 1").acquire()
+
+
+def test_lock_left_by_this_process_is_taken_over(state, run_log):
+    DeploymentLock(state, run_log, "step steady 1").acquire()  # never released, e.g. Ctrl-C during release
+    DeploymentLock(state, run_log, "finish").acquire()
+    assert state.read()["lock"]["command"] == "finish"
 
 
 def test_other_machine_lock_refused(state, run_log):
     set_lock(state, dead_pid(), "other-box")
-    with pytest.raises(StepRefused, match="on other-box since 2026-11-24T10:00:00.000Z"):
-        StepLock(state, run_log, "step steady 1").acquire()
+    with pytest.raises(DeploymentLocked, match="on other-box since 2026-11-24T10:00:00.000Z"):
+        DeploymentLock(state, run_log, "step steady 1").acquire()
 
 
 def test_stale_local_lock_taken_over_with_warning(state, run_log):
     pid = dead_pid()
     set_lock(state, pid, socket.gethostname())
-    StepLock(state, run_log, "step steady 1").acquire()
+    DeploymentLock(state, run_log, "step steady 1").acquire()
     assert state.read()["lock"]["pid"] == os.getpid()
-    assert f"WARNING step took over stale step lock of pid {pid} since 2026-11-24T10:00:00.000Z" in run_log.path.read_text()
+    assert f"WARNING step took over stale deployment lock of pid {pid} since 2026-11-24T10:00:00.000Z" in run_log.path.read_text()
 
 
 def test_force_unlock_with_yes_clears_and_logs(state, run_log, capsys):
     set_lock(state, 4242, "other-box")
-    StepLock(state, run_log, "step --force-unlock").force_unlock(lambda _: True)
+    DeploymentLock(state, run_log, "step --force-unlock").force_unlock(lambda _: True)
     assert state.read()["lock"] is None
-    assert "step lock held by pid 4242 on other-box since 2026-11-24T10:00:00.000Z (step steady 1)" in capsys.readouterr().out
-    assert "WARNING step force-unlocked step lock held by pid 4242 on other-box" in run_log.path.read_text()
+    assert "deployment lock held by pid 4242 on other-box since 2026-11-24T10:00:00.000Z (step steady 1)" in capsys.readouterr().out
+    assert "WARNING step force-unlocked deployment lock held by pid 4242 on other-box" in run_log.path.read_text()
 
 
 def test_force_unlock_declined_keeps_lock(state, run_log, capsys):
     held = set_lock(state, 4242, "other-box")
-    StepLock(state, run_log, "step --force-unlock").force_unlock(lambda _: False)
+    DeploymentLock(state, run_log, "step --force-unlock").force_unlock(lambda _: False)
     assert state.read()["lock"] == held
-    assert "step lock kept" in capsys.readouterr().out
+    assert "deployment lock kept" in capsys.readouterr().out
     assert not run_log.path.exists()
 
 
 def test_force_unlock_refuses_live_local_lock(state, run_log):
     set_lock(state, os.getpid(), socket.gethostname())
-    with pytest.raises(StepRefused, match="stop it instead"):
-        StepLock(state, run_log, "step --force-unlock").force_unlock(lambda _: True)
+    with pytest.raises(DeploymentLocked, match="stop it instead"):
+        DeploymentLock(state, run_log, "step --force-unlock").force_unlock(lambda _: True)
 
 
 def test_force_unlock_without_lock_says_so(state, run_log, capsys):
-    StepLock(state, run_log, "step --force-unlock").force_unlock(lambda _: pytest.fail("must not ask"))
-    assert "no step lock held" in capsys.readouterr().out
+    DeploymentLock(state, run_log, "step --force-unlock").force_unlock(lambda _: pytest.fail("must not ask"))
+    assert "no deployment lock held" in capsys.readouterr().out
 
 
 def test_force_unlock_refuses_if_lock_changed_while_confirming(state, run_log):
@@ -246,6 +252,6 @@ def test_force_unlock_refuses_if_lock_changed_while_confirming(state, run_log):
         set_lock(state, 5555, "third-box")
         return True
 
-    with pytest.raises(StepRefused, match="changed while confirming"):
-        StepLock(state, run_log, "step --force-unlock").force_unlock(confirm)
+    with pytest.raises(DeploymentLocked, match="changed while confirming"):
+        DeploymentLock(state, run_log, "step --force-unlock").force_unlock(confirm)
     assert state.read()["lock"]["pid"] == 5555

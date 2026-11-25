@@ -1,13 +1,21 @@
 import os
+from enum import StrEnum
 from pathlib import Path
 from threading import RLock
-from typing import ClassVar, Literal, Optional
+from typing import ClassVar, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from ak_bench.errors import BenchConfigError
+
+
+class TestType(StrEnum):
+    __test__ = False  # not a pytest test class
+
+    STEADY = "steady"
+    BURST = "burst"
 
 
 class StepRunConfig(BaseModel):
@@ -106,7 +114,7 @@ class BenchConfig(BaseSettings):
     hosts: list[str] | None = None
     modes: list[str] | None = None
     message_types: list[str] | None = None
-    test_types: list[Literal["steady", "burst"]] = Field(default_factory=lambda: ["steady", "burst"])
+    test_types: list[TestType] = Field(default_factory=lambda: list(TestType))
     load_steps: list[int] = Field(default=[1, 10, 100, 1000], min_length=1)
     step_run: StepRunConfig
     steady_traffic: SteadyTrafficConfig = SteadyTrafficConfig()

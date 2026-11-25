@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy
 from matplotlib.figure import Figure
 
+from ak_bench.config import TestType
 from ak_bench.fetchers.core.scaling import ScalingInfoFetcher
 from ak_bench.fetchers.core.transport import TransportCollector
 from ak_bench.hosts.host import Deployment, Host
@@ -27,9 +28,9 @@ class StepPlots(Plots):
             lambda: self._stage_breakdown(requests, name),
             "Fastest / slowest: the completed request with the lowest / highest latency; average: each stage's mean.",
         )
-        timeline = self._steady_timeline if test_type == "steady" else self._burst_timeline
+        timeline = self._steady_timeline if test_type == TestType.STEADY else self._burst_timeline
         self.save(graphs / "03-timeline.png", lambda: timeline(requests, windows, host, deployment, name), "Read top to bottom at the same moment.")
-        if test_type == "steady":
+        if test_type == TestType.STEADY:
             self.save(
                 graphs / "04-every-request.png",
                 lambda: self._every_request(step_dir, requests, windows, name),

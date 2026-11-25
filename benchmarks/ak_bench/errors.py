@@ -11,7 +11,11 @@ class HostRefused(BenchError):
 
 
 class StepRefused(BenchError):
-    """Lock held, step folder exists, unknown step, torn-down deployment."""
+    """Step folder exists, unknown step, torn-down deployment; post-run before finish."""
+
+
+class DeploymentLocked(BenchError):
+    """Another command is working on the deployment (its lock in state.json is held)."""
 
 
 class ScriptFailed(BenchError):

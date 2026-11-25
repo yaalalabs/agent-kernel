@@ -2,8 +2,8 @@
 
 Builds the shared, cloud-independent part of the #786 benchmark system: the `ak-bench` CLI in a new top-level
 `benchmarks/` project, the mock agent app, the load generator with the WebSocket complete driver, the `InfoFetcher`
-base and its five families, the step runner and step-end check, the commands and their state, the CSVs, derived
-numbers and graphs. Nothing here calls a cloud API; every part is tested with a mock host (mock deployment folder, mock
+base and its five families, the step runner and step-end check, the commands and their state, the per-step CSVs
+and graphs. Nothing here calls a cloud API; every part is tested with a mock host (mock deployment folder, mock
 fetchers) and a local mock WebSocket server. The AWS deployment folders and fetchers come in their own issues and plug in
 without harness changes.
 
@@ -62,8 +62,8 @@ of restating them, and only adds what the harness build needs to pin down. Part 
     - `run/`: `commands.py` (one class per command), `state.py` (`DeploymentState`), `step_runner.py`
       (`StepRunner`), `step_end_check.py` (`StepEndCheck`), the deployment folder runner, the run log.
     - `results/`: `common/` (results layout, keyed CSV, percentiles); `csv/`, the per-step CSV generators
-      (per-request, per-window, `scaling_columns.py`, `scaling_numbers.py`, `resource_columns.py`, summary);
-      `metadata.py`; `graphs/` (step, test type and cost graphs).
+      (per-request, per-window, `scaling_columns.py`, `resource_columns.py`);
+      `metadata.py`; `graphs/` (step and cost graphs).
     - `app/`: the benchmarked AK app with the mock agent, a separate uv project with its own `pyproject.toml`
       (like `e2e/app/`), since it is deployed and the harness is not. One Python code base for every host.
     - `app/deploy/<host>-<mode>-<message-type>/`: one deployment folder per host × mode × message type (e.g.
@@ -186,7 +186,7 @@ of restating them, and only adds what the harness build needs to pin down. Part 
     connection, not one process.
   - After `client_timeout_s` from sent with no complete, stops waiting and records `status = timeout`.
   - A failed connect or send records `status = error` for that client's requests; the step carries on.
-- Burst: each client sends one request; records the time to answer all N (first send → last response or timeout).
+- Burst: each client sends one request.
 - Steady: each client draws its own gaps, uniform between `min_send_interval_s` and `max_send_interval_s`
   (min = max = fixed interval), for `load_time_s` from the first send.
   - Next send = previous **scheduled** send + gap; a late send doesn't shift later ones.
@@ -272,7 +272,7 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   fetcher.
 - At the end of each step with at least one timed-out request, a `WARNING` in the run log: "responses for `<count>`
   requests were not received within the timeout of `<client timeout>`". Log only.
-- Then writes the step's CSVs, its `summary.csv` row and `step-metadata.json`, and releases the step lock.
+- Then writes the step's CSVs and `step-metadata.json`, and releases the deployment lock.
 
 ### Step-end check (`StepEndCheck`)
 
@@ -291,8 +291,14 @@ of restating them, and only adds what the harness build needs to pin down. Part 
 ### Commands and state
 
 - One class per command (`Deploy`, `Step`, `Plot`, `Finish`, `PostRun`, `Run`); `Run` calls the others.
-- `DeploymentState` reads / writes `state.json`: the `Deployment`, the load steps, step windows, the step lock, deploy
-  start and teardown time.
+- `DeploymentState` reads / writes `state.json`: the `Deployment`, the load steps, step windows, the deployment lock,
+  deploy start and teardown time.
+- **One command at a time per deployment** (decided 2026-11-25): `deploy`, `step`, `plot`, `finish` and `post-run`
+  each hold the deployment lock in `state.json` (process id + machine) while they work, and release it on every exit
+  (done, error, Ctrl-C). Another command on the same deployment is refused while a live process holds it, so e.g.
+  `finish` can't tear down under a running step, and a step can't start on a deployment being torn down. A lock whose
+  process is gone on the same machine is stale and taken over, with a run-log entry. `run` holds no lock of its own;
+  each command it calls takes and releases it.
 - `deploy --host --mode --message-type [--run-id]`:
   - new run id unless `--run-id`; refuses a host × mode × message type that already has a deployment in that run;
   - checks the `mock_agent` rules, `StageFetchers.validate()` and the deployment folder before deploying;
@@ -302,13 +308,11 @@ of restating them, and only adds what the harness build needs to pin down. Part 
     exits with an error.
 - `step --deployment --test-type steady|burst --step <N> [--replace]`:
   - `--step` must be one of the load steps saved in `state.json`;
-  - refuses while another live process holds the step lock (process id + machine); a lock whose process is gone on
-    the same machine is stale and taken over, with a run-log entry;
   - `step --deployment <id> --force-unlock` (decided 2026-11-23) clears a lock held from **another machine**, which
     this machine can't check: it prints who held the lock and since when, asks for confirmation (`--yes` skips the
     prompt), clears it, writes a run-log entry, and runs no step. Documented in the command's `--help` and in the
-    testing checklist (when to use it: only once the step on the other machine is known to be dead);
-  - refuses an existing step folder unless `--replace` (which replaces the folder and the `summary.csv` row);
+    testing checklist (when to use it: only once the command on the other machine is known to be dead);
+  - refuses an existing step folder unless `--replace` (which replaces the folder);
   - no warm-up option, and `run` runs no warm-up step (decided 2026-11-23); if a run needs one, it's added by hand
     to the run script (#786 Selecting what to run).
 - `plot --deployment` or `--run-id`: draws every graph from the CSVs so far into the same `graphs/` folders.
@@ -323,13 +327,13 @@ of restating them, and only adds what the harness build needs to pin down. Part 
 - **Failures never leave a deployment running unnoticed** (decided 2026-11-23):
   - `run`: if a step fails or the run is interrupted (Ctrl-C), it still runs `finish` (teardown) for that deployment
     before exiting; a second Ctrl-C during teardown is the only way to skip it, and that is logged.
-  - `step`: releases its lock on every exit (done, error, Ctrl-C); a failed step leaves its partial folder and no
-    `summary.csv` row.
+  - every command releases the deployment lock on every exit (done, error, Ctrl-C); a failed step leaves its partial
+    folder.
 - `run.log` per run (`results/<run-id>/run.log`); every command appends to it.
 - `run-metadata.json` (from `deploy`, host values from `deployment.json` `settings`, a missing value stays empty) and
   `step-metadata.json` (per step) carry the fields in #786 Run flow → Run metadata.
 
-### Results, derived numbers and graphs
+### Results and graphs
 
 - Folder layout `results/<run-id>/<platform>/<host>/<mode>/<message type>/<test type>/step-<N>/` (#786 Results):
   - `step-<N>` zero-padded to the digits of the largest load step saved in `state.json`;
@@ -352,17 +356,10 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   - `queue-depth.csv` (`ts, queue, waiting, in_flight, fetcher`);
   - `stage-timestamps.csv` (`request_id, stage, ts`);
   - `resource-usage.csv`: raw samples, long form (`ts, tier, worker, metric, stat, value, fetcher`).
-- `summary.csv`, one row per step (each `step` writes or replaces its own row): latency and stage-duration
-  percentiles with the row count used, min / avg / max of per-window Tx / Rx, error and timeout counts, time to answer
-  all N (burst; empty for steady), `cooldown_max_reached`, scaling numbers and CPU / memory per tier per fetcher.
-- Derived scaling numbers per step × tier × fetcher, from raw sample times (not windows), definitions as in
-  `docs/specs/786-benchmark-system/research/platform-scaling-and-cost.md` (Derived numbers):
-  - decision delay, first new worker, scale-up done, backlog drained, scale-down start, scale-down done;
-  - `workers_before_up`, `workers_peak`, `workers_before_down`, `workers_after_down`;
-  - rate in workers / min; never divides by 0; empty for a step that didn't scale; a count with no source stays
-    empty.
+- No `summary.csv`, no derived scaling numbers, no time to answer all N and no graphs comparing the steps (decided
+  2026-11-25): #786 moved them to its "Later: summary CSV and graphs comparing the steps" section. The per-step
+  CSVs and graphs are enough for now.
 - Graphs (PNG), as listed in #786 Graphs, with its drawing rules:
-  - per test type: `01-latency-per-step`, `02-stage-times-per-step`, `03-resource-usage-per-step`;
   - per step: `01-stage-times`, `02-stage-breakdown`, `03-timeline`, `04-every-request` (steady only),
     `05-resource-usage`;
   - billed cost per run by service (`results/graphs/cost_graph.py`), drawn when `cost.csv` exists.
@@ -391,8 +388,8 @@ of restating them, and only adds what the harness build needs to pin down. Part 
     `.` and an unsigned token are refused; a missing secret fails at build; `TokenSigner` gives the same token for the
     same user every time;
   - connections are opened before `before` starts, and a failed connect records `status = error`;
-  - teardown runs when a `run` step fails, when `run` is interrupted, and when `deploy.sh` fails; the step lock is
-    released on a failed step;
+  - teardown runs when a `run` step fails, when `run` is interrupted, and when `deploy.sh` fails; the deployment lock
+    is released on a failed command, and every command is refused while another holds it;
   - an unknown `fetchers.<name>` key and a missing deployment folder are refused before anything runs.
 - The harness tests run in CI: a step in `.github/workflows/test-reusable.yaml` (called by `test.yaml` on every PR
   and push to `develop`) runs `uv run pytest` in `benchmarks/`. Only the cloud-free tests; no benchmark run.
@@ -404,6 +401,8 @@ of restating them, and only adds what the harness build needs to pin down. Part 
 - Any AK change (the `TRACE` level and trace points are #911).
 - Running the benchmark itself in CI (only the harness's own tests run there).
 - Everything #786 lists as a non-goal (flagging, early stops, load-generator health, cross-host graphs, ...).
+- The summary CSV and the graphs comparing the steps (#786 Later; may be added later, after all the step runs and
+  before `plot`).
 
 ## Open questions
 

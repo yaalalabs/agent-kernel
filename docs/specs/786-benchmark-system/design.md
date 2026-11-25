@@ -146,7 +146,7 @@ change to AK itself is a `TRACE` log level with per-stage trace points on the re
      the next step.
   6. Waits the configured time for log ingestion.
   7. Calls `fetch_and_store` once on each fetcher in `after_step`, for (step start, step end).
-  8. Writes the step's CSVs and its `step-metadata.json`, releases the step lock; the `step` command
+  8. Writes the step's CSVs and its `step-metadata.json`, releases the deployment lock; the `step` command
      ends (`run` then starts the next step).
 - **The step ends when every check holds in the same cool-down poll,** in this order (decided 2026-11-03, PR #877
   review; checks come from the host's `cooldown_checks` list since 2026-11-06). A later check only runs once the
@@ -487,7 +487,7 @@ graph LR
 - **Failures never leave a deployment running** (decided 2026-11-23, #912):
   - `run` still runs `finish` (teardown) when a step fails or on Ctrl-C;
   - a failed `deploy.sh` is followed by `destroy.sh` for what it may have created, and `deploy` exits with an error;
-  - `step` releases its lock on every exit (done, error, Ctrl-C);
+  - every command releases the deployment lock on every exit (done, error, Ctrl-C);
   - a failed `destroy.sh` is logged in the run log and `finish` exits with an error, so the person knows resources
     may be left running.
 
@@ -497,12 +497,16 @@ graph LR
   refused (PR #893 review). Test types from config (default both).
 - `--mode` and `--message-type` take AK's config values (e.g. `--mode async --message-type complete`), the same names
   used in the results folders. `--test-type` takes `steady` or `burst`.
+- **One command at a time per deployment** (decided 2026-11-25, #912): `deploy`, `step`, `plot`, `finish` and
+  `post-run` each hold a lock in `state.json` while they work, and another command on the same deployment is refused
+  until it ends. So two loads never mix, `finish` can't tear down under a running step, and a step can't start on a
+  deployment being torn down. `run` takes no lock of its own; each command it calls takes and releases it.
+  - The lock records the process id and machine; a lock whose process is no longer running (a command that was
+    killed) counts as stale and is taken over, with a run-log entry.
+  - A lock held from another machine can't be checked, so `step --deployment <id> --force-unlock` clears it after a
+    confirmation, with a run-log entry; it's documented in `--help` and the testing checklist (decided 2026-11-23,
+    #912).
 - **`step` rules:**
-  - Refuses to start while another step is running on the same deployment (a lock in `state.json`), so two loads never
-    mix. The lock records the process id and machine; a lock whose process is no longer running (a step that was
-    killed) counts as stale and is taken over, with a run-log entry. A lock held from another machine can't be
-    checked, so `step --deployment <id> --force-unlock` clears it after a confirmation, with a run-log entry; it's
-    documented in `--help` and the testing checklist (decided 2026-11-23, #912).
   - Refuses a step whose folder already exists, unless `--replace` is given.
   - `--step` must be one of the deployment's load steps, the list `deploy` stored in `state.json` (the list the step
     folders are padded to). Changing the load steps in `ak-bench.yaml` takes a new `deploy` (PR #893 review).

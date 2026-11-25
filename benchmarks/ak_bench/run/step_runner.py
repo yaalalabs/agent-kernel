@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ak_bench.config import BenchConfig
+from ak_bench.config import BenchConfig, TestType
 from ak_bench.fetchers.core.info_fetcher import InfoFetcher
 from ak_bench.hosts.host import Deployment, Host, RunInfo
 from ak_bench.load.driver.factory import DriverFactory
@@ -109,7 +109,7 @@ class StepRunner:
             self.run_log.warning(f"tracking of fetcher {trackers[task].name} did not stop within {self.STOP_TIMEOUT_S} s; cancelled")
 
     def _schedule(self, test_type: str) -> tuple[int | None, BurstSchedule | SteadySchedule]:
-        if test_type == "burst":
+        if test_type == TestType.BURST:
             return None, BurstSchedule()
         seed, traffic = secrets.randbits(64), self.config.steady_traffic
         return seed, SteadySchedule(traffic.min_send_interval_s, traffic.max_send_interval_s, traffic.load_time_s, random.Random(seed))
