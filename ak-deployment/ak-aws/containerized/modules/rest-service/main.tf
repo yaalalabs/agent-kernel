@@ -34,10 +34,20 @@ locals {
       AK_EXECUTION__QUEUES__OUTPUT__URL = var.output_queue_url
       AK_EXECUTION__QUEUES__BATCH_SIZE  = tostring(var.queue_config.batch_size)
     } : {},
-    # Response store is only used in REST queue modes (not WebSocket)
-    (var.queue_mode && !var.websocket_mode) ? {
-      AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
-    } : {},
+    # Response store is only used in REST queue modes (not WebSocket). Connection detail only:
+    # AK_EXECUTION__RESPONSE_STORE__TYPE is never injected, so config.yaml picks the backend, exactly
+    # like thread.type and schedule.store.type above.
+    (var.queue_mode && !var.websocket_mode) ? merge(
+      {
+        AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
+      },
+      var.redis_url != null ? {
+        AK_EXECUTION__RESPONSE_STORE__REDIS__URL = var.redis_url
+      } : {},
+      var.valkey_url != null ? {
+        AK_EXECUTION__RESPONSE_STORE__VALKEY__URL = var.valkey_url
+      } : {},
+    ) : {},
     # WebSocket mode (async) — push responses over the connection
     var.websocket_mode ? {
       AK_EXECUTION__MODE                             = var.execution_mode

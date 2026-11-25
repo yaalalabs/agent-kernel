@@ -691,9 +691,13 @@ check "sse_requires_streaming_response_store" {
 }
 ```
 
-Place it beside the existing check in `eventbridge.tf`? No — it belongs with the gateway, not with
-scheduling. Put it in a new `checks.tf` and leave the scheduling check where it is; moving that one
-would change nothing and add diff noise.
+**Corrected at implementation — no new file.** This section originally called for a `checks.tf`. The
+repo has three `check` blocks and not one of them lives in a file of its own: `eventbridge.tf:6` sits
+at the top of the file that creates the scheduling resources, and `serverless/state.tf:398`, `:467`
+both sit beside what they guard. The check therefore goes in **`state.tf`**, immediately above
+`module "redis"` / `module "valkey"` — the very resources `create_redis_cluster ||
+create_valkey_cluster` tests, and the same file serverless keeps its checks in. The scheduling check
+stays where it is.
 
 Why a warning and not a rejection, restating `design.md:165-172` so the implementer does not
 "improve" it into a `validation`: Terraform never sees which store `config.yaml` selected — the module

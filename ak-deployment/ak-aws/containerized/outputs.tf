@@ -2,6 +2,16 @@ output "alb_dns_name" {
   value = module.rest_service.alb_dns_name
 }
 
+output "redis_url" {
+  description = "Connection URL of the module-created Redis cluster; null unless create_redis_cluster"
+  value       = local.redis_url
+}
+
+output "valkey_url" {
+  description = "Connection URL of the module-created Valkey cluster; null unless create_valkey_cluster"
+  value       = local.valkey_url
+}
+
 output "cluster_arn" {
   value = module.ecs.cluster_arn
 }

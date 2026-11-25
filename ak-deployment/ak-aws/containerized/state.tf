@@ -100,6 +100,15 @@ module "vpc" {
   tags                 = var.tags
 }
 
+check "sse_requires_streaming_response_store" {
+  assert {
+    condition = !(var.queue_mode && var.execution_mode == "rest_sync" && var.message_type == "delta") || (
+      var.create_redis_cluster || var.create_valkey_cluster
+    )
+    error_message = "[IMPORTANT] SSE (execution_mode = \"rest_sync\" with message_type = \"delta\") needs a response store that can stream chunks. This deployment creates neither a Redis nor a Valkey cluster, so unless execution.response_store in config.yaml points at an external Redis or Valkey, the service will fail at startup. Set create_redis_cluster = true or create_valkey_cluster = true."
+  }
+}
+
 module "redis" {
   source     = "yaalalabs/ak-common/aws//modules/redis"
   version    = "0.10.2"
