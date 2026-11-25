@@ -48,9 +48,7 @@ class _FakeEvaluator(AKEvaluator):
         if not case.expected:
             raise AKMissingInput("evaluate_by_llm requires AKEvaluationCase.expected")
         score = 1.0 if _normalize(case.expected) in _normalize(case.actual) else 0.2
-        return AKEvaluationResult(
-            metric="fake_llm", evaluator="fake", score=score, reason="fake reason", passed=score >= case.threshold
-        )
+        return AKEvaluationResult(metric="fake_llm", evaluator="fake", score=score, reason="fake reason", passed=score >= case.threshold)
 
 
 class _CountingFakeEvaluator(_FakeEvaluator):
@@ -180,6 +178,15 @@ async def test_expect_forwards_return_metrics(monkeypatch):
     assert result.passed is False
 
 
+@pytest.mark.asyncio
+async def test_expect_forwards_criteria(monkeypatch):
+    _use_evaluator(monkeypatch, "_CriteriaRecordingEvaluator")
+    t = CliTest(path="dummy.py", match_threshold=0.5, mode=Mode.LLM)
+    t.last_agent_response = "Paris is lovely"
+    await t.expect(["Paris"], criteria="rubric")
+    assert CliTest._resolve_evaluator().criteria_seen == ["rubric"]
+
+
 # --- mode routing ------------------------------------------------------------------------- #
 
 
@@ -204,6 +211,13 @@ def test_compare_llm_mode_routes_to_evaluate_by_llm(monkeypatch):
     CliTest.compare("Paris is lovely", ["Paris"], threshold=0.5, mode=Mode.LLM)
     with pytest.raises(AssertionError, match="didn't pass llm evaluation"):
         CliTest.compare("Hello", ["Goodbye forever"], threshold=0.5, mode=Mode.LLM)
+
+
+@pytest.mark.parametrize("criteria", ["rubric", None])
+def test_compare_llm_mode_hands_criteria_to_the_evaluator(monkeypatch, criteria):
+    _use_evaluator(monkeypatch, "_CriteriaRecordingEvaluator")
+    CliTest.compare("Paris is lovely", ["Paris"], threshold=0.5, mode=Mode.LLM, criteria=criteria)
+    assert CliTest._resolve_evaluator().criteria_seen == [criteria]
 
 
 def test_compare_fallback_mode_tries_score_then_llm(monkeypatch):
@@ -444,18 +458,6 @@ def test_opik_module_does_not_shadow_third_party_package():
 
     assert ak_opik_module.GEval is opik.evaluation.metrics.GEval
     assert ak_opik_module.LevenshteinRatio is opik.evaluation.metrics.LevenshteinRatio
-
-
-# --- criteria passthrough --------------------------------------------------------------------#
-
-
-@pytest.mark.parametrize("criteria", ["be warm", None])
-def test_compare_hands_criteria_to_the_llm_judge(monkeypatch, criteria):
-    _use_evaluator(monkeypatch, "_CriteriaRecordingEvaluator")
-
-    CliTest.compare("That's great to hear! Anything else?", ["That's great to hear!"], mode=Mode.LLM, criteria=criteria)
-
-    assert CliTest._resolve_evaluator().criteria_seen == [criteria]
 
 
 # --- evaluator caching -----------------------------------------------------------------------#
