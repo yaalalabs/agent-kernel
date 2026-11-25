@@ -73,14 +73,20 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
     the v2 integration used.
   - `responseTransferMode = "STREAM"`.
   - `uri = "http://<alb_dns_name><overwrite_path>"`.
+  - `timeoutInMillis` = `var.gateway_integration_timeout * 1000`. **Not optional** — see Stream
+    duration below.
 - No `aws_apigatewayv2_api`, `_integration`, `_route` or `_stage` remains outside WebSocket mode.
   `aws_apigatewayv2_vpc_link.ecs_alb` is the deliberate exception and stays; `api_gateway_ws.tf` is
   untouched entirely.
 
 ### Route translation (`state.tf`)
 
-- `local.gateway_endpoints_map` (`state.tf:66`) is rendered into OpenAPI paths. Its construction, and
-  the inputs feeding it, are unchanged.
+- `local.gateway_endpoints_map` (`state.tf:66`) is rendered into OpenAPI paths. The inputs feeding it
+  are unchanged; its `path` field is normalised to the full external path in every branch, because the
+  user and MCP branches store a relative one today (`state.tf:55`, `:61`) while a `paths` object must
+  be keyed by one shape. Nothing in the module reads that field, so the change is invisible — and it
+  removes a divergence from GCP, which already normalises
+  (`ak-gcp/containerized/state.tf:116`, `:126`).
 - Three cases, each testable against an existing example:
   - `POST /api/v1/chat` → a path object with a lowercased method key.
   - `ANY` → `x-amazon-apigateway-any-method`; OpenAPI has no `any` key.
@@ -89,6 +95,9 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
     `integration.request.path.<name>` to `method.request.path.<name>`. The HTTP API's `overwrite:path`
     inferred all this from the string; a REST API does not. Not copyable from the serverless module:
     its `{task_id}` support (#935) rides `AWS_PROXY` to Lambda, which forwards the raw event.
+    - Separately, every `{<name>}` in the **external** path needs its own `parameters` entry whether or
+      not `overwrite_path` references it: API Gateway rejects an import whose path template declares a
+      parameter the operation does not list.
   - **`$request.header.*` and `$request.querystring.*` are translated too**, by the same rule with a
     different source. HTTP API parameter mapping accepts all three in `overwrite:path`, so all three
     work today. Each becomes a `{<name>}` segment in the integration `uri`, a method-level
@@ -147,6 +156,28 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
   300 s.
 - Accepted cost: an abandoned connection (closed laptop, killed tab) is now held for the timeout
   rather than 60 s before the ALB reaps it, so a higher value holds idle connections longer.
+
+### Stream duration
+
+There are **two** caps on the request path and they limit different things. The ALB's bounds a silent
+gap; the gateway's bounds the whole integration. A stream that emits a chunk every two seconds for ten
+minutes never trips the ALB and is killed by the gateway.
+
+- **`timeoutInMillis` must be set on every integration.** Left unset it takes AWS's documented default
+  range ceiling of 29 s, which caps every SSE stream at 29 seconds and silently defeats this change —
+  the same failure the HTTP API had, from a different cause.
+- **A second new module variable, `gateway_integration_timeout`** (seconds, default 900), multiplied
+  by 1000 in the renderer. A variable for the same reason `alb_idle_timeout` is one, and GCP
+  containerized is the precedent for a target exposing *two* request-path timeouts rather than one
+  (`backend_deadline` and `timeout`, `ak-gcp/containerized/variables.tf:81-91`).
+- **The default is the least certain number in this design.** AWS documents it twice and
+  inconsistently: the streaming guide says the integration timeout is configurable "up to 15 minutes"
+  and its own worked example sets `timeoutInMillis: 900000`, while the same page says that switching
+  an integration to `STREAM` *removes* a customised timeout because "API Gateway streams your response
+  for up to 5 minutes". 900 follows the example; claim 4b measures which is true.
+- This also unsettles `alb_idle_timeout`'s 300 s default, which was chosen to match "the REST API's
+  stated idle limit" — that 5-minute figure is the *total* stream figure, not an idle one. The two
+  defaults are set together once claim 4 is measured.
 
 ### Response store
 
@@ -257,10 +288,11 @@ already owns that resource** for WebSocket mode, so REST mode joins an existing 
 - The only new Terraform-injected variable is an existing `AKConfig` field's env var
   (`AK_EXECUTION__RESPONSE_STORE__REDIS__URL`), reusing `_ResponseStoreRedisConfig`
   (`ak-py/src/agentkernel/core/config.py:658`) whole. No new model, no new selector.
-- **One new Terraform input variable: `alb_idle_timeout`** (number, default 300). Nothing existing
-  expresses it — the module has no request-path timeout of any kind today — and it matches the
-  variable every other deployment target already exposes. The response-store requirement adds none,
-  being expressed through the existing `create_redis_cluster` / `create_valkey_cluster` flags.
+- **Two new Terraform input variables: `alb_idle_timeout`** (number, default 300) and
+  **`gateway_integration_timeout`** (number, default 900), both in seconds. Nothing existing expresses
+  either — the module has no request-path timeout of any kind today — and between them they match the
+  two GCP containerized already exposes. The response-store requirement adds none, being expressed
+  through the existing `create_redis_cluster` / `create_valkey_cluster` flags.
 - No `enabled` flag is added: `execution_mode` + `message_type` already select SSE.
 
 ### House patterns
@@ -337,11 +369,13 @@ Each was an open choice during drafting; the requirements above state the outcom
    cluster. Neither covers the other. One env var, two outputs, one `check` block. A `check` rather
    than a `validation` because Terraform cannot see which store `config.yaml` selects, so a hard
    rejection would block valid external-Redis deployments.
-2. **ALB `idle_timeout` is a variable, `alb_idle_timeout`, defaulting to 300 s.** The default matches
-   the REST API's stated idle limit, so the out-of-the-box behaviour needs no thought. It is a
-   variable rather than a constant because every sibling deployment exposes its request-path timeout
-   that way, and because the right value depends on how long the user's agent goes quiet. Rejected: a
-   hardcoded constant, which would make ECS the only target where this cannot be tuned.
+2. **Both request-path timeouts are variables: `alb_idle_timeout` (300 s) and
+   `gateway_integration_timeout` (900 s).** Variables rather than constants because every sibling
+   deployment exposes its request-path timeout that way, and because the right values depend on how
+   long the user's agent goes quiet and how long it runs. Rejected: hardcoded constants, which would
+   make ECS the only target where this cannot be tuned; and a single variable covering both, which
+   would conflate a silent gap with a total duration. **Both defaults are provisional** and are set
+   from claim 4's measurements — AWS's documentation contradicts itself on the streaming cap.
 3. **The ~3.5× per-request cost is accepted** — immaterial beside the model call on the same request.
    Supporting both API types behind a variable would double this module's surface permanently.
 4. **The unconfirmed AWS behaviours are tested on the first deployment, not proven up front.** The one
@@ -371,6 +405,16 @@ Each was an open choice during drafting; the requirements above state the outcom
 - **None blocking.** The seven decisions are settled; what remains is empirical, not a reviewer's call.
 - **Confirmed:** provider `6.70.0` exposes `response_transfer_mode` and `integration_target`, read
   from the provider schema locally. This was the only failure with no workaround.
+- **Confirmed:** the same two settings exist as **extension keys** inside
+  `x-amazon-apigateway-integration`, which is what decision 6's OpenAPI `body` actually needs — a
+  different surface from the provider arguments above. The reference describes `integrationTarget` as
+  "the ALB or NLB ARN to send the request to. Supported only for private integrations that use VPC
+  links V2", which is claim 2's mechanism stated as documentation
+  (`research/aws-claims-to-verify.md`, claim 5). The throwaway apply this needed is unnecessary.
+- **Newly open, from that same reference:** whether `timeoutInMillis` is honoured under `STREAM`, and
+  therefore what the two timeout defaults should be. AWS says both "configurable up to 15 minutes"
+  and "removed, streams for up to 5 minutes" on one page. Measured as claim 4b; it changes two
+  defaults, not the design.
 - **Unconfirmed, tested on the first deployment:** that `STREAM` delivers chunks incrementally, and
   that a REST API reaches an ALB directly over VPC link V2. A negative result on either means the
   feature is not yet possible on AWS and the issue closes.
