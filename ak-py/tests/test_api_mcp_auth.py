@@ -14,7 +14,6 @@ from unittest.mock import patch
 import httpx2
 import pytest
 from fastmcp import Client, FastMCP
-from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.auth import RemoteAuthProvider
 from mcp.server.auth.provider import AccessToken
 
@@ -250,22 +249,6 @@ class TestExecutorPrincipal:
         assert client.calls[0][0].principal.is_anonymous
 
 
-def _http_factory(app):
-    """An MCP HTTP client factory that talks to the ASGI app in-process."""
-
-    def factory(headers=None, timeout=None, auth=None, **kwargs):
-        return httpx2.AsyncClient(
-            transport=httpx2.ASGITransport(app=app),
-            base_url="http://mcp.test",
-            headers=headers,
-            timeout=timeout or httpx2.Timeout(30),
-            auth=auth,
-            **kwargs,
-        )
-
-    return factory
-
-
 class TestThroughARealClient:
     """FastMCP's own HTTP layer enforces the verifier: a bearer token reaches the tool as a principal, a bad one is a 401."""
 
@@ -278,10 +261,10 @@ class TestThroughARealClient:
         return server.http_app(path="/"), client
 
     @pytest.mark.asyncio
-    async def test_a_bearer_token_authenticates_the_call_and_the_principal_reaches_the_queue(self, served):
+    async def test_a_bearer_token_authenticates_the_call_and_the_principal_reaches_the_queue(self, served, mcp_asgi_transport):
         app, queue_client = served
         async with app.router.lifespan_context(app):
-            transport = StreamableHttpTransport("http://mcp.test/", auth="alice-secret", httpx_client_factory=_http_factory(app))
+            transport = mcp_asgi_transport(app, auth="alice-secret")
             async with Client(transport) as client:
                 result = await client.call_tool("triage", {"session_id": "s1", "prompt": "hi"})
 
@@ -357,17 +340,19 @@ class TestTheToolsOfACaller:
         finally:
             AKConfig._reset()
 
-    @staticmethod
-    async def _tools(app, token: str) -> list[str]:
+    @pytest.fixture(autouse=True)
+    def _transport(self, mcp_asgi_transport):
+        self.transport = mcp_asgi_transport
+
+    async def _tools(self, app, token: str) -> list[str]:
         async with app.router.lifespan_context(app):
-            transport = StreamableHttpTransport("http://mcp.test/", auth=token, httpx_client_factory=_http_factory(app))
+            transport = self.transport(app, auth=token)
             async with Client(transport) as client:
                 return sorted(tool.name for tool in await client.list_tools())
 
-    @staticmethod
-    async def _call(app, token: str, tool: str):
+    async def _call(self, app, token: str, tool: str):
         async with app.router.lifespan_context(app):
-            transport = StreamableHttpTransport("http://mcp.test/", auth=token, httpx_client_factory=_http_factory(app))
+            transport = self.transport(app, auth=token)
             async with Client(transport) as client:
                 return await client.call_tool(tool, {"session_id": "s1", "prompt": "hi"}, raise_on_error=False)
 

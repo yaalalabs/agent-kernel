@@ -288,6 +288,43 @@ class TestExecutorThroughTheQueue:
         assert len(built) == 1
 
 
+class TestProtocolVersions:
+    """One server answers both MCP protocols (#933): new clients without a handshake, older ones with it."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stateless_http", [True, False])
+    @pytest.mark.parametrize("mode, version", [("auto", "2026-07-28"), ("legacy", "2025-11-25")])
+    async def test_agent_and_app_tools_answer_on_either_protocol(self, mode, version, stateless_http, mcp_asgi_transport):
+        import warnings
+
+        from fastmcp import Client, FastMCP
+        from mcp.shared.exceptions import MCPDeprecationWarning
+
+        from agentkernel.core.model import AgentReplyText
+
+        queue = _queue_reply(AgentReplyText(response="hello"))
+        server = FastMCP(MCP_NAME)
+        server.tool(MCP.Executor("a").execute, name="a", description="test agent")
+
+        @server.tool
+        def add(x: int) -> int:
+            return x + 1
+
+        app = server.http_app(path="/", stateless_http=stateless_http)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", MCPDeprecationWarning)
+            async with app.router.lifespan_context(app):
+                async with Client(mcp_asgi_transport(app), mode=mode) as client:
+                    replies = [await client.call_tool("a", {"session_id": "s1", "prompt": "hi"}) for _ in range(2)]
+                    added = await client.call_tool("add", {"x": 1})
+                    agreed = client.protocol_version
+
+        assert agreed == version
+        assert [r.content[0].text for r in replies] == ["hello", "hello"]
+        assert [body.session_id for body, _ in queue.calls] == ["s1", "s1"]
+        assert added.data == 2
+
+
 class _NoRunner(Runner):
     async def run(self, agent, session, requests):  # pragma: no cover - tools are listed, never called
         raise AssertionError("not run")
