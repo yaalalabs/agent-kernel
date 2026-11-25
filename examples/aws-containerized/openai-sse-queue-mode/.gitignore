@@ -1,0 +1,11 @@
+.terraform
+requirements.txt
+dist
+dist.zip
+*.tfstate
+*.tfstate.backup
+
+# Auto-injected backend files (optional for CI/CD)
+deploy/backend.tf
+dist-agent-runner
+dist-rest-service

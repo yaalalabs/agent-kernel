@@ -1,0 +1,39 @@
+from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
+from agentkernel.secret import SecretManager
+from agents import Agent, set_default_openai_key
+
+# OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
+# handed to the SDK in memory; it is never written back to os.environ.
+set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
+
+math_agent = Agent(
+    name="math",
+    handoff_description="Specialist agent for math questions",
+    instructions="You provide help with math problems. Do not provide reasoning or step-by-step explanations. Just give the final answer. \
+         If prompted for anything else, refuse to answer.",
+    model="openai/gpt-4.1-mini",
+)
+
+history_agent = Agent(
+    name="history",
+    handoff_description="Specialist agent for historical questions",
+    instructions="You provide assistance with historical queries. Explain important events and context clearly.",
+    model="openai/gpt-4.1-mini",
+)
+
+triage_agent = Agent(
+    name="triage",
+    instructions="You determine which agent to use based on the user's question.",
+    model="openai/gpt-4.1-mini",
+    handoffs=[history_agent, math_agent],
+)
+
+OpenAIModule([triage_agent, math_agent, history_agent])
+
+# Dispatches to StreamAgentRunner per config.yaml's execution.mode: rest_sync + message_type: delta,
+# so each token delta is fanned onto the Output Queue and the IO container streams it as an SSE event.
+handler = AgentRunner.run
+
+if __name__ == "__main__":
+    handler()
