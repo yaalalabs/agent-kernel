@@ -17,7 +17,6 @@ class MCPHttpClient:
     async def _list_tools(self) -> list[Any]:
         try:
             async with Client(self.server_url, auth="oauth") as client:
-                assert await client.ping()
                 return await client.list_tools()
 
         except Exception as e:
