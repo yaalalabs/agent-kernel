@@ -67,7 +67,7 @@ mcp:
   enabled: true
   expose_agents: true  # Every agent becomes a tool unless its descriptor's surfaces leave mcp out
   url: "http://localhost:8000/mcp"  # Public URL of the endpoint, named by the OAuth resource metadata (default: http://localhost:8000/mcp)
-  stateless_http: false  # Run in stateless HTTP mode (default: false)
+  stateless_http: false  # Serve older (2025-11-25) MCP clients statelessly; 2026-07-28 clients always are (default: false)
 
 # WebSocket API configuration (for AWS serverless deployments)
 websocket_api:
@@ -1125,7 +1125,8 @@ mcp:
   expose_agents: false          # Expose agents as MCP tools
   url: "http://localhost:8000/mcp"  # Public URL clients reach the endpoint at (behind a proxy, the public one). With an
                                 # OpenID-family identity provider it is the resource the RFC 9728 metadata names
-  stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
+  stateless_http: false         # Older (2025-11-25) clients only: each request is independent, no Mcp-Session-Id;
+                                # set it when several replicas serve /mcp. 2026-07-28 clients are always stateless (default: false)
 
 # Messaging platform integrations
 slack:

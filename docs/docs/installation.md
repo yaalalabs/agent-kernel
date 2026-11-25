@@ -288,6 +288,10 @@ rm -rf .venv
 uv sync
 ```
 
+The `crewai` and `mcp` extras cannot be installed together: every CrewAI release pins `mcp<2`, and the MCP
+server (FastMCP 4) needs `mcp>=2.3`. Install `agentkernel[crewai]` and `agentkernel[mcp]` in separate environments,
+for example the agent runner and the IO process of a split deployment.
+
 ### Import Errors
 
 If you get import errors after installation, ensure you've installed the appropriate extras:
