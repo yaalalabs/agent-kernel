@@ -63,7 +63,8 @@ nothing leaves the computer.
 - "app_test.py · 42 cases", a chip "Last run: 40 passed · 2 failed" that opens the run history, a button
   "Run tests".
 - `ResultSquares`: 42 squares, 40 passed and 2 failed, with a link "2 failing".
-- "Covers 9 of 12 business rules", link "See untested rules" (BR-005, BR-010, BR-012).
+- "Covers 9 of 13 business rules", link "See untested rules" (BR-005, BR-010, BR-012). BR-013 is drafted, not
+  untested, and is not in that list.
 - "Save this exchange as a test case".
 - "Add CI workflow".
 

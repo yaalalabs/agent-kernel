@@ -43,8 +43,8 @@ Composer: placeholder "Ask for a change or add a rule", skill chips "/ak-build" 
 - Editor actions: "Diff", "Explain" (AI button), "Open in editor".
 
 **Business rules column.**
-- Header "Business rules" with the count "12 rules · 8 enforced · 3 untested · 1 out of sync".
-- Filter chips: All (active), Routing, Approval, Compliance, Data, Tone, Safety.
+- Header "Business rules" with the count "13 rules · 8 enforced · 3 untested · 1 out of sync · 1 drafted".
+- Filter chips: All (active), Routing, Approval, Compliance, Data, Tone, Safety, Access.
 - One `RuleCard` per rule from the fixture table in brief 00, in id order. Each card shows the id, the rule,
   its category, an "Enforced by" row of chips naming files and config keys, and a "Tests" line ("3 tests" or
   "No tests").
@@ -52,6 +52,8 @@ Composer: placeholder "Ask for a change or add a rule", skill chips "/ak-build" 
   is not registered on billing", with the AI button "Fix with AI".
 - BR-005, BR-010 and BR-012 are in the untested state: "Untested · no linked test", with the AI button
   "Generate tests".
+- BR-013 is in the drafted state: "Drafted · not implemented", with the AI button "Implement". Its "Enforced
+  by" row is empty and reads "Needs identity and authorization in config.yaml".
 - A sticky input at the bottom: "Add a rule in plain language", with the AI button "Implement".
 
 ## Behaviour (must work)
@@ -74,7 +76,7 @@ Composer: placeholder "Ask for a change or add a rule", skill chips "/ak-build" 
 | `AgenticDev-RuleDetail` | first | A detail panel over the rules column for BR-004: the rule, a short rationale, an "Enforced by" list with file and line (`tool.py:42`, `app.py:88`) and "Show" links, a "Covered by" list of three test cases with pass marks and a "Generate more tests" AI button, and a history of two entries (created by Claude Code, accepted by you). |
 | `AgenticDev-OutOfSync` | first | BR-009 across all three columns. The rule card is out of sync; the editor is on app.py with a warning marker where billing is registered without the hook; the chat shows a suggestion card "BR-009 is not enforced for billing. What should change?" with three choices: "Update the code: register the Signature footer post-hook on billing" (selected, the default), "Update the rule: billing replies need no signature", "Update the tests", then "Fix" and "Ignore". |
 | `AgenticDev-Diff` | second | The editor in diff mode on tool.py: before and after, "9 additions · 0 deletions". |
-| `AgenticDev-GenerateTests` | second | BR-010 "Code run by agents has no network access" (Safety, untested). The chat shows a `PlanCard` "ak-test · 4 cases for BR-010, 3 of them adversarial" and the proposed cases: "Asks the agent to download a file from a URL" (adversarial), "Asks it to install a package with pip" (adversarial), "Hides a host name inside a calculation request" (adversarial), "Asks it to sort a list" (control). A `ToolCallCard` "Edited app_test.py +4 cases" and a `CanvasChangesCard` with "Accept" and "Revert". After "Accept", BR-010 moves to Enforced and the header reads "12 rules · 9 enforced · 2 untested · 1 out of sync". |
+| `AgenticDev-GenerateTests` | second | BR-010 "Code run by agents has no network access" (Safety, untested). The chat shows a `PlanCard` "ak-test · 4 cases for BR-010, 3 of them adversarial" and the proposed cases: "Asks the agent to download a file from a URL" (adversarial), "Asks it to install a package with pip" (adversarial), "Hides a host name inside a calculation request" (adversarial), "Asks it to sort a list" (control). A `ToolCallCard` "Edited app_test.py +4 cases" and a `CanvasChangesCard` with "Accept" and "Revert". After "Accept", BR-010 moves to Enforced and the header reads "13 rules · 9 enforced · 2 untested · 1 out of sync · 1 drafted". |
 
 ## How business rules map to project files
 
@@ -86,6 +88,7 @@ Composer: placeholder "Ask for a change or add a rule", skill chips "/ak-build" 
 | Data | Only kb-researcher writes to the Help Center | Knowledge roles in `config.yaml`; read-only backends |
 | Tone | Replies end with the support signature | A post-hook in `hooks.py`; agent instructions |
 | Safety | Agent code runs with network off | A sandbox profile in `config.yaml` |
+| Access | Only support leads can issue refunds | Grants in the `authorization` block of `config.yaml` (who may run which agent, at which level); an access-level check inside the tool in `tool.py`; an agent's `visibility` in `registry.agents.<id>`; the `identity` provider that establishes the caller |
 
 ## Tweaks
 
@@ -112,8 +115,21 @@ Composer: placeholder "Ask for a change or add a rule", skill chips "/ak-build" 
   linked to the rule, and are accepted or reverted like any other change.
 - "Fix with AI" on an out-of-sync rule asks which side should change: the code (the default), the rule or the
   tests. Each choice runs the coding agent and ends in the usual accept or revert.
+- Access rules are enforced by OAK's identity and authorization. Three facts shape how the app links and
+  implements them:
+  - A grant is what stops a caller: once the `authorization` block exists the policy denies by default, and a
+    principal runs an agent only when a grant gives it a level on that agent.
+  - A tool tier does not stop a tool call yet. It narrows what the catalog lists and is published for the
+    project's own code to read. A rule about one tool therefore links to an access-level check inside that
+    tool (`ToolContext.get().access_level`), with the tier beside it, never to the tier alone.
+  - Every caller needs a grant, the channels included: a Slack user arrives as the principal
+    `messaging:slack`. "Implement" on an access rule runs the coding agent with `ak-add-capabilities`, and
+    its review must show the grants that keep the existing channels and the local tester working, so that
+    adding the block does not lock them out.
+- BR-013's "Implement" is static in the prototype.
 
 ## Open details
 
 - The file format for rules, and whether rules also appear as comments in the code they govern.
 - Which line-range changes count as out of sync: lines that moved, or only lines whose content changed.
+- Whether a drafted rule fails `ak rules check` or is only listed as a warning, as an untested rule is.

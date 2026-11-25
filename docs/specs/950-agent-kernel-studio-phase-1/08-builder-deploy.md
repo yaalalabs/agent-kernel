@@ -61,7 +61,7 @@ The main artboard shows a first deploy at the moment the plan is ready and waiti
 | passed | State backend | S3 bucket `[BUCKET]` is ready | |
 | passed | Configuration fits the target | `rest_sync` with `delta` is supported on a single-container ECS service | |
 | passed | Tests | 40 of 42 passed | "View" |
-| needs a person | Business rules | BR-009 is out of sync · 3 rules have no tests | AI button "Fix with AI" |
+| needs a person | Business rules | BR-009 is out of sync · 3 rules have no tests · 1 rule is drafted | AI button "Fix with AI" |
 
 2. **Package** (done). `CommandRow`s: `uv export --no-hashes > requirements.txt`,
    `uv pip install -r requirements.txt --target=dist/data`, and the copy of `app.py`, `config.yaml` and the

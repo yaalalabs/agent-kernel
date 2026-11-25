@@ -189,7 +189,7 @@ given is a placeholder in square brackets, never an invented fact.
 The layout is the one the bundled `ak-init` and `ak-cloud-deploy` skills generate. `hooks.py` and `.akstudio/`
 are additions of this fixture.
 
-### Business rules (12 rules: 8 enforced, 3 untested, 1 out of sync; 9 covered by tests)
+### Business rules (13 rules: 8 enforced, 3 untested, 1 out of sync, 1 drafted; 9 covered by tests)
 
 | Id | Category | Rule | Enforced by | Tests |
 |----|----------|------|-------------|-------|
@@ -205,13 +205,15 @@ are additions of this fixture.
 | BR-010 | Safety | Code run by agents has no network access | Sandbox profile in `config.yaml` | none |
 | BR-011 | Tone | Agents answer in the customer's language | Instructions of all three agents in `app.py` | 1 |
 | BR-012 | Data | Order data is read-only for agents | The Orders knowledge base is a read-only backend | none |
+| BR-013 | Access | Only support leads can issue refunds | **Drafted: not implemented.** It needs an `identity` provider, a grant for the support leads group in the `authorization` block of `config.yaml`, and an access-level check in `refund_payment` in `tool.py` | none |
 
 BR-004 and BR-011 were added by Claude Code. Rule states, in order of severity:
 
 1. **Out of sync**: the files no longer match the rule (BR-009).
 2. **Untested**: implemented, but no test is linked (BR-005, BR-010, BR-012). It ranks above Drafted because it
    looks finished but has no evidence.
-3. **Drafted**: no implementation yet.
+3. **Drafted**: no implementation yet (BR-013). The fixture's `config.yaml` has no `identity` or
+   `authorization` block, so nothing is restricted until the rule is implemented.
 4. **Enforced**: implemented and covered by at least one linked test.
 
 ### Story moments
