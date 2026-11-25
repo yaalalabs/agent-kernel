@@ -88,7 +88,6 @@ async def test_steady_step_timeline(fast_config, run_info, run_log, tmp_path, mo
 async def test_burst_step_has_no_seed(fast_config, run_info, run_log, tmp_path):
     record = await run_step(fast_config, run_info, run_log, tmp_path, StageFetchers(), test_type="burst", step=3)
     assert record.seed is None and len(record.load.records) == 3
-    assert record.load.time_to_answer_all_s is not None
 
 
 @pytest.mark.asyncio

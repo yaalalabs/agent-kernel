@@ -42,25 +42,11 @@ class KeyedCsv:
                 merged[self._key_of(row)] = row  # dict keeps first-insert order on replace
             self._write(merged.values())
 
-    def remove(self, keys: Iterable[tuple[str, ...]]) -> None:
-        """Drops the rows with these keys (as CSV cells); a missing file stays missing."""
-        drop = set(keys)
-        with self._lock():
-            if self.path.exists():
-                self._write([row for row in self.read() if self._key_of(row) not in drop])
-
     def read(self) -> list[dict[str, str]]:
         if not self.path.exists():
             return []
         with self.path.open(newline="") as f:
             return list(csv.DictReader(f))
-
-    def header(self) -> list[str]:
-        """The file's columns; [] when it doesn't exist."""
-        if not self.path.exists():
-            return []
-        with self.path.open(newline="") as f:
-            return next(csv.reader(f), [])
 
     def series(self, key: Callable[[dict[str, str]], Hashable], value: Callable[[dict[str, str]], Any]) -> dict[Any, list[tuple[datetime, Any]]]:
         """A long-form file with a `ts` column as {key(row): [(ts, value(row))]}, in file order."""

@@ -89,7 +89,7 @@ class ResourceUsageFetcher(InfoFetcher[ResourceUsage]):
   | 10:04:00 | runner | `None` | cpu_pct | max | 52.0 |
 
 - **Fetchers only return readings.** The shared resource collector turns them into the per-window percentile
-  columns, the summary columns and the long-form `resource-usage.csv` (which is these rows plus a `fetcher` column).
+  columns and the long-form `resource-usage.csv` (which is these rows plus a `fetcher` column).
 - **How many samples:** one per worker per time window per metric (and per stat). Not one per worker in total, and
   not one per request.
   - ECS Container Insights: one event per task per minute → one sample per task per minute per metric. 7 tasks over
@@ -254,7 +254,7 @@ layer when it's on (no IAM change, see above); the run metadata records whether 
   across the tier's workers in each window. The ECS service metrics keep the min / avg / max AWS gives.
 - **Per-step `resource-usage.csv` (new):** the raw per-worker samples in long form
   (`ts, tier, worker, metric, stat, value, fetcher`), since one column per worker doesn't fit the per-time-window file.
-- **Summary CSV (per test type, one row per step):** p0 / p25 / p50 / p75 / p99 / p100 of CPU % and memory per tier over
+- **Later, not in the first stage ([Later](../design.md#later-summary-csv-and-graphs-comparing-the-steps)): summary CSV (per test type, one row per step):** p0 / p25 / p50 / p75 / p99 / p100 of CPU % and memory per tier over
   the step's whole time period (before → load → cool-down), one set per fetcher, e.g.
   `runner.cpu_pct.p100.aws.ecs_container_insights`.
   - Worked out from all the raw samples in the step (every worker, every sample time): p0 = the lowest single
@@ -263,7 +263,7 @@ layer when it's on (no IAM change, see above); the run metadata records whether 
     `Maximum`).
   - Step N is N requests (burst) or N clients (steady traffic), so this row shows how usage changes with load.
 - **Graphs:** separate graphs, not panels in `03-timeline.png`:
-  - `graphs/03-resource-usage-per-step.png` (comparing the steps): CPU % and memory against the load step,
+  - Later, with the summary CSV: `graphs/03-resource-usage-per-step.png` (comparing the steps): CPU % and memory against the load step,
     p0 / p25 / p50 / p75 / p99 / p100, one row of panels per tier (Lambda: memory only).
   - `step-<N>/graphs/05-resource-usage.png` (one step): CPU % and memory over the step's timeline, p0 / p25 / p50 /
     p75 / p99 / p100 across the tier's workers per time window, one row of panels per tier. Same time axis and before /

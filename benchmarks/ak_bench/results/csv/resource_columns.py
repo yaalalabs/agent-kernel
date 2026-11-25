@@ -39,14 +39,6 @@ class ResourceCollector:
                     columns.setdefault(column, [None] * n)[k] = value
         return columns
 
-    def summary(self, step_dir: Path, started: datetime, ended: datetime) -> dict[str, Any]:
-        """The summary.csv columns: the same combination over every raw sample in [started, ended]."""
-        out: dict[str, Any] = dict.fromkeys(self._declared())
-        for (tier, metric, stat, fetcher), workers in self._series(step_dir).items():
-            values = [v for samples in workers.values() for ts, v in samples if started <= ts <= ended]
-            out |= self._combine(tier, metric, stat, fetcher, values)
-        return out
-
     def _declared(self) -> list[str]:
         """Columns laid out from the host and deployment, so a fetcher that stored nothing still has its empty columns."""
         return [

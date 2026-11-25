@@ -146,7 +146,7 @@ change to AK itself is a `TRACE` log level with per-stage trace points on the re
      the next step.
   6. Waits the configured time for log ingestion.
   7. Calls `fetch_and_store` once on each fetcher in `after_step`, for (step start, step end).
-  8. Writes the step's row of `summary.csv` and its `step-metadata.json`, releases the step lock; the `step` command
+  8. Writes the step's CSVs and its `step-metadata.json`, releases the step lock; the `step` command
      ends (`run` then starts the next step).
 - **The step ends when every check holds in the same cool-down poll,** in this order (decided 2026-11-03, PR #877
   review; checks come from the host's `cooldown_checks` list since 2026-11-06). A later check only runs once the
@@ -207,8 +207,7 @@ change to AK itself is a `TRACE` log level with per-stage trace points on the re
      `ak-bench-run-id=<run-id>-<host>-<mode>-<message-type>`, record the run metadata, print the deployment id.
   2. **`step`, once per step run:** one test type at one step number. `run` uses the default order: step numbers
      1 → 10 → 100 → 1000; for each, a steady step run, then a burst step run. Every step run is the four-part step
-     above, with its own live tracking and its own after-step fetch, and writes its own CSVs and its row of
-     `summary.csv`.
+     above, with its own live tracking and its own after-step fetch, and writes its own CSVs.
   3. **`plot`:** draw the graphs from the CSVs so far (any time, as often as needed).
   4. **`finish`:** run the `after_all_steps` list (and re-plot if it stored anything), then tear the deployment down.
   5. **`post-run`** (optional, only for a host with an `after_teardown` list), once the data is ready: AWS runs Cost
@@ -289,8 +288,8 @@ change to AK itself is a `TRACE` log level with per-stage trace points on the re
   extends `InfoFetcher[QueueInfo]`; `QueueInfo` = samples `(ts, queue, waiting, in_flight)`. SQS only gives the
   current depth, so `SqsTransportCollector` is in `during_step` and in `cooldown_checks` with
   `settle_window_s = 60`.
-- Derived per step, per tier and per fetcher (summary CSV), from `t_load_up` (first send) and `t_load_down` (end of
-  load):
+- **Later** (with the summary CSV, see [Later: summary CSV and graphs comparing the steps](#later-summary-csv-and-graphs-comparing-the-steps)):
+  derived per step, per tier and per fetcher, from `t_load_up` (first send) and `t_load_down` (end of load):
   - scale up: decision delay, first new worker, scale-up done, backlog drained;
   - scale down: scale-down start, scale-down done;
   - counts: `workers_before_up`, `workers_peak`, `workers_before_down`, `workers_after_down`;
@@ -323,7 +322,7 @@ change to AK itself is a `TRACE` log level with per-stage trace points on the re
   - **`ResourceUsage`: everything one `fetch()` call returns**: a list of `ResourceSample`s across every tier, worker,
     metric and time in `[start, end]`. A wrapper rather than a bare list so per-fetch details (e.g. what the source
     was missing) can be added later without changing the signature, same as `ScalingInfo`.
-  - The shared resource collector turns the samples into the per-window percentile columns, the summary columns and
+  - The shared resource collector turns the samples into the per-window percentile columns and
     `resource-usage.csv`. Fetchers never compute percentiles; the only reduction inside a fetcher is the Lambda
     query's per log stream × window step, to stay under the Logs Insights row limit.
   - Units: CPU as % of one worker's allocation; memory in MiB and as %.
@@ -468,7 +467,7 @@ graph LR
     SR --> LG["Load generator"]
     LG --> DRV["ClientDriver"]
     DRV -->|WebSocket| AK["AK app<br/>(mock runner, in_memory sessions, TRACE on)"]
-    ORCH --> SHARED["Shared: collectors, step-end check,<br/>derived numbers, CSVs, plots"]
+    ORCH --> SHARED["Shared: collectors, step-end check,<br/>CSVs, plots"]
 ```
 
 ### Selecting what to run (CLI)
@@ -479,7 +478,7 @@ graph LR
   | Command | What it does |
   |---|---|
   | `deploy --host <h> --mode <m> --message-type <t> [--run-id <id>]` | Deploys one host × mode × message type (runs its deployment folder's `deploy.sh`), tags every resource, writes `run-metadata.json` and the deployment's `state.json` (the saved `Deployment`, the load steps from `ak-bench.yaml`, step windows, teardown time). Prints the **deployment id**: the tag value `<run-id>-<host>-<mode>-<message-type>`. Starts a new run id unless `--run-id` is given (to put several deployments in one run folder); refuses a host × mode × message type that already has a deployment in that run, since the tag value and folder would clash. |
-  | `step --deployment <id> --test-type steady\|burst --step <N> [--replace]` | Runs **one** step run (the four parts of the [step timeline](#step-timeline)) with the host's `during_step`, `cooldown_checks` and `after_step` lists. `--step` is one number, not a list, and must be one of the load steps in `ak-bench.yaml`. Writes `step-<N>/` and its row of the test type's `summary.csv`. |
+  | `step --deployment <id> --test-type steady\|burst --step <N> [--replace]` | Runs **one** step run (the four parts of the [step timeline](#step-timeline)) with the host's `during_step`, `cooldown_checks` and `after_step` lists. `--step` is one number, not a list, and must be one of the load steps in `ak-bench.yaml`. Writes `step-<N>/`. |
   | `plot --deployment <id>` or `--run-id <id>` | Draws every graph from the CSVs of the steps run so far, written into the same `graphs/` folders. Any time, as often as needed. |
   | `finish --deployment <id>` | Runs the `after_all_steps` list (and re-plots if it stored anything, so its data is in the graphs), tears down (`destroy.sh`), records the teardown time. Says whether `post-run` is needed (an `after_teardown` list that isn't empty). |
   | `post-run --deployment <id>` or `--run-id <id>` (optional) | Runs the `after_teardown` list (AWS: the billed cost); fills its CSVs, re-plots. The person decides when to run it (AWS: about a day after teardown, once Cost Explorer has the bill). Can be run again. |
@@ -524,7 +523,8 @@ graph LR
 
 - For each selected host × mode × message type: **`deploy` (+ run metadata) → `step` per step run → `plot` →
   `finish` (`after_all_steps` list, tear down)**; later, the optional `post-run` runs the `after_teardown` list. Each
-  step writes its own CSVs and its row of `summary.csv`, so there's no separate "write run-level CSVs" stage.
+  step writes its own CSVs, so there's no separate "write run-level CSVs" stage (the summary CSV, when it's added, is
+  one: see [Later](#later-summary-csv-and-graphs-comparing-the-steps)).
   - **Run test types:** every step stores its own data: live tracking from the start of `before` to the end of the
     cool-down, then the data with history after the cool-down and the configured wait (see
     [Step timeline](#step-timeline)).
@@ -555,7 +555,7 @@ flowchart TD
     DEP --> B
     H --> MORE{"More step runs?"}
     MORE -- "yes: next step run, from the minimum workers<br/>order: 1 steady → 1 burst → 10 steady → 10 burst → …" --> B
-    MORE -- "no" --> PLOT["<b>plot</b>: graphs (PNG)<br/>(each step run already wrote its CSVs<br/>and its summary.csv row)"] --> FIN["<b>finish</b>: after_all_steps list<br/>(empty on AWS), then tear down"]
+    MORE -- "no" --> PLOT["<b>plot</b>: graphs (PNG)<br/>(each step run already wrote its CSVs)"] --> FIN["<b>finish</b>: after_all_steps list<br/>(empty on AWS), then tear down"]
     FIN -.-> BILL["<b>post-run</b> (optional): after_teardown list<br/>AWS: billed cost, ~1 day later,<br/>writes cost.csv, all steps together"]
 ```
 
@@ -601,7 +601,8 @@ flowchart TD
     UTC wall-clock time (to line up with AK's UTC trace lines); latency and other client-side durations come from a
     monotonic clock (decided 2026-11-23, #912);
   - stops waiting for a request after the client timeout and records `status = timeout`.
-- Burst steps also record the **time to answer all N** (first send → last response or timeout).
+- **Later** (with the summary CSV): burst steps also record the **time to answer all N** (first send → last response
+  or timeout).
 - The load generator's own health (CPU, event-loop lag) is not recorded (decided).
 
 ### Client drivers (pluggable execution modes)
@@ -651,7 +652,7 @@ flowchart TD
   - A fetcher never knows which list it's in; the list picks the time window. One fetcher object can be in several
     lists (e.g. `aws.ecs_api` in `during_step` and `cooldown_checks`); fetchers are stateless, so that's safe.
   - Moving a fetcher to another part of the run is a one-line move between lists.
-  - Summary CSVs and graphs aren't in the lists: they don't read the platform, and they're the same shared code for
+  - CSVs and graphs aren't in the lists: they don't read the platform, and they're the same shared code for
     every host.
   - **Start-up check** (when the host is loaded, before anything is deployed): every fetcher in `cooldown_checks` has
     `is_settled()`, and a scaling fetcher there gives `running`.
@@ -703,7 +704,7 @@ flowchart TD
   implementations, not a class with its own code. A class per host would copy the shared parts into every host:
   - `lambda` and `ecs` would each carry their own SQS queue depth and Cost Explorer code.
   - A new host would be a new class; as a bundle it's one registry entry built from existing parts.
-- The harness (load generator, timing, CSVs, derived numbers, plots) never calls a cloud API; it only sees the ABCs
+- The harness (load generator, timing, CSVs, plots) never calls a cloud API; it only sees the ABCs
   and their common return types.
 - `Deployment`: read from the `deployment.json` that `deploy.sh` writes (filled from the Terraform outputs; Q9,
   decided 2026-11-01; read from `deployment.json` decided 2026-11-23, #912):
@@ -727,7 +728,7 @@ flowchart TD
     commands deploy nothing. So a fetcher stays stateless and works for any deployment;
   - a value the source gives per period (CloudWatch metrics, Logs Insights `bin()` rows) gets `ts` = the **end** of
     that period, set in `fetch()` (CloudWatch's 10:01 datapoint is stored as 10:02:00: it's the maximum over that
-    minute, known only once the minute is over). Window fill and derived times then both use `ts` as stored
+    minute, known only once the minute is over). Window fill (and the later derived times) then use `ts` as stored
     (decided 2026-11-05, PR #893 review);
   - `store(result: T, results)`: abstract, written once in each family base for its type; `results` is the step's
     folder in the step lists, the host × mode × message type folder in `after_all_steps` / `after_teardown`;
@@ -883,7 +884,8 @@ flowchart TD
 - Per host × mode × message type: `run-metadata.json`, `state.json` (the deployment and what has run on it, read by
   the separate commands), `cost.csv` (AWS: whole-run billed cost by service, written by
   `post-run`). A host whose cost fetcher is in `after_step` writes a `cost.csv` per step instead.
-- Per test type: `summary.csv` (one row per step; each `step` writes or replaces its own row), `graphs/`.
+- Per test type: its step folders (no `summary.csv` or `graphs/` yet: see
+  [Later](#later-summary-csv-and-graphs-comparing-the-steps)).
 - Per step:
   - `per-request.csv`: request id, session id, user id, scheduled send, sent, first chunk, complete, latency, status,
     raw stage timestamps, and one `<STAGE>_s` duration column per request-path `TraceStage` value (not the
@@ -902,23 +904,14 @@ flowchart TD
   each series (tier, worker, metric, stat, fetcher), that series' last sample at or before the window's end, so a
   series from a fetcher polled every 60 s with 1 s windows fills 60 rows with the same value until its next sample. A sample is carried forward for at most its fetcher's poll interval (or
   the source's sample period, e.g. a Lambda Logs Insights bin); after that the window stays empty (e.g. a Lambda
-  window with no invocations). Derived scaling times (summary) use the raw sample times, not the windows.
-- Summary per step: percentiles of end-to-end latency and each stage duration (with the row count used), min / avg /
-  max of per-window Tx / Rx, error and timeout counts, time to answer all N (burst), `cooldown_max_reached`, scaling
-  numbers and CPU / memory per tier per fetcher (fetcher named).
+  window with no invocations).
 - How each measurement is summarized:
   - per-request times, per-worker CPU / memory: p0 / p25 / p50 / p75 / p99 / p100. No avg column.
   - ECS service metrics: min / avg / max (all AWS gives).
-  - Tx / Rx: min / avg / max of per-window values.
   - counts, times, costs: the value itself.
 
 ### Graphs (PNG)
 
-- Comparing the steps of one host × mode × message type × test type (`<test type>/graphs/`):
-  1. `01-latency-per-step.png`: end-to-end latency percentiles per step, timeouts counted under each step.
-  2. `02-stage-times-per-step.png`: the per-step stage-times graph for every step, one panel per step, same y scale.
-  3. `03-resource-usage-per-step.png`: CPU % and memory percentiles per step, one row of panels per tier
-     (Lambda: memory only).
 - One step (`step-<N>/graphs/`):
   1. `01-stage-times.png`: one box per stage (p25-p75, line at p50, whiskers p0 / p100, marker at p99).
   2. `02-stage-breakdown.png`: stacked stage times for the fastest, average and slowest real request (completed
@@ -940,6 +933,22 @@ flowchart TD
   - billed cost per run by service, drawn when the cost is written (AWS: by `post-run`).
 - No cross-host or cross-mode comparison graphs.
 
+### Later: summary CSV and graphs comparing the steps
+
+- Not built in the first stage (decided 2026-11-25): the per-step CSVs and graphs are enough for now. May be added
+  later.
+- When added, the summary is made **after all the step runs and before `plot`** (`run`: deploy → steps → summary →
+  plot → finish), from the step folders' CSVs, not by each `step`.
+- `summary.csv` per test type, one row per step: percentiles of end-to-end latency and each stage duration (with the
+  row count used), min / avg / max of per-window Tx / Rx, error and timeout counts, time to answer all N (burst),
+  `cooldown_max_reached`, the derived scaling numbers (see [Scaling](#scaling)) and CPU / memory per tier per fetcher
+  (fetcher named) over the step's raw samples. Derived scaling times use the raw sample times, not the windows.
+- Graphs comparing the steps of one host × mode × message type × test type (`<test type>/graphs/`):
+  1. `01-latency-per-step.png`: end-to-end latency percentiles per step, timeouts counted under each step.
+  2. `02-stage-times-per-step.png`: the per-step stage-times graph for every step, one panel per step, same y scale.
+  3. `03-resource-usage-per-step.png`: CPU % and memory percentiles per step, one row of panels per tier
+     (Lambda: memory only).
+
 ### Phase 2: SLA numbers and tuning
 
 - Computed from the phase-1 CSVs without re-running.
@@ -960,6 +969,8 @@ flowchart TD
 - Recording WebSocket connect times and front-door scaling (later; phase 1 only opens the connections before
   `before`).
 - Repeated runs with spread across runs (later).
+- The summary CSV and the graphs comparing the steps in the first stage (may be added later; see
+  [Later](#later-summary-csv-and-graphs-comparing-the-steps)).
 - Kubernetes hosts (EKS, then bare metal) with Kafka: right after the AWS hosts; designed when they're built.
 - GCP, Azure and NATS hosts (interfaces allow them; nothing built).
 - Vertical scaling.

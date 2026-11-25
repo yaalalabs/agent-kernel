@@ -53,7 +53,6 @@ async def test_burst_one_request_per_client(run_log):
         assert r.first_chunk == r.complete and r.sent <= r.complete
     assert result.t_load_up == min(r.sent for r in result.records)
     assert result.t_load_down == max(r.complete for r in result.records)
-    assert 0.1 <= result.time_to_answer_all_s < 0.5
 
 
 @pytest.mark.asyncio
@@ -94,7 +93,6 @@ async def test_steady_returns_after_load_time_and_keeps_updating(run_log):
         result = await gen.run(SteadySchedule(0.1, 0.1, 0.35, random.Random(1)), "steady")
         assert 0.35 <= time.monotonic() - started < 0.45
         assert (result.t_load_down - result.t_load_up).total_seconds() == pytest.approx(0.35)
-        assert result.time_to_answer_all_s is None
         assert not gen.all_settled()  # the last sends' replies are still in flight
         await asyncio.sleep(0.3)
         assert gen.all_settled()

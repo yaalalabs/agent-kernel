@@ -18,9 +18,6 @@ from ak_bench.results.common.layout import ResultsLayout
 from ak_bench.results.common.percentiles import PERCENTILES, percentiles
 from ak_bench.results.csv.per_request import PerRequestWriter
 from ak_bench.results.csv.per_window import PerWindowWriter, WindowGrid
-from ak_bench.results.csv.resource_columns import ResourceCollector
-from ak_bench.results.csv.scaling_numbers import ScalingDerivation
-from ak_bench.results.csv.summary import SummaryWriter
 from ak_bench.results.metadata import RunMetadataWriter, StepMetadataWriter
 from ak_bench.run.step_runner import StepRecord
 
@@ -80,7 +77,7 @@ def record() -> StepRecord:
         request("r3", RequestStatus.ERROR, 14, 14),
         request("r4", RequestStatus.TIMEOUT, 20, 50),
     ]
-    load = LoadResult(records, at(10), at(40), None)
+    load = LoadResult(records, at(10), at(40))
     return StepRecord("steady", 1, at(0), at(10), at(10), at(40), at(60), False, load, 1, 42)
 
 
@@ -139,7 +136,7 @@ def test_per_window_declares_empty_columns_for_a_fetcher_that_stored_nothing(ste
 
     for column in ("runner.cpu_pct.max.resource2", "api.cpu_pct.max.resource2", "api.cpu_pct.p50.resource", "api.desired.scaling"):
         assert [r[column] for r in rows] == [None] * 6
-    header = KeyedCsv(step_dir / "per-time-window.csv", [], []).header()
+    header = KeyedCsv(step_dir / "per-time-window.csv", [], []).read()[0]
     assert {"runner.cpu_pct.max.resource2", "output.in_flight.transport"} <= set(header)
 
 
@@ -153,77 +150,6 @@ def test_window_grid_boundary_sample_falls_in_the_window_it_starts():
     grid = WindowGrid(at(0), at(0.6), 0.1)  # 0.3 / 0.1 is 2.999... in float seconds
     assert [grid.index(at(k / 10)) for k in range(6)] == [0, 1, 2, 3, 4, 5]
     assert len(grid.windows) == 6
-
-
-def test_derived_scaling_up_and_down_no_scale_and_backlog(step_dir, record, host, deployment):
-    derived = ScalingDerivation(host, deployment).derive(step_dir, record)
-
-    runner = {k.split(".")[1]: v for k, v in derived.items() if k.startswith("runner.")}
-    assert runner == {
-        "decision_delay_s": 5,
-        "first_new_worker_s": 8,  # span started at +18 s, before the running increase at +20 s
-        "scale_up_done_s": 15,
-        "scale_down_start_s": 5,
-        "scale_down_done_s": 15,
-        "workers_before_up": 1,
-        "workers_peak": 3,
-        "workers_before_down": 3,
-        "workers_after_down": 1,
-        "scale_up_rate_per_min": 8,
-        "scale_down_rate_per_min": 8,
-    }
-    api = {k.split(".")[1]: v for k, v in derived.items() if k.startswith("api.")}
-    assert (api["workers_before_up"], api["workers_peak"], api["workers_before_down"], api["workers_after_down"]) == (1, 1, 1, 1)
-    assert [api[c] for c in ("decision_delay_s", "first_new_worker_s", "scale_up_done_s", "scale_down_start_s", "scale_down_done_s")] == [None] * 5
-    assert api["scale_up_rate_per_min"] is None and api["scale_down_rate_per_min"] is None
-    assert derived["input.backlog_drained_s.transport"] == 25
-    assert derived["output.backlog_drained_s.transport"] is None
-
-
-def test_derived_without_a_running_source():
-    numbers = ScalingDerivation.tier([], [(at(0), 1), (at(15), 4)], [], at(0), at(10), at(40), at(60))
-
-    assert numbers["decision_delay_s"] == 5
-    assert all(v is None for k, v in numbers.items() if k != "decision_delay_s")
-
-
-def test_resource_summary_over_raw_samples(step_dir, host, deployment):
-    summary = ResourceCollector(host, deployment, {}).summary(step_dir, at(0), at(60))
-
-    assert summary["runner.cpu_pct.p0.resource"] == 10 and summary["runner.cpu_pct.p100.resource"] == 80
-    assert summary["runner.cpu_pct.p50.resource"] == 50
-    assert summary["runner.mem_pct.max.resource"] == 40
-    assert summary["runner.cpu_pct.max.resource2"] is None
-
-
-def test_summary_row_and_replace(tmp_path, step_dir, record, config, host, deployment):
-    requests = PerRequestWriter(WebSocketCompleteDriver).write(step_dir, record.load.records)
-    windows = PerWindowWriter(config, host, deployment).write(step_dir, record)
-    scaling = ScalingDerivation(host, deployment).derive(step_dir, record)
-    resources = ResourceCollector(host, deployment, {}).summary(step_dir, record.started, record.ended)
-    row = SummaryWriter.build(record, requests, windows, scaling, resources)
-
-    assert (row["requests"], row["ok"], row["errors"], row["timeouts"]) == (4, 2, 1, 1)
-    assert row["latency_p50"] == 7.5 and row["latency_n"] == 2
-    assert row["REQUEST_RECEIVED_p0"] == pytest.approx(0.5) and row["REQUEST_RECEIVED_n"] == 1
-    assert row["CLIENT_RECEIVED_n"] == 1 and row["AGENT_FIRST_CHUNK_n"] == 0
-    assert (row["tx_min"], row["tx_max"]) == (0, 0.3) and row["tx_avg"] == pytest.approx(0.08)
-    assert row["rx_avg"] == pytest.approx(0.04)
-    assert row["time_to_answer_all_s"] is None
-    assert row["runner.workers_peak.scaling"] == 3 and row["runner.mem_pct.max.resource"] == 40
-
-    writer, test_type_dir = SummaryWriter(), tmp_path / "steady"
-    writer.upsert(test_type_dir, row)
-    writer.upsert(test_type_dir, {**row, "step": 2})
-    writer.upsert(test_type_dir, {**row, "ok": 3})  # a re-run of step 1 replaces its row
-    rows = KeyedCsv(test_type_dir / "summary.csv", [], []).read()
-    assert [(r["step"], r["ok"]) for r in rows] == [("1", "3"), ("2", "2")]
-
-    writer.upsert(test_type_dir, {"step": 3, "new.column": 1})  # a later step's new series grows the header
-    assert "new.column" in KeyedCsv(test_type_dir / "summary.csv", [], []).header()
-
-    writer.remove(test_type_dir, 2)
-    assert [r["step"] for r in KeyedCsv(test_type_dir / "summary.csv", [], []).read()] == ["1", "3"]
 
 
 def test_run_metadata(tmp_path, run_info, deployment):

@@ -59,7 +59,7 @@ Host (registered by built-in name, e.g. "ecs", "lambda", later "cloud_run", "aca
     fetcher there gives `running`.
 - **Shared, platform-independent code:** run orchestration, the step runner (live tracking, cool-down check, after-step fetch) and timestamps,
   turning scaling
-  source output into per-window worker counts, all derived numbers (scale-up/down times),
+  source output into per-window worker counts, the derived numbers (scale-up/down times; later, with the summary CSV),
   CSV writing and graphs. It only sees the common return types above.
 - **Per-platform code:** only the API calls that fill those types. A field with no source on a platform (e.g. `desired`
   on Lambda) is returned as empty and the column stays blank.
@@ -106,7 +106,7 @@ step's [timeline](../design.md): before → load → cool-down → wait + fetch.
 data covers the first three parts; the fourth waits for log ingestion (default 1 min) and then fetches the step's data
 with history. Live tracking runs from the start of "before" to the end of the cool-down.
 
-- The derived numbers below are computed per step, with `t_load_up` = first send of the step and `t_load_down` = end
+- The derived numbers below (later, with the summary CSV) are computed per step, with `t_load_up` = first send of the step and `t_load_down` = end
   of the load part (steady traffic: the configured time is up; burst: the last response arrived or timed out).
 - **When the cool-down ends:** on every cool-down poll the step runner runs the built-in client check, then each
   fetcher in the host's `cooldown_checks` list, in list order, through its `fetch()` and its family's `is_settled()`.
@@ -256,12 +256,12 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
   - Turning on autoscaling for a tier that's already listed (e.g. the ECS IO service, which our Terraform doesn't
     autoscale today) needs no benchmark change: its line just stops being flat.
 - **All fetchers are recorded side by side:** the per-time-window CSV has one column per tier × count type × fetcher
-  (e.g. `runner.running.aws.ecs_api`), and the derived numbers below are computed for every fetcher. Fetchers can
+  (e.g. `runner.running.aws.ecs_api`), and the derived numbers below (later) are computed for every fetcher. Fetchers can
   disagree (different resolution and lag); that's shown, not reconciled.
 - **Candidates for now:** where a host lists two fetchers below, both are kept as candidates while the design is
   discussed. Each host will be finalized to one fetcher; until then both are recorded side by side.
 - **The fetcher that ends the cool-down** is the scaling fetcher in the host's `cooldown_checks` list (replaces the
-  "first in the list is the primary" rule, 2026-11-06). The summary CSV records which fetcher each number came from.
+  "first in the list is the primary" rule, 2026-11-06). The (later) summary CSV records which fetcher each number came from.
   - **It must give a `running` count** (decided 2026-11-05). At start-up, before anything is deployed, the runner
     refuses a host whose `cooldown_checks` scaling fetcher doesn't list `running` in its `count_types`, with an error
     naming the host and the fetcher. Without this, a `desired`-only fetcher would give the "workers back" check
@@ -360,7 +360,9 @@ Fetchers per host (✓ = available now, later = when the platform is added):
   Terraform uses prefix `ecs`). A log-based ECS fetcher is possible but not needed: `aws.ecs_api` already gives each
   task's exact created / started / stopped times, including the image pull before the task writes any log.
 
-### Derived numbers (written to the summary CSV)
+### Derived numbers (written to the summary CSV, later)
+
+Not built in the first stage: they go in the summary CSV, which comes later ([Later](../design.md#later-summary-csv-and-graphs-comparing-the-steps)).
 
 Scale up, measured from `t_load_up` (the step's first send):
 

@@ -16,7 +16,6 @@ class LoadResult:
     records: list[RequestRecord]
     t_load_up: datetime  # first send
     t_load_down: datetime  # steady: t_load_up + load_time_s; burst: last response or timeout
-    time_to_answer_all_s: float | None  # burst only
 
 
 class LoadGenerator:
@@ -70,8 +69,7 @@ class LoadGenerator:
             first_mono = self._first_sent_mono()
             t_load_up = self._wall(first_mono if first_mono is not None else self._base_mono)
             t_load_down = self._wall(self._last_settle_mono)
-            to_all = self._last_settle_mono - first_mono if first_mono is not None else None
-            return LoadResult(list(self._records.values()), t_load_up, t_load_down, to_all)
+            return LoadResult(list(self._records.values()), t_load_up, t_load_down)
 
         await self._sleep_until(self._base_mono + schedule.load_time_s)
         first_mono = self._first_sent_mono()
@@ -80,7 +78,7 @@ class LoadGenerator:
         await self._sleep_until(load_up_mono + schedule.load_time_s)
         t_load_up = self._wall(load_up_mono)
         # Late replies and timeouts keep updating the records until close().
-        return LoadResult(list(self._records.values()), t_load_up, t_load_up + timedelta(seconds=schedule.load_time_s), None)
+        return LoadResult(list(self._records.values()), t_load_up, t_load_up + timedelta(seconds=schedule.load_time_s))
 
     def all_settled(self) -> bool:
         return self._pending == 0

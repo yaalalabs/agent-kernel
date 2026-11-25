@@ -19,7 +19,7 @@ class ResultsLayout:
         return self.run_dir() / platform / host / mode / message_type
 
     def test_type_dir(self, platform: str, host: str, mode: str, message_type: str, test_type: str) -> Path:
-        """Holds summary.csv and graphs/."""
+        """Holds the test type's step folders."""
         return self.deployment_dir(platform, host, mode, message_type) / test_type
 
     def step_dir(self, platform: str, host: str, mode: str, message_type: str, test_type: str, step: int, load_steps: list[int]) -> Path:

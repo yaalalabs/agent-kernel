@@ -55,7 +55,7 @@ class BenchCli:
         step.add_argument("--deployment", required=True)
         step.add_argument("--test-type", choices=["steady", "burst"])
         step.add_argument("--step", type=int, help="one of the deployment's load steps")
-        step.add_argument("--replace", action="store_true", help="replace an existing step folder and its summary.csv row")
+        step.add_argument("--replace", action="store_true", help="replace an existing step folder")
         step.add_argument("--force-unlock", action="store_true", help=FORCE_UNLOCK_HELP)
         step.add_argument("--yes", action="store_true", help="with --force-unlock: skip the confirmation prompt")
 
