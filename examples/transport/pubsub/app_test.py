@@ -108,7 +108,7 @@ async def test_support_agent_over_pubsub(client):
         ["Hello Andy! I see you made a deposit of $250."],
         threshold=0.1,
         criteria=(
-            "The reply must greet Andy and mention his $250 deposit. "
+            "The reply must greet Andy and mention the $250 deposit. "
             "Any wording of the deposit or follow-up question about it is acceptable and must not be penalized."
         ),
     )

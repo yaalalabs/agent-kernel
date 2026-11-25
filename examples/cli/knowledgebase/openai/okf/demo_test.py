@@ -75,7 +75,7 @@ async def test_consumer_fetches_a_concept_and_answers_from_its_body(test_client)
 
 @pytest.mark.order(2)
 async def test_consumer_reports_the_trust_signal(test_client):
-    # customers.md is machine-confirmed, not human-reviewed, so the answer is no. Trust is
+    # customers.md is machine-confirmed, not human-reviewed, so the answer is UNREVIEWED. Trust is
     # advisory, never a filter: the concept is returned either way, and the agent is expected to
     # pass the signal on rather than present an unreviewed concept as settled.
     response = await ask(
