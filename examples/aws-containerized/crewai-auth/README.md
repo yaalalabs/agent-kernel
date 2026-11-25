@@ -1,6 +1,6 @@
-# Agent Kernel running CrewAI based agents with Authentication in AWS Containered (ECS)
+# Open Agent Kernel running CrewAI based agents with Authentication in AWS Containered (ECS)
 
-This package contains a demo of Agent Kernel running agents built with CrewAI with authentication, running them in a containered configuration using AWS ECS.
+This package contains a demo of Open Agent Kernel running agents built with CrewAI with authentication, running them in a containered configuration using AWS ECS.
 
 ## Authentication
 
@@ -31,7 +31,7 @@ spells out an Auth0 block, and the same block works here unchanged.
 
 This demo deploys the following AWS resources:
 
-- AWS ECS running the Agent Kernel implementation.
+- AWS ECS running the OAK implementation.
 - API Gateway endpoint for the ECS service.
 
 ## Prerequisites

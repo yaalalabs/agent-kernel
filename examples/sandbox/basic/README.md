@@ -3,7 +3,7 @@
 The starting-point sandbox example. See [../README.md](../README.md) for the full set
 (`basic`, `profiles`, `policy`, `docker`, `identity`).
 
-This package demonstrates the Agent Kernel sandbox capability: an OpenAI Agents SDK agent
+This package demonstrates the Open Agent Kernel sandbox capability: an OpenAI Agents SDK agent
 that writes code and executes it in a sandbox. When `sandbox.enabled` is true, Agent
 Kernel attaches the sandbox system tools (`run_code`, `run_command`, `write_sandbox_file`,
 `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`, `new_sandbox_session`,

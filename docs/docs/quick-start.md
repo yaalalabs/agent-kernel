@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Quick Start
 
-Build and run your first AI agent with Agent Kernel in under 5 minutes!
+Build and run your first AI agent with Open Agent Kernel (OAK) in under 5 minutes!
 
 :::info Requirements
 **Python Version:** 3.12 - 3.13.x (Python 3.14+ support to be available soon)  
@@ -13,7 +13,7 @@ Build and run your first AI agent with Agent Kernel in under 5 minutes!
 
 ## Create a Project
 
-Agent Kernel installs into a [uv](https://docs.astral.sh/uv/getting-started/installation/) project. Create one and move into it:
+OAK installs into a [uv](https://docs.astral.sh/uv/getting-started/installation/) project. Create one and move into it:
 
 ```bash
 uv init --python 3.12 my-agent
@@ -24,7 +24,7 @@ Run the framework steps below from inside this directory.
 
 ## Choose Your Framework
 
-Agent Kernel supports multiple frameworks. Pick the one you're most comfortable with:
+OAK supports multiple frameworks. Pick the one you're most comfortable with:
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -474,7 +474,7 @@ Available agents:
 
 ## Understanding the Structure
 
-Every Agent Kernel application follows this pattern:
+Every OAK application follows this pattern:
 
 ```mermaid
 graph TB
@@ -482,12 +482,12 @@ graph TB
     B --> C[Runtime<br/>Global Registry]
     C --> D[Execution<br/>CLI/API/Lambda]
     
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 1. **Define agents** using your preferred framework
-2. **Wrap them** in an Agent Kernel Module
-3. **Run them** using Agent Kernel's execution modes (CLI, API, AWS, etc.)
+2. **Wrap them** in an OAK Module
+3. **Run them** using OAK's execution modes (CLI, API, AWS, etc.)
 
 ## Next Steps
 
@@ -779,7 +779,7 @@ uv add "agentkernel[your-framework]"
 
 ## Learn More
 
-- [Core Concepts](./core-concepts/overview) - Deep dive into Agent Kernel architecture
+- [Core Concepts](./core-concepts/overview) - Deep dive into OAK architecture
 - [Framework Integration](./frameworks/overview) - Framework-specific guides
 - [Deployment Guide](./deployment/overview) - Production deployment options
 - [API Reference](./api/rest-api) - Complete API documentation

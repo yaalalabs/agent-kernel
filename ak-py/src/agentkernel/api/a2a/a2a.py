@@ -9,9 +9,9 @@ from a2a.server.tasks import InMemoryTaskStore, TaskStore
 from a2a.types import AgentCard, InternalError, Message, UnsupportedOperationError
 
 from ...a2ui.hook import A2UIPostHook
-from ...core import Agent
+from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
-from ...core.model import BaseRunRequest, Principal
+from ...core.model import AgentDescriptor, BaseRunRequest, Principal
 from ...core.runtime import Runtime
 from ...identity.provider.request import RequestAuthenticator
 
@@ -25,6 +25,11 @@ class A2A:
 
     Agents never run here: each executor puts the request on the input queue and waits for the
     runner's whole reply in the response store (#780).
+
+    With an ``authorization`` block the cards are the caller's own (#603): ``get_cards`` and
+    ``card_for`` answer for a principal, with the agents it may see and, on each card, the skills
+    it is offered. They decide from the descriptors the cards were mounted with, so no request
+    reads the agent registry for it.
     """
 
     PROTOCOL = "a2a"
@@ -35,6 +40,11 @@ class A2A:
     _cards: dict[str, AgentCard] = {}
     """
     A2A cards
+    """
+    _descriptors: dict[str, AgentDescriptor] = {}
+    """
+    The descriptor each card was built from, by agent id: what the access gate decides visibility and the
+    offered skills by, for as long as the card is mounted
     """
     _executors: dict[str, "A2A.Executor"] = {}
     """
@@ -74,8 +84,14 @@ class A2A:
             if not context.message:
                 raise ValueError("RequestContext must have a message")
 
+            # The body names the surface it entered by, as it names its principal: the runner serves the request
+            # the agents on `a2a`, whatever the agent's descriptor says of `rest`.
             body = BaseRunRequest(
-                prompt=context.get_user_input(), agent=self.agent_name, session_id=context.context_id, principal=self._principal(context)
+                prompt=context.get_user_input(),
+                agent=self.agent_name,
+                session_id=context.context_id,
+                principal=self._principal(context),
+                surface="a2a",
             )
             try:
                 reply = await A2A.get_client().request(body, protocol=A2A.PROTOCOL)
@@ -141,22 +157,48 @@ class A2A:
         return cls._client
 
     @classmethod
+    def reset(cls) -> None:
+        """
+        Forgets everything built: the cards, the descriptors they were mounted with, the executors and the
+        queue client, so the next call builds from the current registry. The cards and their descriptors are
+        one record and are dropped together: a descriptor left without its card would be listed to a caller
+        with no card to show. Intended for testing.
+        """
+        cls._cards = {}
+        cls._descriptors = {}
+        cls._executors = {}
+        cls._built = False
+        cls._client = None
+
+    @classmethod
     def _build(cls):
         if cls._built:
             return
         if not AKConfig.get().a2a.enabled:
             return
-        agents: dict[str, Agent] = Runtime.current().agents()
-        for name, agent in agents.items():
-            whitelisted = AKConfig.get().a2a.agents == ["*"] or name in AKConfig.get().a2a.agents
-            if not whitelisted:
+        # From the registry's descriptors, not the agents this process hosts: a card needs nothing the
+        # descriptor does not carry, so a process over a shared registry serves agents that run elsewhere.
+        # In id order, so every process lists the same catalog whatever order its registry answers in.
+        descriptors = Runtime.current().registry.descriptors()
+        for descriptor in sorted(descriptors, key=lambda descriptor: descriptor.id):
+            if not descriptor.exposed_on("a2a"):
                 continue
-            # get card
-            card: AgentCard | None = agent.get_a2a_card()
-            if card is None:
-                cls._log.warning(f"Agent '{name}' has no A2A card; it is not served over A2A")
-                continue
-            cls._cards.update({name: card})
+            if not descriptor.description:
+                cls._log.warning(
+                    f"Agent '{descriptor.id}' has no description, so its A2A card says only that it is the '{descriptor.id}' agent; "
+                    f"declare one with Module.describe(agent, description=...) or registry.agents.{descriptor.id}.description"
+                )
+            cls._cards[descriptor.id] = A2ACardBuilder.build(descriptor)
+            cls._descriptors[descriptor.id] = descriptor
+        if descriptors and not cls._cards:
+            # Agents exist and none is served: without this the catalog is simply empty and every agent
+            # route a 404. A registry that knows no agent at all is the host's to report (IOHandler).
+            cls._log.warning(
+                f"A2A is enabled but serves no agent: none of the {len(descriptors)} agents the registry knows is exposed on a2a. "
+                f"An agent is on every surface unless its descriptor's surfaces leave one out; add a2a to "
+                f"registry.agents.<id>.surfaces (or Module.describe(agent, surfaces=[...])) for the agents A2A should serve, "
+                f"or set a2a.enabled to false"
+            )
         cls._built = True
 
     @classmethod
@@ -167,14 +209,93 @@ class A2A:
         return executor
 
     @classmethod
-    def get_cards(cls) -> list[AgentCard]:
+    def get_cards(cls, principal: Principal | None = None) -> list[AgentCard]:
+        """
+        Returns the cards a caller is listed: every mounted card, or with an ``authorization`` block the cards
+        of the agents the principal may see, each with the skills it is offered.
+
+        :param principal: Who the listing is for. With an ``authorization`` block a missing one is the
+            anonymous principal, so a caller that forgets it is listed less, never more.
+        :return: The cards, in the order they were mounted (agent id order).
+        """
         cls._build()
-        return list(cls._cards.values())
+        gate = Runtime.access_gate()
+        if gate is None:
+            return list(cls._cards.values())
+        principal = principal or Principal.anonymous()
+        # Among the mounted agents, in one question, then each as the caller is shown it.
+        shown = gate.narrow(principal, gate.visible_agents(principal, cls._descriptors.values()))
+        return [cls._card_as_shown(descriptor) for descriptor in shown]
 
     @classmethod
     def get_card(cls, name: str) -> AgentCard:
+        """
+        Returns an agent's card as it was mounted, whoever asks: what the routes are built with.
+
+        :param name: The agent id.
+        :return: The mounted card, or None for an agent this surface does not serve.
+        """
         cls._build()
         return cls._cards.get(name)
+
+    @classmethod
+    async def card_for(cls, principal: Principal | None, name: str) -> AgentCard | None:
+        """
+        Returns an agent's card as one caller is served it.
+
+        Without an ``authorization`` block that is the mounted card. With one, the card of an agent the
+        principal may not see is None (the surface answers as for an agent it does not serve), and a
+        card it may see carries the skills it is offered: a skill backed by a tool it would be denied is
+        left out of a copy, and the mounted card is never changed. A card with no descriptor to decide
+        by is served to nobody.
+
+        :param principal: Who asks; the anonymous principal when omitted.
+        :param name: The agent id.
+        :return: The card to serve, or None when there is none to serve this caller.
+        """
+        cls._build()
+        card = cls._cards.get(name)
+        gate = Runtime.access_gate()
+        if gate is None or card is None:
+            return card
+        descriptor = cls._descriptors.get(name)
+        principal = principal or Principal.anonymous()
+        if descriptor is None or not await gate.visible_async(principal, descriptor):
+            return None
+        [shown] = await gate.narrow_async(principal, [descriptor])
+        return cls._card_as_shown(shown)
+
+    @classmethod
+    def get_descriptor(cls, name: str) -> AgentDescriptor | None:
+        """
+        Returns the descriptor an agent's card was mounted with.
+
+        :param name: The agent id.
+        :return: The descriptor, or None for an agent this surface does not serve.
+        """
+        cls._build()
+        return cls._descriptors.get(name)
+
+    @classmethod
+    def _card_as_shown(cls, shown: AgentDescriptor) -> AgentCard:
+        """
+        The mounted card of an agent, with only the skills its narrowed descriptor keeps.
+
+        Everything but the skills is the mounted card's, so a caller offered every skill gets that very
+        card, and any other a copy that differs from it in nothing else.
+
+        :param shown: The agent's descriptor as the access gate narrowed it for one caller.
+        :return: The card to serve that caller.
+        """
+        card = cls._cards[shown.id]
+        offered = {skill.id for skill in shown.skills}
+        if all(skill.id in offered for skill in card.skills):
+            return card
+        narrowed = AgentCard()
+        narrowed.CopyFrom(card)
+        del narrowed.skills[:]
+        narrowed.skills.extend(skill for skill in card.skills if skill.id in offered)
+        return narrowed
 
     @classmethod
     def get_agent_names(cls) -> list[str]:

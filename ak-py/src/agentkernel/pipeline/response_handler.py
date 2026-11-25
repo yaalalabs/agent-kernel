@@ -8,7 +8,7 @@ from ..core.model import StreamChunk
 from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_AGUI, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
+from .envelope import ATTR_AGUI, ATTR_ENDPOINT_URL, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
 from .integration_delivery import IntegrationDelivery
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
@@ -23,7 +23,7 @@ class ResponseHandler:
     (wherever the user's sockets are right now), delivered to the owning gateway pod: in-process
     on the ``in_memory`` transport, pod-to-pod HTTP otherwise.
 
-    The generalization of ECSOutputConsumer; response-store records additionally carry the
+    Response-store records additionally carry the
     ``status_code`` forwarded by the Agent Runner.
 
     Integration traffic goes to its platform, then ``protocol`` traffic (A2A and MCP, #780) to the
@@ -174,7 +174,7 @@ class ResponseHandler:
     def _realtime_edge(message: QueueMessage):
         """The live edge (e.g. a LiveKit room) a realtime output message belongs to, or None.
 
-        A stateful edge registers itself in this process when its gateway starts, keyed by session
+        A stateful edge registers itself in this process when its edge starts, keyed by session
         id, which is the output message's group id. Imported lazily, as ``IntegrationDelivery``
         imports the adapter factory, so a process without integrations never loads that package.
         """
@@ -283,7 +283,10 @@ class ResponseHandler:
         if not isinstance(body, dict):
             body = {"response": body}
 
-        self._get_ws_handler().broadcast(message=body, user_id=user_id, message_type=message_type)
+        # endpoint_url is the API Gateway return address on ECS; pod push ignores it.
+        self._get_ws_handler().broadcast(
+            endpoint_url=message.attributes.get(ATTR_ENDPOINT_URL), message=body, user_id=user_id, message_type=message_type
+        )
         # Chunks are one message per token: INFO here would log the whole reply token by token.
         log = self._log.debug if message_type == WebSocketHandlerABC.MessageType.STREAM_CHUNK else self._log.info
         log(f"[OUTPUT DONE] Broadcasted {message_type.value} via WebSocket: user_id={user_id}")
@@ -294,5 +297,7 @@ class ResponseHandler:
         if not user_id:
             self._log.warning(f"Cannot broadcast permanent-failure {message_type.value}: user_id missing")
             return
-        self._get_ws_handler().broadcast(message=error_message, user_id=user_id, message_type=message_type)
+        self._get_ws_handler().broadcast(
+            endpoint_url=message.attributes.get(ATTR_ENDPOINT_URL), message=error_message, user_id=user_id, message_type=message_type
+        )
         self._log.info(f"Broadcasted permanent-failure {message_type.value} via WebSocket: user_id={user_id}")

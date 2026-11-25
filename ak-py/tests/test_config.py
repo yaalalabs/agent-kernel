@@ -6,16 +6,27 @@ from pydantic import ValidationError
 
 from agentkernel.core.config import (
     AKConfig,
+    _A2AConfig,
+    _AGUIConfig,
+    _AuthorizationConfig,
     _ExecutionConfig,
+    _GrantConfig,
     _IdentityConfig,
     _IdentityProviderConfig,
+    _MCPConfig,
+    _RegistryAgentOverlayConfig,
+    _RegistryConfig,
+    _RegistryDynamoDBConfig,
+    _RegistryRedisConfig,
+    _RegistryValkeyConfig,
     _ScheduleConfig,
     _SecretConfig,
     _StaticProviderConfig,
     _ThreadStoreConfig,
     _ThreadValkeyConfig,
+    _ToolPolicyConfig,
 )
-from agentkernel.core.model import ExecutionMode, ReplyMessageType
+from agentkernel.core.model import AccessLevel, ExecutionMode, ReplyMessageType
 from agentkernel.core.util.factory import AKConfigError
 
 
@@ -703,3 +714,261 @@ class TestIdentityConfig:
         provider = _IdentityProviderConfig(issuer="https://issuer.example", audience="ak")
         assert (provider.claims.subject, provider.claims.groups) == ("sub", "groups")
         assert (provider.algorithms, provider.leeway, provider.required_claims) == (["RS256", "ES256"], 30, [])
+
+
+class TestRegistryConfig:
+    """The `registry` block (#603): absent by default (an in-memory registry), a backend selector with its
+    connection block, and the per-agent overlay of deployment-owned catalog fields."""
+
+    def test_absent_by_default(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        assert AKConfig.get().registry is None
+
+    def test_a_block_parses_from_yaml_with_its_backend_and_overlay(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "registry:\n"
+            "  type: redis\n"
+            "  redis:\n"
+            "    url: redis://cache:6379\n"
+            "  agents:\n"
+            "    support-triage:\n"
+            "      version: 1.2.0\n"
+            "      description: Triage support tickets\n"
+            "      owner: cx-platform\n"
+            "      tags: [support]\n"
+            "      visibility: internal\n"
+            "      surfaces: [rest, agui]\n"
+            "      identity:\n"
+            "        subject: svc-triage\n"
+        )
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        registry = AKConfig.get().registry
+
+        assert (registry.type, registry.redis.url) == ("redis", "redis://cache:6379")
+        overlay = registry.agents["support-triage"]
+        assert (overlay.version, overlay.description, overlay.owner) == ("1.2.0", "Triage support tickets", "cx-platform")
+        assert (overlay.tags, overlay.visibility, overlay.surfaces) == (["support"], "internal", ["rest", "agui"])
+        assert overlay.identity.subject == "svc-triage"
+
+    def test_a_bare_block_is_the_in_memory_registry_with_no_overlay(self):
+        registry = _RegistryConfig()
+
+        assert registry.type == "in_memory"
+        assert (registry.redis, registry.valkey, registry.dynamodb) == (None, None, None)
+        assert registry.agents == {}
+
+    def test_the_store_blocks_default_to_the_registry_prefix_and_table_and_never_expire(self):
+        # Unlike the session defaults these inherit from: a descriptor that expired would drop a running agent from the catalog.
+        assert (_RegistryRedisConfig().prefix, _RegistryRedisConfig().ttl) == ("ak:registry:", 0)
+        assert (_RegistryValkeyConfig().prefix, _RegistryValkeyConfig().ttl) == ("ak:registry:", 0)
+        assert (_RegistryDynamoDBConfig().table_name, _RegistryDynamoDBConfig().ttl) == ("ak-agent-registry", 0)
+
+    @pytest.mark.parametrize(
+        "block, model", [("redis", _RegistryRedisConfig), ("valkey", _RegistryValkeyConfig), ("dynamodb", _RegistryDynamoDBConfig)]
+    )
+    def test_a_store_block_refuses_a_ttl(self, block, model):
+        # Nothing registers a hosted agent again while its process runs, so an expiry would remove running agents
+        # from every listing. Refused at load rather than accepted and left to do that.
+        with pytest.raises(AKConfigError, match=f"registry.{block}.ttl is not supported"):
+            model.model_validate({"ttl": 3600})
+
+        assert model.model_validate({"ttl": 0}).ttl == 0
+
+    def test_a_ttl_set_through_the_environment_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_REGISTRY__TYPE", "redis")
+        monkeypatch.setenv("AK_REGISTRY__REDIS__TTL", "600")
+
+        with pytest.raises(AKConfigError, match="registry.redis.ttl is not supported"):
+            AKConfig.get()
+
+    def test_a_key_the_registry_block_does_not_take_is_rejected(self):
+        # `agent:` for `agents:` would otherwise drop every per-agent restriction beneath it without a word.
+        with pytest.raises(ValueError, match="agent"):
+            _RegistryConfig.model_validate({"agent": {"billing": {"surfaces": []}}})
+
+    def test_a_misspelt_registry_key_in_the_environment_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_REGISTRY__AGENT__BILLING__SURFACES", "[]")
+
+        with pytest.raises(ValueError, match="registry"):
+            AKConfig.get()
+
+    def test_an_overlay_entry_sets_nothing_by_default(self):
+        assert _RegistryAgentOverlayConfig().model_dump(exclude_none=True) == {}
+
+    def test_an_overlay_key_the_descriptor_does_not_take_is_rejected(self):
+        # A misspelt `surfaces` silently ignored would leave an agent on every surface.
+        with pytest.raises(ValueError, match="surface"):
+            _RegistryAgentOverlayConfig.model_validate({"surface": ["rest"]})
+
+    @pytest.mark.parametrize("field, value", [("visibility", "secret"), ("surfaces", ["grpc"])])
+    def test_an_overlay_value_outside_the_descriptors_choices_is_rejected(self, field, value):
+        with pytest.raises(ValueError, match=field):
+            _RegistryAgentOverlayConfig.model_validate({field: value})
+
+    def test_a_registry_env_var_materializes_the_block(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_REGISTRY__TYPE", "valkey")
+
+        assert AKConfig.get().registry.type == "valkey"
+
+
+class TestAuthorizationConfig:
+    """The `authorization` block (#603): absent by default (nothing is restricted). When present it names the
+    authorizer, and each built-in backend keeps its settings in a section of its own: the static backend's
+    policy (grants binding subjects to agents at a level, and a per-agent tool policy) is `authorization.static`."""
+
+    def test_absent_by_default(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        assert AKConfig.get().authorization is None
+
+    def test_a_block_parses_from_yaml_with_its_grants_and_tool_policies(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "authorization:\n"
+            "  type: static\n"
+            "  static:\n"
+            "    grants:\n"
+            '      - {subjects: role:admin, agents: "*", level: admin}\n'
+            "      - {subjects: [group:support, role:cx-lead], agents: [support-triage, faq], level: write}\n"
+            "      - {subjects: authenticated, agents: tag:support, level: read}\n"
+            "    tools:\n"
+            "      - agent: support-triage\n"
+            "        tiers: {lookup_ticket: read, create_ticket: write, refund: admin}\n"
+            "        allow: [lookup_ticket, create_ticket, refund]\n"
+            "        deny: [delete_ticket]\n"
+        )
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        authorization = AKConfig.get().authorization
+
+        assert authorization.type == "static"
+        assert [(grant.subjects, grant.agents, grant.level) for grant in authorization.static.grants] == [
+            (["role:admin"], ["*"], AccessLevel.ADMIN),
+            (["group:support", "role:cx-lead"], ["support-triage", "faq"], AccessLevel.WRITE),
+            (["authenticated"], ["tag:support"], AccessLevel.READ),
+        ]
+        [policy] = authorization.static.tools
+        assert policy.agent == "support-triage"
+        assert policy.tiers == {"lookup_ticket": AccessLevel.READ, "create_ticket": AccessLevel.WRITE, "refund": AccessLevel.ADMIN}
+        assert (policy.allow, policy.deny) == (["lookup_ticket", "create_ticket", "refund"], ["delete_ticket"])
+
+    @pytest.mark.parametrize("block", [{}, {"type": "static"}, {"type": "Static"}, {"static": None}], ids=["bare", "named", "any-case", "null"])
+    def test_the_static_type_requires_its_section(self, block):
+        # The same rule as an identity provider: the backend the block names is one it can be built for.
+        with pytest.raises(AKConfigError, match=r"authorization\.type static requires the authorization\.static block"):
+            _AuthorizationConfig.model_validate(block)
+
+    def test_an_empty_static_section_is_a_policy_with_no_grants(self):
+        authorization = _AuthorizationConfig.model_validate({"static": {}})
+
+        assert (authorization.type, authorization.static.grants, authorization.static.tools) == ("static", [], [])
+
+    @pytest.mark.parametrize("name", ["casbin", "acme.authz.PolicyServer"])
+    def test_another_type_needs_no_static_section(self, name):
+        assert _AuthorizationConfig(type=name).static is None
+
+    def test_a_grant_takes_one_subject_or_agent_as_a_bare_string(self):
+        grant = _GrantConfig.model_validate({"subjects": "group:support", "agents": "faq", "level": "read"})
+
+        assert (grant.subjects, grant.agents) == (["group:support"], ["faq"])
+
+    def test_a_grant_level_outside_the_three_tiers_is_rejected(self):
+        with pytest.raises(ValueError, match="level"):
+            _GrantConfig.model_validate({"subjects": "*", "agents": "faq", "level": "owner"})
+
+    def test_a_grant_key_the_model_does_not_take_is_rejected(self):
+        # `agent:` for `agents:` must fail where it is written, not leave a grant that names no agent.
+        with pytest.raises(ValueError, match="agent"):
+            _GrantConfig.model_validate({"subjects": "*", "agent": "faq", "agents": "faq", "level": "read"})
+
+    def test_a_tool_policy_restricts_nothing_until_it_says_so(self):
+        policy = _ToolPolicyConfig(agent="support-triage")
+
+        # No allow-list (None) is every tool; an empty one would be none of them.
+        assert (policy.tiers, policy.allow, policy.deny) == ({}, None, [])
+
+    def test_a_tool_policy_key_the_model_does_not_take_is_rejected(self):
+        # A misspelt `deny` silently ignored would leave the tool callable.
+        with pytest.raises(ValueError, match="denied"):
+            _ToolPolicyConfig.model_validate({"agent": "support-triage", "denied": ["delete_ticket"]})
+
+    def test_a_tool_tier_outside_the_three_tiers_is_rejected(self):
+        with pytest.raises(ValueError, match="tiers"):
+            _ToolPolicyConfig.model_validate({"agent": "support-triage", "tiers": {"refund": "owner"}})
+
+    @pytest.mark.parametrize("key", ["grants", "tools", "statc"])
+    def test_a_key_the_block_does_not_take_is_rejected_for_a_built_in_backend(self, key):
+        # A policy written beside `type`, or under a misspelt `static`, would otherwise be dropped without a word.
+        with pytest.raises(AKConfigError, match=rf"authorization\.{key} is not a setting of the authorization block; it takes type and static"):
+            _AuthorizationConfig.model_validate({"type": "static", "static": {}, key: []})
+
+    def test_grants_written_beside_the_type_are_named_before_the_missing_section(self):
+        # The flat form is the likely mistake: the error says which key is misplaced, not only that `static` is missing.
+        with pytest.raises(AKConfigError, match=r"authorization\.grants is not a setting of the authorization block"):
+            _AuthorizationConfig.model_validate({"grants": [{"subjects": "*", "agents": "*", "level": "read"}]})
+
+    @pytest.mark.parametrize("key", ["tool", "grant"])
+    def test_a_misspelt_key_of_the_static_section_is_rejected(self, key):
+        # `tool:` for `tools:` would otherwise drop every tier and deny list beneath it without a word.
+        with pytest.raises(ValueError, match=rf"static\.{key}"):
+            _AuthorizationConfig.model_validate({"static": {key: []}})
+
+    def test_a_bring_your_own_authorizer_keeps_the_settings_of_its_own(self):
+        authorization = _AuthorizationConfig.model_validate({"type": "acme.authz.PolicyServer", "endpoint": "https://pdp.acme.test"})
+
+        assert authorization.model_extra == {"endpoint": "https://pdp.acme.test"}
+
+    def test_naming_the_static_type_in_the_environment_alone_is_refused(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_AUTHORIZATION__TYPE", "static")
+
+        # A block with no policy at all is refused when it is loaded, in place of denying every agent later.
+        with pytest.raises(AKConfigError, match=r"authorization\.type static requires the authorization\.static block"):
+            AKConfig.get()
+
+    def test_grants_set_through_the_environment_are_parsed(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_AUTHORIZATION__STATIC__GRANTS", '[{"subjects": "*", "agents": ["faq"], "level": "read"}]')
+
+        [grant] = AKConfig.get().authorization.static.grants
+
+        assert (grant.subjects, grant.agents, grant.level) == (["*"], ["faq"], AccessLevel.READ)
+
+
+class TestRemovedAgentLists:
+    """`a2a.agents`, `mcp.agents` and `agui.agents` are gone (#603): an agent's surfaces are part of its
+    descriptor. A configuration that still sets one fails at load with where the setting went, rather than
+    being ignored and leaving every agent on the surface."""
+
+    @pytest.mark.parametrize("block, model", [("a2a", _A2AConfig), ("mcp", _MCPConfig), ("agui", _AGUIConfig)])
+    def test_a_block_that_still_lists_agents_fails_with_the_migration_message(self, block, model):
+        with pytest.raises(AKConfigError, match=f"{block}.agents was removed: set registry.agents.<id>.surfaces instead"):
+            model.model_validate({"agents": ["triage"]})
+
+    @pytest.mark.parametrize("block, model", [("a2a", _A2AConfig), ("mcp", _MCPConfig), ("agui", _AGUIConfig)])
+    def test_the_blocks_no_longer_carry_an_agents_field(self, block, model):
+        assert "agents" not in model.model_fields
+
+    def test_a_yaml_file_that_still_sets_one_fails_at_load(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text("mcp:\n  enabled: true\n  agents: ['*']\n")
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        with pytest.raises(AKConfigError, match="mcp.agents was removed"):
+            AKConfig.get()
+
+    def test_an_environment_variable_that_still_sets_one_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_A2A__AGENTS", '["triage"]')
+
+        with pytest.raises(AKConfigError, match="a2a.agents was removed"):
+            AKConfig.get()
+
+    def test_the_tool_scoping_lists_under_agui_are_untouched(self):
+        agui = _AGUIConfig.model_validate({"state": {"enabled": True, "agents": ["a"]}, "client_context": {"agents": ["b"]}})
+
+        assert (agui.state.agents, agui.client_context.agents) == (["a"], ["b"])

@@ -1,0 +1,224 @@
+---
+sidebar_position: 4
+---
+
+# LangGraph
+
+Integrate LangGraph's graph-based orchestration with Open Agent Kernel (OAK).
+
+## Installation
+
+```bash
+uv add "agentkernel[langgraph]"
+```
+
+## Basic Usage
+
+```python
+from typing import TypedDict
+from langgraph.graph import StateGraph, END
+from agentkernel.cli import CLI
+from agentkernel.langgraph import LangGraphModule
+
+class State(TypedDict):
+    messages: list
+
+def agent_node(state: State):
+    # Your logic
+    return {"messages": state["messages"] + ["response"]}
+
+# Build graph
+workflow = StateGraph(State)
+workflow.add_node("agent", agent_node)
+workflow.set_entry_point("agent")
+workflow.add_edge("agent", END)
+
+# Compile
+graph = workflow.compile()
+graph.name = "assistant"
+
+LangGraphModule([graph])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+## Complex Graph
+
+```python
+from langgraph.graph import StateGraph, END
+
+# Multi-node graph with conditional routing
+workflow = StateGraph(State)
+workflow.add_node("analyzer", analyze_node)
+workflow.add_node("responder", respond_node)
+workflow.add_node("validator", validate_node)
+
+workflow.set_entry_point("analyzer")
+workflow.add_conditional_edges(
+    "analyzer",
+    router_func,
+    {
+        "respond": "responder",
+        "validate": "validator"
+    }
+)
+workflow.add_edge("responder", END)
+workflow.add_edge("validator", "responder")
+
+graph = workflow.compile()
+graph.name = "complex_agent"
+```
+
+## Configuration
+
+```bash
+export OPENAI_API_KEY=sk-...
+```
+
+## Tool Binding
+
+Use `LangGraphToolBuilder` to bind plain Python functions as tools to your LangGraph agents:
+
+```python
+from langgraph.prebuilt import create_react_agent
+from agentkernel.langgraph import LangGraphModule, LangGraphToolBuilder
+
+def get_weather(city: str) -> str:
+    """Returns the weather for a given city."""
+    return f"Weather in {city}: sunny, 25°C"
+
+weather_agent = create_react_agent(
+    name="weather",
+    tools=LangGraphToolBuilder.bind([get_weather]),
+    model=model,
+    prompt="Use the get_weather tool for weather-related questions.",
+)
+
+LangGraphModule([weather_agent])
+```
+
+Both sync and async functions are supported. Async functions are automatically passed as coroutines.
+
+See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
+
+## Structured Output
+
+Build the agent with LangGraph's `response_format` parameter (e.g., `create_react_agent`). The result then contains a `structured_response` alongside the messages; OAK detects it and returns an `AgentReplyAny` whose `content` is the result as a dict:
+
+```python
+from langgraph.prebuilt import create_react_agent
+from pydantic import BaseModel
+from agentkernel.langgraph import LangGraphModule
+
+class WeatherResponse(BaseModel):
+    city: str
+    conditions: str
+
+graph = create_react_agent(
+    model="openai:gpt-4o",
+    tools=[get_weather],
+    response_format=WeatherResponse,
+)
+graph.name = "weather"
+
+LangGraphModule([graph])
+```
+
+Pydantic results are converted via `model_dump()`; graphs without `response_format` continue to return `AgentReplyText` from the last message. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
+
+:::info Streaming limitation
+Structured output applies to non-streaming execution only. Streamed runs emit typed [`StreamEvent`](../core-concepts/runner#streaming-execution)s — `TextDelta` for assistant prose, plus `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd` and `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult` — not just plain text deltas.
+:::
+
+## Per-run context/state
+
+LangGraph round-trips the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key **only for keys the graph's state schema declares as channels**. Its top-level keys are spread into the graph input alongside `messages` (never replacing `messages`); on write-back only keys present on the result come back. A prebuilt `create_react_agent` with its default `AgentState` silently drops unknown keys; pass a `state_schema` that extends `AgentState` with your keys (as the `langgraph_context` example does), or use a custom graph whose state schema includes them, to get a real round-trip.
+
+## Native run options
+
+LangGraph's own run arguments (`config`, `context`, `interrupt_before`, `interrupt_after`,
+`durability`, ...) are declared per agent with
+[`Module.run_options`](../core-concepts/runner.md#native-run-options) and merged into `ainvoke` /
+`astream_events`:
+
+```python
+LangGraphModule([graph]).run_options(
+    graph,
+    config={"callbacks": [ProgressCallbackHandler()], "recursion_limit": 50},
+)
+```
+
+`config` is deep-merged with the `RunnableConfig` the runner builds: dict-valued keys merge with the
+runner's entries winning (`configurable.thread_id` stays the session id), list-valued keys
+(`callbacks`, `tags`) concatenate with the runner's entries first (so a Langfuse callback handler is
+kept beside yours), and every other key is yours.
+
+A [run-options factory](../core-concepts/runner.md#native-run-options) result is merged over the
+static declaration at the top level, so a factory returning `{"config": {"recursion_limit": 9}}`
+replaces the whole static `config`, callbacks included, with no warning. To extend it instead, start
+from the static value:
+
+```python
+def options_for(agent, session, requests):
+    return {"config": {**agent.run_options.get("config", {}), "recursion_limit": 9}}
+```
+
+A `RunnableConfig` key declared at the top level (`recursion_limit=50`, `callbacks=[...]`) is rejected
+with a message pointing to `config={...}`: LangGraph silently drops unknown keywords, so it would
+otherwise never apply.
+
+Reserved (raise `ValueError` at declaration): `input`, `version`, `stream_mode`, `output_keys`,
+`print_mode` (the runner reads `result["messages"]` and `structured_response`, so a changed result
+shape breaks the reply mapping) and the nested `config.configurable.thread_id`.
+
+## Human in the loop
+
+A node calling `interrupt()` pauses the graph, and whatever the resume supplies becomes that call's
+return value:
+
+```python
+from langgraph.types import interrupt
+
+def ask(state):
+    choice = interrupt({"question": "Which method?", "options": ["Card", "Credit"]})
+```
+
+The answer is passed through as the human gave it — the decision's `payload` if there is one, else
+its `message`, else the bare status verb. A node written as `choice = interrupt(...)` receives the
+choice itself, so ordinary LangGraph code works unchanged. This adapter carries all three decision
+statuses natively.
+
+Three things to know, all LangGraph's behaviour rather than OAK's:
+
+- **The interrupting node re-runs from the top** on resume. The first `interrupt()` then returns the
+  stored answer instead of pausing again — so any side effect belongs *after* the questions, never
+  before them.
+- **OAK assigns its own checkpointer**, overwriting one you supplied. That has always been
+  true; human-in-the-loop makes it load-bearing, because the pause lives in it.
+- **A second pause replaces the first.** LangGraph keeps one thread per session, so an earlier record
+  could never be resumed. Only LangGraph's own pauses are replaced: if the same session also holds a
+  pause from an agent on another framework, that one is independent and stays answerable.
+
+A prompt sent alongside a decision **is** carried, encoded by OAK as a write to the
+`messages` channel the adapter already feeds. That mapping is OAK's, not LangGraph's — the
+framework has no "send a prompt with your resume" feature.
+
+See [Human in the Loop](../advanced/human-in-the-loop.md).
+
+## Features
+
+- ✅ Graph-based workflows
+- ✅ Conditional routing
+- ✅ State management
+- ✅ Checkpointing
+- ✅ Framework-agnostic tool binding
+- ✅ Structured output (`response_format` → `AgentReplyAny`)
+
+## Example
+
+See [examples/cli/langgraph](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph) for complete examples.
+
+For per-run context/state carried across turns, see [examples/cli/langgraph_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph_context) (a `create_react_agent` with a custom `state_schema` declaring a `cart` channel; only declared channels round-trip).
+
+For per-agent native run options, see [examples/cli/langgraph-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph-run-options) (a `RunnableConfig` with `callbacks` and `recursion_limit`, with a deterministic `Run stats:` line on every reply).

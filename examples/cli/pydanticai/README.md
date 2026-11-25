@@ -1,7 +1,7 @@
-# Agent Kernel running Pydantic AI Agents
+# Open Agent Kernel running Pydantic AI Agents
 
-This package contains a demo of Agent Kernel running agents built with Pydantic AI. Users may
-interact with agents via the Agent Kernel CLI.
+This package contains a demo of Open Agent Kernel running agents built with Pydantic AI. Users may
+interact with agents via the OAK CLI.
 
 ## Model provider
 

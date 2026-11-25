@@ -169,6 +169,30 @@ class TestApplyTrigger:
         # The occurrence still happened, so it is still recorded.
         assert task.trigger_count == 1
 
+    def test_an_occurrence_that_was_not_run_records_why(self):
+        """#603: an occurrence the access gate refused is still an occurrence; the record says why it did not run."""
+        task = _task()
+
+        task.apply_trigger(request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False, error="Agent 'billing' not found")
+
+        assert task.last_error == "Agent 'billing' not found"
+        assert (task.trigger_count, task.last_request_id, task.last_triggered_at) == (1, "r-1", "2030-02-01T09:00:00+00:00")
+
+    def test_the_next_occurrence_that_runs_clears_the_error(self):
+        # `last_error` describes the most recent occurrence, as `last_request_id` does: it is not a history.
+        task = _task(last_error="Agent 'billing' not found", trigger_count=1)
+
+        task.apply_trigger(request_id="r-2", occurred_at="2030-02-08T09:00:00+00:00", completed=False)
+
+        assert task.last_error is None
+
+    def test_a_skipped_final_occurrence_still_closes_the_task(self):
+        task = _task(spec=ScheduleSpec(at="2030-06-01T09:00:00"))
+
+        task.apply_trigger(request_id="r-1", occurred_at="2030-06-01T09:00:00+00:00", completed=True, error="skipped")
+
+        assert (task.status, task.last_error) == (ScheduleStatus.COMPLETED, "skipped")
+
     def test_it_returns_the_task_so_a_store_can_write_it_back_inline(self):
         task = _task()
 

@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # REST API
 
-Agent Kernel provides a built-in REST API server for agent interaction.
+Open Agent Kernel (OAK) provides a built-in REST API server for agent interaction.
 
 ## Starting the API Server
 
@@ -45,6 +45,11 @@ Execute an agent with a message.
   "session_id": "user-123"
 }
 ```
+
+`agent` is optional. A request that leaves it out runs the default agent: the first agent loaded that is served on
+the `rest` surface (every agent is, unless its `surfaces` says otherwise; see
+[Agent Registry](../core-concepts/configuration.md#agent-registry)). A request that names an agent kept off `rest`
+is answered as if the agent did not exist (see [Error Handling](#error-handling)).
 
 #### Structured replies
 
@@ -119,15 +124,60 @@ and for the session-store setting this depends on.
 
 ### GET /api/v1/agents
 
-List all available agents.
+The agent catalog: one page of the agents served on the REST surface, ordered by id. Each entry is the
+agent's **descriptor**, the record the [agent registry](../core-concepts/configuration.md#agent-registry)
+keeps for it.
+
+| Query parameter | Meaning |
+|---|---|
+| `limit` | Page size (default 50, at most 200) |
+| `cursor` | The `next_cursor` of the page before; omit it for the first page |
+| `tags` | Keep only the agents carrying this tag; repeat the parameter to require several |
 
 **Response:**
 
 ```json
 {
-  "agents": ["assistant", "math", "code"]
+  "agents": [
+    {
+      "id": "math",
+      "name": "math",
+      "version": "1.2.0",
+      "description": "Solves math problems and returns the final answer",
+      "owner": null,
+      "tags": ["calculation"],
+      "visibility": "private",
+      "surfaces": null,
+      "skills": [{"id": "add", "name": "add", "description": "Add two numbers", "tags": []}],
+      "tools": ["add"],
+      "runner": "openai",
+      "supports_streaming": true,
+      "updated_at": null
+    }
+  ],
+  "next_cursor": null
 }
 ```
+
+- `description`, `version`, `owner`, `tags`, `visibility` and `surfaces` are what the application declares, with
+  `Module.describe` or under `registry.agents.<id>`. The description is never the agent's instructions: when none
+  is declared it is the description the agent's framework keeps for it, and empty where the framework has none.
+- `tools` and `skills` come from the agent's framework: the tools it can call, and one skill per tool.
+- `surfaces` is `null` for an agent served on every surface. An agent whose `surfaces` leaves out `rest` is not
+  listed here and is not served by the chat routes: a chat request that names it gets the 404 an unknown agent gets.
+- Without an `authorization` block every agent on the `rest` surface is listed to every caller, and `visibility`
+  is only the declared value. With one, the listing is the caller's own: the agents its principal holds a level on,
+  and the ones their `visibility` lets it see (`internal` for any authenticated caller, `public` for everyone).
+  Each entry's `tools` are then the ones the caller is offered, and `skills` follows them. The route still answers
+  a caller with no credential, who is listed what the anonymous principal may see. See
+  [Authorization](../advanced/identity-and-access.md#authorization).
+- With a shared registry the listing includes agents another process hosts.
+- A page is cut from the listing as it is when the request arrives. When an agent is added or removed between two
+  requests, the next page can repeat an agent or skip one; read the pages again for a listing that must be complete.
+- A malformed `cursor` is a 400.
+
+Earlier versions returned a plain list of names (`{"agents": ["assistant", "math"]}`); read `id` from each
+entry instead.
 
 ### GET /health
 
@@ -181,6 +231,28 @@ Every thread route, the chat routes included, serves authenticated callers only:
 }
 ```
 
+**404 Not Found:**
+
+A request that names an agent the server does not have, or one whose `surfaces` leaves out `rest`: the two get the same answer, so the status does not tell a caller that a name exists on another surface. A request that names no agent runs the default agent, and is a 400 (`No agent available`) only when no agent is on `rest`.
+
+```json
+{
+  "error": "Agent 'support-triage' not found",
+  "session_id": "session-x"
+}
+```
+
+**403 Forbidden:**
+
+With an [`authorization`](../advanced/identity-and-access.md#authorization) block, a caller that may see the agent and holds no level on it, or that sends the `session_id` of a session another principal owns. An agent the caller may not see is the 404 above, with the body an unknown agent gets.
+
+```json
+{
+  "error": "Principal 'bob' holds no level on agent 'support-triage'",
+  "session_id": "session-x"
+}
+```
+
 **500 Internal Server Error:**
 
 ```json
@@ -206,13 +278,13 @@ In the following example, **locale (string)** and **additional_context (dict)** 
 }
 ```
 
-`user_id` is the one extra key a body may not carry: who the request acts as comes from the credential (see [Authentication](#authentication)), and a body with a `user_id` is a 400.
+Two extra keys are not yours to send. `user_id`: who the request acts as comes from the credential (see [Authentication](#authentication)), and a body with a `user_id` is a 400. `surface`: OAK records there which surface a request came in by, and a body that carries a value for it is a 422. If you passed a `surface` of your own as context, rename it.
 
 Please study the [Hooks documentation](/docs/integrations/hooks) for the use of hooks to implement various use cases.
 
 ## Passing images and files
 
-Agent Kernel supports sending images and files to agents in two ways: via JSON body with base64-encoded data, or as multipart form data for larger files. 
+OAK supports sending images and files to agents in two ways: via JSON body with base64-encoded data, or as multipart form data for larger files. 
 
 :::info Current Limitation
 Currently, passing images and files only work with OpenAI SDK & Google ADK. Other implementations will be provided in future
@@ -369,9 +441,34 @@ A detailed example with tests are provided [here](https://github.com/yaalalabs/a
   - Better performance and lower memory usage
   - Direct file uploads from forms or file systems
 
+### Files on a queue transport
+
+On the queue pipeline with a broker transport (`sqs`, `kafka`, `nats`, `pubsub`, `servicebus`), a queue message is far smaller than a file. So the edge saves each base64 file or image to the multimodal attachment store and queues only its ID. The agent runner loads the file back by ID before the agent runs. Both `POST /api/v1/chat` and `POST /api/v1/chat-multipart` work this way.
+
+This needs multimodal support with a store that the edge and the agent runner share, with identical settings in both processes:
+
+```yaml
+multimodal:
+  enabled: true
+  storage_type: redis # or dynamodb
+  redis:
+    url: redis://my-redis:6379
+```
+
+With multimodal on, the agent receives a short description of each file and its ID, and can call the `analyze_attachments` tool for a closer look. The agent only handles text, so this works with every framework.
+
+A request that carries file bytes is refused with a 400, before anything is queued, when:
+
+- `multimodal.enabled` is false.
+- `multimodal.storage_type` keeps files in one process (`in_memory`, `session_cache`). `redis`, `dynamodb` and a custom store whose `shared` is `True` work. Text chats still work, and the edge logs a warning at startup.
+- A file is larger than `api.max_file_size`.
+- The store is `dynamodb` and a file is over about 300 KB: a DynamoDB item holds at most 400 KB. Use `redis` for large files. Files saved earlier in the same request are deleted.
+
+Files given as links (`http://`, `https://`, `s3://`) or plain-text `data:` URIs (no `;base64`) carry no stored bytes and pass through as they are. Saved files expire with the store's TTL (`multimodal.redis.ttl` or `multimodal.dynamodb.ttl`, 7 days by default), so the agent can look at them again in later turns. Each session keeps at most `multimodal.max_attachments` files; older ones are removed. The `in_memory` transport is unchanged: edge and runner share one process, so files stay in the message.
+
 ## Custom Routes
 
-Agent Kernel REST API allows the users to add custom routes to the existing REST server by two ways. This is a support functionality that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
+OAK REST API allows the users to add custom routes to the existing REST server by two ways. This is a support functionality that would avoid users from maintaining a separate REST server for other application work, and exposes an endpoint with a configurable prefix `/custom` by default.
 
 ### Option 1
 
@@ -427,9 +524,9 @@ if __name__ == "__main__":
 
 Set `execution.mode: rest_sync` and `execution.message_type: delta` in `config.yaml` (or `AK_EXECUTION__MODE=rest_sync` and `AK_EXECUTION__MESSAGE_TYPE=delta`) to enable streaming. With this combination, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required. Other combinations don't stream on the REST chat route: `rest_sync` and `rest_async` with `complete` answer with JSON, and `async` rejects it with a 400 that points to `/ws`.
 
-On the queue pipeline with a broker transport (`sqs`, `kafka`, `nats`, `pubsub`):
+On the queue pipeline with a broker transport (`sqs`, `kafka`, `nats`, `pubsub`, `servicebus`):
 
-- Only `POST /api/v1/chat` streams. `/api/v1/chat-multipart` is not registered, because of broker message-size limits.
+- Both `POST /api/v1/chat` and `POST /api/v1/chat-multipart` stream. Uploaded files are saved first and only their IDs are queued (see [Files on a queue transport](#files-on-a-queue-transport)).
 - SSE needs a shared response store that can hold chunks (Redis or Valkey). Otherwise startup fails with an error naming both fixes: such a store, or `async` with `message_type: delta`.
 
 `execution.mode: stream` was removed and now fails when the configuration loads; use `rest_sync` with `message_type: delta` for SSE.
@@ -507,7 +604,7 @@ identity:
 - The chat and streaming routes accept an anonymous caller, and the agent runs as the anonymous principal. The thread, schedule and AG-UI routes serve authenticated callers only: their handlers refuse to construct without an `identity` block, and an anonymous request to them is a `401 Authentication required`.
 - A body or envelope carrying `user_id` is a 400: the acting user comes from the credential, never from the client.
 
-Groups, roles (through a `role_mapper`), the principal on every other surface and the deployment adapters are covered in [Identity and access](../advanced/identity-and-access.md).
+Groups, roles (through a `role_mapper`), the principal on every other surface and the deployment adapters are covered in [Identity and access](../advanced/identity-and-access.md). What a principal may do once it is established (which agents it may run and see) is decided by an optional `authorization` block: see [Authorization](../advanced/identity-and-access.md#authorization).
 
 ### Example Implementation
 

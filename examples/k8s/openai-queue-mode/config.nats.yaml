@@ -49,12 +49,26 @@ session:
 # executes, and the caller's reply waits in the response store above.
 a2a:
   enabled: true
-  agents: ["triage"]
 mcp:
   enabled: true
   expose_agents: true
-  agents: ["triage"]
   stateless_http: true         # the chart runs 2 io-handler replicas outside dev; a stateful MCP session is pinned to one
+
+# What each agent publishes about itself. The description is its catalog text: the A2A card and
+# the MCP tool carry it, never the agent's instructions. Both processes read this file, so it is
+# declared here rather than in code. Which surfaces serve an agent is part of the same record:
+# every surface unless it says otherwise. Only triage is published over A2A and MCP; the two
+# specialists it hands off to stay reachable through REST alone.
+registry:
+  agents:
+    triage:
+      description: Routes a question to the history or the math specialist and returns the answer.
+    math:
+      description: Solves math problems and returns the final answer.
+      surfaces: [rest]
+    history:
+      description: Answers questions about history, with the important events and context.
+      surfaces: [rest]
 
 logging:
   ak:

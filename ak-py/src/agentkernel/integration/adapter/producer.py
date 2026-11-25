@@ -2,10 +2,10 @@ import logging
 from typing import Any
 
 from ...core.config import AKConfig
-from ...core.model import BaseRunRequest, Principal
+from ...core.model import AgentRequestVoice, BaseRunRequest, Principal
 from ...core.multimodal.storage import AttachmentStorageManager
 from ...core.util.factory import AKConfigError
-from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
+from ...pipeline.envelope import ATTR_INTEGRATION, ATTR_REALTIME_END, REPLY_CONTEXT_PREFIX
 from ...pipeline.producer import RequestProducer
 from ...pipeline.transport.base import QueueTransport, QueueTransportFactory
 from .base import InboundRequest, Source
@@ -70,13 +70,16 @@ class IntegrationProducer:
 
         :param adapter_name: The inbound adapter's ``name``; becomes the routing attribute,
             namespaces the dedup key and names the principal's provider.
-        :param request: The normalized request to send.
+        :param request: The normalized request to send; ``end_session`` is stamped as the realtime end-of-session
+            attribute, so an edge never names a queue attribute itself.
         :param source: The adapter's ``Source``; a realtime edge's principal is ``realtime:<name>``,
             every other one ``messaging:<name>``.
         :return: The transport's send response.
         :raises ValueError: If the serialized reply context exceeds the budget.
         """
         attributes = {ATTR_INTEGRATION: adapter_name, **self._reply_attributes(adapter_name, request.reply_context)}
+        if request.end_session:
+            attributes[ATTR_REALTIME_END] = "true"
         body = BaseRunRequest(
             prompt=request.prompt,
             agent=request.agent,
@@ -92,7 +95,9 @@ class IntegrationProducer:
             group_id=request.session_id,
             dedup_id=f"{adapter_name}:{request.request_id}",
         )
-        self._log.info(f"[ENQUEUED] integration={adapter_name}, session_id={request.session_id}, request_id={request.request_id}")
+        # A voice edge enqueues a frame every ~100 ms, so those are logged at debug.
+        level = logging.DEBUG if any(isinstance(item, AgentRequestVoice) for item in request.requests) else logging.INFO
+        self._log.log(level, f"[ENQUEUED] integration={adapter_name}, session_id={request.session_id}, request_id={request.request_id}")
         return result
 
     @staticmethod

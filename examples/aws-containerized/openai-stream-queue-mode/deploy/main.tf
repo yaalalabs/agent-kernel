@@ -1,7 +1,7 @@
 # OpenAI Agents over WebSocket, queue-based token streaming — see ../README.md
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { aws = aws, docker = docker }
 
@@ -18,7 +18,7 @@ module "containerized_agents" {
   # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
   ssm_enabled = true
 
-  # REST/IO service (ECSIOHandler): auth, enqueue chat, push chunks over the connection
+  # REST/IO service (AWSWebsocketAPI): auth, enqueue chat, push chunks over the connection
   rest_service = {
     package_path = "../dist-rest-service"
     command      = ["python", "app_rest_service.py"]

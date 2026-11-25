@@ -1,6 +1,6 @@
 # Developer Guide
 
-This guide provides essential information for developers working on the Agent Kernel project.
+This guide provides essential information for developers working on the Open Agent Kernel project.
 
 ## Table of Contents
 
@@ -72,7 +72,7 @@ make help
 
 ### Formatting Standards
 
-Agent Kernel uses the following tools to maintain code quality:
+OAK uses the following tools to maintain code quality:
 
 - **[black](https://github.com/psf/black)**: Opinionated code formatter
 - **[isort](https://pycqa.github.io/isort/)**: Import statement organizer
@@ -108,12 +108,21 @@ the workflow fails before making any changes.
 
 ### Pull Request Automation (CI)
 
-Three small workflows run on pull requests:
+Four small workflows run on pull requests:
 
 - **PR Title Check** (`.github/workflows/pr-title-check.yaml`): fails unless the PR title follows
   Conventional Commits (`type: description` or `type(scope): description`, with the types listed
   in [CONTRIBUTING.md](CONTRIBUTING.md)). `develop` accepts squash merges only, so the title
   becomes the commit subject. Fix a failure by editing the title; the check re-runs on the edit.
+- **Changelog Check** (`.github/workflows/changelog-check.yaml`): on PRs into `develop`, fails a
+  `feat`, `fix`, `perf`, `refactor`, `build` or `chore` PR that neither adds a `changelog.d/`
+  fragment nor updates a pending one, a `!` title without a `breaking` fragment, and any fragment
+  with an invalid name; the rules are in
+  [CONTRIBUTING.md, "Changelog entries"](CONTRIBUTING.md#changelog-entries) and the logic in
+  `scripts/changelog_fragments.py`. A maintainer skips it with the `no-changelog` label. The job
+  summary previews the next release's changelog. It uses `pull_request`, not
+  `pull_request_target`: it runs the PR's own copy of the script, which is safe only because the
+  token is read-only and no secrets are passed. Keep it that way when editing it.
 - **Request Copilot Review** (`.github/workflows/copilot-review-request.yaml`): requests a GitHub
   Copilot code review when a maintainer adds the `Request Copilot` label to a PR, using the
   `COPILOT_REVIEW_PAT` secret. The develop ruleset's own Copilot rule only fires for authors who
@@ -147,6 +156,8 @@ code; they only call the GitHub API. Keep it that way when editing them.
 2. **Make your changes**
    - Write code following the project's conventions
    - Add tests for new functionality
+   - Add a changelog fragment (`changelog.d/<issue>.<type>.md`) if users would notice the change;
+     see [CONTRIBUTING.md, "Changelog entries"](CONTRIBUTING.md#changelog-entries)
 
 3. **Verify formatting**
    ```bash
@@ -199,5 +210,5 @@ Follow conventional commit format:
 - [AGENTS.md](AGENTS.md) - Guidance for AI coding agents contributing to this repo (architecture pointers, agent-specific gotchas)
 - [Documentation Setup](docs/SETUP.md) - Setting up the documentation site
 - [Examples](examples/) - Sample implementations
-- [Use Cases](use-cases/) - End-to-end agents built from `SPEC.md` using Agent Kernel skills
+- [Use Cases](use-cases/) - End-to-end agents built from `SPEC.md` using OAK skills
 - [e2e](e2e/README.md) - Messaging integration e2e harness (deployable app + Terraform + pytest suite) driven against real Slack, Telegram, WhatsApp, Messenger, Instagram, and Gmail accounts

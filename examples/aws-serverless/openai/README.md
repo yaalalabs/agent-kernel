@@ -1,6 +1,6 @@
-# Agent Kernel running OpenAI Agents SDK based agents in AWS Serverless (Lambda)
+# Open Agent Kernel running OpenAI Agents SDK based agents in AWS Serverless (Lambda)
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using AWS Lambda, using queue-mode's three-Lambda architecture (request handler, agent runner, response handler).
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a serverless configuration using AWS Lambda, using queue-mode's three-Lambda architecture (request handler, agent runner, response handler).
 
 This is also the base deployment for the weekly integration test pipeline: the other `aws-serverless` weekly examples reuse the VPC, private subnets, and all three per-tier Lambda security groups this example creates, instead of each creating their own (see `docs/specs/716-reuse-sg-in-integration-test-pipeline`).
 

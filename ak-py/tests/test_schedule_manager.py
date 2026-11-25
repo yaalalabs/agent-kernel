@@ -11,6 +11,7 @@ import pytest
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ScheduleConfig
 from agentkernel.core.model import AgentReplyText, BaseRunRequest, Principal, ScheduleSpec
+from agentkernel.core.registry import AgentNotFoundError
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.transport.base import QueueTransportFactory
@@ -77,9 +78,6 @@ class DummyAgent(Agent):
 
     def get_description(self) -> str:
         return "Test agent"
-
-    def get_a2a_card(self):
-        return None
 
     def override_system_prompt(self, prompt):
         pass
@@ -257,10 +255,137 @@ class TestCreation:
     def test_creation_rejects_an_agent_that_is_not_registered(self, manager, store):
         # Every occurrence runs unattended, so a bad agent name has to fail at creation rather
         # than in the runner at each fire time.
-        with pytest.raises(ValueError, match="No agent available"):
+        with pytest.raises(AgentNotFoundError, match="^Agent 'not-an-agent' not found$"):
             _create(manager, agent="not-an-agent")
 
         assert store.list() == ([], None)
+
+    def test_creation_in_one_process_rejects_an_agent_only_the_registry_knows(self, manager, store, descriptor_only_registry):
+        """On the in-memory transport the occurrence is run by this process. A descriptor left in a shared registry by
+        a deployment that removed the agent must not arm a task every occurrence of which fails."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(AgentNotFoundError, match="^Agent 'billing' not found$"):
+                _create(manager, agent="billing")
+
+        assert store.list() == ([], None)
+
+    def test_creation_on_a_broker_accepts_an_agent_another_process_hosts(self, provider, store, monkeypatch, descriptor_only_registry):
+        """There the agent runner is another process: the registry is what says the agent exists."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda *args, **kwargs: "sqs"))
+        monkeypatch.setattr(ScheduleManager, "_validate_store_topology", lambda self: None)
+        on_a_broker = ScheduleManager(provider=provider, store=store)
+        registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            task = _create(on_a_broker, agent="billing")
+
+        assert task.agent == "billing"
+
+    @staticmethod
+    def _rest_request(agent: str | None, surface: str | None = "rest") -> BaseRunRequest:
+        return BaseRunRequest(
+            prompt="send the weekly report",
+            agent=agent,
+            session_id="s1",
+            principal=_principal(),
+            schedule=ScheduleSpec(at=FUTURE_AT),
+            surface=surface,
+        )
+
+    def test_a_request_from_the_rest_api_cannot_schedule_an_agent_kept_off_rest(self, manager, store, kept_off_rest):
+        """A task's agent is checked against the surface of the request that creates it (design refinement 13):
+        scheduling is not a way round an agent being kept off `rest`. It is the unknown agent's error."""
+        with kept_off_rest:
+            with pytest.raises(AgentNotFoundError, match="^Agent 'internal' not found$"):
+                manager.create_from_request(self._rest_request("internal"))
+
+        assert store.list() == ([], None)
+
+    def test_the_chat_service_answers_that_request_with_the_unknown_agents_404(self, manager, store, kept_off_rest, monkeypatch):
+        from agentkernel.core.chat_service import ChatService
+
+        monkeypatch.setattr(ScheduleManager, "get", classmethod(lambda cls: manager))
+
+        with kept_off_rest:
+            status, body = ChatService().process_chat_request(self._rest_request("internal"))
+
+        assert (status, body) == (404, {"error": "Agent 'internal' not found", "session_id": "s1"})
+        assert store.list() == ([], None)
+
+    def test_a_request_from_a_surface_the_agent_is_on_schedules_it(self, manager, kept_off_rest):
+        with kept_off_rest:
+            on_rest = manager.create_from_request(self._rest_request("public"))
+            on_a2a = manager.create_from_request(self._rest_request("internal", surface="a2a"))
+
+        assert (on_rest.agent, on_a2a.agent) == ("public", "internal")
+
+    def test_a_task_created_with_no_surface_is_not_governed_by_surfaces(self, manager, kept_off_rest):
+        # The schedule tool an agent calls, and any caller of `create` that is not a chat route.
+        with kept_off_rest:
+            task = _create(manager, agent="internal")
+
+        assert task.agent == "internal"
+
+    def test_a_task_keeps_the_surface_of_the_request_that_created_it(self, manager, provider, store, kept_off_rest):
+        """Decided in iteration 19: an occurrence is served the agents the creating request would have been, so a
+        task naming no agent does not reach, when it fires, an agent kept off the surface it was created over."""
+        with kept_off_rest:
+            task = manager.create_from_request(self._rest_request("public"))
+
+        assert store.get(task.task_id).surface == "rest"
+        assert json.loads(provider.created[0][1])["surface"] == "rest"
+
+    def test_a_task_naming_no_agent_keeps_it_too(self, manager, provider, kept_off_rest):
+        # The case the surface is kept for: nothing is checked when the task is created, so the occurrence must be.
+        with kept_off_rest:
+            manager.create_from_request(self._rest_request(None))
+
+        assert json.loads(provider.created[0][1])["surface"] == "rest"
+
+    def test_a_task_created_by_no_surface_fires_with_none(self, manager, provider, store, kept_off_rest):
+        # A schedule tool: the trigger body is the one it always was, with no `surface` key at all.
+        with kept_off_rest:
+            task = _create(manager, agent="internal")
+
+        assert store.get(task.task_id).surface is None
+        assert "surface" not in json.loads(provider.created[0][1])
+
+    def test_an_amended_task_fires_with_the_surface_it_was_created_by(self, manager, provider, kept_off_rest):
+        with kept_off_rest:
+            task = manager.create_from_request(self._rest_request("public"))
+            manager.update(task.task_id, {"prompt": "send the daily report"}, user_id="u1")
+
+        assert json.loads(provider.updated[0][1])["surface"] == "rest"
+
+    def test_with_authorization_a_task_is_created_only_for_an_agent_its_owner_may_use(self, manager, store, authorization, surface_agent):
+        """The owner's principal is what the access gate decides on (#603, iteration 18): a task every occurrence of
+        which would be refused is not armed. An agent the owner may not see is the unknown agent's error."""
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        authorization(grants=[{"subjects": ["user:u1"], "agents": ["assistant"], "level": "read"}])
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("assistant"))
+        status = surface_agent("status")
+        status._set_descriptor(status.descriptor.model_copy(update={"visibility": "public"}))
+        runtime.register(status)
+
+        with runtime:
+            task = _create(manager, agent="assistant")
+            with pytest.raises(AgentNotFoundError, match="^Agent 'assistant' not found$"):
+                _create(manager, agent="assistant", principal=_principal("u2"))
+            with pytest.raises(PermissionError, match="^Principal 'u2' holds no level on agent 'status'$"):
+                _create(manager, agent="status", principal=_principal("u2"))
+
+        assert [stored.task_id for stored in store.list()[0]] == [task.task_id]
 
     def test_creation_without_an_agent_name_is_not_prechecked(self, manager, provider):
         # The default agent is resolved by whichever process fires the occurrence, which is not
@@ -610,6 +735,49 @@ class TestTriggerRecording:
         manager.record_trigger(task.task_id, principal, request_id="r1")
 
         assert store.get(task.task_id).trigger_count == 0
+
+    def test_an_occurrence_that_was_not_run_is_recorded_with_the_reason(self, manager, store):
+        """#603: the access gate refused the owner at fire time. The occurrence is counted and says why it did not run."""
+        task = _create(manager)
+
+        manager.record_trigger(task.task_id, _principal(), request_id="r1", error="Principal 'u1' holds no level on agent 'planner'")
+
+        recorded = store.get(task.task_id)
+        assert (recorded.trigger_count, recorded.last_request_id) == (1, "r1")
+        assert recorded.last_error == "Principal 'u1' holds no level on agent 'planner'"
+
+    def test_a_skipped_occurrence_closes_a_one_time_task(self, manager, store):
+        # A one-time task has no later occurrence to run instead: skipped or not, the trigger was its only one.
+        task = _create(manager, spec=ScheduleSpec(at=FUTURE_AT))
+
+        manager.record_trigger(task.task_id, _principal(), request_id="r1", error="Agent 'planner' not found")
+
+        recorded = store.get(task.task_id)
+        assert (recorded.status, recorded.last_error) == (ScheduleStatus.COMPLETED, "Agent 'planner' not found")
+
+    def test_a_forged_trigger_records_no_reason_either(self, manager, store):
+        task = _create(manager)
+
+        manager.record_trigger(task.task_id, _principal("u2"), request_id="r1", error="Agent 'planner' not found")
+
+        assert (store.get(task.task_id).trigger_count, store.get(task.task_id).last_error) == (0, None)
+
+    def test_a_store_written_before_the_reason_existed_still_records_an_occurrence_that_runs(self, provider):
+        """A bring-your-own store implements the `record_trigger` it was written against. The reason is handed
+        over only when there is one, so such a store keeps recording every occurrence that runs."""
+
+        class _OlderStore(InMemoryScheduleStore):
+            def record_trigger(self, task_id, request_id, occurred_at, completed):
+                super().record_trigger(task_id, request_id, occurred_at, completed)
+
+        store = _OlderStore()
+        manager = ScheduleManager(provider=provider, store=store)
+        task = _create(manager)
+
+        manager.record_trigger(task.task_id, _principal(), request_id="r1")
+        manager.record_trigger(task.task_id, _principal(), request_id="r2", error="skipped")  # refused by the store: logged, not raised
+
+        assert (store.get(task.task_id).trigger_count, store.get(task.task_id).last_request_id) == (1, "r1")
 
     def test_recording_an_unknown_task_is_ignored(self, manager):
         manager.record_trigger("missing", _principal(), request_id="r1")

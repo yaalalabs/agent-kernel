@@ -32,13 +32,13 @@ graph LR
     A[User] <--> B[API Gateway]
     B <--> C[Lambda Authorizer]
     B <--> D[Lambda Function]
-    D --> E[Agent Kernel Runtime]
+    D --> E[OAK Runtime]
     E <--> F[Your Agent]
     D <--> G[Redis/ElastiCache]
     D <--> H[DynamoDB]
     
     style C fill:#ff9900,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Queue Based Execution: using queues to improve the scalability (recommended for prod)
@@ -62,9 +62,9 @@ graph LR
     F <--> K[Your Agent]
     
     style C fill:#ff9900,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style H fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style F fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style H fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 #### ASYNC (WebSocket) mode
@@ -86,10 +86,10 @@ graph LR
     G <--> K[Session Store]
     G <--> L[Your Agent]
     
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style I fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style G fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style I fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 #### ASYNC + delta (WebSocket token streaming) mode: queue-based
@@ -113,10 +113,10 @@ graph LR
     G <--> K[Session Store]
     G <--> L[Your Agent]
 
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style I fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style G fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style I fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 #### ASYNC + delta (WebSocket token streaming) mode: direct (no queues)
@@ -131,8 +131,8 @@ graph LR
     D <--> F[Session Store]
     D <--> G[Your Agent]
 
-    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style D fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 The request handler receives the incoming API request, the agent runner executes the agent logic, and the response handler persists outbound messages to the configured response store. In queue-backed modes, the three-lambda split keeps request ingestion, execution, and response persistence independent.
@@ -145,7 +145,7 @@ With `message_type: delta`, each stream event is sent as a separate `STREAM_CHUN
 
 - AWS CLI configured
 - AWS credentials with Lambda/API Gateway permissions
-- Agent Kernel with AWS extras: `uv add "agentkernel[aws]"`
+- Open Agent Kernel (OAK) with AWS extras: `uv add "agentkernel[aws]"`
 - For authentication: `uv add "agentkernel[api,aws]"`
 
 ## Deployment
@@ -249,6 +249,35 @@ A registered route receives the raw API Gateway event. It reads the caller with
 `Lambda.principal(event)`: the principal the API Gateway authorizer established (from the
 authorizer context), or the anonymous principal when the API has no authorizer or a webhook bypass
 let the request through. See [Identity and Access](../advanced/identity-and-access.md).
+
+### Path and query parameters
+
+A route can carry path parameters. Query parameters reach every handler as-is in `event["queryStringParameters"]`.
+
+```python
+@Lambda.register("/orders/{order_id}", method="GET")
+def get_order(event, context):
+    order_id = event["pathParameters"]["order_id"]
+    params = event.get("queryStringParameters") or {}
+    return {"order_id": order_id, "expand": params.get("expand")}
+```
+
+Declare the same template in `gateway_endpoints`, with the same parameter name:
+
+```hcl
+gateway_endpoints = [
+  { path = "orders/{order_id}", method = "GET" },
+]
+```
+
+The router does no path matching of its own. API Gateway matches the request against its resources and
+sends the matched template in `event["resource"]` and the values in `event["pathParameters"]`, and the
+router looks the template up among the registered routes. So when two templates overlap, API Gateway's
+precedence decides (a static segment beats a `{parameter}` at the same level). Avoid overlapping templates
+such as `/a/{x}/c` and `/a/b/{y}`: both match `/a/b/c`, and the containerized (FastAPI) target resolves
+that by registration order instead. Path parameters need API Gateway REST in front of the Lambda; a
+direct invoke sends no `resource`, so only static routes match there. Function URLs are not supported:
+their events carry `rawPath` and `requestContext.http.method`, which the router does not read.
 
 ## Lambda Environment Variables
 
@@ -1252,6 +1281,35 @@ are unaffected: they always send an explicit `MessageDeduplicationId`, which tak
 Relevant outputs: `schedule_group_name`, `schedule_group_arn`, `scheduler_execution_role_arn`,
 `schedule_table_name`, `schedule_table_arn` (each `null` unless the matching flag is set).
 
+**Management routes.** `ScheduleRESTRequestHandler` is a FastAPI router and cannot be mounted on the
+Lambda router. Register the same routes on the request handler instead, calling `ScheduleManager`
+directly, and read the task id from the path (see [Path and query parameters](#path-and-query-parameters)):
+
+```python
+from agentkernel.aws import Lambda
+from agentkernel.schedule import ScheduleManager
+
+@Lambda.register("/schedules/{task_id}", method="GET")
+def get_schedule(event, context):
+    task_id = event["pathParameters"]["task_id"]
+    task = ScheduleManager.get().get_task(task_id)
+    return task.model_dump(mode="json") if task else (404, {"error": f"Unknown scheduled task {task_id}"})
+```
+
+```hcl
+gateway_endpoints = [
+  { path = "schedules",           method = "GET" },    # list
+  { path = "schedules/{task_id}", method = "GET" },    # read
+  { path = "schedules/{task_id}", method = "PUT" },    # amend
+  { path = "schedules/{task_id}", method = "DELETE" }, # cancel
+]
+```
+
+These are the containerized routes, path for path. Without an authorizer they are open; resolve the
+owner from the caller's token rather than trusting a client-supplied `user_id`.
+[`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai)
+implements all four with ownership checks and error mapping.
+
 For the application side see the [Scheduling guide](../advanced/scheduling.md).
 
 ### Secret Resolution (SSM Parameter Store)
@@ -1344,7 +1402,7 @@ Lambda.register("/whatsapp/webhook", method="GET")(whatsapp.challenge)
 
 The paths are the adapters' `webhook_path` and `challenge_path`: `/slack/events`, `/teams/messages`,
 `/telegram/webhook`, and `/<platform>/webhook` for the three Meta platforms. The Lambda router strips
-`/<api_base_path>/<api_version>` and matches the rest exactly. The host turns the API Gateway event into
+`/<api_base_path>/<api_version>` and looks the rest up among the registered routes. The host turns the API Gateway event into
 the Starlette request every adapter reads, and answers with the status the platform expects: a rejected
 signature stays a 401 or 403 rather than becoming a retryable 500.
 
@@ -1420,14 +1478,14 @@ cost is one authorizer call per request, chat routes included.
 | Request-handler Lambda | `@Lambda.register("/slack/events", method="POST")` calling `LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter())).handle` |
 | Terraform | `gateway_endpoints = [{ path = "/slack/events", method = "POST" }]` |
 
-Each mismatch fails quietly from Agent Kernel's side:
+Each mismatch fails quietly from OAK's side:
 
 - In the authorizer and the gateway, but not registered: a 500 from the router's no-route error.
 - Registered and in the gateway, but not in the authorizer: a 403. A platform that sends no
   `Authorization` header is denied before your validator runs, with the authorizer logging
   `Event validation failed`; Teams, whose Bot Framework token does arrive in that header, reaches your
   validator and is rejected there.
-- A nonzero authorizer TTL: a 401 that Agent Kernel never logs, because API Gateway answers before the
+- A nonzero authorizer TTL: a 401 that OAK never logs, because API Gateway answers before the
   authorizer runs.
 
 ### Cold starts and Slack's 3 seconds
@@ -1492,8 +1550,8 @@ graph TB
     
     F --> G[DynamoDB<br/>Multi-AZ]
     
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style G fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style G fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 **Key Features:**

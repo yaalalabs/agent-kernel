@@ -1,0 +1,627 @@
+/* The three persona pages: business leader, developer, AI engineer.
+   One stylesheet for the set, built on the design-system tokens and classes in custom.css.
+   Flat: solid surfaces and hairlines, no gradients, glows or shadows. */
+
+/* ── Sections ── */
+
+/* The rail and its sections: the rail is sticky inside this box, so it leaves with the last one */
+.journey {
+  position: relative;
+}
+
+/* An anchor lands below the navigation bar and the step rail */
+.section {
+  padding-block: clamp(4rem, 2.9rem + 4.6vw, 6rem);
+  scroll-margin-top: 8.5rem;
+}
+
+.section + .section {
+  border-top: 1px solid var(--ak-border);
+}
+
+/* ── Layout helpers ── */
+
+.grid2,
+.grid3 {
+  display: grid;
+  gap: var(--ak-space-24);
+}
+
+.grid2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Copy on the left, a figure or code on the right */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: var(--ak-space-64);
+  align-items: start;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-24);
+  min-width: 0;
+}
+
+.stack > * {
+  max-width: 100%;
+}
+
+/* Space between two blocks of one section */
+.block {
+  margin-top: var(--ak-space-64);
+}
+
+.blockSmall {
+  margin-top: var(--ak-space-32);
+}
+
+/* ── Text pieces ── */
+
+.points {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.points li {
+  position: relative;
+  padding-left: var(--ak-space-24);
+  font-size: var(--ak-type-body);
+  line-height: 1.5;
+  color: var(--ak-text);
+}
+
+.points li::before {
+  content: '';
+  position: absolute;
+  top: 0.7em;
+  left: 0;
+  width: 0.75rem;
+  height: 1px;
+  background-color: var(--ak-primary);
+}
+
+.caption {
+  max-width: var(--ak-measure);
+  margin-top: var(--ak-space-24);
+}
+
+.docLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ak-space-12) var(--ak-space-32);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Text for assistive technology only */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.plainList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A card that stretches to the height of its row */
+.card {
+  height: 100%;
+}
+
+/* ── Tabs ── */
+
+.tabs {
+  min-width: 0;
+}
+
+.tabList {
+  display: flex;
+  gap: var(--ak-space-32);
+  border-bottom: 1px solid var(--ak-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabList::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex-shrink: 0;
+  margin-bottom: -1px;
+  padding: var(--ak-space-16) 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-family: var(--ifm-font-family-base);
+  font-size: var(--ak-type-body);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--ak-text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tab:hover {
+  color: var(--ak-fg);
+}
+
+.tabActive {
+  border-bottom-color: var(--ak-primary);
+  color: var(--ak-fg);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: -2px;
+}
+
+.tabPanel {
+  padding-top: var(--ak-space-48);
+}
+
+.tabPanel:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 6px;
+}
+
+/* ── Code sample ── */
+
+.code {
+  width: 100%;
+  min-width: 0;
+}
+
+.code :global(.theme-code-block) {
+  margin: 0;
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-card);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.code :global(.theme-code-block),
+.code :global(pre),
+.code :global(pre code) {
+  background-color: var(--ak-bg-alt) !important;
+}
+
+.code :global(pre) {
+  font-size: var(--ak-type-small);
+}
+
+/* The frame is the border: the code block inside it carries none of its own */
+.code :global(.prism-code) {
+  border: 0;
+  border-radius: 0;
+}
+
+.code :global(.theme-code-block > div:first-child) {
+  border-bottom-color: var(--ak-border);
+}
+
+/* ── A figure in a frame, for the flow diagrams ── */
+
+.figure {
+  margin: 0;
+  min-width: 0;
+}
+
+/* ── A chain: the stations a request passes, in order ── */
+
+.chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ak-space-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chain li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ak-space-12);
+}
+
+.chain li + li::before {
+  content: '\2192';
+  color: var(--ak-text-muted);
+}
+
+.chainStop {
+  display: inline-flex;
+  align-items: center;
+  height: 2.5rem;
+  padding: 0 var(--ak-space-16);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-small);
+  white-space: nowrap;
+  color: var(--ak-text);
+}
+
+.chainStopAccent {
+  border-color: var(--ak-primary);
+  color: var(--ak-fg);
+}
+
+/* ── Rows: a hairline list of title, line and link ── */
+
+.rows {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-8);
+  padding-block: var(--ak-space-24);
+  border-top: 1px solid var(--ak-border);
+}
+
+/* ── Business leader: value list ── */
+
+.values {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.value {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: var(--ak-space-8) var(--ak-space-16);
+  padding-block: var(--ak-space-24);
+  border-top: 1px solid var(--ak-border);
+}
+
+.valueIcon {
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-top: 0.1rem;
+  stroke-width: 1.5;
+  color: var(--ak-blue);
+}
+
+.valueText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-8);
+}
+
+/* ── Business leader: industry scenarios ── */
+
+.scenario {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-32);
+}
+
+.scenarioHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ak-space-16) var(--ak-space-32);
+}
+
+.scenarioCols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-card);
+  overflow: hidden;
+}
+
+.scenarioCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-16);
+  padding: var(--ak-space-32);
+}
+
+.scenarioCol + .scenarioCol {
+  border-left: 1px solid var(--ak-border);
+}
+
+/* The "before" side is neutral; only the outcome carries the accent */
+.scenarioColAfter {
+  background-color: var(--ak-bg-alt);
+}
+
+.scenarioColAfter .scenarioLabel {
+  color: var(--ak-primary-text);
+}
+
+.scenarioColNow .scenarioLabel {
+  color: var(--ak-fg);
+}
+
+/* ── Business leader: questions ── */
+
+.qa {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--ak-space-64);
+  margin: 0;
+  padding: 0;
+}
+
+.qaItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-12);
+  padding-block: var(--ak-space-32);
+  border-top: 1px solid var(--ak-border);
+}
+
+.qaItem dd {
+  margin: 0;
+}
+
+/* ── AI engineer: comparison table ── */
+
+.tableScroll {
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-card);
+  overflow-x: auto;
+}
+
+.tableScroll:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 3px;
+}
+
+.compare {
+  display: table;
+  width: 100%;
+  min-width: 46rem;
+  margin: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--ak-type-body);
+  line-height: 1.4;
+}
+
+.compare tr,
+.compare tr:nth-child(2n) {
+  background: none;
+  border: 0;
+}
+
+.compare th,
+.compare td {
+  padding: var(--ak-space-16) var(--ak-space-24);
+  border: 0;
+  border-bottom: 1px solid var(--ak-border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.compare tbody tr:last-child th,
+.compare tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.compare thead th {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-label);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: bottom;
+  color: var(--ak-text-muted);
+}
+
+.compare tbody th {
+  font-weight: 600;
+  color: var(--ak-fg);
+}
+
+.compare th {
+  background: none;
+}
+
+.compareHint {
+  display: block;
+  margin-top: var(--ak-space-4);
+  font-family: var(--ifm-font-family-base);
+  font-size: var(--ak-type-small);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ak-text-muted);
+}
+
+/* The OAK column is the one to notice */
+.compare .compareOak {
+  background-color: var(--ak-bg-alt);
+  border-left: 1px solid var(--ak-border);
+}
+
+.compare thead .compareOak {
+  border-top: 2px solid var(--ak-primary);
+  color: var(--ak-primary-text);
+}
+
+.cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ak-space-8);
+  color: var(--ak-text);
+}
+
+.cellIcon {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  stroke-width: 2;
+}
+
+/* A "no" is neutral, not red */
+.cellNo,
+.cellPartial {
+  color: var(--ak-text-muted);
+}
+
+.compareOak .cell {
+  color: var(--ak-fg);
+  font-weight: 600;
+}
+
+.compareOak .cellIcon {
+  color: var(--ak-primary-text);
+}
+
+/* ── Keep reading: the other levels ── */
+
+.next {
+  padding-block: var(--ak-space-64);
+  border-top: 1px solid var(--ak-border);
+}
+
+.nextList {
+  margin: var(--ak-space-24) 0 var(--ak-space-32);
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--ak-border);
+}
+
+.nextRow {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 15rem) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--ak-space-24);
+  padding-block: var(--ak-space-24);
+  border-top: 1px solid var(--ak-border);
+  color: inherit;
+  text-decoration: none;
+}
+
+.nextRow:hover {
+  color: inherit;
+  text-decoration: none;
+}
+
+.nextTitle {
+  transition: color 0.15s ease;
+}
+
+.nextRow:hover .nextTitle {
+  color: var(--ak-primary-text);
+}
+
+.nextArrow {
+  font-size: var(--ak-type-h4);
+  color: var(--ak-primary-text);
+  transition: transform 0.15s ease;
+}
+
+.nextRow:hover .nextArrow {
+  transform: translateX(3px);
+}
+
+.nextRow:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 3px;
+}
+
+/* ── Smaller screens ── */
+
+@media (max-width: 996px) {
+  .grid2,
+  .grid3,
+  .split,
+  .qa {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .split {
+    gap: var(--ak-space-32);
+  }
+
+  .block {
+    margin-top: var(--ak-space-48);
+  }
+
+  .tabList {
+    gap: var(--ak-space-24);
+  }
+
+  .tabPanel {
+    padding-top: var(--ak-space-32);
+  }
+
+  .scenarioCols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scenarioCol {
+    padding: var(--ak-space-24);
+  }
+
+  .scenarioCol + .scenarioCol {
+    border-left: 0;
+    border-top: 1px solid var(--ak-border);
+  }
+
+  .nextRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--ak-space-8) var(--ak-space-16);
+  }
+
+  .nextTag,
+  .nextTitle,
+  .nextLine {
+    grid-column: 1;
+  }
+
+  .nextArrow {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .nextTitle,
+  .nextArrow {
+    transition: none;
+  }
+}

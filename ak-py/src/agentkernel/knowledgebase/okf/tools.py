@@ -19,9 +19,9 @@ The capability's instructions are not here: they are a system prompt section, co
 ``OKFPromptComposer.for_agent`` and appended to the agent's own prompt.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
-from ...core.model import SystemTool
+from ...core.model import AccessLevel, SystemTool
 from .capability import OKFCapabilityManager
 
 _NO_KB = "No OKF knowledge base is configured for this agent."
@@ -29,6 +29,10 @@ _NO_KB = "No OKF knowledge base is configured for this agent."
 
 class OKFToolFactory:
     """Builds one agent's OKF system tools from the configured roles."""
+
+    # The tier each tool declares for an authorization policy, where it is not the `read` default: the one
+    # tool that changes a knowledge base. The roles above still decide which agent may write to which database.
+    _TIERS: ClassVar[dict[str, AccessLevel]] = {"write_kb": AccessLevel.WRITE}
 
     @staticmethod
     def get_tools(agent_name: str | None) -> list[SystemTool]:
@@ -52,7 +56,10 @@ class OKFToolFactory:
         # (``OKFPromptComposer.for_agent``, collected by ``SystemToolFactory.get_prompt_sections``)
         # written into the agent's prompt, not a payload smuggled through a tool description --
         # which no framework reads anyway, since the tool builders bind ``func.__doc__``.
-        return [SystemTool(name=func.__name__, description="", func=func) for func in OKFToolFactory._build(agent_name, writable)]
+        return [
+            SystemTool(name=func.__name__, description="", func=func, tier=OKFToolFactory._TIERS.get(func.__name__, AccessLevel.READ))
+            for func in OKFToolFactory._build(agent_name, writable)
+        ]
 
     @staticmethod
     def _build(agent_name: str, writable: bool) -> list[Any]:

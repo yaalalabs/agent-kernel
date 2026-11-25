@@ -4,16 +4,21 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..api.handler import AgentRESTRequestHandler
-from ..core.chat_service import ChatService
+from ..core.chat_service import ChatService, RequestBuilder
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ChatRunRequest, ExecutionMode, FileData, ImageData
+from ..core.multimodal.storage import AttachmentStorageManager
+from ..core.registry import AgentNotFoundError
+from ..core.runtime import Runtime
+from ..core.service import AgentService
+from ..core.util.factory import AKConfigError
 from .envelope import ATTR_PROTOCOL
 from .producer import RequestProducer
 from .response_store.base import ResponseStore
@@ -171,16 +176,25 @@ class RestHandler(AgentRESTRequestHandler):
         store in every mode. A reply with an error status is returned, not raised: the caller
         checks ``is_error``.
 
+        A request for an agent its caller cannot have is not sent (#603): the reply is the one the
+        runner would have stored, with its status and body, built here (see ``_availability_refusal``).
+
         :param body: The chat request; ``session_id`` and ``prompt`` are required. Its ``principal`` is the
             caller's to establish (the executors authenticate their own protocol): this path never reads
-            one from a client and never overwrites one, so an unset principal runs anonymous.
+            one from a client and never overwrites one, so an unset principal runs anonymous. Its
+            ``surface`` is the executor's to name, and is the one the agent must be served on.
         :param protocol: The surface's name, stamped as the ``protocol`` attribute.
-        :return: The stored reply.
+        :return: The stored reply, or the refusal the runner would have answered with.
         :raises ValueError: If ``session_id``, ``prompt`` or ``protocol`` is empty; nothing is sent.
         :raises ReplyTimeoutError: If the budget runs out before the reply is stored.
         """
         self._validate_protocol_request(body, protocol)
         request_id = str(uuid.uuid4())
+        refusal = await self._availability_refusal(body)
+        if refusal is not None:
+            status_code, error = refusal
+            self._log.warning(f"[REFUSED] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}")
+            return QueuedReply(request_id=request_id, status_code=status_code, body={"error": error, "session_id": body.session_id})
         self._log.info(f"[ENQUEUE] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
         # Offload the sync send so it doesn't block the event loop.
         await asyncio.to_thread(RequestProducer(self.get_transport()).enqueue, body, request_id, {ATTR_PROTOCOL: protocol})
@@ -206,6 +220,52 @@ class RestHandler(AgentRESTRequestHandler):
             raise ValueError("No prompt provided in the request")
         if not protocol:
             raise ValueError("protocol is required")
+
+    async def _availability_refusal(self, body: BaseRunRequest) -> tuple[int, str] | None:
+        """Decide, before anything is enqueued, whether the request names an agent its caller cannot have.
+
+        The question the process that runs the agent asks on arrival (``AgentService.ensure_agent_available``),
+        asked here of the registry this process reads, with the request's principal and surface: an
+        agent the registry does not know, one kept off the surface, and with an ``authorization``
+        block one the caller may not see are the unknown agent's 404, and one it may see and holds
+        no level on is a 403. The answer is the status and message the runner would have sent back,
+        so a refusal costs no queue trip, and what this process's own registry says about
+        ``surfaces`` (a ``registry.agents`` overlay set only here) holds for a queued request. The
+        runner asks again when the request runs.
+
+        Two requests are left to the runner. One naming no agent: the default is the runner's to
+        pick, and listing the registry here to second-guess it would cost a store read per request.
+        And one naming an agent while this process's registry knows no agent at all: a process that
+        neither loads the agent modules nor shares a registry has nothing to judge a name by.
+
+        :param body: The chat request, with the principal and surface its entry point assigned.
+        :return: The status and message of the refusal, or None when the request may be enqueued.
+        """
+        if not body.agent:
+            return None
+        try:
+            # Off the event loop: for an agent another process hosts this reads the registry's store.
+            await asyncio.to_thread(AgentService.ensure_agent_available, body.agent, body.principal, surface=body.surface)
+        except PermissionError as e:
+            return 403, str(e)
+        except AgentNotFoundError as e:
+            if await asyncio.to_thread(Runtime.current().registry.is_empty):
+                return None
+            return 404, str(e)
+        return None
+
+    async def _reject_unavailable(self, body: BaseRunRequest) -> None:
+        """Refuse a request for an agent its caller cannot have, in the shape the runner's refusal arrives in.
+
+        :param body: The chat request, with the principal and surface its entry point assigned.
+        :raises HTTPException: 404 or 403 with ``{"error": ..., "session_id": ...}``, the detail a
+            queued refusal carries (``_build_sync_response``) and the direct chat route answers with.
+        """
+        refusal = await self._availability_refusal(body)
+        if refusal is not None:
+            status_code, error = refusal
+            self._log.warning(f"Refused before the queue: {error}")
+            raise HTTPException(status_code=status_code, detail={"error": error, "session_id": body.session_id})
 
     def _build_sync_response(self, record: Any) -> Any:
         """Map a stored response record to the HTTP response, honoring its stored status.
@@ -239,6 +299,20 @@ class RestHandler(AgentRESTRequestHandler):
         # with the one the identity dependency RESTAPI installs put on the request (the anonymous
         # principal without an identity block). The default covers a router mounted on a bare app.
         body.principal = getattr(request.state, "principal", None)
+        # The surface rides the queued body, so the process that runs the agent serves only the agents on `rest`.
+        body.surface = "rest"
+        return await self._enqueue_and_wait(body)
+
+    async def _enqueue_and_wait(self, body: BaseRunRequest, admitted: bool = False) -> Any:
+        """Validate, enqueue and answer one chat request whose principal and surface are assigned.
+
+        :param body: The chat request.
+        :param admitted: True when the caller has already asked whether the agent is available to the
+            request's principal (``RequestHandler.run_chat`` asks before it saves any file), so the
+            registry is read once for a request.
+        :return: The reply (REST_SYNC) or the acknowledgement carrying the request id (REST_ASYNC).
+        :raises HTTPException: For a request this route refuses, a wait that timed out, or a failed run.
+        """
         try:
             if not body.session_id:
                 raise HTTPException(status_code=400, detail="session_id is required")
@@ -249,6 +323,8 @@ class RestHandler(AgentRESTRequestHandler):
                 ChatService.reject_unprocessable(body)
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+            if not admitted:
+                await self._reject_unavailable(body)
 
             # Unique request_id, distinct from session_id.
             request_id = str(uuid.uuid4())
@@ -338,6 +414,7 @@ class RestHandler(AgentRESTRequestHandler):
         if not self._is_queue_mode():
             return super().get_router()
 
+        self._validate_access()
         router = APIRouter()
         router.add_api_route(self.AGENTS_PATH, self.list_agents, methods=["GET"])
         router.add_api_route(self.CHAT_PATH, self.enqueue_and_wait, methods=["POST"])
@@ -357,9 +434,39 @@ class RequestHandler(RestHandler):
 
     requires_pipeline = True
 
+    # Attachment values that carry no bytes of their own: the adapter fetches them, so they cross any broker.
+    _LINK_PREFIXES = ("http://", "https://", "s3://")
+    _MULTIMODAL_OFF_ERROR = (
+        "This request carries file bytes, but multimodal support is disabled. On a queue transport files are saved to "
+        "the attachment store first: set multimodal.enabled: true with storage_type redis or dynamodb."
+    )
+
     def __init__(self):
         super().__init__(logger_name="ak.pipeline.request_handler")
         self._transport_type = QueueTransportFactory.resolve_type()
+        self._warn_if_store_is_unshared()
+
+    def _unshared_store_message(self) -> str:
+        return (
+            f"multimodal.storage_type '{self._config.multimodal.storage_type}' keeps files in the process that saved them, "
+            f"but on the '{self._transport_type}' transport the agent runs in another one. Use redis or dynamodb to send files."
+        )
+
+    def _warn_if_store_is_unshared(self) -> None:
+        """Warn at startup, rather than fail, when file uploads on this broker would be refused.
+
+        Text-only chats work with any store, and deployments serve them today, so a store the
+        runner cannot read refuses only file-bearing requests (``_reject_unqueueable_attachments``).
+        """
+        if self._transport_type == "in_memory" or not self._config.multimodal.enabled:
+            return
+        try:
+            if AttachmentStorageManager.store_is_shared():
+                return
+            message = self._unshared_store_message()
+        except (AKConfigError, ImportError) as e:  # ImportError: the store's driver extra is missing
+            message = str(e)
+        self._log.warning(f"File uploads will be refused: {message}")
 
     def _is_queue_mode(self) -> bool:
         return True
@@ -371,20 +478,20 @@ class RequestHandler(RestHandler):
     # -- routes ----------------------------------------------------------------------------
 
     def get_router(self) -> APIRouter:
+        self._validate_access()
         router = APIRouter()
         router.add_api_route(self.AGENTS_PATH, self.list_agents, methods=["GET"])
         router.add_api_route(self.CHAT_PATH, self.run_chat, methods=["POST"])
         router.add_api_route(self.CHAT_POLL_PATH, self.poll_response, methods=["GET"])
-        if self._transport_type == "in_memory":
-            # Multipart uploads fit in-process messages; broker transports keep the ECS behavior
-            # (no multipart route) because of broker message-size limits.
-            router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart_chat, methods=["POST"])
+        # Served on every transport: on a broker, run_chat saves the uploads and queues only their ids (#871).
+        router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart_chat, methods=["POST"])
         return router
 
     async def run_chat(self, body: ChatRunRequest, request: Request):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
-        # The surface assigns the principal; a client value is overwritten (see enqueue_and_wait).
+        # The surface assigns the principal and names itself; a client value is overwritten (see enqueue_and_wait).
         body.principal = getattr(request.state, "principal", None)
+        body.surface = "rest"
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
@@ -393,9 +500,98 @@ class RequestHandler(RestHandler):
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
         self._reject_unprocessable(body)
         self._reject_unroutable(body)
+        self._reject_unqueueable_attachments(body)
+        # The last refusal, and the first that may read a store: after it files are saved and the request is enqueued.
+        await self._reject_unavailable(body)
+        await self._offload_attachments(body)
         if self._config.execution.is_sse:
             return await self._run_chat_stream(body)
-        return await self.enqueue_and_wait(body, request)
+        return await self._enqueue_and_wait(body, admitted=True)
+
+    def _reject_unqueueable_attachments(self, body: BaseRunRequest) -> None:
+        """Refuse files that cannot cross a broker, before anything is saved, recorded or enqueued.
+
+        On a broker transport file bytes are saved to the attachment store at the edge and only
+        their ids ride the queue (spec #871), so a request whose bytes cannot be saved where the
+        runner reads them is refused here. Links and plain-text ``data:`` URIs carry no stored
+        bytes and pass. The ``in_memory``
+        transport keeps bytes in-process and is never checked. No I/O.
+
+        :param body: The chat request.
+        :raises HTTPException: 400 naming the problem, with the session id.
+        """
+        if self._transport_type == "in_memory":
+            return
+        attachments = [(f.name, f.file_data) for f in body.files or []] + [(i.name, i.image_data) for i in body.images or []]
+        payloads: list[tuple[str, str]] = []
+        for name, data in attachments:
+            scheme = data[:8].lower()
+            if not data or scheme.startswith(self._LINK_PREFIXES):
+                continue
+            if scheme.startswith("data:"):
+                header, _, data = data.partition(",")
+                if not header.lower().endswith(";base64"):
+                    continue  # plain-text data: URI: small text that travels inline like a link (offload records it as a url)
+            payloads.append((name, data))
+        if not payloads:
+            return
+        if not self._config.multimodal.enabled:
+            self._reject_attachment(body, self._MULTIMODAL_OFF_ERROR)
+        try:
+            shared = AttachmentStorageManager.store_is_shared()
+        except (AKConfigError, ImportError) as e:  # the refusal the startup warning promised
+            self._reject_attachment(body, str(e))
+        if not shared:
+            self._reject_attachment(body, self._unshared_store_message())
+        max_size = self._config.api.max_file_size
+        for name, payload in payloads:
+            # Decoded size without decoding: 3 bytes per 4 base64 characters, minus the padding.
+            size = len(payload) * 3 // 4 - payload[-2:].count("=")
+            if size > max_size:
+                self._reject_attachment(body, f"File {name} exceeds maximum size ({size / (1024 * 1024):.2f} MB)")
+
+    async def _offload_attachments(self, body: BaseRunRequest) -> None:
+        """Save file bytes to the attachment store and rewrite the body to carry only their ids.
+
+        Runs after ``_reject_unqueueable_attachments``, so on a broker every file left here is a link
+        or base64 a shared store can hold. ``MultimodalPreHook`` resolves the ids in the runner. The
+        rewrite is the one ``ThreadRequestHandler`` does, so a body it already rewrote has nothing
+        left to save. A deferred request's task keeps only the prompt, so its files are dropped
+        rather than saved or queued.
+
+        :param body: The chat request, mutated in place into its queue-ready form.
+        :raises HTTPException: 400 when building the requests or saving a file is refused
+            (a missing mime type, a file over the store's item limit).
+        """
+        if self._transport_type == "in_memory" or not self._config.multimodal.enabled:
+            return
+        if not (body.files or body.images):
+            return
+        if body.schedule is not None:
+            body.files = None
+            body.images = None
+            return
+        try:
+            requests = await RequestBuilder.from_base_request_async(body)
+            # Saving waits on the store, so it runs off the event loop as the enqueue does.
+            requests, _ = await asyncio.to_thread(
+                AttachmentStorageManager.offload,
+                body.session_id,
+                requests,
+                attachments_disabled_error=self._MULTIMODAL_OFF_ERROR,
+                session_cache_error=self._unshared_store_message(),
+                # Unlike a thread, nothing here needs old files kept; the headroom keeps this request's own.
+                max_attachments=self._config.multimodal.max_attachments + len(requests),
+            )
+        except ValueError as e:
+            self._reject_attachment(body, str(e))
+        body.requests = requests
+        body.files = None
+        body.images = None
+
+    @staticmethod
+    def _reject_attachment(body: BaseRunRequest, message: str) -> NoReturn:
+        raise HTTPException(status_code=400, detail={"error": message, "session_id": body.session_id})
 
     @staticmethod
     def _reject_unprocessable(body: BaseRunRequest) -> None:
@@ -427,12 +623,12 @@ class RequestHandler(RestHandler):
         """
         mode = self._effective_mode()
         if mode == ExecutionMode.REALTIME:
-            # Realtime replies are delivered to the stateful edge (e.g. the LiveKit gateway) that
+            # Realtime replies are delivered to the stateful edge (e.g. the LiveKit edge) that
             # sent the request; a REST caller has no edge, so its reply could never reach it.
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": "REALTIME mode delivers responses through the realtime gateway: this route is not available",
+                    "error": "REALTIME mode delivers responses through the realtime edge: this route is not available",
                     "session_id": body.session_id,
                 },
             )

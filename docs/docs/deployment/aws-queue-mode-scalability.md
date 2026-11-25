@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # AWS Queue Mode: Scalability Design
 
-This page is the architecture and design reference behind Agent Kernel's AWS **queue mode**: the
+This page is the architecture and design reference behind Open Agent Kernel's AWS **queue mode**: the
 SQS-backed pipeline that decouples request handling from agent execution so the two can scale
 independently. It explains the *why* and the *shared contract* across the two processing methods
 AWS ships today — **SQS + Lambda** (serverless) and **SQS + ECS** (containerized).
@@ -30,8 +30,8 @@ SQS + Lambda and SQS + ECS were both built around the same shape:
 Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler
 ```
 
-- On ECS, `ECSAgentRunner` / `ECSSQSConsumer` poll an input SQS queue and write results to an
-  output queue, while `ECSIOHandler` runs the REST/WebSocket API and `ECSOutputConsumer` as two
+- On ECS, the shared pipeline `AgentRunner` polls an input SQS queue and writes results to an
+  output queue, while `IOHandler` runs the REST/WebSocket API and the `ResponseHandler` as two
   peer threads via `ThreadRunner`.
 - On Lambda, `LambdaSQSConsumer` is push-triggered by an SQS Event Source Mapping and returns
   `{"batchItemFailures": ...}` for partial-batch retry.
@@ -85,8 +85,8 @@ graph TB
     AR -. "batchItemFailures reappear" .-> IQ
     RSH -. "batchItemFailures reappear" .-> OQ
 
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RS fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 Async (WebSocket) replaces the response-store hop with a direct push back to the connection:
@@ -103,7 +103,7 @@ graph TB
     AR -. "batchItemFailures reappear" .-> IQ
     RSH -. "batchItemFailures reappear" .-> OQ
 
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Request Flow
@@ -186,8 +186,8 @@ graph TB
     AR -. "not deleted → reappears" .-> IQ
     T2 -. "not deleted → reappears" .-> OQ
 
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RS fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 Async (WebSocket, `message_type` `complete` or `delta`) replaces the response-store hop with a direct push. WebSocket API Gateway
@@ -208,30 +208,30 @@ graph TB
     AR -. "not deleted → reappears" .-> IQ
     T2 -. "not deleted → reappears" .-> OQ
 
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Request Flow
 
 Same four modes as SQS + Lambda, with the roles of Request Handler / Response Handler collapsed
-into two threads of one **IO container** (`ECSIOHandler`, via `ThreadRunner`):
+into two threads of one **IO container** (`IOHandler`, via `ThreadRunner`):
 
 - **Thread 1** runs the REST or WebSocket API: enqueues requests and, for REST Sync/Async, reads
   the response store or returns a `request_id` immediately.
-- **Thread 2** (`ECSOutputConsumer`) long-polls the Output Queue and writes to the response store,
+- **Thread 2** (`ResponseHandler`) long-polls the Output Queue and writes to the response store,
   or pushes over WebSocket for Async mode.
 
-The **Agent Runner** is a separate long-running ECS service (`ECSAgentRunner`) that long-polls the
+The **Agent Runner** is a separate long-running ECS service (`AgentRunner`) that long-polls the
 Input Queue directly — there's no Event Source Mapping on ECS.
 
 ### Components
 
 | Component | Role | As implemented |
 |-----------|------|-----------------|
-| **IO Container — Thread 1** | REST/WebSocket API: enqueue + response-store read (or immediate 202 for async) | `ECSQueueRequestHandler` / `ECSWebSocketRequestHandler` |
-| **IO Container — Thread 2** | Polls the Output Queue, writes to the response store or pushes over WebSocket | `ECSOutputConsumer`, extends `ECSSQSConsumer` |
+| **IO Container — Thread 1** | REST/WebSocket API: enqueue + response-store read (or immediate 202 for async) | `RequestHandler` / `ECSWebSocketRequestHandler` |
+| **IO Container — Thread 2** | Polls the Output Queue, writes to the response store or pushes over WebSocket | `ResponseHandler` (shared pipeline class) |
 | **Input / Output SQS Queues** | Same FIFO/`MessageGroupId`/dedup/visibility-timeout properties as Lambda | `modules/queues/` (same Terraform module as Lambda) |
-| **Agent Runner** | Long-polls the Input Queue, runs the agent, writes to the Output Queue | `ECSAgentRunner`, extends `ECSSQSConsumer` |
+| **Agent Runner** | Long-polls the Input Queue, runs the agent, writes to the Output Queue | `AgentRunner` (shared pipeline class) |
 | **Response Store** | Holds replies by session/request ID with a TTL | DynamoDB, Redis, or Valkey |
 
 **As implemented**, both the IO container's Thread 2 and the Agent Runner are themselves

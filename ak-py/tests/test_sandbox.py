@@ -110,9 +110,6 @@ class _SandboxAgent(Agent):
     def runner(self):
         return self._runner
 
-    def get_a2a_card(self):
-        return None
-
     def get_description(self):
         return "sandbox test agent"
 
@@ -1236,6 +1233,25 @@ def test_install_packages_tool_absent_without_a_permitting_profile(monkeypatch):
     assert "package installs" not in guidance  # no tool, so no per-profile install permissions either
     assert not any(line.rstrip().endswith(";") for line in guidance.splitlines())  # no dangling separator
     assert "not permitted by the profile, report it to the user" in guidance  # always present
+
+
+def test_every_sandbox_tool_declares_the_write_tier(monkeypatch):
+    """Running code is not a read, and the tools that only look inside a sandbox are of no use without it: a
+    principal held to `read` on an agent is offered none of them (#603)."""
+    from agentkernel.core.model import AccessLevel
+
+    profiles = {
+        "default": _SandboxProfileConfig(
+            type=FAKE_DOTTED,
+            policy=_SandboxPolicyConfig(languages=["python"], package_install=_SandboxPackageInstallConfig(ecosystems=["python"])),
+        ),
+    }
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
+
+    tools = get_sandbox_tools()
+
+    assert [tool.name for tool in tools] == [*SANDBOX_TOOL_NAMES, "install_packages"]
+    assert {tool.tier for tool in tools} == {AccessLevel.WRITE}
 
 
 def test_install_packages_tool_registered_with_permission_guidance(monkeypatch):

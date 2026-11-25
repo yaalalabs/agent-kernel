@@ -22,7 +22,7 @@ What performance level do you expect?
 How can this performance issue be reproduced?
 
 ## Environment
-- Agent Kernel Version:
+- Open Agent Kernel Version:
 - Python Version:
 - Hardware specifications:
 - Dataset size (if applicable):

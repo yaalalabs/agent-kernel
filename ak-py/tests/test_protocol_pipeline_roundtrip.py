@@ -19,7 +19,6 @@ from agentkernel.api.a2a.a2a import A2A
 from agentkernel.api.http import RESTAPI
 from agentkernel.api.mcp.akmcp import MCP
 from agentkernel.core.base import Agent, Runner
-from agentkernel.core.builder import A2ACardBuilder
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
@@ -65,8 +64,9 @@ class CountingAgent(Agent):
     def get_description(self) -> str:
         return "Round-trip test agent"
 
-    def get_a2a_card(self):
-        return A2ACardBuilder.build(name=AGENT_NAME, description="Round-trip test agent", skills=[])
+    def _build_descriptor(self):
+        # The catalog text the A2A card carries; the card is built from the descriptor.
+        return super()._build_descriptor().model_copy(update={"description": "Round-trip test agent"})
 
     def override_system_prompt(self, prompt):
         pass
@@ -121,15 +121,14 @@ def _environment(monkeypatch):
     InMemoryTransport.reset()
     InMemoryResponseStore.reset()
     CountingRunner.runs = []
-    saved_a2a = (dict(A2A._cards), dict(A2A._executors), A2A._built, A2A._client)
     saved_mcp = (MCP._fastmcp, MCP._built, dict(MCP._executors), MCP._client)
-    A2A._cards, A2A._executors, A2A._built, A2A._client = {}, {}, False, None
+    A2A.reset()
     MCP._fastmcp, MCP._built, MCP._executors, MCP._client = None, False, {}, None
     agent = CountingAgent()
     Runtime.current().register(agent)
     yield
     Runtime.current().deregister(agent)
-    A2A._cards, A2A._executors, A2A._built, A2A._client = saved_a2a
+    A2A.reset()
     MCP._fastmcp, MCP._built, MCP._executors, MCP._client = saved_mcp
     InMemoryResponseStore.reset()
     InMemoryTransport.reset()

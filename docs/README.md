@@ -1,6 +1,6 @@
-# Agent Kernel Documentation
+# Open Agent Kernel Documentation
 
-This directory contains the comprehensive documentation for Agent Kernel, built with [Docusaurus 2](https://docusaurus.io/).
+This directory contains the comprehensive documentation for Open Agent Kernel (OAK), built with [Docusaurus 2](https://docusaurus.io/).
 
 ## 🚀 Quick Start
 
@@ -45,6 +45,8 @@ docs/
 │   └── examples/          # Examples
 ├── src/                   # React components and custom pages
 │   └── css/              # Custom CSS
+├── plugins/              # Build-time plugins
+│   └── llms-txt/         # Writes /llms.txt and /llms-full.txt for AI assistants
 ├── static/               # Static assets (images, etc.)
 ├── docusaurus.config.js  # Docusaurus configuration
 ├── sidebars.js          # Sidebar navigation
@@ -57,6 +59,7 @@ docs/
 - **Code Syntax Highlighting**: Python, Bash, JSON, YAML support
 - **Dark Mode**: Toggle between light and dark themes
 - **Search**: Full-text search across documentation
+- **llms.txt**: An index of the released docs (`/llms.txt`) and their full text (`/llms-full.txt`) for AI assistants, written on every build
 - **Mobile Responsive**: Works great on all devices
 - **Framework Tabs**: Compare different framework implementations
 - **Interactive Examples**: Copy-paste ready code examples
@@ -193,7 +196,7 @@ To contribute to the documentation:
 
 ## 📄 License
 
-The documentation is released under the same Apache License 2.0 as Agent Kernel.
+The documentation is released under the same Apache License 2.0 as OAK.
 
 ### Third-Party Dependency Note
 
@@ -203,8 +206,5 @@ The docs UI uses `gsap` for client-side animations. `gsap` is distributed under 
 
 - [Docusaurus Documentation](https://docusaurus.io/docs)
 - [Mermaid Documentation](https://mermaid.js.org/)
-- [Agent Kernel GitHub](https://github.com/yaalalabs/agent-kernel)
+- [OAK GitHub](https://github.com/yaalalabs/agent-kernel)
 
----
-
-**Built with ❤️ by [Yaala Labs](https://www.yaalalabs.com/)**

@@ -3,7 +3,7 @@ name: ak-dev-code-quality
 description: >
   Code quality standards, formatting, Python style rules (classes over script-style
   functions, configuration-field rules), commit conventions, and PR workflow for
-  Agent Kernel development. Use this skill when making contributions, formatting
+  Open Agent Kernel development. Use this skill when making contributions, formatting
   code, writing commit messages, or preparing pull requests.
 license: Apache-2.0
 metadata:
@@ -15,7 +15,7 @@ metadata:
 
 ## Code Formatting
 
-Agent Kernel uses `black` for formatting, `isort` for import sorting, and `ruff` for the typing rules only
+Open Agent Kernel (OAK) uses `black` for formatting, `isort` for import sorting, and `ruff` for the typing rules only
 (pyupgrade `UP006`/`UP007`/`UP035`/`UP045`; see Type annotations below).
 
 ### Auto-format
@@ -167,6 +167,7 @@ Branch from and target `develop`, not `main` — CI (`.github/workflows/code-qua
 - **One feature/fix per PR** — keep PRs focused
 - **Include tests** — new features must have tests
 - **Update docs** — if the change affects user-facing behavior
+- **Add a changelog fragment**: a change users of OAK would notice adds `changelog.d/<issue>.<type>.md` (types `breaking`, `added`, `changed`, `deprecated`, `removed`, `fixed`, `security`), written for users in one to three sentences; never edit `CHANGELOG.md`. `.github/workflows/changelog-check.yaml` fails `feat`/`fix`/`perf`/`refactor`/`build`/`chore` PRs without one and `!` titles without a `breaking` one; a maintainer's `no-changelog` label skips it. Use `ak-dev-sync-changelog-from-branch` to write it; the rules are in CONTRIBUTING.md, "Changelog entries"
 - **Add examples** — for new features, add or update examples
 - **Conventional title**: `type: description` or `type(scope): description` using one of the commit types above; the PR Title Check workflow blocks anything else
 - **Fill in the PR template** — description, type of change, testing done
@@ -194,6 +195,7 @@ This updates:
 - `ak-py/pyproject.toml` version field
 - Terraform module versions
 - Example dependency versions
+- `CHANGELOG.md`: before anything is built, `scripts/changelog_fragments.py` validates the pending `changelog.d/` fragments and, while a `breaking` fragment is pending, refuses a version that does not raise the minor version over the last release in `CHANGELOG.md`; a stable production release then compiles the fragments into a new version section with towncrier (`towncrier.toml`), deletes them in the version bump commit, and uses the section as the GitHub release body. Pre-releases only draft it and keep the fragments.
 
 ### Version Locations
 
@@ -293,10 +295,10 @@ Feature logic is written as classes, not as procedural module-level functions. T
 
 ### Logger Hierarchy
 
-- **AK Logger** (`"ak"`): Parent logger for all Agent Kernel components
+- **OAK Logger** (`"ak"`): Parent logger for all OAK components
   - Child loggers like `"ak.api"`, `"ak.runtime"`, etc. inherit from this
-  - Propagation is disabled at the AK level to prevent logs from bubbling to the root
-  - Use `logging.getLogger("ak.<module>")` for Agent Kernel components
+  - Propagation is disabled at the OAK level to prevent logs from bubbling to the root
+  - Use `logging.getLogger("ak.<module>")` for OAK components
 
 ### Log Levels
 

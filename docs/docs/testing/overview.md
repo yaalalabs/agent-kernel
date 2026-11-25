@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Testing Overview
 
-Agent Kernel provides a comprehensive testing framework for testing CLI-based agents with both interactive and automated test capabilities.
+Open Agent Kernel (OAK) provides a comprehensive testing framework for testing CLI-based agents with both interactive and automated test capabilities.
 
 ## Testing Approaches
 
@@ -79,7 +79,7 @@ Best for:
 
 ### Test Comparison Modes
 
-Agent Kernel supports three comparison modes for validating agent responses:
+OAK supports three comparison modes for validating agent responses:
 
 #### Score Mode
 Deterministic, offline string-match scoring with configurable thresholds. The default `deepeval` evaluator uses `Scorer.quasi_exact_match_score`; the built-in `opik` evaluator uses its graded `LevenshteinRatio` metric instead (`jev` has no score mode):
@@ -153,7 +153,7 @@ Set the default test mode via a `test-config.yaml` file in the directory you run
 mode: fallback  # Options: score, llm, fallback
 evaluator: deepeval  # Built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -168,7 +168,7 @@ Or via environment variables:
 
 ```bash
 export AK_TEST__MODE=llm
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```

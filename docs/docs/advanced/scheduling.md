@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Scheduled Tasks
 
-Agent Kernel can **defer and repeat chat execution**: a chat request that carries a `schedule` block is
+Open Agent Kernel (OAK) can **defer and repeat chat execution**: a chat request that carries a `schedule` block is
 not run — it is registered as a scheduled task and acknowledged with **HTTP 202**. When an occurrence is
 due, the configured provider delivers the stored prompt into the input queue as a plain chat request, and
 the normal execution path runs it.
@@ -81,6 +81,12 @@ if __name__ == "__main__":
 An app that mounts nothing still defers and still gets the agent tools — it just serves no
 `/api/v1/schedules` routes.
 
+On AWS Lambda the request handler is not FastAPI, so `ScheduleRESTRequestHandler` cannot be mounted.
+Serve the same routes with `Lambda.register` handlers that call `ScheduleManager` directly; the task id
+arrives as the `{task_id}` path parameter (see the
+[AWS serverless guide](../deployment/aws-serverless.md#scheduling-eventbridge-scheduler) and
+`examples/aws-serverless/schedule-openai`).
+
 Cron parsing needs the `cron` extra:
 
 ```bash
@@ -152,6 +158,8 @@ HTTP/1.1 400 Bad Request
 {"detail":{"error":"schedule 'at' must be in the future: '2020-01-01T09:00:00' has already passed in UTC","session_id":"ses-1"}}
 ```
 
+So is a schedule for an agent that does not exist: a request naming one is a `404` (`Agent '<name>' not found`), as it is on a chat request that runs straight away. A request that comes in by the REST API gets the same `404` for an agent whose `surfaces` leaves out `rest`: what a caller cannot run now, it cannot schedule. The task keeps the surface it was created by (`surface` on the record: `rest` for a chat request, `null` for a task an agent created with the schedule tool), and each occurrence is served the agents that request would have been. So a task that names no agent runs the first agent on that surface, and an occurrence whose agent has since been removed, or taken off the surface, is [skipped](#skipped-occurrences). A task with no surface is not governed by `surfaces`.
+
 ## Managing Schedules
 
 ```bash
@@ -173,6 +181,7 @@ A task record reads back as:
   "prompt": "Send the weekly report",
   "agent": null,
   "session_id": "ses-2",
+  "surface": "rest",
   "spec": {"at": null, "cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"},
   "status": "active",
   "provider_ref": "ae9a043b-27f7-480f-8655-5903fbfd200a",
@@ -180,7 +189,8 @@ A task record reads back as:
   "updated_at": "2026-08-18T07:04:04.178100+00:00",
   "last_triggered_at": null,
   "trigger_count": 0,
-  "last_request_id": null
+  "last_request_id": null,
+  "last_error": null
 }
 ```
 
@@ -188,7 +198,32 @@ A task record reads back as:
 the owner as the identity provider established it (without the agent actor or the credential handle of the creating run), the
 identity every occurrence runs as; `user_id` is its subject.
 `trigger_count`, `last_triggered_at` and `last_request_id` track occurrences — `last_request_id`
-correlates a task with the run it produced.
+correlates a task with the run it produced. `last_error` says why the most recent occurrence was not
+run, and is `null` when it ran.
+
+### Skipped occurrences
+
+An occurrence runs unattended, as the task's owner, long after the task was created. Before it runs,
+OAK asks again what it asked when the task was created: is the task's agent still there, in
+the process that runs the occurrence, still served on the task's surface, and, with an
+[`authorization`](./identity-and-access.md#authorization) block, does the owner still hold a level on
+it. An occurrence that fails the check is not run:
+
+- It is still counted: `trigger_count`, `last_triggered_at` and `last_request_id` advance, and a
+  one-time task is completed by it.
+- `last_error` holds the reason, for example `Agent 'reports' not found` (also the reason when the
+  owner may no longer see the agent) or `Principal 'alice' holds no level on agent 'reports'`. The
+  next occurrence that runs sets it back to `null`.
+- One warning naming the task is logged, and the occurrence's reply has status 403 and the text
+  `scheduled task skipped: the owner no longer holds access to the agent`.
+
+A recurring task stays active, so the next occurrence is checked afresh. A task that names no agent
+while the process has none to default to is not skipped: its occurrence fails with
+`No agent available`, as any such request does, and `last_error` records that too.
+
+A custom `ScheduleStore` receives the reason as an `error` keyword on `record_trigger`. One written
+before the keyword existed keeps recording every occurrence that runs; add the keyword (and pass it
+to `ScheduledTask.apply_trigger`) to record the skipped ones.
 
 ### Amending
 
@@ -226,7 +261,7 @@ The record survives as the audit trail, so the response is the task with `"statu
 
 ## Agent Tools
 
-When the block is present, Agent Kernel injects five system tools and their guidance into the agent's
+When the block is present, OAK injects five system tools and their guidance into the agent's
 system prompt, so an agent can defer work when a user asks it to — agent authors never describe these
 tools themselves:
 
@@ -442,7 +477,9 @@ task at create/amend time and the provider substitutes the occurrence placeholde
   provisioning the schedule group, execution role and schedule table.
 - [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) —
   the AWS Lambda equivalent: request-handler, agent-runner and response-handler Lambdas with the
-  `eventbridge` provider and a DynamoDB store.
+  `eventbridge` provider and a DynamoDB store. The request handler serves the management routes on
+  the same paths (`GET /schedules`, `GET` / `PUT` / `DELETE /schedules/{task_id}`) through
+  `Lambda.register`.
 
 See the [AWS containerized](../deployment/aws-containerized.md#scheduling-eventbridge-scheduler) and
 [AWS serverless](../deployment/aws-serverless.md#scheduling-eventbridge-scheduler) deployment guides for

@@ -1,21 +1,21 @@
-# Agent Kernel Realtime Voice over AWS SQS (LiveKit)
+# Open Agent Kernel Realtime Voice over AWS SQS (LiveKit)
 
-This package demonstrates Agent Kernel's scalable, containerized architecture running in **`REALTIME` execution mode** for voice over WebRTC. It uses LiveKit as the frontend voice gateway and AWS SQS as the backend message broker.
+This package demonstrates Open Agent Kernel's scalable, containerized architecture running in **`REALTIME` execution mode** for voice over WebRTC. It uses LiveKit as the frontend voice gateway and AWS SQS as the backend message broker.
 
 ```
-LiveKit WebRTC → ECSIOHandler → Input SQS Queue → ECSAgentRunner → Output SQS Queue → ECSIOHandler → LiveKit WebRTC
+LiveKit WebRTC → IOHandler → Input SQS Queue → AgentRunner → Output SQS Queue → IOHandler → LiveKit WebRTC
 ```
 
 Because this is designed for production AWS deployments (AWS ECS), the pipeline is strictly separated into two physical files (`app_livekit_io.py` and `app_agent_runner.py`). Each file is meant to be built into its own Docker image and run as a completely independent Cloud Server (ECS Task) with its own security groups and scaling rules.
 
 ## Architecture Overview
 
-- **REST/IO Service ECS Task** (`app_livekit_io.py`, started via `ECSIOHandler.run()`):
+- **REST/IO Service ECS Task** (`app_livekit_io.py`, started via `IOHandler.run()`):
   - Acts as the "Front Door".
   - Connects to LiveKit, catches user audio via WebRTC, and throws the audio chunks onto the Input SQS Queue. 
   - Never runs the AI Agent itself.
   - Simultaneously polls the Output SQS Queue to catch the AI's response audio and streams it back to the LiveKit user.
-- **Agent Runner ECS Task** (`app_agent_runner.py`, started via `ECSAgentRunner.run()`):
+- **Agent Runner ECS Task** (`app_agent_runner.py`, started via `AgentRunner.run()`):
   - Acts as the "Brain".
   - Heavily locked down in a private AWS subnet.
   - Polls the Input SQS Queue for user audio chunks.
@@ -38,3 +38,4 @@ Because this is designed for production AWS deployments (AWS ECS), the pipeline 
     ```
    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so both services read
    the secrets from SSM at startup; no secret passes through Terraform.
+2. The development token endpoint (`GET /livekit/token`) stays disabled until `LIVEKIT_TOKEN_SECRET` is set in the environment or the configured secret provider, requires that secret in the `X-LiveKit-Token-Secret` header, and only mints tokens for rooms in `LIVEKIT_ALLOWED_ROOMS` (comma-separated, default `call_01`). Protect or remove it before exposing the service publicly.

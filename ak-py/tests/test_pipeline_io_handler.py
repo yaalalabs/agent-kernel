@@ -184,46 +184,89 @@ class TestProtocolResponseStore:
 
 
 class TestNoAgentsWarning:
-    """Cards and tools are built from this process's registry: an IO process without the agents
-    serves empty catalogs, so it says so (decision 4: a warning, not an error)."""
+    """Cards and tools are built from the registry's descriptors: an IO process whose registry knows no
+    agent serves empty catalogs, so it says so (decision 4: a warning, not an error)."""
 
     @pytest.fixture
     def registry(self, monkeypatch):
+        """Sets what the current runtime's registry knows, and separately the agents this process hosts."""
+        from agentkernel.core.model import AgentDescriptor
         from agentkernel.core.runtime import Runtime
 
-        def _set(agents):
-            monkeypatch.setattr(Runtime.current(), "agents", lambda: agents)
+        def _set(known: list[str], hosted: dict | None = None):
+            descriptors = [AgentDescriptor(id=id, name=id) for id in known]
+            monkeypatch.setattr(Runtime.current().registry, "descriptors", lambda: descriptors)
+            monkeypatch.setattr(Runtime.current().registry, "agents", lambda: hosted or {})
 
         return _set
 
-    def test_an_empty_registry_warns_with_the_fix(self, registry, caplog):
-        registry({})
+    def test_a_registry_that_knows_no_agent_warns_with_both_fixes(self, registry, caplog):
+        registry([])
 
         with caplog.at_level("WARNING"):
             IOHandler._warn_if_no_agents(_cfg(a2a=True, mcp=True, expose_agents=True))
 
-        assert "A2A and MCP enabled but no agents are registered" in caplog.text
+        assert "A2A and MCP enabled but the agent registry knows no agents" in caplog.text
         assert "Import the same agent modules here as in the agent runner" in caplog.text
+        assert "registry.type" in caplog.text  # or share the registry the agent runner registers into
+
+    def test_agents_known_through_a_shared_registry_are_enough_without_hosting_any(self, registry, caplog):
+        registry(["triage"], hosted={})
+
+        with caplog.at_level("WARNING"):
+            IOHandler._warn_if_no_agents(_cfg(a2a=True, mcp=True, expose_agents=True))
+
+        assert [record.getMessage() for record in caplog.records] == []
 
     @pytest.mark.parametrize(
-        "agents, config",
+        "known, config",
         [
-            ({"triage": object()}, _cfg(a2a=True)),
-            ({}, _cfg(mcp=True)),
-            ({}, _cfg()),
+            (["triage"], _cfg(a2a=True)),
+            ([], _cfg(mcp=True)),
+            ([], _cfg()),
         ],
-        ids=["agents-registered", "mcp-without-agent-tools", "nothing-enabled"],
+        ids=["agents-known", "mcp-without-agent-tools", "nothing-enabled"],
     )
-    def test_nothing_is_logged_otherwise(self, registry, caplog, agents, config):
-        registry(agents)
+    def test_nothing_is_logged_otherwise(self, registry, caplog, known, config):
+        registry(known)
 
         with caplog.at_level("WARNING"):
             IOHandler._warn_if_no_agents(config)
 
-        assert "no agents are registered" not in caplog.text
+        assert [record.getMessage() for record in caplog.records] == []
+
+    def test_a_registry_that_cannot_be_read_does_not_stop_the_check(self, monkeypatch, caplog):
+        """This is a diagnostic. With the store down, mounting the surface raises the store's own error next; the
+        check must not be the thing that ends the process, with a traceback that reads as if a warning failed."""
+        from agentkernel.core.runtime import Runtime
+
+        def _unreachable():
+            raise ConnectionError("the registry store is unreachable")
+
+        monkeypatch.setattr(Runtime.current().registry, "is_empty", _unreachable)
+
+        with caplog.at_level("WARNING"):
+            IOHandler._warn_if_no_agents(_cfg(a2a=True, mcp=True, expose_agents=True))
+
+        [message] = [record.getMessage() for record in caplog.records]
+        assert "could not read the agent registry" in message and "the registry store is unreachable" in message
+
+    def test_the_check_asks_whether_any_agent_is_known_without_listing_them(self, monkeypatch, caplog):
+        from agentkernel.core.runtime import Runtime
+
+        def _listed():
+            raise AssertionError("every descriptor was read to learn whether one exists")
+
+        monkeypatch.setattr(Runtime.current().registry, "descriptors", _listed)
+        monkeypatch.setattr(Runtime.current().registry, "is_empty", lambda: False)
+
+        with caplog.at_level("WARNING"):
+            IOHandler._warn_if_no_agents(_cfg(a2a=True, mcp=True, expose_agents=True))
+
+        assert [record.getMessage() for record in caplog.records] == []
 
     def test_run_warns_and_carries_on(self, monkeypatch, registry, caplog):
-        registry({})
+        registry([])
         started = {}
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
         monkeypatch.setenv("AK_A2A__ENABLED", "true")
@@ -236,7 +279,7 @@ class TestNoAgentsWarning:
         with caplog.at_level("WARNING"):
             IOHandler.run()
 
-        assert "no agents are registered" in caplog.text
+        assert "the agent registry knows no agents" in caplog.text
         assert "agent-runner" in [task.thread_name for task in started["tasks"]]
 
 
@@ -490,3 +533,47 @@ class TestNestedDrainCoordination:
 
         assert not exit_called.is_set(), "a nested runner must return, not end the process"
         assert list(results.values()) == ["done"]
+
+
+class TestExternalWebSocketHandler:
+    """A caller-supplied ws_handler replaces pod push (#870: ECS delivers through API Gateway)."""
+
+    @staticmethod
+    def _capture_tasks(monkeypatch):
+        """Async mode on SQS with neither pod-push prerequisite: no push token, no shared connection store."""
+        captured = {}
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_EXECUTION__MODE", "async")
+        monkeypatch.setenv("AK_EXECUTION__QUEUES__TYPE", "sqs")
+        monkeypatch.setenv("AK_EXECUTION__QUEUES__INPUT__URL", "https://sqs.local/input")
+        monkeypatch.setenv("AK_EXECUTION__QUEUES__OUTPUT__URL", "https://sqs.local/output")
+        AKConfig._reset()
+
+        monkeypatch.setattr("agentkernel.api.http.RESTAPI.build_app", classmethod(lambda cls, handlers=None: MagicMock()))
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.uvicorn.Server", MagicMock())
+        monkeypatch.setattr(IOHandler, "_install_signal_handlers", classmethod(lambda cls, server: None))
+        monkeypatch.setattr(ThreadRunner, "run", staticmethod(lambda tasks, max_workers=None, exit_on_shutdown=True: captured.update(tasks=tasks)))
+        return captured
+
+    def test_the_response_handler_delivers_through_the_given_handler(self, monkeypatch):
+        captured = self._capture_tasks(monkeypatch)
+        response_handler_class = MagicMock()
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.ResponseHandler", response_handler_class)
+        ws_handler = MagicMock()
+
+        IOHandler.run(ws_handler=ws_handler)
+
+        [task] = [task for task in captured["tasks"] if task.thread_name == "response-handler"]
+        task.execution_function()
+        response_handler_class.assert_called_once_with(ws_handler=ws_handler)
+
+    def test_without_it_the_pod_push_prerequisites_still_apply(self, monkeypatch):
+        self._capture_tasks(monkeypatch)
+        with pytest.raises(AKConfigError, match="push_auth_token"):
+            IOHandler.run()
+
+    def test_topology_check_skips_the_push_token_only_when_told(self):
+        config = _cfg(mode=ExecutionMode.ASYNC)
+        IOHandler._validate_topology("sqs", config, pod_push=False)
+        with pytest.raises(AKConfigError, match="push_auth_token"):
+            IOHandler._validate_topology("sqs", config)

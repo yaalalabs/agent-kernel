@@ -1,8 +1,8 @@
 # Claude Agent SDK REST API example
 
-This example serves Claude Agent SDK agents through Agent Kernel's REST API. The `triage` agent
+This example serves Claude Agent SDK agents through Open Agent Kernel's REST API. The `triage` agent
 delegates math, general and weather questions to Claude subagents, each declared once as a native
-`AgentDefinition` (only `triage` is registered with Agent Kernel). The weather subagent calls a local
+`AgentDefinition` (only `triage` is registered with OAK). The weather subagent calls a local
 Python function bound to `triage` through `ClaudeToolBuilder`.
 
 ## Setup
@@ -28,12 +28,12 @@ curl -s http://localhost:8000/api/v1/chat \
 ```
 
 Use the same `session_id` for another turn in the conversation. The default session store is
-in-memory, so it lasts only while this API process runs. Configure a shared Agent Kernel session
+in-memory, so it lasts only while this API process runs. Configure a shared OAK session
 store to continue conversations across processes or replicas.
 
 The example allows only its declared tools: `tools=[]` disables Claude Code's built-in file and
 shell tools, and `setting_sources=[]` avoids loading local settings. `permission_mode="dontAsk"`
-denies unapproved calls; Agent Kernel approves the bound weather tool and the subagent `Agent`
+denies unapproved calls; OAK approves the bound weather tool and the subagent `Agent`
 tool. `strict_mcp_config=True` and `verbatim_prompts=True` keep local MCP configuration and
 `@path` expansion out of API requests, and `max_turns=8` bounds a runaway run. The `options()`
 helper in `app.py` applies these to every agent.

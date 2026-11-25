@@ -1,0 +1,116 @@
+/* Home hero: layout only. Type, spacing and buttons come from the design system. */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--ak-bg);
+}
+
+/* One column of copy. The mark sits to the right, behind it in the stacking order, so the
+   headline can run to three lines at display size without being squeezed by a second column. */
+.grid {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: min(46rem, calc(100vh - var(--ifm-navbar-height) - 3.5rem));
+  padding-block: var(--ak-space-64) var(--ak-space-96);
+}
+
+.copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ak-space-32);
+  max-width: 52rem;
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ak-space-24);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ak-space-16);
+}
+
+.install {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ak-space-16);
+  height: 3rem;
+  padding: 0 var(--ak-space-8) 0 var(--ak-space-16);
+  border: 1px solid var(--ak-border);
+  border-radius: var(--ak-radius-control);
+  background-color: var(--ak-bg-alt);
+  overflow: hidden;
+}
+
+.install .command {
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: var(--ak-type-small);
+  color: var(--ak-text);
+}
+
+.prompt {
+  margin-right: 0.6em;
+  color: var(--ak-primary-text);
+  user-select: none;
+}
+
+.copyButton {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: var(--ak-radius-control);
+  background: transparent;
+  font-size: var(--ak-type-body);
+  color: var(--ak-text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.copyButton:hover {
+  color: var(--ak-fg);
+  background-color: rgba(var(--ak-fg-rgb), 0.08);
+}
+
+.copyButton:focus-visible {
+  outline: 2px solid var(--ak-primary);
+  outline-offset: 2px;
+}
+
+.note {
+  margin-top: calc(-1 * var(--ak-space-8));
+}
+
+@media (max-width: 1100px) {
+  .grid {
+    min-height: 0;
+    padding-block: var(--ak-space-64);
+  }
+
+}
+
+/* On a phone the mark stands above the copy (see components/ParticleLogo): the copy starts
+   below it. --hero-mark is the size of the mark's box. */
+@media (max-width: 600px) {
+  .hero {
+    --hero-mark: 9rem;
+  }
+
+  .grid {
+    padding-top: calc(var(--ak-space-24) + var(--hero-mark) + var(--ak-space-24));
+    padding-bottom: var(--ak-space-64);
+  }
+}

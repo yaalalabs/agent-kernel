@@ -1,12 +1,12 @@
-# Agent Kernel running OpenAI Agents SDK based agents in AWS ECS with AWS DynamoDB as agent memory
+# Open Agent Kernel running OpenAI Agents SDK based agents in AWS ECS with AWS DynamoDB as agent memory
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a containerized configuration on AWS ECS using AWS DynamoDB as agent memory.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a containerized configuration on AWS ECS using AWS DynamoDB as agent memory.
 
 ## Deployed Resources
 
 This demo deploys the following AWS resources:
 
-- Python application running the Agent Kernel implementation
+- Python application running the OAK implementation
 - ECS Fargate service running the containerized application
 - API Gateway endpoint for the ECS service
 - DynamoDB table for agent memory

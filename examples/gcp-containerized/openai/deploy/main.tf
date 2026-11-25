@@ -5,7 +5,7 @@
 # /api/v1/app_info - Custom endpoint created by a custom handler
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.10.1"
+  version = "0.10.2"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration

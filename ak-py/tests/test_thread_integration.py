@@ -91,9 +91,6 @@ class DummyAgent(Agent):
     def get_description(self) -> str:
         return "Test agent"
 
-    def get_a2a_card(self):
-        return None
-
     def override_system_prompt(self, prompt):
         pass
 
@@ -261,9 +258,47 @@ class TestAgentThreadRequestHandler:
         with pytest.raises(HTTPException) as exc:
             await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent="no-such-agent"))
 
+        assert exc.value.status_code == 404
+        assert exc.value.detail == {"error": "Agent 'no-such-agent' not found", "session_id": "s1"}
+        assert thread_enabled.get_thread("s1") is None
+        assert handler.chat_service.calls == []
+
+    @pytest.mark.asyncio
+    async def test_a_request_naming_no_agent_while_none_is_hosted_stays_a_400(self, thread_enabled):
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService()
+
+        with Runtime(InMemorySessionStore()):
+            with pytest.raises(HTTPException) as exc:
+                await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1))
+
         assert exc.value.status_code == 400
         assert exc.value.detail["error"] == "No agent available"
         assert thread_enabled.get_thread("s1") is None
+
+    @pytest.mark.asyncio
+    async def test_an_agent_another_process_hosts_is_refused_before_any_thread_write(self, thread_enabled, descriptor_only_registry):
+        """This handler runs the agent itself: one a shared registry only knows could never be selected here, so
+        its user message must not be recorded first (#603)."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.runtime import Runtime
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService()
+        registry = descriptor_only_registry([AgentDescriptor(id="billing", name="billing")])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as exc:
+                await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent="billing"))
+
+        # The answer an unknown agent gets: this process cannot serve the name, and says no more about it.
+        assert exc.value.status_code == 404
+        assert exc.value.detail["error"] == "Agent 'billing' not found"
+        assert thread_enabled.get_thread("s1") is None
+        assert handler.chat_service.calls == []
 
     @pytest.mark.asyncio
     async def test_stream_accumulates_deltas_into_assistant_message(self, thread_enabled, registered_agent):
@@ -313,6 +348,7 @@ class TestAgentThreadRequestHandler:
             "interruptions": [
                 {"id": "i1", "kind": "input_required", "tool_name": None, "arguments": None, "message": None, "payload": {"question": "which card?"}}
             ],
+            "answer_together": False,
         }
 
     @pytest.mark.asyncio
@@ -410,6 +446,128 @@ def _request(principal: Principal | None = U1) -> Request:
 
 
 class TestEndToEnd:
+    def test_an_unknown_agent_is_404_on_the_chat_route_with_no_thread_written(self, thread_enabled):
+        client = _client(AgentThreadRequestHandler())
+
+        resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-ghost", "agent": "ghost"}, headers=AUTH)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == {"error": "Agent 'ghost' not found", "session_id": "s-ghost"}
+        assert client.get("/api/v1/threads/s-ghost", headers=AUTH).status_code == 404
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_an_unknown_agent_is_404_before_the_stream_opens(self, thread_enabled, monkeypatch, route):
+        from agentkernel.core.config import _ExecutionConfig
+        from agentkernel.core.model import ExecutionMode
+
+        monkeypatch.setattr(AKConfig.get(), "execution", _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta"))
+        client = _client(AgentThreadRequestHandler())
+        fields = {"prompt": "hello", "session_id": "s-ghost", "agent": "ghost"}
+
+        if route == "json":
+            resp = client.post("/api/v1/chat", json=fields, headers=AUTH)
+        else:
+            resp = client.post("/api/v1/chat-multipart", data=fields, headers=AUTH)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Agent 'ghost' not found"
+        assert client.get("/api/v1/threads/s-ghost", headers=AUTH).status_code == 404
+
+    def test_an_agent_kept_off_rest_is_404_with_no_thread_written(self, thread_enabled, kept_off_rest):
+        """`surfaces` governs the thread chat route too (#603, design refinement 13): the unknown agent's answer,
+        refused before the user message is recorded."""
+        with kept_off_rest:
+            client = _client(AgentThreadRequestHandler())
+            resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-off", "agent": "internal"}, headers=AUTH)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == {"error": "Agent 'internal' not found", "session_id": "s-off"}
+        assert client.get("/api/v1/threads/s-off", headers=AUTH).status_code == 404
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_an_agent_kept_off_rest_is_404_before_the_stream_opens(self, thread_enabled, kept_off_rest, monkeypatch, route):
+        from agentkernel.core.config import _ExecutionConfig
+        from agentkernel.core.model import ExecutionMode
+
+        monkeypatch.setattr(AKConfig.get(), "execution", _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta"))
+        fields = {"prompt": "hello", "session_id": "s-off", "agent": "internal"}
+
+        with kept_off_rest:
+            client = _client(AgentThreadRequestHandler())
+            if route == "json":
+                resp = client.post("/api/v1/chat", json=fields, headers=AUTH)
+            else:
+                resp = client.post("/api/v1/chat-multipart", data=fields, headers=AUTH)
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Agent 'internal' not found"
+        assert client.get("/api/v1/threads/s-off", headers=AUTH).status_code == 404
+
+    @pytest.mark.parametrize("route", ["json", "multipart"])
+    def test_a_thread_chat_naming_no_agent_runs_the_first_agent_on_rest(self, thread_enabled, kept_off_rest, route):
+        fields = {"prompt": "hello", "session_id": "s-default"}
+
+        with kept_off_rest:
+            client = _client(AgentThreadRequestHandler())
+            if route == "json":
+                resp = client.post("/api/v1/chat", json=fields, headers=AUTH)
+            else:
+                resp = client.post("/api/v1/chat-multipart", data=fields, headers=AUTH)
+
+        assert resp.json() == {"result": "public", "session_id": "s-default"}
+        recorded = client.get("/api/v1/threads/s-default", headers=AUTH).json()["messages"]
+        assert [(message["role"], message["content"]) for message in recorded] == [("user", "hello"), ("assistant", "public")]
+
+    @staticmethod
+    def _gated_runtime(surface_agent) -> Runtime:
+        """`assistant` is private and granted to alice; `status` is public and granted to nobody."""
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("assistant"))
+        status = surface_agent("status")
+        status._set_descriptor(status.descriptor.model_copy(update={"visibility": "public"}))
+        runtime.register(status)
+        return runtime
+
+    def test_with_authorization_the_chat_is_decided_for_its_caller_before_any_thread_write(self, thread_enabled, authorization, surface_agent):
+        """The pre-check is handed the caller's principal (#603, iteration 18): alice runs and is recorded; bob gets
+        the unknown agent's 404 for an agent he may not see, a 403 for one he sees, and no thread either way."""
+        authorization(grants=[{"subjects": ["user:alice"], "agents": ["assistant"], "level": "read"}])
+
+        with self._gated_runtime(surface_agent):
+            client = _client(AgentThreadRequestHandler())
+            served = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-alice", "agent": "assistant"}, headers=AUTH)
+            hidden = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-hidden", "agent": "assistant"}, headers=BOB_AUTH)
+            forbidden = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-forbidden", "agent": "status"}, headers=BOB_AUTH)
+
+        assert served.json() == {"result": "assistant", "session_id": "s-alice"}
+        assert (hidden.status_code, hidden.json()["detail"]) == (404, {"error": "Agent 'assistant' not found", "session_id": "s-hidden"})
+        assert (forbidden.status_code, forbidden.json()["detail"]) == (
+            403,
+            {"error": "Principal 'bob' holds no level on agent 'status'", "session_id": "s-forbidden"},
+        )
+        assert [client.get(f"/api/v1/threads/{session}", headers=BOB_AUTH).status_code for session in ("s-hidden", "s-forbidden")] == [404, 404]
+        assert len(client.get("/api/v1/threads/s-alice", headers=AUTH).json()["messages"]) == 2
+
+    def test_with_authorization_a_refused_stream_never_opens(self, thread_enabled, authorization, surface_agent, monkeypatch):
+        from agentkernel.core.config import _ExecutionConfig
+        from agentkernel.core.model import ExecutionMode
+
+        monkeypatch.setattr(AKConfig.get(), "execution", _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta"))
+        authorization(grants=[{"subjects": ["user:alice"], "agents": ["assistant"], "level": "read"}])
+
+        with self._gated_runtime(surface_agent):
+            client = _client(AgentThreadRequestHandler())
+            hidden = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-hidden", "agent": "assistant"}, headers=BOB_AUTH)
+            forbidden = client.post(
+                "/api/v1/chat-multipart", data={"prompt": "hello", "session_id": "s-forbidden", "agent": "status"}, headers=BOB_AUTH
+            )
+
+        assert (hidden.status_code, hidden.json()["detail"]) == (404, "Agent 'assistant' not found")
+        assert (forbidden.status_code, forbidden.json()["detail"]) == (403, "Principal 'bob' holds no level on agent 'status'")
+        assert client.get("/api/v1/threads/s-hidden", headers=BOB_AUTH).status_code == 404
+
     def test_an_anonymous_chat_is_401_before_any_thread_write(self, thread_enabled, registered_agent):
         """The chat route refuses a request nothing authenticated before the recorder runs (#603)."""
         client = _client(AgentThreadRequestHandler())

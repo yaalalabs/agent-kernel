@@ -1068,7 +1068,7 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
 def main():
     parser = argparse.ArgumentParser(description='Run a single test')
     parser.add_argument('--type', required=True, 
-                       choices=['api', 'memory', 'cli', 'containerized', 'aws-containerized', 'aws-serverless', 'azure-containerized', 'azure-serverless', 'gcp-containerized', 'gcp-serverless'],
+                       choices=['api', 'memory', 'cli', 'containerized', 'aws-containerized', 'aws-serverless', 'azure-containerized', 'gcp-containerized', 'gcp-serverless'],
                        help='Type of test to run')
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
@@ -1102,7 +1102,7 @@ def main():
     elif args.action == 'deploy':
         if args.type in ['aws-containerized', 'aws-serverless']:
             success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.request_handler_security_group_id, args.agent_runner_security_group_id, args.response_handler_security_group_id, args.alb_security_group_id, args.ecs_service_security_group_id)
-        elif args.type in ['azure-serverless', 'azure-containerized']:
+        elif args.type == 'azure-containerized':
             success = deploy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['gcp-serverless', 'gcp-containerized']:
             success = deploy_gcp_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
@@ -1112,7 +1112,7 @@ def main():
     elif args.action == 'destroy':
         if args.type in ['aws-containerized', 'aws-serverless']:
             success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.request_handler_security_group_id, args.agent_runner_security_group_id, args.response_handler_security_group_id, args.alb_security_group_id, args.ecs_service_security_group_id)
-        elif args.type in ['azure-serverless', 'azure-containerized']:
+        elif args.type == 'azure-containerized':
             success = destroy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['gcp-serverless', 'gcp-containerized']:
             success = destroy_gcp_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
@@ -1130,7 +1130,7 @@ def main():
             success = run_containerized_test(args.path)
         elif args.type in ['aws-containerized', 'aws-serverless']:
             success = test_aws_deployment(args.path, args.deploy_dir)
-        elif args.type in ['azure-containerized', 'azure-serverless']:
+        elif args.type == 'azure-containerized':
             success = test_azure_deployment(args.path, args.deploy_dir)
         elif args.type in ['gcp-containerized', 'gcp-serverless']:
             success = test_gcp_deployment(args.path, args.deploy_dir)

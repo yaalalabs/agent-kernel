@@ -12,7 +12,6 @@ except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
 from .base import Agent, Runner, RunOptionsFactory, Session
-from .realtime import RealtimeRunner
 from .event import (
     DataMessage,
     MessageEnd,
@@ -51,6 +50,7 @@ from .model import (
     ToolFilter,
 )
 from .config import AKConfig as Config
+from .registry import AgentNotFoundError, AgentRegistrationError, AgentRegistry
 from .module import Module
 from .runtime import Runtime
 from .service import AgentService

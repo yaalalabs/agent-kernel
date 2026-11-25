@@ -1,6 +1,6 @@
-# Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (queue mode, streaming)
+# Open Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (queue mode, streaming)
 
-This package demonstrates Agent Kernel's queue-based, scalable containerized architecture
+This package demonstrates Open Agent Kernel's queue-based, scalable containerized architecture
 exposed over a **WebSocket API with `async` + `delta`** — the agent's reply is delivered
 token-by-token as a sequence of `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`.
 
@@ -24,12 +24,12 @@ and `app_agent_runner.py` are identical apart from the custom echo route (`opena
 
 ## Architecture Overview
 
-- **REST/IO Service ECS Task** (`app_rest_service.py`, started via `ECSIOHandler.run()`):
+- **REST/IO Service ECS Task** (`app_rest_service.py`, started via `AWSWebsocketAPI.run()`, which hands off to `IOHandler.run()`):
   - Thread 1: authenticates `$connect`, and on the `chat` route enqueues the request to the Input
     Queue (never runs the agent itself)
-  - Thread 2 (`ECSOutputConsumer`): polls the Output Queue and pushes each streamed chunk back
+  - Thread 2 (`ResponseHandler`): polls the Output Queue and pushes each streamed chunk back
     over the originating WebSocket connection as it arrives
-- **Agent Runner ECS Task** (`app_agent_runner.py`, `ECSAgentRunner` → `ECSStreamAgentRunner`):
+- **Agent Runner ECS Task** (`app_agent_runner.py`, `AgentRunner` → `StreamAgentRunner`):
   polls the Input Queue, streams the agent's reply, and sends **each chunk** — with the
   `endpoint_url` forwarded — as a separate message to the Output Queue. Scales on SQS backlog per
   task, independently of the REST/IO service.
@@ -46,12 +46,12 @@ Client --(wss, ?token=...)--> WS API Gateway --> REST/IO service ($connect / enq
                                                   Input SQS Queue
                                                         |
                                                         v
-                                    Agent Runner (ECSStreamAgentRunner, scales on backlog)
+                                    Agent Runner (StreamAgentRunner, scales on backlog)
                                                         |
                                           one Output SQS message PER chunk
                                                         |
                                                         v
-                                     REST/IO service's output-queue consumer
+                                     REST/IO service's Response Handler
                                                         |
                                        one STREAM_CHUNK push PER chunk
                                                         v

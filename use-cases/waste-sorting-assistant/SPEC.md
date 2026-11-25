@@ -6,7 +6,7 @@ A single-agent solution that advises users on the correct disposal method for a 
 
 ## Functional Requirements
 
-- Build one Agent Kernel agent named `waste_sorting_advisor`.
+- Build one Open Agent Kernel agent named `waste_sorting_advisor`.
 - Advise users whether an item belongs in recycling, compost, landfill, hazardous waste, e-waste, store drop-off, or another local category.
 - Use a lookup tool before giving disposal advice.
 - Accept item, material, and optional region inputs.
@@ -22,7 +22,7 @@ A single-agent solution that advises users on the correct disposal method for a 
 
 ## Deployment
 
-- Follow the deployment folder structure used by the Agent Kernel AWS serverless examples.
+- Follow the deployment folder structure used by the OAK AWS serverless examples.
 - Keep a single `lambda.py` Lambda entry point for the agent.
 - Define deployment packaging commands in `deploy/deploy.sh`.
 - Do not commit generated requirements files; generate dependency exports during packaging.

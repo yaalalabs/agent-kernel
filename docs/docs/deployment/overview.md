@@ -4,13 +4,13 @@ sidebar_position: 1
 
 # Deployment Overview
 
-Agent Kernel is a **multi-cloud AI agent runtime** that supports multiple deployment flavors across AWS, Azure, and GCP, from a single REST container to queue-backed, auto-scaling, WebSocket-streaming topologies.
+Open Agent Kernel (OAK) is a **multi-cloud AI agent runtime** that supports multiple deployment flavors across AWS, Azure, and GCP, from a single REST container to queue-backed, auto-scaling, WebSocket-streaming topologies.
 
 ## Deployment Flavors
 
 ```mermaid
 graph TB
-    A[Agent Kernel Application] --> B{Deployment Flavor}
+    A[OAK Application] --> B{Deployment Flavor}
     B --> C[Local / CLI]
     B --> D[Self-hosted REST API]
     B --> K[MCP Server]
@@ -43,7 +43,7 @@ graph TB
     B --> J
     B --> M
 
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
     style E fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
     style F fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
     style G fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
@@ -70,7 +70,7 @@ Independently of *where* you deploy, `execution.mode` selects *how* requests are
 Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom handlers) execute inline rather than through the pipeline.
 
 :::note
-AWS ECS supports `execution_mode = "async"` with `message_type = "delta"` for WebSocket streaming in both direct and queue-backed topologies: in direct mode the chat route broadcasts each chunk inline via `ChatService.process_stream_chat_async`; in queue mode `ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner`, which fans out one Output Queue message per chunk instead of one for the full reply. See [AWS Containerized](./aws-containerized) for details.
+AWS ECS supports `execution_mode = "async"` with `message_type = "delta"` for WebSocket streaming in both direct and queue-backed topologies: in direct mode the chat route broadcasts each chunk inline via `ChatService.process_stream_chat_async`; in queue mode `AgentRunner.run()` dispatches to `StreamAgentRunner`, which fans out one Output Queue message per chunk instead of one for the full reply. See [AWS Containerized](./aws-containerized) for details.
 :::
 
 **Protocol support by flavor:**
@@ -125,16 +125,16 @@ graph LR
     RS -.->|rest_sync / rest_async| RH
     RSH -.->|"async (API Gateway on AWS, ws-gateway on Kubernetes)"| WS[WebSocket push]
 
-    style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RSH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RSH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 | Role | Local / any server flavor (in-process) | AWS Lambda (serverless) | AWS ECS (containerized) | Kubernetes (Helm chart) |
 |------|----------------------------------------|------------------------|-------------------------|-------------------------|
-| Request handler | `RequestHandler` on the rest-api thread | Request Handler Lambda | `ECSQueueRequestHandler` thread in the IO container | `RequestHandler` thread in the io-handler Deployment |
-| Agent runner | `AgentRunner` worker threads (same process) | Agent Runner Lambda (SQS event source mapping) | `ECSAgentRunner` service, a pool of long-poll consumer threads | `AgentRunner` consumer threads in the agent-runner Deployment |
-| Response handler | `ResponseHandler` worker thread (same process) | Response Handler Lambda | `ECSOutputConsumer` thread pool in the IO container | `ResponseHandler` thread pool in the io-handler Deployment |
+| Request handler | `RequestHandler` on the rest-api thread | Request Handler Lambda | `RequestHandler` thread in the IO container | `RequestHandler` thread in the io-handler Deployment |
+| Agent runner | `AgentRunner` worker threads (same process) | Agent Runner Lambda (SQS event source mapping) | `AgentRunner` service, a pool of long-poll consumer threads | `AgentRunner` consumer threads in the agent-runner Deployment |
+| Response handler | `ResponseHandler` worker thread (same process) | Response Handler Lambda | `ResponseHandler` thread pool in the IO container | `ResponseHandler` thread pool in the io-handler Deployment |
 | Reply delivery | Response store (in-memory), or SSE bridging (`rest_sync` + `delta`) | Response store, or WebSocket push (`async`) | Response store, or WebSocket push (`async`) | Response store (Valkey/Redis), or ws-gateway push (`async`) |
 | Scaling | `no_of_consumers` threads | Automatic per SQS batch | Backlog-per-task target tracking | KEDA on queue depth (Kafka lag / NATS pending / SQS length) |
 
@@ -168,7 +168,7 @@ python my_agent.py
 
 ### AWS Serverless
 
-Uses Agent Kernel Terraform modules.
+Uses OAK Terraform modules.
 
 ```bash
 terraform init && terraform apply
@@ -183,7 +183,7 @@ terraform init && terraform apply
 
 ### AWS Containerized
 
-Uses Agent Kernel Terraform modules.
+Uses OAK Terraform modules.
 
 ```bash
 terraform init && terraform apply
@@ -198,7 +198,7 @@ terraform init && terraform apply
 
 ### Azure Serverless
 
-Uses Agent Kernel Terraform modules.
+Uses OAK Terraform modules.
 
 ```bash
 terraform init && terraform apply
@@ -211,7 +211,7 @@ terraform init && terraform apply
 
 ### Azure Containerized
 
-Uses Agent Kernel Terraform modules.
+Uses OAK Terraform modules.
 
 ```bash
 terraform init && terraform apply
@@ -224,7 +224,7 @@ terraform init && terraform apply
 
 ### GCP Serverless
 
-Uses Agent Kernel Terraform modules.
+Uses OAK Terraform modules.
 
 ```bash
 terraform init && terraform apply
@@ -238,7 +238,7 @@ terraform init && terraform apply
 
 ### GCP Containerized
 
-Uses Agent Kernel Terraform modules.
+Uses OAK Terraform modules.
 
 ```bash
 terraform init && terraform apply
@@ -252,10 +252,10 @@ terraform init && terraform apply
 
 ### On-Prem / Kubernetes
 
-Uses the Agent Kernel Helm chart.
+Uses the OAK Helm chart.
 
 ```bash
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 -f values-<flavor>.yaml
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.2 -f values-<flavor>.yaml
 ```
 
 - io-handler + agent-runner Deployments over Kafka/NATS JetStream (or SQS on EKS)
@@ -278,7 +278,7 @@ helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 -f 
 
 ## Multi-Cloud Strategy
 
-Agent Kernel's **multi-cloud support** enables you to:
+OAK's **multi-cloud support** enables you to:
 
 - **Deploy the same agent code** to AWS, Azure, or GCP without modification
 - **Avoid vendor lock-in**: switch clouds or run on multiple clouds
@@ -288,7 +288,7 @@ Agent Kernel's **multi-cloud support** enables you to:
 
 ## Fault Tolerance Considerations
 
-Agent Kernel provides different levels of fault tolerance depending on your deployment mode:
+OAK provides different levels of fault tolerance depending on your deployment mode:
 
 ### Production-Grade Fault Tolerance
 

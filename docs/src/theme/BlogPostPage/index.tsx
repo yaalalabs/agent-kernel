@@ -5,60 +5,61 @@ import {
   BlogPostProvider,
   useBlogPost,
 } from '@docusaurus/plugin-content-blog/client';
-import BlogLayout from '@theme/BlogLayout';
+import Layout from '@theme/Layout';
 import BlogPostItem from '@theme/BlogPostItem';
 import BlogPostPaginator from '@theme/BlogPostPaginator';
 import BlogPostPageMetadata from '@theme/BlogPostPage/Metadata';
 import BlogPostPageStructuredData from '@theme/BlogPostPage/StructuredData';
 import ContentVisibility from '@theme/ContentVisibility';
+import TOC from '@theme/TOC';
 import type BlogPostPageType from '@theme/BlogPostPage';
 import type {WrapperProps} from '@docusaurus/types';
-import type {BlogSidebar} from '@docusaurus/plugin-content-blog';
 import Link from '@docusaurus/Link';
+import {topicsForPost} from '@site/src/components/Blog/topics';
 
 type Props = WrapperProps<typeof BlogPostPageType>;
 
-const ArrowLeftIcon = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.5"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <polyline points="14 18 8 12 14 6" />
-  </svg>
-);
+/**
+ * A blog post in the site's page pattern: a reading column at the prose measure on the page
+ * container, with the way back and the post's topic above the title, and a table of contents
+ * beside it on a wide screen. The styles are in src/css/blog.css.
+ */
+function BlogPostPageContent({children}: {children: ReactNode}): ReactNode {
+  const {metadata, toc, frontMatter} = useBlogPost();
+  const {nextItem, prevItem, tags} = metadata;
+  const topic = topicsForPost(tags)[0];
+  const showContents = !frontMatter.hide_table_of_contents && toc.length > 0;
 
-function BlogPostPageContent({
-  sidebar,
-  children,
-}: {
-  sidebar: BlogSidebar;
-  children: ReactNode;
-}): ReactNode {
-  const {metadata} = useBlogPost();
-  const {nextItem, prevItem} = metadata;
   return (
-    <BlogLayout sidebar={sidebar}>
+    <Layout>
       <ContentVisibility metadata={metadata} />
-
-      <div className="blog-post-medium-column">
-        <div className="blog-back-btn-container">
-          <Link to="/blog" className="blog-back-btn" title="Back to Blog" aria-label="Back to Blog">
-            <ArrowLeftIcon />
+      <div className={clsx('ak-container', 'blog-post')}>
+        <main className="blog-post__column">
+          <Link to="/blog" className="ak-page-hero__back">
+            All posts
           </Link>
-        </div>
-        <BlogPostItem>{children}</BlogPostItem>
-
-        {(nextItem || prevItem) && (
-          <BlogPostPaginator nextItem={nextItem} prevItem={prevItem} />
+          {topic && (
+            <p className="ak-label blog-post__topic">
+              <Link to={`/blog?topic=${topic.slug}`}>{topic.label}</Link>
+            </p>
+          )}
+          <BlogPostItem>{children}</BlogPostItem>
+          {(nextItem || prevItem) && (
+            <BlogPostPaginator nextItem={nextItem} prevItem={prevItem} />
+          )}
+        </main>
+        {showContents && (
+          <aside className="blog-post__contents" aria-label="On this page">
+            <p className="ak-label">On this page</p>
+            <TOC
+              toc={toc}
+              minHeadingLevel={frontMatter.toc_min_heading_level}
+              maxHeadingLevel={frontMatter.toc_max_heading_level}
+            />
+          </aside>
         )}
       </div>
-    </BlogLayout>
+    </Layout>
   );
 }
 
@@ -73,7 +74,7 @@ export default function BlogPostPageWrapper(props: Props): ReactNode {
         )}>
         <BlogPostPageMetadata />
         <BlogPostPageStructuredData />
-        <BlogPostPageContent sidebar={props.sidebar}>
+        <BlogPostPageContent>
           <BlogPostContent />
         </BlogPostPageContent>
       </HtmlClassNameProvider>

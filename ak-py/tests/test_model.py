@@ -175,7 +175,13 @@ class TestChatRunRequest:
     """#884: the public chat body rejects fields only internal producers set."""
 
     @pytest.mark.parametrize(
-        "field, value", [("requests", [{"type": "text", "prompt": "x"}]), ("scheduled_task_id", "t1"), ("scheduled_time", "2026-01-01T00:00:00Z")]
+        "field, value",
+        [
+            ("requests", [{"type": "text", "prompt": "x"}]),
+            ("scheduled_task_id", "t1"),
+            ("scheduled_time", "2026-01-01T00:00:00Z"),
+            ("surface", "a2a"),
+        ],
     )
     def test_an_internal_field_is_rejected(self, field, value):
         from agentkernel.core.model import ChatRunRequest
@@ -183,7 +189,7 @@ class TestChatRunRequest:
         with pytest.raises(ValidationError, match=f"fields not accepted from clients: \\['{field}'\\]"):
             ChatRunRequest.model_validate({"prompt": "hi", "session_id": "s1", field: value})
 
-    @pytest.mark.parametrize("field", ["requests", "scheduled_task_id", "scheduled_time"])
+    @pytest.mark.parametrize("field", ["requests", "scheduled_task_id", "scheduled_time", "surface"])
     def test_a_null_internal_field_is_accepted(self, field):
         """A generated client may send every optional field as null; null means "not set"."""
         from agentkernel.core.model import ChatRunRequest
@@ -233,3 +239,76 @@ class TestChatRunRequest:
 
         with pytest.raises(ValidationError, match="fields not accepted from clients"):
             BaseRequest.from_payload(payload)
+
+
+class TestRequestSurface:
+    """The surface a chat request entered by (#603, design refinement 13): the entry point's to set beside the
+    principal, never a client's, and carried in the queued body to the process that runs the agent."""
+
+    def test_a_request_enters_by_no_surface_until_an_entry_point_says_so(self):
+        from agentkernel.core.model import BaseChatRequest, BaseRunRequest
+
+        assert BaseChatRequest(prompt="hi", session_id="s1").surface is None
+        assert BaseRunRequest(prompt="hi", session_id="s1").surface is None
+
+    @pytest.mark.parametrize("surface", ["rest", "a2a", "mcp", "agui"])
+    def test_an_entry_point_names_one_of_the_agent_surfaces(self, surface):
+        from agentkernel.core.model import BaseRunRequest
+
+        assert BaseRunRequest(prompt="hi", session_id="s1", surface=surface).surface == surface
+
+    def test_a_surface_no_descriptor_can_name_is_refused(self):
+        from agentkernel.core.model import BaseRunRequest
+
+        with pytest.raises(ValidationError):
+            BaseRunRequest(prompt="hi", session_id="s1", surface="grpc")
+
+    def test_it_rides_the_queued_body_and_is_absent_from_one_that_has_none(self):
+        import json
+
+        from agentkernel.core.model import BaseRunRequest
+
+        queued = json.dumps(BaseRunRequest(prompt="hi", session_id="s1", surface="rest").model_dump(exclude_none=True))
+
+        assert BaseRunRequest.model_validate(json.loads(queued)).surface == "rest"
+        assert "surface" not in BaseRunRequest(prompt="hi", session_id="s1").model_dump(exclude_none=True)
+
+    @pytest.mark.parametrize("value", ["a2a", "rest", "mobile"])
+    def test_a_client_cannot_name_one(self, value):
+        """Refused, not dropped: a client that sent `surface` as context of its own is told, where dropping it
+        would change what its agent sees without a word."""
+        from agentkernel.core.model import ChatRunRequest
+
+        with pytest.raises(ValidationError, match=r"fields not accepted from clients: \['surface'\]"):
+            ChatRunRequest.model_validate({"prompt": "hi", "session_id": "s1", "surface": value})
+
+    @pytest.mark.parametrize(
+        "payload", [{"body": {"prompt": "hi", "session_id": "s1", "surface": "a2a"}}, {"prompt": "hi", "session_id": "s1", "surface": "a2a"}]
+    )
+    def test_a_client_frame_cannot_name_one(self, payload):
+        from agentkernel.core.model import BaseRequest
+
+        with pytest.raises(ValidationError, match="fields not accepted from clients"):
+            BaseRequest.from_payload(payload)
+
+    def test_the_entry_point_sets_it_on_the_body_it_parsed(self):
+        from agentkernel.core.model import ChatRunRequest
+
+        body = ChatRunRequest.model_validate({"prompt": "hi", "session_id": "s1"})
+        body.surface = "rest"
+
+        assert body.surface == "rest"
+
+    def test_the_public_schema_does_not_advertise_it(self):
+        from agentkernel.core.model import BaseRunRequest, ChatRunRequest
+
+        assert "surface" not in ChatRunRequest.model_json_schema()["properties"]
+        assert "surface" in BaseRunRequest.model_json_schema()["properties"]
+
+    def test_it_never_reaches_the_agent_as_context(self):
+        from agentkernel.core.chat_service import RequestBuilder
+        from agentkernel.core.model import BaseRunRequest
+
+        requests = RequestBuilder.from_base_request_sync(BaseRunRequest(prompt="hi", session_id="s1", surface="rest"))
+
+        assert [type(request).__name__ for request in requests] == ["AgentRequestText"]

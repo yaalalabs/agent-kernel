@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Tools
 
-Tools allow agents to perform actions and access external data. Agent Kernel provides a **framework-agnostic** way of writing tool functions that work across all supported frameworks: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents.
+Tools allow agents to perform actions and access external data. Open Agent Kernel (OAK) provides a **framework-agnostic** way of writing tool functions that work across all supported frameworks: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents.
 
 ## Overview
 
@@ -17,7 +17,7 @@ graph TB
     B --> F[Google ADK FunctionTool]
 
     style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ## Writing Tool Functions

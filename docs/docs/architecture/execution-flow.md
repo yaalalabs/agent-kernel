@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Execution Flow
 
-How requests flow through Agent Kernel from user input to agent response: synchronously, streamed, or through queues.
+How requests flow through Open Agent Kernel (OAK) from user input to agent response: synchronously, streamed, or through queues.
 
 ## Request Lifecycle
 
@@ -48,10 +48,10 @@ graph TD
     L --> M[Persist session,<br/>clear volatile cache]
     M --> N[Reply / StreamChunks]
 
-    style H fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style I fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
-    style L fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
-    style CORE fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style H fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style I fill:#ABCEE1,stroke:#fff,stroke-width:2px,color:#02284F
+    style L fill:#ABCEE1,stroke:#fff,stroke-width:2px,color:#02284F
+    style CORE fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ### Which layer does new code call?
@@ -119,7 +119,7 @@ reply = await runtime.run(agent, session, requests, principal=principal)
 ```
 
 1. **Session lock**: `async with session` serializes concurrent requests per session and makes `Session.current()` available.
-2. **Principal**: the `Principal` the surface established (the anonymous principal when it authenticated nobody) is published for the run with the agent as its `actor`; tools read it through `ToolContext.principal`, hooks through `session.get_principal()`, and the session's owner is recorded on its first authenticated run.
+2. **Principal**: the `Principal` the surface established (the anonymous principal when it authenticated nobody) is published for the run with the agent as its `actor`; tools read it through `ToolContext.principal`, hooks through `session.get_principal()`, and the session's owner is recorded on its first authenticated run. With an [`authorization`](../advanced/identity-and-access.md#authorization) block the run is admitted first: the principal must hold a level on the agent and, for a session that has an owner, be that owner. A refusal raises before anything is published or any hook runs, so every route into the runtime is decided the same way, and the tool policy decided for the run is published beside the principal.
 3. **Pre-hooks**: agent hooks first, then system hooks (input guardrails, multimodal preprocessing). A pre-hook may rewrite the request list or halt by returning an `AgentReply`.
 4. **`Runner.run()`**: converts requests to the framework's native format, restores framework session state, executes, and converts the result back to an `AgentReply` (`AgentReplyText`, `AgentReplyImage`, or `AgentReplyAny` for structured output).
 5. **Post-hooks**: system hooks (output guardrails, then A2UI labelling) first, then agent hooks. Order matters within the system hooks: the guardrail sees the reply while it is still text, because A2UI labelling may replace an `AgentReplyText` with an `AgentReplyAny`.
@@ -201,6 +201,7 @@ absent key). The terminal `{"done": true}` frame carries neither. A client that 
 must therefore test for the key rather than assume every non-terminal frame has one.
 
 - If a pre-hook halts (e.g., an input guardrail trips), the stream yields a single `StreamChunk` with `error` set and `done: true`.
+- If the access check refuses the run (an `authorization` block, and a principal with no level on the agent or a session it does not own), the stream is the same single error chunk, and nothing runs.
 - `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) carries `event` alone, with no `delta` key in the wire frame.
 - **Framework support**: OpenAI Agents SDK, LangGraph, and Google ADK stream natively. CrewAI and Smolagents declare `supports_streaming = False` and raise `NotImplementedError` with `message_type: delta`.
 - With `execution.mode: async` and `message_type: delta` (on AWS serverless and AWS ECS containerized), the same `StreamChunk`s are delivered as WebSocket `STREAM_CHUNK` messages instead of SSE; see below.
@@ -247,9 +248,9 @@ graph TB
     RESP --> WS
     RS -.->|"rest_sync await / rest_async poll"| RH
 
-    style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style RESP fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RH fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style RESP fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 What the abstraction fixes, and what it leaves open:
@@ -446,7 +447,7 @@ graph LR
     E --> F[Agent runs on text only]
     F -->|"analyze_attachments(ids, prompt)"| D
 
-    style B fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#ABCEE1,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 The agent's conversation history stays free of binary data; the auto-registered `analyze_attachments` tool retrieves stored attachments on demand. See [Multimodal](../advanced/multimodal).

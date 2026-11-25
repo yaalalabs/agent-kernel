@@ -1,7 +1,7 @@
 ---
 name: ak-dev-write-spec
 description: >
-  Write the spec documents for a planned Agent Kernel change under
+  Write the spec documents for a planned Open Agent Kernel change under
   docs/specs/<issue-number>-<short-title>/ in three ordered stages: a concise point-form design
   spec (design.md) that a maintainer reviews first, then a detailed
   implementation spec (spec.md) once the design is approved, then a concise
@@ -18,7 +18,7 @@ metadata:
 
 # Write a Spec for a Planned Change
 
-Use this skill when asked to produce spec documents for Agent Kernel work before (or instead of) implementing it. A change is specified in **three documents, written in strict order**, all under `docs/specs/<issue-number>-<short-title>/`:
+Use this skill when asked to produce spec documents for Open Agent Kernel work before (or instead of) implementing it. A change is specified in **three documents, written in strict order**, all under `docs/specs/<issue-number>-<short-title>/`:
 
 | Stage | File | What it is | Written when |
 |---|---|---|---|
@@ -81,7 +81,7 @@ docs/specs/<issue-number>-<short-title>/
 
 ## Stage 1: `design.md` — the Design Spec
 
-`design.md` is read by an Agent Kernel expert to understand **what is changing and why** — in minutes, not an afternoon. It goes through multiple manual review cycles, so it is optimized for fast reading and per-point commenting: point form, hierarchical, complete.
+`design.md` is read by an OAK expert to understand **what is changing and why** — in minutes, not an afternoon. It goes through multiple manual review cycles, so it is optimized for fast reading and per-point commenting: point form, hierarchical, complete.
 
 ### Prepare
 
@@ -277,12 +277,17 @@ Written only after `design.md` and `spec.md` are complete. `plan.md` breaks the 
 <From spec.md's Testing section: new test files, changed patch targets,
 the command to run the suite.>
 
-## Iteration N: Sync docs and skills
+## Iteration N: Sync docs, skills and changelog
 
 <Which `.agents/skills/` files and docs surfaces the change invalidates —
 name file and line. State explicitly (and verify) when a surface needs no
 update, and confirm with the ak-dev-sync-docs-from-branch /
-ak-dev-sync-skills-from-branch flows before merge.>
+ak-dev-sync-skills-from-branch flows before merge. Name the changelog
+fragment files (`changelog.d/<issue>.<type>.md`) and their types: each
+user-visible item in spec.md's "Behavioural changes" needs a `breaking` or
+`changed` fragment, or `fixed` when it corrects a bug users could hit
+(several items can share one); internal items need none. Write them with
+ak-dev-sync-changelog-from-branch.>
 ```
 
 - Each iteration should leave the branch in a working, testable state.

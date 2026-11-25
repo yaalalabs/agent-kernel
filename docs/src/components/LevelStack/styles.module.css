@@ -1,0 +1,124 @@
+/* The level stack. Two colours from the theme tokens, so it follows both colour modes.
+   Stroke widths hold through the projection because every stroke is non-scaling. */
+
+.root {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.plane,
+.shape,
+.faint,
+.accent,
+.node,
+.nodeBusy,
+.nodeAccent,
+.rail {
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.plane {
+  fill: var(--ak-bg-alt);
+  stroke: rgba(var(--ak-blue-rgb), 0.55);
+  transition: stroke 0.3s ease, fill 0.3s ease;
+}
+
+.shape {
+  fill: none;
+  stroke: rgba(var(--ak-blue-rgb), 0.7);
+}
+
+.faint {
+  fill: none;
+  stroke: rgba(var(--ak-blue-rgb), 0.3);
+}
+
+.accent {
+  fill: none;
+  stroke: var(--ak-primary);
+}
+
+.node {
+  fill: var(--ak-bg-alt);
+  stroke: rgba(var(--ak-blue-rgb), 0.7);
+}
+
+.nodeBusy {
+  fill: var(--ak-blue);
+  stroke: var(--ak-blue);
+}
+
+.nodeAccent {
+  fill: var(--ak-primary);
+  stroke: var(--ak-primary);
+}
+
+.rail {
+  stroke: rgba(var(--ak-blue-rgb), 0.45);
+}
+
+.index {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  fill: var(--ak-text-muted);
+  transition: fill 0.3s ease;
+}
+
+/* A lit layer lifts a little and takes the accent */
+
+.layer {
+  transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.layerActive {
+  transform: translateY(-12px);
+}
+
+.layerActive .plane {
+  stroke: var(--ak-primary);
+}
+
+.layerActive .index {
+  fill: var(--ak-primary-text);
+}
+
+/* Dots fall from one layer to the next: 150 is the gap between layers in the drawing */
+
+.drop {
+  fill: var(--ak-blue);
+  animation: level-drop 2.6s cubic-bezier(0.5, 0, 0.7, 1) infinite;
+}
+
+@keyframes level-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(150px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop {
+    animation: none;
+    transform: translateY(75px);
+  }
+
+  .layer {
+    transition: none;
+  }
+}

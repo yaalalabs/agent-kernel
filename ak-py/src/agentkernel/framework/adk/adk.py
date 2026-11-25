@@ -43,7 +43,6 @@ from agentkernel.core.model import (
 
 from ...core import Agent as AKBaseAgent
 from ...core import Module
-from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
@@ -65,6 +64,7 @@ from ...core.event import (
 )
 from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
+from ...realtime.base import RealtimeRunner as BaseRealtimeRunner
 from ...trace import Trace
 
 FRAMEWORK = "adk"
@@ -928,7 +928,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
 
     ADK owns the conversation: its tools, transfers and workflows. The root is an ``LlmAgent`` or a ``Workflow``.
     Run options: ``run_config`` reaches ``run_live()``; the Runner constructor options reach the ``Runner``/``App``.
-    Agent Kernel hooks and guardrails do not run on this path.
+    Agent Kernel hooks run on the call in the realtime pool, not in this adapter (see docs/specs/927-realtime-hooks).
     """
 
     input_sample_rate = 16000
@@ -939,13 +939,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     def __init__(self):
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.adk.realtime")
-        self._callback: Callable | None = None
         self._runner: Runner | None = None
         self._queue: LiveRequestQueue | None = None
         self._listen_task: asyncio.Task | None = None
-        self._closing = False
-        self._speaker: str | None = None
-        self._roster: list[str] = []
         self._tool_context: AKToolContext | None = None
 
     def initial_speaker(self, agent: AKBaseAgent) -> str | None:
@@ -1025,13 +1021,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            self._log.error(f"ADK live run failed: {e}")
-            if not self._closing:
-                await self._callback("error", {"message": f"ADK live run failed: {e}"})
+            await self._report_listen_failed(f"ADK live run failed: {e}")
             return
-        if not self._closing:
-            # A clean end of run_live() means the native session closed, not that a turn finished.
-            await self._callback("error", {"message": "ADK live run ended"})
+        # A clean end of run_live() means the native session closed, not that a turn finished.
+        await self._report_listen_ended("ADK live run ended")
 
     async def _handle_event(self, event: Event) -> bool:
         """
@@ -1040,52 +1033,48 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         """
         if event.error_code or event.error_message:
             detail = ": ".join(value for value in (event.error_code, event.error_message) if value)
-            await self._callback("error", {"message": f"ADK live run failed: {detail}"})
+            await self._callback(BaseRealtimeRunner.Event.ERROR, {"message": f"ADK live run failed: {detail}"})
             return True
         if event.actions and event.actions.requested_tool_confirmations:
             await self._refuse_confirmation(event)
             return True
         if event.author == "user":
+            # ADK authors the caller's transcription as "user": partial pieces, then one finished aggregate.
+            transcription = event.input_transcription
+            if transcription is not None and transcription.finished and (transcription.text or "").strip():
+                await self._callback(BaseRealtimeRunner.Event.INPUT_TRANSCRIPT, {"text": transcription.text.strip(), "message_id": event.id})
             return False
         if event.interrupted:
-            await self._callback("interrupt", {})
+            await self._callback(BaseRealtimeRunner.Event.INTERRUPT, {})
 
         output = event.output_transcription
         if output is not None and output.text and not output.finished and event.partial:
             await self._speaker_changed(event.author)
-            await self._callback("transcript_delta", {"delta": output.text, "message_id": event.id})
+            await self._callback(BaseRealtimeRunner.Event.TRANSCRIPT_DELTA, {"delta": output.text, "message_id": event.id})
 
         for part in event.content.parts if event.content and event.content.parts else []:
             blob = part.inline_data
             if blob is not None and blob.data and (blob.mime_type or "").startswith("audio/"):
                 await self._speaker_changed(event.author)
-                await self._callback("audio_delta", {"delta": base64.b64encode(blob.data).decode("utf-8"), "message_id": event.id})
+                await self._callback(
+                    BaseRealtimeRunner.Event.AUDIO_DELTA, {"delta": base64.b64encode(blob.data).decode("utf-8"), "message_id": event.id}
+                )
             elif part.text and not part.thought and output is None:
                 await self._speaker_changed(event.author)
-                await self._callback("transcript_delta", {"delta": part.text, "message_id": event.id})
+                await self._callback(BaseRealtimeRunner.Event.TRANSCRIPT_DELTA, {"delta": part.text, "message_id": event.id})
 
         if event.actions and event.actions.transfer_to_agent:
-            await self._callback("done", {"status": "transferred"})
+            await self._callback(BaseRealtimeRunner.Event.DONE, {"status": "transferred"})
         elif event.turn_complete:
-            await self._callback("done", {"status": "completed"})
+            await self._callback(BaseRealtimeRunner.Event.DONE, {"status": "completed"})
         return False
-
-    async def _speaker_changed(self, agent: str) -> None:
-        """Reports a change of speaker once, with the roster when the agent is new to it."""
-        if agent == self._speaker:
-            return
-        data: dict[str, Any] = {"agent": agent, "previous_agent": self._speaker}
-        if agent not in self._roster:
-            self._roster.append(agent)
-            data["agents"] = list(self._roster)
-        self._speaker = agent
-        await self._callback("agent_changed", data)
 
     async def _refuse_confirmation(self, event: Event) -> None:
         """Fails the connection for a tool that needs a human's confirmation: a realtime session has no decision route."""
         names = sorted({response.name for response in event.get_function_responses() if response.name}) or ["a tool"]
         await self._callback(
-            "error", {"message": f"Tool(s) {', '.join(names)} of agent '{event.author}' require confirmation, which a realtime session cannot get"}
+            BaseRealtimeRunner.Event.ERROR,
+            {"message": f"Tool(s) {', '.join(names)} of agent '{event.author}' require confirmation, which a realtime session cannot get"},
         )
 
     async def append_audio(self, base64_audio: str) -> None:
@@ -1105,10 +1094,21 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         await self._cancel_and_wait(task)
         runner, self._runner = self._runner, None
         if runner is not None:
-            await runner.close()
+            await self._release(runner)
         ctx, self._tool_context = self._tool_context, None
         if ctx is not None:
             ctx.__exit__(None, None, None)
+
+    @staticmethod
+    async def _release(runner: Runner) -> None:
+        """Flushes the session service, the one thing a call owns.
+
+        ``Runner.close()`` would also close the toolsets and the plugins. Both belong to the application and are shared by every
+        call on the agent (an MCP toolset's connections, a plugin's client), so ending one call would cut off what another call is
+        using. The unary path never closes them either.
+        """
+        if runner.session_service:
+            await runner.session_service.flush()
 
 
 class GoogleADKAgent(AKBaseAgent):
@@ -1194,12 +1194,61 @@ class GoogleADKAgent(AKBaseAgent):
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, GoogleADKToolBuilder.bind([tool]))
 
-    def get_a2a_card(self):
+    def _native_description(self) -> str:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the native agent's `description`, which ADK keeps apart from its `instruction`, without the
+        system-tool guidance this adapter appends to it (`override_system_prompt`): that text is Agent Kernel's,
+        not the agent's, and is still there when the same native agent is wrapped again.
         """
-        # TODO Add A2A card support
-        pass
+        from ...core.tool import SystemToolFactory
+
+        description = getattr(self.agent, "description", None)
+        if not isinstance(description, str):
+            return ""
+        guidance = SystemToolFactory.get_system_prompt_suffix(self.name)
+        return description.replace(guidance, "") if guidance else description
+
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names of the tools of every `LlmAgent` reachable from the root, the root's first, each once.
+
+        Not reported: a toolset's tools (an MCP toolset lists them only inside a run), the agents of a `Workflow`
+        nested in another, and a callable object that has neither a `name` nor a function name.
+        """
+        return list(self._named_tools())
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each reachable tool by name: a tool object's own, a plain function's docstring.
+        """
+        # The docstring only for a function: asked of a tool object, getdoc answers with its class's.
+        return {
+            name: getattr(tool, "description", None) or (inspect.getdoc(tool) if inspect.isroutine(tool) else None) or ""
+            for name, tool in self._named_tools().items()
+        }
+
+    def _named_tools(self) -> dict[str, Any]:
+        """
+        Returns the tools of every `LlmAgent` reachable from the root, by name: the root itself or a workflow's
+        nodes, then each level of `sub_agents`. A tool object is named by its `name`, a plain callable by its
+        function name, as ADK names them; a toolset, which lists its tools only inside a run, has no name here and
+        is left out.
+        """
+        found: dict[str, Any] = {}
+        seen: set[int] = set()
+        pending = GoogleADKRealtimeRunner._workflow_nodes(self._agent) if isinstance(self._agent, Workflow) else [self._agent]
+        while pending:
+            node = pending.pop(0)
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, LlmAgent):
+                for tool in node.tools:
+                    name = self._native_tool_name(tool)
+                    if name:
+                        found.setdefault(name, tool)
+            pending.extend(getattr(node, "sub_agents", None) or [])
+        return found
 
 
 class GoogleADKModule(Module):
@@ -1219,13 +1268,22 @@ class GoogleADKModule(Module):
             class to override. Only the pipeline (in REALTIME mode) ever instantiates it.
         """
         super().__init__()
-        self.realtime_runner_cls = realtime_runner_cls or GoogleADKRealtimeRunner
+        # A tracer is built only when a runner is left to choose, as before: a module given both runners never touches tracing.
+        needs_tracer = runner is None or realtime_runner_cls is None
+        tracer = Trace.get() if needs_tracer and AKConfig.get().trace.enabled else None
         if runner is not None:
             self.runner = runner
-        elif AKConfig.get().trace.enabled:
-            self.runner = Trace.get().adk()
+        elif tracer is not None:
+            self.runner = tracer.adk()
         else:
             self.runner = GoogleADKRunner()
+        # After the text runner: its constructor installs the instrumentor; the realtime method then finds it installed.
+        if realtime_runner_cls is not None:
+            self.realtime_runner_cls = realtime_runner_cls
+        elif tracer is not None and (traced := tracer.adk_realtime()) is not None:
+            self.realtime_runner_cls = traced
+        else:
+            self.realtime_runner_cls = GoogleADKRealtimeRunner
         self.load(agents)
 
     def _wrap(self, agent: BaseAgent | Workflow, agents: list[BaseAgent | Workflow]) -> AKBaseAgent:

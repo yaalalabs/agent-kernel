@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Memory Management
 
-Agent Kernel provides a sophisticated memory management system with multiple layers designed for different use cases and lifecycles. Understanding these layers helps you build efficient, context-aware agents that don't bloat LLM prompts.
+Open Agent Kernel (OAK) provides a sophisticated memory management system with multiple layers designed for different use cases and lifecycles. Understanding these layers helps you build efficient, context-aware agents that don't bloat LLM prompts.
 
 :::tip Choosing a backend?
 See [Choosing a Memory Backend](../core-concepts/memory-backends.md) for a beginner-friendly comparison of session stores, caches, and knowledge bases.
@@ -45,8 +45,8 @@ graph TB
     AM --> G
     AM --> H
     
-    style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style A fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style D fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
     style E fill:#1e7a55,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
@@ -54,7 +54,7 @@ Session-bound memory lives in the session store. Long-term knowledge lives in a 
 
 ## Memory Layers
 
-Agent Kernel provides three distinct memory layers, each with different purposes and lifecycles.
+OAK provides three distinct memory layers, each with different purposes and lifecycles.
 
 ### 1. Conversational State (Short-term Memory)
 
@@ -85,7 +85,7 @@ Agent Kernel provides three distinct memory layers, each with different purposes
 
 **Purpose**: Store additional data needed by tools and hooks **without bloating the LLM context**.
 
-Agent Kernel provides two types of auxiliary caches with identical APIs but different lifecycles:
+OAK provides two types of auxiliary caches with identical APIs but different lifecycles:
 
 #### Volatile Cache (Request-Scoped)
 
@@ -549,7 +549,7 @@ def get_cache_stats(session):
 
 ## Summary
 
-Agent Kernel's memory management provides three distinct layers:
+OAK's memory management provides three distinct layers:
 
 **Conversational State** (Short-term Memory):
 - Automatically managed by framework adapters

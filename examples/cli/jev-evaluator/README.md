@@ -1,6 +1,6 @@
-# Agent Kernel CLI testing with the built-in JEV evaluator
+# Open Agent Kernel CLI testing with the built-in JEV evaluator
 
-This package demos an OpenAI Agents SDK trivia agent running in Agent Kernel via the CLI, tested
+This package demos an OpenAI Agents SDK trivia agent running in Open Agent Kernel via the CLI, tested
 with the **built-in `jev` evaluator** — the [TypeSafe](https://docs.typesafe.ai) JEV judge. Like the
 [`opik-evaluator`](../opik-evaluator) example, it shows the built-in evaluator extension point: any short
 name registered in [`Test._resolve_evaluator_class`](../../../ak-py/src/agentkernel/test/test.py) works as the

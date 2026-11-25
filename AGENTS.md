@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Guidance for AI coding agents (Claude Code, Cursor, Copilot, Codex, Windsurf, etc.) working
-**on** the Agent Kernel codebase itself. If you're building an agent *with* Agent Kernel, see
+**on** the Open Agent Kernel codebase itself. If you're building an agent *with* OAK, see
 the [README](README.md) and [kernel.yaala.ai/docs](https://kernel.yaala.ai/docs) instead — this
 file is for contributors to this repo.
 
@@ -11,10 +11,10 @@ This repo ships two unrelated sets of "skills," named similarly but serving oppo
 
 | Skill set | Location | Audience | Purpose |
 | --- | --- | --- | --- |
-| **Dev skills** | [.agents/skills/ak-dev-*](.agents/skills/) | You, working on this repo | Architecture, testing conventions, code quality, and step-by-step guides for adding a new framework adapter / guardrail / knowledge base / messaging integration / tracing provider / multimodal storage / sandbox provider / queue transport to Agent Kernel core |
-| **Bundled skills** | [ak-py/src/agentkernel/skills/](ak-py/src/agentkernel/skills/) (`ak-init`, `ak-build`, `ak-add-capabilities`, `ak-add-integration`, `ak-cloud-deploy`, `ak-test`) | End users of the `agentkernel` PyPI package | Shipped *inside* the package so a downstream developer's coding assistant can scaffold and extend agents built *with* Agent Kernel |
+| **Dev skills** | [.agents/skills/ak-dev-*](.agents/skills/) | You, working on this repo | Architecture, testing conventions, code quality, and step-by-step guides for adding a new framework adapter / guardrail / knowledge base / messaging integration / tracing provider / multimodal storage / sandbox provider / queue transport to OAK core |
+| **Bundled skills** | [ak-py/src/agentkernel/skills/](ak-py/src/agentkernel/skills/) (`ak-init`, `ak-build`, `ak-add-capabilities`, `ak-add-integration`, `ak-cloud-deploy`, `ak-test`) | End users of the `agentkernel` PyPI package | Shipped *inside* the package so a downstream developer's coding assistant can scaffold and extend agents built *with* OAK |
 
-If a task is about changing Agent Kernel's own source, use the dev skills under `.agents/skills/`.
+If a task is about changing OAK's own source, use the dev skills under `.agents/skills/`.
 Never edit the bundled skills to document a dev-only workflow, and never edit the dev skills to
 change end-user-facing scaffolding behavior — read the description in each `SKILL.md` before
 editing either.
@@ -70,7 +70,7 @@ When adding or touching an adapter:
 - **No feature-forcing.** Don't require a capability the underlying framework/service doesn't
   natively support (e.g. don't invent a fake token stream when the SDK has no streaming API —
   raise `NotImplementedError` until a real mapping exists). CrewAI and smolagents *do* stream in
-  their SDKs; their AK adapters still raise because that wiring is not implemented yet — same
+  their SDKs; their OAK adapters still raise because that wiring is not implemented yet — same
   `NotImplementedError` shape, different reason.
 - **No hidden defaults that change behavior.** Config-driven, explicit choices (`AKConfig`) beat
   adapter-internal heuristics. If an adapter needs a default, make it the same default the native
@@ -107,10 +107,11 @@ reviews against them (full detail in the "House Patterns for New Features" secti
 
 When documentation changes, the React landing and features pages hold hard-coded inventories of
 frameworks, integrations, providers, deployment targets, and capabilities; update them alongside
-`docs/docs/`. On the landing page they live in `docs/src/components/IntegrationsMarquee/data.tsx`,
-`ArchitectureOverview/data.tsx`, and `FeatureExplorer/data.tsx`; on the features page in
-`docs/src/pages/features.tsx` (see `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features
-Pages*, for the change-type to entry mapping).
+`docs/docs/`. On the landing page they live under `docs/src/components/HomeSections/`
+(`integrations.data.tsx`, `index.tsx`, `Deployment.tsx`, `Announcement.tsx`) and in
+`ArchitectureOverview/data.tsx`; on the features page in `docs/src/pages/features.tsx`; and the
+newest capabilities are listed in `docs/docs/whats-new.md` (see `ak-dev-sync-docs-from-branch`,
+*Docs-Site Landing and Features Pages*, for the change-type to entry mapping).
 
 ## Setup, build, lint, test
 
@@ -147,6 +148,65 @@ or a specific `examples/<dir>` subpath rather than `examples/` wholesale, or exp
 `.venv` (most search tools respect `.gitignore` by default — confirm yours does before trusting a
 repo-wide search).
 
+## Naming and brand
+
+The project is **Open Agent Kernel**, shortened to **OAK**. It was previously called Agent Kernel.
+When you write or update documentation, READMEs, skills or website copy:
+
+- **Full name first, then OAK.** Use "Open Agent Kernel" in titles, H1s and metadata, and on the
+  first mention on a page (as "Open Agent Kernel (OAK)" where the sentence allows). Use "OAK" after
+  that, in sub-headings and in diagram labels.
+- **Identifiers are not renamed.** The package is still `agentkernel`, the CLI is `ak`, classes keep
+  their `AK` prefix (`AKConfig`) and environment variables keep `AK_`. Repository paths, the
+  `yaalalabs/agent-kernel` URL and `kernel.yaala.ai` are unchanged.
+- **The company is named only in legal text.** "Yaala Labs" appears in the privacy, cookie and terms
+  pages, in `NOTICE`, in copyright lines (the READMEs and the website footer) and nowhere else: not in
+  page metadata, sign-off lines, docs or package metadata, where the author is "Open Agent Kernel".
+  The `yaalalabs` identifiers (the GitHub organisation, the Terraform and container registries, the
+  email addresses) stay, as do released doc versions and published blog posts.
+- **Quote product output exactly.** Strings the code emits still carry the old name, for example the
+  OpenAPI title `Agent Kernel REST API`, trace span names such as `Agent Kernel OpenAI` and the
+  `AgentKernel` service name. Code blocks and quoted output keep them as emitted.
+- **Brand assets.** Logos, the colour palette and usage rules live in
+  [branding/README.md](branding/README.md). The website theme tokens are in
+  `docs/src/css/custom.css`: use the tokens there, not new hex values.
+- **Two colour modes.** The site has a light mode (default) and a dark mode that share one set of token
+  names. Never write a literal white, navy or grey in a stylesheet: use `--ak-fg`, `--ak-text*`,
+  `--ak-bg*` and `--ak-surface*`, which flip with the mode. Use `--ak-primary-text` for orange text
+  and `--ak-primary` for orange fills. Canvas and WebGL code reads colours through
+  `docs/src/lib/brand.ts`. Check new UI in both modes.
+- **One design system for website pages.** Marketing pages are flat and left-aligned. Build new
+  sections from the shared pieces in `docs/src/css/custom.css` (`ak-container`, `ak-section`, the
+  `ak-display` to `ak-label` type classes, `ak-btn`, `ak-link`, `ak-card`, `ak-tag`) and the
+  `SectionHeader` component, not from page-local copies. Sizes come from the `--ak-type-*` and
+  `--ak-space-*` tokens, corners from the two radii (`--ak-radius-control`, `--ak-radius-card`).
+  Running text is 15 px or larger; the only smaller sizes are the 13 px monospace label and 14 px for
+  labels inside diagrams. Surfaces are flat (no gradient fills, glass blur, glows or drop shadows),
+  with two exceptions: cards lift with one soft shadow in the light mode, and floating layers (the
+  chat launcher and its panel) carry a shadow. Headings are in sentence case, except the home hero
+  headline, which capitalises every word. Content is never hidden
+  without script, with reduced motion, in print, or when it is already on screen at load. Pages below
+  the home page start with `PageHero` and end with `ClosingPanel`; the only entrance effect is
+  `Reveal`, which fades content below the fold up once. Interface icons are Tabler outline icons
+  (`react-icons/tb`) and brand marks are Simple Icons (`react-icons/si`). Moving illustrations use the
+  line-art vocabulary in `docs/src/components/VectorMotion/`. The full rules are in
+  [branding/README.md](branding/README.md#website-design-system).
+- **Small screens.** Check new UI at 390 px with touch emulation, in both modes. The page never scrolls
+  sideways: wide content (code, tables, tab rows) scrolls inside its own box. Touch targets are 44 px:
+  size controls to it, and give a one-line text link its target from an unseen box under
+  `@media (pointer: coarse)`, as `.ak-link` does, so the layout does not move. Anything named only on
+  hover needs its name written out under `@media (hover: none)`. A bar that sticks under the navbar
+  follows it when it slides away (`html:has(.navbar[class*='navbarHidden'])`, as in `StepTimeline`).
+  Form fields are 16 px or larger, or Safari zooms the page. Under 996 px the navbar is 56 px and
+  anything scoped to `.navbar` also matches the phone menu, so scope bar-only rules to `.navbar__inner`.
+- **llms.txt.** `docs/plugins/llms-txt/` writes `/llms.txt` (an index for AI assistants) and
+  `/llms-full.txt` (the docs as one file) on every build, from the released docs. The list of pages is
+  generated, so a new docs page needs nothing. The summary above the list is hand-written in
+  `template.md`: update it when a framework is added or removed, the supported Python versions change,
+  or the install command or an identifier changes. Give a new docs page an opening sentence that says
+  what the page is for, because that sentence becomes its description in the index. `npm test` in
+  `docs/` runs the tests of the plugin's text helpers.
+
 ## Conventions
 
 - **Commits & PRs**: [CONTRIBUTING.md](CONTRIBUTING.md) is canonical for commit message format
@@ -161,6 +221,11 @@ repo-wide search).
   and `ak-dev-sync-skills-from-branch` describe how root docs, `ak-py` docs, and the bundled
   skills get kept in sync with code — this repo has automation (`auto-sync-skills-docs.yaml`) that
   expects docs/skills to track implementation, not drift.
+- **Changelog**: a PR with a user-visible change adds a fragment under `changelog.d/`
+  (`<issue>.<type>.md`), never an edit to `CHANGELOG.md`; the Publish workflow compiles fragments
+  at release time and `changelog-check.yaml` enforces them. Rules are in CONTRIBUTING.md,
+  "Changelog entries"; `.agents/skills/ak-dev-sync-changelog-from-branch` writes the fragment at
+  the end of a branch, alongside the docs and skills sync.
 
 ## Terraform (`ak-deployment/`)
 

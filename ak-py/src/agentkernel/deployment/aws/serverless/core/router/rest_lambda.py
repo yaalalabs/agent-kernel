@@ -82,7 +82,7 @@ class DefaultEndpointsHandler:
 
     def _parse_body(self, event: dict[str, Any]) -> BaseRequest:
         """
-        Parse request body from API Gateway event and assign the caller's principal to it.
+        Parse request body from API Gateway event and assign the caller's principal and the `rest` surface to it.
 
         The principal is the one the API Gateway authorizer serialized into the request context
         (``requestContext.authorizer.principal``); without an authorizer context the request runs
@@ -96,6 +96,8 @@ class DefaultEndpointsHandler:
         request = BaseRequest.from_payload(body_dict)
         if request.body is not None:
             request.body.principal = self.principal_from_event(event)
+            # The request entered by the REST API: only an agent whose descriptor is on `rest` is served to it.
+            request.body.surface = "rest"
         return request
 
     @staticmethod
@@ -341,6 +343,8 @@ class RESTLambdaRouter(BaseLambdaRouter):
     Router for AWS Lambda events coming from API Gateway REST API v1.
     - Register handlers per (method, route) for REST endpoints.
     - Route can be provided in multiple forms and will be normalized.
+    - Routes may carry path parameters ("/threads/{session_id}"): dispatch looks the route up by the
+      resource template API Gateway matched, and handlers read the values from event["pathParameters"].
     - If no handler match is found, the router raises ValueError.
     """
 
@@ -398,6 +402,19 @@ class RESTLambdaRouter(BaseLambdaRouter):
 
         return _decorator
 
+    def _resolve_route_path(self, event: dict[str, Any], event_path: str, base_path: str, method: str) -> str:
+        """
+        Resolve the registered route key: the resource template API Gateway matched first, then the concrete path.
+
+        :param event: API Gateway event
+        :param event_path: Concrete request path
+        :param base_path: The /<api_base_path>/<api_version> prefix to strip
+        :param method: Normalized HTTP method
+        :return: The first candidate registered for the method, else the concrete path
+        """
+        candidates = [p.removeprefix(base_path) for p in (event.get("resource"), event_path) if p]
+        return next((p for p in candidates if method in self._routes.get(p, {})), candidates[-1])
+
     def dispatch(self, event: dict[str, Any], context: Any) -> dict[str, Any] | None:
         """
         Dispatch incoming API Gateway REST event to the appropriate registered handler.
@@ -418,7 +435,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
             converted_event_path = (
                 self._default_chat_path
                 if event_path == env_agent_endpoint and method in [self._default_chat_method, self._default_user_polling_method]
-                else event_path.removeprefix(env_base_path)
+                else self._resolve_route_path(event, event_path, env_base_path, method)
             )
         else:
             self._log.warning("Environment variables not provided; using default agent handler")

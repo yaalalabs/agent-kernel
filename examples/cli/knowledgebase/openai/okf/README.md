@@ -207,7 +207,7 @@ configuration is legitimately correct wherever the bundle happens to be writable
 
 ## What Happens At Startup
 
-1. Agent Kernel reads the `okf` block and validates it: every database must name an agent, and
+1. Open Agent Kernel (OAK) reads the `okf` block and validates it: every database must name an agent, and
    no agent may be both `producer` and `curator` of the same database.
 2. Each `Agent(...)` in `demo.py` is constructed. As it is, `SystemToolFactory` asks the OKF
    capability for that agent's tools and prompt section.
@@ -250,7 +250,7 @@ Choose the config path otherwise — it is less code and the protocol ships main
 
 Do not use both for the same agent. If an agent is named in the `okf` block *and* has
 knowledge-base tools bound by hand, it ends up carrying two sets of identically named tools;
-Agent Kernel logs a warning naming the collisions and attaches anyway, since silently ignoring
+OAK logs a warning naming the collisions and attaches anyway, since silently ignoring
 your configuration would be worse.
 
 ## Run Tests

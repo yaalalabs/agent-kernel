@@ -1,12 +1,14 @@
 ---
 slug: /framework-agnostic-tool-binding
 title: "Write Once, Run Anywhere: Universal Tools for AI Agents"
-authors: [yaala]
+authors: [amitha]
 tags: [agent-kernel, tools, openai, google-adk, crewai, langgraph, framework-agnostic, portability]
-image: /img/card.png
+image: /img/blog/framework-agnostic-tools-banner.png
 ---
 
 # Write Once, Run Anywhere: Universal Tools for AI Agents
+
+![Write once, run anywhere. Universal tools for AI agents: stop rewriting the same tools for different frameworks.](/img/blog/framework-agnostic-tools-banner.png)
 
 **Stop rewriting the same tools for different AI frameworks.**
 

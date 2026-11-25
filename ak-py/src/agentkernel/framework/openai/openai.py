@@ -18,10 +18,8 @@ from openai.types.responses.response_text_delta_event import ResponseTextDeltaEv
 
 from ...core import Agent as BaseAgent
 from ...core import Module
-from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
-from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -53,6 +51,7 @@ from ...core.model import (
 )
 from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
+from ...realtime.base import RealtimeRunner as BaseRealtimeRunner
 from ...secret import SecretManager
 from ...trace import Trace
 
@@ -349,18 +348,26 @@ class OpenAIRunner(BaseRunner):
                 f"({type(e).__name__}: {e}). This usually means the SDK was upgraded while the run was paused."
             ) from e
 
-    def _apply(self, state: RunState, decisions: list[ResumeDecision]) -> None:
+    def _apply(self, state: RunState, decisions: list[ResumeDecision], run_config: Any = None) -> None:
         """
         Renders each decision onto the restored state.
 
-        `cancelled` reaches the model as a rejection carrying AK's own wording, because the SDK has
-        only approve and reject: without it, "nobody decided" would be indistinguishable from "the
-        human refused", which is the distinction the three-valued status exists to keep.
+        The SDK has only approve and reject, so both `denied` and `cancelled` reject — carrying
+        AK's own wording from :meth:`_rejection_text`, since `rejection_message` **becomes the
+        call's output**. Left to the SDK a refusal reads as approval still pending, and left to the
+        human's bare words it reads as what the tool returned.
+
+        An application that configured `RunConfig.tool_error_formatter` has said how a refused call
+        should read, so a denial carrying no reason of its own defers to it: the SDK consults the
+        formatter only when no explicit message is given. A denial that does carry a reason, and
+        `cancelled` in every case, keep AK's wording — nobody deciding is not a tool error.
 
         :param state: The restored state.
         :param decisions: The human's decisions, already validated against the record by Runtime.
+        :param run_config: The resolved run options' `run_config`, when one was declared.
         :raises ValueError: If a decision names an interruption the restored state does not hold.
         """
+        formatter = getattr(run_config, "tool_error_formatter", None)
         pending = {item.call_id: item for item in state.get_interruptions()}
         for decision in decisions:
             item = pending.get(decision.id)
@@ -371,10 +378,10 @@ class OpenAIRunner(BaseRunner):
                 )
             if decision.status == "approved":
                 state.approve(item)
-            elif decision.status == "denied":
-                state.reject(item, rejection_message=decision.message)
+            elif formatter is not None and decision.status == "denied" and not decision.message:
+                state.reject(item)
             else:
-                state.reject(item, rejection_message=self.CANCELLED_DECISION_MESSAGE)
+                state.reject(item, rejection_message=self._rejection_text(decision))
 
     async def resume(
         self,
@@ -404,9 +411,9 @@ class OpenAIRunner(BaseRunner):
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            self._apply(state, decisions)
-
             options = await agent.resolve_run_options(session, requests)
+            self._apply(state, decisions, options.get("run_config"))
+
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
             kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
@@ -456,9 +463,9 @@ class OpenAIRunner(BaseRunner):
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            self._apply(state, decisions)
-
             options = await agent.resolve_run_options(session, requests)
+            self._apply(state, decisions, options.get("run_config"))
+
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
             kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
@@ -632,7 +639,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
     The wrapped agent must be a ``RealtimeAgent``; the SDK owns its tools, handoffs and guardrails.
     Run options: ``model`` and ``config`` reach ``RealtimeRunner(...)``, ``model_config`` reaches ``run(...)``.
-    Agent Kernel hooks and guardrails do not run on this path.
+    Agent Kernel hooks run on the call in the realtime pool, not in this adapter (see docs/specs/927-realtime-hooks).
     """
 
     RUNNER_OPTIONS: ClassVar[frozenset[str]] = frozenset({"model", "config"})
@@ -644,13 +651,10 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
     def __init__(self):
         super().__init__(FRAMEWORK)
+        self._log = logging.getLogger("ak.openai.realtime")
         self._session: RealtimeSession | None = None
-        self._callback: Callable | None = None
         self._listen_task: asyncio.Task | None = None
-        self._closing = False
         self._response_in_flight = False
-        self._speaker: str | None = None
-        self._roster: list[str] = []
 
     def team(self, agent: BaseAgent) -> list[str]:
         """Every agent reachable through ``handoffs``, the starting agent first."""
@@ -748,19 +752,18 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            _log.error(f"OpenAI realtime session error: {e}")
-            if not self._closing:
-                await self._callback("error", {"message": f"OpenAI realtime session error: {e}"})
+            await self._report_listen_failed(f"OpenAI realtime session error: {e}")
             return
-        if not self._closing:
-            # A clean end of the event stream means the native session closed, not that a turn finished.
-            await self._callback("error", {"message": "OpenAI realtime session ended"})
+        # A clean end of the event stream means the native session closed, not that a turn finished.
+        await self._report_listen_ended("OpenAI realtime session ended")
 
     async def _handle_event(self, event: Any) -> None:
         """Maps one SDK session event onto the pool's events."""
         kind = event.type
         if kind == "audio":
-            await self._callback("audio_delta", {"delta": base64.b64encode(event.audio.data).decode("utf-8"), "message_id": event.item_id})
+            await self._callback(
+                BaseRealtimeRunner.Event.AUDIO_DELTA, {"delta": base64.b64encode(event.audio.data).decode("utf-8"), "message_id": event.item_id}
+            )
         elif kind == "raw_model_event":
             await self._handle_model_event(event.data)
         elif kind == "handoff":
@@ -770,42 +773,35 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         elif kind == "audio_interrupted":
             await self._interrupted()
         elif kind == "guardrail_tripped":
-            _log.warning(f"Realtime output guardrail tripped: {event.message[:200]}")
+            self._log.warning(f"Realtime output guardrail tripped: {event.message[:200]}")
             await self._interrupted()
         elif kind == "tool_approval_required":
             await self._refuse_approval(event)
         elif kind == "error":
             # An error the session survives; one it cannot survive raises in _listen instead.
-            _log.warning(f"OpenAI realtime error: {event.error}")
+            self._log.warning(f"OpenAI realtime error: {event.error}")
 
     async def _handle_model_event(self, data: Any) -> None:
         kind = data.type
         if kind in ("transcript_delta", "output_text_delta"):
-            await self._callback("transcript_delta", {"delta": data.delta, "message_id": data.item_id})
+            await self._callback(BaseRealtimeRunner.Event.TRANSCRIPT_DELTA, {"delta": data.delta, "message_id": data.item_id})
+        elif kind == "input_audio_transcription_completed":
+            text = (data.transcript or "").strip()
+            if text:
+                await self._callback(BaseRealtimeRunner.Event.INPUT_TRANSCRIPT, {"text": text, "message_id": data.item_id})
         elif kind == "turn_started":
             self._response_in_flight = True
         elif kind == "turn_ended":
             self._response_in_flight = False
-            await self._callback("done", {"status": "completed"})
-
-    async def _speaker_changed(self, agent: str, previous: str | None = None) -> None:
-        """Reports a change of speaker once (the SDK names it on both handoff and agent_start), with the roster when the agent is new."""
-        if agent == self._speaker:
-            return
-        data: dict[str, Any] = {"agent": agent, "previous_agent": previous or self._speaker}
-        if agent not in self._roster:
-            self._roster.append(agent)
-            data["agents"] = list(self._roster)
-        self._speaker = agent
-        await self._callback("agent_changed", data)
+            await self._callback(BaseRealtimeRunner.Event.DONE, {"status": "completed"})
 
     async def _interrupted(self) -> None:
         """Reports ``interrupt`` while a response is in flight, else ``speech_started``: the SDK sends one event for both."""
         if self._response_in_flight:
             self._response_in_flight = False
-            await self._callback("interrupt", {})
+            await self._callback(BaseRealtimeRunner.Event.INTERRUPT, {})
         else:
-            await self._callback("speech_started", {})
+            await self._callback(BaseRealtimeRunner.Event.SPEECH_STARTED, {})
 
     async def _refuse_approval(self, event: Any) -> None:
         """Rejects a tool call that needs approval, so the model is not left waiting, and fails the connection."""
@@ -814,7 +810,8 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
             await self._session.reject_tool_call(event.call_id)
         finally:
             await self._callback(
-                "error", {"message": f"Tool '{name}' of agent '{event.agent.name}' needs approval, which a realtime session cannot get"}
+                BaseRealtimeRunner.Event.ERROR,
+                {"message": f"Tool '{name}' of agent '{event.agent.name}' needs approval, which a realtime session cannot get"},
             )
 
     async def append_audio(self, base64_audio: str) -> None:
@@ -893,16 +890,27 @@ class OpenAIAgent(BaseAgent):
         # Delegate to the tool builder to handle binding
         self._append_tools(self._agent, OpenAIToolBuilder.bind([tool]))
 
-    def get_a2a_card(self):
+    def _native_description(self) -> str:
         """
-        Returns the A2A AgentCard associated with the agent.
+        Returns the agent's `handoff_description`: the SDK's own description of what the agent does and when to
+        call on it, kept apart from its instructions.
         """
-        from a2a.types import AgentSkill
+        return self.agent.handoff_description or ""
 
-        skills = []
-        for tool in self.agent.tools:
-            skills.append(AgentSkill(id=tool.name, name=tool.name, description=tool.description, tags=[]))
-        return A2ACardBuilder.build(name=self.name, description=self.agent.instructions, skills=skills)
+    def get_tool_names(self) -> list[str]:
+        """
+        Returns the names of the native agent's tools, hosted tools included.
+
+        Not reported: the tools of the agent's `mcp_servers`, which are listed only when a run connects, and the
+        tools of an agent it hands off to, which that agent's own descriptor reports.
+        """
+        return [tool.name for tool in self.agent.tools]
+
+    def _tool_descriptions(self) -> dict[str, str]:
+        """
+        Returns the description of each native tool by name. A hosted tool carries none.
+        """
+        return {tool.name: getattr(tool, "description", None) or "" for tool in self.agent.tools}
 
 
 class OpenAIModule(Module):
@@ -920,16 +928,26 @@ class OpenAIModule(Module):
         Initializes an OpenAIModule instance.
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
-        :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
+        :param realtime_runner_cls: Optional realtime runner class for ``execution.mode: realtime``; defaults to the
+            OpenAI realtime runner, or the configured tracer's traced one when tracing is enabled.
         """
         super().__init__()
-        self.realtime_runner_cls = realtime_runner_cls or OpenAIRealtimeRunner
+        # A tracer is built only when a runner is left to choose, as before: a module given both runners never touches tracing.
+        needs_tracer = runner is None or realtime_runner_cls is None
+        tracer = Trace.get() if needs_tracer and AKConfig.get().trace.enabled else None
         if runner is not None:
             self.runner = runner
-        elif AKConfig.get().trace.enabled:
-            self.runner = Trace.get().openai()
+        elif tracer is not None:
+            self.runner = tracer.openai()
         else:
             self.runner = OpenAIRunner()
+        # After the text runner: its constructor installs the instrumentor; the realtime method then finds it installed.
+        if realtime_runner_cls is not None:
+            self.realtime_runner_cls = realtime_runner_cls
+        elif tracer is not None and (traced := tracer.openai_realtime()) is not None:
+            self.realtime_runner_cls = traced
+        else:
+            self.realtime_runner_cls = OpenAIRealtimeRunner
         self.load(agents)
 
     def _wrap(self, agent: Agent | RealtimeAgent, agents: list[Agent | RealtimeAgent]) -> BaseAgent:

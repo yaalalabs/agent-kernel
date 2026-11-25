@@ -29,10 +29,10 @@ A2UI = "application/a2ui+json"
 
 @pytest.fixture(autouse=True)
 def reset_a2a_state():
-    """A2A keeps its cards, executors and client in class state; restore them so tests don't leak."""
-    saved = (dict(A2A._cards), dict(A2A._executors), A2A._built, A2A._client)
+    """A2A keeps its cards, their descriptors, the executors and the client in class state; none of it leaks."""
+    A2A.reset()
     yield
-    A2A._cards, A2A._executors, A2A._built, A2A._client = dict(saved[0]), dict(saved[1]), saved[2], saved[3]
+    A2A.reset()
 
 
 class FakeClient:

@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Overview
 
-Agent Kernel is built around six core abstractions that work together to provide a unified interface for AI agent development and execution.
+Open Agent Kernel (OAK) is built around six core abstractions that work together to provide a unified interface for AI agent development and execution.
 
 ## Architecture Overview
 
@@ -14,7 +14,7 @@ graph TB
         A[Agent Definition<br/>OpenAI/CrewAI/LangGraph/ADK]
     end
     
-    subgraph "Agent Kernel Core"
+    subgraph "OAK Core"
         B[Agent<br/>Framework Wrapper]
         T[Tools<br/>Framework-Agnostic]
         C[Runner<br/>Execution Strategy]
@@ -50,8 +50,8 @@ graph TB
     F --> M
     
     style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff
-    style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style E fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style F fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style E fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## The Six Core Abstractions
@@ -178,7 +178,7 @@ agent = runtime.agents().get("my-agent")
 
 Around these abstractions, the kernel provides:
 
-- **Hooks**: `PreHook`/`PostHook` classes attached per-agent or system-wide. Pre-hooks can rewrite or halt requests (guardrails, RAG injection); post-hooks transform replies and can inspect, rewrite or drop any streamed event — tool arguments and results included — via `on_stream_event()`, or end a run by raising `StreamHalt`. [Hooks guide →](../integrations/hooks)
+- **Hooks**: `PreHook`/`PostHook` classes attached per-agent or system-wide. Pre-hooks can rewrite or halt requests (guardrails, RAG injection); post-hooks transform replies and can inspect, rewrite or drop any streamed event — tool arguments and results included — via `on_stream_event()`, or end a run by raising `StreamHalt`. On a realtime voice call the same hooks run, with an optional `on_stream_input()` for caller audio. [Hooks guide →](../integrations/hooks)
 - **AgentService**: the conversation object for stateful clients (the CLI): owns agent selection and session lifecycle; `run_multi()` executes multi-modal requests and `stream_multi()` yields token-level `StreamChunk`s.
 - **ChatService**: the chat request layer on top of AgentService. Its execution core (`execute`/`execute_stream`) validates, builds or accepts prebuilt request lists, and returns typed replies; it is what messaging integrations, the thread handler, and the AG-UI handler call. Its presentation wrappers (`process_*`) add the HTTP shapes (JSON, SSE, `HTTPException`) used by the REST API and deployment handlers.
 - **Execution modes**: the same application supports direct execution, SSE streaming (`execution.mode: rest_sync` with `execution.message_type: delta`), and on AWS, queue-backed (`rest_sync`/`rest_async`) and WebSocket (`async`, with `message_type` `complete` or `delta`) modes. [Execution flow →](../architecture/execution-flow)
@@ -216,12 +216,12 @@ sequenceDiagram
 graph LR
     A[Define Framework Agents] --> B[Create Module]
     B --> C[Module.__init__]
-    C --> D[Create AK Agents]
+    C --> D[Create OAK Agents]
     D --> E[Create Runners]
     E --> F[Register with Runtime]
     F --> G[Ready for Execution]
     
-    style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style F fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 ### Execution Flow
@@ -236,19 +236,19 @@ graph TD
     F --> G[Update Session]
     G --> H[Return Result]
     
-    style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style E fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style B fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style E fill:#3F598A,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## Design Principles
 
 ### Framework Agnostic
 
-Agent Kernel provides a consistent API regardless of the Agent framework you use. In fact you can have mix frameworks for different Agents and all can run together in the same deployment. If you decide to switch the Agent framework, the kernel provides a similar interface and hence the porting can be really quick.
+OAK provides a consistent API regardless of the Agent framework you use. In fact you can have mix frameworks for different Agents and all can run together in the same deployment. If you decide to switch the Agent framework, the kernel provides a similar interface and hence the porting can be really quick.
 
 ### Minimal Overhead
 
-Agent Kernel adds minimal overhead to framework execution. It's a thin adapter layer, not a heavy abstraction.
+OAK adds minimal overhead to framework execution. It's a thin adapter layer, not a heavy abstraction.
 
 ### Pluggable Architecture
 
@@ -270,7 +270,7 @@ Built-in features for production deployment:
 
 ## Configuration
 
-Agent Kernel can be configured via environment variables or a configuration object:
+OAK can be configured via environment variables or a configuration object:
 
 ```python
 from agentkernel.core import AKConfig
@@ -286,7 +286,7 @@ Common configuration options:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AK_LOGGING__AK__LEVEL` | Agent Kernel logging level | not overridden |
+| `AK_LOGGING__AK__LEVEL` | OAK logging level | not overridden |
 | `AK_SESSION__TYPE` | Session storage backend (`in_memory`, `redis`, `valkey`, `dynamodb`, `cosmosdb`, `firestore`) | `in_memory` |
 | `AK_SESSION__REDIS__URL` | Redis connection URL | `redis://localhost:6379` |
 | `AK_SESSION__DYNAMODB__TABLE_NAME` | DynamoDB table name | - |
@@ -342,7 +342,7 @@ if __name__ == "__main__":
 
 Sessions and caches help with short- to medium-term conversational context, but many applications also need durable, cross-session knowledge that persists across conversations and agents. Examples include product manuals, user or customer profiles, organizational policies, or domain knowledge graphs.
 
-Agent Kernel's **Knowledge Base** support provides a unified way to connect multiple storage backends - vector stores, graph databases, SQL engines, and directories of markdown documents - and expose them to agents as callable tools. Each backend declares what it supports, and the agent is given tools for exactly those operations.
+OAK's **Knowledge Base** support provides a unified way to connect multiple storage backends - vector stores, graph databases, SQL engines, and directories of markdown documents - and expose them to agents as callable tools. Each backend declares what it supports, and the agent is given tools for exactly those operations.
 
 For help deciding between session memory and a knowledge base, see [Choosing a Memory Backend](./memory-backends.md).
 
@@ -495,7 +495,7 @@ knowledge_agent = CrewAgent(
 )
 ```
 
-The knowledge base tools integrate seamlessly with Agent Kernel's `ToolBuilder` pattern, which means:
+The knowledge base tools integrate seamlessly with OAK's `ToolBuilder` pattern, which means:
 - **Framework-agnostic**: same KB tools work with OpenAI, CrewAI, LangGraph, etc.
 - **No boilerplate**: Agent automatically gets `read_kb`, `write_kb`, schema introspection, and whichever capability-gated tools the registered backends support
 - **Pluggable**: swap backends without changing agent code

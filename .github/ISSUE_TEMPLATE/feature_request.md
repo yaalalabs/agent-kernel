@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature or enhancement for Agent Kernel
+about: Suggest a new feature or enhancement for Open Agent Kernel
 title: '[FEATURE] '
 labels: enhancement
 assignees: amithad

@@ -1,13 +1,13 @@
-# Agent Kernel running OpenAI Agents SDK based agents in Azure Container Apps with Azure Cosmos DB as agent memory
+# Open Agent Kernel running OpenAI Agents SDK based agents in Azure Container Apps with Azure Cosmos DB as agent memory
 
-This package contains a demo of Agent Kernel running agents built with OpenAI Agents SDK, running them in a containerized configuration on Azure Container Apps using Azure Cosmos DB as agent memory.
+This package contains a demo of Open Agent Kernel running agents built with OpenAI Agents SDK, running them in a containerized configuration on Azure Container Apps using Azure Cosmos DB as agent memory.
 
 ## Deployed Resources
 
 This demo deploys the following Azure resources:
 
 - **Azure Container Apps Environment** - Serverless container hosting platform
-- **Azure Container App** - Python application running the Agent Kernel implementation
+- **Azure Container App** - Python application running the OAK implementation
 - **Azure Container Registry (ACR)** - Private container registry for the application image
 - **Azure API Management (APIM)** - API Gateway endpoint for the Container App service
 - **Azure Cosmos DB** - NoSQL database for agent memory and session storage. We are using the [Azure Cosmos DB Table API](https://learn.microsoft.com/en-us/azure/cosmos-db/table/introduction) to store the session data.

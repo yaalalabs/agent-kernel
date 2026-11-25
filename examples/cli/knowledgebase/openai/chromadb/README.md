@@ -7,7 +7,7 @@ This example shows how to add a **single knowledge base** using ChromaDB.
 1. How to define a ChromaDB backend with a clear schema.
 2. How to build KB tools from `KnowledgeBuilder`.
 3. How to bind KB tools into an OpenAI Agent.
-4. How to run the agent from the Agent Kernel CLI.
+4. How to run the agent from the Open Agent Kernel CLI.
 
 > These have been implemneted in demo.py please refer that 
 

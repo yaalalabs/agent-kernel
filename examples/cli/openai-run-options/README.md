@@ -1,4 +1,4 @@
-# Agent Kernel: per-agent native run options (OpenAI Agents SDK)
+# Open Agent Kernel: per-agent native run options (OpenAI Agents SDK)
 
 This demo shows how to pass the OpenAI Agents SDK's own **per-run options** to an agent through Agent
 Kernel: a higher `max_turns`, a `RunHooks` instance that reports progress, and a `RunConfig` carrying a
@@ -14,7 +14,7 @@ OpenAIModule([weather_agent]).run_options(
 )
 ```
 
-Every keyword is one of `Runner.run` / `Runner.run_streamed`'s own arguments. Agent Kernel copies the
+Every keyword is one of `Runner.run` / `Runner.run_streamed`'s own arguments. Open Agent Kernel copies the
 declared options into the native call and writes the keys it owns (`session`, `context`) last.
 
 ## How it works
@@ -44,7 +44,7 @@ Run stats: llm_calls=2, tool_calls=1, filter_runs=2, max_turns=25
 
 | Path | Mode | What you get |
 |---|---|---|
-| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
+| OAK stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
 | Native hooks through run options (this demo) | any mode, including `rest_sync` | the SDK's full lifecycle: `on_agent_start`, `on_llm_start`, `on_tool_start`, handoffs |
 
 ## Notes

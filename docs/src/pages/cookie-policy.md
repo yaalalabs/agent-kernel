@@ -4,7 +4,7 @@
 
 ## Introduction
 
-This Cookie Policy explains how Yaala Labs ("we", "us", or "our") uses cookies on the Agent Kernel documentation website at [kernel.yaala.ai](https://kernel.yaala.ai), and how you can control them.
+This Cookie Policy explains how Yaala Labs ("we", "us", or "our") uses cookies on the Open Agent Kernel documentation website at [kernel.yaala.ai](https://kernel.yaala.ai), and how you can control them.
 
 ## What Are Cookies?
 

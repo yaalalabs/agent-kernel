@@ -4,11 +4,11 @@ sidebar_position: 3
 
 # Agent Skills
 
-Agent Kernel ships with **Agent Skills**: structured guides that coding agents (GitHub Copilot, Claude Code, Codex, etc.) can follow to help you build, extend, and deploy AI agents. Skills use the [Agent Skills Open Standard](https://agentskills.io) (SKILL.md format) for cross-agent compatibility.
+Open Agent Kernel (OAK) ships with **Agent Skills**: structured guides that coding agents (GitHub Copilot, Claude Code, Codex, etc.) can follow to help you build, extend, and deploy AI agents. Skills use the [Agent Skills Open Standard](https://agentskills.io) (SKILL.md format) for cross-agent compatibility.
 
 ## What Are Agent Skills?
 
-Agent Skills are machine-readable guides that coding agents discover and follow automatically. Instead of reading documentation yourself and translating it into code, you describe what you want in natural language and the coding agent reads the relevant skill to generate correct, idiomatic code for Agent Kernel.
+Agent Skills are machine-readable guides that coding agents discover and follow automatically. Instead of reading documentation yourself and translating it into code, you describe what you want in natural language and the coding agent reads the relevant skill to generate correct, idiomatic code for OAK.
 
 Each skill is a `SKILL.md` file with:
 - **YAML frontmatter**: name, description, metadata for discovery (~100 tokens)
@@ -56,13 +56,30 @@ ak skill update --assistant claude
 
 Once installed, skills are automatically discovered by the corresponding coding agent.
 
+## Giving Your Assistant the Docs
+
+Skills tell a coding assistant how to do a task. To let it look things up as well, point it at the docs. The site publishes them in the [llms.txt](https://llmstxt.org) format, which is written for AI assistants:
+
+| File | What it holds | Use it when |
+|------|---------------|-------------|
+| [`llms.txt`](https://kernel.yaala.ai/llms.txt) | A summary of OAK and a link to every docs page, with one line on each | The assistant can open links: it reads the index and fetches the pages it needs |
+| [`llms-full.txt`](https://kernel.yaala.ai/llms-full.txt) | Every docs page in one file | The assistant cannot browse, or you want the whole docs in one upload |
+
+Paste the address into a chat, or add it as a docs source where your tool supports that:
+
+```text
+https://kernel.yaala.ai/llms.txt
+```
+
+`llms-full.txt` is large (over 1 MB), more than many assistants can read in one message, so upload it as a file or give it to a tool that indexes documents. Both files describe the latest release and are rebuilt with the site.
+
 ## Available User Skills
 
 These skills are bundled with the `agentkernel` PyPI package and help you build agent projects:
 
 ### ak-init
 
-Interactively scaffold a new Agent Kernel project. Covers all supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
+Interactively scaffold a new OAK project. Covers all supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
 
 **Example prompts:**
 - *"Create a new agent project using CrewAI for AWS Lambda"*
@@ -87,7 +104,7 @@ Add messaging platform integrations to an existing project. Covers Slack, WhatsA
 
 ### ak-cloud-deploy
 
-Deploy your agent to AWS, Azure, GCP, or any Kubernetes cluster. Generates complete Terraform configurations for six cloud deployment modes, plus Helm-chart deployments to on-prem/baremetal/EKS Kubernetes (the `ak-deployment/ak-k8s` chart: io-handler + agent-runner Deployments over NATS/Kafka/SQS, optional WebSocket gateway tier, KEDA queue-depth autoscaling). Terraform modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, an API Gateway authorizer (`APIGatewayAuthorizer`, one line) that authenticates through the `identity` block in `config.yaml`, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds, plus a scalable SQS queue mode (`queue_mode = true`) that splits the deployment into a REST/IO ECS service (`ECSIOHandler`) and a separate Agent Runner ECS service (`ECSAgentRunner`) with `sync`/`async` execution modes and DynamoDB-backed response storage.
+Deploy your agent to AWS, Azure, GCP, or any Kubernetes cluster. Generates complete Terraform configurations for six cloud deployment modes, plus Helm-chart deployments to on-prem/baremetal/EKS Kubernetes (the `ak-deployment/ak-k8s` chart: io-handler + agent-runner Deployments over NATS/Kafka/SQS, optional WebSocket gateway tier, KEDA queue-depth autoscaling). Terraform modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, an API Gateway authorizer (`APIGatewayAuthorizer`, one line) that authenticates through the `identity` block in `config.yaml`, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds, plus a scalable SQS queue mode (`queue_mode = true`) that splits the deployment into a REST/IO ECS service (`IOHandler`, or `AWSWebsocketAPI` in WebSocket mode) and a separate Agent Runner ECS service (`AgentRunner`) with `sync`/`async` execution modes and DynamoDB-backed response storage.
 
 **Example prompts:**
 - *"Deploy my agent to AWS Lambda"*
@@ -115,18 +132,18 @@ Set up testing and debug common issues. Covers test modes (score, llm, fallback)
 
 ## Developer Skills: Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains nineteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+OAK doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains twenty developer skills that teach coding assistants how to work on the OAK codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards, eliminating the onboarding curve for new contributors.
 
 | Skill | What It Teaches Your Coding Assistant |
 |---|---|
-| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`, `AgentService`, `ChatService`), design principles, the house patterns every new feature follows (pluggable by default, reuse of existing configuration over new knobs, classes over script-style functions), adapter pattern, messaging integrations (the `integration/adapter` seam: `InboundAdapter`/`OutboundAdapter`, `WebhookRESTRequestHandler`, `PollerRunner`), execution flow, the unified queue execution pipeline (`agentkernel.pipeline`: `QueueMessage`/`QueueTransport`/`ConsumerLoop`, the `in_memory` transport, `RequestProducer`, `AgentRunner`/`ResponseHandler`/`RequestHandler`/`IOHandler`, the `RESTAPI.run` delegation rule, and the relocation shims), and the AWS ECS containerized deployment classes (`ECSIOHandler`, `ECSOutputConsumer`, `ECSAgentRunner`, `ECSStreamAgentRunner`, `ECSSQSConsumer`, `RawQueueConsumer`, `ThreadRunner`), everything needed to understand the codebase |
+| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`, `AgentService`, `ChatService`), design principles, the house patterns every new feature follows (pluggable by default, reuse of existing configuration over new knobs, classes over script-style functions), adapter pattern, messaging integrations (the `integration/adapter` seam: `InboundAdapter`/`OutboundAdapter`, `WebhookRESTRequestHandler`, `PollerRunner`), execution flow, the unified queue execution pipeline (`agentkernel.pipeline`: `QueueMessage`/`QueueTransport`/`ConsumerLoop`, the `in_memory` transport, `RequestProducer`, `AgentRunner`/`ResponseHandler`/`RequestHandler`/`IOHandler`, the `RESTAPI.run` delegation rule, and the relocation shims), and the AWS ECS containerized deployment on the shared pipeline classes (`IOHandler`, `AgentRunner`, `AWSWebsocketAPI`, `AWSWebSocketHandler`, `ECSSQSConsumer`, `RawQueueConsumer`, `ThreadRunner`), everything needed to understand the codebase |
 | `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK): subclass creation, dependency wiring, exports, tests |
 | `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail): writing the `InboundAdapter`/`OutboundAdapter` pair, hosting it (`WebhookRESTRequestHandler` or `PollerRunner`), webhook verification, attachments, configuration, and examples |
 | `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst, Open Knowledge Format): declare capabilities, implement the matching `KnowledgeBase` operations, reuse `DocumentStore` for document-shaped backends, wire dependencies, add contract tests/docs/examples |
 | `ak-dev-new-guardrail-provider` | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI): input/output guardrails, factory registration, configuration |
-| `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry, Logfire, CloudWatch): `BaseTrace` interface, traced runners, factory wiring |
+| `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry, Logfire, CloudWatch): `BaseTrace` interface, traced runners (and traced realtime runners for voice calls), factory wiring |
 | `ak-dev-new-multimodal-storage` | How to add a new multimodal attachment storage backend (beyond in-memory, Redis, DynamoDB): storage interface, config wiring, tests, and docs |
 | `ak-dev-new-sandbox-provider` | How to add a new sandbox code-execution backend (beyond `local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`): implement the `Sandbox`/`SandboxProvider` ABCs, declare capabilities honestly (including `install_packages` and language support), factory registration, config block, contract tests |
 | `ak-dev-new-queue-transport` | How to add a new queue transport to the execution pipeline (beyond `in_memory`, SQS, Kafka, NATS JetStream, Google Cloud Pub/Sub, Azure Service Bus): the queue-semantics contract, `QueueTransport`/`TransportConsumer` implementation, factory registration, config and extras, the `QueueTransportContract` suite (fake and live-broker), the transport example, and Helm chart wiring |
@@ -135,6 +152,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-new-identity-provider` | How to add a new identity provider (beyond `oidc`, `cognito`, `entra`, `firebase` and `static`; Auth0, Keycloak and Okta are `oidc` configurations): the `IdentityProvider` contract (`authenticate` raising `AuthenticationError`, `security_scheme`, never writing `roles`), the config sub-block, factory registration behind `require_extra("auth")`, the dotted-path bring-your-own route, the role mapper, the `IdentityProviderContract`/`RoleMapperContract` suites, and docs, skills and example expectations |
 | `ak-dev-sync-skills-from-branch` | How to inspect branch commits plus uncommitted changes, then add/update/remove developer and user skills so the skill trees stay aligned with the implemented capability set |
 | `ak-dev-sync-docs-from-branch` | How to inspect branch commits plus uncommitted changes, then update root docs, package docs, website docs, deployment READMEs, and example READMEs so documentation matches the implemented behavior |
+| `ak-dev-sync-changelog-from-branch` | How to decide whether a branch changes anything users of OAK would notice, then add `changelog.d/<issue>.<type>.md` fragments written for users (never an edit to `CHANGELOG.md`) and check them the way the Changelog Check workflow and the release will |
 | `ak-dev-sync-skills-and-docs-from-commit` | How to process a specific commit hash (typically merged to develop), update dev/user skills and documentation based on that commit delta, and support automation PR flows with loop prevention |
 | `ak-dev-write-spec` | How to spec a planned change under `docs/specs/<issue-number>-<short-title>/` in three ordered stages: a concise point-form design spec (`design.md`) reviewed first, then a detailed implementation spec (`spec.md`), then a concise iteration-by-iteration plan (`plan.md`) the PR review checks the code against — plus an optional `research/` subfolder preserving the supporting investigation the design cites |
 | `ak-dev-review-pr` | Given a PR number or URL, fetch it with the GitHub CLI, review the delta against the architecture/code-quality/testing skills, dedupe findings, and post a single batched review with inline comments |
@@ -143,7 +161,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 
 ### How Contributors Benefit
 
-A first-time contributor doesn't need to spend hours reading source code to understand how Agent Kernel is structured. They simply ask their coding assistant:
+A first-time contributor doesn't need to spend hours reading source code to understand how OAK is structured. They simply ask their coding assistant:
 
 - *"Add support for a new agent framework called X"* → The assistant reads `ak-dev-new-framework-integration` and generates the complete adapter module with correct subclasses, exports, and tests.
 - *"Add a new tracing provider for Datadog"* → The assistant reads `ak-dev-new-tracing-provider` and implements the `BaseTrace` interface, creates traced runners, and wires the factory.
@@ -172,13 +190,13 @@ The skills carry the same architectural knowledge the core team has: patterns, c
 
 ## Real-World Use Cases
 
-The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) directory in the repository contains complete agent projects built using this exact workflow. Each project starts from a `SPEC.md` describing the agent's purpose, and the coding assistant uses the Agent Kernel skills to generate all code, configuration, and deployment files.
+The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases) directory in the repository contains complete agent projects built using this exact workflow. Each project starts from a `SPEC.md` describing the agent's purpose, and the coding assistant uses the OAK skills to generate all code, configuration, and deployment files.
 
 **Example: Waste Sorting Assistant**
 
 The [`waste-sorting-assistant`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/waste-sorting-assistant) is a domain-specific agent that recommends waste disposal categories based on item material and local recycling rules. It demonstrates:
 - OpenAI Agents SDK agent with custom tools
-- Agent Kernel session memory for region-specific rules
+- OAK session memory for region-specific rules
 - AWS Lambda deployment with DynamoDB-backed session persistence
 
 **Example: Mathru — Maternal Health Companion**

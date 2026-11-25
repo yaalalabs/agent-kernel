@@ -1,9 +1,9 @@
-# Agent Kernel
+# Open Agent Kernel
 
 [![PyPI version](https://badge.fury.io/py/agentkernel.svg)](https://badge.fury.io/py/agentkernel)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-Agent Kernel is a lightweight **AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks. Migrate your existing agents to Agent Kernel and instantly utilize pre-built execution and testing capabilities. Deploy the same agent code without modification — see the "Multi-Cloud Deployment" section below for supported platforms.
+Open Agent Kernel (OAK) is a lightweight **AI agent runtime** and adapter layer for building and running AI agents across multiple frameworks. Migrate your existing agents to OAK and instantly utilize pre-built execution and testing capabilities. Deploy the same agent code without modification — see the "Multi-Cloud Deployment" section below for supported platforms.
 
 ## Features
 
@@ -12,7 +12,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified, capability-declaring `KnowledgeBase` interface with ChromaDB, Neo4j, Starburst/Trino and Open Knowledge Format bundle (local directory or S3) backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
-- **Identity and Access**: One configured identity provider (any OIDC issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft Entra ID, Firebase, a static credential map, or your own by dotted path) authenticates every surface; tools, hooks, threads and scheduled tasks see the same `Principal`, and a role mapper derives roles from groups and claims
+- **Identity and Access**: One configured identity provider (any OIDC issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft Entra ID, Firebase, a static credential map, or your own by dotted path) authenticates every surface; tools, hooks, threads and scheduled tasks see the same `Principal`, and a role mapper derives roles from groups and claims. An optional `authorization` block grants principals a level on agents, so a caller runs and is listed only the agents it is granted or may see
 - **Secret Resolution**: `SecretManager` resolves API keys and passwords environment-first, falling back to a pluggable provider (`env`, `aws_ssm` for AWS SSM Parameter Store, `kubernetes` for Kubernetes Secrets mounted into the pod, or your own) with a TTL'd process cache
 - **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
 - **Human in the Loop**: Pause a run for a person's approval or answer and resume from their decision — `status: "PAUSED"` with HTTP 202, a `resume` block carrying `approved`/`denied`/`cancelled` decisions, supported on OpenAI Agents SDK, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework over REST, streaming and AG-UI
@@ -21,6 +21,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
 - **AG-UI Server**: Built-in [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) handler for driving any streaming-capable agent from an AG-UI frontend, with opt-in shared state and client-context tools
+- **Agent Registry**: One descriptor per agent (name, version, description, owner, tags, skills, tools and the surfaces it is served on), declared with `Module.describe` or `registry.agents.<id>`; the agent catalog (`GET /api/v1/agents`), A2A cards, MCP agent tools and the AG-UI listing are built from it, with pluggable backends (`in_memory`, `redis`, `valkey`, `dynamodb`)
 - **A2UI**: Label a JSON reply as [A2UI](https://a2ui.org/) from two config keys, so a client receives a generative-UI document as an object with its format named rather than a string to parse twice
 - **REST API**: Built-in REST API server for agent interaction
 - **Test Automation**: Built-in test suite for testing agents
@@ -86,7 +87,7 @@ uv add "agentkernel[cron]"
 
 ### Basic Concepts
 
-- **Agent**: Framework-specific agent wrapped by an Agent Kernel adapter
+- **Agent**: Framework-specific agent wrapped by an OAK adapter
 - **Runner**: Framework-specific execution strategy
 - **Session**: Shared state across conversation turns
 - **Module**: Container that registers agents with the Runtime
@@ -186,7 +187,7 @@ if __name__ == "__main__":
 
 ## Interactive CLI
 
-Agent Kernel includes an interactive CLI for local development and testing.
+OAK includes an interactive CLI for local development and testing.
 
 **Available Commands:**
 - `!h`, `!help` — Show help
@@ -235,7 +236,7 @@ handler = Lambda.handler
 
 **Note that this is just the simple serverless version. A more advanced serverless deployment mode, which uses queues for scalability, is also available. For queue-backed execution modes and response-store configuration, see the [AWS Serverless Deployment](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/aws-serverless.md) guide.**
 
-The AWS serverless handler accepts both a direct `BaseRunRequest` payload and the normalized `BaseRequest` envelope. If a flat run payload is provided, Agent Kernel generates a `request_id` and normalizes it before processing. The caller is never named in the payload: the API Gateway authorizer (`handler = APIGatewayAuthorizer().handle`, configured by the `identity` block) establishes the principal and the handler puts it on the request; see [Identity and Access](https://kernel.yaala.ai/docs/advanced/identity-and-access).
+The AWS serverless handler accepts both a direct `BaseRunRequest` payload and the normalized `BaseRequest` envelope. If a flat run payload is provided, OAK generates a `request_id` and normalizes it before processing. The caller is never named in the payload: the API Gateway authorizer (`handler = APIGatewayAuthorizer().handle`, configured by the `identity` block) establishes the principal and the handler puts it on the request; see [Identity and Access](https://kernel.yaala.ai/docs/advanced/identity-and-access).
 
 Accepted payloads:
 
@@ -299,9 +300,10 @@ Azure Functions also accepts the normalized envelope, and flat run payloads are 
 ```
 
 **Status Codes:**
-- `200` — Success
-- `400` — No agent available
-- `500` — Unexpected error
+- `200`: Success
+- `400`: Invalid request, or no agent named and none available
+- `404`: The agent the request names was not found, or is not served on the `rest` surface
+- `500`: Unexpected error
 
 ### GCP Cloud Run Deployment
 
@@ -371,7 +373,7 @@ and the end-to-end example at
 
 ## Configuration
 
-Agent Kernel can be configured via environment variables, `.env` files, or YAML/JSON configuration files.
+OAK can be configured via environment variables, `.env` files, or YAML/JSON configuration files.
 
 ### Configuration Precedence
 
@@ -382,7 +384,7 @@ Values are loaded in the following order (highest precedence first):
 
 ### Configuration File
 
-By default, Agent Kernel looks for `./config.yaml` in the current working directory.
+By default, OAK looks for `./config.yaml` in the current working directory.
 
 **Override the config file path:**
 
@@ -401,7 +403,7 @@ Supported formats: `.yaml`, `.yml`, `.json`
 - **Field**: `logging.ak.level`
 - **Type**: string
 - **Default**: `WARNING`
-- **Description**: Agent Kernel logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
+- **Description**: OAK logger level (INFO, DEBUG, ERROR, WARNING, CRITICAL)
 - **Environment Variable**: `AK_LOGGING__AK__LEVEL`
 
 - **Field**: `logging.system.level`
@@ -457,7 +459,51 @@ identity:
 - **Description**: The `static` provider's credentials. Each key names a secret resolved through the secret capability when the provider is built (the environment first), so no credential value is written in the file; a key with no secret, or an empty map, fails startup. An entry's `roles` are issued directly; a role mapper replaces them.
 
 - **Field**: `identity.role_mapper.type`, `identity.role_mapper.mapping`, `identity.role_mapper.claims`, `identity.role_mapper.pass_through`
-- **Description**: Optional. `mapping` (default) maps group names to roles, and the string or list values of the claim paths listed in `claims` (default `[]`: groups only, since a user sets many of their own claims), then appends the `pass_through` claim's value as roles; a dotted path selects a `RoleMapper` subclass, which reads settings of its own from `model_extra`. Without a mapper only a `static` entry's own roles exist. Nothing enforces roles yet.
+- **Description**: Optional. `mapping` (default) maps group names to roles, and the string or list values of the claim paths listed in `claims` (default `[]`: groups only, since a user sets many of their own claims), then appends the `pass_through` claim's value as roles; a dotted path selects a `RoleMapper` subclass, which reads settings of its own from `model_extra`. Without a mapper only a `static` entry's own roles exist. A grant of the `authorization` block names a role as `role:<name>`.
+
+#### Authorization
+
+The `authorization` block decides which agents each principal may run and see. Without it nothing is
+restricted. With it the policy denies by default: a caller runs an agent only when a grant gives it a level
+on that agent, and is listed only the agents it holds a level on or that their `visibility` lets it see.
+Full reference: [Authorization](https://kernel.yaala.ai/docs/next/advanced/identity-and-access#authorization).
+
+```yaml
+authorization:
+  type: static
+  static:
+    grants:
+      - subjects: [group:support]
+        agents: [support-triage]
+        level: write
+    tools:
+      - agent: support-triage
+        tiers: {refund_order: admin}
+        deny: [purge_queue]
+```
+
+- **Field**: `authorization.type`
+- **Type**: string
+- **Default**: `static`
+- **Description**: `static`, or a dotted path to an `Authorizer` subclass, which is handed the whole block and reads its own settings from `model_extra`. `casbin`, `openfga`, `cedar` and `authzen` are reserved names, not shipped yet
+- **Environment Variable**: `AK_AUTHORIZATION__TYPE`
+
+- **Field**: `authorization.static.grants`
+- **Type**: list of `{subjects, agents, level}`
+- **Description**: Who holds which level on which agents; a principal holds the highest level its grants give. A subject is `*` (everyone, anonymous callers included), `authenticated`, `user:<subject>`, `group:<name>`, `role:<name>` or `provider:<name>` (a name ending in `:` matches by prefix, so `provider:messaging:` is every messaging sender). An agent entry is an agent id, `*` or `tag:<name>`. `level` is `read`, `write` or `admin`. With no grants every agent is denied to every principal
+- **Environment Variable**: `AK_AUTHORIZATION__STATIC__GRANTS` (a JSON list)
+
+- **Field**: `authorization.static.tools`
+- **Type**: list of `{agent, tiers, allow, deny}`
+- **Description**: The tool policy, one entry per agent. `tiers` maps a tool to the lowest level that is offered it (an unlisted tool is `read`, except the sandbox and schedule tools, `write_kb` and `update_agui_state`, which declare `write`); `allow`, when set, is the only tools the agent offers; `deny` wins over `allow`. The decision is published for each run (`ToolContext.get().access_level`, `Session.get_tool_filter()`) and narrows the tools and skills the catalog and A2A cards list. It does not stop a tool call yet. A policy naming a tool its agent does not have is a startup error
+- **Environment Variable**: `AK_AUTHORIZATION__STATIC__TOOLS` (a JSON list)
+
+What a caller gets with the block: an agent it may not see answers like one that does not exist (a 404 on
+REST chat, AG-UI and every A2A route of the agent; an MCP tool that is not listed), an agent it sees and
+holds no level on is a 403 (`Agent not available` on MCP), a session is continued only by the principal
+that owns it, and a scheduled occurrence whose owner lost access is skipped. Put the same block in the
+configuration of every process: the one that accepts requests answers early and filters the listings, the
+one that runs agents enforces every run.
 
 #### Session Store
 
@@ -541,7 +587,7 @@ mode additionally require `multimodal.enabled: true` with a shared attachment st
 - **Naming Model**
   - **Field**: `thread.naming.model`
   - **Type**: string
-  - **Default**: `gpt-4o-mini`
+  - **Default**: `gpt-6-luna`
   - **Description**: LiteLLM model used to generate thread names (requires the `thread` extra — `uv add "agentkernel[thread]"` — and an API key in the environment; falls back to a truncated prompt prefix otherwise)
   - **Environment Variable**: `AK_THREAD__NAMING__MODEL`
 
@@ -666,7 +712,9 @@ execution pipeline. The block also injects five agent tools (`create_schedule`, 
 and the handler requires an `identity` block. Every scheduling request needs an authenticated principal:
 it is the owner the task is stored under and that later reads and changes are checked against (an
 anonymous management request is a 401, an anonymous chat request with a `schedule` block a 403; there is
-no `user_id` field). A bare `schedule:` block works for local development: its defaults are the
+no `user_id` field). An occurrence is checked before it runs: when the task's agent is gone, or no longer
+served on the surface the task was created by, the occurrence is skipped and the task's `last_error` says
+why. A bare `schedule:` block works for local development: its defaults are the
 `local` provider and the `in_memory` store. See `examples/api/schedule-openai`.
 
 - **Provider Type**
@@ -821,8 +869,8 @@ Configure queue-backed and serverless execution behavior.
     reply in one message (JSON under `rest_sync`, one `CHAT_RESPONSE` under `async`); `delta` sends one
     message per chunk (SSE under `rest_sync`, one `STREAM_CHUNK` per chunk ending with `done: true`
     under `async`). `rest_async` + `delta` and `realtime` + `complete` fail at config load. AWS
-    Lambda (REST router init) and the ECS queue-mode `ECSIOHandler` (startup) refuse `rest_sync` +
-    `delta`; use `async` + `delta` there
+    Lambda (REST router init) and ECS queue mode (`terraform plan`) refuse `rest_sync` + `delta`;
+    use `async` + `delta` there
   - **Environment Variable**: `AK_EXECUTION__MESSAGE_TYPE`
 
 - **Queues**
@@ -1109,6 +1157,68 @@ Configure the REST API server (if using the API module).
   - **Description**: Enable agent interaction routes
   - **Environment Variable**: `AK_API__ENABLED_ROUTES__AGENTS`
 
+#### Agent Registry Configuration
+
+Every agent has a **descriptor** (its id, name, version, description, tags, tools and the surfaces it is served
+on). The agent registry keeps the descriptors, and the catalog route (`GET /api/v1/agents`), A2A cards, MCP agent
+tools and the AG-UI listing are built from them. The `registry` block is optional: without it, descriptors live in
+the process that loads the agents. An agent is on every surface unless its descriptor names the surfaces it is
+served on, in code (`Module.describe`) or in this block.
+
+- **Type**
+  - **Field**: `registry.type`
+  - **Options**: `in_memory`, `redis`, `valkey`, `dynamodb`, or a dotted path to an `AgentRegistry` subclass
+  - **Default**: `in_memory`
+  - **Description**: Where descriptors are kept. A store-backed type shares them between processes, so a process
+    that only accepts requests can list agents another process hosts and serve them over the queue. It shares what
+    is known about an agent, not the agent: a handler that runs agents in its own process still needs the agent
+    loaded there, and every agent runner on a queue has to host the agents served from it. A store type needs its
+    block
+  - **Environment Variable**: `AK_REGISTRY__TYPE`
+
+- **Store blocks**
+  - **Field**: `registry.redis` / `registry.valkey` (`url`, `prefix`), `registry.dynamodb` (`table_name`)
+  - **Default**: prefix `ak:registry:`, table `ak-agent-registry` (partition key `agent_id`, no sort key)
+  - **Description**: Descriptors do not expire, and a `ttl` set here is refused at startup: a descriptor is written
+    when its agent loads and never again while the process runs, so an expiry would remove running agents from
+    every listing. After a deployment that renames or removes an agent, delete its record from the store (the key
+    `<prefix>agent:<id>` and the member `<id>` of the set `<prefix>index:all`, or the DynamoDB item)
+  - **Environment Variable**: `AK_REGISTRY__REDIS__URL`, `AK_REGISTRY__DYNAMODB__TABLE_NAME`, and so on
+
+- **Per-agent fields**
+  - **Field**: `registry.agents.<agent id>` with `description`, `version`, `owner`, `tags`, `visibility`,
+    `surfaces`, `identity`
+  - **Description**: Catalog fields set for one agent, over what the code declares with
+    `Module.describe(agent, ...)`. `surfaces` lists where the agent is served (`rest`, `a2a`, `mcp`, `agui`); an
+    agent that declares none is on every surface, and `[]` puts it on none. An agent kept off `rest` is left out of
+    the catalog, a chat request that names it is a 404, and a chat request that names no agent runs the first agent
+    on `rest`. Messaging integrations, the CLI and a task an agent schedules itself are not governed by
+    `surfaces`; a task created by a chat request keeps that request's surface for its occurrences.
+    `description` is the text an A2A card
+    and an MCP tool publish; an agent's instructions are never published, and when none is declared the
+    description the agent's framework keeps for it (OpenAI `handoff_description`, the `description` of ADK,
+    Pydantic AI, MAF, Claude and smolagents agents) is used. `visibility` (`private`, `internal`,
+    `public`) says who may see an agent without holding a level on it once an `authorization` block
+    exists, and changes nothing without one. An unknown key under an agent, or under `registry`, is a startup error. Each process applies its
+    own block to the agents it reads from the registry, so a restriction set where a surface is served holds for
+    agents another process hosts
+
+```python
+# In code, where the agent is loaded
+OpenAIModule([triage, math]).describe(triage, description="Routes a question to the right specialist").describe(
+    math, description="Solves math problems", surfaces=["rest"]
+)
+```
+
+```yaml
+# Or per agent id in config.yaml; where both set a field, the configuration wins
+registry:
+  agents:
+    math:
+      description: Solves math problems
+      surfaces: [rest]
+```
+
 #### A2A (Agent-to-Agent) Configuration
 
 - **Enabled**
@@ -1116,11 +1226,10 @@ Configure the REST API server (if using the API module).
   - **Default**: `false`
   - **Environment Variable**: `AK_A2A__ENABLED`
 
-- **Agents**
-  - **Field**: `a2a.agents`
-  - **Default**: `["*"]`
-  - **Description**: List of agent names to enable A2A (use `["*"]` for all)
-  - **Environment Variable**: `AK_A2A__AGENTS` (comma-separated)
+- **Agents served**: every agent, unless its descriptor's `surfaces` leaves `a2a` out (see
+  [Agent Registry Configuration](#agent-registry-configuration)). The `a2a.agents` list and `AK_A2A__AGENTS`
+  were removed; a configuration that still sets them stops the application at startup. Each agent's card is
+  built from its descriptor: declare its `description` and `version` there.
 
 - **URL**
   - **Field**: `a2a.url`
@@ -1146,11 +1255,10 @@ Configure the REST API server (if using the API module).
   - **Description**: Expose agents as MCP tools
   - **Environment Variable**: `AK_MCP__EXPOSE_AGENTS`
 
-- **Agents**
-  - **Field**: `mcp.agents`
-  - **Default**: `["*"]`
-  - **Description**: List of agent names to expose as MCP tools
-  - **Environment Variable**: `AK_MCP__AGENTS` (comma-separated)
+- **Agents exposed**: every agent, unless its descriptor's `surfaces` leaves `mcp` out (see
+  [Agent Registry Configuration](#agent-registry-configuration)). The `mcp.agents` list and `AK_MCP__AGENTS`
+  were removed; a configuration that still sets them stops the application at startup. Each tool is described
+  by the agent's declared `description`, never by its instructions.
 
 - **URL**
   - **Field**: `mcp.url`
@@ -1181,11 +1289,9 @@ with a 401, since AG-UI runs agents on a caller's behalf and has no anonymous mo
 `supports_streaming = True` are reachable (currently OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI
 and Microsoft Agent Framework — not CrewAI or Smolagents). See `examples/api/agui`.
 
-- **Agents**
-  - **Field**: `agui.agents`
-  - **Default**: unset (every streaming-capable agent is reachable)
-  - **Description**: Agent names reachable over AG-UI
-  - **Environment Variable**: `AK_AGUI__AGENTS` (comma-separated)
+- **Agents reachable**: every streaming-capable agent, unless its descriptor's `surfaces` leaves `agui` out (see
+  [Agent Registry Configuration](#agent-registry-configuration)). The `agui.agents` list and `AK_AGUI__AGENTS`
+  were removed; a configuration that still sets them stops the application at startup.
 
 - **Prefix**
   - **Field**: `agui.prefix`
@@ -1196,7 +1302,7 @@ and Microsoft Agent Framework — not CrewAI or Smolagents). See `examples/api/a
 - **Default Agent**
   - **Field**: `agui.default_agent`
   - **Default**: unset
-  - **Description**: Agent served on the bare prefix route (`POST {prefix}`, in addition to `POST {prefix}/{agent_name}`); must be one of `agui.agents` when that list is set
+  - **Description**: Agent served on the bare prefix route (`POST {prefix}`, in addition to `POST {prefix}/{agent_name}`); it must be loaded and exposed on `agui` when the handler is built
   - **Environment Variable**: `AK_AGUI__DEFAULT_AGENT`
 
 - **State Tools**
@@ -1220,7 +1326,7 @@ and Microsoft Agent Framework — not CrewAI or Smolagents). See `examples/api/a
 #### A2UI Configuration
 
 Labels a JSON reply as [A2UI](https://a2ui.org/) so a client receives the document as an object with
-its format named, instead of a JSON string it has to parse a second time. Agent Kernel supplies the
+its format named, instead of a JSON string it has to parse a second time. OAK supplies the
 media type and nothing else — the component catalog belongs in your agent's instructions, because it
 has to match the components your frontend implements. The block does not reach a streamed run
 (`execution.message_type: delta`) or an agent configured with a framework `output_type`; both are told to
@@ -1388,7 +1494,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 
 - **Llm Model**
   - **Field**: `llm.model`
-  - **Default**: `gpt-4o-mini`
+  - **Default**: `gpt-6-luna`
   - **Description**: LLM model for llm evaluation
   - **Environment Variable**: `AK_TEST__LLM__MODEL`
 
@@ -1414,7 +1520,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 mode: fallback
 evaluator: deepeval
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -1445,7 +1551,7 @@ Configure input and output guardrails to validate agent requests and responses f
 
   - **Model**
     - **Field**: `guardrail.input.model`
-    - **Default**: `gpt-4o-mini`
+    - **Default**: `gpt-6-luna`
     - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__INPUT__MODEL`
 
@@ -1483,7 +1589,7 @@ Configure input and output guardrails to validate agent requests and responses f
 
   - **Model**
     - **Field**: `guardrail.output.model`
-    - **Default**: `gpt-4o-mini`
+    - **Default**: `gpt-6-luna`
     - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__MODEL`
 
@@ -1535,12 +1641,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
 ```
 
@@ -1780,17 +1886,17 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire, cloudwatch
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
 export AK_TEST__EVALUATOR=deepeval  # Built-in short name (deepeval, opik or jev), or a dotted path to your own AKEvaluator subclass
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 # Guardrails configuration
 export AK_GUARDRAIL__INPUT__ENABLED=false
 export AK_GUARDRAIL__INPUT__TYPE=openai
-export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__INPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json
 export AK_GUARDRAIL__OUTPUT__ENABLED=false
 export AK_GUARDRAIL__OUTPUT__TYPE=openai
-export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json
 # Walled AI guardrails
 export WALLED_API_KEY=your-walledai-api-key
@@ -1914,13 +2020,16 @@ api:
     agents: true
 a2a:
   enabled: true
-  agents: ["*"]
   url: http://localhost:8000/a2a
   task_store_type: in_memory
 mcp:
   enabled: false
   expose_agents: false
-  agents: ["*"]
+registry:
+  agents:
+    math:
+      description: Solves math problems
+      surfaces: [rest, a2a]   # omitted = every surface
 trace:
   enabled: true
   type: langfuse
@@ -1931,13 +2040,13 @@ guardrail:
     enabled: false
     type: openai
     pii: true
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: false
     type: openai
     pii: true
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
   # For Walled AI, set type: walledai, WALLED_API_KEY,
   # and optionally use input/output pii (default: true) to enable/disable PII masking.
@@ -1985,14 +2094,12 @@ gmail:
   },
   "a2a": {
     "enabled": true,
-    "agents": ["*"],
     "url": "http://localhost:8000/a2a",
     "task_store_type": "in_memory"
   },
   "mcp": {
     "enabled": false,
-    "expose_agents": false,
-    "agents": ["*"]
+    "expose_agents": false
   },
   "trace": {
     "enabled": true,
@@ -2002,13 +2109,13 @@ gmail:
     "input": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": "/path/to/guardrails_input.json"
     },
     "output": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": "/path/to/guardrails_output.json"
     }
   },
@@ -2062,7 +2169,7 @@ The `evaluator` field accepts three built-in short names — `deepeval` (default
 mode: fallback
 evaluator: deepeval
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -2080,7 +2187,7 @@ export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
 ```bash
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
 export AK_TEST__EVALUATOR=deepeval
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```

@@ -4,7 +4,8 @@
 # or message type.
 agui:
   default_agent: planner # also serves POST /agui, in addition to POST /agui/planner
-  # agents: [planner]    # omitted = every streaming-capable agent is reachable
+  # Every streaming-capable agent is reachable here. To keep one off AG-UI, set its surfaces
+  # under registry.agents.<id>.surfaces (the agui.agents list was removed).
 
   state:
     # Shared JSON both the frontend and the agent read and write.
@@ -27,7 +28,7 @@ agui:
 
 # Attachments the browser sends with a run are described by a vision model and stored, so the agent can
 # refer back to them on later turns. `storage_type` defaults to `in_memory`, which is right for a demo;
-# the description and analysis models default to gpt-4o via LiteLLM, so OPENAI_API_KEY covers both.
+# the description and analysis models default to gpt-6-luna via LiteLLM, so OPENAI_API_KEY covers both.
 multimodal:
   enabled: true
 

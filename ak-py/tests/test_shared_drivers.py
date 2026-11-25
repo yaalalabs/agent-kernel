@@ -162,6 +162,57 @@ class TestDynamoDecimalCodec:
         assert DynamoDecimalCodec.from_dynamo(None) is None
 
 
+class TestConnectionLogging:
+    """A connection URL may carry the password, and DEBUG logs are shipped and kept like any other."""
+
+    def test_connecting_logs_the_host_and_never_the_credentials_in_the_url(self, monkeypatch, caplog):
+        seen = {}
+
+        def from_url(url, **kwargs):
+            seen["url"] = url
+            return MagicMock()
+
+        monkeypatch.setattr(redis_driver_module.redis, "from_url", from_url)
+        driver = RedisDriver(url="rediss://ak-user:s3cr3t-p4ss@cache.internal:6380/2")
+
+        with caplog.at_level("DEBUG", logger="ak.core.util.driver.redis"):
+            _ = driver.client
+
+        assert seen["url"] == "rediss://ak-user:s3cr3t-p4ss@cache.internal:6380/2"  # the client still gets the URL as configured
+        logged = " ".join(record.getMessage() for record in caplog.records)
+        assert "cache.internal:6380" in logged
+        assert "s3cr3t-p4ss" not in logged and "ak-user" not in logged
+
+    @pytest.mark.parametrize(
+        "url, expected",
+        [
+            ("redis://localhost:6379", "redis://localhost:6379"),
+            ("redis://:only-a-password@localhost:6379/0", "redis://localhost:6379/0"),
+            ("valkey://user:pw@[::1]:6379", "valkey://[::1]:6379"),
+            ("unix:///var/run/redis.sock?password=pw", "unix:///var/run/redis.sock"),
+        ],
+    )
+    def test_the_logged_location_drops_the_user_the_password_and_the_query(self, url, expected):
+        assert RedisDriver._location(url) == expected
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "not a url at all",
+            "redis://user:s3cr3t-p4ss@[::1:6379",  # an unmatched bracket: does not parse
+            "user:s3cr3t-p4ss@host:6379",  # no scheme: the user reads as one, the rest as a path
+            "s3cr3t-p4ss@host:6379",
+            "redis://",
+        ],
+    )
+    def test_a_url_that_does_not_parse_is_logged_as_a_placeholder_never_echoed(self, url):
+        """Such a URL fails on the first connection attempt, so the log line would be its only trace, password and all."""
+        logged = RedisDriver._location(url)
+
+        assert logged == "<unparseable connection URL>"
+        assert "s3cr3t-p4ss" not in logged
+
+
 class TestPingReconnect:
     """Health-check/reconnect on established Redis clients."""
 

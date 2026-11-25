@@ -13,7 +13,7 @@ from threading import RLock
 from typing import Any, ClassVar, Optional
 
 from ..core.config import AKConfig
-from ..core.model import BaseChatRequest, Principal, ScheduleSpec
+from ..core.model import AgentSurface, BaseChatRequest, Principal, ScheduleSpec
 from ..core.service import AgentService
 from ..core.util.factory import AKConfigError
 from ..core.util.pagination import DEFAULT_PAGE_SIZE, clamp_limit, decode_cursor, encode_cursor
@@ -56,6 +56,9 @@ class ScheduleManager:
         self._validate_transport_compatibility()
         self._validate_local_provider_topology()
         self._validate_store_topology()
+        # On the in-memory transport every occurrence is run by this process, so a task's agent has to be
+        # hosted here; on a broker the agent runner is another process and the registry says what exists.
+        self._runs_occurrences = QueueTransportFactory.resolve_type() == "in_memory"
 
     @classmethod
     def get(cls) -> Optional["ScheduleManager"]:
@@ -99,6 +102,8 @@ class ScheduleManager:
         :return: The created task.
         :raises ValueError: If the request carries no schedule block, or the schedule is unusable.
         :raises PermissionError: If the request carries no authenticated principal.
+        :raises AgentNotFoundError: If the request names an agent that is not available, or one kept
+            off the surface the request entered by.
         :raises ScheduleError: If the provider rejected the registration.
         """
         if req.schedule is None:
@@ -109,6 +114,7 @@ class ScheduleManager:
             spec=req.schedule,
             agent=req.agent,
             session_id=req.session_id,
+            surface=req.surface,
         )
 
     def create(
@@ -118,6 +124,7 @@ class ScheduleManager:
         spec: ScheduleSpec,
         agent: str | None = None,
         session_id: str | None = None,
+        surface: AgentSurface | None = None,
     ) -> ScheduledTask:
         """Validate, store and register a new scheduled task.
 
@@ -130,9 +137,17 @@ class ScheduleManager:
         :param spec: The occurrence rule.
         :param agent: The agent each occurrence runs on, or None for the default.
         :param session_id: Originating session of the task.
+        :param surface: The surface the creating request entered by, or None when no surface governs
+            it (a schedule tool). A named agent must be served on it: a request that could not run
+            the agent now cannot schedule it either. The task keeps it and every occurrence carries
+            it, so an occurrence is served the agents the creating request would have been: a task
+            naming no agent runs the first agent on that surface, not one kept off it.
         :return: The created task, carrying its provider reference.
-        :raises PermissionError: If the principal is missing or anonymous.
-        :raises ValueError: If the prompt, session, agent or occurrence rule is unusable.
+        :raises PermissionError: If the principal is missing or anonymous, or the access gate gives it
+            no level on an agent it may see.
+        :raises AgentNotFoundError: If the named agent is not available, is kept off the surface, or is
+            one the principal may not see.
+        :raises ValueError: If the prompt, session or occurrence rule is unusable.
         :raises ScheduleError: If the provider rejected the registration.
         """
         if principal is None or principal.is_anonymous:
@@ -145,9 +160,12 @@ class ScheduleManager:
         # Every occurrence runs unattended, so a named agent that does not exist has to fail here,
         # where the caller still sees it, rather than in the runner at each fire time. Only a named
         # agent is checked: an unnamed one resolves to whatever default the firing process has, and
-        # that process is not necessarily this one.
+        # that process is not necessarily this one. Where this process is the one that fires, the agent
+        # must be hosted here: a descriptor a removed agent left in a shared registry is not enough.
+        # With an authorization block the owner must also be one the access gate lets use the agent,
+        # since every occurrence runs as the owner.
         if agent:
-            AgentService.ensure_agent_available(agent)
+            AgentService.ensure_agent_available(agent, principal, hosted=self._runs_occurrences, surface=surface)
         OccurrenceCalculator.validate(spec)
 
         now = utc_now_iso()
@@ -162,6 +180,7 @@ class ScheduleManager:
             prompt=prompt,
             agent=agent,
             session_id=session_id,
+            surface=surface,
             spec=spec,
             created_at=now,
             updated_at=now,
@@ -279,18 +298,30 @@ class ScheduleManager:
         self._log.info(f"Cancelled scheduled task {task_id}")
         return cancelled
 
-    def record_trigger(self, task_id: str, principal: Principal | None, request_id: str | None = None, occurred_at: str | None = None) -> None:
+    def record_trigger(
+        self,
+        task_id: str,
+        principal: Principal | None,
+        request_id: str | None = None,
+        occurred_at: str | None = None,
+        error: str | None = None,
+    ) -> None:
         """Record that an occurrence of a task fired, and complete a one-time task.
 
         Never raises: the occurrence fields are advisory bookkeeping, and a store that cannot
         take them must not fail the run the trigger started. A rejected owner is the same kind of
         non-event — the run itself is legitimate, only its claim to be someone's occurrence is not.
 
+        An occurrence that was not run (``error``) is recorded like one that was, with the reason
+        in the task's ``last_error``: it fired, and for a one-time task it was the only occurrence.
+
         :param task_id: Identifier of the task that fired.
         :param principal: The principal the run acts as; its subject must own the task or nothing
             is recorded.
         :param request_id: Request id of the run the occurrence produced, when known.
         :param occurred_at: Occurrence timestamp reported by the provider; now when omitted.
+        :param error: Why the occurrence was not run (its owner may no longer use the agent); None
+            when it ran.
         """
         try:
             task = self._store.get(task_id)
@@ -299,12 +330,16 @@ class ScheduleManager:
                 return
             if not self._owns_occurrence(task, principal):
                 return
+            # The reason is handed over only when there is one: a bring-your-own store written before
+            # the keyword existed keeps recording every occurrence that runs.
+            reason = {"error": error} if error else {}
             # A one-time schedule has no further occurrences, so the trigger closes it.
             self._store.record_trigger(
                 task_id,
                 request_id=request_id,
                 occurred_at=occurred_at or utc_now_iso(),
                 completed=task.spec.at is not None,
+                **reason,
             )
         except Exception as exc:
             self._log.error(f"Failed to record trigger of scheduled task {task_id}: {exc}")
@@ -513,4 +548,8 @@ class ScheduleManager:
             "request_id": TOKEN_REQUEST_ID,
             "scheduled_time": TOKEN_OCCURRENCE_TIME,
         }
+        if task.surface is not None:
+            # The occurrence is served the agents of the surface its task was created over. A task no
+            # surface governs (a schedule tool's) keeps the body it always had, with no key at all.
+            body["surface"] = task.surface
         return json.dumps(body)

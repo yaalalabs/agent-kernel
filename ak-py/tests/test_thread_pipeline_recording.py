@@ -33,6 +33,7 @@ from agentkernel.pipeline.request_handler import RequestHandler
 from agentkernel.pipeline.response_handler import ResponseHandler
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
 from agentkernel.pipeline.thread_runner import ThreadRunner
+from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
 AGENT_NAME = "thread-pipeline-agent"
@@ -65,9 +66,6 @@ class DummyAgent(Agent):
 
     def get_description(self) -> str:
         return "Thread pipeline test agent"
-
-    def get_a2a_card(self):
-        return None
 
     def override_system_prompt(self, prompt):
         pass
@@ -208,6 +206,22 @@ class TestEdgeRecording:
         assert body.get("images") is None
         assert [req["type"] for req in body["requests"]] == ["text", "attachment_ref"]
 
+    def test_a_file_a_broker_cannot_carry_leaves_no_thread_behind(self, monkeypatch, dummy_agent):
+        """#871: the broker check runs before the recording, so a refused upload opens no thread."""
+        manager = _configure(monkeypatch, mode="rest_async")  # multimodal off
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
+        handler = ThreadRequestHandler()
+        handler._transport = InMemoryTransport()
+        handler._response_store = InMemoryResponseStore()
+
+        payload = _chat(images=[{"image_data": "aGVsbG8=", "name": "a.png", "mime_type": "image/png"}])
+        response = _client(handler).post(CHAT, json=payload)
+
+        assert response.status_code == 400
+        assert "multimodal support is disabled" in response.json()["detail"]["error"]
+        assert manager.get_thread("s1") is None
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
+
     def test_construction_fails_without_an_identity_block(self, monkeypatch):
         """Threads are keyed on the caller, so with nobody able to authenticate the handler is a configuration error (#603)."""
         _configure(monkeypatch, mode="rest_async")
@@ -266,8 +280,107 @@ class TestEdgeRecording:
 
         response = _client().post(CHAT, json=_chat(agent="nope"))
 
-        assert response.status_code == 400
+        assert response.status_code == 404
+        assert response.json()["detail"] == {"error": "Agent 'nope' not found", "session_id": "s1"}
         assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_an_agent_kept_off_rest_leaves_no_phantom_thread(self, monkeypatch, kept_off_rest):
+        """The edge knows the request entered by the REST API, so an agent the registry knows on another surface is
+        refused here like an unknown one, before the user message is recorded or anything is enqueued (#603)."""
+        manager = _configure(monkeypatch, mode="rest_async")
+
+        with kept_off_rest:
+            response = _client().post(CHAT, json=_chat(agent="internal"))
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == {"error": "Agent 'internal' not found", "session_id": "s1"}
+        assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_an_agent_another_process_hosts_off_rest_is_refused_at_the_edge_too(self, monkeypatch, descriptor_only_registry):
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        manager = _configure(monkeypatch, mode="rest_async")
+        registry = descriptor_only_registry(
+            [AgentDescriptor(id="internal", name="internal", surfaces=["a2a"]), AgentDescriptor(id="public", name="public")]
+        )
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            client = _client()
+            kept_off = client.post(CHAT, json=_chat(agent="internal"))
+            served = client.post(CHAT, json=_chat(session_id="s2", agent="public"))
+
+        assert (kept_off.status_code, kept_off.json()["detail"]["error"]) == (404, "Agent 'internal' not found")
+        assert manager.get_thread("s1") is None
+        # The agent on `rest` is recorded and enqueued, marked as a request that entered by it.
+        assert served.status_code == 200
+        assert json.loads(_enqueued().body)["surface"] == "rest"
+
+    def test_with_authorization_the_edge_decides_for_the_caller_before_recording(self, monkeypatch, authorization, descriptor_only_registry):
+        """The edge hands the caller's principal to the check (#603, iteration 18): u1, granted the agent, is recorded
+        and enqueued; u2 gets the unknown agent's 404 for an agent it may not see and a 403 for one it sees."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        manager = _configure(monkeypatch, mode="rest_async")
+        authorization(grants=[{"subjects": ["user:u1"], "agents": ["assistant"], "level": "read"}])
+        registry = descriptor_only_registry(
+            [AgentDescriptor(id="assistant", name="assistant"), AgentDescriptor(id="status", name="status", visibility="public")]
+        )
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            served = _client().post(CHAT, json=_chat(session_id="s-u1", agent="assistant"))
+            other = _client(token="u2-token")
+            hidden = other.post(CHAT, json=_chat(session_id="s-hidden", agent="assistant"))
+            forbidden = other.post(CHAT, json=_chat(session_id="s-forbidden", agent="status"))
+
+        assert served.status_code == 200
+        assert (hidden.status_code, hidden.json()["detail"]) == (404, {"error": "Agent 'assistant' not found", "session_id": "s-hidden"})
+        assert (forbidden.status_code, forbidden.json()["detail"]) == (
+            403,
+            {"error": "Principal 'u2' holds no level on agent 'status'", "session_id": "s-forbidden"},
+        )
+        assert (manager.get_thread("s-hidden"), manager.get_thread("s-forbidden")) == (None, None)
+        assert json.loads(_enqueued().body)["session_id"] == "s-u1"
+
+    def test_the_registry_is_asked_once_for_a_request_that_is_recorded(self, monkeypatch, descriptor_only_registry):
+        """The pipeline handler this one extends asks before it enqueues (#603, iteration 19). The thread handler has
+        already asked, before its first write, so an agent another process hosts costs one store read, not two."""
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        _configure(monkeypatch, mode="rest_async")
+        reads = []
+
+        class _Counting(descriptor_only_registry):
+            def descriptor(self, id):
+                reads.append(id)
+                return super().descriptor(id)
+
+        with Runtime(InMemorySessionStore(), registry=_Counting([AgentDescriptor(id="assistant", name="assistant")])):
+            response = _client().post(CHAT, json=_chat(agent="assistant"))
+
+        assert response.status_code == 200
+        assert reads == ["assistant"]
+
+    def test_a_deferred_request_is_asked_about_before_the_queue(self, monkeypatch, descriptor_only_registry):
+        # Nothing is recorded for a deferred request, so the recording step asked nothing: the inherited check does.
+        from agentkernel.core.model import AgentDescriptor
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        manager = _configure(monkeypatch, mode="rest_async")
+        schedule = ScheduleSpec(at="2999-01-01T00:00:00Z").model_dump(exclude_none=True)
+
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([AgentDescriptor(id="assistant", name="assistant")])):
+            refused = _client().post(CHAT, json=_chat(agent="ghost", schedule=schedule))
+            accepted = _client().post(CHAT, json=_chat(session_id="s2", agent="assistant", schedule=schedule))
+
+        assert (refused.status_code, refused.json()["detail"]) == (404, {"error": "Agent 'ghost' not found", "session_id": "s1"})
+        assert accepted.status_code == 200
+        assert manager.get_thread("s1") is None
+        assert json.loads(_enqueued().body)["session_id"] == "s2"
 
     def test_async_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
         """The route cannot answer in ASYNC mode, so it must refuse before opening the thread."""

@@ -1,16 +1,20 @@
+import base64
 import json
 import threading
 
 import pytest
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
-from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest
+from agentkernel.core.model import AgentDescriptor, AgentReplyText, AgentRequestText, BaseRunRequest, Principal
+from agentkernel.core.multimodal.hooks import MultimodalPreHook
+from agentkernel.core.multimodal.storage import AttachmentStorageManager
 from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.pipeline import request_handler
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.consumer import ConsumerLoop
@@ -48,9 +52,6 @@ class DummyAgent(Agent):
 
     def get_description(self) -> str:
         return "Pipeline e2e test agent"
-
-    def get_a2a_card(self):
-        return None
 
     def override_system_prompt(self, prompt):
         pass
@@ -179,7 +180,7 @@ class TestRestSyncParity:
     def test_agents_route_lists_registered_agents(self, monkeypatch, dummy_agent):
         _configure(monkeypatch, mode="rest_sync")
         response = _client().get(RequestHandler.AGENTS_PATH)
-        assert AGENT_NAME in response.json()["agents"]
+        assert AGENT_NAME in [entry["id"] for entry in response.json()["agents"]]
 
 
 class TestRestAsync:
@@ -263,6 +264,105 @@ class TestRestAsync:
         assert "principal" not in json.loads(message.body)
 
 
+class _QueuedRestHandler(RestHandler):
+    """RestHandler in queue mode: its own enqueue-and-wait route, the one the pipeline handler builds on."""
+
+    def _is_queue_mode(self) -> bool:
+        return True
+
+
+class TestAnAgentKeptOffRest:
+    """The queued chat routes say the request entered by the REST API, and the runner serves it only the agents on
+    `rest` (#603, design refinement 13). The `kept_off_rest` runtime hosts `internal` (on `a2a` only, registered
+    first) and `public`; the runner threads run under it, as the edge does."""
+
+    def test_the_queued_body_carries_the_surface_it_entered_by(self, monkeypatch, kept_off_rest):
+        _configure(monkeypatch, mode="rest_async")
+
+        with kept_off_rest:
+            _client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "public"})
+
+        [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert json.loads(message.body)["surface"] == "rest"
+
+    def test_the_base_handlers_own_queue_route_marks_it_too(self, monkeypatch, kept_off_rest):
+        _configure(monkeypatch, mode="rest_async")
+        app = FastAPI()
+        app.include_router(_QueuedRestHandler().get_router())
+
+        with kept_off_rest:
+            TestClient(app).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "public"})
+
+        [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert json.loads(message.body)["surface"] == "rest"
+
+    def test_the_multipart_route_marks_it_too(self, monkeypatch, kept_off_rest):
+        _configure(monkeypatch, mode="rest_async")
+
+        with kept_off_rest:
+            _client().post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "session_id": "s1", "agent": "public"})
+
+        [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert json.loads(message.body)["surface"] == "rest"
+
+    def test_naming_it_is_answered_with_the_unknown_agents_404(self, monkeypatch, kept_off_rest, workers):
+        _configure(monkeypatch, mode="rest_sync")
+        with kept_off_rest:
+            workers()
+            client = _client()
+            kept_off = client.post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "internal"})
+            unknown = client.post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "ghost"})
+
+        assert kept_off.status_code == unknown.status_code == 404
+        assert kept_off.json()["detail"] == {"error": "Agent 'internal' not found", "session_id": "s1"}
+        assert unknown.json()["detail"] == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+
+    def test_a_request_naming_no_agent_runs_the_first_agent_on_rest(self, monkeypatch, kept_off_rest, workers):
+        _configure(monkeypatch, mode="rest_sync")
+        with kept_off_rest:
+            workers()
+            response = _client().post(CHAT, json={"prompt": "hello", "session_id": "s1"})
+
+        assert response.status_code == 200
+        assert response.json() == {"result": "public", "session_id": "s1"}
+
+    def test_the_multipart_route_answers_the_same(self, monkeypatch, kept_off_rest, workers):
+        _configure(monkeypatch, mode="rest_sync")
+        with kept_off_rest:
+            workers()
+            client = _client()
+            kept_off = client.post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "session_id": "s1", "agent": "internal"})
+            default = client.post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "session_id": "s1"})
+
+        assert (kept_off.status_code, kept_off.json()["detail"]["error"]) == (404, "Agent 'internal' not found")
+        assert default.json() == {"result": "public", "session_id": "s1"}
+
+    def test_the_streamed_default_skips_it(self, monkeypatch, kept_off_rest, workers):
+        _configure(monkeypatch, mode="rest_sync", message_type="delta")
+        with kept_off_rest:
+            workers(stream=True)
+            with _client().stream("POST", CHAT, json={"prompt": "hello", "session_id": "s1"}) as response:
+                frames = [json.loads(line[len("data: ") :]) for line in response.iter_lines() if line.startswith("data: ")]
+
+        assert "".join(frame.get("delta", "") for frame in frames) == "public"
+
+    def test_a_protocol_request_is_enqueued_as_its_executor_built_it(self, monkeypatch, knows_triage):
+        # A2A and MCP reach the queue through ``request``: each executor names its own surface, and this path
+        # neither adds ``rest`` nor takes theirs away.
+        import asyncio
+
+        _configure(monkeypatch)
+        transport = InMemoryTransport()
+        store = FakeStore(record={"status_code": 200, "body": {"result": "ok"}})
+
+        # A session each: the queue hands out one message of a session at a time.
+        asyncio.run(_protocol_handler(store, transport).request(_protocol_body(session_id="s1", surface="a2a"), protocol="a2a"))
+        asyncio.run(_protocol_handler(store, transport).request(_protocol_body(session_id="s2"), protocol="mcp"))
+
+        bodies = {body["session_id"]: body for body in (json.loads(m.body) for m in transport.create_consumer(QueueName.INPUT).fetch(2, 0.5))}
+        assert (bodies["s1"]["surface"], "surface" in bodies["s2"]) == ("a2a", False)
+
+
 class TestInternalFieldsRejected:
     """#884: a client cannot set the fields internal producers use, so a resume decision cannot be dropped."""
 
@@ -325,8 +425,7 @@ class TestStatusHonoringResponses:
     """
 
     def test_status_honoring_lives_in_the_shared_base(self):
-        """ECSQueueRequestHandler is a bare RestHandler, so the behavior has to be inherited, not
-        re-implemented on the pipeline handler."""
+        """The behavior is inherited from RestHandler, not re-implemented on the pipeline handler."""
         assert RequestHandler._build_sync_response is RestHandler._build_sync_response
 
     def test_2xx_non_200_is_preserved(self, monkeypatch):
@@ -440,11 +539,287 @@ class TestMultipart:
         assert response.status_code == 400
         assert "Invalid image type" in response.json()["detail"]["error"]
 
-    def test_multipart_route_absent_on_broker_transports(self, monkeypatch, dummy_agent):
-        _configure(monkeypatch, mode="rest_sync")
-        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
-        response = _client().post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "x", "session_id": "s1"})
-        assert response.status_code == 404
+    def test_multipart_route_served_on_broker_transports(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, multimodal=False)
+        response = client.post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "x", "session_id": "s1", "agent": AGENT_NAME})
+        assert response.status_code == 200
+        assert len(_queued()) == 1
+
+
+BASE64_HELLO = "aGVsbG8="
+
+
+def _broker_client(
+    monkeypatch, *, multimodal=True, storage_type="in_memory", shared=None, mode="rest_async", message_type=None, transport=None
+) -> TestClient:
+    """A handler on a broker transport (#871), with the in-memory transport and store injected so nothing dials out."""
+    if multimodal:
+        monkeypatch.setenv("AK_MULTIMODAL__ENABLED", "true")
+        monkeypatch.setenv("AK_MULTIMODAL__STORAGE_TYPE", storage_type)
+    _configure(monkeypatch, mode=mode, message_type=message_type)
+    monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
+    if shared is not None:
+        monkeypatch.setattr(AttachmentStorageManager, "store_is_shared", classmethod(lambda cls: shared))
+    handler = RequestHandler()
+    handler._transport = transport or InMemoryTransport()
+    handler._response_store = InMemoryResponseStore()
+    app = FastAPI()
+    app.include_router(handler.get_router())
+    return TestClient(app)
+
+
+def _queued() -> list:
+    return InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05)
+
+
+def _with_file(file_data: str, **extra) -> dict:
+    return {
+        "prompt": "hi",
+        "session_id": "s1",
+        "agent": AGENT_NAME,
+        "files": [{"file_data": file_data, "name": "a.txt", "mime_type": "text/plain"}],
+        **extra,
+    }
+
+
+class TestBrokerUploadChecks:
+    """#871: on a broker, files that cannot be saved where the runner reads them are refused before the queue."""
+
+    def _assert_refused(self, response, fragment: str) -> None:
+        assert response.status_code == 400
+        assert fragment in response.json()["detail"]["error"]
+        assert response.json()["detail"]["session_id"] == "s1"
+        assert _queued() == []
+
+    def test_a_plain_text_data_uri_travels_inline(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True, transport=_CappedTransport())
+        _CappedTransport.sent = []
+
+        assert client.post(CHAT, json=_with_file("data:text/plain,hello%20world")).status_code == 200
+
+        [body] = [json.loads(sent) for sent in _CappedTransport.sent]
+        assert body["requests"][1]["file_data"] == "data:text/plain,hello%20world"
+
+    def test_a_store_config_error_is_a_400(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, storage_type="nonsense")
+        self._assert_refused(client.post(CHAT, json=_with_file(BASE64_HELLO)), "unknown multimodal storage_type 'nonsense'")
+
+    def test_saved_files_are_capped_at_max_attachments(self, monkeypatch, dummy_agent):
+        monkeypatch.setenv("AK_MULTIMODAL__MAX_ATTACHMENTS", "1")
+        client = _broker_client(monkeypatch, shared=True)
+        seen = []
+        real_offload = AttachmentStorageManager.offload.__func__
+        monkeypatch.setattr(
+            AttachmentStorageManager, "offload", classmethod(lambda cls, *a, **k: seen.append(k["max_attachments"]) or real_offload(cls, *a, **k))
+        )
+
+        assert client.post(CHAT, json=_with_file(BASE64_HELLO)).status_code == 200
+        assert seen == [1 + 2]  # the cap plus this request's prompt and file
+
+    def test_file_bytes_without_multimodal_are_refused(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, multimodal=False)
+        self._assert_refused(client.post(CHAT, json=_with_file(BASE64_HELLO)), "multimodal support is disabled")
+
+    def test_an_image_counts_as_file_bytes(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, multimodal=False)
+        body = {"prompt": "hi", "session_id": "s1", "images": [{"image_data": f"data:image/png;base64,{BASE64_HELLO}", "name": "a.png"}]}
+        self._assert_refused(client.post(CHAT, json=body), "multimodal support is disabled")
+
+    def test_file_bytes_with_an_unshared_store_are_refused(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, storage_type="in_memory")
+        self._assert_refused(client.post(CHAT, json=_with_file(BASE64_HELLO)), "keeps files in the process that saved them")
+
+    def test_a_json_file_over_max_file_size_is_refused(self, monkeypatch, dummy_agent):
+        monkeypatch.setenv("AK_API__MAX_FILE_SIZE", "4")
+        client = _broker_client(monkeypatch, shared=True)
+        self._assert_refused(client.post(CHAT, json=_with_file(BASE64_HELLO)), "exceeds maximum size")
+
+    def test_a_file_at_max_file_size_passes(self, monkeypatch, dummy_agent):
+        monkeypatch.setenv("AK_API__MAX_FILE_SIZE", "5")  # "hello" decodes to exactly 5 bytes
+        client = _broker_client(monkeypatch, shared=True)
+        assert client.post(CHAT, json=_with_file(BASE64_HELLO)).status_code == 200
+        assert len(_queued()) == 1
+
+    def test_a_link_needs_no_store(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, multimodal=False)
+        assert client.post(CHAT, json=_with_file("https://example.com/a.txt")).status_code == 200
+        assert len(_queued()) == 1
+
+    def test_a_text_chat_works_with_an_unshared_store(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, storage_type="in_memory")
+        assert client.post(CHAT, json={"prompt": "hi", "session_id": "s1", "agent": AGENT_NAME}).status_code == 200
+        assert len(_queued()) == 1
+
+    def test_the_in_memory_transport_is_never_checked(self, monkeypatch, dummy_agent):
+        _configure(monkeypatch, mode="rest_async")  # multimodal off: refused on a broker, fine in-process
+        response = _client().post(CHAT, json=_with_file("data:text/plain,hello"))
+        assert response.status_code == 200
+        assert len(_queued()) == 1
+
+    def test_startup_warns_about_an_unshared_store(self, monkeypatch, caplog):
+        with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
+            _broker_client(monkeypatch, storage_type="in_memory")
+        assert "File uploads will be refused" in caplog.text
+        assert "multimodal.storage_type 'in_memory'" in caplog.text
+
+    def test_startup_survives_an_unknown_store(self, monkeypatch, caplog):
+        with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
+            _broker_client(monkeypatch, storage_type="nonsense")
+        assert "unknown multimodal storage_type 'nonsense'" in caplog.text
+
+    def test_startup_survives_a_missing_store_extra(self, monkeypatch, caplog):
+        def missing(cls):
+            raise ImportError("install agentkernel[redis]")
+
+        monkeypatch.setattr(AttachmentStorageManager, "store_is_shared", classmethod(missing))
+        with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
+            _broker_client(monkeypatch, storage_type="redis")
+        assert "File uploads will be refused: install agentkernel[redis]" in caplog.text
+
+    def test_startup_is_quiet_with_a_shared_store(self, monkeypatch, caplog):
+        with caplog.at_level("WARNING", logger="ak.pipeline.request_handler"):
+            _broker_client(monkeypatch, shared=True)
+        assert "File uploads will be refused" not in caplog.text
+
+
+class _CappedTransport(InMemoryTransport):
+    """A broker stand-in: refuses an input message over LIMIT bytes, as SQS, Kafka and NATS do, and keeps what it sent."""
+
+    LIMIT = 64 * 1024
+    sent: list[str] = []
+
+    def send(self, queue, message):
+        if queue == QueueName.INPUT:
+            assert len(message.body.encode()) <= self.LIMIT, f"input message of {len(message.body.encode())} bytes is over the broker limit"
+            _CappedTransport.sent.append(message.body)
+        return super().send(queue, message)
+
+
+BIG_FILE = b"x" * (200 * 1024)  # well over the 64 KB cap once base64-encoded
+
+
+@pytest.fixture
+def broker_uploads(monkeypatch):
+    """Multimodal on in the runner: the system hooks rebuild from this config, and the description model is stubbed."""
+    _CappedTransport.sent = []
+    monkeypatch.setattr(Runtime, "_system_pre_hooks", None)
+    # The runner and responder build their store through the factory, which refuses in_memory on a broker.
+    monkeypatch.setattr(ResponseStoreFactory, "create", staticmethod(lambda *a, **k: InMemoryResponseStore()))
+    described: list[str] = []
+
+    async def describe(self, data, mime_type="image/jpeg"):
+        described.append(data)
+        return "a greeting"
+
+    monkeypatch.setattr(MultimodalPreHook, "_describe_attachment_briefly", describe)
+    return described
+
+
+class TestBrokerUploads:
+    """#871: on a broker, uploads are saved at the edge and only their ids ride the queue."""
+
+    def _client(self, monkeypatch, **kwargs) -> TestClient:
+        return _broker_client(monkeypatch, shared=True, mode="rest_sync", transport=_CappedTransport(), **kwargs)
+
+    def _assert_only_ids_were_queued(self) -> None:
+        [body] = [json.loads(sent) for sent in _CappedTransport.sent]
+        assert body.get("files") is None and body.get("images") is None
+        assert [req["type"] for req in body["requests"]] == ["text", "attachment_ref"]
+
+    def test_a_json_upload_over_the_broker_limit_round_trips(self, monkeypatch, dummy_agent, workers, broker_uploads):
+        client = self._client(monkeypatch)
+        workers()
+
+        response = client.post(CHAT, json=_with_file(base64.b64encode(BIG_FILE).decode()))
+
+        assert response.status_code == 200
+        assert "a greeting" in response.json()["result"]  # the runner loaded the file by its id and described it
+        assert broker_uploads == [base64.b64encode(BIG_FILE).decode()]
+        self._assert_only_ids_were_queued()
+
+    def test_a_multipart_upload_over_the_broker_limit_round_trips(self, monkeypatch, dummy_agent, workers, broker_uploads):
+        client = self._client(monkeypatch)
+        workers()
+
+        response = client.post(
+            RequestHandler.CHAT_MULTIPART_PATH,
+            data={"prompt": "hi", "session_id": "s1", "agent": AGENT_NAME},
+            files=[("files", ("big.bin", BIG_FILE, "application/octet-stream"))],
+        )
+
+        assert response.status_code == 200
+        assert "a greeting" in response.json()["result"]
+        self._assert_only_ids_were_queued()
+
+    def test_a_streamed_upload_over_the_broker_limit_round_trips(self, monkeypatch, dummy_agent, workers, broker_uploads):
+        client = self._client(monkeypatch, message_type="delta")
+        # The in-memory response store is process-local; here edge and runner share the process.
+        monkeypatch.setattr(RequestHandler, "_store_can_serve_sse", lambda self: True)
+        workers(stream=True)
+
+        with client.stream("POST", CHAT, json=_with_file(base64.b64encode(BIG_FILE).decode())) as response:
+            assert response.status_code == 200
+            frames = [json.loads(line[len("data: ") :]) for line in response.iter_lines() if line.startswith("data: ")]
+
+        assert frames[-1]["done"] is True
+        assert broker_uploads == [base64.b64encode(BIG_FILE).decode()]
+        self._assert_only_ids_were_queued()
+
+    def test_a_streamed_multipart_upload_over_the_broker_limit_round_trips(self, monkeypatch, dummy_agent, workers, broker_uploads):
+        client = self._client(monkeypatch, message_type="delta")
+        monkeypatch.setattr(RequestHandler, "_store_can_serve_sse", lambda self: True)
+        workers(stream=True)
+
+        with client.stream(
+            "POST",
+            RequestHandler.CHAT_MULTIPART_PATH,
+            data={"prompt": "hi", "session_id": "s1", "agent": AGENT_NAME},
+            files=[("files", ("big.bin", BIG_FILE, "application/octet-stream"))],
+        ) as response:
+            assert response.status_code == 200
+            frames = [json.loads(line[len("data: ") :]) for line in response.iter_lines() if line.startswith("data: ")]
+
+        assert frames[-1]["done"] is True
+        assert broker_uploads == [base64.b64encode(BIG_FILE).decode()]
+        self._assert_only_ids_were_queued()
+
+    def test_a_link_travels_untouched(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True, transport=_CappedTransport())
+        _CappedTransport.sent = []
+
+        assert client.post(CHAT, json=_with_file("https://example.com/a.txt")).status_code == 200
+
+        [body] = [json.loads(sent) for sent in _CappedTransport.sent]
+        assert body["requests"][1]["file_data"] == "https://example.com/a.txt"
+
+    def test_a_scheduled_request_saves_and_queues_no_file(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True, transport=_CappedTransport())
+        _CappedTransport.sent = []
+        monkeypatch.setattr(
+            AttachmentStorageManager, "offload", classmethod(lambda cls, *a, **k: pytest.fail("a deferred request must not save files"))
+        )
+        big = base64.b64encode(BIG_FILE).decode()
+
+        response = client.post(CHAT, json=_with_file(big, schedule={"at": "2099-01-01T00:00:00"}))
+
+        assert response.status_code == 200
+        [body] = [json.loads(sent) for sent in _CappedTransport.sent]
+        assert not body.get("files") and body["prompt"] == "hi"
+        assert body["schedule"]["at"].startswith("2099-01-01T00:00:00")
+
+    def test_a_save_the_store_refuses_is_a_400(self, monkeypatch, dummy_agent):
+        client = _broker_client(monkeypatch, shared=True)
+
+        def refuse(cls, *args, **kwargs):
+            raise ValueError("Attachment a.txt is 500 KB stored, over DynamoDB's 400 KB item limit.")
+
+        monkeypatch.setattr(AttachmentStorageManager, "offload", classmethod(refuse))
+
+        response = client.post(CHAT, json=_with_file(BASE64_HELLO))
+
+        assert response.status_code == 400
+        assert "400 KB item limit" in response.json()["detail"]["error"]
+        assert _queued() == []
 
 
 class TestWebSocketModeGuards:
@@ -462,7 +837,7 @@ class TestWebSocketModeGuards:
         _configure(monkeypatch, mode="realtime")
         response = _client().post(CHAT, json={"prompt": "hi", "session_id": "s1"})
         assert response.status_code == 400
-        assert "realtime gateway" in response.json()["detail"]["error"]
+        assert "realtime edge" in response.json()["detail"]["error"]
 
         # Nothing was enqueued: the input queue stays empty.
         assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
@@ -604,11 +979,22 @@ def _protocol_handler(store, transport=None, budget=(3, 0.5)) -> RestHandler:
     return _InjectedHandler(store, transport or InMemoryTransport(), budget)
 
 
+@pytest.fixture
+def knows_triage(descriptor_only_registry):
+    """A runtime of the test's own whose registry knows `triage`, the agent the protocol bodies name.
+
+    `request` asks whether the agent is available before it enqueues (#603). Under the shared global runtime the
+    answer would depend on what an earlier test module left registered there.
+    """
+    with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([AgentDescriptor(id="triage", name="triage")])):
+        yield
+
+
 class TestProtocolRequest:
     """``RestHandler.request`` (#780): the "enqueue, then wait for the whole reply" A2A and MCP share with REST."""
 
     @pytest.fixture(autouse=True)
-    def _defaults(self, monkeypatch):
+    def _defaults(self, monkeypatch, knows_triage):
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
         AKConfig._reset()
 
@@ -831,3 +1217,311 @@ class TestStreamErrorFrames:
 
         assert frames == [{"error": "Stream delivery failed", "done": True, "session_id": "s1"}]
         assert "cache.internal" not in json.dumps(frames)
+
+
+# -- the precheck before the queue (#603, plan iteration 19) ---------------------------------------
+
+
+ALICE = Principal(subject="alice", provider="static", namespace="static")
+BOB = Principal(subject="bob", provider="static", namespace="static")
+
+# What the edge of a split deployment knows: descriptors of agents another process hosts. `assistant` is private,
+# `status` is public, `internal` is kept off the REST surface.
+EDGE_AGENTS = [
+    AgentDescriptor(id="assistant", name="assistant"),
+    AgentDescriptor(id="status", name="status", visibility="public"),
+    AgentDescriptor(id="internal", name="internal", surfaces=["a2a"]),
+]
+GRANTS = [{"subjects": ["user:alice"], "agents": ["assistant", "internal"], "level": "read"}]
+
+
+def _edge_client(handler=None, principal: Principal | None = None) -> TestClient:
+    """The queue routes of an edge process, with the principal an identity dependency would have set."""
+
+    async def _identity(request: Request):
+        request.state.principal = principal or Principal.anonymous()
+
+    app = FastAPI()
+    app.include_router((handler or RequestHandler()).get_router(), dependencies=[Depends(_identity)])
+    return TestClient(app)
+
+
+def _queued_bodies() -> list[dict]:
+    return [json.loads(message.body) for message in InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)]
+
+
+@pytest.fixture
+def edge(descriptor_only_registry):
+    """The current runtime of an edge process: a registry that knows `EDGE_AGENTS` and hosts none of them.
+
+    `edge.reads` counts the registry reads a request cost, and `edge.threads` names the threads that made them.
+    """
+
+    class _CountingRegistry(descriptor_only_registry):
+        def __init__(self, descriptors):
+            super().__init__(descriptors)
+            self.reads: list[str] = []
+            self.threads: set[str] = set()
+
+        def _read(self, what: str) -> None:
+            self.reads.append(what)
+            self.threads.add(threading.current_thread().name)
+
+        def descriptor(self, id):
+            self._read(f"descriptor:{id}")
+            return super().descriptor(id)
+
+        def descriptors(self):
+            self._read("descriptors")
+            return super().descriptors()
+
+        def is_empty(self):
+            self._read("is_empty")
+            return super().is_empty()
+
+    registry = _CountingRegistry(EDGE_AGENTS)
+    with Runtime(InMemorySessionStore(), registry=registry):
+        yield registry
+
+
+class TestThePrecheckBeforeTheQueue:
+    """A request for an agent its caller cannot have is answered by the process that accepts it, with the status
+    and body the runner would have answered, and nothing is enqueued (#603, spec 8.3). The edge reads the agent
+    registry, so it decides for agents another process hosts; the runner asks again when the request runs."""
+
+    def test_a_request_for_an_agent_the_registry_knows_is_enqueued(self, monkeypatch, edge):
+        _configure(monkeypatch, mode="rest_async")
+
+        response = _edge_client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "assistant"})
+
+        assert response.status_code == 200
+        assert [body["agent"] for body in _queued_bodies()] == ["assistant"]
+
+    def test_an_unknown_agent_is_the_404_the_runner_answers_and_nothing_is_enqueued(self, monkeypatch, edge):
+        _configure(monkeypatch, mode="rest_sync")
+
+        response = _edge_client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "ghost"})
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": {"error": "Agent 'ghost' not found", "session_id": "s1"}}
+        assert _queued_bodies() == []
+
+    def test_the_edges_own_view_of_surfaces_holds_for_a_queued_request(self, monkeypatch, edge):
+        # Iteration 17b left this to the runner's descriptor. An agent the edge's registry keeps off `rest` is refused here.
+        _configure(monkeypatch, mode="rest_async")
+
+        response = _edge_client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "internal"})
+
+        assert (response.status_code, response.json()["detail"]["error"]) == (404, "Agent 'internal' not found")
+        assert _queued_bodies() == []
+
+    def test_with_authorization_a_hidden_agent_and_an_unknown_one_are_one_answer(self, monkeypatch, edge, authorization):
+        _configure(monkeypatch, mode="rest_async")
+        authorization(grants=GRANTS)
+        client = _edge_client(principal=BOB)
+
+        hidden = client.post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "assistant"})
+        unknown = client.post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "ghost"})
+
+        assert hidden.status_code == unknown.status_code == 404
+        assert hidden.json() == {"detail": {"error": "Agent 'assistant' not found", "session_id": "s1"}}
+        assert unknown.json() == {"detail": {"error": "Agent 'ghost' not found", "session_id": "s1"}}
+        assert _queued_bodies() == []
+
+    def test_with_authorization_an_agent_the_caller_sees_and_may_not_use_is_a_403(self, monkeypatch, edge, authorization):
+        _configure(monkeypatch, mode="rest_async")
+        authorization(grants=GRANTS)
+
+        response = _edge_client(principal=BOB).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "status"})
+
+        assert response.status_code == 403
+        assert response.json() == {"detail": {"error": "Principal 'bob' holds no level on agent 'status'", "session_id": "s1"}}
+        assert _queued_bodies() == []
+
+    def test_with_authorization_a_caller_with_a_level_is_enqueued_as_itself(self, monkeypatch, edge, authorization):
+        _configure(monkeypatch, mode="rest_async")
+        authorization(grants=GRANTS)
+
+        response = _edge_client(principal=ALICE).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "assistant"})
+
+        assert response.status_code == 200
+        [body] = _queued_bodies()
+        assert (body["agent"], body["principal"]["subject"]) == ("assistant", "alice")
+
+    def test_a_grant_does_not_put_an_agent_on_a_surface_it_is_kept_off(self, monkeypatch, edge, authorization):
+        _configure(monkeypatch, mode="rest_async")
+        authorization(grants=GRANTS)  # alice holds a level on `internal`, which is on `a2a` only
+
+        response = _edge_client(principal=ALICE).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "internal"})
+
+        assert response.status_code == 404
+
+    def test_a_request_nobody_authenticated_is_decided_as_the_anonymous_principal(self, monkeypatch, edge, authorization):
+        _configure(monkeypatch, mode="rest_async")
+        authorization(grants=GRANTS)
+        app = FastAPI()
+        app.include_router(RequestHandler().get_router())  # mounted with no identity dependency at all
+
+        response = TestClient(app).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "assistant"})
+
+        assert response.status_code == 404
+        assert _queued_bodies() == []
+
+    def test_it_is_refused_on_the_sse_path_before_the_stream_opens(self, monkeypatch, edge):
+        _configure(monkeypatch, mode="rest_sync", message_type="delta")
+
+        response = _edge_client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "ghost"})
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": {"error": "Agent 'ghost' not found", "session_id": "s1"}}
+        assert not response.headers["content-type"].startswith("text/event-stream")
+        assert _queued_bodies() == []
+
+    def test_the_multipart_route_refuses_it_too(self, monkeypatch, edge):
+        _configure(monkeypatch, mode="rest_async")
+
+        response = _edge_client().post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "session_id": "s1", "agent": "ghost"})
+
+        assert (response.status_code, response.json()["detail"]["error"]) == (404, "Agent 'ghost' not found")
+        assert _queued_bodies() == []
+
+    def test_the_base_handlers_own_queue_route_refuses_it_too(self, monkeypatch, edge):
+        _configure(monkeypatch, mode="rest_async")
+
+        response = _edge_client(_QueuedRestHandler()).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "ghost"})
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": {"error": "Agent 'ghost' not found", "session_id": "s1"}}
+        assert _queued_bodies() == []
+
+    def test_no_file_is_saved_for_a_request_that_is_refused(self, monkeypatch, edge):
+        _configure(monkeypatch, mode="rest_async")
+        saved = []
+
+        async def _offload(self, body):
+            saved.append(body.agent)
+
+        monkeypatch.setattr(RequestHandler, "_offload_attachments", _offload)
+        client = _edge_client()
+
+        client.post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "ghost"})
+        client.post(CHAT, json={"prompt": "hello", "session_id": "s2", "agent": "assistant"})
+
+        assert saved == ["assistant"]
+
+    def test_the_registry_is_read_once_for_a_request_and_off_the_event_loop(self, monkeypatch, edge):
+        _configure(monkeypatch, mode="rest_async")
+        loop_thread = []
+
+        async def _identity(request: Request):
+            loop_thread.append(threading.current_thread().name)
+            request.state.principal = Principal.anonymous()
+
+        app = FastAPI()
+        app.include_router(RequestHandler().get_router(), dependencies=[Depends(_identity)])
+
+        TestClient(app).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "assistant"})
+
+        # A store read blocks: made on the loop it would hold every other request of the process.
+        assert edge.reads == ["descriptor:assistant"]
+        assert edge.threads.isdisjoint(loop_thread)
+
+    def test_a_request_naming_no_agent_is_left_to_the_process_that_picks_the_default(self, monkeypatch, edge):
+        _configure(monkeypatch, mode="rest_async")
+
+        response = _edge_client().post(CHAT, json={"prompt": "hello", "session_id": "s1"})
+
+        assert response.status_code == 200
+        assert edge.reads == []  # nothing to look up, and no listing to second-guess the runner's default
+        assert len(_queued_bodies()) == 1
+
+    def test_an_edge_that_knows_no_agent_leaves_the_decision_to_the_runner(self, monkeypatch, descriptor_only_registry):
+        """A split deployment whose accepting process neither loads the agent modules nor shares a registry has
+        nothing to judge a name by. It enqueued every request before the precheck existed, and still does."""
+        _configure(monkeypatch, mode="rest_async")
+
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([])):
+            response = _edge_client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "assistant"})
+
+        assert response.status_code == 200
+        assert [body["agent"] for body in _queued_bodies()] == ["assistant"]
+
+    def test_a_deferred_request_for_an_agent_its_caller_cannot_have_is_refused_before_the_queue(self, monkeypatch, edge):
+        _configure(monkeypatch, mode="rest_async")
+        schedule = {"at": "2999-01-01T00:00:00Z"}
+
+        response = _edge_client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "ghost", "schedule": schedule})
+
+        assert (response.status_code, response.json()["detail"]["error"]) == (404, "Agent 'ghost' not found")
+        assert _queued_bodies() == []
+
+    def test_what_the_runner_would_run_is_what_the_edge_let_through(self, monkeypatch, kept_off_rest, workers):
+        # Single process, nothing mocked: the same request answered by the edge and, for a served agent, by the runner.
+        _configure(monkeypatch, mode="rest_sync")
+        with kept_off_rest:
+            workers()
+            client = _client()
+            refused = client.post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "internal"})
+            served = client.post(CHAT, json={"prompt": "hello", "session_id": "s2", "agent": "public"})
+
+        assert (refused.status_code, refused.json()["detail"]) == (404, {"error": "Agent 'internal' not found", "session_id": "s1"})
+        assert served.json() == {"result": "public", "session_id": "s2"}
+
+
+class TestThePrecheckOnAProtocolRequest:
+    """`RestHandler.request`, the path A2A and MCP enqueue by, asks the same question with the principal and the
+    surface its executor put on the body. A refusal comes back as the reply the runner would have stored: this
+    path raises no HTTP error, and its callers already read `is_error`."""
+
+    @pytest.fixture(autouse=True)
+    def _defaults(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_agent_is_answered_without_the_queue_or_the_store(self, edge):
+        transport = InMemoryTransport()
+        store = FakeStore(record={"status_code": 200, "body": {"result": "ok"}})
+
+        reply = await _protocol_handler(store, transport).request(_protocol_body(agent="ghost"), protocol="a2a")
+
+        assert (reply.status_code, reply.is_error) == (404, True)
+        assert reply.body == {"error": "Agent 'ghost' not found", "session_id": "s1"}
+        assert reply.error == "Agent 'ghost' not found"
+        assert reply.request_id  # a refused request is still one request, with an id to log by
+        assert transport.create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
+        assert store.reads == []
+
+    @pytest.mark.asyncio
+    async def test_the_surface_the_executor_named_is_the_one_applied(self, edge):
+        store = FakeStore(record={"status_code": 200, "body": {"result": "ok"}})
+
+        on_a2a = await _protocol_handler(store).request(_protocol_body(agent="internal", surface="a2a"), protocol="a2a")
+        on_mcp = await _protocol_handler(store).request(_protocol_body(agent="internal", session_id="s2", surface="mcp"), protocol="mcp")
+
+        assert (on_a2a.status_code, on_mcp.status_code) == (200, 404)
+
+    @pytest.mark.asyncio
+    async def test_with_authorization_the_principal_on_the_body_is_who_is_asked_about(self, edge, authorization):
+        authorization(grants=GRANTS)
+        store = FakeStore(record={"status_code": 200, "body": {"result": "ok"}})
+        handler = _protocol_handler(store)
+
+        granted = await handler.request(_protocol_body(agent="assistant", principal=ALICE), protocol="mcp")
+        hidden = await handler.request(_protocol_body(agent="assistant", session_id="s2", principal=BOB), protocol="mcp")
+        forbidden = await handler.request(_protocol_body(agent="status", session_id="s3", principal=BOB), protocol="mcp")
+        nobody = await handler.request(_protocol_body(agent="assistant", session_id="s4"), protocol="mcp")
+
+        assert (granted.status_code, hidden.status_code, forbidden.status_code, nobody.status_code) == (200, 404, 403, 404)
+        assert forbidden.body == {"error": "Principal 'bob' holds no level on agent 'status'", "session_id": "s3"}
+
+    @pytest.mark.asyncio
+    async def test_an_edge_that_knows_no_agent_enqueues_as_before(self, descriptor_only_registry):
+        transport = InMemoryTransport()
+        store = FakeStore(record={"status_code": 200, "body": {"result": "ok"}})
+
+        with Runtime(InMemorySessionStore(), registry=descriptor_only_registry([])):
+            reply = await _protocol_handler(store, transport).request(_protocol_body(), protocol="a2a")
+
+        assert reply.status_code == 200
+        assert len(transport.create_consumer(QueueName.INPUT).fetch(1, 0.1)) == 1

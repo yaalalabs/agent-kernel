@@ -4,7 +4,7 @@ sidebar_position: 9
 
 # On-Prem / Kubernetes Deployment
 
-Deploy Agent Kernel's queue-execution pipeline to any Kubernetes cluster with the official
+Deploy Open Agent Kernel's queue-execution pipeline to any Kubernetes cluster with the official
 Helm chart: an `io-handler` Deployment (REST API + Response Handler), an `agent-runner`
 Deployment (the consumers executing your agents), and an optional `ws-gateway` Deployment for
 WebSocket delivery. Backing services (Valkey, NATS JetStream) ship as condition-gated
@@ -31,9 +31,9 @@ flowchart LR
     IO --> RS[(Valkey<br/>responses + sessions)]
     AR --> RS
 
-    style IO fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style WSG fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style IO fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style AR fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
+    style WSG fill:#FF5E32,stroke:#fff,stroke-width:2px,color:#02284F
 ```
 
 This is the same five-component [queue pipeline](../advanced/queue-mode-guide) that runs
@@ -51,8 +51,8 @@ Build your application images (the
 example walks this end to end on k3d, microk8s, and k3s), load them into your cluster, then:
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.1 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.2 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.10.2 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>
@@ -63,7 +63,7 @@ curl -s -X POST http://localhost:8000/api/v1/chat \
   -d '{"prompt": "Hello", "session_id": "s1", "agent": "triage"}'
 ```
 
-The chart is published to GHCR as an OCI artifact with every Agent Kernel release, versioned
+The chart is published to GHCR as an OCI artifact with every OAK release, versioned
 like the package, and the flavor values files (`values-dev.yaml`, `values-baremetal.yaml`,
 `values-eks.yaml`) ship inside it, which is what the `helm pull --untar` unpacks. To work from
 a repository checkout instead (unreleased chart changes), add the valkey and nats chart repos,
@@ -179,7 +179,7 @@ store. The tier ships with its own ServiceAccount and RBAC, KEDA scaling on the 
 backlog, and values-gated namespace hardening (Pod Security Admission, default-deny egress,
 quotas).
 
-The tier also installs **standalone**: when the rest of Agent Kernel runs outside the cluster
+The tier also installs **standalone**: when the rest of OAK runs outside the cluster
 (Lambda mode, ECS), disable `ioHandler` and `agentRunner` and this chart deploys only the
 sandbox worker; the agent side and the worker then meet solely on the shared sandbox queues
 and response store. See the

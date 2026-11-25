@@ -2,11 +2,11 @@
 
 NATS is a broker transport, so the pipeline is split across two processes that share the queues:
 
-    python app.py io        # LiveKit edge gateway + REST API (Request/Response Handler)
+    python app.py io        # LiveKit edge + REST API (Request/Response Handler)
     python app.py runner    # Agent Runner + the per-session native live sessions
 
 Both read the same config.yaml. Start the NATS server first. Run the ``runner`` role as a **single
-replica**: its RealtimeConnectionPool is process-local, and one gateway instance must own a room.
+replica**: its RealtimeConnectionPool is process-local, and one edge instance must own a room.
 """
 
 import logging
@@ -16,8 +16,8 @@ from agentkernel.framework.openai import (
     OpenAIModule,
     OpenAIToolBuilder,
 )
-from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
+from agentkernel.integration.livekit import LiveKitLifecycleAdapter
 from agentkernel.pipeline import AgentRunner, IOHandler
 from agents.realtime import RealtimeAgent
 
@@ -41,11 +41,9 @@ OpenAIModule([general_agent]).run_options(
     general_agent, model_config={"initial_model_settings": {"model_name": "gpt-realtime", "voice": "alloy"}}
 )
 
-gateway = LiveKitEdgeGateway(session_id="room_01")
-
 
 def run_io() -> None:
-    IOHandler.run(gateways=[GatewayRunner(gateway)])
+    IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])
 
 
 ENTRYPOINTS = {"io": run_io, "runner": AgentRunner.run}

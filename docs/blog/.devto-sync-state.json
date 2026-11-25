@@ -1,78 +1,78 @@
 {
   "2025-10-23-announcing-agent-kernel.md": {
-    "content_hash": "f6525df1183792620d441699a385492eb1465985481bb0bb48557a88bcacf1ff",
+    "content_hash": "7cf541268c5f6e05e981d2ef05c5619f54b5b02449f2cf73fdfe5b2f4d176e23",
     "devto_article_id": 4805362,
-    "devto_url": "https://dev.to/agent-kernel/introducing-agent-kernel-framework-agnostic-ai-agent-runtime-5cb0"
+    "devto_url": "https://dev.to/open-agent-kernel/introducing-agent-kernel-framework-agnostic-ai-agent-runtime-5cb0"
   },
   "2025-11-17-observability-support.md": {
-    "content_hash": "60b80fc9c4ff4fdbb2f837a012e712ffc715940597d994bb1ed4258664018328",
+    "content_hash": "ad17414a39d3eb567b85b288546303966a6b0809b585941a4e908618802fda0e",
     "devto_article_id": 4805736,
-    "devto_url": "https://dev.to/agent-kernel/production-grade-observability-agent-kernel-integrates-langfuse-and-openllmetry-3ab9"
+    "devto_url": "https://dev.to/open-agent-kernel/production-grade-observability-agent-kernel-integrates-langfuse-and-openllmetry-3ab9"
   },
   "2025-11-21-messaging-platform-integrations.md": {
-    "content_hash": "f8e8f7fa12d787f317faf20fd0ab035a1b520f1a8f186a77e3180f3b7a2965c2",
+    "content_hash": "e838facd34b825bef2efc5bb665c8521e241f52588ad387f32ae9be843d6a1d2",
     "devto_article_id": 4805769,
-    "devto_url": "https://dev.to/agent-kernel/connect-everywhere-agent-kernel-now-supports-slack-whatsapp-and-messenger-2ig5"
+    "devto_url": "https://dev.to/open-agent-kernel/connect-everywhere-agent-kernel-now-supports-slack-whatsapp-and-messenger-2ig5"
   },
   "2025-12-18-hooks-and-smart-memory.md": {
-    "content_hash": "bbe939e0e9e9abebf394790b715dbb4baf2ac33c03309449c635fb1302deffb7",
+    "content_hash": "b727d51c5abfcfd45ea697a347a4c30d2704159890ec70244655f3d6948afeb1",
     "devto_article_id": 4806120,
-    "devto_url": "https://dev.to/agent-kernel/power-up-your-agents-execution-hooks-and-smart-memory-in-agent-kernel-5d1k"
+    "devto_url": "https://dev.to/open-agent-kernel/power-up-your-agents-execution-hooks-and-smart-memory-in-agent-kernel-5d1k"
   },
   "2026-01-13-guardrails-content-safety.md": {
-    "content_hash": "ac9c9edfff484896b80592f78ad63230795dd7f7f84725abd2b5255d8724d8d4",
+    "content_hash": "6bc031bea2166b143d0ce316cba98a0e9a0f54c7907e9a397d80122ac3afee77",
     "devto_article_id": 4806127,
-    "devto_url": "https://dev.to/agent-kernel/safe-ai-at-scale-introducing-guardrails-for-agent-kernel-34ec"
+    "devto_url": "https://dev.to/open-agent-kernel/safe-ai-at-scale-introducing-guardrails-for-agent-kernel-34ec"
   },
   "2026-02-16-azure-multi-cloud.md": {
-    "content_hash": "68f041448f89155728144490b5febb17ad288ac8fa5f69b0a9e1b5fe29713315",
+    "content_hash": "ccce583bbffe4adb776a4dc87a89a7aad8eed565aee220c7ad6b64ea00c33cf4",
     "devto_article_id": 4806162,
-    "devto_url": "https://dev.to/agent-kernel/agent-kernel-goes-multi-cloud-azure-support-is-here-29he"
+    "devto_url": "https://dev.to/open-agent-kernel/agent-kernel-goes-multi-cloud-azure-support-is-here-29he"
   },
   "2026-02-18-framework-agnostic-tools.md": {
-    "content_hash": "4279b3668733ad42c96c4ce9da5ee00daba4521c61f60716e8e96e31e3eb8349",
+    "content_hash": "0931059b3d36d27ea3be1ffcfe8ef83933bf61e41b863d4a1b67d2388299962c",
     "devto_article_id": 4806178,
-    "devto_url": "https://dev.to/agent-kernel/write-once-run-anywhere-universal-tools-for-ai-agents-1mmg"
+    "devto_url": "https://dev.to/open-agent-kernel/write-once-run-anywhere-universal-tools-for-ai-agents-1mmg"
   },
   "2026-03-10-agent-skills-cli.md": {
-    "content_hash": "f77339b74a8f35a72a8b43c3bd1f7efda7cac5080dcfff8863fbcaceca28665e",
+    "content_hash": "5b0b6df86789dc0957632475295792f183468b2bd4ee6608350b2d0bbdbcee83",
     "devto_article_id": 4806187,
-    "devto_url": "https://dev.to/agent-kernel/agent-skills-agent-kernel-builds-enterprise-agents-for-you-h0d"
+    "devto_url": "https://dev.to/open-agent-kernel/agent-skills-agent-kernel-builds-enterprise-agents-for-you-h0d"
   },
   "2026-03-10-walledai-guardrails.md": {
-    "content_hash": "433f685b6b83dddd99223254838909353e47b5b1c9b412576aa370610e12e694",
+    "content_hash": "2956b0e5b6aa038b99a103a9df2c8dad795f644769c65c3a03c1948feef6516d",
     "devto_article_id": 4806195,
-    "devto_url": "https://dev.to/agent-kernel/walled-ai-guardrails-in-practice-1j8g"
+    "devto_url": "https://dev.to/open-agent-kernel/walled-ai-guardrails-in-practice-1j8g"
   },
   "2026-05-04-knowledge-bases-self-evolving-agents.md": {
-    "content_hash": "f6aa3806d1288c355ebd260fe39d38b910fde418dd9f4c7df5017ebac17c9a8e",
+    "content_hash": "5b72fc9bf237c6a30d6fb5c6b720a032706204246d0e0ba9107661194b9cdd6d",
     "devto_article_id": 4806207,
-    "devto_url": "https://dev.to/agent-kernel/knowledge-bases-the-missing-layer-that-lets-ai-agents-self-evolve-39g3"
+    "devto_url": "https://dev.to/open-agent-kernel/knowledge-bases-the-missing-layer-that-lets-ai-agents-self-evolve-39g3"
   },
   "2026-05-27-agent-kernel-live-climate-impact-x.md": {
-    "content_hash": "6305921af26c2df98ca84a6bc12d9ab20c3a5f77c9c8e151241217545e9fd899",
+    "content_hash": "ebc19e4bbd63fc3b6a81cd579ace680e89155f50395618a1c532dc47819aaa6c",
     "devto_article_id": 4806221,
-    "devto_url": "https://dev.to/agent-kernel/agent-kernel-is-live-at-climate-impact-x-4fap"
+    "devto_url": "https://dev.to/open-agent-kernel/agent-kernel-is-live-at-climate-impact-x-4fap"
   },
   "2026-06-09-gcp-support.md": {
-    "content_hash": "03ff2a0e9ea38dae843f5602679f06c620acb56fb35fb96b923173e1bdbbc4e5",
+    "content_hash": "9c0aabb94a5410776dcb8047ec73ad2bbe22fe08384f79ad025a7a6d4a85b8e5",
     "devto_article_id": 4806244,
-    "devto_url": "https://dev.to/agent-kernel/agent-kernel-now-runs-on-gcp-aws-azure-gcp-on-prem-one-platform-39i8"
+    "devto_url": "https://dev.to/open-agent-kernel/agent-kernel-now-runs-on-gcp-aws-azure-gcp-on-prem-one-platform-39i8"
   },
   "2026-08-06-agent-kernel-execution-broker.md": {
-    "content_hash": "21eb8dd9f353ccd898e6d4c2adf9a73e00542949ea063a09d3f7a2ecec93b712",
+    "content_hash": "97cdd7fd78d3d94310dc35141c63b707faee8722edd0365a1e51bb4626f48a3a",
     "devto_article_id": 4806258,
-    "devto_url": "https://dev.to/agent-kernel/introducing-the-agent-kernel-execution-broker-a-safe-place-for-ai-agents-to-run-code-48p8"
+    "devto_url": "https://dev.to/open-agent-kernel/introducing-the-agent-kernel-execution-broker-a-safe-place-for-ai-agents-to-run-code-48p8"
   },
   "2026-08-17-aws-queue-mode-scalability.md": {
-    "content_hash": "ddc4e78f88e3ed045d0ee1ed07b9d46d2ba6ccb147773764c2c4d01611d8cdb5",
+    "content_hash": "0b60a2b378bafafaeacf454a1636f6419a059910b687d6c5ffec0d58935e572d",
     "devto_article_id": 4806304,
-    "devto_url": "https://dev.to/agent-kernel/scaling-agent-kernel-on-aws-decoupling-request-handling-from-agent-execution-56bg"
+    "devto_url": "https://dev.to/open-agent-kernel/scaling-agent-kernel-on-aws-decoupling-request-handling-from-agent-execution-56bg"
   },
   "2026-09-14-kubernetes-on-prem-helm-chart.md": {
-    "content_hash": "a54ae96082aff7e50032c7f9350c6a6fd6a13cd16accb27991d3c093459ee8ed",
+    "content_hash": "99d76b4997970581eafd37064b5d0b22808a07776316258ddee1ead94858cbb8",
     "devto_article_id": 4806317,
-    "devto_url": "https://dev.to/agent-kernel/your-cluster-your-data-one-helm-chart-agent-kernel-on-on-prem-kubernetes-5g9g"
+    "devto_url": "https://dev.to/open-agent-kernel/your-cluster-your-data-one-helm-chart-agent-kernel-on-on-prem-kubernetes-5g9g"
   },
   "2026-09-14-scheduled-tasks.md": {
     "content_hash": "360ba261a6949e9d6df0a302a10ae0c391b6694798b82621cda2a4b8098de3ee",
@@ -83,5 +83,10 @@
     "content_hash": "deb9524bb8cb81dbfc406591992a46d3b684643b92b3bd54fa88a1c19782b9b9",
     "devto_article_id": 4968017,
     "devto_url": "https://dev.to/agent-kernel/your-agent-finally-has-a-face-ag-ui-in-agent-kernel-2hca"
+  },
+  "2026-11-20-realtime-agent-team.md": {
+    "content_hash": "5f5d10836a450235375aa05d0326d71a5ee5d2edc8d55af75ac38a59d6e477c0",
+    "devto_article_id": 5092752,
+    "devto_url": "https://dev.to/open-agent-kernel/production-ready-voice-agents-many-specialists-one-conversation-1ic2"
   }
 }

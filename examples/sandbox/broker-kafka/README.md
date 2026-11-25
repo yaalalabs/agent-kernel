@@ -23,7 +23,7 @@ Three things to observe:
    returns the finished output on a later turn (the whole recovery contract).
 2. **RBAC as the boundary.** `k8s/rbac.yaml` binds the sandbox pod ServiceAccount to the
    `view` ClusterRole. Read-only kubectl succeeds; any write comes back `Forbidden` from the
-   API server, no matter what the command string says. Agent Kernel never parses command
+   API server, no matter what the command string says. Open Agent Kernel (OAK) never parses command
    strings for safety (that is not a boundary).
 3. **At-least-once execution.** Kafka redelivers on failure until `max_receive_count`, then
    the worker records a permanent-failure completion; side-effectful commands are not

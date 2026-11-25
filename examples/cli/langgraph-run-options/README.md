@@ -1,4 +1,4 @@
-# Agent Kernel: per-agent native run options (LangGraph)
+# Open Agent Kernel: per-agent native run options (LangGraph)
 
 This demo shows how to pass LangGraph's own **per-run `RunnableConfig`** to a graph through Agent
 Kernel: a callback handler that reports progress and a higher `recursion_limit`. Neither is reachable
@@ -17,9 +17,9 @@ LangGraphModule([weather_agent]).run_options(
 1. **Declaration.** `run_options(graph, **options)` is chained like `pre_hook` / `post_hook`. The
    keywords are `ainvoke` / `astream_events`'s own arguments (`config`, `context`, `interrupt_before`,
    `interrupt_after`, `durability`, ...).
-2. **The `config` merge.** Agent Kernel builds its own config with `configurable.thread_id` set to the
-   session id. Your `config` is deep-merged under it: dict-valued keys merge with Agent Kernel's entries
-   winning, list-valued keys (`callbacks`, `tags`) concatenate with Agent Kernel's entries first, and
+2. **The `config` merge.** Open Agent Kernel (OAK) builds its own config with `configurable.thread_id` set to the
+   session id. Your `config` is deep-merged under it: dict-valued keys merge with OAK's entries
+   winning, list-valued keys (`callbacks`, `tags`) concatenate with OAK's entries first, and
    every other key is yours. With Langfuse tracing enabled, the graph therefore receives
    `[langfuse_handler, ProgressCallbackHandler()]`.
 3. **Reserved keys.** `input`, `version`, `stream_mode`, `output_keys`, `print_mode` and the nested
@@ -42,7 +42,7 @@ Run stats: llm_calls=2, tool_calls=1, recursion_limit=50
 
 | Path | Mode | What you get |
 |---|---|---|
-| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
+| OAK stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
 | Native callbacks through run options (this demo) | any mode, including `rest_sync` | LangChain's full callback surface: chain, chat model, tool, retriever events |
 
 ## Running

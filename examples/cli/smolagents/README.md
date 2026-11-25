@@ -1,7 +1,7 @@
-# Agent Kernel running HuggingFace smolagents Agents
+# Open Agent Kernel running HuggingFace smolagents Agents
 
-This package contains a demo of Agent Kernel running agents built with HuggingFace `smolagents`. Users may
-interact with agents via the Agent Kernel CLI.
+This package contains a demo of Open Agent Kernel running agents built with HuggingFace `smolagents`. Users may
+interact with agents via the OAK CLI.
 
 This example utilizes `CodeAgent` alongside tools to natively evaluate mathematical expressions.
 
