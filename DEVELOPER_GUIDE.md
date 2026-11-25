@@ -115,8 +115,9 @@ Four small workflows run on pull requests:
   in [CONTRIBUTING.md](CONTRIBUTING.md)). `develop` accepts squash merges only, so the title
   becomes the commit subject. Fix a failure by editing the title; the check re-runs on the edit.
 - **Changelog Check** (`.github/workflows/changelog-check.yaml`): on PRs into `develop`, fails a
-  `feat`, `fix`, `perf`, `refactor`, `build` or `chore` PR that adds no `changelog.d/` fragment, a
-  `!` title without a `breaking` fragment, and any fragment with an invalid name; the rules are in
+  `feat`, `fix`, `perf`, `refactor`, `build` or `chore` PR that neither adds a `changelog.d/`
+  fragment nor updates a pending one, a `!` title without a `breaking` fragment, and any fragment
+  with an invalid name; the rules are in
   [CONTRIBUTING.md, "Changelog entries"](CONTRIBUTING.md#changelog-entries) and the logic in
   `scripts/changelog_fragments.py`. A maintainer skips it with the `no-changelog` label. The job
   summary previews the next release's changelog. It uses `pull_request`, not

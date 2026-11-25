@@ -16,8 +16,8 @@ orphan_prefix = "+"
 underlines = ["", "", ""]
 ignore = ["README.md"]
 
-# Rendered in this order. Keep "breaking" first: publish.yaml also refuses a patch bump while a
-# breaking fragment is pending.
+# Rendered in this order. Keep "breaking" first: while a breaking fragment is pending, publish.yaml
+# also refuses a version that does not raise the minor version over the last release.
 
 [[tool.towncrier.type]]
 directory = "breaking"

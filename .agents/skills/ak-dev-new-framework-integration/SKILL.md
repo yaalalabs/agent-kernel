@@ -460,4 +460,4 @@ Create at minimum:
 - [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), `pick()` chip on the Agent frameworks card (`ArchitectureOverview/data.tsx`), the framework count in the Build stage's points (`HomeSections/index.tsx`)
 - [ ] The Framework adapters capability on `docs/src/pages/features.tsx` (count and `more` link), the FAQ answers, and `docs/docs/intro.md`
 - [ ] Every other framework roll call updated (Step 14: installation, quick start, examples overview, streaming lists, AG-UI and tracing tables, session handles, FrameworkSelector, marketing pages, bundled and developer skills)
-- [ ] Changelog fragment `changelog.d/<issue>.added.md` (or `.breaking.md` when something public changes), written for users with `ak-dev-sync-changelog-from-branch`
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (`+<short-slug>.added.md` when the PR has no issue; `.breaking.md` only when existing code, config or deployments stop working), written for users with `ak-dev-sync-changelog-from-branch`

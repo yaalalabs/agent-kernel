@@ -195,7 +195,7 @@ This updates:
 - `ak-py/pyproject.toml` version field
 - Terraform module versions
 - Example dependency versions
-- `CHANGELOG.md`: before anything is built, `scripts/changelog_fragments.py` validates the pending `changelog.d/` fragments and refuses a `patch` bump while a `breaking` fragment is pending; a stable production release then compiles the fragments into a new version section with towncrier (`towncrier.toml`), deletes them in the version bump commit, and uses the section as the GitHub release body. Pre-releases only draft it and keep the fragments.
+- `CHANGELOG.md`: before anything is built, `scripts/changelog_fragments.py` validates the pending `changelog.d/` fragments and, while a `breaking` fragment is pending, refuses a version that does not raise the minor version over the last release in `CHANGELOG.md`; a stable production release then compiles the fragments into a new version section with towncrier (`towncrier.toml`), deletes them in the version bump commit, and uses the section as the GitHub release body. Pre-releases only draft it and keep the fragments.
 
 ### Version Locations
 

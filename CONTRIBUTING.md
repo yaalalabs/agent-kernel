@@ -126,14 +126,16 @@ issue uses `+<short-slug>.<type>.md`, which is rendered without a link.
 - the issue link is added for you
 
 **The check.** The **Changelog Check** workflow fails a `feat`, `fix`, `perf`, `refactor`,
-`build` or `chore` PR that adds no fragment, a PR whose title has `!` but adds no `breaking`
-fragment, and any PR that adds a fragment with an invalid name. `docs`, `test`, `ci` and `style`
-PRs need no fragment. If your PR changes nothing users would notice, ask a maintainer to add the
-`no-changelog` label.
+`build` or `chore` PR that neither adds a fragment nor updates a pending one, a PR whose title has
+`!` but adds no `breaking` fragment, and any PR that adds or edits a fragment with an invalid name.
+`docs`, `test`, `ci` and `style` PRs need no fragment. A fix to a change that has not been released
+yet corrects that change's pending fragment instead of adding a `fixed` one. If your PR changes
+nothing users would notice, ask a maintainer to add the `no-changelog` label.
 
 **Versioning.** Before 1.0, any release may contain breaking changes; they are always listed under
-Breaking changes. The Publish workflow refuses a patch release while a `breaking` fragment is
-pending, so a breaking change ships in at least a minor release.
+Breaking changes. While a `breaking` fragment is pending, the Publish workflow refuses a version
+that does not raise the minor version over the last release in `CHANGELOG.md`, so a breaking change
+ships in at least a minor release.
 
 Preview what the next release will say with
 `uvx towncrier@26.9.0 build --draft --version next`.

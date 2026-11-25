@@ -117,9 +117,13 @@ flowchart LR
     `ready_for_review`, `labeled`, `unlabeled` (stacked PRs into feature branches are checked when
     the final PR targets `develop`)
   - read-only, no secrets, so it runs on fork PRs
-- Fails when the PR adds no valid fragment and its title type is `feat`, `fix`, `perf`,
-  `refactor`, `build` or `chore`
+- Fails when the PR neither adds a valid fragment nor updates a pending one and its title type is
+  `feat`, `fix`, `perf`, `refactor`, `build` or `chore`
   - `chore` is included because #984 shows a `chore:` PR can be breaking
+  - updating counts because a fix to an unreleased change corrects that change's pending entry
+    instead of adding a `fixed` one
+  - the PR's fragments are the diff of its merge commit against the first parent, not against
+    `pull_request.base.sha`, which lags `develop` on runs after the PR's last push
 - Fails when the title has `!` and the PR adds no `breaking` fragment
 - Passes without a fragment for
   - title types `docs`, `test`, `ci`, `style`
@@ -138,8 +142,11 @@ flowchart LR
 - Validate before anything ships
   - before `Publish to PyPI` (`publish.yaml:124`), render `towncrier build --draft --version <new_version>`
   - fail if any file in `changelog.d/` other than the ignored ones would not be rendered
-  - fail a `patch` bump when `changelog.d/` holds a `breaking` fragment; the job summary says to
+  - while `changelog.d/` holds a `breaking` fragment, fail a version that does not raise the minor
+    version (major from 1.0) over the newest release in `CHANGELOG.md`; the job summary says to
     rerun with `minor`
+    - checks the bumped version, not the `version_bump` input: `bump_version.py` ignores the input
+      when the current version is a pre-release
   - runs for both `test` and `production`
 - Stable production release
   - `towncrier build --yes --version <new_version> --date <UTC date>` writes the section and deletes
@@ -180,7 +187,8 @@ flowchart LR
     PR title
   - steps: list the user-visible changes; decide fragment or none (rules above); pick the type;
     write in user terms with a docs link, and a migration line for `breaking`; run
-    `uvx towncrier check --compare-with origin/develop`; preview with `build --draft`
+    `scripts/changelog_fragments.py validate` and `check-pr`, as CI does (`towncrier check`
+    accepts names the release refuses); preview with `build --draft`
   - never edits version sections in `CHANGELOG.md`
   - listed in the dev skills table in `docs/docs/agent-skills.md` (next to `:153-154`)
 - `ak-dev-code-quality`
@@ -196,7 +204,9 @@ flowchart LR
 - `ak-dev-write-spec`
   - the plan template's "Iteration N: Sync docs and skills" (`SKILL.md:280`) also names the
     fragment files and their types
-  - each item in spec.md's "Behavioural changes" maps to a `breaking` or `changed` fragment
+  - each user-visible item in spec.md's "Behavioural changes" needs a `breaking` or `changed`
+    fragment, or `fixed` when it corrects a bug users could hit (several items can share one);
+    internal items need none
 - The 11 `ak-dev-new-*` skills: each checklist (Step 6 in `ak-dev-new-queue-transport`) gains
   "changelog fragment `changelog.d/<issue>.added.md`"
 - `ak-dev-sync-skills-and-docs-from-commit`, Step 7 Authoring Rules (`SKILL.md:230`): never create
@@ -225,5 +235,5 @@ None. Resolved on 2026-11-25 and folded into the requirements above:
 - Fragment names use the issue number, not the PR number
 - `changelog-check` is a required status check from the start
 - Backfill covers v0.9.0 to v0.10.2
-- Preamble states the pre-1.0 breaking-change policy, and `publish.yaml` refuses a `patch` bump
-  while a `breaking` fragment is pending
+- Preamble states the pre-1.0 breaking-change policy, and `publish.yaml` refuses a version that
+  does not raise the minor version while a `breaking` fragment is pending

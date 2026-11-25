@@ -2,10 +2,10 @@ name: Changelog Check
 
 # Requires a changelog fragment under changelog.d/ on PRs with a user-visible change (#664).
 # The rules live in scripts/changelog_fragments.py (PullRequestPolicy) and CONTRIBUTING.md,
-# "Changelog entries": feat, fix, perf, refactor, build and chore PRs add a fragment; a "!" title
-# adds a breaking one; docs, test, ci and style PRs, bot PRs and PRs with the maintainer-only
-# no-changelog label need none; an invalid fragment name always fails. publish.yaml compiles the
-# fragments into CHANGELOG.md at release time.
+# "Changelog entries": feat, fix, perf, refactor, build and chore PRs add a fragment or update a
+# pending one; a "!" title adds a breaking one; docs, test, ci and style PRs, bot PRs and PRs with
+# the maintainer-only no-changelog label need none; an invalid fragment name always fails.
+# publish.yaml compiles the fragments into CHANGELOG.md at release time.
 #
 # `edited` re-runs the check after a title change; `labeled`/`unlabeled` after no-changelog is
 # added or removed. `synchronize` is included because a required check must re-report on every
@@ -34,7 +34,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          # The PR's merge commit and its two parents: the base it was merged onto and the PR head.
+          fetch-depth: 2
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -46,11 +47,13 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          # HEAD is the PR's merge commit, so BASE_SHA...HEAD is exactly what the PR changes.
-          mapfile -t ADDED < <(git diff --name-only --diff-filter=AR "${BASE_SHA}...HEAD" -- changelog.d/)
-          mapfile -t MODIFIED < <(git diff --name-only --diff-filter=M "${BASE_SHA}...HEAD" -- changelog.d/)
+          # HEAD is the PR's merge commit and HEAD^1 the develop commit it was merged onto, so the
+          # diff is exactly what the PR changes. Not pull_request.base.sha: it is the base as of the
+          # PR's last push, so on a later labeled or edited run it would also count fragments other
+          # PRs have merged since. -z keeps raw file names, so an odd one still reaches validation.
+          mapfile -d '' -t ADDED < <(git diff -z --name-only --diff-filter=AR HEAD^1 HEAD -- changelog.d/)
+          mapfile -d '' -t MODIFIED < <(git diff -z --name-only --diff-filter=M HEAD^1 HEAD -- changelog.d/)
           # --option=value so a title or label starting with "-" is not read as a flag.
           python scripts/changelog_fragments.py check-pr \
             --title="$PR_TITLE" \

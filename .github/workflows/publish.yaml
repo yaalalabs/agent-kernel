@@ -94,11 +94,14 @@ jobs:
       - name: Check changelog fragments
         id: changelog
         run: |
-          # Runs before anything is built or published (#664). Fails on a fragment name towncrier
-          # would not render, or on a patch bump while a breaking fragment is pending. The drafted
-          # section becomes the GitHub release body; "Compile changelog" writes it into CHANGELOG.md.
+          # Runs before anything is built or published (#664). Fails on an invalid fragment name, or
+          # while a breaking fragment is pending on a version that does not raise the minor version
+          # over the last release in CHANGELOG.md. It checks the bumped version, not the
+          # version_bump input, which bump_version.py ignores when the current version is a
+          # pre-release. The drafted section becomes the GitHub release body; "Compile changelog"
+          # writes it into CHANGELOG.md.
           python scripts/changelog_fragments.py validate
-          python scripts/changelog_fragments.py check-bump --bump ${{ inputs.version_bump }}
+          python scripts/changelog_fragments.py check-bump --version "${{ steps.bump_version.outputs.new_version }}"
 
           RELEASE_DATE=$(date -u +%Y-%m-%d)
           echo "date=$RELEASE_DATE" >> "$GITHUB_OUTPUT"

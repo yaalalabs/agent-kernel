@@ -181,8 +181,9 @@ containerized e2e tests.
 - Skills: the pipeline section of `.agents/skills/ak-dev-architecture/SKILL.md`, and the
   user-facing queue/deploy content in `ak-py/src/agentkernel/skills/` where transports are
   enumerated.
-- Changelog: a `changelog.d/<issue>.added.md` fragment naming the new transport and linking the
-  queue mode guide, written for users with `ak-dev-sync-changelog-from-branch`.
+- Changelog: a `changelog.d/<issue>.added.md` fragment (`+<short-slug>.added.md` when the PR has
+  no issue) naming the new transport and linking the queue mode guide, written for users with
+  `ak-dev-sync-changelog-from-branch`.
 
 ## Definition of Done
 

@@ -16,29 +16,30 @@ SCRIPTS_DIR = Path(__file__).parent
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from changelog_fragments import (
-    ChangelogCLI,
-    ChangelogConfig,
-    Fragment,
-    FragmentDirectory,
-    PullRequestPolicy,
-    ReleaseGuard,
-)
+from changelog_fragments import ChangelogCLI, ChangelogConfig, ChangelogFile, Fragment, FragmentDirectory, PullRequestPolicy, ReleaseGuard, Version
 
 REPO_ROOT = SCRIPTS_DIR.parent
 CONFIG = ChangelogConfig(
     directory="changelog.d",
+    filename="CHANGELOG.md",
     types=("breaking", "added", "changed", "deprecated", "removed", "fixed", "security"),
     ignore=("README.md",),
     orphan_prefix="+",
 )
 
 
-class TempFragments:
-    """A temporary repo root with a changelog.d/ holding the given file names."""
+def changelog_with(*versions: str) -> str:
+    """CHANGELOG.md text with one release heading per version, newest first, as towncrier writes them."""
+    sections = [f"## [{v}](https://github.com/yaalalabs/agent-kernel/releases/tag/v{v}) - 2026-11-20\n\n- Entry.\n" for v in versions]
+    return "# Changelog\n\n<!-- towncrier release notes start -->\n\n" + "\n".join(sections)
 
-    def __init__(self, *names: str):
+
+class TempFragments:
+    """A temporary repo root with a changelog.d/ holding the given file names, and optionally a CHANGELOG.md."""
+
+    def __init__(self, *names: str, released: tuple[str, ...] = ()):
         self.names = names
+        self.released = released
 
     def __enter__(self) -> Path:
         self._dir = tempfile.TemporaryDirectory()
@@ -46,6 +47,8 @@ class TempFragments:
         (root / "changelog.d").mkdir()
         for name in self.names:
             (root / "changelog.d" / name).write_text("Entry.\n", encoding="utf-8")
+        if self.released:
+            (root / "CHANGELOG.md").write_text(changelog_with(*self.released), encoding="utf-8")
         return root
 
     def __exit__(self, *exc) -> None:
@@ -74,11 +77,11 @@ class TestFragmentParse(unittest.TestCase):
 
     def test_names_towncrier_would_reject_or_drop(self):
         for name in [
-            "700.feature.md",  # unknown type: towncrier build drops it silently
+            "700.feature.md",  # unknown type: towncrier 26.9.0 fails the build on it
             "added.md",  # no issue part
             "603.added.registry.md",  # text counter: towncrier raises "multiple files"
-            "701.added.txt",  # not Markdown
-            "abc.added.md",  # issue is not a number and not an orphan
+            "701.added.txt",  # not Markdown: towncrier accepts any extension
+            "abc.added.md",  # issue is not a number and not an orphan: towncrier accepts it
             "+.added.md",  # empty orphan slug
             "664.Added.md",  # type is case-sensitive
         ]:
@@ -158,9 +161,18 @@ class TestPullRequestPolicy(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.rule, "missing-fragment")
 
-    def test_modified_fragment_does_not_satisfy_the_requirement(self):
-        result = self.evaluate("fix: x", modified=["changelog.d/664.fixed.md"])
-        self.assertEqual(result.rule, "missing-fragment")
+    def test_updating_a_pending_fragment_satisfies_titles_without_bang(self):
+        # A fix to an unreleased change corrects that change's pending entry instead of adding a `fixed` one.
+        updated = self.evaluate("fix: x", modified=["changelog.d/664.added.md"])
+        self.assertTrue(updated.ok)
+        self.assertEqual(updated.rule, "fragment-updated")
+        self.assertEqual(self.evaluate("feat: x", added=["changelog.d/1.added.md"], modified=["changelog.d/664.added.md"]).rule, "fragment-added")
+        self.assertIn("pending fragment", self.evaluate("fix: x").report)
+
+    def test_breaking_title_needs_an_added_breaking_fragment(self):
+        result = self.evaluate("feat!: x", modified=["changelog.d/870.breaking.md"])
+        self.assertFalse(result.ok)
+        self.assertEqual(result.rule, "breaking-title")
 
     def test_unparsed_title_is_left_to_the_title_check(self):
         result = self.evaluate("Add a thing")
@@ -168,28 +180,80 @@ class TestPullRequestPolicy(unittest.TestCase):
         self.assertEqual(result.rule, "title-unparsed")
 
 
+class TestVersion(unittest.TestCase):
+    def test_parse_drops_the_pre_release_suffix(self):
+        self.assertEqual(Version.parse("0.10.2"), Version(0, 10, 2))
+        self.assertEqual(Version.parse("0.11.0a1"), Version(0, 11, 0))
+        self.assertEqual(str(Version.parse("1.2.3b12")), "1.2.3")
+        for text in ["0.10", "v0.10.2", "0.10.2-alpha", "0.10.2rc1", ""]:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                Version.parse(text)
+
+    def test_breaking_changes_need_a_minor_step_before_1_0_and_a_major_step_from_1_0(self):
+        last = Version(0, 10, 2)
+        self.assertFalse(Version(0, 10, 3).can_break_after(last))
+        self.assertTrue(Version(0, 11, 0).can_break_after(last))
+        self.assertTrue(Version(1, 0, 0).can_break_after(last))
+        self.assertFalse(Version(1, 3, 0).can_break_after(Version(1, 2, 3)))
+        self.assertTrue(Version(2, 0, 0).can_break_after(Version(1, 2, 3)))
+
+
+class TestChangelogFile(unittest.TestCase):
+    def test_repo_changelog_has_a_release_heading_the_guard_can_read(self):
+        # Fails if towncrier.toml's title_format and ChangelogFile.HEADING drift apart.
+        self.assertIsNotNone(ChangelogFile(REPO_ROOT, CONFIG).latest_release())
+
+    def test_latest_release_is_the_first_heading(self):
+        with TempFragments(released=("0.10.2", "0.10.1", "0.9.0")) as root:
+            self.assertEqual(ChangelogFile(root, CONFIG).latest_release(), Version(0, 10, 2))
+
+    def test_no_release_without_a_file_or_a_heading(self):
+        with TempFragments() as root:
+            self.assertIsNone(ChangelogFile(root, CONFIG).latest_release())
+            (root / "CHANGELOG.md").write_text(changelog_with(), encoding="utf-8")
+            self.assertIsNone(ChangelogFile(root, CONFIG).latest_release())
+
+
 class TestReleaseGuard(unittest.TestCase):
+    @staticmethod
+    def guard(root: Path) -> ReleaseGuard:
+        return ReleaseGuard(FragmentDirectory(root, CONFIG), ChangelogFile(root, CONFIG))
+
     def test_validate(self):
         with TempFragments("664.added.md", "README.md") as root:
-            self.assertTrue(ReleaseGuard(FragmentDirectory(root, CONFIG)).validate().ok)
+            self.assertTrue(self.guard(root).validate().ok)
         with TempFragments("664.added.md", "700.feature.md") as root:
-            result = ReleaseGuard(FragmentDirectory(root, CONFIG)).validate()
+            result = self.guard(root).validate()
             self.assertFalse(result.ok)
             self.assertIn("700.feature.md", result.report)
 
-    def test_patch_bump_refused_while_breaking_fragment_pending(self):
-        with TempFragments("870.breaking.md", "664.added.md") as root:
-            guard = ReleaseGuard(FragmentDirectory(root, CONFIG))
-            refused = guard.check_bump("patch")
-            self.assertFalse(refused.ok)
-            self.assertIn("870.breaking.md", refused.report)
-            self.assertIn("minor", refused.report)
-            self.assertTrue(guard.check_bump("minor").ok)
-            self.assertTrue(guard.check_bump("major").ok)
+    def test_breaking_fragment_needs_a_minor_step_over_the_last_release(self):
+        with TempFragments("870.breaking.md", "664.added.md", released=("0.10.2", "0.10.1")) as root:
+            guard = self.guard(root)
+            for version in ["0.10.3", "0.10.3a1"]:
+                with self.subTest(version=version):
+                    refused = guard.check_bump(version)
+                    self.assertFalse(refused.ok)
+                    self.assertEqual(refused.rule, "breaking-bump")
+                    self.assertIn("870.breaking.md", refused.report)
+                    self.assertIn("`0.10.2`", refused.report)
+                    self.assertIn("version_bump: minor", refused.report)
+            for version in ["0.11.0", "0.11.0a1", "0.11.0b2", "1.0.0"]:
+                with self.subTest(version=version):
+                    self.assertTrue(guard.check_bump(version).ok)
 
-    def test_patch_bump_allowed_without_breaking_fragments(self):
-        with TempFragments("664.added.md") as root:
-            self.assertTrue(ReleaseGuard(FragmentDirectory(root, CONFIG)).check_bump("patch").ok)
+    def test_breaking_fragment_needs_a_major_step_from_1_0(self):
+        with TempFragments("870.breaking.md", released=("1.2.3",)) as root:
+            refused = self.guard(root).check_bump("1.3.0")
+            self.assertFalse(refused.ok)
+            self.assertIn("version_bump: major", refused.report)
+            self.assertTrue(self.guard(root).check_bump("2.0.0").ok)
+
+    def test_any_version_is_allowed_without_breaking_fragments_or_an_earlier_release(self):
+        with TempFragments("664.added.md", released=("0.10.2",)) as root:
+            self.assertTrue(self.guard(root).check_bump("0.10.3").ok)
+        with TempFragments("870.breaking.md") as root:
+            self.assertTrue(self.guard(root).check_bump("0.1.1").ok)
 
 
 class TestCLI(unittest.TestCase):
@@ -198,6 +262,7 @@ class TestCLI(unittest.TestCase):
         self.root = Path(self._dir.name)
         shutil.copy(REPO_ROOT / "towncrier.toml", self.root / "towncrier.toml")
         (self.root / "changelog.d").mkdir()
+        (self.root / "CHANGELOG.md").write_text(changelog_with("0.10.2"), encoding="utf-8")
         self.summary = self.root / "summary.md"
         self._env = os.environ.get("GITHUB_STEP_SUMMARY")
         os.environ["GITHUB_STEP_SUMMARY"] = str(self.summary)
@@ -215,8 +280,8 @@ class TestCLI(unittest.TestCase):
     def test_exit_codes_and_step_summary(self):
         self.assertEqual(self.run_cli("validate"), 0)
         (self.root / "changelog.d" / "870.breaking.md").write_text("Entry.\n", encoding="utf-8")
-        self.assertEqual(self.run_cli("check-bump", "--bump", "patch"), 1)
-        self.assertEqual(self.run_cli("check-bump", "--bump", "minor"), 0)
+        self.assertEqual(self.run_cli("check-bump", "--version", "0.10.3"), 1)
+        self.assertEqual(self.run_cli("check-bump", "--version", "0.11.0"), 0)
         self.assertEqual(self.run_cli("check-pr", "--title", "feat: x", "--author", "octocat"), 1)
         self.assertEqual(
             self.run_cli("check-pr", "--title", "feat: x", "--author", "octocat", "--labels", " documentation , no-changelog "),

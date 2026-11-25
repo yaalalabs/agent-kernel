@@ -283,9 +283,11 @@ the command to run the suite.>
 name file and line. State explicitly (and verify) when a surface needs no
 update, and confirm with the ak-dev-sync-docs-from-branch /
 ak-dev-sync-skills-from-branch flows before merge. Name the changelog
-fragment files (`changelog.d/<issue>.<type>.md`) and their types: every
-item in spec.md's "Behavioural changes" becomes a `breaking` or `changed`
-fragment; write them with ak-dev-sync-changelog-from-branch.>
+fragment files (`changelog.d/<issue>.<type>.md`) and their types: each
+user-visible item in spec.md's "Behavioural changes" needs a `breaking` or
+`changed` fragment, or `fixed` when it corrects a bug users could hit
+(several items can share one); internal items need none. Write them with
+ak-dev-sync-changelog-from-branch.>
 ```
 
 - Each iteration should leave the branch in a working, testable state.

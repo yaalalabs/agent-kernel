@@ -52,8 +52,9 @@ a user would see:
 - optional-dependency extras and dependency bounds in `ak-py/pyproject.toml`
 - Terraform module inputs and outputs under `ak-deployment/`, Helm chart values
 - bundled user skills under `ak-py/src/agentkernel/skills/`
-- spec documents: a `docs/specs/<issue>-*/spec.md` "Behavioural changes" section lists exactly
-  the changes that need `breaking` or `changed` fragments
+- spec documents: each user-visible item in a `docs/specs/<issue>-*/spec.md` "Behavioural
+  changes" section needs a fragment, `breaking` or `changed`, or `fixed` when it corrects a bug
+  users could hit (several items can share one); internal items need none
 
 ## Step 3: Decide Fragment or None
 
@@ -67,6 +68,8 @@ Needs a fragment, one per distinct user-visible change:
 Needs none: tests, CI, internal refactors with no behaviour change, docs-only changes, blog posts.
 
 A bug that only existed on the branch (introduced and fixed before merge) needs no `fixed` entry.
+Neither does a fix to a change that is on `develop` but not released yet: correct that change's
+pending fragment instead (the Changelog Check counts an edited fragment).
 Several commits that together ship one capability get one entry, not one per commit.
 
 ## Step 4: Pick the Type
@@ -82,8 +85,9 @@ Several commits that together ship one capability get one entry, not one per com
 | `security` | A security fix |
 
 When in doubt between `removed`/`changed` and `breaking`, choose `breaking`: the release then
-cannot ship as a patch (`publish.yaml` refuses a patch bump while a `breaking` fragment is pending),
-and a PR title with `!` must carry a `breaking` fragment.
+cannot ship as a patch (while a `breaking` fragment is pending, `publish.yaml` refuses a version
+that does not raise the minor version over the last release), and a PR title with `!` must carry a
+`breaking` fragment.
 
 ## Step 5: Name the File
 
@@ -134,11 +138,11 @@ python scripts/changelog_fragments.py check-pr --title="feat: <title>" --author=
 uvx towncrier@26.9.0 build --draft --version next
 ```
 
-The Changelog Check fails a `feat`, `fix`, `perf`, `refactor`, `build` or `chore` PR with no
-fragment, a `!` title without a `breaking` fragment, and any invalid fragment name. `docs`, `test`,
-`ci` and `style` PRs need none. When a required-type PR genuinely changes nothing users would
-notice, say so in the PR description and ask a maintainer for the `no-changelog` label; do not add
-an empty or internal-facing fragment to satisfy the check.
+The Changelog Check fails a `feat`, `fix`, `perf`, `refactor`, `build` or `chore` PR that neither
+adds a fragment nor updates a pending one, a `!` title that adds no `breaking` fragment, and any
+invalid fragment name. `docs`, `test`, `ci` and `style` PRs need none. When a required-type PR
+genuinely changes nothing users would notice, say so in the PR description and ask a maintainer for
+the `no-changelog` label; do not add an empty or internal-facing fragment to satisfy the check.
 
 ## Output Expectations
 
