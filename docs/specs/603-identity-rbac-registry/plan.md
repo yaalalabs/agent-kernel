@@ -1106,6 +1106,45 @@ adds the caller to a check that already knows the surface.
     `make lint-check` (isort, black, ruff) run without syncing the environment, all clean, and
     the docs site built.
 
+### Phase D as shipped
+
+What changed in phase D after iteration 20, before it merged (2026-11-25). Each is recorded in
+the spec section it changes.
+
+- **The A2A fallback route.** A method a route does not serve, a credential the provider
+  refuses and a trailing slash each told a mounted agent from a name that is not mounted. One
+  route behind the agents' own (`UnservedA2ARoute`) answers them all alike; see the follow-up in
+  iteration 20 and spec refinement 18.
+- **Docs.** The phase D part of iteration 27 landed here, run with
+  `ak-dev-sync-docs-from-branch`:
+  - `advanced/identity-and-access.md` gains the Authorization section: the `authorization`
+    block, grants (the six subject forms, agent ids, `*` and `tag:`), levels, visibility, what
+    each surface answers, session ownership, scheduled tasks, the tool policy, the startup
+    checks, split deployments and a bring-your-own authorizer.
+  - The pages that said visibility is "not enforced yet" say what enforces it:
+    `api/rest-api.md` (the caller's catalog, the 403), `api/a2a-server.md`, `api/mcp-server.md`,
+    `api/agui-server.md`, `integrations/agui.md`, `core-concepts/configuration.md` (the block in
+    the reference configuration, its environment form, the Visibility note) and
+    `core-concepts/module.md`; `advanced/scheduling.md` says an occurrence is asked about its
+    owner's level again when it fires. `architecture/execution-flow.md` gains the admission
+    step, `advanced/queue-mode-guide.md` the block in both processes, and
+    `integrations/overview.md` and `integrations/livekit.md` the grant a messaging sender or a
+    realtime caller needs (`provider:messaging:<platform>`, `provider:realtime:livekit`).
+  - Three leftovers of phase A that the iteration 27 check found, on `develop` as well: the
+    human-in-the-loop, Slack and Telegram pages (and the bundled skill) still said the presser
+    of an approval button reaches the run as `acting_user_id`. It is the run's principal.
+  - `whats-new.md`, the tip in `intro.md`, an Authorization capability on the features page
+    (linking into the unreleased docs, `/docs/next/`, until a release carries the section) and
+    the Guard stage of the landing page; `ak-py/README.md` (the block's fields) and the root
+    `README.md`. The landing page's announcement line is left on the released identity
+    capability: it announces what a release carries.
+  - The bundled user skill `ak-add-capabilities`, where it said visibility is not enforced.
+- **Stated in every one of those places:** a tool policy (`tiers`, `allow`, `deny`) is published
+  for each run and narrows what the catalog and an A2A card list, and no framework adapter stops
+  a call by it until phase E. Agent access, visibility and session ownership are enforced.
+- **Not done here, left to iteration 28:** the `ak-dev-new-authorizer` dev skill, the evals of
+  the bundled skills, and the user skills' own walk through an `authorization` block.
+
 ## Phase E: Framework tool gates (iterations 21 to 23)
 
 Each adapter gate is one file plus one `tests/test_tool_gates_<adapter>.py`, grouped by
@@ -1219,8 +1258,10 @@ objects in `tests/test_tool_<adapter>.py`:
 
 The docs and skills for phases A and B landed with phase B itself (PR #937: the identity page,
 the docs-site and README updates, the landing-page tiles, `ak-dev-new-identity-provider` and the
-user-skill updates), and those for phase C with phase C (see "Phase C as shipped"), so iterations
-27 and 28 cover what phases D to F add and re-verify the rest.
+user-skill updates), those for phase C with phase C (see "Phase C as shipped"), and the docs for
+phase D with phase D (see "Phase D as shipped", decided 2026-11-25: a phase is not merged with
+its user documentation behind it), so iterations 27 and 28 cover what phases E and F add, the
+one dev skill phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
 
 ### Iteration 26: Test walk
 
@@ -1252,10 +1293,11 @@ user-skill updates), and those for phase C with phase C (see "Phase C as shipped
      `Module.describe` and `registry.agents.<id>.description` as the way to give a card its
      description and version, and notes that an agent registered after a process mounted its A2A
      routes is served there after a restart (spec 6, A2A card); `api/mcp-server.md` says the same
-     of an agent's MCP tool (spec 8.6). Still to write: what the access gate changes on each of
-     these pages (caller filtering, the 403 and 404), and what phases D to F add to the landing
-     and feature pages (the registry card, the store tiles and the What's New entry landed with
-     phase C).
+     of an agent's MCP tool (spec 8.6). What the access gate changes on each of these pages
+     (caller filtering, the 403 and 404) landed with phase D, with the Authorization section of
+     the identity page, the What's New entry and the features-page capability. Still to write:
+     the call-time tool gates of phase E (the pages say today that a tool policy narrows what is
+     listed and does not stop a call, which phase E reverses) and the credentials of phase F.
 - **Verify:** `grep -rnF -e AuthValidator -e Authoriser -e acting_user_id -e mcp.agents
   -e a2a.agents -e agui.agents -e userId -e get_a2a_card docs/docs ak-py/README.md README.md
   ak-deployment` (fixed strings, one `-e` per term, so no term is lost to a line break in the

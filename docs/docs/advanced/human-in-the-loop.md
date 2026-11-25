@@ -309,8 +309,9 @@ the agent cannot tell the two apart.
 Four things to know before you ship it:
 
 - **Anyone who can see the message can press.** OAK ships no approver policy: channel
-  membership is not an approval list. The presser's platform user id travels with the decision as
-  `acting_user_id`, so a `PreHook` is where you check it.
+  membership is not an approval list. The presser is the principal of the run that carries the
+  decision (`session.get_principal()`, its `subject` the platform user id), so a `PreHook` is where
+  you check it.
 - **The buttons offer approve and deny, not cancel.** `cancelled` means
   [nobody decided](#why-cancelled-is-not-denied), and a button somebody pressed is not that. Add it
   if your flow wants it, by subclassing the outbound adapter and setting `DECISIONS`. The words on

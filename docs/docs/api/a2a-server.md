@@ -118,10 +118,28 @@ security scheme and names it as the card's security requirement, on the card and
 bearer for the `static` provider and for a provider of your own, OpenID Connect with the issuer's
 discovery URL for the `oidc` family. Without an `identity` block a card declares no security.
 
-The card states how a client is expected to call; the server does not turn an uncredentialed call away
-yet. As above, a `message:send` without a credential still runs as the anonymous principal, so a client
-that follows the card always authenticates while one that ignores it is served anonymously. Refusing
-such a call is what authorization adds.
+The card states how a client is expected to call. Without an `authorization` block the server does not
+turn an uncredentialed call away: a `message:send` without a credential still runs as the anonymous
+principal, so a client that follows the card always authenticates while one that ignores it is served
+anonymously.
+
+### Access
+
+An [`authorization`](../advanced/identity-and-access.md#authorization) block makes the A2A surface answer
+for the caller:
+
+- **The catalog and the cards are the caller's own.** `/a2a/catalog` lists the cards of the agents the
+  caller may see, and a card lists the skills the caller is offered: a skill that stands for a tool the
+  caller's level does not reach is left out, and a skill you declared yourself stays. Both responses
+  carry `Vary: Authorization`, and a card's `ETag` is computed from the card as it is served, so a cache
+  never hands one caller's card to another.
+- **An agent the caller may not see answers 404** on every one of its routes, the card included, with
+  the response of an agent that is not served at all. So does any other request under
+  `/a2a/<name>/`: a name that is not served, a path no route has, or a method a route does not take
+  (which is a 405 without the block).
+- **An agent the caller sees and holds no level on answers 403** on the message and task routes, before
+  the request reaches the agent. Its card is still served.
+- A request with a credential the identity provider refuses is a 401 on any path under `/a2a/<name>/`.
 
 ## Agent Capabilities
 

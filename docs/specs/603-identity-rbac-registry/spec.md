@@ -2732,8 +2732,12 @@ and MCP tool text come from, per-agent `surfaces` in place of the three removed 
 adapter contract without `get_a2a_card`, across the docs site, `ak-py/README.md`, the dev skills
 `ak-dev-architecture`, `ak-dev-new-framework-integration` and `ak-dev-testing-conventions`, the
 user skill `ak-add-capabilities` with its evals, and the four examples that expose agents over A2A
-or MCP, which now declare a description for each agent). `plan.md`'s docs and skills iterations
-(27 and 28) cover phases D to F, and the sync skills verify the whole before merge.
+or MCP, which now declare a description for each agent). The phase D portion of the docs landed
+with phase D (2026-11-25, `plan.md`, "Phase D as shipped": the Authorization section of
+`advanced/identity-and-access.md`, the pages of each surface, the configuration reference, the
+READMEs, What's New and the features and landing pages). `plan.md`'s docs and skills iterations
+(27 and 28) cover phases E and F and the `ak-dev-new-authorizer` skill, and the sync skills
+verify the whole before merge.
 
 - **Docs site (`docs/docs/`)**: new `advanced/identity-and-access.md`; `api/rest-api.md`
   (the Authentication section 474-499 and the `user_id` context claim 192-207, already

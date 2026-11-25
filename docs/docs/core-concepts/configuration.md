@@ -243,6 +243,25 @@ identity:
     claims: []  # claim paths whose string or list values are also looked up in mapping; only groups by default,
                 # since a user sets many of their own claims (a display name, a username, an email)
 
+# Authorization (optional - presence enables it. Without this block nothing is restricted. With it a caller
+# runs only the agents a grant gives it a level on, and sees only the agents it may see. See "Authorization" below)
+authorization:
+  type: static  # static, or a dotted path to an Authorizer subclass (its own settings arrive in model_extra)
+  static:  # required when type is static
+    grants:  # who holds which level on which agents; with none, every agent is denied to every principal
+      - subjects: [group:ops]  # '*' | authenticated | user:<subject> | group:<name> | role:<name> | provider:<name>
+        agents: [support-triage]  # an agent id | '*' | tag:<name>
+        level: write  # read | write | admin; a principal holds the highest level its grants give
+      - subjects: [provider:messaging:slack]  # a name ending in ':' matches by prefix (provider:messaging:)
+        agents: ["tag:help"]
+        level: read
+    tools:  # per agent: which tools each level is offered. Published for each run and applied to the
+            # listings; a tool call is not refused by it yet (see "Authorization" below)
+      - agent: support-triage
+        tiers: {refund_order: admin}  # tool -> the lowest level offered it; unlisted tools are read
+        allow: null  # when set, the only tools the agent offers
+        deny: [purge_queue]  # never offered; wins over allow
+
 # Agent registry (optional - without this block agent descriptors live in the memory of the process that
 # loads the agents, and an agent is on every surface unless its code narrows them with Module.describe.
 # See "Agent Registry" below)
@@ -262,7 +281,7 @@ registry:
       version: "1.2.0"  # quoted: YAML reads 1.2 or 2 as a number, which is refused
       owner: cx-platform
       tags: [support]
-      visibility: internal  # private | internal | public; recorded, not enforced yet (see below)
+      visibility: internal  # private | internal | public; who may see the agent once an authorization block exists (see below)
       surfaces: [rest, agui]  # rest | a2a | mcp | agui; [] = none; omitted = what the code declared (every surface by default)
 
 # Messaging platform integrations
@@ -654,6 +673,28 @@ export AK_IDENTITY__PROVIDER__ENTRA__TENANT_ID=<tenant-id>  # entra only
 export AK_IDENTITY__PROVIDER__FIREBASE__PROJECT_ID=<project-id>  # firebase only
 ```
 
+### Authorization
+
+An `authorization` block decides which agents each principal may run and see. Without it nothing is restricted.
+See [Authorization](../advanced/identity-and-access.md#authorization) for grants, levels, visibility and what each
+surface answers.
+
+```bash
+export AK_AUTHORIZATION__TYPE=static  # Options: 'static', or a dotted path to an Authorizer subclass (default: 'static')
+export AK_AUTHORIZATION__STATIC__GRANTS='[{"subjects": ["group:ops"], "agents": ["support-triage"], "level": "write"}]'  # JSON list of grants
+export AK_AUTHORIZATION__STATIC__TOOLS='[{"agent": "support-triage", "deny": ["purge_queue"]}]'  # JSON list of per-agent tool policies
+```
+
+- **Grants.** Each grant gives its subjects a level (`read`, `write` or `admin`) on its agents, and a principal
+  holds the highest level its grants give. The policy denies by default: an agent nobody is granted is run by
+  nobody, a caller without a credential included, unless a grant names `*`.
+- **Tool policy.** `tiers`, `allow` and `deny` decide which tools each level is offered. The decision is published
+  for every run and narrows the tools and skills the catalog and A2A cards list. It does not stop a tool call yet.
+- **Every process.** Put the same block in the configuration of the process that accepts requests and of the
+  process that runs the agents: the first answers early and filters the listings, the second enforces every run.
+- **Startup checks.** An unusable grant or policy, and a tool policy naming a tool its agent does not have, stop the
+  application. A grant that matches no agent or tag is logged as a warning.
+
 ### Agent Registry
 
 Every agent has a **descriptor**: its id, name, version, description, tags, the tools it reports and the surfaces
@@ -713,9 +754,11 @@ export AK_REGISTRY__AGENTS__BILLING__SURFACES='["rest"]'  # a per-agent field; t
   value without that surface. There is no allow-list any more: an agent added later with no `surfaces` is on
   every surface, so set it for each new agent that should not be.
 - **Visibility.** `visibility` (`private`, `internal`, `public`) is recorded on the descriptor and published in the
-  catalog. It is not enforced yet: until authorization ships, every agent listed on a surface is listed to every
-  caller, and the catalog route answers a caller with no credential. `surfaces` is what keeps an agent off a
-  listing today.
+  catalog. With an [`authorization`](#authorization) block it decides who may see an agent they hold no level on:
+  `private` (the default) nobody, `internal` every authenticated caller, `public` everyone. A caller is then listed
+  only the agents it holds a level on or may see, on the catalog, A2A, MCP and AG-UI alike, and an agent it may not
+  see answers like one that does not exist. Without the block `visibility` changes nothing: every agent on a surface
+  is listed to every caller, and `surfaces` is what keeps an agent off a listing.
 - **Description.** The description is catalog text for people and other agents. It is what an A2A card and an
   MCP tool publish; an agent's instructions are never published. Left undeclared, it is the description the
   agent's framework keeps for it, where it has one apart from the instructions

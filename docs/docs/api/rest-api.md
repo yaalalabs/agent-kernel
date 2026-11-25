@@ -165,8 +165,12 @@ keeps for it.
 - `tools` and `skills` come from the agent's framework: the tools it can call, and one skill per tool.
 - `surfaces` is `null` for an agent served on every surface. An agent whose `surfaces` leaves out `rest` is not
   listed here and is not served by the chat routes: a chat request that names it gets the 404 an unknown agent gets.
-- `visibility` is the declared value and is not enforced yet: until authorization ships, every agent on the `rest`
-  surface is listed to every caller, and this route answers a caller with no credential.
+- Without an `authorization` block every agent on the `rest` surface is listed to every caller, and `visibility`
+  is only the declared value. With one, the listing is the caller's own: the agents its principal holds a level on,
+  and the ones their `visibility` lets it see (`internal` for any authenticated caller, `public` for everyone).
+  Each entry's `tools` are then the ones the caller is offered, and `skills` follows them. The route still answers
+  a caller with no credential, who is listed what the anonymous principal may see. See
+  [Authorization](../advanced/identity-and-access.md#authorization).
 - With a shared registry the listing includes agents another process hosts.
 - A page is cut from the listing as it is when the request arrives. When an agent is added or removed between two
   requests, the next page can repeat an agent or skip one; read the pages again for a listing that must be complete.
@@ -238,6 +242,17 @@ A request that names an agent the server does not have, or one whose `surfaces` 
 }
 ```
 
+**403 Forbidden:**
+
+With an [`authorization`](../advanced/identity-and-access.md#authorization) block, a caller that may see the agent and holds no level on it, or that sends the `session_id` of a session another principal owns. An agent the caller may not see is the 404 above, with the body an unknown agent gets.
+
+```json
+{
+  "error": "Principal 'bob' holds no level on agent 'support-triage'",
+  "session_id": "session-x"
+}
+```
+
 **500 Internal Server Error:**
 
 ```json
@@ -263,7 +278,7 @@ In the following example, **locale (string)** and **additional_context (dict)** 
 }
 ```
 
-Two extra keys are not yours to send. `user_id`: who the request acts as comes from the credential (see [Authentication](#authentication)), and a body with a `user_id` is a 400. `surface`: Agent Kernel records there which surface a request came in by, and a body that carries a value for it is a 422. If you passed a `surface` of your own as context, rename it.
+Two extra keys are not yours to send. `user_id`: who the request acts as comes from the credential (see [Authentication](#authentication)), and a body with a `user_id` is a 400. `surface`: OAK records there which surface a request came in by, and a body that carries a value for it is a 422. If you passed a `surface` of your own as context, rename it.
 
 Please study the [Hooks documentation](/docs/integrations/hooks) for the use of hooks to implement various use cases.
 
@@ -589,7 +604,7 @@ identity:
 - The chat and streaming routes accept an anonymous caller, and the agent runs as the anonymous principal. The thread, schedule and AG-UI routes serve authenticated callers only: their handlers refuse to construct without an `identity` block, and an anonymous request to them is a `401 Authentication required`.
 - A body or envelope carrying `user_id` is a 400: the acting user comes from the credential, never from the client.
 
-Groups, roles (through a `role_mapper`), the principal on every other surface and the deployment adapters are covered in [Identity and access](../advanced/identity-and-access.md).
+Groups, roles (through a `role_mapper`), the principal on every other surface and the deployment adapters are covered in [Identity and access](../advanced/identity-and-access.md). What a principal may do once it is established (which agents it may run and see) is decided by an optional `authorization` block: see [Authorization](../advanced/identity-and-access.md#authorization).
 
 ### Example Implementation
 

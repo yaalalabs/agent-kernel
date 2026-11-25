@@ -204,14 +204,16 @@ run, and is `null` when it ran.
 ### Skipped occurrences
 
 An occurrence runs unattended, as the task's owner, long after the task was created. Before it runs,
-Agent Kernel asks again what it asked when the task was created: is the task's agent still there, in
-the process that runs the occurrence, and still served on the task's surface. An occurrence that
-fails the check is not run:
+OAK asks again what it asked when the task was created: is the task's agent still there, in
+the process that runs the occurrence, still served on the task's surface, and, with an
+[`authorization`](./identity-and-access.md#authorization) block, does the owner still hold a level on
+it. An occurrence that fails the check is not run:
 
 - It is still counted: `trigger_count`, `last_triggered_at` and `last_request_id` advance, and a
   one-time task is completed by it.
-- `last_error` holds the reason, for example `Agent 'reports' not found`. The next occurrence that
-  runs sets it back to `null`.
+- `last_error` holds the reason, for example `Agent 'reports' not found` (also the reason when the
+  owner may no longer see the agent) or `Principal 'alice' holds no level on agent 'reports'`. The
+  next occurrence that runs sets it back to `null`.
 - One warning naming the task is logged, and the occurrence's reply has status 403 and the text
   `scheduled task skipped: the owner no longer holds access to the agent`.
 
