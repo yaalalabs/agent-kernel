@@ -244,3 +244,4 @@ pins every dependency with.
 - [ ] Factory tests (`TestFactoryBranches` in `test_identity_oidc.py` for a token issuer, `TestIdentityProviderFactory` in `test_identity_providers.py` otherwise)
 - [ ] Docs: `identity-and-access.md`, `configuration.md`, `ak-py/README.md`, root `README.md`, architecture skill, bundled skills and evals, landing inventories
 - [ ] `cd ak-py && uv run pytest tests/test_identity_*.py` and `make lint-check-all` clean
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (or `.breaking.md` when something public changes), written for users with `ak-dev-sync-changelog-from-branch`

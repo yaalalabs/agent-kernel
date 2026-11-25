@@ -257,3 +257,4 @@ enumerates the built-ins by name, not just one page:
       and its `evals/evals.json`
 - [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`); the
       Pluggable evaluators capability's summary in `features.tsx`
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (or `.breaking.md` when something public changes), written for users with `ak-dev-sync-changelog-from-branch`

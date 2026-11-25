@@ -357,3 +357,4 @@ Then the features page: the **Messaging channels** capability under Connect in `
 - [ ] Documentation in `docs/docs/integrations/<platform>.md`
 - [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`), `pick()` chip on the Messaging channels card (`ArchitectureOverview/data.tsx`), the channel list in the Connect stage's points (`HomeSections/index.tsx`)
 - [ ] The Messaging channels capability on `docs/src/pages/features.tsx` (count and `more` link) and the README/intro roll calls
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (or `.breaking.md` when something public changes), written for users with `ak-dev-sync-changelog-from-branch`

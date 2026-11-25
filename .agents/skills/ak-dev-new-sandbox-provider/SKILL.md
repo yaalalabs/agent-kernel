@@ -338,3 +338,4 @@ including a profile that demonstrates enforced policy and sentinel-based determi
 - [ ] Documentation: provider table row in `docs/docs/advanced/sandbox.md` + extra in `ak-py/README.md`
 - [ ] Landing page inventories: integration item (`HomeSections/integrations.data.tsx`)
 - [ ] Provider inventories on `docs/src/pages/features.tsx` (the Sandboxed code execution capability's count and names) and `SandboxFlowDiagram`
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (or `.breaking.md` when something public changes), written for users with `ak-dev-sync-changelog-from-branch`

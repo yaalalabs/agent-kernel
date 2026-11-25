@@ -199,3 +199,4 @@ real value into state.
 - [ ] Docs: `docs/docs/advanced/secrets.md`, architecture skill, `ak-py/README.md`
 - [ ] Landing page inventories: an integration item with role `Secrets` under a name no other item uses (`HomeSections/integrations.data.tsx`), the Secret resolution capability's summary (`docs/src/pages/features.tsx`)
 - [ ] `cd ak-py && uv run pytest tests/test_secret_*.py` and `make lint-check-all` clean
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (or `.breaking.md` when something public changes), written for users with `ak-dev-sync-changelog-from-branch`

@@ -181,6 +181,8 @@ containerized e2e tests.
 - Skills: the pipeline section of `.agents/skills/ak-dev-architecture/SKILL.md`, and the
   user-facing queue/deploy content in `ak-py/src/agentkernel/skills/` where transports are
   enumerated.
+- Changelog: a `changelog.d/<issue>.added.md` fragment naming the new transport and linking the
+  queue mode guide, written for users with `ak-dev-sync-changelog-from-branch`.
 
 ## Definition of Done
 
@@ -189,4 +191,4 @@ containerized e2e tests.
 - `make lint-check-all`: green.
 - Example runs end to end locally (its `app_test.py` passes against a live agent).
 - Factory rejects a missing config block and a missing extra with actionable errors.
-- Docs and skills surfaces above updated in the same PR.
+- Docs and skills surfaces above updated in the same PR, and the changelog fragment added.

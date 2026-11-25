@@ -1,0 +1,74 @@
+name: Changelog Check
+
+# Requires a changelog fragment under changelog.d/ on PRs with a user-visible change (#664).
+# The rules live in scripts/changelog_fragments.py (PullRequestPolicy) and CONTRIBUTING.md,
+# "Changelog entries": feat, fix, perf, refactor, build and chore PRs add a fragment; a "!" title
+# adds a breaking one; docs, test, ci and style PRs, bot PRs and PRs with the maintainer-only
+# no-changelog label need none; an invalid fragment name always fails. publish.yaml compiles the
+# fragments into CHANGELOG.md at release time.
+#
+# `edited` re-runs the check after a title change; `labeled`/`unlabeled` after no-changelog is
+# added or removed. `synchronize` is included because a required check must re-report on every
+# new head SHA.
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, edited, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+# Read-only: the job only reads the PR's own files and diff, so it runs the same on fork PRs.
+permissions:
+  contents: read
+
+concurrency:
+  group: changelog-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check-changelog:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Check the changelog fragment
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # HEAD is the PR's merge commit, so BASE_SHA...HEAD is exactly what the PR changes.
+          mapfile -t ADDED < <(git diff --name-only --diff-filter=AR "${BASE_SHA}...HEAD" -- changelog.d/)
+          mapfile -t MODIFIED < <(git diff --name-only --diff-filter=M "${BASE_SHA}...HEAD" -- changelog.d/)
+          # --option=value so a title or label starting with "-" is not read as a flag.
+          python scripts/changelog_fragments.py check-pr \
+            --title="$PR_TITLE" \
+            --author="$PR_AUTHOR" \
+            --labels="$PR_LABELS" \
+            --added "${ADDED[@]}" \
+            --modified "${MODIFIED[@]}"
+
+      - name: Preview the next release's changelog
+        if: always()
+        run: |
+          # Renders every pending fragment the way publish.yaml will, so a fragment that towncrier
+          # cannot render fails here rather than at release time.
+          pip install --quiet uv
+          {
+            echo "<details><summary>Next release's changelog with this PR merged</summary>"
+            echo
+            uvx --quiet towncrier@26.9.0 build --draft --version next
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -125,6 +125,10 @@ jobs:
         working-directory: scripts
         run: python test_update_chart_versions.py
 
+      - name: Test changelog_fragments script
+        working-directory: scripts
+        run: python test_changelog_fragments.py
+
   unit-tests:
     needs: [build-ak-py]
     runs-on: ubuntu-latest

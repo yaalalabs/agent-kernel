@@ -381,3 +381,4 @@ Grep `docs/src/pages/*.tsx` and the root `README.md` for the existing backend na
 - [ ] Configuration example in documentation
 - [ ] Documentation in `docs/docs/advanced/multimodal.md`
 - [ ] Landing page inventories: integration item or its `title` (`HomeSections/integrations.data.tsx`); the Multimodal input capability on `docs/src/pages/features.tsx` when it lists backends
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (or `.breaking.md` when something public changes), written for users with `ak-dev-sync-changelog-from-branch`

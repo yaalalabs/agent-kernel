@@ -91,6 +91,22 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"
 
+      - name: Check changelog fragments
+        id: changelog
+        run: |
+          # Runs before anything is built or published (#664). Fails on a fragment name towncrier
+          # would not render, or on a patch bump while a breaking fragment is pending. The drafted
+          # section becomes the GitHub release body; "Compile changelog" writes it into CHANGELOG.md.
+          python scripts/changelog_fragments.py validate
+          python scripts/changelog_fragments.py check-bump --bump ${{ inputs.version_bump }}
+
+          RELEASE_DATE=$(date -u +%Y-%m-%d)
+          echo "date=$RELEASE_DATE" >> "$GITHUB_OUTPUT"
+          uvx --quiet towncrier@26.9.0 build --draft \
+            --version "${{ steps.bump_version.outputs.new_version }}" \
+            --date "$RELEASE_DATE" > "$RUNNER_TEMP/changelog_section.md"
+          cat "$RUNNER_TEMP/changelog_section.md" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Update published skills with new version
         run: |
           python scripts/update_skills_version.py \
@@ -129,11 +145,22 @@ jobs:
           print-hash: true
           repository-url: ${{ inputs.environment == 'test' && 'https://test.pypi.org/legacy/' || '' }}
 
+      - name: Compile changelog
+        if: inputs.environment == 'production' && inputs.prerelease == ''
+        run: |
+          # Stable releases only: writes the new section into CHANGELOG.md and git-rm's the
+          # fragments it used. Pre-releases leave the fragments for the stable release.
+          uvx --quiet towncrier@26.9.0 build --yes \
+            --version "${{ steps.bump_version.outputs.new_version }}" \
+            --date "${{ steps.changelog.outputs.date }}"
+
       - name: Commit version bump
         if: inputs.environment == 'production'
         run: |
           # The skills tree includes the ak-cloud-deploy chart pin from update_chart_versions.py.
-          git add ak-py/pyproject.toml ak-py/uv.lock ak-py/src/agentkernel/skills/
+          # CHANGELOG.md and changelog.d/ change only on a stable release (Compile changelog), so
+          # the vX.Y.Z tag below contains the section for X.Y.Z.
+          git add ak-py/pyproject.toml ak-py/uv.lock ak-py/src/agentkernel/skills/ CHANGELOG.md changelog.d/
           git commit -m "chore: bump version to ${{ steps.bump_version.outputs.new_version }}"
           git push origin ${{ github.ref_name }}
       
@@ -214,8 +241,13 @@ jobs:
           \`\`\`bash
           pip install agentkernel==${VERSION}
           \`\`\`
+
+          ## Changelog
           EOF
-          
+          # The section drafted in "Check changelog fragments", without its version heading (the
+          # release title already names the version). GitHub's generated PR list follows it.
+          sed '1{/^## /d;}' "$RUNNER_TEMP/changelog_section.md" >> release_body.md
+
           # Create release
           gh release create "v${TAG_VERSION}" \
             --title "v${TAG_VERSION}" \
