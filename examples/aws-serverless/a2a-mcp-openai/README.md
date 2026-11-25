@@ -58,6 +58,21 @@ They must agree:
 | `lambda_request_handler.py` | `Lambda.register(path, method=method)(protocol.handle)` for each `ProtocolPaths.ROUTES` | 500: the router has no route for the call |
 | `deploy/main.tf` | `enable_a2a_server = true`, `enable_mcp_server = true` | API Gateway answers 403 before any Lambda runs: there is no `/a2a` or `/mcp` route |
 
+## Serving only one protocol
+
+This example serves both. To serve one, turn the other off in `config.yaml` and `deploy/main.tf`; `lambda_request_handler.py`
+stays as it is:
+
+| Serve | `config.yaml` | `deploy/main.tf` |
+|---|---|---|
+| MCP only | `a2a.enabled: false` | `enable_a2a_server = false` |
+| A2A only | `mcp.enabled: false` | `enable_mcp_server = false` |
+| MCP with only your own tools, no agents | `a2a.enabled: false`, `mcp.expose_agents: false` | `enable_a2a_server = false` |
+
+An MCP server that exposes no agents enqueues nothing, so the request handler skips the queue, response-store and wait-budget
+checks at cold start; `mcp.stateless_http: true` is still required. `lambda_test.py` covers both protocols, so its tests for
+the one you turn off fail.
+
 ## The public URL, and the second apply
 
 The agent card advertises `a2a.url`, and MCP names `mcp.url` in its login metadata. Both must be the API's **public URL**,
