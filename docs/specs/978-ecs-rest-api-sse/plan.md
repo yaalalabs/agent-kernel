@@ -174,8 +174,12 @@ this plan; the line numbers are from `develop`.
 
 - An **"Upgrading" section** in `docs/docs/deployment/aws-containerized.md` naming webhook
   re-registration as a step, and the ALB idle-timeout change.
-- **The PR title is the release note** — release bodies are generated from merged PR titles, so the
-  title must say the ECS invoke URL changes.
+- **`changelog.d/978.breaking.md`** for the invoke-URL change, and **`changelog.d/978.added.md`** for
+  SSE becoming available in ECS queue mode. Release bodies are compiled from these fragments by
+  towncrier, **not** from PR titles (`.github/workflows/publish.yaml:101-102`, `:249-252`). Both go in
+  the **implementation** PR: a `docs:` PR needs no fragment, and one merged ahead of the code compiles
+  into a release that does not contain it. Follow `changelog.d/870.breaking.md` (same ECS surface) and
+  use no em or en dashes.
 - `docs/docs/whats-new.md` capability entry (not a migration surface).
 - `alb_idle_timeout`, `gateway_integration_timeout` and the two new outputs in the containerized
   `README.md` tables. **Document the two timeouts together** — the common mistake will be raising one

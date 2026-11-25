@@ -946,8 +946,17 @@ New material:
 
 - **An "Upgrading" section in `docs/docs/deployment/aws-containerized.md`** naming webhook
   re-registration as a step, and the ALB idle-timeout change.
-- **The PR title is the release note** — release bodies are generated from merged PR titles, so the
-  title must say the ECS invoke URL changes.
+- **`changelog.d/978.breaking.md`** carries the invoke-URL change (Behavioural change 1). Release
+  bodies are compiled from these fragments by towncrier, **not** from PR titles
+  (`.github/workflows/publish.yaml:101-102`, `:249-252`), so this fragment is the release note. It
+  opens `To migrate, ...` per the house rule and names webhook re-registration.
+  `changelog.d/870.breaking.md` is the shape to follow: same ECS surface, same migration sentence.
+  - A second fragment, **`changelog.d/978.added.md`**, records SSE becoming available in ECS queue
+    mode. One fragment per user-visible change, so the two do not merge.
+  - Both belong to the **implementation** PR, not to the spec PRs. A `docs:`-titled PR needs no
+    fragment, and one merged ahead of the code would compile into a release that does not contain it.
+  - Fragment prose takes **no em or en dashes** (`changelog.d/README.md`, CONTRIBUTING's "Changelog
+    entries"), unlike these spec documents.
 - `docs/docs/whats-new.md` gets the capability entry. It is not a migration surface.
 - `alb_idle_timeout`, `gateway_integration_timeout` and the two new outputs in the containerized
   `README.md` variable and output tables. The two timeouts are documented **together**, since the
