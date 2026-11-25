@@ -153,22 +153,21 @@ Independent of Iterations 1–2; can be built in parallel.
 
 ## Iteration 10: Tests and CI
 
-- **Goal:** the full suites pass and the harness tests run on every PR.
+- **Goal:** the full suites pass and the harness and app tests run on every PR.
 - **Files:** `.github/workflows/test-reusable.yaml`
 - **Steps:**
   1. Add the "Test benchmark harness" step after "Test ak-py" in the `unit-tests` job (Consumer changes).
   2. Run both full suites; check that no test needs network beyond `127.0.0.1` or a cloud account.
-  3. Decide O8 (app tests in CI) with the maintainer; if yes, add a second step with
-     `working-directory: benchmarks/app`, and close O8 in `design.md`.
+  3. Add the "Test benchmark app" step with `working-directory: benchmarks/app` (O8, decided yes 2026-11-25).
 - **Verify:** `cd benchmarks && uv run pytest -q`; `cd benchmarks/app && uv run pytest -q`; the PR's `unit-tests`
-  job shows the new step passing.
+  job shows both new steps passing.
 
 ## Iteration 11: Sync docs and skills
 
 - `AGENTS.md:28-49` (Repo map): add a `benchmarks/` line next to `e2e/` (`ak-bench` harness + benchmarked app, see
   `benchmarks/README.md`).
 - `.agents/skills/ak-dev-testing-conventions/SKILL.md:531` (`test-reusable.yaml` description): add that `unit-tests`
-  also runs `uv run pytest` in `benchmarks/` (and `benchmarks/app/` if O8 is yes).
+  also runs `uv run pytest` in `benchmarks/` and `benchmarks/app/`.
 - No update needed (checked):
   - `.agents/skills/ak-dev-code-quality/SKILL.md:305` and `docs/docs/core-concepts/configuration.md:368` describe the
     `TRACE` level from #911; this issue doesn't change it.

@@ -389,7 +389,8 @@ change to AK itself is a `TRACE` log level with per-stage trace points on the re
     classes (decided 2026-11-24, #912).
   - The benchmarked app (mock agent) is `benchmarks/app/`, its own uv project like `e2e/app/`, since it is deployed
     and the harness isn't (decided 2026-11-23, #912).
-  - The harness's own cloud-free tests run in the repo's test workflow (decided 2026-11-23, #912).
+  - The cloud-free tests of the harness (decided 2026-11-23, #912) and of the app in `benchmarks/app/` (decided
+    2026-11-25, #912) run in the repo's test workflow.
   - Cloud SDKs (`boto3`), data and plotting libraries are dependencies of this project only.
   - Code split by role, not by topic (decided 2026-11-24, #912):
     - `fetchers/`: the only code that calls a cloud or platform SDK. `fetchers/core/` holds the `InfoFetcher`

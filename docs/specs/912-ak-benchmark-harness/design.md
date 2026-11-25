@@ -391,15 +391,16 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   - teardown runs when a `run` step fails, when `run` is interrupted, and when `deploy.sh` fails; the deployment lock
     is released on a failed command, and every command is refused while another holds it;
   - an unknown `fetchers.<name>` key and a missing deployment folder are refused before anything runs.
-- The harness tests run in CI: a step in `.github/workflows/test-reusable.yaml` (called by `test.yaml` on every PR
-  and push to `develop`) runs `uv run pytest` in `benchmarks/`. Only the cloud-free tests; no benchmark run.
+- The harness and app tests run in CI: two steps in `.github/workflows/test-reusable.yaml` (called by `test.yaml` on
+  every PR and push to `develop`) run `uv run pytest` in `benchmarks/` and in `benchmarks/app/`. Only the cloud-free
+  tests; no benchmark run.
 
 ## Non-goals
 
 - Real deployment folders and fetchers, and the `ecs` / `lambda` host entries (AWS issues).
 - WebSocket delta and `rest_async` drivers (later; new driver class + factory branch, no harness change).
 - Any AK change (the `TRACE` level and trace points are #911).
-- Running the benchmark itself in CI (only the harness's own tests run there).
+- Running the benchmark itself in CI (only the harness and app tests run there).
 - Everything #786 lists as a non-goal (flagging, early stops, load-generator health, cross-host graphs, ...).
 - The summary CSV and the graphs comparing the steps (#786 Later; may be added later, after all the step runs and
   before `plot`).
@@ -410,5 +411,5 @@ Resolved 2026-11-23: O1 (connect before `before`), O4 (raw file names), O5 (two 
 O6 (`benchmarks/app/` as its own project), O7 (harness tests in the test workflow), O3 (no bring-your-own driver:
 built-ins only), O2 (signed tokens, one per user; see Client authentication); written into the requirements above.
 
-- **O8. CI for the app's tests** (`benchmarks/app/`: `MockRunner`, `BenchIdentityProvider`): the test-workflow step
-  above runs `benchmarks/` only. Decide at the end of the task whether it also runs `benchmarks/app/`.
+Resolved 2026-11-25: O8 (the app's tests run in CI too: a running benchmark would not catch a mock agent with wrong
+delays, only a crashing one); written into Testing above.

@@ -1058,17 +1058,20 @@ class CostReport:     def draw(self, deployment_dir: Path) -> None: ...      # g
 
 ### Consumer changes
 
-- `.github/workflows/test-reusable.yaml`, job `unit-tests` (`:128-156`): one new step after "Test ak-py":
+- `.github/workflows/test-reusable.yaml`, job `unit-tests` (`:128-156`): two new steps after "Test ak-py":
 
   ```yaml
   - name: Test benchmark harness
     working-directory: benchmarks
     run: uv run pytest
+
+  - name: Test benchmark app
+    working-directory: benchmarks/app
+    run: uv run pytest
   ```
 
-  It installs `agentkernel` from the checked-out `ak-py/` path source, so it tests the parser of the branch.
-- O8 (app tests in CI) stays open per `design.md`; if decided yes, a second step with
-  `working-directory: benchmarks/app`.
+  Both install `agentkernel` from the checked-out `ak-py/` path source, so they test the branch's parser and AK
+  base classes.
 - Nothing else in the repo changes. `ak-py` is untouched (the `TRACE` level and parser are #911).
 
 ### Config changes
