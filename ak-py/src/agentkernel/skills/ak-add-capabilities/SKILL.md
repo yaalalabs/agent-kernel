@@ -1750,9 +1750,11 @@ Tell the user what changes once the block exists:
   `--token`) through `*`.
 - The tool policy is published for each run (`ToolContext.get().access_level`) and narrows the tools
   and skills the listings show. A denied tool is kept from the model on the OpenAI Agents SDK,
-  Pydantic AI, Microsoft Agent Framework and the Claude Agent SDK. On Google ADK, CrewAI, LangGraph
+  Pydantic AI, Microsoft Agent Framework, the Claude Agent SDK, Google ADK and CrewAI. On LangGraph
   and smolagents, and on realtime calls, it is not stopped yet, so there do not rely on `deny` or
   `tiers` alone: check `access_level` inside the tool, or do not grant the agent.
+- A run keeps the policy of the agent it started with, so state the tiers of the tools it can reach
+  (a handoff target's, a sub-agent's, a CrewAI coworker's) in that agent's policy.
 - The policy covers the tools an agent declares when it loads. Tools that exist only inside a run (an
   MCP server's) are not offered under the block, and an OpenAI Agents SDK agent with `mcp_servers`
   does not load while it is configured.

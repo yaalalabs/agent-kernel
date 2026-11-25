@@ -885,9 +885,9 @@ authorization: the authorizer contract, the static backend, its factory and the
 (`AgentService.ensure_agent_available`), the queue pipeline's precheck before anything is enqueued,
 a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
 realtime surfaces (iteration 20, the Protocol surfaces bullet below). Phase E gates tools from the published tool filter (the Tool gates bullet below): the OpenAI,
-Pydantic AI, MAF and Claude adapters since iteration 21; ADK, CrewAI, LangGraph, smolagents and
-the realtime runners follow in iterations 22 and 23, and until then enforce nothing at call
-time. The credentials capability is a later phase: `Principal.credential_ref` is inert. Authentication is
+Pydantic AI, MAF and Claude adapters since iteration 21, ADK and CrewAI since iteration 22;
+LangGraph, smolagents and the realtime runners follow in iteration 23, and until then enforce
+nothing at call time. The credentials capability is a later phase: `Principal.credential_ref` is inert. Authentication is
 configuration: one identity provider per deployment, named by the `identity` block, and no
 handler or entry point takes a validator or authoriser argument any more (`agentkernel.auth` is
 deleted).
@@ -1153,7 +1153,7 @@ deleted).
   `ChatService.execute`), run the question on a thread of their own. A new surface asks the gate
   before it commits anything and maps `PermissionError` to 403 and `AgentNotFoundError` to 404;
   it never asks the authorizer directly.
-- **Tool gates** (phase E, iteration 21 so far; spec section 9 and refinement 20). Shape is consistent,
+- **Tool gates** (phase E, iterations 21 and 22 so far; spec section 9 and refinements 20 and 21). Shape is consistent,
   behaviour is not: each adapter applies the run's filter through `ToolGate` at list time where its
   framework has a hook and at call time through a hook, AK's check first and the application's own
   hook, guardrail, middleware or capability kept behind it. A refused call is answered with the
@@ -1180,6 +1180,29 @@ deleted).
   `allowed_tools` (the application's own entry included), joins `disallowed_tools` once, and the
   one `PreToolUse` hook denies it with the reason ahead of its approval and resume branches. Only
   the tools the adapter serves are gated.
+  **Three rules every gate follows.** (1) What a run can reach is declared under the agent it
+  started with, because the run's filter is that agent's: handoff targets and agents used as
+  tools (OpenAI), sub-agents, workflow nodes and agent tools (ADK), the coworkers of a delegating
+  agent (CrewAI). (2) A framework's own control-flow tools are not gated: no agent declares
+  them, and refusing them would stop a run from moving (ADK's `TransferToAgentTool` and
+  `SetModelResponseTool`, CrewAI's `BaseAgentTool` delegation tools; an OpenAI handoff is not a
+  function tool at all). (3) A gate that changes a native object or a process-wide list is put
+  in place only when an `authorization` block is configured (`Runtime.access_gate()`).
+  **ADK** (`GoogleADKToolGate`): `before_tool` is a `before_tool_callback` put first on every
+  `LlmAgent` that `agents(root)` reaches (the walk `get_tool_names` shares: agents used as tools,
+  the nodes of a workflow and of one nested in it, each level of `sub_agents`; a workflow keeps
+  copies of its agents, so inspect `agents(workflow)`, not the objects handed to it). It returns
+  `{"error": reason}`, which ADK gives the model as the call's result. The run is found through
+  `tool_context.state["ak_tool_context"]`, which an `AgentTool`'s nested run inherits; no id
+  means no run of ours (not gated), an id that cannot be fetched refuses the call. A bare
+  callable is declared under the name of the `FunctionTool` ADK wraps it in. ADK's live flow
+  calls the same callbacks.
+  **CrewAI** (`CrewAIToolGate`): two hooks in CrewAI's process-wide lists, registered once from
+  `CrewAIModule.load`. `before_tool_call` returns `False` to block; `after_tool_call` returns the
+  reason, which replaces CrewAI's own blocked-by-hook line because CrewAI runs after hooks for a
+  blocked call. A hook gets the sanitized name a tool is served under (`sanitize_tool_name`), so
+  the call is matched to the declared name that sanitizes to it. The hooks never raise: CrewAI
+  lets a call through when a hook fails, so a failure refuses the call.
 - **Protocol surfaces** (iteration 20). Each answers for the caller in its own protocol's terms,
   and a hidden agent is never told apart from one the surface does not serve.
   **MCP** (`api/mcp/akmcp.py`): every agent tool is registered with

@@ -1972,6 +1972,32 @@ Shared pieces (`core/`):
     name in its own `allowed_tools` is dropped from the run's list, a tool is added to
     `disallowed_tools` once, and the hook is installed for a refusal alone (an agent with no
     approval tool had none). `_native_options` takes the run's `session`.
+- As built (iteration 22), where the two callback-driven adapters differ from the table (design
+  refinement 21):
+  - **ADK.** `GoogleADKToolGate.before_tool` is the callback, put first on every agent a run
+    can reach (`GoogleADKToolGate.install`, from `GoogleADKAgent.__init__`) and only when an
+    `authorization` block is configured. `GoogleADKToolGate.agents(root)` is the one walk the
+    gate and `get_tool_names` share: the root, the agents it uses as tools (`AgentTool.agent`),
+    the nodes of a workflow, one nested in another included, and each level of `sub_agents`.
+    A workflow keeps copies of the agents it is given, so the gate is on the copies. The
+    callback leaves ADK's own two tools alone (`TransferToAgentTool`,
+    `SetModelResponseTool`): no filter lists them and a run could not move without them. A
+    call whose state names no Agent Kernel tool context is not gated; one whose context can
+    no longer be fetched is refused (`tool gate failed: <type>`). `get_tool_names` reports a
+    bare callable under the name of the `FunctionTool` ADK wraps it in (a callable object by
+    its class, a `functools.partial` as `partial`). ADK's live flow calls the same callbacks
+    (`flows/llm_flows/functions.py`), so the realtime runner needs no gate of its own once a
+    filter is published for a call (iteration 23).
+  - **CrewAI.** `CrewAIToolGate` registers two hooks, once for the process, from
+    `CrewAIModule.load` and only when the block is configured. `before_tool_call` returns
+    `False` for a refused call. `after_tool_call` returns the reason for the same call:
+    CrewAI runs its after hooks for a blocked call too, and a string they return replaces its
+    own `Tool execution blocked by hook` line, so the model reads the reason. A hook is given
+    the sanitized name CrewAI serves a tool under, and the call is matched to the declared
+    name that sanitizes to it. The hooks never raise (CrewAI lets a call through when a hook
+    fails): a failure refuses the call. The delegation tools CrewAI adds (`BaseAgentTool`)
+    are left alone, and `get_tool_names` declares the tools of the coworkers when the agent
+    may delegate, since a delegated call runs under the first agent's filter.
 - Composition rule everywhere: AK's check runs first; a user-set hook, callback, middleware,
   capability or `is_enabled` value is preserved and runs after (OpenAI `is_enabled` is an AND of
   both; ADK and MAF lists are AK-first; CrewAI's global hook list keeps the user's hooks).
@@ -2327,6 +2353,15 @@ Each is intentional; the justification is design section 10 unless stated.
     a run on Pydantic AI, the functions of an MCP tool on MAF. An OpenAI agent with an
     `mcp_servers` entry, or a handoff that does not hold its agent, fails `Module.load` with
     the `AKConfigError` of an ungated tool. Without the block nothing of this applies.
+46. Two more adapters declare more with no `authorization` block (iteration 22; section 9), as
+    change 44 did. A Google ADK agent also declares the tools of the agents it uses as tools
+    and of the nodes of a workflow nested in another, and a callable object under the name ADK
+    serves it by (it was left out). A CrewAI agent that may delegate also declares the tools
+    of its coworkers, the other agents of its module.
+47. With an `authorization` block (iteration 22), a tool the running agent does not declare is
+    refused on ADK and CrewAI as well: a toolset's tools on ADK, for one. The tools the two
+    frameworks move a run with (ADK's transfer and structured response, CrewAI's delegation
+    tools) are not gated.
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (the optional
 `last_error`, `surface` and `principal` on a task's document aside); the queue envelope
@@ -2526,6 +2561,13 @@ New files under `ak-py/tests/`:
   OpenAI, where that path is read from the SDK and not run). The declared names are pinned
   in `test_tool_gates_openai.py` (handoff targets, agents as tools, what is ungated) and
   `test_tool_pydanticai.py` (each compared with the names a real run serves).
+  As built (iteration 22): `test_tool_gates_adk.py` runs real agents over a scripted `BaseLlm`
+  (what ADK's function handling ran, what the model received), including a transfer to a
+  sub-agent whose tool is then refused, a confirmation that never pauses, a confirmed call
+  denied by the resume, ADK's own two tools, and a call outside a run. `test_tool_gates_crewai.py`
+  runs real crews over a scripted `BaseLLM` on the ReAct path, where the result of a call is
+  text the test reads; it needs the CrewAI overlay and is skipped without it, like the other
+  CrewAI suites.
 - `test_agent_registry.py` also holds `TestAvailability`: a named agent known only through the
   registry is available, an unknown one is not, an unnamed request needs some descriptor (asked
   through `is_empty`, never a listing), a hosted agent is answered without a store read, and the
@@ -3185,3 +3227,20 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    A call approved while its run was paused is decided again by the filter of the resume, on
    every adapter that pauses: the policy or the caller's level may have changed in between
    (section 9; behavioural changes 44 and 45).
+21. **The ADK and CrewAI gates, where building them settled the outline** (iteration 22,
+   2026-11-25). Four points, each written into section 9.
+   A framework's own control-flow tools are not gated. ADK reaches its transfer and its
+   structured-response tool through the same callback as an application tool, and CrewAI its
+   delegation tools through the same hooks. No agent declares them, so refinement 20's rule
+   would have refused every one and a run could not have moved between agents. The gate
+   recognises them by type and stands aside; the tools the run reaches next are gated. A policy
+   therefore cannot deny a move between agents, as it cannot deny an OpenAI handoff.
+   What a run can reach is declared under the agent it started with, on these two as on OpenAI:
+   an ADK agent used as a tool and the nodes of a nested workflow, and the coworkers of a CrewAI
+   agent that may delegate. One walk serves the declaration and the gate on ADK.
+   On CrewAI the model reads the reason. The table expected CrewAI's own blocked-by-hook line
+   to be all a refused call could answer; an after hook's return replaces it, and CrewAI runs
+   after hooks for a blocked call.
+   Both gates are put in place only when the block is configured, as the OpenAI one is: ADK's
+   callback list and CrewAI's process-wide hook lists are otherwise as the application left
+   them (section 9; behavioural changes 46 and 47).

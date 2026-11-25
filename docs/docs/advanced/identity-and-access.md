@@ -501,7 +501,9 @@ agent is built with:
 | Pydantic AI | Is not offered to the model, and a call that reaches it is answered with the reason. |
 | Claude Agent SDK | Is not offered to the model (`disallowed_tools`), and a call that reaches it is denied with the reason. |
 | Microsoft Agent Framework | Is still shown to the model; the call is answered with the reason and the tool is not run. |
-| Google ADK, CrewAI, LangGraph, smolagents; realtime calls | Not stopped yet. |
+| Google ADK | Is still shown to the model; the call is answered with the reason and the tool is not run. |
+| CrewAI | Is still shown to the model; the call is blocked and the model reads the reason. |
+| LangGraph, smolagents; realtime calls | Not stopped yet. |
 
 The reason is the sentence `Session.get_tool_filter().reason(name)` gives, for example
 `Tool 'refund_order' requires level admin; the current principal has write`. The model reads it as the
@@ -511,22 +513,29 @@ What the policy covers is the tools an agent declares when it loads, which are t
 entry lists:
 
 - **Tools that exist only inside a run are not offered.** The tools of an MCP server, or of a
-  toolset handed over for one run, have no name a policy could offer. On Pydantic AI and Microsoft
-  Agent Framework they are left out of a run that has an `authorization` block. An OpenAI Agents SDK
-  agent with `mcp_servers`, or with a handoff built by hand that does not hold its agent, does not
-  load while the block is configured: the error names what could not be gated.
-- **Agents an OpenAI agent hands off to.** A run keeps the policy of the agent it started with, so the
-  tools of the agents it hands off to, or uses as tools, are listed under that agent and take their
-  tiers from its policy. State them there.
+  toolset handed over for one run, have no name a policy could offer. On Pydantic AI, Microsoft
+  Agent Framework and Google ADK they are left out of, or refused in, a run that has an
+  `authorization` block. An OpenAI Agents SDK agent with `mcp_servers`, or with a handoff built by
+  hand that does not hold its agent, does not load while the block is configured: the error names
+  what could not be gated.
+- **Agents a run can reach.** A run keeps the policy of the agent it started with, whichever agent
+  ends up calling a tool. So the tools of the agents it can reach are listed under that agent and
+  take their tiers from its policy; state them there. That covers the agents an OpenAI agent hands
+  off to or uses as tools, the sub-agents, workflow nodes and agent tools under a Google ADK root,
+  and the coworkers of a CrewAI agent that may delegate.
+- **Moves between agents are not gated.** An OpenAI handoff, an ADK transfer to another agent and
+  the tools CrewAI adds for delegation are how a run moves, not tools you declared, so a policy
+  cannot deny them. The tools the run reaches afterwards are gated as above.
 - **Hosted and built-in tools are not stopped.** A tool the provider runs (OpenAI's web search, file
-  search and code interpreter), Claude Code's built-in tools and the tools of other MCP servers on a
-  Claude agent are outside the gate. Use the framework's own settings for those.
+  search and code interpreter, Google Search and code execution on ADK), Claude Code's built-in
+  tools and the tools of other MCP servers on a Claude agent are outside the gate. Use the
+  framework's own settings for those.
 - **A paused call.** A tool that waits for a human's approval is asked about again when the approval
   arrives: if the policy denies it by then, it is not run.
 
 :::caution Not every framework stops a denied tool yet
-On Google ADK, CrewAI, LangGraph and smolagents, and on realtime calls, an agent still calls every
-tool it was built with. Until those are covered, keep a tool away from a caller there by not granting
+On LangGraph and smolagents, and on realtime calls, an agent still calls every tool it was built
+with. Until those are covered, keep a tool away from a caller there by not granting
 the caller the agent, or check `access_level` inside the tool as above.
 :::
 

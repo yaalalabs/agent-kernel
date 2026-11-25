@@ -728,6 +728,16 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
     model calls.
   - A call approved while paused is decided again by the filter of the resume.
   - A gate that cannot answer refuses the tool.
+- As built (spec refinement 21), for ADK and CrewAI:
+  - A framework's own control-flow tools are not gated: ADK's transfer and structured-response
+    tools, CrewAI's delegation tools.
+    - A policy cannot deny a move between agents; the tools reached next are gated.
+  - ADK: the callback is on every agent a run can reach, agents used as tools and the nodes of
+    nested workflows included, and their tools are declared under the root.
+  - CrewAI: a refused call is blocked by a before hook, and an after hook gives the model the
+    reason in place of CrewAI's own line.
+  - CrewAI: an agent that may delegate declares its coworkers' tools.
+  - Both are put in place only when the block is configured.
 - Every adapter resolves nothing itself: it reads `TOOL_FILTER_CACHE_KEY` from the session's
   volatile cache (set by `Runtime`), so with no `authorization` block the filter is absent and the
   native calls are keyword-for-keyword what they are today (the #754 invariant).

@@ -1266,6 +1266,31 @@ objects in `tests/test_tool_<adapter>.py`:
   2. CrewAI: the process-wide `register_before_tool_call_hook` registered on first module load,
      returning `False` for a denied tool (spec 9).
 - **Verify:** `test_tool_gates_adk.py`, `test_tool_gates_crewai.py`.
+- **As built (2026-11-25):** both steps, with what was settled along the way written into spec
+  9 and refinement 21:
+  - **ADK:** `GoogleADKToolGate`. One walk (`agents`) serves the gate and `get_tool_names`:
+    it adds agents used as tools and the nodes of a nested workflow, which closes the nested
+    `Workflow` gap, and a bare callable is declared under the name ADK serves it by, which
+    closes the callable-object and `partial` gap. The gate leaves ADK's transfer and
+    structured-response tools alone.
+  - **CrewAI:** `CrewAIToolGate`, a before hook and an after hook. Step 2 expected CrewAI's own
+    blocked-by-hook line to reach the agent; the after hook puts the reason in its place. The
+    delegation tools are left alone and an agent that may delegate declares its coworkers'
+    tools. Registered with the public `register_*_hook` functions, so the application's hooks
+    registered earlier run ahead of the gate: a refusal still holds, since any hook that
+    blocks a call blocks it.
+  - **Both** are put in place only when the block is configured, as the OpenAI gate is.
+  - **Not covered:** a tool the model provider runs on ADK (Google Search, code execution),
+    for which ADK calls no callback; a CrewAI tool not run through an executor; a
+    hierarchical crew's manager, whose coworkers' tools are declared only under an agent that
+    may delegate.
+  - **Verified through the overlay only:** CrewAI is not installed beside the test extra, so
+    `test_tool_gates_crewai.py` is skipped in the ordinary run and was run with
+    `uv run --no-sync --with "crewai>=1.15.0,<2.0.0"`, against CrewAI 1.15.18.
+  - **Docs and changelog, in step:** the table in `advanced/identity-and-access.md` gains the
+    two frameworks and the points on agents a run can reach and on moves between agents; the
+    short mentions and the pending `603.added.md` name six frameworks; `603.changed.2.md`
+    covers spec behavioural change 46 as well.
 
 ### Iteration 23: LangGraph, smolagents and realtime; Q12 live
 

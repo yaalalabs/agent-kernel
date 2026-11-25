@@ -4,13 +4,22 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 from crewai import Agent, Crew, Memory, Task
+from crewai.hooks.tool_hooks import (
+    ToolCallHookContext,
+    get_after_tool_call_hooks,
+    get_before_tool_call_hooks,
+    register_after_tool_call_hook,
+    register_before_tool_call_hook,
+)
 from crewai.memory import MemoryRecord, ScopeInfo
 from crewai.memory.storage.backend import StorageBackend as Storage
 from crewai.tools import tool as crewai_tool
+from crewai.tools.agent_tools.base_agent_tools import BaseAgentTool
+from crewai.utilities.string_utils import sanitize_tool_name
 from pydantic import BaseModel
 
 from ...core import Agent as BaseAgent
-from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
+from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext, ToolGate
 from ...core.config import AKConfig
 from ...core.event import StreamEvent
 from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
@@ -421,6 +430,78 @@ class CrewAIRunner(Runner):
         yield  # make this an async generator to satisfy the type contract
 
 
+class CrewAIToolGate:
+    """
+    The tool gate of CrewAI runs (#603): two tool-call hooks, registered once for the process.
+
+    CrewAI keeps one list of tool-call hooks for the whole process and every executor runs it around every tool
+    call, whichever agent of a crew makes the call. `before_tool_call` blocks a call to a tool the run's
+    ToolFilter does not allow, so the tool is not run. CrewAI then answers the call with a line of its own
+    ("Tool execution blocked by hook"), and `after_tool_call` puts the filter's reason in its place, so the
+    model reads why. Hooks the application registered are kept; one that blocks a call still blocks it.
+
+    The run is found through the ToolContext the runner set: context variables reach the thread a crew is
+    kicked off on. A crew the application runs itself has no run of ours and is not gated.
+
+    CrewAI serves a tool to the model under a sanitized form of its name (`Refund Order` as `refund_order`),
+    which is the name a hook is given. The filter lists the names the agent declares, so a call is matched to
+    the declared name that sanitizes to it.
+
+    Left alone: the tools CrewAI adds to an agent that may delegate (delegate work to a coworker, ask one a
+    question). They are how a crew moves work, not tools the application declared. The tools a coworker then
+    calls are declared under the agent the run started with (`CrewAIAgent.get_tool_names`) and gated by its
+    filter. Not reached: a tool that is not run through an executor.
+    """
+
+    @classmethod
+    def install(cls) -> None:
+        """
+        Registers the two hooks in CrewAI's process-wide lists; a second call registers nothing.
+        """
+        if cls.before_tool_call not in get_before_tool_call_hooks():
+            register_before_tool_call_hook(cls.before_tool_call)
+        if cls.after_tool_call not in get_after_tool_call_hooks():
+            register_after_tool_call_hook(cls.after_tool_call)
+
+    @staticmethod
+    def before_tool_call(context: ToolCallHookContext) -> bool | None:
+        """
+        The hook CrewAI runs ahead of a tool call.
+        :param context: CrewAI's description of the call.
+        :return: False to block a call the run's filter refuses; None to let the call go on.
+        """
+        return False if CrewAIToolGate.refusal(context) is not None else None
+
+    @staticmethod
+    def after_tool_call(context: ToolCallHookContext) -> str | None:
+        """
+        The hook CrewAI runs after a tool call, a blocked one included.
+        :param context: CrewAI's description of the call, with the result so far.
+        :return: The reason, as the result of a call the run's filter refuses; None to keep the result of any other.
+        """
+        return CrewAIToolGate.refusal(context)
+
+    @staticmethod
+    def refusal(context: ToolCallHookContext) -> str | None:
+        """
+        Returns why the run's tool filter refuses a call, or None when the run is not gated, the tool is allowed
+        or the tool is one of CrewAI's own delegation tools. It never raises: CrewAI lets a call through when a
+        hook fails, so a failure here refuses the call.
+        :param context: CrewAI's description of the call.
+        """
+        try:
+            tool_filter = ToolGate.current()
+            if tool_filter is None:
+                return None
+            if isinstance(getattr(context.tool, "_original_tool", None), BaseAgentTool):
+                return None
+            called = sanitize_tool_name(context.tool_name)
+            declared = next((name for name in (*tool_filter.allowed, *tool_filter.reasons) if sanitize_tool_name(name) == called), context.tool_name)
+        except Exception as error:
+            return f"{ToolGate.FAILED}: {type(error).__name__}"
+        return ToolGate.refusal(declared)
+
+
 class CrewAIAgent(BaseAgent):
     """
     CrewAIAgent class provides an agent wrapping for CrewAI based agents.
@@ -512,17 +593,33 @@ class CrewAIAgent(BaseAgent):
 
     def get_tool_names(self) -> list[str]:
         """
-        Returns the names of the native agent's tools.
+        Returns the names of the tools a run of the agent can call: the native agent's own and, when it may
+        delegate, those of its coworkers, the other agents of the crew. A run's tool filter is this agent's
+        whichever agent of the crew ends up calling a tool, so a policy for this agent names their tools too.
 
         Not reported: the delegation tools CrewAI adds for an agent that allows delegation when a crew runs.
+        The tool gate leaves those alone.
         """
-        return [tool.name for tool in self.agent.tools or []]
+        return list(self._declared_tools())
 
     def _tool_descriptions(self) -> dict[str, str]:
         """
-        Returns the description of each native tool by name.
+        Returns the description of each declared tool by name.
         """
-        return {tool.name: tool.description or "" for tool in self.agent.tools or []}
+        return {name: tool.description or "" for name, tool in self._declared_tools().items()}
+
+    def _declared_tools(self) -> dict[str, Any]:
+        """
+        Returns the tools a run can call by name, the agent's own first; a name two agents share is kept once.
+        """
+        declared: dict[str, Any] = {}
+        reachable = (
+            [self.agent, *(coworker for coworker in self._crew if coworker is not self.agent)] if self.agent.allow_delegation else [self.agent]
+        )
+        for agent in reachable:
+            for tool in agent.tools or []:
+                declared.setdefault(tool.name, tool)
+        return declared
 
     def attach_tool(self, tool: Any) -> None:
         """
@@ -593,10 +690,14 @@ class CrewAIModule(Module):
 
     def load(self, agents: list[Agent]) -> "CrewAIModule":
         """
-        Loads the specified agents into the module. By replacing the current agents.
+        Loads the specified agents into the module. By replacing the current agents. With an `authorization`
+        block the tool gate's hooks are registered first, once for the process; without the block CrewAI's
+        hook lists are left as they are.
         :param agents: List of agents to load.
         :return: CrewAIModule instance.
         """
+        if Runtime.access_gate() is not None:
+            CrewAIToolGate.install()
         super().load(agents)
         return self
 
