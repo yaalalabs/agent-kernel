@@ -239,7 +239,7 @@ class TestOpenAIInputGuardrail:
         assert result == sample_requests
         kwargs = guardrail._guardrails_client.chat.completions.create.call_args.kwargs
         assert kwargs["model"] == model
-        assert kwargs["max_completion_tokens"] == 1
+        assert kwargs["max_completion_tokens"] == 16
         assert "max_tokens" not in kwargs
         assert kwargs.get("reasoning_effort") == reasoning
 
@@ -281,7 +281,7 @@ class TestOpenAIOutputGuardrail:
         kwargs = guardrail._guardrails_client.chat.completions.create.call_args.kwargs
         assert kwargs["model"] == model
         assert kwargs["messages"][-1] == {"role": "assistant", "content": "I'm doing great!"}
-        assert kwargs["max_completion_tokens"] == 1
+        assert kwargs["max_completion_tokens"] == 16
         assert "max_tokens" not in kwargs
         assert kwargs.get("reasoning_effort") == reasoning
 

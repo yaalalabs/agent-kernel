@@ -60,7 +60,8 @@ class TokenOverlapEvaluator(AKEvaluator):
                 model=f"{llm.provider}/{llm.model}",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
-                **reasoning_off_params(llm.model),  # a reasoning model rejects temperature=0 unless its reasoning is off
+                # a reasoning model rejects temperature=0 unless its reasoning is off
+                **reasoning_off_params(llm.model),
             )
             content = response.choices[0].message.content.strip()
             match = _SCORE_PATTERN.search(content)
