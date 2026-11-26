@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 from fastmcp.exceptions import ToolError
@@ -113,9 +113,9 @@ class TestExecutorReplyShapes:
 
     @pytest.mark.asyncio
     async def test_labelled_reply_returns_a_tool_result_with_meta(self):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
 
-        from fastmcp.tools.tool import ToolResult
+        from fastmcp.tools import ToolResult
 
         from agentkernel.api.mcp.akmcp import MCP
         from agentkernel.core.model import AgentReplyAny
@@ -124,7 +124,7 @@ class TestExecutorReplyShapes:
         reply = AgentReplyAny(content=content, media_type="application/a2ui+json")
 
         _queue_reply(reply)
-        result = await MCP.Executor("a").execute("s1", "hi", AsyncMock())
+        result = await MCP.Executor("a").execute("s1", "hi")
 
         assert isinstance(result, ToolResult)
         assert result.structured_content == content
@@ -132,25 +132,25 @@ class TestExecutorReplyShapes:
 
     @pytest.mark.asyncio
     async def test_unlabelled_structured_reply_still_returns_its_string(self):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
 
         from agentkernel.api.mcp.akmcp import MCP
         from agentkernel.core.model import AgentReplyAny
 
         _queue_reply(AgentReplyAny(content={"a": 1}))
-        result = await MCP.Executor("a").execute("s1", "hi", AsyncMock())
+        result = await MCP.Executor("a").execute("s1", "hi")
 
         assert result == '{"a": 1}'
 
     @pytest.mark.asyncio
     async def test_text_reply_returns_its_text(self):
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
 
         from agentkernel.api.mcp.akmcp import MCP
         from agentkernel.core.model import AgentReplyText
 
         _queue_reply(AgentReplyText(response="hello"))
-        result = await MCP.Executor("a").execute("s1", "hi", AsyncMock())
+        result = await MCP.Executor("a").execute("s1", "hi")
 
         assert result == "hello"
 
@@ -161,9 +161,9 @@ class TestExecutorReplyShapes:
         fastmcp enforces it: `ToolResult(structured_content=[...])` raises `ValueError`. A2UI on
         v0.9.1 is a message sequence, so this is a first-class payload shape, not an edge case.
         """
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
 
-        from fastmcp.tools.tool import ToolResult
+        from fastmcp.tools import ToolResult
 
         from agentkernel.api.mcp.akmcp import MCP
         from agentkernel.core.model import AgentReplyAny
@@ -172,7 +172,7 @@ class TestExecutorReplyShapes:
         reply = AgentReplyAny(content=content, media_type="application/a2ui+json")
 
         _queue_reply(reply)
-        result = await MCP.Executor("a").execute("s1", "hi", AsyncMock())
+        result = await MCP.Executor("a").execute("s1", "hi")
 
         assert isinstance(result, ToolResult)
         assert result.structured_content == {"result": content}
@@ -185,7 +185,7 @@ class TestExecutorReplyShapes:
         Asserted through a real client rather than on the ToolResult, because the claim is about
         what the caller receives — without the flag they would have to know about `result`.
         """
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import patch
 
         from fastmcp import Client, FastMCP
 
@@ -209,13 +209,12 @@ class TestExecutorReplyShapes:
     @pytest.mark.asyncio
     async def test_an_image_reply_returns_the_runners_text(self):
         """The runner's body is now the only source of reply text, and it names the image (#780)."""
-        from unittest.mock import AsyncMock
 
         from agentkernel.api.mcp.akmcp import MCP
         from agentkernel.core.model import AgentReplyImage
 
         _queue_reply(AgentReplyImage(response="here it is", name="chart.png", image_data="aGk="))
-        result = await MCP.Executor("a").execute("s1", "hi", AsyncMock())
+        result = await MCP.Executor("a").execute("s1", "hi")
 
         assert result == "here it is. Image chart.png is attached."
 
@@ -229,7 +228,7 @@ class TestExecutorThroughTheQueue:
 
         client = _queue_reply(AgentReplyText(response="hi"))
 
-        await MCP.Executor("triage").execute("s9", "what is 2+2", AsyncMock())
+        await MCP.Executor("triage").execute("s9", "what is 2+2")
 
         [(body, protocol)] = client.calls
         assert (body.prompt, body.agent, body.session_id) == ("what is 2+2", "triage", "s9")
@@ -250,7 +249,7 @@ class TestExecutorThroughTheQueue:
         MCP._client = client
 
         with pytest.raises(ToolError) as excinfo:
-            await MCP.Executor("a").execute("s1", "hi", AsyncMock())
+            await MCP.Executor("a").execute("s1", "hi")
 
         assert str(excinfo.value) == message
 
@@ -287,6 +286,43 @@ class TestExecutorThroughTheQueue:
 
         assert MCP.get_client() is MCP.get_client()
         assert len(built) == 1
+
+
+class TestProtocolVersions:
+    """One server answers both MCP protocols (#933): new clients without a handshake, older ones with it."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stateless_http", [True, False])
+    @pytest.mark.parametrize("mode, version", [("auto", "2026-07-28"), ("legacy", "2025-11-25")])
+    async def test_agent_and_app_tools_answer_on_either_protocol(self, mode, version, stateless_http, mcp_asgi_transport):
+        import warnings
+
+        from fastmcp import Client, FastMCP
+        from mcp.shared.exceptions import MCPDeprecationWarning
+
+        from agentkernel.core.model import AgentReplyText
+
+        queue = _queue_reply(AgentReplyText(response="hello"))
+        server = FastMCP(MCP_NAME)
+        server.tool(MCP.Executor("a").execute, name="a", description="test agent")
+
+        @server.tool
+        def add(x: int) -> int:
+            return x + 1
+
+        app = server.http_app(path="/", stateless_http=stateless_http)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", MCPDeprecationWarning)
+            async with app.router.lifespan_context(app):
+                async with Client(mcp_asgi_transport(app), mode=mode) as client:
+                    replies = [await client.call_tool("a", {"session_id": "s1", "prompt": "hi"}) for _ in range(2)]
+                    added = await client.call_tool("add", {"x": 1})
+                    agreed = client.protocol_version
+
+        assert agreed == version
+        assert [r.content[0].text for r in replies] == ["hello", "hello"]
+        assert [body.session_id for body, _ in queue.calls] == ["s1", "s1"]
+        assert added.data == 2
 
 
 class _NoRunner(Runner):

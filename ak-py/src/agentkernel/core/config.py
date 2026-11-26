@@ -176,9 +176,10 @@ class _MCPConfig(_SurfaceConfig):
     )
     stateless_http: bool = Field(
         default=False,
-        description="Run MCP in stateless HTTP mode. Each request is independent (no Mcp-Session-Id). "
-        "Useful for debugging with MCP Inspector and clients that don't support sessions. "
-        "Trade-off: server-side session features (sampling, mid-call notifications) are unavailable.",
+        description="Serve older (2025-11-25) MCP clients statelessly: each request is independent "
+        "(no Mcp-Session-Id), so any replica can answer it. Set it when more than one replica serves /mcp. "
+        "2026-07-28 clients are always stateless and are not affected. "
+        "Trade-off for older clients: server-side session features (sampling, mid-call notifications) are unavailable.",
     )
 
 

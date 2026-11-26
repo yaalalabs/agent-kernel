@@ -338,3 +338,29 @@ def authorization(monkeypatch):
     _forget()
     yield _install
     _forget()
+
+
+@pytest.fixture
+def mcp_asgi_transport():
+    """Returns a function that builds a FastMCP HTTP transport to an ASGI app, served in-process.
+
+    ``mcp_asgi_transport(app, auth=...)`` gives a ``StreamableHttpTransport`` whose client talks to ``app``
+    with no socket. FastMCP 4's transport takes an ``httpx2`` client only, so the factory builds one.
+    """
+    import httpx2
+    from fastmcp.client.transports import StreamableHttpTransport
+
+    def _transport(app, auth=None):
+        def factory(headers=None, timeout=None, auth=None, **kwargs):
+            return httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app),
+                base_url="http://mcp.test",
+                headers=headers,
+                timeout=timeout or httpx2.Timeout(30),
+                auth=auth,
+                **kwargs,
+            )
+
+        return StreamableHttpTransport("http://mcp.test/", auth=auth, httpx_client_factory=factory)
+
+    return _transport

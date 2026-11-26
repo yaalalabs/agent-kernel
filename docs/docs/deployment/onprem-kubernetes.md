@@ -42,7 +42,7 @@ configuration, not code.
 
 A2A and MCP are served by the io-handler and executed by the agent-runner through the same queues;
 see the example's [A2A and MCP section](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode#a2a-and-mcp)
-for the setup (agents loaded in both images, `mcp.stateless_http` for several io-handler replicas).
+for the setup (agents loaded in both images, `mcp.stateless_http` for older 2025-11-25 MCP clients when several io-handler replicas run).
 
 ## Quick Start
 

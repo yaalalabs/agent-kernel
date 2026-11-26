@@ -1273,7 +1273,7 @@ registry:
 - **Stateless HTTP**
   - **Field**: `mcp.stateless_http`
   - **Default**: `false`
-  - **Description**: Run MCP in stateless HTTP mode (no `Mcp-Session-Id`)
+  - **Description**: Serve older (2025-11-25) MCP clients statelessly (no `Mcp-Session-Id`); set it when several replicas serve `/mcp`. 2026-07-28 clients are always stateless
   - **Environment Variable**: `AK_MCP__STATELESS_HTTP`
 
 - **Endpoint** (not configurable)

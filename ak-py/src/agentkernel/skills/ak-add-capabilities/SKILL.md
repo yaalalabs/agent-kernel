@@ -585,7 +585,8 @@ registry:
      built from the agent registry when it starts. Import the same agent modules in the IO process as in the
      agent runner, or share the registry (`registry.type: redis`, `valkey` or `dynamodb`) and start the runner
      first. Configure a shared `execution.response_store` (redis, valkey or dynamodb) in every execution mode,
-     and set `mcp.stateless_http: true` when more than one IO replica serves `/mcp`.
+     and set `mcp.stateless_http: true` when more than one IO replica serves `/mcp` to older (2025-11-25)
+     clients; 2026-07-28 clients are always stateless.
    - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
      block); failures reach the client as a fixed message, with details in the logs only.
    - Tools you add yourself to `MCP.get()` are your own code and still run in the IO process.

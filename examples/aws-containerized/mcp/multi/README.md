@@ -94,7 +94,7 @@ mcp:
 | ------------------ | ------------------------------------------------------------------------------------------------ |
 | `enabled`          | Enables the MCP server                                                                           |
 | `expose_agents`    | Automatically exposes agents as MCP tools                                                        |
-| `stateless_http`   | Stateless HTTP mode — each request is independent, no `Mcp-Session-Id` (default: `false`)        |
+| `stateless_http`   | Older (2025-11-25) clients only: no `Mcp-Session-Id`, any replica answers (default: `false`)     |
 
 
 Every agent becomes an MCP tool unless its descriptor says otherwise. To keep one off MCP, list the surfaces it

@@ -275,6 +275,8 @@ Rubric for new code:
 - A server-side protocol surface whose caller waits for one whole reply (A2A, MCP) enqueues through
   `pipeline.request_handler.RestHandler.request` with its own `protocol` value, so the agent runs on the
   Agent Runner like every other server surface; it never runs the agent in the IO process.
+  MCP is served by FastMCP 4, which agrees MCP 2026-07-28 or 2025-11-25 per connection; conversation
+  state follows the tools' `session_id` argument, never `Mcp-Session-Id`.
 - Cross-cutting behavior that must apply to every run regardless of surface goes in a `Runtime` pre/post
   hook, not in a service layer.
 - Entry surfaces never call `Runtime` directly.
