@@ -293,6 +293,57 @@ class <Name>Agent(Agent):
 - Store the native agent in `self._native_agent` for access in the Runner
 - Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
 
+### 4b. Gate the Agent's Tools
+
+With an `authorization` block, `Runtime` publishes one `ToolFilter` per run: the tools the run's principal is
+offered and why each other one is refused (#603, spec section 9). **Only the adapter enforces it.** No core
+code stops a tool call, and the base class reports no ungated tools, so an adapter that skips this step loads
+under the block and silently enforces nothing. Read the eight existing gates before writing yours; the shape
+is the same everywhere, the mechanism is the framework's own:
+
+| Mechanism | Adapters | What the gate is |
+|---|---|---|
+| A per-run hook passed on the native call | Pydantic AI, MAF, Claude | `AKToolGateCapability` (`capabilities=`), `AKToolGateMiddleware` (`middleware=`), `_native_options` (`allowed_tools` / `disallowed_tools` plus the `PreToolUse` hook) |
+| A hook set on the native agent at wrap time | OpenAI, ADK, smolagents | `OpenAIToolGate` (`is_enabled` and an input guardrail), `GoogleADKToolGate` (`before_tool_callback`), `SmolagentsToolGate` (`forward` wrapped) |
+| A process-wide hook list | CrewAI | `CrewAIToolGate` (before and after tool-call hooks) |
+| Inside the tools the `ToolBuilder` makes | LangGraph | `LangGraphToolGate` (a compiled graph cannot be changed) |
+
+The rules every gate follows:
+
+- **Read the decision, never make it.** Ask `ToolGate.refusal(name, session=None)` from `agentkernel.core.tool`:
+  the reason, or `None` when the run is not gated or the tool is allowed. Without a session it reads the
+  current `ToolContext`'s, which your runner sets around the native call and which a native hook inherits.
+  It fails closed (a filter it cannot read refuses the tool); if your hook finds the session another way
+  (ADK reads an id from the native state), make that lookup fail closed too.
+- **Call time is required, list time where the framework allows.** Answer a refused call with the reason
+  as the tool's result, never an exception into the framework, so the model reads it and the run carries
+  on. Hide refused tools from the model too when the framework has a hook for what a turn offers.
+- **Nothing changes without the block.** A gate that changes a native object or a process-wide list is put
+  in place only when `Runtime.access_gate()` is not None, at wrap time and again in `attach_tool`, and is
+  idempotent (mark what you wrapped). A per-run hook is added only when `ToolGate.current(session)` returns
+  a filter. The native call stays keyword-for-keyword what it is without the block. Put the gate first and
+  keep the application's own hooks, callbacks or middleware behind it.
+- **What you declare is what you gate.** `ToolFilter.allows` is false for a name the agent never declared,
+  so a gate refuses every tool `get_tool_names()` leaves out. Declare every tool the gate can see, under the
+  name the model calls it by (a toolset's prefix or rename included), and the tools of every agent a run can
+  reach: a run keeps the filter of the agent it started with whichever agent calls the tool (handoff
+  targets, agents used as tools, sub-agents and workflow nodes, managed agents, delegating coworkers,
+  compiled subgraphs). Walk them with one helper the gate and the declaration share.
+- **Leave the framework's control-flow tools alone.** A tool the framework adds to move or end a run
+  (ADK's transfer and structured response, CrewAI's delegation tools, smolagents' `final_answer`) is
+  neither declared nor gated; recognise it by type or by the framework's own key. A policy cannot deny a
+  move between agents; the tools reached afterwards are gated.
+- **Report what you cannot gate.** `ungated_tool_names()` names what the application bound that your gate
+  cannot reach (a tool built outside your `ToolBuilder`, an MCP server listed only inside a run, a tool run
+  in a remote sandbox); under the block such an agent does not load (design Q12).
+  `provider_tool_names()` names what the model provider or the framework runs itself (hosted and built-in
+  tools); it is logged once at startup, not refused.
+- **A paused call is asked again.** When the framework pauses for approval, the resume must be decided by
+  the resume's filter: a policy or a level can change in between (Pydantic AI turns such an approval into a
+  denial; LangGraph and Claude re-check in the gate itself).
+- **Realtime too.** If the framework has a native realtime session, make sure it calls the same gate. The
+  `RealtimeConnection` sets the `ToolContext` at connect and publishes the call's filter (the room's).
+
 ### 5. Implement the ToolBuilder
 
 Subclass `ToolBuilder` from `agentkernel.core.tool`:
@@ -417,6 +468,16 @@ Create tests in `ak-py/tests/`:
 
 Follow the existing test patterns (e.g. `test_openai_runner.py`, `test_smolagents_runner.py`, `test_pydanticai_runner.py`, `test_tool_adk.py`) — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
 
+`tests/test_tool_gates_<name>.py` holds the tool gate (#603), on real SDK objects driven by a scripted model so
+no network is called (see `test_tool_gates_pydanticai.py` and `test_tool_gates_maf.py`): a denied tool is not
+run and the model receives the reason, an allowed one runs beside it, a tool the filter never listed is
+refused, a run that is not gated runs every tool, a streamed run is gated the same, a call approved while
+paused is refused when the resume's filter denies it, the gate runs ahead of an application hook that is
+kept, nothing native changes without the block (and the native call's keywords are the same), the declared
+names are the names a real run serves, `ungated_tool_names` and `provider_tool_names` report what they should,
+and a run through `Runtime` under the `authorization` fixture is decided by the principal's level. Then break
+each rule once and confirm a test fails.
+
 `tests/test_tool_<name>.py` also carries the tool-reporting cases (#603), on real SDK objects: `get_tool_names()` in declaration order, `_tool_descriptions()` for a described and an undescribed tool, the descriptor that results (one skill per tool carrying its description), and the description case: the native description field seeds `descriptor.description`, and an agent with instructions and no description gets an empty one.
 
 ### 13. Add Examples
@@ -431,8 +492,9 @@ Create at minimum:
 - Update `docs/sidebars.js` to include the new framework
 - Landing page (`docs/src/components/`): add an item to the **Agent frameworks & dev tools** row of `INTEGRATION_ROWS` in `HomeSections/integrations.data.tsx` (role `Framework`, `href` to the new page, logo or `react-icons/si` glyph); add `pick("<item name>")` to the **Agent frameworks** card in `ArchitectureOverview/data.tsx`; raise the count in the Build stage's "Adapters for eight agent frameworks" point in `HomeSections/index.tsx` (`STAGES`). Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*
 - Features page (`docs/src/pages/features.tsx`): the **Framework adapters** capability under Build: the count in its `summary` and a `more` link to the new page. Grep `docs/src/pages/*.tsx`, `docs/src/components/FAQ/index.tsx`, the root `README.md` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
+- Add the framework's row to the **Where a denied tool is stopped** table in `docs/docs/advanced/identity-and-access.md`, saying whether a denied tool is hidden from the model, how a refused call is answered, and what the gate cannot reach
 - The framework's own page carries the same sections as the other framework pages: Tool Binding, Structured Output, Per-run context/state, Native run options, Human in the loop (say so when `supports_pause` stays `False`), Features and Example
-- Every other roll call. Grep the whole repo for the most recently added framework's name and compare its hits with the new framework's, e.g. `grep -rIl -i 'pydantic.\?ai' docs/docs docs/src ak-py/src/agentkernel/skills .agents/skills README.md ak-py/README.md`. Typical surfaces: `installation.md` (the framework's section and the `all` extras line), `quick-start.md` (a tab), `examples/overview.md`, the streaming-capable lists (`api/rest-api.md`, `core-concepts/configuration.md`, `core-concepts/overview.md`, the Azure/GCP deployment pages), the AG-UI tables (`api/agui-server.md`, `integrations/agui.md`), `advanced/human-in-the-loop.md`, the traceability depth tables, the native-handle list in `core-concepts/session.md`, `docs/src/components/FrameworkSelector`, the marketing pages under `docs/src/pages/`, the bundled user skills (`ak-build`, `ak-init`, `ak-test`, `ak-add-capabilities`), and the framework lists in the developer skills
+- Every other roll call. Grep the whole repo for the most recently added framework's name and compare its hits with the new framework's, e.g. `grep -rIl -i 'pydantic.\?ai' docs/docs docs/src ak-py/src/agentkernel/skills .agents/skills README.md ak-py/README.md`. Typical surfaces: `installation.md` (the framework's section and the `all` extras line), `quick-start.md` (a tab), `examples/overview.md`, the streaming-capable lists (`api/rest-api.md`, `core-concepts/configuration.md`, `core-concepts/overview.md`, the Azure/GCP deployment pages), the AG-UI tables (`api/agui-server.md`, `integrations/agui.md`), `advanced/human-in-the-loop.md`, the traceability depth tables, the native-handle list in `core-concepts/session.md`, `docs/src/components/FrameworkSelector`, `FRAMEWORKS` in `docs/src/components/AccessFlowDiagram` (the tool gate node), the marketing pages under `docs/src/pages/`, the bundled user skills (`ak-build`, `ak-init`, `ak-test`, `ak-add-capabilities`), and the framework lists in the developer skills
 
 ## Checklist
 
@@ -453,6 +515,9 @@ Create at minimum:
 - [ ] `<Name>Agent.RESERVED_RUN_OPTIONS` declared; `run()` and `stream()` each resolve once with `await agent.resolve_run_options(session, requests)` after the early returns and pass the mapping to `_native_kwargs` and your helpers (#754, #758)
 - [ ] `_native_agent_name` overridden if the registered name is not `agent.name`
 - [ ] `<Name>Agent.get_tool_names()` and `_tool_descriptions()` report the tools declared on the native agent (#603), their docstring says what is left out, no `get_a2a_card()` is defined, and `tests/test_tool_<name>.py` covers the names, the descriptions and the resulting descriptor skills
+- [ ] A tool gate (Step 4b) that refuses a call through `ToolGate.refusal` with the reason as the tool's result, hides refused tools where the framework has a list-time hook, changes nothing without the `authorization` block, and re-checks a call approved while paused
+- [ ] `get_tool_names()` covers every tool the gate can see, under the name the model calls, including the tools of every agent a run can reach; the framework's own control-flow tools are neither declared nor gated
+- [ ] `ungated_tool_names()` and `provider_tool_names()` report what the gate cannot reach and what the provider runs; `tests/test_tool_gates_<name>.py` covers the gate, and the framework has a row in the identity page's tool table
 - [ ] `<Name>Agent._native_description()` returns the framework's own description field if it has one apart from the instructions, and is left at the default otherwise; `tests/test_tool_<name>.py` asserts both that the field seeds `descriptor.description` and that instructions alone seed nothing
 - [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an OAK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module; a factory-merged mapping (a mock whose `resolve_run_options` returns it) wins over the static key at the native call, and `resolve_run_options` is awaited exactly once per `run` and per `stream` (#758)
 - [ ] CLI example in `examples/cli/<name>/`

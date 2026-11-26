@@ -206,7 +206,11 @@ pins every dependency with.
   `title` saying so, as Auth0, Okta and Keycloak have); and the provider lines in the `points` of
   the **Identity and access** capability under Guard in `docs/src/pages/features.tsx`. The home
   page announcement (`HomeSections/Announcement.tsx`) names the providers while identity is the
-  newest capability. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`.
+  newest capability. A new short `type` name also joins the provider list of the two access
+  diagrams: `PROVIDERS` in `docs/src/components/AccessFlowDiagram` (the features page's closer
+  look) and the identity provider node of the Mermaid diagram under *How it fits together* in
+  `docs/docs/advanced/identity-and-access.md`. Logo sourcing and the build check are in
+  `ak-dev-sync-docs-from-branch`.
 
 ## Gotchas
 

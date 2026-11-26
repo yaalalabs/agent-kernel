@@ -43,6 +43,69 @@ def whoami() -> str:
 | **Authorization** | An `authorization` block grants principals a level (`read`, `write`, `admin`) on agents. With it, a caller runs only the agents it is granted and sees only the ones it may see; without it nothing is restricted. See [Authorization](#authorization). |
 | **Extra** | `oidc`, `cognito`, `entra` and `firebase` need `agentkernel[auth]` (PyJWT, cryptography, httpx). `static` needs nothing extra. |
 
+## How it fits together
+
+Authentication decides who is calling; authorization decides what that caller may do. OAK does the
+first once, where a request enters, and the second twice: at the surface, before anything is queued, and
+again where every run starts, down to the tools the agent may call.
+
+```mermaid
+flowchart TD
+    Caller["Caller<br/>person, service, messaging sender, voice caller, CLI"]
+    Surface["Surface<br/>REST · A2A · MCP · AG-UI · WebSocket · messaging · LiveKit · CLI"]
+    Caller -->|"bearer token, or the platform's identity"| Surface
+
+    subgraph authn ["1 · Authentication: who is calling"]
+        Provider["Identity provider<br/>oidc · cognito · entra · firebase · static · your own"]
+        Mapper["Role mapper<br/>groups and claims to roles"]
+        Principal(["Principal<br/>subject · provider · namespace · groups · roles"])
+        Provider --> Mapper --> Principal
+    end
+
+    Surface -->|"verify the credential"| Provider
+    Surface -.->|"messaging and voice edges name the platform's sender"| Principal
+    Provider -.->|"credential refused"| Unauthorized["401"]
+
+    subgraph authz ["2 · Authorization: what the caller may do"]
+        Registry[("Agent registry<br/>visibility · surfaces · tags · tools")]
+        Authorizer["Authorizer<br/>grants and tool policy, static or your own"]
+        Gate{{"Access gate"}}
+        Registry --> Gate
+        Authorizer --> Gate
+    end
+
+    Principal --> Gate
+    Gate -->|"at the surface, before anything is queued"| Edge["Agent check and the caller's catalog"]
+    Edge -.->|"hidden: 404 · no level: 403"| Refused["Refused"]
+    Gate -->|"where every run starts"| Admit["Run admitted<br/>level · session owner · tool filter"]
+    Admit --> Run["Agent run<br/>principal and tool filter published for the run"]
+    Run --> ToolGate["Framework tool gate<br/>every adapter, voice calls included"]
+    ToolGate -->|"allowed"| Tool["Tool runs"]
+    ToolGate -->|"denied"| Reason["Hidden, or answered with the reason"]
+```
+
+1. **A caller presents a credential** to the surface it uses: a bearer token on HTTP, a token on the
+   WebSocket handshake or the CLI. A messaging platform or a voice room vouches for its own sender
+   instead.
+2. **The identity provider verifies it** and returns a [principal](#the-principal): who the caller is,
+   which provider and namespace vouched for it, and its groups. The role mapper adds roles. A credential
+   that does not verify is a `401`; a request with none runs as the anonymous principal. Messaging and
+   voice edges build the principal from the platform's sender (`messaging:<platform>`,
+   `realtime:<gateway>`).
+3. **The access gate decides** from two things: the agent registry, which says which agents exist and
+   how each is described, and the authorizer, which holds the grants and the tool policy of the
+   [`authorization` block](#authorization). Without the block nothing is restricted.
+4. **At the surface**, before a session is loaded or anything is queued, the gate checks that the
+   caller may use the agent it named and narrows what the caller is listed. An agent it may not see is a
+   `404`, exactly as if it did not exist; one it sees and holds no level on is a `403`.
+5. **Where every run starts**, the gate asks again, whichever surface the request came through: the
+   caller's level on the agent, whether the [session](#sessions) is its to continue, and the run's tool
+   filter. The principal and the filter are published for the run, where tools and hooks read them.
+6. **The framework adapter's tool gate** applies the filter: a denied tool is kept from the model, or a
+   call to it is answered with the reason instead of running ([where a denied tool is
+   stopped](#where-a-denied-tool-is-stopped)). [Scheduled tasks](#scheduled-tasks) are decided again
+   when they fire, and a paused tool call when its approval arrives.
+
 ## Configuration
 
 ```yaml

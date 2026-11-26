@@ -1337,6 +1337,45 @@ objects in `tests/test_tool_<adapter>.py`:
   - **Phase E's code is complete.** Left open: whether a participant who joins a call opened by
     someone else may speak to the agent at all (only their tools are narrowed today).
 
+### Phase E as shipped
+
+What phase E delivered, and what it settled beyond the iteration plans, before it merged
+(2026-11-26). Each point is recorded in the spec section it changes.
+
+- **Code.** `ToolGate` in `core/tool.py` and a gate in all eight adapters (iterations 21 to 23),
+  with the realtime call gated through the room's filter and the Q12 refusal live. Spec
+  refinements 20 to 22 hold what building them settled: a gate refuses a tool the agent does
+  not declare; what a run can reach is declared under the agent it started with; a framework's
+  own control-flow tools are not gated; a gate that changes a native object is put in place only
+  under the block; a realtime room runs its tools as all of its speakers.
+- **The phase C review's undeclared tools.** Closed: Pydantic AI prefixed and renamed toolsets,
+  LangGraph compiled subgraphs, ADK nested workflows and callable objects, smolagents managed
+  agents (and `final_answer` no longer declared), OpenAI handoff targets and agents used as
+  tools. Refused under the block instead: an OpenAI agent's `mcp_servers` and a handoff that
+  does not hold its agent (`realtime_handoff` among them).
+- **Docs.** Written iteration by iteration, then checked at the end of the phase:
+  `advanced/identity-and-access.md` (the framework table, the realtime room, the startup refusal
+  and warning), `core-concepts/configuration.md`, `ak-py/README.md`, the bundled
+  `ak-add-capabilities` skill; and in the end-of-phase pass, What's New, the features page's
+  Authorization capability, the landing page's Guard point and the root `README.md` Guard row.
+  Added at the user's request (2026-11-26): one diagram of authentication and authorization
+  together, components and flow, as a Mermaid flowchart under *How it fits together* on the
+  identity page and as `AccessFlowDiagram`, a closer look below the sandbox's on the features
+  page. Both name the providers and the frameworks, so the docs-sync, identity-provider and
+  framework-integration skills list them among the roll calls to update.
+- **Changelog.** Phase D's pending `603.added.md` corrected in place, since it has not been
+  released, where the phase D plan expected a new `603.added.1.md`; `603.changed.2.md` (what the
+  catalog lists) and `603.breaking.3.md` (the agents that no longer load under the block) added.
+- **Dev skills.** `ak-dev-architecture` and `ak-dev-testing-conventions` in step with each
+  iteration, and `ak-dev-new-framework-integration` gains Step 4b, the tool gate a new adapter
+  must ship (its rules, the mechanisms by framework, the test suite and the checklist items).
+  That closes what iteration 28 step 2 left for phase E.
+- **Known limits, each in the spec:** OpenAI's realtime session answers a denied tool `Tool <name>
+  not found`; MAF's hosted tools given as dicts are not reported; a tool a LangGraph node calls
+  without a `ToolNode` is seen by nothing; CrewAI is verified through the uv overlay only.
+- **Left open:** whether a participant who joins a call opened by someone else may speak to the
+  agent at all. Today their presence only narrows the room's tools.
+
 ## Phase F: Credentials (iterations 24 to 25)
 
 ### Iteration 24: Credential store
@@ -1379,8 +1418,9 @@ The docs and skills for phases A and B landed with phase B itself (PR #937: the 
 the docs-site and README updates, the landing-page tiles, `ak-dev-new-identity-provider` and the
 user-skill updates), those for phase C with phase C (see "Phase C as shipped"), and the docs for
 phase D with phase D (see "Phase D as shipped", decided 2026-11-25: a phase is not merged with
-its user documentation behind it), so iterations 27 and 28 cover what phases E and F add, the
-one dev skill phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
+its user documentation behind it), and the docs and dev skills for phase E with phase E (see
+"Phase E as shipped"), so iterations 27 and 28 cover what phase F adds, the one dev skill
+phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
 
 ### Iteration 26: Test walk
 
@@ -1440,8 +1480,9 @@ one dev skill phase D still owes (`ak-dev-new-authorizer`), and re-verify the re
   2. Landed with phase C, re-verify here: `ak-dev-new-framework-integration` describes the
      adapter contract without `get_a2a_card`, with `get_tool_names` and `_tool_descriptions` in
      its place (the card comes from the descriptor), and the stub agent in
-     `ak-dev-testing-conventions` lost the method. Still to add: `ungated_tool_names` and the tool
-     gate, with phase E. Verify no update is needed for `ak-dev-write-spec`,
+     `ak-dev-testing-conventions` lost the method. The tool gate, `ungated_tool_names` and
+     `provider_tool_names` landed with phase E (Step 4b; see "Phase E as shipped"); re-verify them
+     here. Verify no update is needed for `ak-dev-write-spec`,
      `ak-dev-review-pr`, the other `ak-dev-new-*` skills, `ak-build`, `ak-init` and `ak-test`.
   3. Wherever `ak-add-capabilities` and `ak-cloud-deploy` list the identity providers, Auth0 is
      named as a supported provider with its `oidc` block (decided 2026-11-10), and the
