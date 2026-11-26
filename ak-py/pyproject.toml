@@ -211,7 +211,7 @@ a2a = [
     "uvicorn>=0.37.0,<0.53.0",
 ]
 mcp = [
-    "fastmcp>=3.4.10,<4.0.0"
+    "fastmcp>=4.2,<5"
 ]
 multimodal = [
     "litellm>=1.100.3,<2.0.0",
@@ -257,6 +257,11 @@ conflicts = [
     [
         { extra = "crewai" },
         { extra = "test" },
+    ],
+    # crewai pins mcp<2 in every release (crewAIInc/crewAI#6750 closed, not planned) and fastmcp 4 needs mcp>=2.3
+    [
+        { extra = "crewai" },
+        { extra = "mcp" },
     ],
 ]
 

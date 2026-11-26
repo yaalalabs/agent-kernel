@@ -1,12 +1,12 @@
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
-from fastmcp import Context, FastMCP
+from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthCheck, AuthContext
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.http import StarletteWithLifespan
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools import ToolResult
 
 from ...core.config import AKConfig
 from ...core.model import AgentDescriptor, BaseRunRequest
@@ -78,7 +78,7 @@ class MCP:
             self.agent_name = agent_name
             self.log = logging.getLogger(f"ak.mcp.executor.{agent_name}")
 
-        async def execute(self, session_id: str, prompt: str, ctx: Context) -> Any:
+        async def execute(self, session_id: str, prompt: str) -> Any:
             """Run the agent on the agent runner and return its reply in the richest shape MCP can carry.
 
             The reply is the body the runner stored, so a structured payload arrives as the object
@@ -105,7 +105,7 @@ class MCP:
             """
             from ...pipeline.request_handler import ReplyTimeoutError
 
-            await ctx.info(f"Executing agent '{self.agent_name}' with prompt: {prompt} with session_id: {session_id}")
+            self.log.debug(f"Executing agent '{self.agent_name}' for session_id={session_id}")
             # The principal the verifier put on this call's access token; a server built without
             # auth, or a token another verifier minted, authenticated nobody we know.
             principal = AKAccessToken.principal_of(get_access_token())
@@ -129,7 +129,6 @@ class MCP:
                 self.log.error(f"Agent reply failed: request_id={reply.request_id}, status_code={reply.status_code}, error={reply.error}")
                 raise ToolError(self.ERROR_MESSAGE)
 
-            await ctx.debug(f"Agent response '{reply.result}'")
             if reply.media_type:
                 meta: dict[str, Any] = {"media_type": reply.media_type}
                 if isinstance(reply.result, dict):
