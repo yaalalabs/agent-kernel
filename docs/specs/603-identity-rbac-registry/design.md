@@ -759,8 +759,8 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
   - ADK's `FinishTaskTool` is a control-flow tool like transfer.
   - CrewAI: the gate's before hook runs first, and a call is decided by the tool's declared name.
   - smolagents: a code agent's tools see the run's context on the local executor's worker thread.
-  - Realtime: a participant the authorizer cannot answer for leaves the room no tool, and the next
-    input asks again.
+  - Realtime: a participant the authorizer cannot answer for leaves the room no tool, whoever speaks
+    next, and their next input asks again.
 - Every adapter resolves nothing itself: it reads `TOOL_FILTER_CACHE_KEY` from the session's
   volatile cache (set by `Runtime`), so with no `authorization` block the filter is absent and the
   native calls are keyword-for-keyword what they are today (the #754 invariant).

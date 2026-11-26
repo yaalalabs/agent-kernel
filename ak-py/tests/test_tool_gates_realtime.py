@@ -223,6 +223,58 @@ class TestTheRoomsFilter:
         assert (published.level, published.allowed) == (AccessLevel.READ, frozenset({"lookup"}))
 
     @pytest.mark.asyncio
+    async def test_a_participant_not_yet_answered_for_still_narrows_the_room_when_another_speaks(self, call, monkeypatch):
+        # bob has spoken, so the room stays without tools while his decision is missing, whoever speaks next; it is
+        # asked for again on his next input, and then the room is what both of them may use.
+        from agentkernel.identity.authz.gate import AccessGate
+
+        connection = call()
+        asked: list[str] = []
+        working = AccessGate.tool_filter
+
+        def flaky(self, principal, agent, level=None):
+            asked.append(principal.subject)
+            if principal.subject == "bob" and asked.count("bob") == 1:
+                raise RuntimeError("the policy engine is down")
+            return working(self, principal, agent, level)
+
+        monkeypatch.setattr(AccessGate, "tool_filter", flaky)
+        await _speak(connection, BOB, ALICE)
+        after_alice = connection.session.get_tool_filter()
+        await _speak(connection, ALICE)
+        assert asked == ["bob", "alice"]  # alice's own repeated input asks nobody again
+        await _speak(connection, BOB)
+
+        assert after_alice.allowed == frozenset()
+        assert after_alice.reason("refund") == "tool gate failed: RuntimeError"
+        assert asked == ["bob", "alice", "bob"]
+        published = connection.session.get_tool_filter()
+        assert (published.level, published.allowed) == (AccessLevel.READ, frozenset({"lookup"}))
+        assert published.reason("refund") == REFUND_FOR_READ
+
+    @pytest.mark.asyncio
+    async def test_a_room_decision_that_fails_for_another_reason_leaves_no_tool_and_raises_nothing(self, call, monkeypatch):
+        # Raising would hand the input back to the pool's queue; the room loses its tools and the next input asks again.
+        connection = call()
+        await _speak(connection, ALICE)
+        working, calls = Runtime._acting, []
+
+        def broken_once(agent, principal):
+            calls.append(principal)
+            if len(calls) == 1:
+                raise RuntimeError("the acting principal could not be built")
+            return working(agent, principal)
+
+        monkeypatch.setattr(Runtime, "_acting", staticmethod(broken_once))
+        await _speak(connection, BOB)
+        while_broken = connection.session.get_tool_filter()
+        await _speak(connection, BOB)
+
+        assert while_broken.allowed == frozenset()
+        assert while_broken.reason("lookup") == "tool gate failed: RuntimeError"
+        assert connection.session.get_tool_filter().allowed == frozenset({"lookup"})
+
+    @pytest.mark.asyncio
     async def test_closing_the_call_unpublishes_the_filter(self, call):
         connection = call()
         await _speak(connection, ALICE)

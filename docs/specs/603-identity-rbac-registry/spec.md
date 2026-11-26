@@ -1469,7 +1469,8 @@ is.
   publishes their intersection (`RealtimeConnection._room_tool_filter`): a tool is offered only
   when every one of them may use it, at the lowest of their levels, and a participant holding no
   level on the agent leaves the room no tool. A participant the authorizer cannot answer for
-  (it raises) leaves the room no tool until a later input of theirs is answered (review of #1018). The order of speakers changes nothing, so the race
+  (it raises) leaves the room no tool, whoever speaks next, until a later input of theirs is
+  answered (review of #1018). The order of speakers changes nothing, so the race
   decides no tool. The principal a tool reads, and the owner recorded, are still the last
   speaker's; whether a participant may speak to the agent at all is still asked only of the
   caller who opened the call.
@@ -2080,10 +2081,14 @@ Shared pieces (`core/`):
     replaces that `timeout` once for the process, under the block, with one that runs the code in
     a copy of the caller's context.
   - **Realtime, a filter that cannot be decided.** When the authorizer raises for a participant
-    (anything but the `PermissionError` of no level), `publish_principal` publishes a filter that
-    allows no tool, each refused with `tool gate failed: <type>`, logs a warning, and does not
-    record the input as published, so the next input asks again. Raising would have handed the
-    input back to the pool's queue to be retried, every audio chunk of it.
+    (anything but the `PermissionError` of no level), the participant is kept as unanswered
+    (`RealtimeConnection._unanswered`, with the reason `tool gate failed: <type>`) and the room is
+    offered no tool while any participant is unanswered, whoever speaks next; a warning is logged.
+    The speaker's input is not counted as published while they are unanswered, so their next input
+    asks the authorizer again, and a decision it gives replaces the unanswered entry. Any other
+    failure in deciding the room's filter publishes a filter that allows no tool, with the same
+    reason, and is retried on the next input. Raising would have handed the input back to the pool's
+    queue to be retried, every audio chunk of it.
 - Composition rule everywhere: AK's check runs first; a user-set hook, callback, middleware,
   capability or `is_enabled` value is preserved and runs after (OpenAI `is_enabled` is an AND of
   both; ADK and MAF lists are AK-first; CrewAI's before hook goes first in its global list).

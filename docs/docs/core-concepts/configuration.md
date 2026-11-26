@@ -690,8 +690,8 @@ export AK_AUTHORIZATION__STATIC__TOOLS='[{"agent": "support-triage", "deny": ["p
   nobody, a caller without a credential included, unless a grant names `*`.
 - **Tool policy.** `tiers`, `allow` and `deny` decide which tools each level is offered. The decision is published
   for every run and narrows the tools and skills the catalog and A2A cards list. A call to a denied tool is
-  answered with the reason instead of running on every supported framework (the OpenAI Agents SDK, Pydantic AI, Microsoft Agent Framework, the Claude Agent SDK, Google ADK, CrewAI, LangGraph and smolagents) and on realtime
-  calls, and on the OpenAI Agents SDK, Pydantic AI, the Claude Agent SDK and Microsoft Agent Framework the tool is also hidden from the model. Tools the provider runs are logged, not gated
+  not run on any supported framework (the OpenAI Agents SDK, Pydantic AI, Microsoft Agent Framework, the Claude Agent SDK, Google ADK, CrewAI, LangGraph and smolagents) or realtime call, and is answered with the reason,
+  except on an OpenAI Agents SDK realtime call, which answers `Tool <name> not found`. On the OpenAI Agents SDK, Pydantic AI, the Claude Agent SDK and Microsoft Agent Framework the tool is also hidden from the model. Tools the provider runs are logged, not gated
   ([where a denied tool is stopped](../advanced/identity-and-access.md#where-a-denied-tool-is-stopped)).
 - **Every process.** Put the same block in the configuration of the process that accepts requests and of the
   process that runs the agents: the first answers early and filters the listings, the second enforces every run.

@@ -145,6 +145,9 @@ class RealtimeConnection:
         # The tool decision for each participant who has spoken in the call, by provider, namespace and
         # subject; None for one holding no level on the agent. Only filled with an `authorization` block.
         self._participants: dict[tuple[str, str | None, str], ToolFilter | None] = {}
+        # Participants who have spoken but whose decision the authorizer could not give, with the reason each
+        # tool is refused meanwhile. While one is here the room is offered no tool.
+        self._unanswered: dict[tuple[str, str | None, str], str] = {}
         # Lifecycle. Moved from consumer threads (mark_closed) and from the loop (connect, close), so
         # every move happens under the lock.
         self._state = RealtimeConnection._State.CONNECTING
@@ -342,10 +345,10 @@ class RealtimeConnection:
         is an input.
 
         With an ``authorization`` block the call's tool filter is published with it: the room's
-        (``_room_tool_filter``), which the tool gates of the framework adapters read. If the authorizer cannot
-        answer for this participant, the room is left no tool rather than the filter it had, and the input is
-        not counted as published, so the next one asks again. Nothing is raised: the pool would hand the input
-        back to the queue to be retried, every audio chunk of it.
+        (``_room_tool_filter``), which the tool gates of the framework adapters read. While the authorizer cannot
+        answer for this participant the room is left no tool, and the input is not counted as published, so
+        their next one asks again. Nothing is raised: the pool would hand the input back to the queue to be
+        retried, every audio chunk of it.
 
         :param principal: The input's principal, or None when it named nobody (anonymous).
         """
@@ -361,8 +364,17 @@ class RealtimeConnection:
             self._principal_published = False
             return
         self.principal = principal
-        self._principal_published = True
+        self._principal_published = not self._unanswered or self._participant(principal)[1] not in self._unanswered
         self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal, tool_filter)
+
+    def _participant(self, principal: Principal | None) -> tuple[Principal, tuple[str, str | None, str]]:
+        """The principal a participant's tools are decided for, and the key the call keeps their decision by.
+
+        :param principal: The principal of an input, or None for an anonymous one.
+        :return: The acting principal and its provider, namespace and subject.
+        """
+        acting = self.runtime._acting(self.agent, principal)
+        return acting, (acting.provider, acting.namespace, acting.subject)
 
     def _room_tool_filter(self, principal: Principal | None) -> ToolFilter | None:
         """The tool decision for the call, with ``principal`` among those who have spoken in it.
@@ -371,7 +383,9 @@ class RealtimeConnection:
         so the decision is the room's, not the speaker's: a tool is offered only when every participant
         who has spoken may use it, at the lowest level among them, and one holding no level on the agent
         leaves the room no tool. Who spoke last changes nothing, so no participant borrows another's level
-        (spec #603, section 8.4, design refinement 22). Each participant is asked about once.
+        (spec #603, section 8.4, design refinement 22). Each participant is asked about once their decision
+        is given; one the authorizer could not answer for leaves the room no tool, whoever speaks next, and
+        is asked again on their own next input.
 
         :param principal: The principal of the input just dispatched, or None for an anonymous one.
         :return: The room's filter, or None without an ``authorization`` block.
@@ -379,31 +393,41 @@ class RealtimeConnection:
         gate = Runtime.access_gate()
         if gate is None:
             return None
-        acting = self.runtime._acting(self.agent, principal)
-        key = (acting.provider, acting.namespace, acting.subject)
+        acting, key = self._participant(principal)
         if key not in self._participants:
             try:
                 self._participants[key] = gate.tool_filter(acting, self.agent)
+                self._unanswered.pop(key, None)
             except PermissionError:
                 self._participants[key] = None
-        return self._shared(list(self._participants.values()))
+                self._unanswered.pop(key, None)
+            except Exception as error:
+                self._log.warning(
+                    f"Realtime session {self.session_id}: the tool filter of a participant could not be decided, so no tool is offered: {error!r}"
+                )
+                self._unanswered[key] = f"{ToolGate.FAILED}: {type(error).__name__}"
+        return self._shared(list(self._participants.values()), list(self._unanswered.values()))
 
-    def _shared(self, filters: list[ToolFilter | None]) -> ToolFilter:
+    def _shared(self, filters: list[ToolFilter | None], unanswered: list[str]) -> ToolFilter:
         """The tool decision every participant's allows.
 
-        :param filters: Each participant's filter, None for one holding no level on the agent.
-        :return: The tools all of them are offered, the lowest of their levels, and for every other tool the
-            reason of a participant denied it.
+        :param filters: Each answered participant's filter, None for one holding no level on the agent.
+        :param unanswered: The refusal reason for each participant the authorizer could not answer for.
+        :return: The tools all of them are offered (none while one is unanswered or holds no level), the lowest
+            of their levels, and for every other tool the reason of a participant denied it.
         """
         holding = [each for each in filters if each is not None]
-        allowed = frozenset.intersection(*(each.allowed for each in holding)) if holding and len(holding) == len(filters) else frozenset()
+        everyone = bool(holding) and len(holding) == len(filters) and not unanswered
+        allowed = frozenset.intersection(*(each.allowed for each in holding)) if everyone else frozenset()
         reasons: dict[str, str] = {}
         for name in self.agent.get_tool_names():
             if name in allowed:
                 continue
             denial = next((each.reason(name) for each in holding if not each.allows(name)), None)
-            reasons[name] = denial or (
-                f"Tool '{name}' is not available while a participant in this call holds no level on agent '{self.agent.descriptor.id}'"
+            reasons[name] = (
+                denial
+                or next(iter(unanswered), None)
+                or f"Tool '{name}' is not available while a participant in this call holds no level on agent '{self.agent.descriptor.id}'"
             )
         # The call was opened for a caller holding a level, so one participant at least holds one.
         level = min((each.level for each in holding), default=AccessLevel.READ)

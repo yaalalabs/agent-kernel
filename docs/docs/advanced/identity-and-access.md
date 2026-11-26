@@ -589,7 +589,8 @@ entry lists:
   Agent Framework and Google ADK they are left out of, or refused in, a run that has an
   `authorization` block. An OpenAI Agents SDK agent with `mcp_servers`, or with a handoff built by
   hand that does not hold its agent, does not load while the block is configured: the error names
-  what could not be gated.
+  what could not be gated. A Claude Agent SDK agent's other MCP servers are the exception: they stay
+  outside the gate, as the hosted and built-in tools below do.
 - **Agents a run can reach.** A run keeps the policy of the agent it started with, whichever agent
   ends up calling a tool. So the tools of the agents it can reach are listed under that agent and
   take their tiers from its policy; state them there. That covers the agents an OpenAI agent hands

@@ -1231,9 +1231,10 @@ deleted).
   under the block, with one that runs the code in a copy of the caller's context.
   **Realtime**: no pool-side check. `RealtimeConnection.publish_principal` publishes the room's
   filter (`_room_tool_filter`: the intersection of every participant who has spoken, the lowest
-  level, no tool while one holds no level; an authorizer that raises for a participant publishes a
-  filter allowing nothing, with `tool gate failed: <type>` reasons, and leaves the input unpublished
-  so the next asks again), and the gates on the native agents act on it (ADK's live
+  level, no tool while one holds no level; a participant the authorizer raises for is kept in
+  `_unanswered` with a `tool gate failed: <type>` reason, the room is offered nothing while any is
+  unanswered, whoever speaks, and that participant's next input asks again), and the gates on the
+  native agents act on it (ADK's live
   flow calls `before_tool_callback`; OpenAI's realtime session asks `is_enabled` per call and answers
   a denied tool `Tool <name> not found`). **Provider-run tools**: `Agent.provider_tool_names()`
   (OpenAI hosted tools, ADK tools with no function declaration, Claude Code built-ins and
