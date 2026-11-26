@@ -176,6 +176,7 @@ class Test:
         threshold: float = 0.5,
         mode: Mode = None,
         return_metrics: bool = False,
+        criteria: str | None = None,
     ) -> AKEvaluationResult | None:
         """
         Compare an actual string against a list of expected strings using the specified mode.
@@ -193,6 +194,9 @@ class Test:
             (score-based or LLM-judge) may score outside that range. Not validated here. Default is 0.5.
         :param mode: Comparison mode - 'score', 'llm', or 'fallback'. Default is 'fallback'.
         :param return_metrics: If True, return the decisive AKEvaluationResult instead of raising on failure.
+        :param criteria: Optional plain-language rubric for the llm judge (llm and fallback modes), replacing the
+            default rubric, e.g. "must acknowledge the happiness; any follow-up question is fine". Use it when only
+            part of a free-form reply is deterministic. Ignored by score mode.
         :raises AssertionError: If the actual string doesn't match any expected string and return_metrics is False.
         :return: The decisive AKEvaluationResult if return_metrics is True, else None.
         """
@@ -208,7 +212,7 @@ class Test:
         decisive: AKEvaluationResult | None = None
 
         for exp in expected:
-            case = AKEvaluationCase(user_input=user_input, actual=actual, expected=exp, threshold=threshold)
+            case = AKEvaluationCase(user_input=user_input, actual=actual, expected=exp, threshold=threshold, criteria=criteria)
 
             if selected_mode == Mode.SCORE:
                 result, result_mode = evaluator.evaluate_by_score(case), Mode.SCORE
@@ -256,12 +260,13 @@ class Test:
             return f"Response didn't pass llm evaluation against any expected. Expected: {expected}, Received: {actual}"
         return f"Response didn't pass score matching or llm evaluation. Expected: {expected}, Received: {actual}"
 
-    async def expect(self, expected: list[str], return_metrics: bool = False) -> AKEvaluationResult | None:
+    async def expect(self, expected: list[str], return_metrics: bool = False, criteria: str | None = None) -> AKEvaluationResult | None:
         """
         Asserts that the last response received from the CLI matches the expected message.
         Uses the mode specified during Test initialization.
         :param expected: The expected message variants.
         :param return_metrics: If True, return the decisive AKEvaluationResult instead of raising on failure.
+        :param criteria: Optional plain-language rubric for the llm judge; see compare().
         """
         if self.last_agent_response is None:
             raise AssertionError("No response available to compare. Ensure send() was called before expect().")
@@ -272,6 +277,7 @@ class Test:
             threshold=self.match_threshold,
             mode=self.mode,
             return_metrics=return_metrics,
+            criteria=criteria,
         )
 
     async def _drain_stderr(self):

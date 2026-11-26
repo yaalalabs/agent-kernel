@@ -67,7 +67,7 @@ mcp:
   enabled: true
   expose_agents: true  # Every agent becomes a tool unless its descriptor's surfaces leave mcp out
   url: "http://localhost:8000/mcp"  # Public URL of the endpoint, named by the OAuth resource metadata (default: http://localhost:8000/mcp)
-  stateless_http: false  # Run in stateless HTTP mode (default: false)
+  stateless_http: false  # Serve older (2025-11-25) MCP clients statelessly; 2026-07-28 clients always are (default: false)
 
 # WebSocket API configuration (for AWS serverless deployments)
 websocket_api:
@@ -693,7 +693,10 @@ export AK_AUTHORIZATION__STATIC__TOOLS='[{"agent": "support-triage", "deny": ["p
   holds the highest level its grants give. The policy denies by default: an agent nobody is granted is run by
   nobody, a caller without a credential included, unless a grant names `*`.
 - **Tool policy.** `tiers`, `allow` and `deny` decide which tools each level is offered. The decision is published
-  for every run and narrows the tools and skills the catalog and A2A cards list. It does not stop a tool call yet.
+  for every run and narrows the tools and skills the catalog and A2A cards list. A call to a denied tool is
+  not run on any supported framework (the OpenAI Agents SDK, Pydantic AI, Microsoft Agent Framework, the Claude Agent SDK, Google ADK, CrewAI, LangGraph and smolagents) or realtime call, and is answered with the reason,
+  except on an OpenAI Agents SDK realtime call, which answers `Tool <name> not found`. On the OpenAI Agents SDK, Pydantic AI, the Claude Agent SDK and Microsoft Agent Framework the tool is also hidden from the model. Tools the provider runs are logged, not gated
+  ([where a denied tool is stopped](../advanced/identity-and-access.md#where-a-denied-tool-is-stopped)).
 - **Every process.** Put the same block in the configuration of the process that accepts requests and of the
   process that runs the agents: the first answers early and filters the listings, the second enforces every run.
 - **Startup checks.** An unusable grant or policy, and a tool policy naming a tool its agent does not have, stop the
@@ -1129,7 +1132,8 @@ mcp:
   expose_agents: false          # Expose agents as MCP tools
   url: "http://localhost:8000/mcp"  # Public URL clients reach the endpoint at (behind a proxy, the public one). With an
                                 # OpenID-family identity provider it is the resource the RFC 9728 metadata names
-  stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
+  stateless_http: false         # Older (2025-11-25) clients only: each request is independent, no Mcp-Session-Id;
+                                # set it when several replicas serve /mcp. 2026-07-28 clients are always stateless (default: false)
 
 # Messaging platform integrations
 slack:

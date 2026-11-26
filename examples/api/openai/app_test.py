@@ -61,20 +61,23 @@ async def test_support_agent(http_client):
     response = await http_client.send("I am Andy Dufresne. I did some deposits.")
     Test.compare(
         response,
-        [
-            " Hello Andy! I noticed that you made a mobile check deposit of $250. Could you tell me how satisfied you were with the mobile check deposit process?"
-        ],
+        ["Hello Andy! I see you made a deposit of $250."],
         threshold=0.1,
+        criteria=(
+            "The reply must greet Andy and mention the $250 deposit. "
+            "Any wording of the deposit or follow-up question about it is acceptable and must not be penalized."
+        ),
     )
 
     response = await http_client.send("I was extremely happy")
     Test.compare(
         response,
-        [
-            "That's great to hear! What specifically made the experience enjoyable for you?",
-            "Glad to hear that! Did the deposit of $250 go smoothly, without any issues or delays?",
-        ],
+        ["That's great to hear!"],
         threshold=0.1,
+        criteria=(
+            "The reply must warmly acknowledge that the customer was happy. "
+            "Any follow-up question about their experience is acceptable and must not be penalized."
+        ),
     )
 
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})

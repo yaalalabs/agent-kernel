@@ -26,7 +26,7 @@ class AKEvaluationCase(BaseModel):
     expected: str | None = None
     threshold: float = 0.5  # the score/pass cutoff the evaluator must weigh its own passed against
     context: list[str] | None = None  # carried, unpopulated in v1 (no shipped metric reads it)
-    criteria: str | None = None  # carried, unpopulated in v1 (llm mode uses AK's default rubric)
+    criteria: str | None = None  # optional llm-judge rubric from Test.compare/expect; unset uses AK's default rubric
 
 
 class AKEvaluationResult(BaseModel):

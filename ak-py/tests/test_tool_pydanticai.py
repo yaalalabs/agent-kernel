@@ -257,3 +257,55 @@ class TestPydanticAIAgentToolReporting:
 
     def test_an_agent_with_no_tools_reports_none(self):
         assert self._agent().get_tool_names() == []
+
+    def _agent_with(self, *toolsets):
+        from pydantic_ai import Agent as NativeAgent
+        from pydantic_ai.models.test import TestModel
+
+        from agentkernel.framework.pydanticai.pydanticai import PydanticAIAgent, PydanticAIRunner
+
+        native = NativeAgent(model=TestModel(custom_output_text="ok"), name="billing", toolsets=list(toolsets))
+        return PydanticAIAgent("billing", PydanticAIRunner(), native)
+
+    async def _served(self, agent) -> list[str]:
+        """The names the SDK serves the agent's tools under in a run: what the model is shown and calls."""
+        from pydantic_ai.models.test import TestModel
+
+        model = TestModel(call_tools=[], custom_output_text="ok")  # the tools are listed to it; it calls none
+        await agent.agent.run("hi", model=model)
+        return [definition.name for definition in model.last_model_request_parameters.function_tools]
+
+    @pytest.mark.asyncio
+    async def test_a_tool_behind_a_prefix_is_reported_under_the_name_the_model_calls(self):
+        from pydantic_ai import FunctionToolset
+
+        agent = self._agent_with(FunctionToolset([get_weather, add]).prefixed("crm"))
+
+        assert agent.get_tool_names() == ["crm_get_weather", "crm_add"]
+        assert agent.get_tool_names() == await self._served(agent)
+
+    @pytest.mark.asyncio
+    async def test_a_renamed_tool_is_reported_under_its_new_name_and_the_others_under_their_own(self):
+        from pydantic_ai import FunctionToolset
+
+        agent = self._agent_with(FunctionToolset([get_weather, add]).renamed({"forecast": "get_weather"}))
+
+        assert agent.get_tool_names() == ["forecast", "add"]
+        assert agent.get_tool_names() == await self._served(agent)
+
+    @pytest.mark.asyncio
+    async def test_wrappers_are_followed_one_inside_another(self):
+        from pydantic_ai import FunctionToolset
+
+        inner = FunctionToolset([get_weather]).renamed({"forecast": "get_weather"})
+        agent = self._agent_with(inner.prefixed("crm"), FunctionToolset([add]).approval_required())
+
+        assert agent.get_tool_names() == ["crm_forecast", "add"]
+        assert agent.get_tool_names() == await self._served(agent)
+
+    def test_a_renamed_tool_keeps_its_description(self):
+        from pydantic_ai import FunctionToolset
+
+        agent = self._agent_with(FunctionToolset([get_weather]).prefixed("crm"))
+
+        assert agent._tool_descriptions() == {"crm_get_weather": "Returns the weather for a given city."}

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from .base import Agent, AgentRequest, Session
 from .config import AKConfig
-from .model import AccessLevel, Principal, SystemTool
+from .model import AccessLevel, Principal, SystemTool, ToolFilter
 
 if TYPE_CHECKING:
     from .runtime import Runtime
@@ -179,6 +179,72 @@ class ToolContext:
         if id not in cls._cache:
             raise KeyError(f"No ToolContext found for id: {id}")
         return cls._cache[id]
+
+
+class ToolGate:
+    """
+    What a framework adapter asks before it offers or runs a tool.
+
+    The gate decides nothing. With an `authorization` block, Runtime publishes one ToolFilter for each run: the tools
+    the run's principal is offered on the agent, and why each other one is not. Every adapter reads that filter
+    through this class, at list time where its framework has a hook and at call time through a hook or a wrapper,
+    and never asks an authorizer itself.
+
+    A run with no filter is not gated, and every method here says so. That is what keeps an adapter's native call
+    keyword-for-keyword unchanged without the block: an adapter adds its hook, or lets it act, only when
+    `current()` returns a filter.
+
+    The filter is over the tools the agent declares (`Agent.get_tool_names`). A tool it never listed is offered
+    by no policy, so it is refused like a denied one.
+    """
+
+    FAILED: ClassVar[str] = "tool gate failed"
+
+    @staticmethod
+    def current(session: Session | None = None) -> ToolFilter | None:
+        """
+        Returns the tool filter of a run.
+        :param session: The session of the run, where the adapter's hook holds it. Omitted, the session of the
+            current ToolContext is read: a tool call runs inside the ToolContext its runner set, whichever
+            native hook it reaches.
+        :return: The run's filter, or None when the run is not gated or no run is in progress.
+        """
+        if session is None:
+            context = ToolContext._context.get()
+            if context is None:
+                return None
+            session = context.session
+        return session.get_tool_filter()
+
+    @staticmethod
+    def deny_result(name: str, tool_filter: ToolFilter) -> str:
+        """
+        Returns what a denied tool answers in place of its result: the reason, in words the model can pass on.
+        :param name: The tool's name, as the agent declares it.
+        :param tool_filter: The run's filter.
+        :return: The reason the tool is denied.
+        """
+        return tool_filter.reason(name)
+
+    @classmethod
+    def refusal(cls, name: str, session: Session | None = None) -> str | None:
+        """
+        Returns why a tool may not be offered or run in a run, the one question every adapter's hook asks.
+
+        It never raises: a native hook has no good place for an exception, and a gate that cannot answer is no
+        reason to run the tool. A failure in reading or asking the filter refuses the tool, and the refusal names
+        the kind of failure.
+        :param name: The tool's name, as the agent declares it.
+        :param session: The session of the run; the one of the current ToolContext when omitted.
+        :return: The reason, or None when the run is not gated or the tool is allowed.
+        """
+        try:
+            tool_filter = cls.current(session)
+            if tool_filter is None or tool_filter.allows(name):
+                return None
+            return cls.deny_result(name, tool_filter)
+        except Exception as error:
+            return f"{cls.FAILED}: {type(error).__name__}"
 
 
 class ToolBuilder:

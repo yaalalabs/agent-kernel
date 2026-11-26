@@ -92,7 +92,7 @@ Wraps a framework-specific agent. Key properties:
 - **`pre_hooks` / `post_hooks`**: Lists of `PreHook` / `PostHook` instances applied during execution
 - **`run_options`**: a live dict of framework-native per-run options declared through `Module.run_options` (#754), merged by the adapter into every native run call with the keys it owns written last; never persisted. **`RESERVED_RUN_OPTIONS`** (`ClassVar[Mapping[str, str]]`, key to reason) names the keys the adapter populates itself or depends on for reply mapping, and **`validate_run_options(options)`** raises `ValueError` naming the runner, the agent and every reserved key present (LangGraph overrides it to add the nested `config.configurable.thread_id`). **`run_options_factory`** (#758): the per-run `RunOptionsFactory` (`(agent, session, requests) -> Mapping | Awaitable[Mapping]`, exported from `agentkernel.core`) declared through `Module.run_options`, or `None`; a settable property with the same bypass caveat as the dict. **`resolve_run_options(session, requests)`** (async) is what every adapter awaits once per `run` / `stream`: a copy of `run_options`, the factory called once (awaited when its result is awaitable), the result required to be a `Mapping` (`TypeError` naming the agent otherwise), passed through `validate_run_options`, and `dict.update`d over the copy (top-level, factory wins). With no factory it returns the copy, so the static path is unchanged. Nothing is caught: a raising factory, a non-mapping result or a reserved key propagate to the adapter, which surfaces them like a framework error
 - **`get_description()`**: returns the native agent's description or instructions. Concrete on the base (default `""`) and read by nothing in OAK since #603: what a surface publishes is the descriptor's description, which is seeded by `_native_description()`, never by this. The eight built-in adapters keep their implementations; a new adapter need not write one
-- **`descriptor`**: the agent's `AgentDescriptor` (#603), its catalog entry: `id`, `name`, `version`, `description`, `owner`, `tags`, `visibility`, `surfaces`, `skills`, `tools`, `runner`, `supports_streaming`, `identity`. Built once, on first read (not in `__init__`: an adapter assigns its native agent and attaches system tools after the base constructor returns), by `_build_descriptor()` from **`get_tool_names()`** and **`_tool_descriptions()`**, which each adapter implements from its native tools (base: `[]` and `{}`), and from **`_native_description()`** (base `""`): the description the framework keeps for the agent apart from its instructions (OpenAI `handoff_description`; the `description` of an ADK, Pydantic AI, MAF, Claude or smolagents agent; none for CrewAI and LangGraph), never a fallback to instructions, a system prompt, a goal or a backstory. ADK strips the system-tool guidance this adapter appends to the native `description`. `Module.describe(agent, **fields)` then declares what only the application knows and registers the agent again so the registry holds the result; the `registry.agents.<id>` config overlay is applied last. The description is catalog text: the native description by default, replaced by a declared one (an empty declared one withholds it), and never `get_description()`. `get_tool_names()` reports the tools **declared** on the native agent when it is loaded, under the names the application declared them by (a prefix the adapter adds itself to serve a tool, such as Claude's `mcp__ak__`, is not part of the name), with no I/O: tools that only exist at run time (a remote MCP server's, a toolset resolved per run, a handoff target's, those of a sub-workflow or sub-graph the adapter does not walk) are not reported, and each adapter's docstring names what it leaves out. There is no `get_a2a_card()` any more: the A2A surface builds each card from the registry's descriptor (`A2ACardBuilder.build(descriptor)`, which gives an agent or skill with no description a neutral sentence, since A2A requires the field and an empty one is dropped from the served JSON), and MCP registers agent tools from the same record. An adapter class that still defines `get_a2a_card` gets one warning from `_build_descriptor` saying nothing calls it
+- **`descriptor`**: the agent's `AgentDescriptor` (#603), its catalog entry: `id`, `name`, `version`, `description`, `owner`, `tags`, `visibility`, `surfaces`, `skills`, `tools`, `runner`, `supports_streaming`, `identity`. Built once, on first read (not in `__init__`: an adapter assigns its native agent and attaches system tools after the base constructor returns), by `_build_descriptor()` from **`get_tool_names()`** and **`_tool_descriptions()`**, which each adapter implements from its native tools (base: `[]` and `{}`), and from **`_native_description()`** (base `""`): the description the framework keeps for the agent apart from its instructions (OpenAI `handoff_description`; the `description` of an ADK, Pydantic AI, MAF, Claude or smolagents agent; none for CrewAI and LangGraph), never a fallback to instructions, a system prompt, a goal or a backstory. ADK strips the system-tool guidance this adapter appends to the native `description`. `Module.describe(agent, **fields)` then declares what only the application knows and registers the agent again so the registry holds the result; the `registry.agents.<id>` config overlay is applied last. The description is catalog text: the native description by default, replaced by a declared one (an empty declared one withholds it), and never `get_description()`. `get_tool_names()` reports the tools **declared** on the native agent, and on every agent a run of it can reach (handoff targets it holds, agents used as tools, sub-agents and workflow nodes, managed agents, compiled subgraphs, delegating coworkers), when it is loaded, under the names the application declared them by (a prefix the adapter adds itself to serve a tool, such as Claude's `mcp__ak__`, is not part of the name), with no I/O: tools that only exist at run time (a remote MCP server's, a toolset resolved per run, those of a handoff that does not hold its agent) are not reported, and each adapter's docstring names what it leaves out. There is no `get_a2a_card()` any more: the A2A surface builds each card from the registry's descriptor (`A2ACardBuilder.build(descriptor)`, which gives an agent or skill with no description a neutral sentence, since A2A requires the field and an empty one is dropped from the served JSON), and MCP registers agent tools from the same record. An adapter class that still defines `get_a2a_card` gets one warning from `_build_descriptor` saying nothing calls it
 - **`Agent.current()`**: Class method returning whichever `Agent` is currently executing in this async context (or `None`). Backed by a `contextvars.ContextVar` (`current_agent`) set via the private `_activate()` context manager, which `Runtime.run()`/`Runtime.stream()` wrap the whole hook+runner+hook span in (token-based set/reset, so nested activations: e.g. a future agent-as-tool/handoff calling back into the Runtime: restore rather than clobber). This is how `Session.get_framework_session()` resolves which runner key to read
 
 ### Runner (`ak-py/src/agentkernel/core/base.py`)
@@ -275,6 +275,8 @@ Rubric for new code:
 - A server-side protocol surface whose caller waits for one whole reply (A2A, MCP) enqueues through
   `pipeline.request_handler.RestHandler.request` with its own `protocol` value, so the agent runs on the
   Agent Runner like every other server surface; it never runs the agent in the IO process.
+  MCP is served by FastMCP 4, which agrees MCP 2026-07-28 or 2025-11-25 per connection; conversation
+  state follows the tools' `session_id` argument, never `Mcp-Session-Id`.
 - Cross-cutting behavior that must apply to every run regardless of surface goes in a `Runtime` pre/post
   hook, not in a service layer.
 - Entry surfaces never call `Runtime` directly.
@@ -324,6 +326,7 @@ Pydantic-based configuration:
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
 
 - **`ToolContext`**: Execution context available inside tool functions via `ToolContext.get()`. Provides access to `runtime`, `agent`, `session`, `requests`, and `principal` (the run's principal as `Runtime` published it, read through `session.get_principal()`: the authenticated caller with the agent as `actor`, or the anonymous principal when the surface authenticated nobody).
+- **`ToolGate`** (#603, iteration 21): what a framework adapter asks before it offers or runs a tool. It decides nothing: with an `authorization` block `Runtime` publishes one `ToolFilter` per run, and the gate reads it. `current(session=None)` returns the run's filter (the session handed in, else the one of the current `ToolContext`; `None` when the run is not gated or no run is in progress), `deny_result(name, filter)` the reason string, and `refusal(name, session=None)` is the one question every hook asks: the reason, or `None` when the run is not gated or the tool is allowed. `refusal` never raises (a native hook has no place for an exception) and fails closed: a filter that cannot be read or asked refuses the tool with `tool gate failed: <type>`. An adapter adds its hook, or lets it act, only when `current()` returns a filter, which is what keeps the native call keyword-for-keyword unchanged without the block. The filter is over `Agent.get_tool_names()` and `allows(name)` is false for a name it never listed, so **what an adapter declares must be what its gate matches**: the name the model calls, and every tool the gate can see.
 - **`ToolBuilder`**: Base class for framework-specific tool builders. Each framework implements `bind(funcs)` to wrap plain Python functions into framework-native tool objects. An adapter may accept more than `funcs`: OpenAI, Google ADK, Pydantic AI and MAF each take `**options` and forward them to the native wrapper (`function_tool`, `FunctionTool`, `Tool`, `tool()`), which is how a gated tool is declared without the native decorator — `needs_approval`, `require_confirmation` and `requires_approval` are each that framework's human-in-the-loop flag. Options apply to every function in the call, so tools wanting different ones are bound separately. LangGraph's `bind` takes `agent_name` instead; smolagents' native wrapper takes nothing but the function, so it has nothing to forward.
 - Write plain Python functions → bind via the framework's ToolBuilder → tools work across frameworks
 - **Gotcha: every `ToolBuilder.bind()` derives the bound tool's name from `func.__name__`, not from `SystemTool.name`.** A `SystemTool` whose `func` has a different `__name__` than `SystemTool.name` binds under the function's name, silently: the model schema advertises the mismatched name while any injected prompt text (and the tool's own `description`) may still reference the `SystemTool.name` spelling, so the model can't find the tool it was told to call. This bit `AnalyzeAttachmentsTool` for every multimodal deployment until `tools.py`'s `_analyze_attachments` was renamed to `analyze_attachments` (#657) — when adding a new `SystemTool`, keep `func.__name__` and `SystemTool.name` identical.
@@ -883,10 +886,9 @@ authorization: the authorizer contract, the static backend, its factory and the
 `authorization` block gates every run (`Runtime._admit`), the pre-run check
 (`AgentService.ensure_agent_available`), the queue pipeline's precheck before anything is enqueued,
 a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
-realtime surfaces (iteration 20, the Protocol surfaces bullet below). The framework tool gates and the
-credentials capability are later phases: the tool filter is published and
-`ToolContext.access_level` reads it, but no adapter enforces it at call time yet, and
-`Principal.credential_ref` is inert. Authentication is
+realtime surfaces (iteration 20, the Protocol surfaces bullet below). Phase E gates tools from the published tool filter (the Tool gates bullet below): the OpenAI,
+Pydantic AI, MAF and Claude adapters since iteration 21, ADK and CrewAI since iteration 22,
+LangGraph, smolagents and realtime calls since iteration 23. The credentials capability is a later phase: `Principal.credential_ref` is inert. Authentication is
 configuration: one identity provider per deployment, named by the `identity` block, and no
 handler or entry point takes a validator or authoriser argument any more (`agentkernel.auth` is
 deleted).
@@ -1152,6 +1154,94 @@ deleted).
   `ChatService.execute`), run the question on a thread of their own. A new surface asks the gate
   before it commits anything and maps `PermissionError` to 403 and `AgentNotFoundError` to 404;
   it never asks the authorizer directly.
+- **Tool gates** (phase E, iterations 21 to 23; spec section 9 and refinements 20 to 22). Shape is consistent,
+  behaviour is not: each adapter applies the run's filter through `ToolGate` at list time where its
+  framework has a hook and at call time through a hook, AK's check first and the application's own
+  hook, guardrail, middleware or capability kept behind it. A refused call is answered with the
+  reason as the tool's result, never with an exception into the framework. A call approved while
+  its run was paused is decided again by the filter of the resume.
+  **OpenAI** (`OpenAIToolGate`): `is_enabled` becomes the gate AND the application's value, and an
+  `ak_tool_gate` input guardrail goes first on every `FunctionTool`. Installed at wrap and in
+  `attach_tool`, and only when the block is configured (`Runtime.access_gate()`), so no native
+  object changes without it. A run keeps the filter of the agent it started with, so
+  `reachable(root)` walks the agents it hands off to (`handoffs`, `handoff(agent)` through its
+  `_agent_ref`) and uses as tools (`_agent_instance`): their tools are declared under the first
+  agent and gated. `ungated_tool_names()` names an `mcp_servers` entry and a handoff that does not
+  hold its agent, and a tool the SDK runs in this process without asking the gate (a local
+  `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool`, `CustomTool`), which the access
+  gate refuses at load. `OpenAIToolGate.provider_run(tool)` is what the provider runs (`HOSTED_TOOLS`,
+  and a `ShellTool` whose environment is in `HOSTED_ENVIRONMENTS`): declared and not gated. Both are
+  allowlists, so a type or environment a later SDK adds is ungated until classified, and
+  `test_every_tool_type_the_sdk_defines_is_classified` fails on that upgrade. `tool_name(tool)` falls
+  back to the type's name for a tool with no `name`.
+  **Pydantic AI** (`AKToolGateCapability`): a per-run capability added by `PydanticAIRunner._gated`
+  at all four native calls, ahead of the run options' `capabilities`; `prepare_tools` drops what
+  the filter refuses and `wrap_tool_execute` returns the reason without running the handler.
+  `_served_tools` reports each tool under the name its toolset serves it by (`<prefix>_<name>`,
+  a renamed name). `_deferred_results` hands an approval of a tool denied by the resume to the
+  SDK as `ToolDenied(reason)`. A toolset listed only inside a run is left out of a gated run.
+  **MAF** (`AKToolGateMiddleware`, `AKToolOfferMiddleware`): both put first on the native agent's
+  `middleware` by `MAFAgent._gate_tools` at wrap time, under the block only, so the application's
+  own agent middleware never sees a refused call. The function middleware sets `context.result` to
+  the reason and returns without `call_next()`; the chat middleware hands each model request a copy
+  of the options without the refused tools (a denied `approval_mode="always_require"` tool would
+  otherwise pause before any function middleware runs). The function loop keeps the full list, so a
+  stray call to a hidden tool still gets the reason. `_prepare_session` adds no middleware.
+  **Claude**: in `_native_options(..., session=)` a refused `mcp__ak__<name>` leaves
+  `allowed_tools` (the application's own entry included), joins `disallowed_tools` once, and the
+  one `PreToolUse` hook denies it with the reason ahead of its approval and resume branches. Only
+  the tools the adapter serves are gated.
+  **Three rules every gate follows.** (1) What a run can reach is declared under the agent it
+  started with, because the run's filter is that agent's: handoff targets and agents used as
+  tools (OpenAI), sub-agents, workflow nodes and agent tools (ADK), the coworkers of a delegating
+  agent (CrewAI). (2) A framework's own control-flow tools are not gated: no agent declares
+  them, and refusing them would stop a run from moving (ADK's `TransferToAgentTool` and
+  `SetModelResponseTool` and, where the SDK has it, `FinishTaskTool`, CrewAI's `BaseAgentTool` delegation tools; an OpenAI handoff is not a
+  function tool at all). (3) A gate that changes a native object or a process-wide list is put
+  in place only when an `authorization` block is configured (`Runtime.access_gate()`).
+  **ADK** (`GoogleADKToolGate`): `before_tool` is a `before_tool_callback` put first on every
+  `LlmAgent` that `agents(root)` reaches (the walk `get_tool_names` shares: agents used as tools,
+  the nodes of a workflow and of one nested in it, each level of `sub_agents`; a workflow keeps
+  copies of its agents, so inspect `agents(workflow)`, not the objects handed to it). It returns
+  `{"error": reason}`, which ADK gives the model as the call's result. The run is found through
+  `tool_context.state["ak_tool_context"]`, which an `AgentTool`'s nested run inherits; no id
+  means no run of ours (not gated), an id that cannot be fetched refuses the call. A bare
+  callable is declared under the name of the `FunctionTool` ADK wraps it in. ADK's live flow
+  calls the same callbacks.
+  **CrewAI** (`CrewAIToolGate`): two hooks in CrewAI's process-wide lists, registered once from
+  `CrewAIModule.load`. `before_tool_call` returns `False` to block; `after_tool_call` returns the
+  reason, which replaces CrewAI's own blocked-by-hook line because CrewAI runs after hooks for a
+  blocked call. A hook gets the sanitized name a tool is served under (`sanitize_tool_name`), so
+  the call is decided by the declared name of the tool on the context (`context.tool.name`), and only
+  without one matched to the declared name that sanitizes to it (more than one: refused as
+  ambiguous). The before hook is inserted first in CrewAI's global list, the after hook appended
+  last. The hooks never raise: CrewAI lets a call through when a hook fails, so a failure refuses
+  the call.
+  **LangGraph** (`LangGraphToolGate`): a compiled graph cannot be changed, so the gate is inside
+  the tools `LangGraphToolBuilder.bind` makes: each function is wrapped (`functools.wraps`, so the
+  schema is unchanged) and the tool marked `metadata={"ak_gated": True}`; the wrapper returns the
+  reason. `tool_nodes(graph)` covers compiled subgraphs (`get_subgraphs(recurse=True)`), for
+  `get_tool_names` and for `ungated_tool_names`, which names every unmarked tool instance in every
+  node (a native tool sharing a bound tool's name is still named); under the block
+  such an agent does not load (Q12). An interrupted tool runs again on resume, so it is asked again.
+  **smolagents** (`SmolagentsToolGate`): `forward` wrapped on each tool instance (marked
+  `__ak_gated__`) under the block, at wrap and in `attach_tool`; managed agents are walked
+  (`agents`), `final_answer` and managed-agent calls left alone; a code agent whose
+  `python_executor` is not a `LocalPythonExecutor` is not wrapped and is ungated as a whole. The
+  local executor runs the model's code on a `timeout` worker thread that drops context variables,
+  so `carry_the_run_into_code()` replaces `local_python_executor.timeout`, once for the process and
+  under the block, with one that runs the code in a copy of the caller's context.
+  **Realtime**: no pool-side check. `RealtimeConnection.publish_principal` publishes the room's
+  filter (`_room_tool_filter`: the intersection of every participant who has spoken, the lowest
+  level, no tool while one holds no level; a participant the authorizer raises for is kept in
+  `_unanswered` with a `tool gate failed: <type>` reason, the room is offered nothing while any is
+  unanswered, whoever speaks, and that participant's next input asks again once
+  `RETRY_PAUSE_SECONDS` (1 s) have passed, since every audio chunk is an input), and the gates on the
+  native agents act on it (ADK's live
+  flow calls `before_tool_callback`; OpenAI's realtime session asks `is_enabled` per call and answers
+  a denied tool `Tool <name> not found`). **Provider-run tools**: `Agent.provider_tool_names()`
+  (OpenAI hosted tools, ADK tools with no function declaration, Claude Code built-ins and
+  other MCP servers) is logged once per agent by `validate_configuration`, never refused.
 - **Protocol surfaces** (iteration 20). Each answers for the caller in its own protocol's terms,
   and a hidden agent is never told apart from one the surface does not serve.
   **MCP** (`api/mcp/akmcp.py`): every agent tool is registered with

@@ -495,7 +495,7 @@ authorization:
 
 - **Field**: `authorization.static.tools`
 - **Type**: list of `{agent, tiers, allow, deny}`
-- **Description**: The tool policy, one entry per agent. `tiers` maps a tool to the lowest level that is offered it (an unlisted tool is `read`, except the sandbox and schedule tools, `write_kb` and `update_agui_state`, which declare `write`); `allow`, when set, is the only tools the agent offers; `deny` wins over `allow`. The decision is published for each run (`ToolContext.get().access_level`, `Session.get_tool_filter()`) and narrows the tools and skills the catalog and A2A cards list. It does not stop a tool call yet. A policy naming a tool its agent does not have is a startup error
+- **Description**: The tool policy, one entry per agent. `tiers` maps a tool to the lowest level that is offered it (an unlisted tool is `read`, except the sandbox and schedule tools, `write_kb` and `update_agui_state`, which declare `write`); `allow`, when set, is the only tools the agent offers; `deny` wins over `allow`. The decision is published for each run (`ToolContext.get().access_level`, `Session.get_tool_filter()`) and narrows the tools and skills the catalog and A2A cards list. A call to a denied tool is not run on any supported framework (the OpenAI Agents SDK, Pydantic AI, Microsoft Agent Framework, the Claude Agent SDK, Google ADK, CrewAI, LangGraph and smolagents) or realtime call, and is answered with the reason, except on an OpenAI Agents SDK realtime call, which answers `Tool <name> not found`; on the OpenAI Agents SDK, Pydantic AI, the Claude Agent SDK and Microsoft Agent Framework the tool is also hidden from the model; tools the provider runs are logged, not gated. An agent with tools OAK cannot gate does not load under the block: a LangGraph tool not bound through `LangGraphToolBuilder.bind`, a smolagents code agent on a remote executor, and an OpenAI Agents SDK agent with `mcp_servers`, a handoff that does not hold its agent, or an SDK tool that runs in the process (a local `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool` or `CustomTool`). A policy naming a tool its agent does not have is a startup error
 - **Environment Variable**: `AK_AUTHORIZATION__STATIC__TOOLS` (a JSON list)
 
 What a caller gets with the block: an agent it may not see answers like one that does not exist (a 404 on
@@ -1269,7 +1269,7 @@ registry:
 - **Stateless HTTP**
   - **Field**: `mcp.stateless_http`
   - **Default**: `false`
-  - **Description**: Run MCP in stateless HTTP mode (no `Mcp-Session-Id`)
+  - **Description**: Serve older (2025-11-25) MCP clients statelessly (no `Mcp-Session-Id`); set it when several replicas serve `/mcp`. 2026-07-28 clients are always stateless
   - **Environment Variable**: `AK_MCP__STATELESS_HTTP`
 
 - **Endpoint** (not configurable)

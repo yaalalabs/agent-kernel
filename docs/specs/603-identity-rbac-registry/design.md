@@ -704,7 +704,7 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 
 | Adapter | List time | Call time | Not covered |
 |---|---|---|---|
-| Microsoft Agent Framework (agent-framework-core 1.20.0, `framework/maf/`) | none (the tool list is static on the agent) | a per-run `FunctionMiddleware` passed through `Agent.run(middleware=...)` that sets a denial result instead of calling next | hosted and provider-executed tools |
+| Microsoft Agent Framework (agent-framework-core 1.20.0, `framework/maf/`) | none (the tool list is static on the agent); as built, a chat middleware leaves denied tools out of each request (review of #1018) | a per-run `FunctionMiddleware` passed through `Agent.run(middleware=...)` that sets a denial result instead of calling next; as built, first on the native agent | hosted and provider-executed tools |
 | Realtime runners (`core/realtime/runner.py:124`) | none (the session's tool list is declared at connect) | the AK-owned `execute_tool` entry point, before the adapter runs the tool | none: this is the one place AK already owns the call |
 | OpenAI Agents SDK (0.20.0) | `FunctionTool.is_enabled` composed with any user-set callable (AND) | `tool_input_guardrails` entry returning `reject_content(reason)` | Hosted tools (web search, file search, computer use) |
 | Pydantic AI (2.13.0) | a per-run `capabilities=[AKToolGateCapability]` whose `prepare_tools` drops denied definitions, composed AK-first with any caller capabilities (2.13.0 has no `prepare_tools` on `Agent`; spec refinement 2) | the same capability's `before_tool_execute` raising `ModelRetry(reason)` | none: the capability sees every `ToolDefinition`, attached toolsets included |
@@ -714,6 +714,53 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 | smolagents | none | `Tool.forward` wrapped on every tool in `agent.tools` at wrap time, native ones included | tools added to `agent.tools` after wrap time: refused at startup with `authorization` configured, as for LangGraph (settled, Q12; spec refinement 4) |
 | Claude Agent SDK (`framework/claude/`, #833) | per run: a denied `mcp__ak__<name>` is left out of the `allowed_tools` the runner builds and added to `disallowed_tools` on the run's `ClaudeAgentOptions`, so the SDK never offers it | the per-run `PreToolUse` matcher the HITL gate already installs (`framework/claude/claude.py:512`) answers `permissionDecision: "deny"` with the reason in `permissionDecisionReason`; AK's check runs ahead of the approval branch, so a denied tool never pauses | Claude Code's built-in tools and tools from other `mcp_servers`: `get_tool_names` lists only the tools the in-process `ak` server serves, and the gate leaves the rest to the SDK's own permission settings |
 
+- As built (spec refinement 20), for OpenAI, Pydantic AI, MAF and Claude:
+  - A gate refuses a tool the filter never listed, so an adapter declares every tool its gate
+    can see.
+  - OpenAI: the tools of the agents a run hands off to, or uses as tools, are declared under
+    the agent the run started with and gated by its filter.
+    - A policy for that agent states their tiers; the other agent's policy is not consulted.
+  - OpenAI: an MCP server, and a handoff that does not hold its agent, are ungated and refused
+    at startup under `authorization` (the Q12 rule). A hosted tool is declared and not gated.
+  - OpenAI: the gate is put on the native tools only when the block is configured.
+  - Pydantic AI: a denied call is answered with the reason as its result, not with a retry.
+  - Pydantic AI: a tool behind a prefixed or renamed toolset is declared under the name the
+    model calls.
+  - A call approved while paused is decided again by the filter of the resume.
+  - A gate that cannot answer refuses the tool.
+- As built (spec refinement 21), for ADK and CrewAI:
+  - A framework's own control-flow tools are not gated: ADK's transfer and structured-response
+    tools, CrewAI's delegation tools.
+    - A policy cannot deny a move between agents; the tools reached next are gated.
+  - ADK: the callback is on every agent a run can reach, agents used as tools and the nodes of
+    nested workflows included, and their tools are declared under the root.
+  - CrewAI: a refused call is blocked by a before hook, and an after hook gives the model the
+    reason in place of CrewAI's own line.
+  - CrewAI: an agent that may delegate declares its coworkers' tools.
+  - Both are put in place only when the block is configured.
+- As built (spec refinement 22), LangGraph, smolagents and realtime:
+  - A realtime call with several participants runs its tools as all of them: a tool is offered
+    only when every participant who has spoken may use it, at the lowest of their levels.
+    - The principal a tool reads is still the last speaker's.
+  - smolagents: `final_answer` and calls to managed agents are not gated; managed agents' tools
+    are declared under the manager.
+  - smolagents: a code agent on a remote executor is ungated as a whole, so it does not load
+    under `authorization`.
+  - LangGraph: the tools of compiled subgraphs are declared and checked.
+  - OpenAI realtime answers a denied tool `Tool <name> not found`, without the reason.
+  - Tools a provider runs are logged once per agent at startup (`Agent.provider_tool_names`).
+- As built (review of #1018):
+  - OpenAI: a tool the SDK runs in the process without asking the gate (a local shell, an
+    apply-patch editor, a computer, a custom tool) is ungated, so the agent does not load under
+    `authorization`; only the hosted tool types and a shell in a hosted container are the provider's.
+    Both are allowlists: a tool type or environment a later SDK adds is refused until it is classified.
+  - MAF: a denied tool is also kept from the model (a chat middleware), and both middleware sit
+    first on the native agent, ahead of the application's own, only under `authorization`.
+  - ADK's `FinishTaskTool` is a control-flow tool like transfer.
+  - CrewAI: the gate's before hook runs first, and a call is decided by the tool's declared name.
+  - smolagents: a code agent's tools see the run's context on the local executor's worker thread.
+  - Realtime: a participant the authorizer cannot answer for leaves the room no tool, whoever speaks
+    next, and their next input asks again.
 - Every adapter resolves nothing itself: it reads `TOOL_FILTER_CACHE_KEY` from the session's
   volatile cache (set by `Runtime`), so with no `authorization` block the filter is absent and the
   native calls are keyword-for-keyword what they are today (the #754 invariant).

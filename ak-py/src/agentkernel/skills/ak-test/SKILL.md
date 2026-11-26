@@ -197,6 +197,9 @@ async def test_follow_up(test_client):
 - Pass `return_metrics=True` to `expect()` (or `Test.compare()`) to get back an
   `AKEvaluationResult` (score, evaluator, metric, reason) instead of raising `AssertionError` on a
   mismatch — useful for asserting on the score itself rather than just pass/fail
+- Pass `criteria="..."` to `expect()` (or `Test.compare()`) when only part of a free-form reply is
+  deterministic (e.g. an agent that adds its own follow-up question): it is a plain-language rubric
+  that replaces the llm judge's default one (`llm`/`fallback` modes; ignored in `score` mode)
 
 #### 4. Write API Agent Tests
 

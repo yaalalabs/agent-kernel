@@ -43,6 +43,69 @@ def whoami() -> str:
 | **Authorization** | An `authorization` block grants principals a level (`read`, `write`, `admin`) on agents. With it, a caller runs only the agents it is granted and sees only the ones it may see; without it nothing is restricted. See [Authorization](#authorization). |
 | **Extra** | `oidc`, `cognito`, `entra` and `firebase` need `agentkernel[auth]` (PyJWT, cryptography, httpx). `static` needs nothing extra. |
 
+## How it fits together
+
+Authentication decides who is calling; authorization decides what that caller may do. OAK does the
+first once, where a request enters, and the second twice: at the surface, before anything is queued, and
+again where every run starts, down to the tools the agent may call.
+
+```mermaid
+flowchart TD
+    Caller["Caller<br/>person, service, messaging sender, voice caller, CLI"]
+    Surface["Surface<br/>REST · A2A · MCP · AG-UI · WebSocket · messaging · LiveKit · CLI"]
+    Caller -->|"bearer token, or the platform's identity"| Surface
+
+    subgraph authn ["1 · Authentication: who is calling"]
+        Provider["Identity provider<br/>oidc · cognito · entra · firebase · static · your own"]
+        Mapper["Role mapper<br/>groups and claims to roles"]
+        Principal(["Principal<br/>subject · provider · namespace · groups · roles"])
+        Provider --> Mapper --> Principal
+    end
+
+    Surface -->|"verify the credential"| Provider
+    Surface -.->|"messaging and voice edges name the platform's sender"| Principal
+    Provider -.->|"credential refused"| Unauthorized["401"]
+
+    subgraph authz ["2 · Authorization: what the caller may do"]
+        Registry[("Agent registry<br/>visibility · surfaces · tags · tools")]
+        Authorizer["Authorizer<br/>grants and tool policy, static or your own"]
+        Gate{{"Access gate"}}
+        Registry --> Gate
+        Authorizer --> Gate
+    end
+
+    Principal --> Gate
+    Gate -->|"at the surface, before anything is queued"| Edge["Agent check and the caller's catalog"]
+    Edge -.->|"hidden: 404 · no level: 403"| Refused["Refused"]
+    Gate -->|"where every run starts"| Admit["Run admitted<br/>level · session owner · tool filter"]
+    Admit --> Run["Agent run<br/>principal and tool filter published for the run"]
+    Run --> ToolGate["Framework tool gate<br/>every adapter, voice calls included"]
+    ToolGate -->|"allowed"| Tool["Tool runs"]
+    ToolGate -->|"denied"| Reason["Hidden, or answered with the reason"]
+```
+
+1. **A caller presents a credential** to the surface it uses: a bearer token on HTTP, a token on the
+   WebSocket handshake or the CLI. A messaging platform or a voice room vouches for its own sender
+   instead.
+2. **The identity provider verifies it** and returns a [principal](#the-principal): who the caller is,
+   which provider and namespace vouched for it, and its groups. The role mapper adds roles. A credential
+   that does not verify is a `401`; a request with none runs as the anonymous principal. Messaging and
+   voice edges build the principal from the platform's sender (`messaging:<platform>`,
+   `realtime:<gateway>`).
+3. **The access gate decides** from two things: the agent registry, which says which agents exist and
+   how each is described, and the authorizer, which holds the grants and the tool policy of the
+   [`authorization` block](#authorization). Without the block nothing is restricted.
+4. **At the surface**, before a session is loaded or anything is queued, the gate checks that the
+   caller may use the agent it named and narrows what the caller is listed. An agent it may not see is a
+   `404`, exactly as if it did not exist; one it sees and holds no level on is a `403`.
+5. **Where every run starts**, the gate asks again, whichever surface the request came through: the
+   caller's level on the agent, whether the [session](#sessions) is its to continue, and the run's tool
+   filter. The principal and the filter are published for the run, where tools and hooks read them.
+6. **The framework adapter's tool gate** applies the filter: a denied tool is kept from the model, or a
+   call to it is answered with the reason instead of running ([where a denied tool is
+   stopped](#where-a-denied-tool-is-stopped)). [Scheduled tasks](#scheduled-tasks) are decided again
+   when they fire, and a paused tool call when its approval arrives.
+
 ## Configuration
 
 ```yaml
@@ -489,12 +552,70 @@ def refund_order(order_id: str) -> str:
 `Session.get_tool_filter()` returns the whole decision in a hook or a tool: `level`, `allows(name)` and
 `reason(name)`, the sentence that says why a tool is refused.
 
-:::caution The tool policy does not stop a tool call yet
-Today the policy narrows what the catalog and A2A cards list and is published for your own code to
-read. OAK does not yet remove a denied tool from what the model is offered, or refuse the call: an
-agent still calls every tool it was built with. Until that enforcement exists, keep a tool away from a
-caller by not granting the caller the agent, or check `access_level` inside the tool as above.
-:::
+#### Where a denied tool is stopped
+
+On every framework the policy narrows what the catalog and A2A cards list and is published for your
+own code to read. Whether OAK also keeps the model from a denied tool depends on the framework the
+agent is built with:
+
+| Framework | A denied tool |
+|---|---|
+| OpenAI Agents SDK | Is not offered to the model, and a call that reaches it is answered with the reason. |
+| Pydantic AI | Is not offered to the model, and a call that reaches it is answered with the reason. |
+| Claude Agent SDK | Is not offered to the model (`disallowed_tools`), and a call that reaches it is denied with the reason. |
+| Microsoft Agent Framework | Is not offered to the model, and a call that reaches it is answered with the reason. A call to a hidden tool bound with `approval_mode="always_require"` is still put to a person first, since MAF asks before any middleware runs, and is refused when the approval arrives. |
+| Google ADK | Is still shown to the model; the call is answered with the reason and the tool is not run. |
+| CrewAI | Is still shown to the model; the call is blocked and the model reads the reason. |
+| LangGraph | Is still shown to the model; the call is answered with the reason and the tool is not run. Only tools bound with `LangGraphToolBuilder` can be gated: a bound tool is checked however it is called, while a node that calls an unbound tool or a plain function itself is outside the gate and the startup check. |
+| smolagents | Is still shown to the model; the call is answered with the reason and the tool is not run. |
+
+On a realtime call the OpenAI and Google ADK gates act as on a turn, with two differences. OpenAI's
+realtime session answers a denied tool `Tool <name> not found` rather than with the reason. And a call
+can have several participants (a LiveKit room), all speaking into one conversation, so the policy is
+the room's: a tool is offered only when every participant who has spoken may use it, at the lowest
+level among them, and a participant holding no level on the agent leaves the room no tool. Who
+spoke last does not matter, so no participant can borrow another's level. A tool still reads the
+identity of the participant who spoke last as its principal.
+
+The reason is the sentence `Session.get_tool_filter().reason(name)` gives, for example
+`Tool 'refund_order' requires level admin; the current principal has write`. The model reads it as the
+tool's result and carries on, so a refusal never fails the run.
+
+What the policy covers is the tools an agent declares when it loads, which are the tools its catalog
+entry lists:
+
+- **Tools that exist only inside a run are not offered.** The tools of an MCP server, or of a
+  toolset handed over for one run, have no name a policy could offer. On Pydantic AI, Microsoft
+  Agent Framework and Google ADK they are left out of, or refused in, a run that has an
+  `authorization` block. An OpenAI Agents SDK agent with `mcp_servers`, or with a handoff built by
+  hand that does not hold its agent, does not load while the block is configured: the error names
+  what could not be gated. A Claude Agent SDK agent's other MCP servers are the exception: they stay
+  outside the gate, as the hosted and built-in tools below do.
+- **Agents a run can reach.** A run keeps the policy of the agent it started with, whichever agent
+  ends up calling a tool. So the tools of the agents it can reach are listed under that agent and
+  take their tiers from its policy; state them there. That covers the agents an OpenAI agent hands
+  off to or uses as tools, the sub-agents, workflow nodes and agent tools under a Google ADK root,
+  and the coworkers of a CrewAI agent that may delegate.
+- **Moves between agents are not gated.** An OpenAI handoff, an ADK transfer to another agent, the
+  tools CrewAI adds for delegation and a call to a smolagents managed agent are how a run moves, not
+  tools you declared, so a policy cannot deny them. Nor is smolagents' `final_answer`, which ends a
+  run. The tools the run reaches afterwards are gated as above, and a smolagents manager lists the
+  tools of its managed agents.
+- **Tools OAK cannot gate stop the agent from loading.** With an `authorization` block, a LangGraph
+  agent with a tool not bound through `LangGraphToolBuilder` (a `@tool` from LangChain, a
+  `StructuredTool` you built), a smolagents code agent that runs its tools in a remote sandbox
+  (E2B, Docker, Modal), and an OpenAI Agents SDK agent with a tool the SDK runs in your process
+  without a guardrail (a local `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool` or
+  `CustomTool`) fail to load and the error names the tools. A LangGraph tool in a compiled
+  subgraph counts too. Rebind the tools with the tool builder or as function tools, or run the code
+  agent on the local executor.
+- **Hosted and built-in tools are not stopped.** A tool the provider runs (OpenAI's web search, file
+  search and code interpreter, Google Search and URL context on ADK), Claude Code's built-in tools
+  and the tools of other MCP servers on a Claude agent are outside the gate. The application starts
+  and logs a warning naming them; use the framework's own settings for those.
+- **A paused call.** A tool that waits for a human's approval is asked about again when the approval
+  arrives: if the policy denies it by then, it is not run.
+
 
 ### Startup checks
 
@@ -506,8 +627,13 @@ would have affected:
   `authorization.static.grants[2]`.
 - A tool policy that names a tool its agent does not have stops the application, with the tools the
   agent does have. A misspelt `deny` would otherwise deny nothing.
+- An agent with tools OAK cannot gate (a LangGraph tool not bound with `LangGraphToolBuilder`, the
+  tools of a smolagents code agent on a remote executor, an OpenAI agent's `mcp_servers`, a handoff
+  that does not hold its agent or an SDK tool that runs in the process) stops the application,
+  naming the tools.
 - A grant that names an agent id or a tag no agent carries, and a `role:` subject with no role mapper
-  configured, are logged as warnings: they match nothing today.
+  configured, are logged as warnings: they match nothing today. So are an agent's hosted and
+  built-in tools, which the tool policy does not reach.
 
 ### Where the block goes
 

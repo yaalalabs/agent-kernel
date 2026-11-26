@@ -9,6 +9,7 @@ import Reveal from '@site/src/components/ui/Reveal';
 import { ClosingPanel } from '@site/src/components/HomeSections';
 import { StageMotion, type Stage as StageId } from '@site/src/components/VectorMotion';
 import SandboxFlowDiagram from '@site/src/components/SandboxFlowDiagram';
+import AccessFlowDiagram from '@site/src/components/AccessFlowDiagram';
 import styles from './features.module.css';
 
 /* The page is a reference: every capability of the runtime, grouped by the six stages the home
@@ -265,11 +266,12 @@ const STAGES: StageGroup[] = [
       {
         title: 'Authorization',
         summary:
-          'Grants in configuration decide which agents each caller may run and see. A caller is listed only its own agents, and an agent hidden from it answers like one that does not exist.',
+          'Grants in configuration decide which agents each caller may run and see, and which of their tools. A caller is listed only its own agents, and an agent hidden from it answers like one that does not exist.',
         points: [
           'Grants for users, groups, roles and messaging senders, at read, write or admin',
           'Private, internal and public agents',
           'The same answer on REST, A2A, MCP and AG-UI',
+          'A tool policy every framework adapter enforces, voice calls included',
         ],
         // Drop `next` from the path once a release carries the Authorization section.
         guide: { label: 'Authorization', to: '/docs/next/advanced/identity-and-access#authorization' },
@@ -516,7 +518,7 @@ function StageSection({ stage, position }: { stage: StageGroup; position: number
   );
 }
 
-/** One capability gets a diagram: the sandbox is the only one whose moving parts need a picture. */
+/** Two capabilities get a diagram: the sandbox and access control are the ones whose moving parts need a picture. */
 function SandboxCloserLook(): JSX.Element {
   // Tell the build that this id exists, so links to it are checked.
   useBrokenLinks().collectAnchor('sandbox');
@@ -543,6 +545,42 @@ function SandboxCloserLook(): JSX.Element {
           <li>
             <Link to="/docs/architecture/sandbox-internals" className="ak-link">
               Sandbox internals
+            </Link>
+          </li>
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/** Authentication and authorization as one flow, below the sandbox's. */
+function AccessCloserLook(): JSX.Element {
+  // Tell the build that this id exists, so links to it are checked.
+  useBrokenLinks().collectAnchor('access');
+  return (
+    <section id="access" className={clsx('ak-section', styles.closer)}>
+      <div className="ak-container">
+        <SectionHeader
+          label="A closer look"
+          title="Who may call what"
+          lead="The identity provider turns a caller's credential into a principal. The access gate then decides, from the grants and the agent registry, which agents that principal may run and see and which of their tools it is offered: once where the request comes in and again where the run starts."
+        />
+        <AccessFlowDiagram />
+        <ul className={styles.closerLinks}>
+          {/* Drop `next` from these paths once a release carries the Authorization section. */}
+          <li>
+            <Link to="/docs/next/advanced/identity-and-access#how-it-fits-together" className="ak-link">
+              Identity and access
+            </Link>
+          </li>
+          <li>
+            <Link to="/docs/next/advanced/identity-and-access#authorization" className="ak-link">
+              Authorization
+            </Link>
+          </li>
+          <li>
+            <Link to="/docs/next/advanced/identity-and-access#where-a-denied-tool-is-stopped" className="ak-link">
+              Where a denied tool is stopped
             </Link>
           </li>
         </ul>
@@ -586,6 +624,7 @@ export default function Features(): JSX.Element {
         </div>
 
         <SandboxCloserLook />
+        <AccessCloserLook />
       </main>
       <ClosingPanel />
     </Layout>
