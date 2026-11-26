@@ -1749,16 +1749,20 @@ Tell the user what changes once the block exists:
   caller through `provider:realtime:livekit`, a caller with no credential (and a CLI run without
   `--token`) through `*`.
 - The tool policy is published for each run (`ToolContext.get().access_level`) and narrows the tools
-  and skills the listings show. A denied tool is kept from the model on every supported framework
-  and on realtime calls, except tools the model provider runs (hosted and built-in tools), which
-  are logged at startup.
-- Under the block a LangGraph agent must bind its tools with `LangGraphToolBuilder.bind`, and a
-  smolagents code agent must use the local executor; otherwise the agent does not load.
+  and skills the listings show. A call to a denied tool is answered with the reason instead of running
+  on every supported framework and on realtime calls; on the OpenAI Agents SDK, Pydantic AI, the Claude Agent SDK and Microsoft Agent Framework
+  the tool is also hidden from the model. Tools the model provider runs (hosted and built-in tools)
+  are not gated and are logged at startup.
+- Under the block a LangGraph agent must bind its tools with `LangGraphToolBuilder.bind`, a
+  smolagents code agent must use the local executor, and an OpenAI Agents SDK agent must bind tools
+  that run in the process (a local `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool`,
+  `CustomTool`) as function tools; otherwise the agent does not load.
 - A run keeps the policy of the agent it started with, so state the tiers of the tools it can reach
   (a handoff target's, a sub-agent's, a CrewAI coworker's) in that agent's policy.
 - The policy covers the tools an agent declares when it loads. Tools that exist only inside a run (an
-  MCP server's) are not offered under the block, and an OpenAI Agents SDK agent with `mcp_servers`
-  does not load while it is configured.
+  MCP server's) are not offered under the block, and an OpenAI Agents SDK agent with `mcp_servers`,
+  or with a handoff that does not hold its agent (`realtime_handoff(...)`), does not load while it is
+  configured.
 - Put the same block in the configuration of every process (the one that accepts requests and the
   one that runs agents).
 

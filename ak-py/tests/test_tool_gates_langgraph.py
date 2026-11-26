@@ -254,6 +254,26 @@ class TestWhatCannotBeGated:
 
         assert agent.ungated_tool_names() == ["export_ledger"]
 
+    def test_a_native_tool_is_named_even_when_a_gated_one_shares_its_name(self):
+        # Every tool instance is checked: the name is listed once in the catalog, and the native one still runs ungated.
+        @tool
+        def refund(order_id: str) -> str:
+            """Refund an order, bound natively."""
+            return "refunded"
+
+        billing = _graph([refund]).compile(name="billing_team")
+        outer = StateGraph(MessagesState)
+        outer.add_node("front", ToolNode(LangGraphToolBuilder.bind([_Tools().refund])))
+        outer.add_node("billing", billing)
+        outer.add_edge(START, "front")
+        outer.add_edge("front", "billing")
+        outer.add_edge("billing", END)
+
+        agent = LangGraphAgent(name="desk", runner=LangGraphRunner(), agent=outer.compile(name="desk"))
+
+        assert agent.get_tool_names() == ["refund"]
+        assert agent.ungated_tool_names() == ["refund"]
+
     def test_such_an_agent_does_not_load_under_an_authorization_block(self, authorization):
         authorization(grants=[{"subjects": ["*"], "agents": ["*"], "level": "write"}])
         graph = _graph([self._native()]).compile(name="ledger")

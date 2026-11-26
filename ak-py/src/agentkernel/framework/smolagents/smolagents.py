@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import functools
 import inspect
 from collections.abc import AsyncGenerator, Callable, Mapping
@@ -222,6 +223,10 @@ class SmolagentsToolGate:
     What the gate cannot reach is named by `ungated`: a tool added to an agent after it was loaded, and every
     tool of a code agent whose executor is not the local one, since a remote executor rebuilds each tool from
     its source in the sandbox. With an `authorization` block such an agent does not load (design Q12).
+
+    The local executor runs each code action on a thread of its own, to put a time limit on it, and that thread
+    does not inherit the caller's context: a tool called from the code would find no run, and nothing would be
+    refused. `carry_the_run_into_code` makes the thread run in the context of the call that started it.
     """
 
     FINAL_ANSWER: ClassVar[str] = "final_answer"
@@ -286,12 +291,47 @@ class SmolagentsToolGate:
         carries the gate already is left alone.
         :param root: The native agent a run starts with.
         """
+        cls.carry_the_run_into_code()
         for agent in cls.agents(root):
             if not cls.runs_tools_here(agent):
                 continue
             for tool in cls.tools(agent).values():
                 if not cls.gated(tool):
                     tool.forward = cls._gate(tool)
+
+    @classmethod
+    def carry_the_run_into_code(cls) -> None:
+        """
+        Makes the local executor run a code action in the context of the call that started it.
+
+        smolagents puts a time limit on a code action by running it on a fresh thread, through the `timeout`
+        helper of `smolagents.local_python_executor`, which it looks up each time it runs code. The thread
+        starts with an empty context, so the run's ToolContext, and with it the tool filter, would not reach a
+        tool the code calls. The helper is replaced, once and for the process, by one that captures the
+        caller's context and runs the code action in it; the time limit and its error are smolagents' own.
+        Called only under an `authorization` block, with the gate.
+        """
+        from smolagents import local_python_executor
+
+        original = local_python_executor.timeout
+        if getattr(original, cls.MARK, False):
+            return
+
+        def timeout(timeout_seconds: int) -> Callable[[Callable], Callable]:
+            limit = original(timeout_seconds)
+
+            def decorator(func: Callable) -> Callable:
+                @functools.wraps(func)
+                def in_the_callers_context(*args: Any, **kwargs: Any) -> Any:
+                    context = contextvars.copy_context()
+                    return limit(functools.partial(context.run, func))(*args, **kwargs)
+
+                return in_the_callers_context
+
+            return decorator
+
+        setattr(timeout, cls.MARK, True)
+        local_python_executor.timeout = timeout
 
     @classmethod
     def ungated(cls, root: Any) -> list[str]:

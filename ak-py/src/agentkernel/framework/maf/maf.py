@@ -9,7 +9,18 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from typing import Any, ClassVar
 from uuid import uuid4
 
-from agent_framework import Agent, AgentResponse, AgentResponseUpdate, AgentSession, Content, FunctionInvocationContext, FunctionMiddleware, Message
+from agent_framework import (
+    Agent,
+    AgentResponse,
+    AgentResponseUpdate,
+    AgentSession,
+    ChatContext,
+    ChatMiddleware,
+    Content,
+    FunctionInvocationContext,
+    FunctionMiddleware,
+    Message,
+)
 from agent_framework import tool as maf_tool
 
 from ...core import Agent as BaseAgent
@@ -76,20 +87,21 @@ class MAFSession:
 
 class AKToolGateMiddleware(FunctionMiddleware):
     """
-    The tool gate of one Microsoft Agent Framework run (#603).
+    The call-time half of the Microsoft Agent Framework tool gate (#603).
 
-    A function middleware the runner puts first on a gated run, ahead of any the run options carry. The framework
-    runs it around every function the model calls, so a call to a tool the run's ToolFilter does not allow is
-    answered with the reason as the function's result: the function is not run, the middleware after this one
-    never sees the call, and the model reads the reason and carries on. The framework has no hook for what a
-    turn offers (the tool list is static on the agent), so a denied tool is still shown to the model.
+    A function middleware the adapter puts first on the native agent under an `authorization` block. MAF runs the
+    agent's own middleware ahead of any passed with a run, and runs this one around every function the model
+    calls, so a call to a tool the run's ToolFilter does not allow is answered with the reason as the function's
+    result: the function is not run, no middleware after this one sees the call, and the model reads the reason
+    and carries on. The run is found through the current ToolContext, which the runner sets and MAF's function
+    tasks inherit.
 
     Not gated: a hosted or provider-executed tool, which runs where no function middleware is called.
     """
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session | None = None):
         """
-        :param session: The session of the run, which holds the filter Runtime published for it.
+        :param session: The session of one run, to decide for that run only; the current ToolContext's when omitted.
         """
         self._session = session
 
@@ -99,6 +111,29 @@ class AKToolGateMiddleware(FunctionMiddleware):
             # Returning without `call_next()` is the framework's way to answer a call without running it.
             context.result = reason
             return
+        await call_next()
+
+
+class AKToolOfferMiddleware(ChatMiddleware):
+    """
+    The list-time half of the Microsoft Agent Framework tool gate (#603).
+
+    A chat middleware the adapter puts on the native agent with `AKToolGateMiddleware`. Before each request to the
+    model it leaves the tools the run's ToolFilter does not allow out of what the request offers, so the model is
+    not shown them. That matters most for a tool bound with `approval_mode="always_require"`: MAF asks for the
+    approval before any function middleware runs, so a denied tool the model was offered would put a call the
+    gate refuses in front of a person, arguments included.
+
+    The request gets a copy of the options; the function loop keeps the full list, so a call to a hidden tool all
+    the same is answered by `AKToolGateMiddleware` with the reason. A tool with no name to decide by (a hosted
+    tool given as a dict) is offered as it is.
+    """
+
+    async def process(self, context: ChatContext, call_next: Callable[[], Awaitable[None]]) -> None:
+        options = context.options
+        if isinstance(options, Mapping) and options.get("tools") and ToolGate.current() is not None:
+            offered = [tool for tool in options["tools"] if not getattr(tool, "name", None) or ToolGate.refusal(tool.name) is None]
+            context.options = {**options, "tools": offered}
         await call_next()
 
 
@@ -186,9 +221,8 @@ class MAFRunner(Runner):
         self, session: Session | None, options: Mapping[str, Any], state: dict[str, Any] | None = None
     ) -> tuple[dict[str, Any], AgentSession | None, dict | None]:
         """
-        Restores the native MAF session and injects the framework context for one run. A gated run also gets the
-        tool gate as its first function middleware, ahead of any the run options carry; a run that is not gated
-        gets no `middleware` argument it did not have.
+        Restores the native MAF session and injects the framework context for one run. The tool gate is on the
+        native agent itself (`MAFAgent._gate_tools`), so the native call is the same with and without it.
         :param session: The AK session, or None for a stateless run.
         :param options: The run options resolved for this run.
         :param state: A serialized native session to restore instead of the stored one: a paused run's snapshot.
@@ -211,10 +245,7 @@ class MAFRunner(Runner):
             # Deep copy so in-place tool mutations do not alter `incoming`.
             native_session.state["ak_context"] = copy.deepcopy(incoming)
 
-        kwargs = self._native_kwargs(options, session=native_session)
-        if ToolGate.current(session) is not None:
-            kwargs["middleware"] = [AKToolGateMiddleware(session), *(options.get("middleware") or [])]
-        return kwargs, native_session, incoming
+        return self._native_kwargs(options, session=native_session), native_session, incoming
 
     def _finalize_session(
         self, session: Session | None, native_session: AgentSession | None, incoming: dict | None, record: PausedRun | None = None
@@ -773,6 +804,21 @@ class MAFAgent(BaseAgent):
         self._agent = agent
         self._attach_system_tools()
         self._setup_system_prompt()
+        self._gate_tools()
+
+    def _gate_tools(self) -> None:
+        """
+        Puts the tool gate first among the native agent's middleware, when an `authorization` block is configured:
+        what each request offers the model, then what each call answers. MAF runs the agent's own middleware ahead
+        of a run's, so the application's middleware, kept behind the gate, never sees a call the gate refused.
+        Idempotent; without the block the native agent is left exactly as the application built it.
+        """
+        if Runtime.access_gate() is None:
+            return
+        existing = list(self._agent.middleware or [])
+        if any(isinstance(middleware, AKToolGateMiddleware) for middleware in existing):
+            return
+        self._agent.middleware = [AKToolGateMiddleware(), AKToolOfferMiddleware(), *existing]
 
     @property
     def agent(self) -> Agent:

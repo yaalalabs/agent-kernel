@@ -17,7 +17,7 @@
   display: none;
   margin: 0;
   padding: 0.625rem 1rem;
-  font-size: 0.8125rem;
+  font-size: 0.9375rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -104,7 +104,7 @@
 }
 
 .phaseTitle {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -168,7 +168,7 @@
 }
 
 .callerChip {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -326,7 +326,7 @@
 
 .gateEyebrow {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -422,7 +422,7 @@
 
 .laneEyebrow {
   margin: 0 0 0.2rem;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -644,5 +644,23 @@
 
   .footerCard:last-child {
     border-bottom: none;
+  }
+}
+
+/* Print: the page is narrower than the diagram and cannot scroll, so drop the minimum width and the
+   clipping and scale the flow down to fit; every node stays on the page. */
+@media print {
+  .panel,
+  .wrap {
+    overflow: visible;
+  }
+
+  .diagram {
+    min-width: 0;
+    zoom: 0.66;
+  }
+
+  .scrollHint {
+    display: none;
   }
 }

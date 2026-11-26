@@ -156,6 +156,48 @@ class TestWhatACallAnswers:
         assert REFUND_REASON in refunds_model.read  # the call to the managed agent went through; its tool was refused
 
 
+class _Coder(Model):
+    """Writes one code action that calls `refund` and answers with what it returned, as a code agent's model does."""
+
+    def __init__(self):
+        super().__init__(model_id="coder")
+        self.steps = 0
+
+    def generate(self, messages, stop_sequences=None, response_format=None, tools_to_call_from=None, **kwargs):
+        self.steps += 1
+        code = 'result = refund("7")\nfinal_answer(result)' if self.steps == 1 else 'final_answer("no answer")'
+        return ChatMessage(role=MessageRole.ASSISTANT, content=f"Thought: refund it.\n<code>\n{code}\n</code>")
+
+
+class TestACodeAgentOnTheLocalExecutor:
+    """The local executor runs each code action on a thread of its own, with a time limit, and that thread does not
+    inherit the run's context; the gate carries the run across, so a tool called from the code is decided by it."""
+
+    @staticmethod
+    def _coder() -> tuple[SmolagentsAgent, _Tools]:
+        tools = _Tools()
+        native = CodeAgent(tools=[tools.lookup, tools.refund], model=_Coder(), name="coder", max_steps=3)
+        return SmolagentsAgent("coder", SmolagentsRunner(), native), tools
+
+    @pytest.mark.asyncio
+    async def test_a_denied_tool_called_from_the_code_is_not_run(self, gated):
+        agent, tools = self._coder()
+
+        reply = await agent.runner.run(agent, _session(REFUND_DENIED), PROMPT)
+
+        assert tools.ran == []
+        assert str(reply) == REFUND_REASON
+
+    @pytest.mark.asyncio
+    async def test_an_allowed_tool_called_from_the_code_runs(self, gated):
+        agent, tools = self._coder()
+
+        reply = await agent.runner.run(agent, _session(_allowing("lookup", "refund")), PROMPT)
+
+        assert tools.ran == ["refund"]
+        assert str(reply) == "refunded 7"
+
+
 class TestWhereTheGateIsPut:
     def test_without_an_authorization_block_the_native_tools_are_left_as_they_are(self):
         agent, _, tools = _billing()

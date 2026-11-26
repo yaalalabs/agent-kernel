@@ -176,6 +176,18 @@ class _RefundOrder(BaseTool):
         return f"refunded {order_id}"
 
 
+def _named(name: str) -> BaseTool:
+    """A tool declared under `name`, exactly as written."""
+
+    class _Tool(BaseTool):
+        description: str = "A tool."
+
+        def _run(self, order_id: str = "") -> str:
+            return "ran"
+
+    return _Tool(name=name)
+
+
 class TestTheNameACallIsMatchedBy:
     """CrewAI serves a tool under a sanitized name; the filter lists the name the agent declares."""
 
@@ -202,6 +214,21 @@ class TestTheNameACallIsMatchedBy:
 
         assert CrewAIToolGate.refusal(self._context(_RefundOrder(), "refund_order")) is None
 
+    def test_two_tools_whose_names_sanitize_alike_are_decided_each_by_its_own_name(self, running):
+        # `Refund Order` on the agent is allowed, `refund_order` on a coworker is denied: CrewAI calls both
+        # `refund_order`, and the call is decided by the tool CrewAI selected, never by whichever name comes first.
+        running(_allowing("Refund Order", refund_order="Tool 'refund_order' is denied for agent 'billing'"))
+
+        assert CrewAIToolGate.refusal(self._context(_named("refund_order"), "refund_order")) == "Tool 'refund_order' is denied for agent 'billing'"
+        assert CrewAIToolGate.refusal(self._context(_named("Refund Order"), "refund_order")) is None
+
+    def test_without_the_selected_tool_a_served_name_two_declared_names_share_is_refused(self, running):
+        running(_allowing("Refund Order", "refund_order"))
+        context = self._context(_named("refund_order"), "refund_order")
+        context.tool = None
+
+        assert CrewAIToolGate.refusal(context) == "Tool 'refund_order' is ambiguous: ['Refund Order', 'refund_order'] are all served under that name"
+
     def test_outside_a_run_nothing_is_refused(self):
         assert CrewAIToolGate.refusal(self._context(_RefundOrder(), "refund_order")) is None
 
@@ -209,7 +236,7 @@ class TestTheNameACallIsMatchedBy:
         # CrewAI lets a call through when a hook raises, so the gate must answer instead of failing.
         running(_allowing("Refund Order"))
         context = self._context(_RefundOrder(), "refund_order")
-        context.tool_name = None  # nothing a name can be matched by
+        context.tool, context.tool_name = None, None  # nothing a name can be matched by
 
         assert CrewAIToolGate.refusal(context).startswith("tool gate failed: ")
         assert run_before_tool_call_hooks(context) is True  # CrewAI's own dispatch: the call is blocked
@@ -267,14 +294,38 @@ class TestTheHooks:
         assert get_before_tool_call_hooks() == [CrewAIToolGate.before_tool_call]
         assert get_after_tool_call_hooks() == [CrewAIToolGate.after_tool_call]
 
-    def test_the_applications_own_hooks_are_kept(self):
+    def test_the_gate_goes_ahead_of_the_applications_own_hooks_registered_before_it(self):
+        # CrewAI runs before hooks in order, so an approval hook registered first would ask a person about a call
+        # the gate then refuses. The application's hooks are kept, in their order, behind the gate.
         def audit(context):
+            return None
+
+        def approve(context):
+            return None
+
+        register_before_tool_call_hook(audit)
+        register_before_tool_call_hook(approve)
+        CrewAIToolGate.install()
+
+        assert get_before_tool_call_hooks() == [CrewAIToolGate.before_tool_call, audit, approve]
+
+    def test_the_applications_hooks_never_see_a_call_the_gate_refused(self):
+        seen: list[str] = []
+
+        def audit(context):
+            seen.append(context.tool_name)
             return None
 
         register_before_tool_call_hook(audit)
         CrewAIToolGate.install()
+        ToolContext(Runtime.current(), None, _session(REFUND_DENIED), []).set()
+        try:
+            refused = run_before_tool_call_hooks(ToolCallHookContext(tool_name="refund", tool_input={}, tool=_named("refund").to_structured_tool()))
+        finally:
+            ToolContext._context.set(None)
 
-        assert get_before_tool_call_hooks() == [audit, CrewAIToolGate.before_tool_call]
+        assert refused is True
+        assert seen == []
 
     def test_loading_a_module_registers_the_hooks_only_under_an_authorization_block(self, authorization):
         native = CrewAgent(role="billing", goal="Bill", backstory="Bills.", llm=Scripted())

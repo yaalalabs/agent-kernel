@@ -277,9 +277,10 @@ class <Name>Agent(Agent):
         return self._native_agent.description or ""
 
     def get_tool_names(self) -> list[str]:
-        """The tools declared on the native agent, by the name the model calls them. Not reported: <what
-        this adapter leaves out, e.g. tools of a remote MCP server, of a handoff target, of a sub-graph>."""
-        return [tool.name for tool in self._native_agent.tools]
+        """The tools declared on the native agent and on every agent a run of it can reach (a handoff
+        target, an agent used as a tool, a sub-agent), by the name the model calls them. Not reported:
+        <what this adapter leaves out, e.g. tools of a remote MCP server, a toolset resolved per run>."""
+        return [tool.name for tool in self._reachable_tools()]  # framework-specific walk, deduplicated by name
 
     def _tool_descriptions(self) -> dict[str, str]:
         # Tool name -> the native tool's description; the descriptor's skills carry it
@@ -289,7 +290,7 @@ class <Name>Agent(Agent):
 **Key requirements:**
 - `get_description()` is optional since #603: nothing in OAK reads it, and the base returns `""`. Implement it when the native agent has a description worth handing to application code; never rely on it reaching a card, a tool or the catalog
 - `_native_description()` seeds the descriptor's `description`, which the agent catalog, an A2A card and an MCP tool publish (#603). Implement it **only** when the framework has a field that is a description by its own definition, separate from the instructions (OpenAI `handoff_description`, ADK and Pydantic AI `description`), and return that field as it is. Never fall back to the instructions, a system prompt, a goal or a backstory: leave the base's `""` and the application declares the text with `Module.describe`. If your adapter appends OAK's system-tool guidance to that same native field, strip it here (the ADK adapter does)
-- `get_tool_names()` and `_tool_descriptions()` report the native agent's tools (#603). The base class builds the agent's descriptor from them, once, on first read, so read the native agent in these methods rather than caching anything in `__init__` (system tools are attached after the base constructor returns). The contract is **statically declared tools only**: report what the native agent object holds when it is loaded, under the name the application declared each tool by, and do no I/O to find more. A prefix or rename the application puts on a toolset is part of that name; a prefix your adapter adds itself to serve a tool is not (the Claude adapter serves `lookup` as `mcp__ak__lookup` and reports `lookup`, mapping between the two where it gates the call). Tools that only exist at run time (a remote MCP server's, a toolset resolved per run, a handoff target's) are not reported; say in the method's docstring what your adapter leaves out, since an authorization policy can only name a tool the descriptor lists. Do not build an A2A card: `get_a2a_card()` was removed, and the A2A surface builds every card from the registry's descriptor (`A2ACardBuilder.build(descriptor)`); MCP agent tools and the catalog route read the same record. Add the descriptor cases to `tests/test_tool_<name>.py` (tool names in order, one skill per tool with its description)
+- `get_tool_names()` and `_tool_descriptions()` report the native agent's tools (#603). The base class builds the agent's descriptor from them, once, on first read, so read the native agent in these methods rather than caching anything in `__init__` (system tools are attached after the base constructor returns). The contract is **statically declared tools only**: report what the native agent object, and every agent a run of it can reach, holds when it is loaded, under the name the application declared each tool by, and do no I/O to find more. "Can reach" means handoff targets, agents used as tools, sub-agents and workflow nodes, managed agents, compiled subgraphs and delegation coworkers: a run keeps the filter of the agent it started with, and a gate refuses a tool the filter does not list, so a reachable agent's tool left out here can never be allowed (spec refinement 20). A prefix or rename the application puts on a toolset is part of that name; a prefix your adapter adds itself to serve a tool is not (the Claude adapter serves `lookup` as `mcp__ak__lookup` and reports `lookup`, mapping between the two where it gates the call). Tools that only exist at run time (a remote MCP server's, a toolset resolved per run, an agent built inside a tool) are not reported; say in the method's docstring what your adapter leaves out, since an authorization policy can only name a tool the descriptor lists. Do not build an A2A card: `get_a2a_card()` was removed, and the A2A surface builds every card from the registry's descriptor (`A2ACardBuilder.build(descriptor)`); MCP agent tools and the catalog route read the same record. Add the descriptor cases to `tests/test_tool_<name>.py` (tool names in order, one skill per tool with its description)
 - Store the native agent in `self._native_agent` for access in the Runner
 - Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
 
@@ -303,8 +304,8 @@ is the same everywhere, the mechanism is the framework's own:
 
 | Mechanism | Adapters | What the gate is |
 |---|---|---|
-| A per-run hook passed on the native call | Pydantic AI, MAF, Claude | `AKToolGateCapability` (`capabilities=`), `AKToolGateMiddleware` (`middleware=`), `_native_options` (`allowed_tools` / `disallowed_tools` plus the `PreToolUse` hook) |
-| A hook set on the native agent at wrap time | OpenAI, ADK, smolagents | `OpenAIToolGate` (`is_enabled` and an input guardrail), `GoogleADKToolGate` (`before_tool_callback`), `SmolagentsToolGate` (`forward` wrapped) |
+| A per-run hook passed on the native call | Pydantic AI, Claude | `AKToolGateCapability` (`capabilities=`), `_native_options` (`allowed_tools` / `disallowed_tools` plus the `PreToolUse` hook) |
+| A hook set on the native agent at wrap time | OpenAI, MAF, ADK, smolagents | `OpenAIToolGate` (`is_enabled` and an input guardrail), `AKToolGateMiddleware` and `AKToolOfferMiddleware` (first in the agent's `middleware`), `GoogleADKToolGate` (`before_tool_callback`), `SmolagentsToolGate` (`forward` wrapped) |
 | A process-wide hook list | CrewAI | `CrewAIToolGate` (before and after tool-call hooks) |
 | Inside the tools the `ToolBuilder` makes | LangGraph | `LangGraphToolGate` (a compiled graph cannot be changed) |
 
@@ -314,7 +315,11 @@ The rules every gate follows:
   the reason, or `None` when the run is not gated or the tool is allowed. Without a session it reads the
   current `ToolContext`'s, which your runner sets around the native call and which a native hook inherits.
   It fails closed (a filter it cannot read refuses the tool); if your hook finds the session another way
-  (ADK reads an id from the native state), make that lookup fail closed too.
+  (ADK reads an id from the native state), make that lookup fail closed too. A tool the framework runs on
+  a thread it starts itself without copying the context sees no `ToolContext` and is let through: carry
+  the context onto that thread (smolagents' local executor runs code under a `timeout` thread, which the
+  gate replaces with one that runs it in a copy of the caller's context), and test a call that goes that
+  way end to end.
 - **Call time is required, list time where the framework allows.** Answer a refused call with the reason
   as the tool's result, never an exception into the framework, so the model reads it and the run carries
   on. Hide refused tools from the model too when the framework has a hook for what a turn offers.
@@ -322,7 +327,10 @@ The rules every gate follows:
   in place only when `Runtime.access_gate()` is not None, at wrap time and again in `attach_tool`, and is
   idempotent (mark what you wrapped). A per-run hook is added only when `ToolGate.current(session)` returns
   a filter. The native call stays keyword-for-keyword what it is without the block. Put the gate first and
-  keep the application's own hooks, callbacks or middleware behind it.
+  keep the application's own hooks, callbacks or middleware behind it, so they never see a call the gate
+  refuses. Where the framework combines the hooks' decisions instead of running them in turn (the Claude
+  Agent SDK runs every matching `PreToolUse` hook and keeps `deny` over any other answer), the position
+  changes nothing and the gate stays where the adapter already puts its own hook.
 - **What you declare is what you gate.** `ToolFilter.allows` is false for a name the agent never declared,
   so a gate refuses every tool `get_tool_names()` leaves out. Declare every tool the gate can see, under the
   name the model calls it by (a toolset's prefix or rename included), and the tools of every agent a run can
@@ -336,8 +344,10 @@ The rules every gate follows:
 - **Report what you cannot gate.** `ungated_tool_names()` names what the application bound that your gate
   cannot reach (a tool built outside your `ToolBuilder`, an MCP server listed only inside a run, a tool run
   in a remote sandbox); under the block such an agent does not load (design Q12).
-  `provider_tool_names()` names what the model provider or the framework runs itself (hosted and built-in
-  tools); it is logged once at startup, not refused.
+  `provider_tool_names()` names what the model provider runs on its side (hosted and built-in tools); it
+  is logged once at startup, not refused. A tool type the framework runs in this process, on the
+  application's code, is not the provider's even when it is not a function tool (the OpenAI SDK's local
+  `ShellTool`, `ApplyPatchTool`, `ComputerTool`, `CustomTool`): if your gate cannot reach it, it is ungated.
 - **A paused call is asked again.** When the framework pauses for approval, the resume must be decided by
   the resume's filter: a policy or a level can change in between (Pydantic AI turns such an approval into a
   denial; LangGraph and Claude re-check in the gate itself).

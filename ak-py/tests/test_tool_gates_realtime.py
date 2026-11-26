@@ -196,6 +196,33 @@ class TestTheRoomsFilter:
         assert published.reason("lookup") == "Tool 'lookup' is not available while a participant in this call holds no level on agent 'voice'"
 
     @pytest.mark.asyncio
+    async def test_a_participant_the_authorizer_cannot_answer_for_leaves_no_tool_until_it_can(self, call, monkeypatch):
+        # Failing closed: the room loses its tools, not keeps the last filter, and the next input asks again.
+        from agentkernel.identity.authz.gate import AccessGate
+
+        connection = call()
+        await _speak(connection, ALICE)
+        asked: list[str] = []
+        working = AccessGate.tool_filter
+
+        def flaky(self, principal, agent, level=None):
+            asked.append(principal.subject)
+            if principal.subject == "bob" and asked.count("bob") == 1:
+                raise RuntimeError("the policy engine is down")
+            return working(self, principal, agent, level)
+
+        monkeypatch.setattr(AccessGate, "tool_filter", flaky)
+        await _speak(connection, BOB)
+        while_down = connection.session.get_tool_filter()
+        await _speak(connection, BOB)
+
+        assert while_down.allowed == frozenset()
+        assert while_down.reason("lookup") == "tool gate failed: RuntimeError"
+        assert asked == ["bob", "bob"]
+        published = connection.session.get_tool_filter()
+        assert (published.level, published.allowed) == (AccessLevel.READ, frozenset({"lookup"}))
+
+    @pytest.mark.asyncio
     async def test_closing_the_call_unpublishes_the_filter(self, call):
         connection = call()
         await _speak(connection, ALICE)

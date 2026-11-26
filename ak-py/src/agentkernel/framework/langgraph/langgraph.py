@@ -471,9 +471,15 @@ class LangGraphAgent(BaseAgent):
     def ungated_tool_names(self) -> list[str]:
         """
         Returns the tools of the graph that `LangGraphToolBuilder` did not bind: the gate is inside the tools it
-        binds, so a tool built any other way runs with no check of the run's tool filter.
+        binds, so a tool built any other way runs with no check of the run's tool filter. Every tool node is
+        checked, so a native tool is named even where a gated one elsewhere in the graph shares its name.
         """
-        return [name for name, tool in self._graph_tools().items() if not LangGraphToolGate.gated(tool)]
+        names: list[str] = []
+        for tool_node in LangGraphToolGate.tool_nodes(self.agent):
+            for name, tool in tool_node.tools_by_name.items():
+                if not LangGraphToolGate.gated(tool) and name not in names:
+                    names.append(name)
+        return names
 
     def _tool_descriptions(self) -> dict[str, str]:
         """

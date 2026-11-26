@@ -1370,8 +1370,22 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
   iteration, and `ak-dev-new-framework-integration` gains Step 4b, the tool gate a new adapter
   must ship (its rules, the mechanisms by framework, the test suite and the checklist items).
   That closes what iteration 28 step 2 left for phase E.
+- **Review of #1018** (spec section 9, "As built (review of #1018)"). Fixed: OpenAI tools the SDK
+  runs in the process (a local shell, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool`,
+  `CustomTool`) were counted as the provider's and are now ungated, so the agent does not load;
+  MAF now hides a denied tool (`AKToolOfferMiddleware`) and puts both middleware first on the
+  native agent, so the application's middleware never sees a refused call and a denied approval
+  tool never pauses; ADK's `FinishTaskTool` is a control-flow tool; CrewAI's before hook goes first
+  and a call is decided by the tool's declared name; LangGraph names every native tool instance;
+  smolagents code agents ran their tools outside the run's context on the local executor and so
+  were not gated; a realtime participant the authorizer cannot answer for leaves the room no tool
+  instead of failing the input. The docs, changelog and bundled skill now say a denied tool is
+  stopped on every framework and hidden from the model on four. Declined: moving the Claude
+  refusal hook ahead of the application's `PreToolUse` hooks, since the SDK combines their
+  decisions with deny first whatever the order.
 - **Known limits, each in the spec:** OpenAI's realtime session answers a denied tool `Tool <name>
-  not found`; MAF's hosted tools given as dicts are not reported; a tool a LangGraph node calls
+  not found`; MAF's hosted tools given as dicts are not reported, and a call to a hidden MAF tool
+  bound with `approval_mode="always_require"` is still put to a person before it is refused; a tool a LangGraph node calls
   without a `ToolNode` is seen by nothing; CrewAI is verified through the uv overlay only.
 - **Left open:** whether a participant who joins a call opened by someone else may speak to the
   agent at all. Today their presence only narrows the room's tools.

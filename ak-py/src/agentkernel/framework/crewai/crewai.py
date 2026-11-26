@@ -4,13 +4,8 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 from crewai import Agent, Crew, Memory, Task
-from crewai.hooks.tool_hooks import (
-    ToolCallHookContext,
-    get_after_tool_call_hooks,
-    get_before_tool_call_hooks,
-    register_after_tool_call_hook,
-    register_before_tool_call_hook,
-)
+from crewai.hooks.dispatch import InterceptionPoint, get_global_hook_list
+from crewai.hooks.tool_hooks import ToolCallHookContext, get_after_tool_call_hooks, register_after_tool_call_hook
 from crewai.memory import MemoryRecord, ScopeInfo
 from crewai.memory.storage.backend import StorageBackend as Storage
 from crewai.tools import tool as crewai_tool
@@ -435,17 +430,19 @@ class CrewAIToolGate:
     The tool gate of CrewAI runs (#603): two tool-call hooks, registered once for the process.
 
     CrewAI keeps one list of tool-call hooks for the whole process and every executor runs it around every tool
-    call, whichever agent of a crew makes the call. `before_tool_call` blocks a call to a tool the run's
-    ToolFilter does not allow, so the tool is not run. CrewAI then answers the call with a line of its own
-    ("Tool execution blocked by hook"), and `after_tool_call` puts the filter's reason in its place, so the
-    model reads why. Hooks the application registered are kept; one that blocks a call still blocks it.
+    call, whichever agent of a crew makes the call. `before_tool_call` goes first in the before list, ahead of
+    the hooks the application registered (kept, in their order), and blocks a call to a tool the run's
+    ToolFilter does not allow, so the tool is not run and no hook after it sees the call. CrewAI then answers
+    the call with a line of its own ("Tool execution blocked by hook"), and `after_tool_call`, last in the
+    after list so nothing replaces it, puts the filter's reason in its place, so the model reads why.
 
     The run is found through the ToolContext the runner set: context variables reach the thread a crew is
     kicked off on. A crew the application runs itself has no run of ours and is not gated.
 
     CrewAI serves a tool to the model under a sanitized form of its name (`Refund Order` as `refund_order`),
-    which is the name a hook is given. The filter lists the names the agent declares, so a call is matched to
-    the declared name that sanitizes to it.
+    which is the name a hook is given; the tool the call selected, also in the hook's context, carries the name
+    the agent declared, and that is the name the call is decided by. Two declared names that sanitize alike
+    therefore never share a decision.
 
     Left alone: the tools CrewAI adds to an agent that may delegate (delegate work to a coworker, ask one a
     question). They are how a crew moves work, not tools the application declared. The tools a coworker then
@@ -456,10 +453,12 @@ class CrewAIToolGate:
     @classmethod
     def install(cls) -> None:
         """
-        Registers the two hooks in CrewAI's process-wide lists; a second call registers nothing.
+        Registers the two hooks in CrewAI's process-wide lists, the before hook first and the after hook last; a
+        second call registers nothing. CrewAI's live before list is changed in place, as CrewAI asks of it.
         """
-        if cls.before_tool_call not in get_before_tool_call_hooks():
-            register_before_tool_call_hook(cls.before_tool_call)
+        before = get_global_hook_list(InterceptionPoint.PRE_TOOL_CALL)
+        if cls.before_tool_call not in before:
+            before.insert(0, cls.before_tool_call)
         if cls.after_tool_call not in get_after_tool_call_hooks():
             register_after_tool_call_hook(cls.after_tool_call)
 
@@ -495,8 +494,15 @@ class CrewAIToolGate:
                 return None
             if isinstance(getattr(context.tool, "_original_tool", None), BaseAgentTool):
                 return None
-            called = sanitize_tool_name(context.tool_name)
-            declared = next((name for name in (*tool_filter.allowed, *tool_filter.reasons) if sanitize_tool_name(name) == called), context.tool_name)
+            declared = getattr(context.tool, "name", None)
+            if not isinstance(declared, str) or not declared:
+                # No selected tool to read the declared name from: find it by the served name, and refuse a
+                # served name two declared names share rather than pick one of them.
+                called = sanitize_tool_name(context.tool_name)
+                matches = {name for name in (*tool_filter.allowed, *tool_filter.reasons) if sanitize_tool_name(name) == called}
+                if len(matches) > 1:
+                    return f"Tool '{called}' is ambiguous: {sorted(matches)} are all served under that name"
+                declared = matches.pop() if matches else context.tool_name
         except Exception as error:
             return f"{ToolGate.FAILED}: {type(error).__name__}"
         return ToolGate.refusal(declared)

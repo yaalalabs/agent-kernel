@@ -1165,16 +1165,23 @@ deleted).
   `reachable(root)` walks the agents it hands off to (`handoffs`, `handoff(agent)` through its
   `_agent_ref`) and uses as tools (`_agent_instance`): their tools are declared under the first
   agent and gated. `ungated_tool_names()` names an `mcp_servers` entry and a handoff that does not
-  hold its agent, which the access gate refuses at load. A hosted tool is declared and not gated.
+  hold its agent, and a tool the SDK runs in this process without asking the gate (a local
+  `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool`, `CustomTool`), which the access
+  gate refuses at load. `OpenAIToolGate.provider_run(tool)` is what the provider runs (the hosted
+  types and a `ShellTool` in a hosted container): declared and not gated.
   **Pydantic AI** (`AKToolGateCapability`): a per-run capability added by `PydanticAIRunner._gated`
   at all four native calls, ahead of the run options' `capabilities`; `prepare_tools` drops what
   the filter refuses and `wrap_tool_execute` returns the reason without running the handler.
   `_served_tools` reports each tool under the name its toolset serves it by (`<prefix>_<name>`,
   a renamed name). `_deferred_results` hands an approval of a tool denied by the resume to the
   SDK as `ToolDenied(reason)`. A toolset listed only inside a run is left out of a gated run.
-  **MAF** (`AKToolGateMiddleware`): first in the per-run `middleware` list built in
-  `_prepare_session`, for a gated run only; it sets `context.result` to the reason and returns
-  without `call_next()`. No list-time hook: a denied tool is still shown to the model.
+  **MAF** (`AKToolGateMiddleware`, `AKToolOfferMiddleware`): both put first on the native agent's
+  `middleware` by `MAFAgent._gate_tools` at wrap time, under the block only, so the application's
+  own agent middleware never sees a refused call. The function middleware sets `context.result` to
+  the reason and returns without `call_next()`; the chat middleware hands each model request a copy
+  of the options without the refused tools (a denied `approval_mode="always_require"` tool would
+  otherwise pause before any function middleware runs). The function loop keeps the full list, so a
+  stray call to a hidden tool still gets the reason. `_prepare_session` adds no middleware.
   **Claude**: in `_native_options(..., session=)` a refused `mcp__ak__<name>` leaves
   `allowed_tools` (the application's own entry included), joins `disallowed_tools` once, and the
   one `PreToolUse` hook denies it with the reason ahead of its approval and resume branches. Only
@@ -1184,7 +1191,7 @@ deleted).
   tools (OpenAI), sub-agents, workflow nodes and agent tools (ADK), the coworkers of a delegating
   agent (CrewAI). (2) A framework's own control-flow tools are not gated: no agent declares
   them, and refusing them would stop a run from moving (ADK's `TransferToAgentTool` and
-  `SetModelResponseTool`, CrewAI's `BaseAgentTool` delegation tools; an OpenAI handoff is not a
+  `SetModelResponseTool` and, where the SDK has it, `FinishTaskTool`, CrewAI's `BaseAgentTool` delegation tools; an OpenAI handoff is not a
   function tool at all). (3) A gate that changes a native object or a process-wide list is put
   in place only when an `authorization` block is configured (`Runtime.access_gate()`).
   **ADK** (`GoogleADKToolGate`): `before_tool` is a `before_tool_callback` put first on every
@@ -1200,24 +1207,33 @@ deleted).
   `CrewAIModule.load`. `before_tool_call` returns `False` to block; `after_tool_call` returns the
   reason, which replaces CrewAI's own blocked-by-hook line because CrewAI runs after hooks for a
   blocked call. A hook gets the sanitized name a tool is served under (`sanitize_tool_name`), so
-  the call is matched to the declared name that sanitizes to it. The hooks never raise: CrewAI
-  lets a call through when a hook fails, so a failure refuses the call.
+  the call is decided by the declared name of the tool on the context (`context.tool.name`), and only
+  without one matched to the declared name that sanitizes to it (more than one: refused as
+  ambiguous). The before hook is inserted first in CrewAI's global list, the after hook appended
+  last. The hooks never raise: CrewAI lets a call through when a hook fails, so a failure refuses
+  the call.
   **LangGraph** (`LangGraphToolGate`): a compiled graph cannot be changed, so the gate is inside
   the tools `LangGraphToolBuilder.bind` makes: each function is wrapped (`functools.wraps`, so the
   schema is unchanged) and the tool marked `metadata={"ak_gated": True}`; the wrapper returns the
   reason. `tool_nodes(graph)` covers compiled subgraphs (`get_subgraphs(recurse=True)`), for
-  `get_tool_names` and for `ungated_tool_names`, which names every unmarked tool; under the block
+  `get_tool_names` and for `ungated_tool_names`, which names every unmarked tool instance in every
+  node (a native tool sharing a bound tool's name is still named); under the block
   such an agent does not load (Q12). An interrupted tool runs again on resume, so it is asked again.
   **smolagents** (`SmolagentsToolGate`): `forward` wrapped on each tool instance (marked
   `__ak_gated__`) under the block, at wrap and in `attach_tool`; managed agents are walked
   (`agents`), `final_answer` and managed-agent calls left alone; a code agent whose
-  `python_executor` is not a `LocalPythonExecutor` is not wrapped and is ungated as a whole.
+  `python_executor` is not a `LocalPythonExecutor` is not wrapped and is ungated as a whole. The
+  local executor runs the model's code on a `timeout` worker thread that drops context variables,
+  so `carry_the_run_into_code()` replaces `local_python_executor.timeout`, once for the process and
+  under the block, with one that runs the code in a copy of the caller's context.
   **Realtime**: no pool-side check. `RealtimeConnection.publish_principal` publishes the room's
   filter (`_room_tool_filter`: the intersection of every participant who has spoken, the lowest
-  level, no tool while one holds no level), and the gates on the native agents act on it (ADK's live
+  level, no tool while one holds no level; an authorizer that raises for a participant publishes a
+  filter allowing nothing, with `tool gate failed: <type>` reasons, and leaves the input unpublished
+  so the next asks again), and the gates on the native agents act on it (ADK's live
   flow calls `before_tool_callback`; OpenAI's realtime session asks `is_enabled` per call and answers
   a denied tool `Tool <name> not found`). **Provider-run tools**: `Agent.provider_tool_names()`
-  (OpenAI non-function tools, ADK tools with no function declaration, Claude Code built-ins and
+  (OpenAI hosted tools, ADK tools with no function declaration, Claude Code built-ins and
   other MCP servers) is logged once per agent by `validate_configuration`, never refused.
 - **Protocol surfaces** (iteration 20). Each answers for the caller in its own protocol's terms,
   and a hidden agent is never told apart from one the surface does not serve.

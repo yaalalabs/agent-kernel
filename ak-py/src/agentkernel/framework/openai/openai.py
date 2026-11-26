@@ -9,7 +9,20 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from typing import Any, ClassVar
 
-from agents import Agent, FunctionTool, Runner, function_tool
+from agents import (
+    Agent,
+    CodeInterpreterTool,
+    FileSearchTool,
+    FunctionTool,
+    HostedMCPTool,
+    ImageGenerationTool,
+    ProgrammaticToolCallingTool,
+    Runner,
+    ShellTool,
+    ToolSearchTool,
+    WebSearchTool,
+    function_tool,
+)
 from agents.handoffs import Handoff
 from agents.realtime import RealtimeAgent, RealtimeRunner, RealtimeSession
 from agents.run_state import RunState
@@ -849,11 +862,37 @@ class OpenAIToolGate:
     tools are declared under the first agent and carry the gate too.
 
     What this leaves out: a hosted tool (web search, file search, code interpreter) is run by the provider, which
-    asks the SDK neither question, so it is declared and cannot be gated. And `ungated` names what the
-    application bound that can be neither declared nor gated.
+    asks the SDK neither question, so it is declared and cannot be gated (`provider_run`). Every other tool that
+    is not a function tool runs the application's own code in this process (a local shell, an apply-patch
+    editor, a computer, a custom tool) and the SDK asks neither question for it either; `ungated` names those,
+    with what the application bound that can be neither declared nor gated.
     """
 
     GUARDRAIL_NAME: ClassVar[str] = "ak_tool_gate"
+    HOSTED_TOOLS: ClassVar[tuple[type, ...]] = (
+        WebSearchTool,
+        FileSearchTool,
+        CodeInterpreterTool,
+        ImageGenerationTool,
+        HostedMCPTool,
+        ToolSearchTool,
+        ProgrammaticToolCallingTool,
+    )
+    """
+    The tool types OpenAI runs itself. A shell is hosted only in a hosted environment; anything else that is not
+    a function tool is taken to run here, so a tool type the SDK adds later is refused, not trusted
+    """
+
+    @classmethod
+    def provider_run(cls, tool: Any) -> bool:
+        """
+        Whether OpenAI runs a tool itself, rather than the SDK running the application's code in this process.
+        :param tool: A tool of a native agent.
+        """
+        if isinstance(tool, ShellTool):
+            environment: Mapping[str, object] = tool.environment or {}
+            return environment.get("type", "local") != "local"
+        return isinstance(tool, cls.HOSTED_TOOLS)
 
     @classmethod
     def install(cls, agents: Iterable[Any]) -> None:
@@ -886,13 +925,18 @@ class OpenAIToolGate:
     @classmethod
     def ungated(cls, root: Any) -> list[str]:
         """
-        Names what a run of `root` can call that the adapter can neither declare nor gate: the tools of an MCP
-        server, which are listed only once a run connects to it, and the tools of an agent a handoff names
-        without holding it (a `Handoff` built by hand, a `realtime_handoff`).
+        Names what a run of `root` can call that the adapter cannot gate: a tool the SDK runs in this process
+        that is not a function tool (a local shell, an apply-patch editor, a computer, a custom tool), the tools
+        of an MCP server, which are listed only once a run connects to it, and the tools of an agent a handoff
+        names without holding it (a `Handoff` built by hand, a `realtime_handoff`).
         :param root: The native agent a run starts with.
-        :return: One entry for each such source, on `root` or on an agent it can reach.
+        :return: One entry for each such tool or source, on `root` or on an agent it can reach.
         """
         names: list[str] = []
+        for agent in cls.reachable(root):
+            for tool in getattr(agent, "tools", None) or []:
+                if not isinstance(tool, FunctionTool) and not cls.provider_run(tool) and tool.name not in names:
+                    names.append(tool.name)
         for agent in cls.reachable(root):
             for server in getattr(agent, "mcp_servers", None) or []:
                 names.append(f"the tools of MCP server '{server.name}' on agent '{agent.name}'")
@@ -1062,18 +1106,20 @@ class OpenAIAgent(BaseAgent):
 
     def ungated_tool_names(self) -> list[str]:
         """
-        Returns what a run of the agent can call that is neither declared nor gated: the tools of an MCP server
-        and of an agent a handoff does not hold, on this agent or on one it can reach. A hosted tool is not
-        among them: it is declared, and the provider runs it where no gate reaches.
+        Returns what a run of the agent can call that no gate reaches and the application could rebind: a tool
+        the SDK runs in this process that is not a function tool, the tools of an MCP server and of an agent a
+        handoff does not hold, on this agent or on one it can reach. A hosted tool is not among them: the
+        provider runs it, and `provider_tool_names` reports it.
         """
         return OpenAIToolGate.ungated(self.agent)
 
     def provider_tool_names(self) -> list[str]:
         """
-        Returns the hosted tools a run of the agent can call (web search, file search, code interpreter and the
-        like): declared, and run by the provider, which asks the SDK neither question the gate answers.
+        Returns the hosted tools a run of the agent can call (web search, file search, code interpreter, a shell
+        in a hosted container and the like): declared, and run by the provider, which asks the SDK neither question
+        the gate answers. A tool the SDK runs in this process is not among them: `ungated_tool_names` reports it.
         """
-        return [name for name, tool in self._declared_tools().items() if not isinstance(tool, FunctionTool)]
+        return [name for name, tool in self._declared_tools().items() if OpenAIToolGate.provider_run(tool)]
 
     def _declared_tools(self) -> dict[str, Any]:
         """

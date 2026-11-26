@@ -344,6 +344,18 @@ class TestADKsOwnTools:
     def test_a_structured_response_is_not_refused(self, run):
         assert GoogleADKToolGate.before_tool(tool=SetModelResponseTool(self._Out), args={"answer": "x"}, tool_context=run) is None
 
+    def test_finishing_a_task_is_not_refused_nor_declared(self, run):
+        # An agent in task mode ends its task through a tool ADK appends to it.
+        def lookup(order_id: str) -> str:
+            """Look an order up."""
+            return "order"
+
+        worker = LlmAgent(name="worker", model=_model(), mode="task", description="Looks orders up.", tools=[lookup])
+        [finish] = [tool for tool in worker.tools if getattr(tool, "name", None) == "finish_task"]
+
+        assert GoogleADKAgent("worker", GoogleADKRunner(), worker).get_tool_names() == ["lookup"]
+        assert GoogleADKToolGate.before_tool(tool=finish, args={}, tool_context=run) is None
+
     def test_any_other_tool_the_filter_never_listed_is(self, run):
         def export_ledger() -> str:
             """Export the ledger."""

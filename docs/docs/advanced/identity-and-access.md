@@ -563,7 +563,7 @@ agent is built with:
 | OpenAI Agents SDK | Is not offered to the model, and a call that reaches it is answered with the reason. |
 | Pydantic AI | Is not offered to the model, and a call that reaches it is answered with the reason. |
 | Claude Agent SDK | Is not offered to the model (`disallowed_tools`), and a call that reaches it is denied with the reason. |
-| Microsoft Agent Framework | Is still shown to the model; the call is answered with the reason and the tool is not run. |
+| Microsoft Agent Framework | Is not offered to the model, and a call that reaches it is answered with the reason. A call to a hidden tool bound with `approval_mode="always_require"` is still put to a person first, since MAF asks before any middleware runs, and is refused when the approval arrives. |
 | Google ADK | Is still shown to the model; the call is answered with the reason and the tool is not run. |
 | CrewAI | Is still shown to the model; the call is blocked and the model reads the reason. |
 | LangGraph | Is still shown to the model; the call is answered with the reason and the tool is not run. Only tools bound with `LangGraphToolBuilder` can be gated. |
@@ -602,10 +602,12 @@ entry lists:
   tools of its managed agents.
 - **Tools OAK cannot gate stop the agent from loading.** With an `authorization` block, a LangGraph
   agent with a tool not bound through `LangGraphToolBuilder` (a `@tool` from LangChain, a
-  `StructuredTool` you built), and a smolagents code agent that runs its tools in a remote sandbox
-  (E2B, Docker, Modal), fail to load and the error names the tools. A LangGraph tool in a compiled
-  subgraph counts too. Rebind the tools with the tool builder, or run the code agent on the local
-  executor.
+  `StructuredTool` you built), a smolagents code agent that runs its tools in a remote sandbox
+  (E2B, Docker, Modal), and an OpenAI Agents SDK agent with a tool the SDK runs in your process
+  without a guardrail (a local `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool` or
+  `CustomTool`) fail to load and the error names the tools. A LangGraph tool in a compiled
+  subgraph counts too. Rebind the tools with the tool builder or as function tools, or run the code
+  agent on the local executor.
 - **Hosted and built-in tools are not stopped.** A tool the provider runs (OpenAI's web search, file
   search and code interpreter, Google Search and URL context on ADK), Claude Code's built-in tools
   and the tools of other MCP servers on a Claude agent are outside the gate. The application starts
@@ -625,8 +627,9 @@ would have affected:
 - A tool policy that names a tool its agent does not have stops the application, with the tools the
   agent does have. A misspelt `deny` would otherwise deny nothing.
 - An agent with tools OAK cannot gate (a LangGraph tool not bound with `LangGraphToolBuilder`, the
-  tools of a smolagents code agent on a remote executor, an OpenAI agent's `mcp_servers`) stops the
-  application, naming the tools.
+  tools of a smolagents code agent on a remote executor, an OpenAI agent's `mcp_servers`, a handoff
+  that does not hold its agent or an SDK tool that runs in the process) stops the application,
+  naming the tools.
 - A grant that names an agent id or a tag no agent carries, and a `role:` subject with no role mapper
   configured, are logged as warnings: they match nothing today. So are an agent's hosted and
   built-in tools, which the tool policy does not reach.

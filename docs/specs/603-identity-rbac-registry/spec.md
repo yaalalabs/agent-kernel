@@ -1468,7 +1468,8 @@ is.
   speakers. The connection keeps the tool filter of every participant who has spoken and
   publishes their intersection (`RealtimeConnection._room_tool_filter`): a tool is offered only
   when every one of them may use it, at the lowest of their levels, and a participant holding no
-  level on the agent leaves the room no tool. The order of speakers changes nothing, so the race
+  level on the agent leaves the room no tool. A participant the authorizer cannot answer for
+  (it raises) leaves the room no tool until a later input of theirs is answered (review of #1018). The order of speakers changes nothing, so the race
   decides no tool. The principal a tool reads, and the owner recorded, are still the last
   speaker's; whether a participant may speak to the agent at all is still asked only of the
   caller who opened the call.
@@ -2035,13 +2036,56 @@ Shared pieces (`core/`):
     (`google_search`, `url_context`), a Claude agent's Claude Code built-ins (all of them unless
     `options.tools` is a list) and its other MCP servers. `validate_configuration` logs them once
     per agent and does not refuse.
+- As built (review of #1018), where the review changed what iterations 21 to 23 shipped:
+  - **OpenAI, tools the SDK runs in the process.** A local `ShellTool` (no `environment`, or
+    `{"type": "local"}`), `LocalShellTool`, `ApplyPatchTool`, `ComputerTool` and `CustomTool` run
+    the application's code here, and the SDK asks no `is_enabled` and runs no input guardrail for
+    them. They are named by `ungated_tool_names`, so the agent does not load under the block.
+    `OpenAIToolGate.provider_run(tool)` decides what is the provider's: the hosted types
+    (`WebSearchTool`, `FileSearchTool`, `CodeInterpreterTool`, `ImageGenerationTool`,
+    `HostedMCPTool`, `ToolSearchTool`, `ProgrammaticToolCallingTool`) and a `ShellTool` in a hosted
+    container; `provider_tool_names` reports only those.
+  - **MAF, list time and placement.** The table's per-run middleware is replaced by two middleware
+    the adapter puts first on the native agent at wrap time, only under the block
+    (`MAFAgent._gate_tools`): `AKToolGateMiddleware` (function, call time, as the table has it) and
+    `AKToolOfferMiddleware` (chat, list time), which hands each model request a copy of the options
+    without the tools the filter refuses. On the agent, the gate runs ahead of the agent's own
+    function middleware, so a cache or audit middleware never sees a refused call; per run it ran
+    behind them. Hiding the tool also keeps a denied `approval_mode="always_require"` tool from
+    pausing the run, since MAF asks for the approval before any function middleware runs. The
+    function loop keeps the full tool list, so a call to a hidden tool is still answered with the
+    reason; one to a hidden approval tool is still put to a person first and refused on resume.
+    `_prepare_session` passes no middleware of its own any more, so the native call is keyword for
+    keyword the same with and without the block.
+  - **ADK.** ADK 2.8's task mode adds `FinishTaskTool` to an agent's tools; it joins
+    `TransferToAgentTool` and `SetModelResponseTool` in `GoogleADKToolGate.OWN_TOOLS` (imported
+    only where the SDK has it), so it is neither gated nor declared.
+  - **CrewAI.** The before hook is put first in CrewAI's global list, so an application's before
+    hook never sees a refused call; the after hook is still last, so its reason is the line the
+    model reads. A call is decided by the declared name of the tool CrewAI is running
+    (`context.tool.name`), not by matching the sanitized name it serves the tool under: two tools
+    whose names sanitize alike (`Refund Order`, `refund_order`) are each decided by their own.
+    Without a tool on the context, the sanitized match is the fallback, and a name more than one
+    declared tool sanitizes to is refused as ambiguous.
+  - **LangGraph.** `ungated_tool_names` asks of every tool instance in every tool node, so a native
+    tool that shares its name with a bound one in another node is still named.
+  - **smolagents, code agents.** The local executor runs the model's code in a worker thread under
+    a timeout (`local_python_executor.timeout`), which does not carry context variables, so the
+    gate inside a tool saw no `ToolContext` and let every call through. `SmolagentsToolGate`
+    replaces that `timeout` once for the process, under the block, with one that runs the code in
+    a copy of the caller's context.
+  - **Realtime, a filter that cannot be decided.** When the authorizer raises for a participant
+    (anything but the `PermissionError` of no level), `publish_principal` publishes a filter that
+    allows no tool, each refused with `tool gate failed: <type>`, logs a warning, and does not
+    record the input as published, so the next input asks again. Raising would have handed the
+    input back to the pool's queue to be retried, every audio chunk of it.
 - Composition rule everywhere: AK's check runs first; a user-set hook, callback, middleware,
   capability or `is_enabled` value is preserved and runs after (OpenAI `is_enabled` is an AND of
-  both; ADK and MAF lists are AK-first; CrewAI's global hook list keeps the user's hooks).
+  both; ADK and MAF lists are AK-first; CrewAI's before hook goes first in its global list).
 - The reason string is `ToolFilter.reason(name)`, for example
   `"Tool 'apply_manifest' requires level write; the current principal has read"`.
 - Traced runner subclasses (`trace/*/<framework>.py`) call `super().run(...)` and need no change;
-  the MAF middleware is added inside `MAFRunner._prepare_session`, which the traced runner reuses.
+  the MAF middleware is on the native agent, which the traced runner runs.
 - System-prompt text about system tools stays composed per agent at load time
   (`core/tool.py:256-276`); it is not filtered per run (documented limitation, design section 7).
 

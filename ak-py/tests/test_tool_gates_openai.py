@@ -333,6 +333,52 @@ class TestWhatCannotBeGated:
     def test_an_agent_with_only_function_and_hosted_tools_has_none(self):
         assert _wrapped(_native(tools=[lookup, WebSearchTool()])).ungated_tool_names() == []
 
+    @staticmethod
+    def _local_tools() -> list:
+        """The SDK tool types that run the application's own code in this process, where no gate reaches."""
+        from agents import ApplyPatchTool, ComputerTool, CustomTool, LocalShellTool, ShellTool
+
+        async def run_sql(context, text):
+            return "rows"
+
+        class Browser:
+            environment, dimensions = "browser", (1024, 768)
+
+        return [
+            ShellTool(executor=lambda request: "ok"),
+            LocalShellTool(executor=lambda request: "ok"),
+            CustomTool(name="sql", description="Run SQL.", on_invoke_tool=run_sql),
+            ApplyPatchTool(editor=object()),
+            ComputerTool(computer=Browser()),
+        ]
+
+    def test_tools_the_sdk_runs_in_this_process_are_ungated_not_provider_run(self):
+        # A local shell, a custom tool, an apply-patch editor, a computer: the application's code, run by the SDK
+        # here, which asks no `is_enabled` and runs no input guardrail for them.
+        wrapped = _wrapped(_native(tools=[lookup, *self._local_tools()]))
+
+        assert wrapped.ungated_tool_names() == ["shell", "local_shell", "sql", "apply_patch", "computer_use_preview"]
+        assert wrapped.provider_tool_names() == []
+
+    def test_a_shell_in_a_hosted_container_is_provider_run(self):
+        from agents import ShellTool
+
+        wrapped = _wrapped(_native(tools=[lookup, ShellTool(environment={"type": "container_auto"})]))
+
+        assert (wrapped.ungated_tool_names(), wrapped.provider_tool_names()) == ([], ["shell"])
+
+    def test_an_agent_with_a_local_sdk_tool_does_not_load_under_the_block(self, gated):
+        from agents import ShellTool
+
+        native = _native(tools=[lookup, ShellTool(executor=lambda request: "ok")])
+
+        with Runtime(InMemorySessionStore()) as runtime:
+            with pytest.raises(AKConfigError, match=r"agent 'billing' on openai has tools Agent Kernel cannot gate: \['shell'\]"):
+                from agentkernel.framework.openai.openai import OpenAIModule
+
+                OpenAIModule([native])
+            assert runtime.agents() == {}
+
     def test_hosted_tools_are_reported_as_run_by_the_provider(self):
         billing = _native("billing", tools=[refund, WebSearchTool()])
         triage = _wrapped(_native("triage", tools=[lookup], handoffs=[billing]))

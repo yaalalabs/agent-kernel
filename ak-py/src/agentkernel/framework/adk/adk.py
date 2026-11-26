@@ -71,6 +71,13 @@ from ...core.util.error_util import user_facing_error_message
 from ...realtime.base import RealtimeRunner as BaseRealtimeRunner
 from ...trace import Trace
 
+try:  # the tool an agent in task mode ends its task with; ADK keeps it in a private module
+    from google.adk.agents.llm.task._finish_task_tool import FinishTaskTool
+
+    _TASK_TOOLS: tuple[type, ...] = (FinishTaskTool,)
+except ImportError:  # pragma: no cover: an ADK without task mode
+    _TASK_TOOLS = ()
+
 FRAMEWORK = "adk"
 
 APP_NAME = "AgentKernel"
@@ -1131,14 +1138,14 @@ class GoogleADKToolGate:
     all, so each carries the callback and their tools are declared under the root. The callback finds the run
     by the tool context id the runner seeds into the ADK session state, which an agent used as a tool inherits.
 
-    Left alone: the two tools ADK adds to a request itself, the transfer to another agent and the structured
-    response, which are how a run moves and not tools the application declared. Not reached: a tool the model
-    provider runs (Google Search, code execution), for which ADK calls no callback.
+    Left alone: the tools ADK adds itself, the transfer to another agent, the structured response and the end of
+    a task (an agent in task mode), which are how a run moves or ends and not tools the application declared.
+    Not reached: a tool the model provider runs (Google Search, code execution), for which ADK calls no callback.
     """
 
-    OWN_TOOLS: ClassVar[tuple[type, ...]] = (TransferToAgentTool, SetModelResponseTool)
+    OWN_TOOLS: ClassVar[tuple[type, ...]] = (TransferToAgentTool, SetModelResponseTool, *_TASK_TOOLS)
     """
-    The tools ADK adds to a request on its own; no filter lists them and the gate does not refuse them
+    The tools ADK adds on its own; no filter lists them, the gate does not refuse them and no agent declares them
     """
 
     @classmethod
@@ -1330,7 +1337,7 @@ class GoogleADKAgent(AKBaseAgent):
         for agent in GoogleADKToolGate.agents(self._agent):
             for tool in agent.tools:
                 served = self._served_tool(tool)
-                if served is not None:
+                if served is not None and not isinstance(served, GoogleADKToolGate.OWN_TOOLS):
                     found.setdefault(served.name, served)
         return found
 

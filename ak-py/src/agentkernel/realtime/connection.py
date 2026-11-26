@@ -17,7 +17,7 @@ from ..core.hooks import StreamHalt
 from ..core.model import AccessLevel, AgentRequest, AgentRequestText, AgentRequestVoice, Principal, StreamChunk, ToolFilter
 from ..core.runtime import Runtime
 from ..core.session.serde import BinarySerde
-from ..core.tool import ToolContext
+from ..core.tool import ToolContext, ToolGate
 from ..pipeline.envelope import (
     ATTR_INTEGRATION,
     ATTR_REALTIME,
@@ -342,15 +342,26 @@ class RealtimeConnection:
         is an input.
 
         With an ``authorization`` block the call's tool filter is published with it: the room's
-        (``_room_tool_filter``), which the tool gates of the framework adapters read.
+        (``_room_tool_filter``), which the tool gates of the framework adapters read. If the authorizer cannot
+        answer for this participant, the room is left no tool rather than the filter it had, and the input is
+        not counted as published, so the next one asks again. Nothing is raised: the pool would hand the input
+        back to the queue to be retried, every audio chunk of it.
 
         :param principal: The input's principal, or None when it named nobody (anonymous).
         """
         if self._principal_published and principal == self.principal:
             return
+        try:
+            tool_filter = self._room_tool_filter(principal)
+        except Exception as error:
+            self._log.warning(f"Realtime session {self.session_id}: the tool filter could not be decided, so no tool is offered: {error!r}")
+            failed = f"{ToolGate.FAILED}: {type(error).__name__}"
+            no_tool = ToolFilter(level=AccessLevel.READ, allowed=frozenset(), reasons={name: failed for name in self.agent.get_tool_names()})
+            self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal, no_tool)
+            self._principal_published = False
+            return
         self.principal = principal
         self._principal_published = True
-        tool_filter = self._room_tool_filter(principal)
         self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal, tool_filter)
 
     def _room_tool_filter(self, principal: Principal | None) -> ToolFilter | None:
