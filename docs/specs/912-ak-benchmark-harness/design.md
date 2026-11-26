@@ -177,6 +177,10 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   - Sets each `request_id` itself (unique per request) and puts it in the prompt the mock agent echoes.
   - Sending and receiving run separately; responses are matched to requests by `request_id`. A send never waits for
     a response.
+    - A reply without a request id is matched by the id in its text (the echoed prompt). AK's enqueue-failure and
+      agent-error replies carry neither, so they go to the connection's only in-flight request (always the case in a
+      burst step). With several in flight (steady steps) they can't be attributed: logged at `WARNING`, and those
+      requests show as `timeout`.
   - Records per request, on the client clock: scheduled send, sent, first chunk, complete, status
     (`ok` / `error` / `timeout`).
     - Timestamps are UTC wall-clock time (so they line up with AK's UTC trace lines); latency and every other

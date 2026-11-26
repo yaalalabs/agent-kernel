@@ -56,14 +56,34 @@ async def test_refused_token_raises_on_connect():
 
 
 @pytest.mark.asyncio
-async def test_system_response_failed_is_error():
+@pytest.mark.parametrize(
+    ("server_kw", "detail"),
+    [({"fail": {"req1"}}, "Request processing failed"), ({"agent_error": {"req1"}}, "agent failed")],
+)
+async def test_id_less_error_reply_settles_the_only_in_flight_request(server_kw, detail):
     events = []
-    async with MockWsServer(SECRET, fail={"req1"}) as server:
+    async with MockWsServer(SECRET, **server_kw) as server:
         driver = await connected(server, events)
         await driver.send("req1", "sess1", "req1")
         await until(lambda: events)
         await driver.close()
-    assert [(e.request_id, e.kind, e.detail) for e in events] == [("req1", "error", "Request processing failed")]
+    assert [(e.request_id, e.kind, e.detail) for e in events] == [("req1", "error", detail)]
+
+
+@pytest.mark.asyncio
+async def test_id_less_error_reply_with_two_in_flight_is_not_guessed(caplog):
+    events = []
+    async with MockWsServer(SECRET, delay_s=0.05, fail={"req1"}, drop={"req2"}) as server:
+        driver = await connected(server, events)
+        await driver.send("req1", "sess1", "req1")
+        await driver.send("req2", "sess1", "req2")
+        await until(lambda: "id-less error reply with 2 requests in flight" in caplog.text)
+        await asyncio.sleep(0.1)
+        await driver.close()
+    # Neither is settled: both stay in flight and end by the generator's client timeout.
+    assert events == []
+    assert list(driver._in_flight) == ["req1", "req2"]
+    assert any(r.levelname == "WARNING" and "Request processing failed" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -114,6 +134,7 @@ def test_unmatched_and_non_json_frames_dropped():
     events = []
     driver = WebSocketCompleteDriver("ws://unused", "t", events.append)
     driver._in_flight["abc"] = None
+    driver._in_flight["def"] = None  # two in flight, so the id-less FAILED frame can't be attributed
     driver._handle("not json")
     driver._handle(json.dumps({"type": "CHAT_RESPONSE", "result": "content={'echo': 'xyz'}"}))
     driver._handle(json.dumps({"type": "SYSTEM_RESPONSE", "status": "FAILED", "message": "Request processing failed"}))

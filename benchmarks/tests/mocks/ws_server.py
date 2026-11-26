@@ -16,13 +16,15 @@ class MockWsServer:
     """Local stand-in for AK's WebSocket chat endpoint: CHAT_QUEUED, then after delay_s a CHAT_RESPONSE echoing the prompt (no request id).
 
     Like AK, a bad token (or a user in fail_connect_for) is accepted and then closed with 1008. Requests in `drop` are never
-    answered, requests in `fail` get a SYSTEM_RESPONSE FAILED (both take request ids or users), and `duplicate` sends every reply twice.
+    answered, requests in `fail` get AK's enqueue-failure SYSTEM_RESPONSE FAILED and requests in `agent_error` its agent-error
+    CHAT_RESPONSE {"error": ...}, both without request id or prompt as AK sends them (all three take request ids or users), and
+    `duplicate` sends every reply twice.
     """
 
-    def __init__(self, secret: str, delay_s: float = 0.0, drop=(), fail=(), fail_connect_for=(), duplicate: bool = False):
+    def __init__(self, secret: str, delay_s: float = 0.0, drop=(), fail=(), agent_error=(), fail_connect_for=(), duplicate: bool = False):
         self.signer = TokenSigner(secret)
         self.delay_s = delay_s
-        self.drop, self.fail, self.fail_connect_for = set(drop), set(fail), set(fail_connect_for)
+        self.drop, self.fail, self.agent_error, self.fail_connect_for = set(drop), set(fail), set(agent_error), set(fail_connect_for)
         self.duplicate = duplicate
         self.connections: Counter[str] = Counter()  # accepted connections per user
         self.frames: Counter[str] = Counter()  # chat frames per user
@@ -65,7 +67,9 @@ class MockWsServer:
     async def _reply(self, ws: ServerConnection, user: str, request_id: str, body: dict) -> None:
         await asyncio.sleep(self.delay_s)
         if {request_id, user} & self.fail:
-            reply = {"status": "FAILED", "message": "Request processing failed", "request_id": request_id, "type": "SYSTEM_RESPONSE"}
+            reply = {"status": "FAILED", "message": "Request processing failed", "type": "SYSTEM_RESPONSE"}
+        elif {request_id, user} & self.agent_error:
+            reply = {"error": "agent failed", "type": "CHAT_RESPONSE"}
         else:
             reply = {"result": f"content={{'echo': '{body['prompt']}'}}", "session_id": body["session_id"], "type": "CHAT_RESPONSE"}
         with contextlib.suppress(ConnectionClosed):

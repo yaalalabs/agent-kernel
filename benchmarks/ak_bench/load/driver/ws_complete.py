@@ -78,9 +78,12 @@ class WebSocketCompleteDriver(ClientDriver):
         # Only replies count: CHAT_QUEUED carries the request id but is the ack, and an unknown frame must not pass as a reply.
         if kind != "CHAT_RESPONSE" and not (kind == "SYSTEM_RESPONSE" and failed):
             return
-        request_id = self._match(frame, raw)
+        request_id = self._match(frame, raw, failed)
         if request_id is None:
-            _logger.debug("dropped an unmatched %s frame: %.200s", kind, raw)
+            if failed:
+                _logger.warning("dropped an id-less error reply with %d requests in flight: %.200s", len(self._in_flight), raw)
+            else:
+                _logger.debug("dropped an unmatched %s frame: %.200s", kind, raw)
             return
         del self._in_flight[request_id]
         wall, mono = datetime.now(UTC), time.monotonic()
@@ -90,9 +93,13 @@ class WebSocketCompleteDriver(ClientDriver):
             self.on_event(ResponseEvent(request_id, "first_chunk", wall, mono))
             self.on_event(ResponseEvent(request_id, "complete", wall, mono))
 
-    def _match(self, frame: dict, raw: str) -> str | None:
-        """The frame's request_id; else the in-flight id found in the frame text (AK's complete reply carries none, the prompt is the id)."""
+    def _match(self, frame: dict, raw: str, failed: bool) -> str | None:
+        """The frame's request_id; else the in-flight id found in the frame text (AK's complete reply carries none, the prompt is the id);
+        else, for an error reply (AK's carry neither id nor prompt), the connection's only in-flight request."""
         request_id = frame.get("request_id")
         if request_id is not None:
             return request_id if request_id in self._in_flight else None
-        return next((r for r in self._in_flight if r in raw), None)
+        found = next((r for r in self._in_flight if r in raw), None)
+        if found is None and failed and len(self._in_flight) == 1:
+            return next(iter(self._in_flight))
+        return found

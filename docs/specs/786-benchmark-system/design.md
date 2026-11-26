@@ -599,7 +599,9 @@ flowchart TD
     AK pushes a WebSocket reply to every connection of the reply's `user_id` (`pipeline/response_handler.py:279-287`);
   - sends on a schedule (burst: once; steady: a random gap between sends) and **never waits for a response before
     sending**;
-    receiving runs separately and matches responses to requests by `request_id`;
+    receiving runs separately and matches responses to requests by `request_id` (a reply without one by the id in
+    its text; an id-less error reply, which carries neither, by the connection's only in-flight request; with several
+    in flight, as in steady steps, it can't be attributed and those requests show as `timeout`);
   - sets the `request_id` itself (the WS handler accepts a client id, `pipeline/ws/handler.py:228`; the Lambda WS
     path requires one, `deployment/aws/serverless/core/router/ws_lambda.py:386-387`);
   - records scheduled send, sent, first chunk and complete times per request from the client clock: timestamps are
