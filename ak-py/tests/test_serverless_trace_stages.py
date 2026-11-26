@@ -136,5 +136,5 @@ def test_delta_websocket(caplog):
         (TraceStage.AGENT_DONE, "req-1"),
         (TraceStage.OUTPUT_ENQUEUED, "req-1"),
     ]
-    # One output message per chunk, each traced (#911 Q1).
-    assert _traces(caplog, "ak.aws.responsehandler") == [(TraceStage.OUTPUT_RECEIVED, "req-1"), (TraceStage.RESPONSE_DELIVERED, "req-1")] * 2
+    # One output message per chunk; only the last (done) chunk is traced (#911 L2).
+    assert _traces(caplog, "ak.aws.responsehandler") == [(TraceStage.OUTPUT_RECEIVED, "req-1"), (TraceStage.RESPONSE_DELIVERED, "req-1")]

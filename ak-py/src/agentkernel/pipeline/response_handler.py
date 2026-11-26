@@ -60,14 +60,27 @@ class ResponseHandler:
             self._ws_handler = PodPushWebSocketHandler()
         return self._ws_handler
 
+    def _trace(self, stage: TraceStage, message: QueueMessage) -> None:
+        """Write a trace line for a whole reply or a delta stream's last chunk only.
+
+        Delta sends one output message per chunk, and only the last one carries ``done: true``, so a
+        request gets one line per stage however many chunks it has (#911 L2). The body is parsed
+        only at ``TRACE``.
+        """
+        if not self._log.isEnabledFor(TRACE):
+            return
+        body = json.loads(message.body) if message.body else None
+        if isinstance(body, dict) and body.get("done") is False:
+            return
+        self._log.log(TRACE, "[%s] request_id=%s", stage, message.attributes.get(ATTR_REQUEST_ID))
+
     def process(self, message: QueueMessage) -> None:
         """Deliver one output message: to its messaging platform, or per the execution mode."""
         integration = IntegrationDelivery.integration_of(message.attributes)
         if integration and message.attributes.get(ATTR_REALTIME):
             self._deliver_realtime(message, integration)
             return
-        # Delta sends one output message per chunk, so this fires per chunk (#911 Q1).
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_RECEIVED, message.attributes.get(ATTR_REQUEST_ID))
+        self._trace(TraceStage.OUTPUT_RECEIVED, message)
         if integration:
             body = json.loads(message.body) if message.body else {}
             status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
@@ -268,7 +281,7 @@ class ResponseHandler:
                 "rest_sync + delta (SSE) and AG-UI delivery require a chunk-streaming response store (in_memory, redis, valkey, "
                 "or a BYO store with the capability)"
             )
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+        self._trace(TraceStage.RESPONSE_DELIVERED, message)
         store.add_chunk(request_id, json.loads(message.body))
 
     def _broadcast(self, message: QueueMessage, message_type: WebSocketHandlerABC.MessageType) -> None:
@@ -289,7 +302,7 @@ class ResponseHandler:
             body = {"response": body}
 
         # endpoint_url is the API Gateway return address on ECS; pod push ignores it.
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, message.attributes.get(ATTR_REQUEST_ID))
+        self._trace(TraceStage.RESPONSE_DELIVERED, message)
         self._get_ws_handler().broadcast(
             endpoint_url=message.attributes.get(ATTR_ENDPOINT_URL), message=body, user_id=user_id, message_type=message_type
         )

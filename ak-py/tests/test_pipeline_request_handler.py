@@ -499,7 +499,7 @@ class TestTraceStages:
         with caplog.at_level(TRACE, logger="ak"):
             with _client().stream("POST", CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME}) as response:
                 frames = [line for line in response.iter_lines() if line.startswith("data: ")]
-            _await_deliveries(caplog, len(frames))
+            _await_deliveries(caplog, 1)
 
         lines = _trace_lines(caplog)
         assert [line.stage for line in lines["ak.pipeline.request_handler"]] == [TraceStage.REQUEST_HANDLER_START, TraceStage.INPUT_ENQUEUED]
@@ -510,11 +510,9 @@ class TestTraceStages:
             TraceStage.AGENT_DONE,
             TraceStage.OUTPUT_ENQUEUED,
         ]
-        # One output message per chunk, each traced (#911 Q1).
-        assert [line.stage for line in lines["ak.pipeline.response_handler"]] == [
-            TraceStage.OUTPUT_RECEIVED,
-            TraceStage.RESPONSE_DELIVERED,
-        ] * len(frames)
+        # One output message per chunk; only the last (done) chunk is traced (#911 L2).
+        assert len(frames) > 1
+        assert [line.stage for line in lines["ak.pipeline.response_handler"]] == [TraceStage.OUTPUT_RECEIVED, TraceStage.RESPONSE_DELIVERED]
         assert len({line.request_id for group in lines.values() for line in group}) == 1
 
 
