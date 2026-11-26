@@ -366,7 +366,7 @@ from agentkernel.maf import MAFModule
 
 # Define your agent
 assistant = Agent(
-    OpenAIChatClient(model="gpt-4.1-mini"),
+    OpenAIChatClient(model="gpt-6-luna"),
     name="assistant",              # required — AK registers agents by name eagerly
     description="A helpful AI assistant.",
     instructions="You are a helpful AI assistant. Provide concise and accurate answers.",

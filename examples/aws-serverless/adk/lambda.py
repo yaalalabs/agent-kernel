@@ -11,7 +11,7 @@ openai_key = SecretManager.current().get("OPENAI_API_KEY")
 # Math specialist agent
 math_agent = Agent(
     name="math",
-    model=LiteLlm(model="openai/gpt-4.1-mini", api_key=openai_key),
+    model=LiteLlm(model="openai/gpt-6-luna", reasoning_effort="none", api_key=openai_key),
     description="Specialist agent for math questions",
     instruction="""
     You provide help with math problems.
@@ -23,7 +23,7 @@ math_agent = Agent(
 # General purpose agent
 history_agent = Agent(
     name="history",
-    model=LiteLlm(model="openai/gpt-4.1-mini", api_key=openai_key),
+    model=LiteLlm(model="openai/gpt-6-luna", reasoning_effort="none", api_key=openai_key),
     description="Agent for history questions",
     instruction="""
     You provide assistance with history queries.
@@ -33,7 +33,7 @@ history_agent = Agent(
 
 triage_agent = LlmAgent(
     name="triage",
-    model=LiteLlm(model="openai/gpt-4.1-mini", api_key=openai_key),
+    model=LiteLlm(model="openai/gpt-6-luna", reasoning_effort="none", api_key=openai_key),
     description="Agent that routes the user to the appropriate specialist agent (math or history).",
     instruction="""
     You determine which agent to use based on the user's question.

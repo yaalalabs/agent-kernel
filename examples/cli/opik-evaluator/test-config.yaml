@@ -7,5 +7,5 @@ mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallba
 # an Opik Cloud account, API key, or server.
 evaluator: opik
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai

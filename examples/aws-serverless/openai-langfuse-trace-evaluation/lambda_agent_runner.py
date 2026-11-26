@@ -1,6 +1,7 @@
 from agentkernel.aws import ServerlessAgentRunner
 from agentkernel.openai import OpenAIModule
-from agents import Agent, function_tool
+from agents import Agent, ModelSettings, function_tool
+from openai.types.shared import Reasoning
 
 ORDERS = {"A-1001": "Shipped, arriving Friday"}
 
@@ -18,7 +19,8 @@ support_agent = Agent(
     instructions="You answer questions about orders and deliveries. Always look the order up with "
     "get_order_status and report exactly what it returns. If the order is not found, say so; never guess.",
     tools=[get_order_status],
-    model="gpt-4.1-mini",
+    model="gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 triage_agent = Agent(
@@ -26,7 +28,8 @@ triage_agent = Agent(
     instructions="You are the front desk of an online shop. Hand order and delivery questions to the support "
     "agent. Politely decline anything unrelated to the shop's orders.",
     handoffs=[support_agent],
-    model="gpt-4.1-mini",
+    model="gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([triage_agent, support_agent])

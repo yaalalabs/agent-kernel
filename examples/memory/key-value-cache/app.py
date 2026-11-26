@@ -1,7 +1,8 @@
 from agentkernel import KeyValueCache, Session
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agents import Agent, function_tool
+from agents import Agent, ModelSettings, function_tool
+from openai.types.shared import Reasoning
 
 from hooks import RAGHook
 
@@ -37,7 +38,8 @@ senior_agent = Agent(
         "If you can't find any information, respond with 'I don't know'."
     ),
     tools=[query_private_knowledge_base],
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 junior_agent = Agent(
@@ -47,7 +49,8 @@ junior_agent = Agent(
         "If you can't find any information, respond with 'I don't know'."
     ),
     tools=[query_private_knowledge_base],
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 # Register the agent with the OpenAI module attaching RAG pre-hook

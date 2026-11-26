@@ -5,7 +5,8 @@ from agentkernel.cli import CLI
 from agentkernel.core import Agent as AKAgent
 from agentkernel.core import AgentReplyText, AgentRequest, AgentRequestText, PostHook, Session
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
-from agents import Agent, RunConfig, RunHooks
+from agents import Agent, ModelSettings, RunConfig, RunHooks
+from openai.types.shared import Reasoning
 
 logger = logging.getLogger("ak.example.openai_dynamic_run_options")
 
@@ -97,7 +98,8 @@ weather_agent = Agent(
     instructions="You provide weather information upon request. Use the get_weather tool for every weather question. "
     "Give short and direct answers.",
     tools=OpenAIToolBuilder.bind([get_weather]),
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 # The declaration: a factory beside static keywords, in one call. `max_turns` and `hooks` are declared once and

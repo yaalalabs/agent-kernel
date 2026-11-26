@@ -44,7 +44,7 @@ exists, from the deployment's logs). The harness is a downstream *consumer* of t
 
 ### Deployment: one long-lived instance, all integrations on
 
-- One deployable app (`e2e/app/app.py`): a single OpenAI agent `general` on `gpt-4.1-mini`,
+- One deployable app (`e2e/app/app.py`): a single OpenAI agent `general` on `gpt-6-luna`,
   registered via `OpenAIModule`, served by `RESTAPI.run([...handlers])`.
 - Handler activation is credential-gated so the same app degrades cleanly:
   - Slack + Telegram are **always on** (their credentials are always provided).

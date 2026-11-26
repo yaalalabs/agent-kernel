@@ -42,7 +42,8 @@ async def test_client():
 async def ask(test_client, agent_name: str, message: str) -> str:
     """Point the CLI at one of the three agents defined in demo.py and send it one message."""
     await test_client.send(f"!select {agent_name}")
-    return (await test_client.send(message)).lower()
+    # Newer models write a curly apostrophe ("can’t"); straighten it so the phrase checks match either.
+    return (await test_client.send(message)).lower().replace("’", "'")
 
 
 async def test_demo_imports_nothing_from_the_knowledgebase_package():

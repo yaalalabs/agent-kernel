@@ -7,7 +7,8 @@ This example routes across two read-only Starburst backends:
 
 """
 
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 from agentkernel.cli import CLI
 from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
 from agentkernel.knowledgebase.starburst import StarburstManager
@@ -133,7 +134,8 @@ EXECUTION PROTOCOL:
     knowledge_tools = knowledge_builder.build()
     return Agent(
         name="KB_Router_Agent",
-        model="gpt-4.1-mini",
+        model="gpt-6-luna",
+        model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
         instructions=instructions,
         tools=OpenAIToolBuilder.bind(knowledge_tools),
     )

@@ -174,7 +174,7 @@ from agentkernel.cli import CLI
 from agentkernel.maf import MAFModule
 
 agent = Agent(
-    OpenAIChatClient(model="gpt-4.1-mini"),
+    OpenAIChatClient(model="gpt-6-luna"),
     name="assistant",
     description="A helpful assistant.",
     instructions="You are a helpful assistant.",

@@ -7,13 +7,14 @@ from agentkernel.api import RESTAPI
 from agentkernel.langgraph import LangGraphModule
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.pipeline import IOHandler
-from agents import Agent
+from agents import Agent, ModelSettings
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
+from openai.types.shared import Reasoning
 
 REFUNDS: dict[str, float] = {"ORD-1001": 42.50, "ORD-1002": 980.00}
 
@@ -54,7 +55,8 @@ support_agent = Agent(
     # turns that into a paused reply. Its body runs only once a human has approved. The two tools are
     # bound separately because the options apply to every function in a call.
     tools=OpenAIToolBuilder.bind([lookup_order]) + OpenAIToolBuilder.bind([issue_refund], needs_approval=True),
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([support_agent])
@@ -111,7 +113,9 @@ def confirm(state: RefundPlan) -> dict[str, Any]:
         f"In one short sentence, confirm to the customer that their refund will be returned via "
         f'{state["method"]}.' + (f' Work in this note from the agent: "{state["note"]}"' if state["note"] else "")
     )
-    reply = ChatOpenAI(model="gpt-4.1-mini", temperature=0).invoke([SystemMessage(content=instruction)])
+    reply = ChatOpenAI(model="gpt-6-luna", reasoning_effort="none", temperature=0).invoke(
+        [SystemMessage(content=instruction)]
+    )
     return {"messages": [reply]}
 
 

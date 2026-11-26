@@ -5,12 +5,13 @@ from agentkernel.core import AgentReplyText, PostHook, Session
 from agentkernel.pydanticai import PydanticAIModule, PydanticAIToolBuilder
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import FunctionToolCallEvent
+from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import UsageLimits
 
 logger = logging.getLogger("ak.example.pydanticai_run_options")
 
 STATS_PREFIX = "Run stats:"
-MODEL = "openai:gpt-4.1-mini"
+MODEL = "openai:gpt-6-luna"
 REQUEST_LIMIT = 10  # Pydantic AI's cap on model requests per run; the SDK default is 50
 
 
@@ -61,6 +62,7 @@ class AppendRunStatsPostHook(PostHook):
 
 weather_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="weather",
     description="Weather assistant",
     instructions="You provide weather information upon request. Use the get_weather tool for every weather question. "

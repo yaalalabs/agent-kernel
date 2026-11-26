@@ -1,13 +1,15 @@
 from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 math_agent = Agent(
     name="math",
     handoff_description="Specialist agent for math questions",
     instructions="You provide help with math problems. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 general_agent = Agent(
@@ -15,7 +17,8 @@ general_agent = Agent(
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 triage_agent = Agent(
@@ -23,7 +26,8 @@ triage_agent = Agent(
     instructions="You determine which agent to use based on the user's question. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details",
     handoffs=[general_agent, math_agent],
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 module = OpenAIModule([triage_agent, math_agent, general_agent])
@@ -34,7 +38,8 @@ geography_agent = Agent(
     handoff_description="Agent for geography questions",
     instructions="You provide assistance with geography questions. Give short and direct answers exactly to the question."
     "Don't answer with sentences ",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 physics_agent = Agent(
@@ -42,7 +47,8 @@ physics_agent = Agent(
     handoff_description="Agent for physics questions",
     instructions="You provide assistance with physics questions. Give short and direct answers exactly to the question."
     "Don't answer with sentences ",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 module.load([geography_agent, physics_agent])

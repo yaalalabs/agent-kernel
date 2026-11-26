@@ -227,9 +227,9 @@ class TestOpenAIInputGuardrail:
         assert isinstance(guardrail, InputGuardrail)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("model", ["gpt-6-luna", "gpt-4.1-mini"])
-    async def test_check_call_params_do_not_depend_on_the_model(self, monkeypatch, mock_session, mock_agent, sample_requests, model):
-        """The check call sends max_completion_tokens, which reasoning and non-reasoning models both accept."""
+    @pytest.mark.parametrize("model, reasoning", [("gpt-6-luna", "none"), ("gpt-4.1-mini", None)])
+    async def test_check_call_turns_reasoning_off_where_the_model_can(self, monkeypatch, mock_session, mock_agent, sample_requests, model, reasoning):
+        """max_completion_tokens caps reasoning tokens too, so a reasoning model is sent reasoning_effort="none"."""
         monkeypatch.setattr(AKConfig.get().guardrail.input, "model", model)
         guardrail = OpenAIInputGuardrail()
         guardrail._guardrails_client = Mock()
@@ -239,9 +239,9 @@ class TestOpenAIInputGuardrail:
         assert result == sample_requests
         kwargs = guardrail._guardrails_client.chat.completions.create.call_args.kwargs
         assert kwargs["model"] == model
-        assert kwargs["max_completion_tokens"] == 1
+        assert kwargs["max_completion_tokens"] == 16
         assert "max_tokens" not in kwargs
-        assert "reasoning_effort" not in kwargs
+        assert kwargs.get("reasoning_effort") == reasoning
 
 
 class TestOpenAIOutputGuardrail:
@@ -266,9 +266,11 @@ class TestOpenAIOutputGuardrail:
         assert isinstance(guardrail, OutputGuardrail)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("model", ["gpt-6-luna", "gpt-4.1-mini"])
-    async def test_check_call_params_do_not_depend_on_the_model(self, monkeypatch, mock_session, mock_agent, sample_requests, sample_reply, model):
-        """The check call sends max_completion_tokens, which reasoning and non-reasoning models both accept."""
+    @pytest.mark.parametrize("model, reasoning", [("gpt-6-luna", "none"), ("gpt-4.1-mini", None)])
+    async def test_check_call_turns_reasoning_off_where_the_model_can(
+        self, monkeypatch, mock_session, mock_agent, sample_requests, sample_reply, model, reasoning
+    ):
+        """max_completion_tokens caps reasoning tokens too, so a reasoning model is sent reasoning_effort="none"."""
         monkeypatch.setattr(AKConfig.get().guardrail.output, "model", model)
         guardrail = OpenAIOutputGuardrail()
         guardrail._guardrails_client = Mock()
@@ -279,9 +281,9 @@ class TestOpenAIOutputGuardrail:
         kwargs = guardrail._guardrails_client.chat.completions.create.call_args.kwargs
         assert kwargs["model"] == model
         assert kwargs["messages"][-1] == {"role": "assistant", "content": "I'm doing great!"}
-        assert kwargs["max_completion_tokens"] == 1
+        assert kwargs["max_completion_tokens"] == 16
         assert "max_tokens" not in kwargs
-        assert "reasoning_effort" not in kwargs
+        assert kwargs.get("reasoning_effort") == reasoning
 
 
 class TestBaseGuardrailUtil:

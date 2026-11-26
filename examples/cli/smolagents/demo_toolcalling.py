@@ -23,7 +23,7 @@ def get_weather(city: str) -> str:
         return f"Cannot find weather for {city}."
 
 
-model = LiteLLMModel(model_id="openai/gpt-4.1-mini")
+model = LiteLLMModel(model_id="openai/gpt-6-luna", reasoning_effort="none", drop_params=True)
 
 math_agent = ToolCallingAgent(
     tools=[],

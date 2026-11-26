@@ -1,7 +1,8 @@
 from agentkernel.aws import AWSWebsocketAPI
 from agentkernel.openai import OpenAIModule
 from agentkernel.secret import SecretManager
-from agents import Agent, set_default_openai_key
+from agents import Agent, ModelSettings, set_default_openai_key
+from openai.types.shared import Reasoning
 
 # OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
 # handed to the SDK in memory; it is never written back to os.environ.
@@ -12,20 +13,23 @@ math_agent = Agent(
     handoff_description="Specialist agent for math questions",
     instructions="You provide help with math problems. Do not provide reasoning or step-by-step explanations. Just give the final answer. \
          If prompted for anything else, refuse to answer.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 history_agent = Agent(
     name="history",
     handoff_description="Specialist agent for historical questions",
     instructions="You provide assistance with historical queries. Explain important events and context clearly.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 triage_agent = Agent(
     name="triage",
     instructions="You determine which agent to use based on the user's question.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
     handoffs=[history_agent, math_agent],
 )
 

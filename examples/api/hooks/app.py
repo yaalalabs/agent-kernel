@@ -1,6 +1,7 @@
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 from hooks import DisclaimerHook, GuardRailHook, RAGHook
 
@@ -11,7 +12,8 @@ qa_agent = Agent(
         "You are a helpful AI assistant that answers questions accurately. "
         "Keep your responses concise and informative."
     ),
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 # Register the agent with the OpenAI module

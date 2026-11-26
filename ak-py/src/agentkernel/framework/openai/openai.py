@@ -16,6 +16,7 @@ from agents import (
     FunctionTool,
     HostedMCPTool,
     ImageGenerationTool,
+    ItemHelpers,
     ProgrammaticToolCallingTool,
     Runner,
     ShellTool,
@@ -145,6 +146,28 @@ class OpenAIRunner(BaseRunner):
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, OpenAISession())
 
     @staticmethod
+    def _final_output(result: Any) -> Any:
+        """
+        Returns the run's final output, recovering the answer when the closing message is blank.
+
+        Newer OpenAI models (gpt-6-luna) can write the answer as a "commentary" message and close
+        the response with an empty "final_answer" one. The SDK takes the last message, so the
+        reply would come back empty although the model answered. Only the last model call is
+        searched, so text from an earlier step of the run is never returned in its place.
+
+        :param result: The SDK run result.
+        :return: The final output, or the last non-blank message text of the last model call.
+        """
+        reply = result.final_output
+        if not isinstance(reply, str) or reply.strip() or not result.raw_responses:
+            return reply
+        for item in reversed(result.raw_responses[-1].output):
+            text = ItemHelpers.extract_text(item)
+            if text and text.strip():
+                return text
+        return reply
+
+    @staticmethod
     def _process_requests(requests: list[AgentRequest]) -> tuple[str, list[dict]]:
         """
         Process requests and extract prompt text and message content.
@@ -269,7 +292,7 @@ class OpenAIRunner(BaseRunner):
             if result.interruptions:
                 return self._paused_reply(agent, session, result)
 
-            reply = result.final_output
+            reply = self._final_output(result)
             structured = AgentReplyAny.from_output(reply, prompt)
             if structured is not None:
                 return structured
@@ -441,7 +464,7 @@ class OpenAIRunner(BaseRunner):
             if result.interruptions:
                 return self._paused_reply(agent, session, result)
 
-            reply = result.final_output
+            reply = self._final_output(result)
             structured = AgentReplyAny.from_output(reply)
             if structured is not None:
                 return structured

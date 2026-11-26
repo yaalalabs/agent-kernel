@@ -9,10 +9,11 @@ def get_weather(location: str) -> str:
     return f"The weather in {location} is 72 degrees and sunny."
 
 
-client = OpenAIChatClient(model="gpt-4.1-mini")
+client = OpenAIChatClient(model="gpt-6-luna")
 
 maf_agent = Agent(
     client,
+    default_options={"reasoning": {"effort": "none"}},
     instructions="You are a helpful support agent. Use the tools provided.",
     name="support",
     tools=MAFToolBuilder.bind([get_weather]),

@@ -82,10 +82,11 @@ class AppendRunStatsPostHook(PostHook):
         return "append_run_stats"
 
 
-client = OpenAIChatClient(model="gpt-4.1-mini")
+client = OpenAIChatClient(model="gpt-6-luna")
 
 weather_agent = Agent(
     client,
+    default_options={"reasoning": {"effort": "none"}},
     name="weather",
     description="Weather assistant",
     instructions="You provide weather information upon request. Use the get_weather tool for every weather question. "

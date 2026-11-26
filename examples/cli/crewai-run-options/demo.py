@@ -3,7 +3,7 @@ import logging
 from agentkernel.cli import CLI
 from agentkernel.core import AgentReplyText, PostHook, Session
 from agentkernel.crewai import CrewAIModule, CrewAIToolBuilder
-from crewai import Agent
+from crewai import LLM, Agent
 
 logger = logging.getLogger("ak.example.crewai_run_options")
 
@@ -63,7 +63,7 @@ weather_agent = Agent(
     tools=CrewAIToolBuilder.bind([get_weather]),
     max_iter=MAX_ITER,
     verbose=False,
-    llm="openai/gpt-4.1-mini",
+    llm=LLM(model="openai/gpt-6-luna", reasoning_effort="none"),
 )
 
 # The declaration. The keywords are the Crew(...) constructor's own arguments: Agent Kernel builds one Crew

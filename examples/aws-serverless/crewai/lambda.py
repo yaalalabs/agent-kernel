@@ -19,7 +19,7 @@ math_agent = Agent(
          If prompted for anything else, refuse to answer.",
     verbose=False,
     tracing=False,
-    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
+    llm=LLM(model="openai/gpt-6-luna", reasoning_effort="none", api_key=openai_key),
 )
 
 history_agent = Agent(
@@ -28,7 +28,7 @@ history_agent = Agent(
     backstory="You provide assistance with historical queries. Explain important events and context clearly.",
     verbose=False,
     tracing=False,
-    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
+    llm=LLM(model="openai/gpt-6-luna", reasoning_effort="none", api_key=openai_key),
 )
 
 CrewAIModule([math_agent, history_agent])

@@ -9,7 +9,8 @@ carried a `schedule` block or the agent called `create_schedule` itself.
 from agentkernel.openai import OpenAIModule
 from agentkernel.pipeline import AgentRunner
 from agentkernel.secret import SecretManager
-from agents import Agent, set_default_openai_key
+from agents import Agent, ModelSettings, set_default_openai_key
+from openai.types.shared import Reasoning
 
 # OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
 # handed to the SDK in memory; it is never written back to os.environ.
@@ -21,7 +22,8 @@ reminder_agent = Agent(
     "recurring basis, register it with the scheduling tools rather than answering as if it had "
     "already run, and tell the user the task id you registered. When a scheduled prompt reaches "
     "you, answer it normally — it is a plain request.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([reminder_agent])

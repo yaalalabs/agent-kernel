@@ -238,7 +238,7 @@ builder = KnowledgeBuilder([backend])
 
 agent = Agent(
     name="KB_Router_Agent",
-    model="gpt-4.1-mini",
+    model="gpt-6-luna",
     instructions="...your own navigation protocol...",
     tools=OpenAIToolBuilder.bind(builder.build()),
 )

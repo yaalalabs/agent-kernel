@@ -81,10 +81,11 @@ class AppendCartPostHook(PostHook):
         return "append_cart"
 
 
-client = OpenAIChatClient(model="gpt-4.1-mini")
+client = OpenAIChatClient(model="gpt-6-luna")
 
 shopping_agent = Agent(
     client,
+    default_options={"reasoning": {"effort": "none"}},
     name="shopping",
     description="Grocery shopping assistant that keeps a cart across turns",
     instructions="""

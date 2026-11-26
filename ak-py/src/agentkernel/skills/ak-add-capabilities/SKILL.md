@@ -1450,7 +1450,7 @@ def ask(state):
     choice = interrupt({"question": "Which method?", "options": ["Card", "Credit"]})
 
 # Pydantic AI — needs DeferredToolRequests among its output types, or neither axis can pause
-agent = Agent(model="openai:gpt-4.1-mini", output_type=[str, DeferredToolRequests])
+agent = Agent(model="openai:gpt-6-luna", output_type=[str, DeferredToolRequests])
 
 @agent.tool(name="ask_size")
 def ask_size(ctx: RunContext, q: str) -> str:

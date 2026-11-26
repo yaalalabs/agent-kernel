@@ -8,13 +8,15 @@ flavor) and run in pods the sandbox worker creates. The REST side lives in app_i
 
 from agentkernel.openai import OpenAIModule
 from agentkernel.pipeline import AgentRunner
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 coder_agent = Agent(
     name="coder",
     instructions="You are a coding assistant. Run the user's computations in the sandbox and answer "
     "only from what actually executed. Follow the user's output-format instructions exactly.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([coder_agent])

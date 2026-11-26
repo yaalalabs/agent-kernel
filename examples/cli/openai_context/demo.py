@@ -3,7 +3,8 @@ import logging
 from agentkernel.cli import CLI
 from agentkernel.core import AgentReplyText, PostHook, PreHook
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
-from agents import Agent, RunContextWrapper, function_tool
+from agents import Agent, ModelSettings, RunContextWrapper, function_tool
+from openai.types.shared import Reasoning
 
 logger = logging.getLogger("ak.example.openai_context")
 
@@ -79,7 +80,8 @@ shopping_agent = Agent(
     "or what the cart currently contains.",
     # Both styles in one list: the decorated tool as is, the plain one through the builder.
     tools=[add_to_cart] + OpenAIToolBuilder.bind([view_cart]),
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([shopping_agent]).pre_hook(shopping_agent, [SeedCartContextPreHook()]).post_hook(

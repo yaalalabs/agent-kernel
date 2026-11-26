@@ -248,7 +248,7 @@ This adapter pauses on **both** of the framework's axes, and they mean different
 from pydantic_ai import Agent, DeferredToolRequests, RunContext
 from pydantic_ai.exceptions import CallDeferred
 
-agent = Agent(model="openai:gpt-4.1-mini", output_type=[str, DeferredToolRequests])
+agent = Agent(model="openai:gpt-6-luna", output_type=[str, DeferredToolRequests])
 
 @agent.tool(name="ask_reason")
 def ask_reason(ctx: RunContext, order_id: str) -> str:

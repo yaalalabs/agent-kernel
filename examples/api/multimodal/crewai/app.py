@@ -1,14 +1,14 @@
 from agentkernel.api import RESTAPI
 from agentkernel.crewai import CrewAIModule
 
-from crewai import Agent
+from crewai import LLM, Agent
 
 general_agent = Agent(
     role="general",
     goal="Assistant with general queries",
     backstory="You provide assistance with general queries. Give short and clear answers",
     verbose=False,
-    llm="openai/gpt-4.1-mini",
+    llm=LLM(model="openai/gpt-6-luna", reasoning_effort="none"),
 )
 
 CrewAIModule([general_agent])

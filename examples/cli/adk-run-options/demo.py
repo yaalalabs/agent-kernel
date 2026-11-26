@@ -72,7 +72,7 @@ class AppendRunStatsPostHook(PostHook):
 
 weather_agent = Agent(
     name="weather",
-    model=LiteLlm(model="openai/gpt-4.1-mini"),
+    model=LiteLlm(model="openai/gpt-6-luna", reasoning_effort="none"),
     description="Weather assistant",
     instruction="You provide weather information upon request. Use the get_weather tool for every weather question. "
     "Give short and direct answers.",

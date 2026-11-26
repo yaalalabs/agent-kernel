@@ -1,6 +1,7 @@
 from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 from pydantic import BaseModel
 
 
@@ -21,7 +22,8 @@ contact_agent = Agent(
     instructions="You extract contact details from the user's message. "
     "Fill in only the fields that are present in the message and set the rest to null.",
     output_type=ContactCard,
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([contact_agent])

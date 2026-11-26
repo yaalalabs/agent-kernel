@@ -9,7 +9,8 @@ This is the most complete KB router example in this folder. It combines:
 
 """
 
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 from agentkernel.cli import CLI
 from agentkernel.knowledgebase.chroma import ChromaManager
 from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
@@ -216,7 +217,8 @@ EXECUTION PROTOCOL:
     knowledge_tools = knowledge_builder.build()
     return Agent(
         name="KB_Router_Agent",
-        model="gpt-4.1-mini",
+        model="gpt-6-luna",
+        model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
         instructions=instructions,
         tools=OpenAIToolBuilder.bind(knowledge_tools),
     )

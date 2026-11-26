@@ -1,6 +1,7 @@
 from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 # All profiles are docker-backed. 'guarded' (default) sets a fully enforceable policy, so
 # executions run inside the envelope (no network, cpu/memory limits). 'restricted' sets an
@@ -21,7 +22,8 @@ coder_agent = Agent(
         "pretending the work succeeded; if the user asked for a specific reply on failure, answer "
         "with exactly that."
     ),
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([coder_agent])

@@ -45,7 +45,7 @@ e2e/
 
 ### App (`e2e/app/app.py`)
 
-- `general` OpenAI agent (`gpt-4.1-mini`), one-sentence-reply instructions, registered via
+- `general` OpenAI agent (`gpt-6-luna`), one-sentence-reply instructions, registered via
   `OpenAIModule([general_agent])`.
 - `main()` → `_maybe_start_gmail()` then `RESTAPI.run(_handlers())`.
 - `_handlers()` returns `[AgentSlackRequestHandler(), AgentTelegramRequestHandler()]` (always on) plus

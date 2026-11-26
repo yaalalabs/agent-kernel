@@ -10,7 +10,7 @@ from langgraph.prebuilt import create_react_agent
 # OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
 # handed to the LangChain chat model in memory; it is never written back to os.environ.
 openai_key = SecretManager.current().get("OPENAI_API_KEY")
-model = ChatOpenAI(model="gpt-4.1-mini", temperature=0.0, api_key=openai_key)
+model = ChatOpenAI(model="gpt-6-luna", reasoning_effort="none", temperature=0.0, api_key=openai_key)
 
 # Math agent: Handles mathematical problems and calculations
 # Uses LangGraph's ReAct framework to provide step-by-step mathematical solutions

@@ -312,7 +312,7 @@ from agentkernel.maf import MAFModule, MAFToolBuilder
 
 # Swap the client for any other MAF provider (install its package, e.g. agent-framework-anthropic).
 <agent_name> = Agent(
-    OpenAIChatClient(model="gpt-4.1-mini"),
+    OpenAIChatClient(model="gpt-6-luna"),
     name="<name>",                # required — AK registers agents by name immediately
     description="<short description>",  # set it: the default for the agent's catalog entry, A2A card and MCP tool text
     instructions="<instructions>",

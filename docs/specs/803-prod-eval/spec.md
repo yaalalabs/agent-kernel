@@ -1052,8 +1052,8 @@ ORDERS = {"A-1001": "Shipped, arriving Friday"}
 def get_order_status(order_id: str) -> str: ...      # ORDERS lookup on order_id.strip().upper()
 
 support_agent = Agent(name="support", handoff_description="Order and delivery questions",
-                      tools=[get_order_status], model="gpt-4.1-mini", instructions=...)
-triage_agent = Agent(name="triage", handoffs=[support_agent], model="gpt-4.1-mini", instructions=...)
+                      tools=[get_order_status], model="gpt-6-luna", instructions=...)
+triage_agent = Agent(name="triage", handoffs=[support_agent], model="gpt-6-luna", instructions=...)
 OpenAIModule([triage_agent, support_agent])
 handler = ServerlessAgentRunner.handle
 
@@ -1335,7 +1335,7 @@ module "serverless_agents" {                       # queue mode, like aws-server
       LANGFUSE_SECRET_KEY    = var.langfuse_secret_key
       LANGFUSE_BASE_URL      = var.langfuse_base_url
       AK_TEST__LLM__PROVIDER = "openai"
-      AK_TEST__LLM__MODEL    = "gpt-4.1-mini"
+      AK_TEST__LLM__MODEL    = "gpt-6-luna"
       OPIK_TRACK_DISABLE     = "true"
       RESULTS_TABLE          = aws_dynamodb_table.results.name
     }
@@ -1504,7 +1504,7 @@ dev = ["agentkernel[test]>=0.9.5", "httpx>=0.27.0", "black==26.5.1", "isort>=5.0
 - None in AK from Phases 2–3 (the Langfuse flush is Phase 1 behavioural change 3). The weekly
   integration run gains one deployment (three Lambdas behind one API Gateway, two SQS queues, two ECR
   repositories, one DynamoDB table; Redis is the base deployment's) and its judge calls: three or four
-  `gpt-4.1-mini` calls per test trace, on the existing CI OpenAI key.
+  `gpt-6-luna` calls per test trace, on the existing CI OpenAI key.
 
 ## Phases 2–3 error handling
 

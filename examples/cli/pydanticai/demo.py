@@ -4,8 +4,9 @@ from agentkernel.cli import CLI
 from agentkernel.core import ToolContext
 from agentkernel.pydanticai import PydanticAIModule, PydanticAIToolBuilder
 from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings
 
-MODEL = "openai:gpt-4.1-mini"
+MODEL = "openai:gpt-6-luna"
 
 
 def get_weather(city: str) -> str:
@@ -21,6 +22,7 @@ def get_weather(city: str) -> str:
 
 math_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="math",
     description="Specialist agent for math questions",
     instructions="You provide help with math problems. Give short and direct answers exactly to the question. "
@@ -29,6 +31,7 @@ math_agent = Agent(
 
 general_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="general",
     description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers exactly to the question. "
@@ -37,6 +40,7 @@ general_agent = Agent(
 
 weather_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="weather",
     description="Agent that provides weather information",
     instructions="You provide weather information upon request. Use the get_weather tool for all weather-related questions.",
@@ -64,6 +68,7 @@ async def ask_weather(question: str) -> str:
 
 triage_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="triage",
     description="Front-line agent that routes each question to the right specialist",
     instructions="You determine which specialist should answer the user's question and call the matching tool: "

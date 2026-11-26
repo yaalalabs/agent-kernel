@@ -4,10 +4,11 @@ from agentkernel.cli import CLI
 from agentkernel.core import AgentReplyText, PostHook, PreHook, ToolContext
 from agentkernel.pydanticai import PydanticAIModule, PydanticAIToolBuilder
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.settings import ModelSettings
 
 logger = logging.getLogger("ak.example.pydanticai_context")
 
-MODEL = "openai:gpt-4.1-mini"
+MODEL = "openai:gpt-6-luna"
 
 CART_PREFIX = "Current cart:"
 
@@ -86,6 +87,7 @@ class AppendCartPostHook(PostHook):
 # aid only: Pydantic AI does not check deps at runtime.
 shopping_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="shopping",
     description="Grocery shopping assistant that keeps a cart across turns",
     instructions="You are a grocery shopping assistant. Use the add_to_cart tool whenever the user wants to add an item, "
