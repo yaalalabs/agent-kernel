@@ -170,7 +170,13 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
                 # Kept for the connection (a conn: reference), renewed by each frame and forgotten at $disconnect.
                 principal = await credentials.retain(principal, token, connection=True)
 
-            await self._offload(self.get_websocket_handler().on_connect, connection_id=connection_id, principal=principal)
+            try:
+                await self._offload(self.get_websocket_handler().on_connect, connection_id=connection_id, principal=principal)
+            except Exception:
+                # No connection row names the reference, so no $disconnect would forget it.
+                if credentials is not None:
+                    await self._offload(credentials.forget, principal)
+                raise
             return self.build_success_http_response("WebSocket connection established", user_id=principal.subject)
         except Exception as e:
             self._log.exception(f"WebSocket $connect failed: {e}")

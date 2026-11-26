@@ -470,6 +470,21 @@ class TestRequestAuthenticator:
         # The one parser: the dependency refuses what it returns None for, and the Lambda router keeps nothing for it.
         assert RequestAuthenticator.bearer_token(header) == token
 
+    @pytest.mark.parametrize(
+        ("headers", "value"),
+        [
+            ({"Authorization": "Bearer a"}, "Bearer a"),
+            ({"authorization": "Bearer a", "Host": "x"}, "Bearer a"),
+            ({"Authorization": "Bearer a", "authorization": "Bearer a"}, "Bearer a"),
+            ({"Authorization": "Bearer a", "authorization": "Bearer b"}, None),
+            ({"Host": "x"}, None),
+            (None, None),
+        ],
+    )
+    def test_authorization_header_is_one_value_whatever_its_case_or_none(self, headers, value):
+        # Two names that disagree are ambiguous: whoever picked one could keep a token other than the one authenticated.
+        assert RequestAuthenticator.authorization_header(headers) == value
+
     def test_current_is_none_outside_a_request(self):
         assert RequestAuthenticator.current() is None
 

@@ -271,6 +271,33 @@ class TestInMemoryCredentialStore(CredentialStoreContract):
         assert "ref-1" not in InMemoryCredentialStore._entries
 
 
+class TestTheInMemoryReadAndARenewal:
+    def test_a_read_that_finds_an_entry_expired_never_deletes_one_renewed_since(self, monkeypatch):
+        # Another thread renews between the read's lookup and its expiry check: the renewal must stand.
+        import agentkernel.identity.credential.in_memory as module
+
+        store = InMemoryCredentialStore(None)
+        store.clear()
+        store.put("conn:ref", TOKEN, time.time() + 60)
+        InMemoryCredentialStore._entries["conn:ref"] = (TOKEN, 100.0)  # as if it expired at t=100
+        renewed = []
+
+        class _Clock:
+            @staticmethod
+            def time():
+                if not renewed:  # the read's expiry check: the renewal lands first, at t=99.9
+                    renewed.append(True)
+                    InMemoryCredentialStore._entries["conn:ref"] = (TOKEN, 220.0)
+                return 100.1
+
+        monkeypatch.setattr(module, "time", _Clock)
+
+        store.get("conn:ref")
+
+        assert InMemoryCredentialStore._entries.get("conn:ref") == (TOKEN, 220.0)
+        store.clear()
+
+
 class TestRedisCredentialStore(CredentialStoreContract):
     @pytest.fixture
     def client(self) -> _FakeRedisLikeClient:

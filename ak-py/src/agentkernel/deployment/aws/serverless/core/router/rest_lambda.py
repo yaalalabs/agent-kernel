@@ -139,15 +139,13 @@ class DefaultEndpointsHandler:
         """
         :param event: An API Gateway event.
         :return: The token of its ``Authorization: Bearer`` header, whatever the header name's case, or None. The
-            header is parsed by ``RequestAuthenticator``, so what the authorizer accepts is what is kept.
+            header is found and parsed by ``RequestAuthenticator``, the authorizer's rule, so the token kept is
+            the one it authenticated.
         """
         headers = event.get("headers")
         if not isinstance(headers, dict):
             return None
-        for name, value in headers.items():
-            if isinstance(name, str) and name.lower() == "authorization" and isinstance(value, str):
-                return RequestAuthenticator.bearer_token(value)
-        return None
+        return RequestAuthenticator.bearer_token(RequestAuthenticator.authorization_header(headers))
 
     @staticmethod
     def principal_from_event(event: dict[str, Any]) -> Principal:
@@ -388,6 +386,12 @@ class DefaultEndpointsHandler:
                 "statusCode": 500,
                 "body": json.dumps({"error": "Error processing request", "session_id": None}),
             }
+        finally:
+            # The run is over when the reply is in. A request refused before its run started (an unknown agent)
+            # never reached the release in Runtime; for one that ran, the entry is already gone.
+            from ......identity.credential.manager import CredentialManager
+
+            CredentialManager.release_for(request.body.principal)
 
 
 class RESTLambdaRouter(BaseLambdaRouter):

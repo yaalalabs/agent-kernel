@@ -140,13 +140,16 @@ class APIGatewayAuthorizer:
         """Validate the event, finding the ``Authorization`` header whatever its case.
 
         REST v1 REQUEST authorizer events keep header names as the client sent them, and HTTP/2 or
-        undici clients send ``authorization``; the gateway's identity source matches either. A
-        missing header still fails validation, which denies.
+        undici clients send ``authorization``; the gateway's identity source matches either. The value
+        is read by ``RequestAuthenticator.authorization_header``, the rule the REST router keeps the
+        token by, so two names that disagree count as none. A missing header still fails validation,
+        which denies.
         """
         headers = event.get("headers")
         if isinstance(headers, dict):
-            normalized = {("Authorization" if name.lower() == "authorization" else name): value for name, value in headers.items()}
-            event = {**event, "headers": normalized}
+            header = RequestAuthenticator.authorization_header(headers)
+            others = {name: value for name, value in headers.items() if not (isinstance(name, str) and name.lower() == "authorization")}
+            event = {**event, "headers": {**others, **({"Authorization": header} if header is not None else {})}}
         return APIGatewayRequestAuthorizerEvent.model_validate(event)
 
     def _build_policy(self, principal_id: str, effect: str, method_arn: str, context: dict[str, Any] | None = None):

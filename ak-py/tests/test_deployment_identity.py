@@ -575,6 +575,19 @@ class TestTheLambdaRESTRouterKeepsTheRequestsCredential:
         assert Principal.model_validate_json(policy["context"]["principal"]).credential_ref is None
         assert credentials_on_aws.store._entries == {}
 
+    def test_the_authorizer_denies_two_authorization_headers_that_disagree(self, static_identity, credentials_on_aws):
+        # The router could otherwise keep a token other than the one the authorizer authenticated.
+        event = _authorizer_event("Bearer mallory-token")
+        event["headers"]["authorization"] = "Bearer alice-secret"
+
+        assert _effect(APIGatewayAuthorizer().handle(event)) == "Deny"
+
+    def test_the_authorizer_accepts_the_header_in_either_case(self, static_identity, credentials_on_aws):
+        event = _authorizer_event(None)
+        event["headers"]["authorization"] = "Bearer alice-secret"
+
+        assert _effect(APIGatewayAuthorizer().handle(event)) == "Allow"
+
     def test_the_authorizer_never_builds_the_credentials_capability(self, static_identity, config, monkeypatch):
         # It keeps nothing, so a store its role cannot reach or an extra its package lacks must not fail it.
         from agentkernel.core.config import _CredentialsConfig
@@ -653,6 +666,29 @@ class TestTheLambdaRESTRouterKeepsTheRequestsCredential:
         assert parsed == ["Basic YWxpY2U6c2VjcmV0"]  # parsed by the authenticator's own rule
         assert "credential_ref" not in send.call_args.kwargs["message_body"]["principal"]
 
+    def test_two_authorization_headers_that_disagree_keep_nothing(self, static_identity, credentials_on_aws):
+        handler = _endpoints_handler()
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+        event = _rest_event_with_header(policy["context"], body={**CHAT_BODY, "request_id": "r1"})
+        event["headers"] = {"Authorization": "Bearer mallory-token", "authorization": "Bearer alice-secret"}
+
+        with patch(f"{REST_LAMBDA_MODULE}.SQSHandler.send_message_to_input_queue", return_value={}) as send:
+            handler._send_to_queue(handler._parse_body(event), event)
+
+        assert "credential_ref" not in send.call_args.kwargs["message_body"]["principal"]
+        assert credentials_on_aws.store._entries == {}
+
+    def test_a_direct_request_refused_before_its_run_leaves_no_credential(self, static_identity, credentials_on_aws):
+        # An unknown agent is answered before Runtime starts, so Runtime's release never runs.
+        handler = _endpoints_handler()
+        handler._chat_service.process_chat_request.return_value = (404, {"error": "agent not found"})
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+
+        response = handler._handle_agent_chat(_rest_event_with_header(policy["context"]), None)
+
+        assert response["statusCode"] == 404
+        assert credentials_on_aws.store._entries == {}
+
     def test_an_anonymous_request_keeps_nothing(self, static_identity, credentials_on_aws):
         handler = _endpoints_handler()
         request = handler._parse_body(_rest_event(None, body={**CHAT_BODY, "request_id": "r1"}))
@@ -683,6 +719,16 @@ class TestTheLambdaWebSocketKeepsTheConnectionsCredential:
         principal = handler.on_connect.call_args.kwargs["principal"]
         assert principal.credential_ref.startswith("conn:")
         assert credentials_on_aws.store.get(principal.credential_ref) == b"alice-secret"
+
+    def test_connect_forgets_the_credential_when_the_connection_is_not_stored(self, static_identity, credentials_on_aws):
+        # No connection row names the reference, so no $disconnect would ever forget it.
+        handler = _connection_handler()
+        handler.on_connect.side_effect = RuntimeError("the connections table is unreachable")
+
+        status, _ = handler._handle_connect(_ws_event(token="alice-secret"))
+
+        assert status == 500
+        assert credentials_on_aws.store._entries == {}
 
     def test_the_connection_routes_refuse_an_in_memory_store(self, static_identity, config):
         from agentkernel.core.config import _CredentialsConfig
@@ -726,6 +772,16 @@ class TestTheECSWebSocketKeepsTheConnectionsCredential:
         principal = ws.on_connect.call_args.kwargs["principal"]
         assert principal.credential_ref.startswith("conn:")
         assert credentials_on_aws.store.get(principal.credential_ref) == b"alice-secret"
+
+    @pytest.mark.asyncio
+    async def test_connect_forgets_the_credential_when_the_connection_is_not_stored(self, static_identity, credentials_on_aws):
+        handler, ws = _system_handler()
+        ws.on_connect.side_effect = RuntimeError("the connections table is unreachable")
+
+        response = await handler._handle_connect(_ecs_request(token="alice-secret"))
+
+        assert response.status_code == 500
+        assert credentials_on_aws.store._entries == {}
 
     def test_the_connection_routes_refuse_an_in_memory_store(self, static_identity, config):
         # A frame can reach another task than the one that kept the credential: always under a rolling deploy.

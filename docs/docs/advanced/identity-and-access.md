@@ -455,8 +455,9 @@ How it works:
 - **The token never travels.** The credential is kept, encrypted with AES-GCM under the key named by
   `encryption_key`, in the credential store under a random reference. The principal carries the reference
   (`credential_ref`), never the token, so the token is not in the session, a queue message or a log line.
-- **It ends with the run.** OAK deletes the credential when the run it was kept for ends, however it ends,
-  and in any case when `inbound_ttl` has passed or the token itself expires. No copy of it outlives the run:
+- **It ends with the run, or the connection.** OAK deletes a request's credential when the run it was kept
+  for ends, however it ends, and a WebSocket connection's or CLI session's when the connection or session
+  ends; in any case when `inbound_ttl` has passed or the token itself expires. No copy outlives it:
   `passthrough` caches nothing.
 - **Where it is kept.** The REST, A2A and AG-UI routes keep the credential of each authenticated request that
   can start a run (not of a `GET`, `HEAD` or `OPTIONS` request such as a catalog listing or a poll for a

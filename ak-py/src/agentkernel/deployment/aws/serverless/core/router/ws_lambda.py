@@ -240,7 +240,13 @@ class ConnectionRoutesHandler(LambdaWSHandler):
                 # Kept for the connection (a conn: reference), renewed by each frame and forgotten at $disconnect.
                 principal = run_async_sync(credentials.retain(principal, token, connection=True))
 
-            self.on_connect(connection_id=connection_id, principal=principal)
+            try:
+                self.on_connect(connection_id=connection_id, principal=principal)
+            except Exception:
+                # No connection row names the reference, so no $disconnect would forget it.
+                if credentials is not None:
+                    credentials.forget(principal)
+                raise
 
             return 200, self._build_lambda_response(user_id=principal.subject, msg="WebSocket connection established", success=True)
 

@@ -1009,7 +1009,9 @@ deleted).
   and nothing on a WebSocket handshake (a run's reference would die with the first frame's run).
   `from_config(retains=False)` builds no manager, for a surface that never starts a run (the Lambda
   authorizer). `bearer_token(header)` is the one bearer parser (public, never raises), which the Lambda
-  REST router uses too. `release(principal)` deletes it through the manager, off the loop.
+  REST router uses too, and `authorization_header(headers)` the one rule for finding the header in an
+  event that keeps the client's name case (the authorizer and the router; two names that disagree are
+  None, so the authorizer denies). `release(principal)` deletes it through the manager, off the loop.
 - **Which routes refuse the anonymous principal** is the handlers' decision, not the
   authenticator's. `AuthorisedRESTRequestHandler` (`api/handler.py`) reads
   `request.state.principal` back in `_resolve_user` and answers 401 `Authentication required`
@@ -1344,9 +1346,10 @@ deleted).
   a session), the pipeline WebSocket gateway and the CLI (both for the connection, forgotten
   when it ends). On AWS (iteration 25b, refinement 25): the Lambda REST router retains where a run
   starts (`_send_to_queue`, `_handle_agent_chat`) from the event's own `Authorization` header, never in
-  `_parse_body` (a poll) and never in the authorizer, whose result is cached per token; the Lambda and
-  ECS `$connect` handlers retain for the connection, and `AWSWebSocketHandler.on_disconnect` forgets for
-  both. `renew(principal)` keeps a `conn:` credential whose principal has no `exp` another `inbound_ttl`
+  `_parse_body` (a poll) and never in the authorizer, whose result is cached per token, and the direct
+  route releases in a `finally` (a request refused before its run keeps nothing); the Lambda and ECS
+  `$connect` handlers retain for the connection (forgetting it again when the connection row cannot be
+  written), and `AWSWebSocketHandler.on_disconnect` forgets for both. `renew(principal)` keeps a `conn:` credential whose principal has no `exp` another `inbound_ttl`
   through `CredentialStore.touch` (so an expired or forgotten one stays gone, even when a disconnect in
   another process races the frame; never raising), so any process renews it: the pipeline gateway's
   `_dispatch`, the Lambda frame's `_connection_principal` and the ECS `build_route_context` (via

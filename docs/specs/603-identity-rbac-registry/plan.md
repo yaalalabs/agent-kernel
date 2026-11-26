@@ -1499,7 +1499,11 @@ What phase F delivered, and what it settled beyond the iteration plans, before i
   - `require_shared_store` decides by `CredentialStoreFactory.is_shared`, and the ECS WebSocket API
     calls it too;
   - the CLI renews before each prompt, one bearer parser serves the dependency and the Lambda router,
-    and a failed delete is logged by type alone.
+    and a failed delete is logged by type alone;
+  - a second CodeRabbit round: one `Authorization` header rule for the authorizer and the Lambda
+    router (two that disagree count as none), the Lambda direct route releasing in a `finally`, both
+    AWS `$connect`s forgetting a credential whose connection row failed, and the in-memory read never
+    deleting an entry renewed since its lookup.
 - **Docs.** Written iteration by iteration, then checked at the end of the phase: the identity page's
   "Credentials for downstream calls" section and its deployment notes, `core-concepts/configuration.md`,
   `ak-py/README.md`, the bundled `ak-add-capabilities` skill; and in the end-of-phase pass, a seventh

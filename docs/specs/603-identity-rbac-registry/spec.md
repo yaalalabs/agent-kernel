@@ -536,13 +536,17 @@ class RequestAuthenticator:
 - As built (iteration 25b, design refinement 25), the AWS adapters and renewal:
   - The Lambda REST router (`DefaultEndpointsHandler`) retains where a run starts, `_send_to_queue`
     (REST_SYNC and the REST_ASYNC submit) and the direct `_handle_agent_chat`, from the event's own
-    `Authorization: Bearer` header found whatever its case (`_bearer_token`, which parses the value with
-    `RequestAuthenticator.bearer_token`); `_parse_body`, which a poll uses too, retains nothing. With
-    queues, `get_routes` refuses an `in_memory` store.
+    `Authorization: Bearer` header found whatever its case (`_bearer_token`, which finds it with
+    `RequestAuthenticator.authorization_header`, the authorizer's rule too, so two names that disagree
+    count as none and the authorizer denies them, and parses it with `RequestAuthenticator.bearer_token`);
+    `_parse_body`, which a poll uses too, retains nothing. The direct route releases in a `finally`, so a
+    request refused before its run starts (an unknown agent) keeps nothing. With queues, `get_routes`
+    refuses an `in_memory` store.
   - The Lambda `$connect` (`ConnectionRoutesHandler`) and the ECS `$connect`
     (`ECSWebSocketSystemRequestHandler`) retain for the connection, and both refuse a store that is not
     shared at construction: on ECS a frame can reach another task than the one that took the handshake,
-    as it does under every rolling deploy. `AWSWebSocketHandler.on_disconnect`, shared by both, reads the
+    as it does under every rolling deploy. A `$connect` whose connection row cannot be written forgets
+    the credential it just kept, since no `$disconnect` would find it. `AWSWebSocketHandler.on_disconnect`, shared by both, reads the
     stored principal before the row goes and forgets its credential (`CredentialManager.forget_for`).
   - Renewal is `CredentialManager.renew(principal)`: for a `conn:` reference whose principal carries no
     `exp`, it extends the stored entry to `inbound_ttl` from now with `CredentialStore.touch`, which
@@ -637,7 +641,8 @@ and a fake exchanger.
     thread replaced), `EXPIRE` on Redis and Valkey (whole seconds rounded up; it sets nothing on a key
     that is gone) and a conditional `update_item` on DynamoDB (`attribute_exists(credential_key) AND
     expires_at > :now`). An expiry that has passed is a `ValueError`. `CredentialStoreContract` pins
-    that it extends a live entry and never creates, revives or restores one.
+    that it extends a live entry and never creates, revives or restores one. The in-memory read drops an
+    expired entry only if it is still the one it looked up, so a renewal between the two stands.
   - **Shared means encrypted.** `CredentialStore.shared` (a class attribute, `True` by default,
     `False` on `InMemoryCredentialStore`) decides it in the base constructor: a shared store built
     without a cipher raises `AKConfigError` naming `identity.credentials.encryption_key`, a

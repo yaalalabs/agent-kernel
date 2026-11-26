@@ -3,7 +3,7 @@
 import asyncio
 import contextvars
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from ...core.model import Principal
@@ -98,6 +98,22 @@ class RequestAuthenticator:
         if header is None or self._provider is None:
             return Principal.anonymous()
         return await self.authenticate_token(self._bearer_token(header), context)
+
+    @staticmethod
+    def authorization_header(headers: Mapping[str, Any] | None) -> str | None:
+        """
+        The ``Authorization`` header of a request whose header names keep the client's case (an API Gateway REST
+        event), so the authorizer and the AWS Lambda REST router read the same one. Never raises.
+
+        :param headers: The request's headers, or None.
+        :return: Its value, whatever the name's case; None when there is none, or when two names that differ only
+            in case carry different values, since whoever picked one could keep a token other than the one the
+            other authenticated.
+        """
+        if not headers:
+            return None
+        values = {value for name, value in headers.items() if isinstance(name, str) and name.lower() == "authorization" and isinstance(value, str)}
+        return values.pop() if len(values) == 1 else None
 
     @staticmethod
     def bearer_token(header: str | None) -> str | None:

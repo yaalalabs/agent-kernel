@@ -42,7 +42,10 @@ class InMemoryCredentialStore(CredentialStore):
             return None
         data, expires_at = entry
         if expires_at <= time.time():
-            self._entries.pop(key, None)
+            with self._lock:
+                # Only the entry this read saw: one renewed or replaced since the lookup stays.
+                if self._entries.get(key) is entry:
+                    del self._entries[key]
             return None
         return data
 
