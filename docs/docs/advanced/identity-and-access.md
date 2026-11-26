@@ -566,7 +566,7 @@ agent is built with:
 | Microsoft Agent Framework | Is not offered to the model, and a call that reaches it is answered with the reason. A call to a hidden tool bound with `approval_mode="always_require"` is still put to a person first, since MAF asks before any middleware runs, and is refused when the approval arrives. |
 | Google ADK | Is still shown to the model; the call is answered with the reason and the tool is not run. |
 | CrewAI | Is still shown to the model; the call is blocked and the model reads the reason. |
-| LangGraph | Is still shown to the model; the call is answered with the reason and the tool is not run. Only tools bound with `LangGraphToolBuilder` can be gated. |
+| LangGraph | Is still shown to the model; the call is answered with the reason and the tool is not run. Only tools bound with `LangGraphToolBuilder` can be gated: a bound tool is checked however it is called, while a node that calls an unbound tool or a plain function itself is outside the gate and the startup check. |
 | smolagents | Is still shown to the model; the call is answered with the reason and the tool is not run. |
 
 On a realtime call the OpenAI and Google ADK gates act as on a turn, with two differences. OpenAI's

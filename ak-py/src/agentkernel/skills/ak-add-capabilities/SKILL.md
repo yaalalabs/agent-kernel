@@ -1757,6 +1757,11 @@ Tell the user what changes once the block exists:
   smolagents code agent must use the local executor, and an OpenAI Agents SDK agent must bind tools
   that run in the process (a local `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool`,
   `CustomTool`) as function tools; otherwise the agent does not load.
+- On LangGraph the gate covers the calls a `ToolNode` makes and every tool bound with
+  `LangGraphToolBuilder.bind`, however it is called. A graph node that calls an unbound tool or a
+  plain function itself is your own code: neither the gate nor the startup check sees it, so ask
+  `ToolContext.get().session.get_tool_filter()` there (`allows(name)`, `reason(name)`), or call the
+  bound tool instead.
 - A run keeps the policy of the agent it started with, so state the tiers of the tools it can reach
   (a handoff target's, a sub-agent's, a CrewAI coworker's) in that agent's policy.
 - The policy covers the tools an agent declares when it loads. Tools that exist only inside a run (an
