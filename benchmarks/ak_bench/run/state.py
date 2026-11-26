@@ -73,7 +73,8 @@ class DeploymentState:
 
 class DeploymentLock:
     """One command at a time per deployment: the lock in state.json (process id + machine), taken by every command
-    that works on a deployment. Also a context manager: acquire on enter, release on every exit."""
+    that works on a deployment. Also a context manager: acquire on enter, release on every exit; on Ctrl-C it also logs
+    that the deployment may still be running, since nothing is torn down then."""
 
     def __init__(self, state: DeploymentState, run_log: RunLog, command: str):
         self.state = state
@@ -81,13 +82,11 @@ class DeploymentLock:
         self.command = command
 
     def acquire(self) -> None:
-        """DeploymentLocked while another live process (or another machine) holds it. A dead local holder is taken over,
-        and so is one left by this process (a release cut short by Ctrl-C), so `run` can still tear down."""
+        """DeploymentLocked while another live process (or another machine) holds it. A dead local holder is taken over."""
         with self.state.update() as data:
             held = data.get("lock")
             if held:
-                mine = held["host"] == socket.gethostname() and held["pid"] == os.getpid()
-                if not mine and (held["host"] != socket.gethostname() or self._alive(held["pid"])):
+                if held["host"] != socket.gethostname() or self._alive(held["pid"]):
                     raise DeploymentLocked(self._describe(held))
                 self.run_log.warning(f"took over stale deployment lock of pid {held['pid']} since {held['since']}")
             data["lock"] = {"pid": os.getpid(), "host": socket.gethostname(), "command": self.command, "since": KeyedCsv.cell(datetime.now(UTC))}
@@ -122,8 +121,16 @@ class DeploymentLock:
         self.acquire()
         return self
 
-    def __exit__(self, *exc: object) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, *exc: object) -> None:
         self.release()
+        if exc_type is KeyboardInterrupt:
+            data = self.state.read()
+            if not data["teardown_at"]:
+                deployment_id = data["deployment_id"]
+                self.run_log.warning(
+                    f"interrupted: {deployment_id} was not torn down and its resources may still be running; "
+                    f"`ak-bench finish --deployment {deployment_id}` tears them down"
+                )
 
     @staticmethod
     def _describe(held: dict[str, Any]) -> str:

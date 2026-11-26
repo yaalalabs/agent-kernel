@@ -13,8 +13,9 @@ script does inside. There are none yet: they come with the host issues.
 | entry files | as the host needs | One per tier: `import agent` (registers the agent), then the host's entry point (Lambda: `handler = ServerlessAgentRunner.handle`, ...; ECS: `AgentRunner.run`, `AWSWebsocketAPI.run()`) |
 
 Both run as `bash <script>` with the folder as the working directory, stdout / stderr shown to the user, and no
-timeout. A non-zero exit code is a failure. If `deploy.sh` fails, the harness runs `destroy.sh` to clean up, so
-`destroy.sh` must cope with a partial deployment.
+timeout. A non-zero exit code is a failure. If `deploy.sh` fails, the harness runs `destroy.sh` to clean up. On
+Ctrl-C during `deploy.sh` it runs nothing; a later `ak-bench finish` runs `destroy.sh` with the same inputs. So
+`destroy.sh` must cope with a partial deployment, and must not need `deployment.json`.
 
 ## Inputs (environment variables)
 

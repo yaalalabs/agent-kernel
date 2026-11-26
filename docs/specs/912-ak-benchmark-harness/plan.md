@@ -134,10 +134,10 @@ Independent of Iterations 1–2; can be built in parallel.
   2. Add `CostReport`.
 - **Verify:** `uv run pytest tests/results/test_plots.py -q`
 
-## Iteration 9: Commands and the `run` teardown guarantee
+## Iteration 9: Commands and the teardown rules
 
 - **Goal:** `deploy`, `step`, `plot`, `finish`, `post-run` and `run` work end to end against the mock host, and
-  teardown always runs.
+  teardown runs after every failure; Ctrl-C tears nothing down and leaves the deployment for `finish`.
 - **Files:** `ak_bench/run/commands.py`, `cli.py` (wire each sub-command to its class, `--force-unlock` help text),
   `README.md` (command reference), `tests/run/test_commands.py`, `tests/run/test_teardown_guarantee.py`
 - **Steps:**
@@ -145,8 +145,8 @@ Independent of Iterations 1–2; can be built in parallel.
   2. Add `Step` and `Step.force_unlock` (deployment lock held for the whole command, `--replace`); every other
      command on a deployment holds the same lock.
   3. Add `Plot`, `Finish` (deletes `auth_secret` after a good teardown), `PostRun`.
-  4. Add `Run` (dry check of every combination, step order, `Finish` in `finally`, second Ctrl-C handling).
-  5. Wire the CLI: `BenchError` → exit 1, `KeyboardInterrupt` → exit 130.
+  4. Add `Run` (dry check of every combination, step order, `Finish` after a failed step or plot, none on Ctrl-C).
+  5. Wire the CLI: `BenchError` → exit 1, `KeyboardInterrupt` → exit 130; `DeploymentLock` logs the Ctrl-C `WARNING`.
   6. Finish `benchmarks/README.md`: commands, `ak-bench.yaml` reference, when to use `--force-unlock`.
 - **Verify:** `uv run pytest tests/run/test_commands.py tests/run/test_teardown_guarantee.py -q` (the mock host exists only
   inside the tests, so there is no by-hand `ak-bench run` until the AWS issues add a real host)

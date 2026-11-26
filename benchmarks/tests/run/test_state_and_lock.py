@@ -198,12 +198,6 @@ def test_live_local_lock_refused(state, run_log):
         DeploymentLock(state, run_log, "step burst 1").acquire()
 
 
-def test_lock_left_by_this_process_is_taken_over(state, run_log):
-    DeploymentLock(state, run_log, "step steady 1").acquire()  # never released, e.g. Ctrl-C during release
-    DeploymentLock(state, run_log, "finish").acquire()
-    assert state.read()["lock"]["command"] == "finish"
-
-
 def test_other_machine_lock_refused(state, run_log):
     set_lock(state, dead_pid(), "other-box")
     with pytest.raises(DeploymentLocked, match="on other-box since 2026-11-24T10:00:00.000Z"):

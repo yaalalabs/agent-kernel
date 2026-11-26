@@ -485,12 +485,18 @@ graph LR
   | `post-run --deployment <id>` or `--run-id <id>` (optional) | Runs the `after_teardown` list (AWS: the billed cost); fills its CSVs, re-plots. The person decides when to run it (AWS: about a day after teardown, once Cost Explorer has the bill). Can be run again. |
   | `run [--host] [--mode] [--message-type] [--steps]` | For each selected host × mode × message type: `deploy` → `step` for every configured step in the default order → `plot` → `finish`. |
 
-- **Failures never leave a deployment running** (decided 2026-11-23, #912):
-  - `run` still runs `finish` (teardown) when a step fails or on Ctrl-C;
+- **Failures never leave a deployment running unnoticed** (decided 2026-11-23, #912):
+  - `run` still runs `finish` (teardown) when a step fails;
   - a failed `deploy.sh` is followed by `destroy.sh` for what it may have created, and `deploy` exits with an error;
   - every command releases the deployment lock on every exit (done, error, Ctrl-C);
   - a failed `destroy.sh` is logged in the run log and `finish` exits with an error, so the person knows resources
-    may be left running.
+    may be left running;
+  - **Ctrl-C ends only the current command** (decided 2026-11-26, #912): it tears nothing down (`destroy.sh` is not
+    started, the teardown time stays unset), releases the deployment lock, leaves `state.json` whole, writes a run-log
+    `WARNING` naming the deployment id, saying its resources may still be running and that
+    `ak-bench finish --deployment <id>` tears them down (not for a deployment already torn down), and exits with 130. `run` stops at once and runs
+    `finish` for no deployment. Ctrl-C during `deploy.sh` still leaves the deployment in `state.json` (id, auth secret,
+    deploy inputs), so a later `finish` runs `destroy.sh` for it.
 
 - `run`'s `--host <name>`, `--mode <name>` and `--message-type <name>` are each repeatable (default: all). Covers all ×
   all, one host, one mode on one host, one mode on all hosts, one message type of a mode. `--steps` picks a subset of the

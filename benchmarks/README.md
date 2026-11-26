@@ -29,7 +29,7 @@ plot, tear down), or all at once with `run`.
 | `plot --deployment <id>` or `--run-id <id>` | Draws every graph from the CSVs of the steps run so far. Run it any time, as often as you like. |
 | `finish --deployment <id>` | Runs the host's after-all-steps fetchers, tears down (`destroy.sh`), records the teardown time and says whether `post-run` is needed. If `destroy.sh` fails, exits with an error: resources may be left running. |
 | `post-run --deployment <id>` or `--run-id <id>` | Runs the after-teardown fetchers (on AWS: the billed cost, about a day after teardown) and re-plots. Safe to run again. |
-| `run [--host <h>]... [--mode <m>]... [--message-type <t>]... [--steps <N>]...` | For each selected host × mode × message type: `deploy` → every step (steady N, then burst N, then the next N) → `plot` → `finish`. Each flag can be repeated; leaving one out means the config's list, else all built-ins. Every `--steps` value must be in `load_steps`. If a step fails or you press Ctrl-C, `finish` still runs; only a second Ctrl-C during teardown skips it (and that is logged). |
+| `run [--host <h>]... [--mode <m>]... [--message-type <t>]... [--steps <N>]...` | For each selected host × mode × message type: `deploy` → every step (steady N, then burst N, then the next N) → `plot` → `finish`. Each flag can be repeated; leaving one out means the config's list, else all built-ins. Every `--steps` value must be in `load_steps`. If a step fails, `finish` still runs for that deployment. Ctrl-C stops the run at once without `finish` (see below). |
 
 Global options (before the command):
 
@@ -46,6 +46,11 @@ left by a killed command on the same machine is taken over by the next command; 
 
 Exit codes: `0` done, `1` refused or failed (the message says why; nothing is deployed when a check fails), `130`
 interrupted with Ctrl-C.
+
+Ctrl-C ends only the current command and tears nothing down: `destroy.sh` is not run, the deployment lock is
+released, and the run log gets a `WARNING` naming the deployment id (unless it is already torn down). Its resources
+may still be running (and billing); `ak-bench finish --deployment <id>` tears them down, also after an interrupted
+`deploy`.
 
 Example, one deployment by hand:
 

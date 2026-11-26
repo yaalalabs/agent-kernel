@@ -329,8 +329,13 @@ of restating them, and only adds what the harness build needs to pin down. Part 
   against `load_steps` before anything is deployed; then per host × mode × message type: deploy → steps in the default
   order (steady N, then burst N, then the next N, for the configured test types) → plot → finish.
 - **Failures never leave a deployment running unnoticed** (decided 2026-11-23):
-  - `run`: if a step fails or the run is interrupted (Ctrl-C), it still runs `finish` (teardown) for that deployment
-    before exiting; a second Ctrl-C during teardown is the only way to skip it, and that is logged.
+  - `run`: if a step fails, it still runs `finish` (teardown) for that deployment before exiting;
+  - **Ctrl-C ends only the current command** (decided 2026-11-26): it tears nothing down (`destroy.sh` is not started,
+    the teardown time stays unset), releases the deployment lock, leaves `state.json` whole, writes a run-log `WARNING`
+    naming the deployment id, saying its resources may still be running and that `ak-bench finish --deployment <id>`
+    tears them down (not for a deployment already torn down), and exits with 130. `run` stops at once and runs `finish`
+    for no deployment. Ctrl-C during `deploy.sh` still leaves the deployment in `state.json` (id, auth secret, deploy
+    inputs), so a later `finish` runs `destroy.sh` for it.
   - every command releases the deployment lock on every exit (done, error, Ctrl-C); a failed step leaves its partial
     folder.
 - `run.log` per run (`results/<run-id>/run.log`); every command appends to it.
@@ -392,8 +397,10 @@ of restating them, and only adds what the harness build needs to pin down. Part 
     `.` and an unsigned token are refused; a missing secret fails at build; `TokenSigner` gives the same token for the
     same user every time;
   - connections are opened before `before` starts, and a failed connect records `status = error`;
-  - teardown runs when a `run` step fails, when `run` is interrupted, and when `deploy.sh` fails; the deployment lock
-    is released on a failed command, and every command is refused while another holds it;
+  - teardown runs when a `run` step fails and when `deploy.sh` fails; Ctrl-C in `deploy`, `step` and `run` starts no
+    `destroy.sh`, releases the lock, leaves the teardown time unset, logs the `WARNING` and exits with 130; `finish`
+    tears down a deployment whose `deploy.sh` was interrupted; the deployment lock is released on a failed command,
+    and every command is refused while another holds it;
   - an unknown `fetchers.<name>` key and a missing deployment folder are refused before anything runs.
 - The harness and app tests run in CI: two steps in `.github/workflows/test-reusable.yaml` (called by `test.yaml` on
   every PR and push to `develop`) run `uv run pytest` in `benchmarks/` and in `benchmarks/app/`. Only the cloud-free

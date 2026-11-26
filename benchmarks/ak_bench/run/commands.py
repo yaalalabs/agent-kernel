@@ -64,10 +64,6 @@ class Command:
         """No '-' in it, so a deployment id splits into run id, host, mode and message type (DeploymentState.locate)."""
         return cls._now().strftime("%Y%m%dT%H%M%SZ")
 
-    @staticmethod
-    def _log_skipped_teardown(run_log: RunLog, deployment_id: str) -> None:
-        run_log.error(f"teardown skipped by a second Ctrl-C: {deployment_id} may be left running")
-
     def _destroy(self, state: DeploymentState, run_log: RunLog) -> None:
         """Runs destroy.sh with the deploy inputs; on success records teardown_at and drops the auth secret."""
         data = state.read()
@@ -151,16 +147,12 @@ class Deploy(Command):
                 d["deployment"] = deployment.to_json()
                 d["deploy_finished"] = KeyedCsv.cell(self._now())
             RunMetadataWriter().write(state.path.parent, state.run_info(), started, deployment, delays)
-        except BaseException as e:
-            # Also on Ctrl-C during deploy.sh: what it created so far must not be left running unnoticed
+        except Exception as e:  # not on Ctrl-C: state.json already holds what `finish` needs to run destroy.sh
             run_log.error(f"deploy failed: {type(e).__name__}: {e}; running destroy.sh for what it may have created")
             try:
                 self._destroy(state, run_log)
             except ScriptFailed:
                 pass  # logged by _destroy; the deploy failure is the one raised
-            except KeyboardInterrupt:
-                self._log_skipped_teardown(run_log, env.deployment_id)
-                raise
             raise
 
 
@@ -314,19 +306,14 @@ class Run(Command):
                     for test_type in self.config.test_types:
                         self.step.execute(deployment_id, test_type, n, False)
                 self.plot.execute(deployment_id, None)
-            except BaseException:
-                self._finish(deployment_id, run_log, failed=True)
+            except Exception:  # Ctrl-C stops the run at once and tears nothing down
+                self._finish_after_error(deployment_id, run_log)
                 raise
-            self._finish(deployment_id, run_log, failed=False)
+            self.finish.execute(deployment_id)
 
-    def _finish(self, deployment_id: str, run_log: RunLog, failed: bool) -> None:
-        """Teardown guarantee: only a second Ctrl-C skips it. After a failure the first error is the one raised."""
+    def _finish_after_error(self, deployment_id: str, run_log: RunLog) -> None:
+        """Tears down after a failed step or plot; the step's or plot's error is the one raised."""
         try:
             self.finish.execute(deployment_id)
-        except KeyboardInterrupt:
-            self._log_skipped_teardown(run_log, deployment_id)
-            raise
-        except Exception as e:
-            if not failed:
-                raise
+        except Exception as e:  # noqa: BLE001 - logged; the earlier error is the one raised
             run_log.error(f"finish of {deployment_id} failed after an earlier error: {type(e).__name__}: {e}")

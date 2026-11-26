@@ -492,7 +492,10 @@ class ScriptEnv:
 ```
 
 - Scripts run as `subprocess.run(["bash", script], cwd=folder, env=os.environ | env.as_env())`, stdout / stderr
-  inherited (Terraform output stays visible), no timeout.
+  inherited (Terraform output stays visible), no timeout. No Ctrl-C handling of their own: the script gets the
+  terminal's `SIGINT` too, and the harness does not wait for it to finish. Terraform's state lock stops a `finish`
+  started meanwhile from running `destroy.sh` on the same state at the same time (`destroy.sh` fails, `finish` exits 1,
+  and can be run again).
 - `as_env()` sets `AK_BENCH_DEPLOYMENT_ID`, `AK_BENCH_AUTH_SECRET`, `AK_BENCH_HOST_SETTINGS` (JSON of
   `host_settings.<host>`, `{}` when absent), `AK_BENCH_OUTPUT` (the deployment directory), and
   `AK_BENCH_MOCK_AGENT_MIN_DELAY_S` / `AK_BENCH_MOCK_AGENT_MAX_DELAY_S` only for the mock agent. `destroy.sh` gets the
@@ -554,9 +557,12 @@ class DeploymentLock:                   # one command at a time per deployment; 
   - no lock → take it (`pid`, `socket.gethostname()`, command, now);
   - lock from this machine whose process is gone (`os.kill(pid, 0)` raises `ProcessLookupError`) → stale: take it over
     and log `WARNING took over stale deployment lock of pid <pid> since <since>`;
-  - lock held by this same process (a release cut short by Ctrl-C) → taken over the same way, so `run`'s `finish` is
-    never refused by the process's own leftover lock;
   - lock from this machine with a live process, or from another machine → `DeploymentLocked` naming holder, since and its command.
+- **Release:** `DeploymentLock.__exit__` clears the lock on every exit (done, error, `KeyboardInterrupt`). On
+  `KeyboardInterrupt`, if `teardown_at` is unset, it then logs run-log
+  ``WARNING "interrupted: <deployment id> was not torn down and its resources may still be running; `ak-bench finish --deployment <deployment id>` tears them down"``.
+  This is the only Ctrl-C handling in the commands: nothing is torn down, and every `state.json` write is an atomic
+  replace, so the file is never half-written.
 - **`force_unlock`:** prints `deployment lock held by pid <pid> on <host> since <since> (<command>)`, asks
   `confirm()` (`input()` y/N; `--yes` passes `lambda _: True`), clears the lock, logs a run-log `WARNING`. On a lock
   from this machine with a live process it refuses (that process can be stopped instead); with no lock it says so and
@@ -591,8 +597,10 @@ class Run:      def execute(self, hosts, modes, message_types, steps) -> None: .
    already exists.
 6. Secret: `secrets.token_hex(32)` (32 random bytes).
 7. Record `deploy_started`, create `state.json` (no `deployment` yet), take the deployment lock, run `deploy.sh`.
-8. On `ScriptFailed`: run-log `ERROR`, run `destroy.sh` (its own failure is logged, not raised over the first one),
-   record `teardown_at`, then raise.
+8. On `ScriptFailed` (or any other `Exception`): run-log `ERROR`, run `destroy.sh` (its own failure is logged, not
+   raised over the first one), record `teardown_at`, then raise. Not on `KeyboardInterrupt`: no `destroy.sh`;
+   `state.json` already holds the deployment id, `auth_secret` and deploy inputs, so a later `finish` runs
+   `destroy.sh` for it (with no `deployment` saved, its fetchers get an empty `Deployment`).
 9. Save `deployment`, `deploy_finished`; write `run-metadata.json`; print the deployment id.
 
 **`Step.execute`**:
@@ -630,10 +638,10 @@ key.
    combination run steps 1–4 of `Deploy` as a dry check, so a bad combination is refused before the first deploy.
 2. For each host × mode × message type: `Deploy` → for each N in `load_steps` order (or the `--steps` subset, same
    order), for each test type in `config.test_types` order: `Step` → `Plot` → `Finish`.
-3. **Teardown guarantee:** steps and plot run inside `try`; on any exception or `KeyboardInterrupt`, `Finish` runs in
-   the `finally`. A second `KeyboardInterrupt` while `Finish` runs is caught once to log
-   `ERROR "teardown skipped by a second Ctrl-C: <deployment id> may be left running"` and then re-raised. After
-   `Finish`, the first exception is re-raised (the remaining combinations are not started).
+3. **Teardown after a failure:** steps and plot run inside `try`; on an `Exception`, `Finish` runs (its own
+   `Exception` is logged as run-log `ERROR`, not raised over the first one), then the first exception is re-raised
+   (the remaining combinations are not started). `KeyboardInterrupt` is not caught: `run` stops at once and runs
+   `Finish` for no deployment; the interrupted command's lock logs the Ctrl-C `WARNING`.
 4. No warm-up step.
 
 **CLI (`cli.py`):** `argparse` with sub-commands `deploy`, `step`, `plot`, `finish`, `post-run`, `run` and the flags of
@@ -803,17 +811,26 @@ class ClientDriver(ABC):
   which the AWS deployment folders wire to the chat handler.
 - Receive task, per JSON frame (only reply frames count, so an unexpected frame ends as `timeout`, never as a false `ok`):
   - `type == "CHAT_QUEUED"`: ignored; it carries the request id but is the acknowledgement (`pipeline/ws/handler.py:275-283`).
-  - `type == "CHAT_RESPONSE"`: request id = the frame's `request_id` if present, else the in-flight request id of this
-    connection that appears in the frame text. A complete reply body is `{"result": str(reply), "session_id": ...}`
-    with no request id (`core/chat_service.py:381,394`); the prompt is the request id and the mock agent echoes it,
-    so it appears in `result`. Emits `first_chunk` + `complete`, or `error` when the body has an `error` key (agent
-    error reply, `pipeline/agent_runner.py:122,166`).
+  - `type == "CHAT_RESPONSE"`: emits `first_chunk` + `complete`, or `error` (with the frame's `error` text) when the
+    body has an `error` key (agent error reply, `pipeline/agent_runner.py:122,166`).
   - `type == "SYSTEM_RESPONSE"` with an `error` key (permanent delivery failure, `pipeline/response_handler.py:141-146`)
-    or `status == "FAILED"` (enqueue failure, `pipeline/ws/handler.py:270,297-298`): emits `error` for the request id
-    found the same way.
-  - every other frame (other `SYSTEM_RESPONSE`, `STREAM_CHUNK`, unknown types) is ignored; an unmatched reply
-    (duplicate delivery, late reply after timeout, an error reply without the id) is logged and dropped; the first match
-    wins.
+    or `status == "FAILED"` (enqueue failure, `pipeline/ws/handler.py:270,297-298`): emits `error` with the frame's
+    `error` / `message` text.
+  - Reply matching, in order, within the connection's in-flight requests:
+    1. the frame's `request_id`, if it is in flight;
+    2. else the in-flight request id that appears in the frame text. A complete reply body is
+       `{"result": str(reply), "session_id": ...}` with no request id (`core/chat_service.py:381,394`); the prompt is
+       the request id and the mock agent echoes it, so it appears in `result`;
+    3. else, for an error reply (`error` key or `status == "FAILED"`) with exactly one request in flight, that
+       request. AK's enqueue-failure `{"status": "FAILED", "message": "Request processing failed"}` and agent-error
+       `{"error": "<reason>"}` replies carry neither request id nor prompt.
+  - An unmatched error reply with more than one request in flight is not guessed: it is logged at `WARNING` with the
+    frame (truncated) and the in-flight count, and those requests end by their own reply or by timeout.
+  - every other frame (other `SYSTEM_RESPONSE`, `CHAT_QUEUED`, `STREAM_CHUNK`, unknown types) is ignored; any other
+    unmatched reply (duplicate delivery, late reply after timeout) is dropped with a `DEBUG` log; the first match wins.
+  - **Limit:** a burst step has one request per connection, so AK's id-less error replies always end as `error`. In a
+    steady step several requests can be in flight on one connection; there an id-less error reply cannot be
+    attributed and its request shows as `timeout`.
 - `trace_stages`: every `TraceStage` except `AGENT_FIRST_CHUNK`, `RESPONSE_POLL_START`, `RESPONSE_FOUND`, in enum order
   (`core/logger.py:16-29`).
 
@@ -1109,8 +1126,10 @@ For the reviewer: none changes a `design.md` requirement, but each fills a gap i
 5. **`REQUEST_RECEIVED_s`** = client sent → `REQUEST_RECEIVED` (the chain starts at the client), and the stage chain
    comes from `ClientDriver.trace_stages`.
 6. **Reply matching**: frame `request_id` when present, else the connection's in-flight id found in the frame text
-   (the complete reply body carries no request id). With the real agent, matching relies on the agent repeating the
-   prompt.
+   (the complete reply body carries no request id), else for an error reply the connection's only in-flight request
+   (AK's enqueue-failure and agent-error replies carry neither id nor prompt). With the real agent, matching relies on
+   the agent repeating the prompt. With several requests in flight on a connection (steady steps), an id-less error
+   reply is logged at `WARNING` and not attributed, so its request shows as `timeout`.
 7. **`host_settings.<host>` accepts any keys** (they are host-specific and go to `deploy.sh` as JSON); only
    `max_cooldown_s` is typed. Every other block refuses unknown keys.
 8. **Run id format** `%Y%m%dT%H%M%SZ`, `--run-id` without `-`, so the deployment id splits unambiguously.
@@ -1140,7 +1159,8 @@ For the reviewer: none changes a `design.md` requirement, but each fills a gap i
 | cool-down read raises / no value | `StepEndCheck.poll` | not met, run-log entry, settle run reset; max cool-down ends the step |
 | tracking task hangs at stop | `StepRunner` | cancelled after 30 s, run-log `WARNING` |
 | graph draw raises | plots | run-log `ERROR` naming the graph; other graphs drawn |
-| exception or Ctrl-C during `run` | `Run` | `Finish` runs; second Ctrl-C skips it with a run-log `ERROR`; exit ≠ 0 |
+| exception during `run` step or plot | `Run` | `Finish` runs for that deployment; first error raised; exit 1 |
+| Ctrl-C during any command (`deploy`, `step`, `plot`, `finish`, `post-run`, `run`) | `DeploymentLock`, CLI | nothing torn down (no `destroy.sh`, `teardown_at` unset); lock released; run-log `WARNING` naming the deployment id and `ak-bench finish --deployment <id>` (none when `teardown_at` is already set, e.g. in `post-run`); `run` stops without `Finish`; exit 130 |
 | exception or Ctrl-C during any command | every command | deployment lock released; a failed step keeps its partial folder |
 | `BenchIdentityProvider` without a secret | app startup | `RuntimeError` at build |
 | bad token | `BenchIdentityProvider.authenticate` | `AuthenticationError` → AK closes the socket (`pipeline/ws/handler.py:192-212`) |
@@ -1183,11 +1203,11 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 | `run/test_step_end_check.py` | order (requests → checks in list order, later not fetched while earlier fails); settle window (holds only after `settle_window_s` of consecutive ok polls); a raising read and an empty read reset the run and log; empty `cooldown_checks` ends once requests settle; max cool-down with host override → `max_reached` |
 | `load/test_schedule.py` | burst: one offset per client; steady: gaps within [min, max], next = previous scheduled + gap, none > `load_time_s`, min = max gives a fixed interval, per-client draws differ |
 | `load/test_load_generator.py` (MockWsServer) | all connects finish before `run()`; burst sends one request per client, all within a few ms; N clients → N distinct users and tokens, one connection each; request ids unique and in the prompt; responses matched without request id in the frame; dropped reply → `timeout` after `client_timeout_s`; refused connect → that client's requests `error`, others `ok`; latency from monotonic clock; a late send doesn't shift later scheduled sends |
-| `load/test_ws_complete_driver.py` | frame shape; token in query; `CHAT_QUEUED` ignored; `SYSTEM_RESPONSE` FAILED and `error`-key replies → `error`; duplicate reply dropped |
+| `load/test_ws_complete_driver.py` (MockWsServer sends AK's id-less FAILED and `error` replies) | frame shape; token in query; `CHAT_QUEUED` ignored; `SYSTEM_RESPONSE` FAILED and `error`-key replies → `error`; one in flight + id-less FAILED or `error` reply → `error` with its text; two in flight + id-less error reply → neither settled, `WARNING` logged, both left to time out; duplicate reply dropped |
 | `run/test_step_runner.py` | connect happens before `before` starts; `during_step` windows are contiguous (last poll, now) and a final poll after stop; a hanging tracker is cancelled after the stop timeout (patched to 0.2 s); `after_step` gets (step start, step end) after the wait; a raising fetcher → empty columns + run-log entry, step completes; the missing-responses `WARNING` text and count |
 | `run/test_state_and_lock.py` | stale lock (dead pid, this host) taken over with log; live lock refused; other-host lock refused; `--force-unlock` prints holder, honours `--yes` / declined prompt, logs; lock released on success, exception and `KeyboardInterrupt` |
 | `run/test_commands.py` (mock folder + MockWsServer) | full deploy → step (steady and burst) → plot → finish → post-run produces every CSV, every graph, `run-metadata.json`, `step-metadata.json`, `cost.csv` and the cost graph; script env contains the contract variables (mock delays only with `mock_agent`); `state.json` round-trips `Deployment` unchanged and loses `auth_secret` after finish; refusals: existing step folder without `--replace` (and `--replace` replaces folder + row), step not in saved load steps, every command refused while another holds the deployment lock, `run --steps 7` before any deploy, unknown `fetchers.<name>` and missing folder before any script; existing host × mode × message type in a run id refused |
-| `run/test_teardown_guarantee.py` | `run` with a step that raises → `destroy.sh` ran and the error surfaces; `KeyboardInterrupt` during a step → `destroy.sh` ran; second interrupt during finish → logged skip; `deploy.sh` failure → `destroy.sh` ran, exit 1; `destroy.sh` failure → run-log `ERROR`, exit 1 |
+| `run/test_teardown_guarantee.py` | `run` with a step that raises → `destroy.sh` ran and the error surfaces (also when `destroy.sh` then fails); `deploy.sh` failure → `destroy.sh` ran, exit 1; `destroy.sh` failure → run-log `ERROR`, exit 1, `finish` can run again; Ctrl-C in `deploy`, `step` and `run` → no `destroy.sh`, lock released, `teardown_at` unset, one run-log `WARNING` with the deployment id, exit 130, and `run` calls no `finish`; `finish` tears down a deployment whose `deploy.sh` was interrupted |
 | `results/test_results.py` (recorded CSV fixtures) | percentiles match `numpy.percentile(..., method="linear")` and are empty for no data; per-request durations incl. `REQUEST_RECEIVED_s`, `CLIENT_RECEIVED_s`, empty `AGENT_FIRST_CHUNK_s`; per-window Tx / Rx / errors / timeouts / latency; carry-forward limit (poll interval, and sample gap for after-step series); declared-but-empty columns for a fetcher that stored nothing; step folder padding |
 | `results/test_plots.py` | every phase-1 graph file is produced from recorded data, including one with all-empty resource data (panels drawn, not skipped); cost graph only when `cost.csv` exists |
 | `load/test_token_cross_check.py` | a `TokenSigner` token is accepted by `BenchIdentityProvider` (imports the app module by path; the app's dependencies are a subset of the harness's) |
