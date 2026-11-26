@@ -301,6 +301,15 @@ one builder:
   so the hazard is removed rather than reasoned about.
 - `timeoutInMillis` is **not optional** (§0). The variable is in seconds for consistency with
   `alb_idle_timeout`; the `* 1000` lives here, at the one place the millisecond unit is required.
+- **Two of the three parameter sources are unverified against a REST API.** `_param_re` accepts
+  `path`, `header` and `querystring`, and `_ep_request_params` maps all three onto
+  `integration.request.path.*`. The HTTP API accepted all three through `overwrite:path`
+  (`origin/develop:api_gateway.tf:38-41`), so this is compatibility surface that must keep working,
+  not new capability — which is why the regex is **not** narrowed to `path`. But nothing in
+  `examples/` or `e2e/` uses the header or querystring forms, so only the `path` branch has ever
+  been applied against AWS. `path` is well covered by the weekly suite: `openai-schedule` exercises
+  `ANY` with `{task_id}` and `$request.path.task_id`, `crewai` the non-`ANY` plus generated OPTIONS
+  shape. Treat the other two as untested rather than as known-good.
 - `operationId` must be unique across the document. `replace(ep.method, "any", "any-method")` keeps the
   ANY operation distinct from a sibling `get` on the same path; `trim`/`replace` on the path mirror
   GCP's `operationId` construction (`ak-gcp/containerized/api_gateway.tf:77`). A path containing
@@ -787,7 +796,16 @@ model, no new selector, no `enabled` flag.
 | `alb_idle_timeout` | root **and** `modules/rest-service/` | `number` | `300` | The module has no request-path timeout of any kind today. How long an agent may stay silent is a property of the user's workload, not of AWS |
 | `gateway_integration_timeout` | root only | `number` | `900` | Same, for total stream duration. Unset, the integration takes AWS's 29 s default and SSE dies at 29 s (§0) |
 
-Both defaults are provisional pending claim 4.
+`gateway_integration_timeout`'s default is provisional pending claim 4b.
+`alb_idle_timeout`'s is not: AWS documents a fixed 5-minute idle cap on a Regional REST stream, so
+300 matches the limit the gateway enforces regardless (claim 4a).
+
+**Both are declared top-level, not on `var.rest_service`**, even though that object already carries
+`alb_security_group_id` and the ALB belongs to the REST service. The two caps are one story for the
+operator and are documented as a pair; `gateway_integration_timeout` configures the gateway rather
+than the service and has no object to live on, so nesting only `alb_idle_timeout` would split the
+pair across two surfaces. The cohesion gained is worth less than the coherence lost. Recorded here
+so the trade-off is not re-derived at every review.
 
 The response-store requirement adds no variable: it is expressed through the existing
 `create_redis_cluster` / `create_valkey_cluster` flags.

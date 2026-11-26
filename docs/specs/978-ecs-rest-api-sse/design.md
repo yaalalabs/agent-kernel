@@ -134,9 +134,11 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
   and a mock built from `cors_*` would contradict the container on every non-preflight response.
   - This mirrors the GCP module exactly, which proxies its preflight operation to Cloud Run and
     builds one only for non-`ANY` paths (`ak-gcp/containerized/api_gateway.tf:47-58`, `:73-74`).
-  - Consequence: `var.enable_cors` and the `cors_*` variables stop affecting ECS. They are already
-    inert for actual responses once the gateway stops rewriting them; this makes that honest. #1006
-    makes the container's own policy configurable, which is the actual fix.
+  - Consequence: the `cors_*` **values** stop affecting ECS. They are already inert for actual
+    responses once the gateway stops rewriting them; this makes that honest. #1006 makes the
+    container's own policy configurable, which is the actual fix.
+  - `var.enable_cors` itself keeps one effect: whether the preflight operation is emitted at all.
+    It is not inert, and its description says so.
 
 ### ALB
 
