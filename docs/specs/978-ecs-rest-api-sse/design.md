@@ -159,9 +159,10 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
 
 ### Stream duration
 
-There are **two** caps on the request path and they limit different things. The ALB's bounds a silent
-gap; the gateway's bounds the whole integration. A stream that emits a chunk every two seconds for ten
-minutes never trips the ALB and is killed by the gateway.
+There are **two configurable** caps on the request path and they limit different things. The ALB's
+bounds a silent gap; the gateway's bounds the whole integration. A stream that emits a chunk every two
+seconds for ten minutes never trips the ALB and is killed by the gateway. The gateway's own fixed
+5-minute idle cap is the third, and is covered under ALB above.
 
 - **`timeoutInMillis` must be set on every integration.** Left unset it takes AWS's documented default
   range ceiling of 29 s, which caps every SSE stream at 29 seconds and silently defeats this change —
@@ -175,9 +176,11 @@ minutes never trips the ALB and is killed by the gateway.
   and its own worked example sets `timeoutInMillis: 900000`, while the same page says that switching
   an integration to `STREAM` *removes* a customised timeout because "API Gateway streams your response
   for up to 5 minutes". 900 follows the example; claim 4b measures which is true.
-- This also unsettles `alb_idle_timeout`'s 300 s default, which was chosen to match "the REST API's
-  stated idle limit" — that 5-minute figure is the *total* stream figure, not an idle one. The two
-  defaults are set together once claim 4 is measured.
+- `alb_idle_timeout`'s 300 s default is **not** affected. The 5-minute figure is documented as an
+  idle limit after all — the streaming page states it separately from the 15-minute maximum
+  duration: "for Regional or private endpoints, the timeout is 5 minutes". 300 s matches the cap
+  the gateway applies anyway, so a higher value changes nothing for traffic through the gateway.
+  Only `gateway_integration_timeout` waits on claim 4b.
 
 ### Response store
 
@@ -257,6 +260,11 @@ already owns that resource** for WebSocket mode, so REST mode joins an existing 
   - Documented, not worked around. Giving every explicit resource a fallback method would turn
     today's clean method-not-allowed into a silent catch-all, which is worse than the gap.
   - Nothing in `examples/` or `e2e/` uses `{proxy+}`, and it is not documented as supported.
+- **The ALB's idle timeout rises from an implicit 60 s to 300 s on every containerized
+  deployment**, not only SSE ones, because `aws_lb.app` sets no `idle_timeout` today. Long-running
+  non-streaming requests that the ALB used to cut at 60 s now survive, and an abandoned connection
+  is held five times longer before it is reaped. Set `alb_idle_timeout = 60` to keep the old
+  behaviour.
 - Output names and types are unchanged, repointed at the new resources: `api_gateway_id`,
   `api_gateway_stage`, `agent_invoke_url`, and the two log-group outputs. `e2e/app/deploy/outputs.tf:2`
   builds `https://<id>.execute-api.<region>.amazonaws.com/<stage>` from the first two; a REST API's

@@ -88,8 +88,12 @@ every stream would die at 29 seconds and look exactly like the old buffering bug
    neither `alb_idle_timeout` nor `gateway_integration_timeout`, so a plain `terraform init` against
    it fails on unknown variables. Rewrite the source to this repo's copy:
     ```bash
-    python3 scripts/deploy/inject_dependencies.py            # --revert to put the registry source back
+    python3 ../../../scripts/deploy/inject_dependencies.py   # --revert to put the registry source back
     ```
+    Run it from this example's directory, the same place the later steps start from; the script finds the repo root itself.
+
+    It also writes `deploy/backend.tf` pointing at the CI Terraform state bucket. If you do not have access to that bucket, delete that file or repoint it at your own before `terraform init`.
+
     Skip this step only once a release containing the streaming REST gateway is published and the pin is raised to it.
 
 3. Update `deploy/terraform.tfvars` if you want different naming (`prefix`, `region`).

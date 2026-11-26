@@ -238,7 +238,7 @@ variable "throttling_burst_limit" {
 
 variable "alb_idle_timeout" {
   type        = number
-  description = "Seconds the ALB holds a connection open with no bytes in either direction, before closing it. Raise it when an agent can stay silent mid-stream for longer than the default, such as a long tool call under SSE. The gateway's integration timeout caps the total stream length separately, so raising this alone does not extend a stream past what API Gateway allows."
+  description = "Seconds the ALB holds a connection open with no bytes in either direction, before closing it. Raise it when an agent can stay silent mid-stream for longer than the default, such as a long tool call under SSE. Two API Gateway limits cap this from above and neither is configurable here: a Regional REST API cuts a streamed response after 5 minutes of silence, and gateway_integration_timeout caps the total. Values above 300 therefore only affect callers that reach the ALB directly inside the VPC."
   default     = 300
 }
 

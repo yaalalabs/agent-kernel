@@ -111,12 +111,20 @@ async def test_frames_are_spread_over_time(streamed):
     A buffered reply arrives as one burst, so every frame lands within milliseconds of the first.
     A streamed one spreads across the generation. The threshold is deliberately loose: this
     separates "one burst" from "a stream", not fast streaming from slow.
+
+    Only frames that carry text count. Frame count and total span alone are too weak: an empty
+    delta followed a second later by the whole answer satisfies both while having streamed nothing.
     """
-    _, offsets = streamed
-    span = offsets[-1] - offsets[0]
+    frames, offsets = streamed
+    text_offsets = [offset for frame, offset in zip(frames, offsets) if frame.get("delta")]
+    assert len(text_offsets) >= 2, (
+        f"only {len(text_offsets)} of {len(frames)} frames carried text, so the reply did not "
+        "arrive incrementally even though several frames did"
+    )
+    span = text_offsets[-1] - text_offsets[0]
     assert span > 0.5, (
-        f"all {len(offsets)} frames arrived within {span:.3f}s of each other, which is a buffered "
-        "response released in one burst, not a stream"
+        f"all {len(text_offsets)} text frames arrived within {span:.3f}s of each other, which is a "
+        "buffered response released in one burst, not a stream"
     )
 
 

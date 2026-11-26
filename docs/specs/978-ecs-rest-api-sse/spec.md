@@ -735,7 +735,7 @@ and is the only place the real answer exists.
 | `modules/rest-service/main.tf:37-40`, `:219` | Response-store env vars, `idle_timeout` (§6, §7.1) |
 | `modules/rest-service/variables.tf` | `alb_idle_timeout` added (§6) |
 | `rest_service.tf` | `alb_idle_timeout` passed through (§6) |
-| `checks.tf` (new) | The response-store check (§7.3) |
+| `state.tf` | The response-store `check` block, above `module "redis"` (§7.3) |
 | `iam.tf` | **Verified unchanged.** A VPC-link HTTP proxy integration needs no new permission, and the response-store policy at `:40-62` / `:116-119` is DynamoDB-only because Redis and Valkey are reached by network, not by IAM |
 | `modules/agent-runner/` | **Verified unchanged** (§7.1) |
 

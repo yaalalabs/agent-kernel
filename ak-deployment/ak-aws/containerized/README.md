@@ -296,8 +296,8 @@ enable_api_gateway_logs = true
 
   ```bash
   terraform state mv \
-    'module.<module_name>.aws_cloudwatch_log_group.rest_api' \
-    'module.<module_name>.aws_cloudwatch_log_group.rest_api[0]'
+    'module.<module_name>.aws_cloudwatch_log_group.http_api' \
+    'module.<module_name>.aws_cloudwatch_log_group.http_api[0]'
 
   # WebSocket modes only:
   terraform state mv \
@@ -314,24 +314,40 @@ enable_api_gateway_logs = true
     'module.<module_name>.aws_api_gateway_account.this[0]'
   ```
 
+  The first command uses the log group's **old** name on both sides. It is renamed `http_api` →
+  `rest_api` in this release, but `state mv` runs against the pre-upgrade state, and the module's
+  `moved` block carries the rename across on the apply that follows.
+
   Skipping this makes Terraform destroy and recreate these resources, discarding any retained logs.
 
 ### Request-Path Timeouts
 
-Two separate caps bound a request, and raising one does not extend what the other is cutting. The
-common mistake is to raise the ALB timeout and expect a longer stream.
+Three separate caps bound a request, and raising one does not extend what the other two are
+cutting. The common mistake is to raise the ALB timeout and expect a longer stream.
 
 | Variable | Description | Type | Default | Required |
 |---|---|---|---|---|
 | `alb_idle_timeout` | Seconds the ALB holds a connection open with **no bytes in either direction**. Bounds a silent gap, such as a long tool call mid-stream | `number` | `300` | no |
 | `gateway_integration_timeout` | Seconds API Gateway allows one integration request to run **in total**, streamed response included. Bounds the overall length of an SSE stream | `number` | `900` | no |
 
-A stream emitting a chunk every two seconds for ten minutes never trips `alb_idle_timeout`, because
-it is never idle, and is cut by `gateway_integration_timeout`. A request whose agent thinks silently
-for six minutes and then replies trips `alb_idle_timeout` while well inside the gateway's total.
+The third cap is API Gateway's own, and it is **not configurable**: a streamed response on a
+Regional (or private) endpoint is cut after **5 minutes** with no bytes sent, and after 30 seconds
+on an edge-optimized one. This is separate from `gateway_integration_timeout`, which bounds the
+total rather than a gap.
 
-Both defaults are provisional: AWS documents the streaming cap as both 5 and 15 minutes on the same
-page, so the measured values from the first deployment will replace them.
+So `alb_idle_timeout` above 300 buys nothing for traffic arriving through the gateway: the gateway
+cuts a silent stream at 5 minutes whatever the ALB allows. It still matters for callers inside the
+VPC that reach the ALB directly on `alb_dns_name`.
+
+A stream emitting a chunk every two seconds for ten minutes never trips either idle cap, because it
+is never idle, and is cut by `gateway_integration_timeout`. A request whose agent thinks silently
+for six minutes and then replies is cut by the gateway's 5-minute idle cap while well inside the
+total.
+
+`gateway_integration_timeout`'s default is provisional. AWS documents the integration timeout as
+configurable "up to 15 minutes" and its own example sets 900000 ms, but the same page says that
+switching an integration to `STREAM` *removes* a customised timeout. Which of those holds is
+unmeasured; 900 follows the example.
 
 ### Security Groups
 

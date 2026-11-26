@@ -13,7 +13,7 @@ a real deployment on 2026-11-26.
 | 1 | AWS provider `6.70.0` exposes `response_transfer_mode` and `integration_target` | provider schema, locally | **Confirmed — see below** |
 | 2 | A REST API integrates directly with an ALB over VPC link V2, no NLB | the stack applies and serves one request end to end | **Confirmed — see below** |
 | 3 | With `responseTransferMode = "STREAM"`, SSE chunks arrive **incrementally** | `curl -N`, timestamping each chunk | **Confirmed — see below** |
-| 4 | The REST API's real limits on a Regional endpoint: the **idle** timeout, and the **total** stream duration `timeoutInMillis` permits under `STREAM` | a route that stays silent then emits; and a route that emits steadily past 5 and 15 minutes | The `alb_idle_timeout` and integration-timeout **defaults** follow the measurements, not the documentation, which contradicts itself (5 min vs 15 min) |
+| 4 | The REST API's real limits on a Regional endpoint: the **idle** timeout, and the **total** stream duration `timeoutInMillis` permits under `STREAM` | a route that stays silent then emits; and a route that emits steadily past 5 and 15 minutes | The integration-timeout **default** follows the measurement. The idle limit is documented unambiguously (5 min, Regional) and `alb_idle_timeout = 300` follows it |
 | 5 | `x-amazon-apigateway-integration` accepts `responseTransferMode` **and** `integrationTarget` | the OpenAPI extension reference, which enumerates every supported key | **Confirmed — see below** |
 
 ## 1. Provider support — confirmed 2026-11-23
@@ -104,8 +104,18 @@ paths:
   timeout, this timeout value is removed, as API Gateway streams your response for up to **5
   minutes**."
 
-Those last two contradict each other and both are current AWS documentation. What is certain is that
-this is a **different cap from the ALB's**, and the design accounts for only one of them:
+**Correction, 2026-11-26.** The survey above missed a sentence that resolves most of this. The same
+page states the idle limit separately and unambiguously: "Your streams are subject to idle timeouts.
+For Regional or private endpoints, the timeout is **5 minutes**. For edge-optimized endpoints, the
+timeout is 30 seconds." So the page documents **two different limits**, not one figure twice:
+5 minutes of silence, and 15 minutes of total duration. Reading the 5-minute figure as a total was
+wrong, and so was the conclusion that the documentation contradicts itself about the total.
+
+What does still conflict is narrower: the `BUFFERED` → `STREAM` note calls a customised timeout
+"removed", while the configuration section says it can be set "up to 15 minutes". Whether
+`timeoutInMillis` is honoured at all under `STREAM` is therefore still open — that is claim 4b.
+
+Either way this is a **different cap from the ALB's**, and the design accounts for only one of them:
 
 | Cap | Limits | Set by |
 | --- | --- | --- |
@@ -214,8 +224,17 @@ classic Docker builder cannot cross-build. Deploy from an amd64 host or from CI.
 ## 4. Still to measure
 
 Claim 4 was deliberately skipped: it tunes two defaults rather than deciding feasibility, and SSE
-works without it. Until it is measured, **`alb_idle_timeout = 300` and
-`gateway_integration_timeout = 900` remain provisional** — chosen from documentation that gives both
-5 minutes and 15 minutes for the same cap. Record 4a and 4b here when someone needs the real
-ceilings, and correct the two defaults and their descriptions from the measurements rather than from
-the documentation.
+works without it. The two halves no longer stand in the same place, though.
+
+**4a — the idle limit: documented, not measured.** AWS states it plainly for the endpoint type this
+module uses: "for Regional or private endpoints, the timeout is 5 minutes". That is a hard gateway
+limit an operator cannot raise, so **`alb_idle_timeout = 300` is settled rather than provisional**
+— it matches the cap the gateway enforces anyway, and a higher value only reaches callers that hit
+the ALB directly inside the VPC. Measuring it would confirm the documentation, not decide anything.
+
+**4b — the total limit: still open.** The page says the integration timeout is configurable "up to
+15 minutes" and sets `timeoutInMillis: 900000` in its own example, yet also says switching to
+`STREAM` *removes* a customised timeout. So **`gateway_integration_timeout = 900` remains
+provisional**: the open question is whether `timeoutInMillis` is honoured under `STREAM` at all, and
+whether a *lower* value is honoured if it is. Record the measurement here when someone needs the real
+ceiling, and correct the default and its description from it rather than from the documentation.
