@@ -557,8 +557,8 @@ path")` so a config written for a later release fails loudly (Q19).
 
 ```python
 class CredentialBroker:
-    def __init__(self, principal: Principal, store: CredentialStore, cipher: CredentialCipher,
-                 exchangers: dict[str, TokenExchanger], agent_id: str): ...
+    def __init__(self, principal: Principal, store: CredentialStore,
+                 exchangers: dict[str, TokenExchanger], agent_id: str): ...  # no cipher: the store encrypts (refinement 23)
     async def token_for(self, audience: str, scopes: Optional[list[str]] = None) -> str: ...
 ```
 
@@ -578,6 +578,42 @@ lands with the first exchange flow (design section 3.1, Q19).
 ciphertext never equals plaintext, wrong key fails to decrypt) and `TokenExchangerContract`
 (issued token shape, `expires_at` in the future, `actor` forwarded) subclassed by `passthrough`
 and a fake exchanger.
+
+- As built (iteration 24, design refinement 23), where the store differs from the text above:
+  - **The store encrypts.** `put`, `get`, `delete` and `clear` are concrete on `CredentialStore`:
+    `put` refuses an `expires_at` that has passed (`ValueError`, nothing stored) and seals the value
+    with the store's cipher, the key as associated data; `get` opens it. A backend implements
+    `_write(key, data, expires_at)`, `_read(key)` (None for a missing or expired entry),
+    `_remove(key)` and `_clear()` over ciphertext only, so no caller handles ciphertext and the
+    broker (iteration 25) takes no cipher.
+  - **Shared means encrypted.** `CredentialStore.shared` (a class attribute, `True` by default,
+    `False` on `InMemoryCredentialStore`) decides it in the base constructor: a shared store built
+    without a cipher raises `AKConfigError` naming `identity.credentials.encryption_key`, a
+    bring-your-own store included. The in-memory store without a key keeps values as they came and
+    logs one warning when it is built.
+  - **The cipher** (`CredentialCipher`, `store.py`): `encrypt(plaintext, reference)` and
+    `decrypt(sealed, reference)`; a value under another key, under another reference, changed, or
+    shorter than a nonce and a tag raises `CredentialError` (`identity/errors.py`, added here
+    rather than in iteration 25). `from_config(credentials)` is None without `encryption_key`,
+    reads the secret through `SecretManager`, decodes base64url strictly (padding optional) and
+    raises `AKConfigError` for a missing secret, a malformed key name, a value that is not base64url
+    or one that is not 32 bytes, never quoting the value. The `auth` extra already carries
+    `cryptography`; the cipher imports it under `require_extra("auth", ...)`.
+  - **Redis and Valkey** write the value and its expiry in one command,
+    `_RedisLikeDriver.set_with_expiry(key, value, ttl)` (`SET ... PX`, milliseconds, a non-positive
+    `ttl` refused), new on the shared driver beside `rpush_with_expiry`: `set` followed by
+    `expire_in` could leave a credential without an expiry. The driver has no store-wide TTL.
+  - **DynamoDB** keeps `credential_key`, `value` (binary), `expires_at` (what a read checks, since
+    DynamoDB removes an expired item late) and `expiry_time` (`expires_at` rounded up, for
+    DynamoDB's own TTL). The driver has no store-wide TTL.
+  - **The factory** builds the cipher first, then the backend from explicit settings (`url`,
+    `prefix`, `table_name`), the registry's shape; a shared type without its block is an
+    `AKConfigError` (`identity.credentials.store.<type> must be set ...`), as the registry's is. A
+    dotted path is built through `CredentialStore.from_config(store_config, cipher)`, whose default
+    passes the cipher alone; a store of your own overrides it to read `model_extra`.
+  - **Exports**: `agentkernel.identity` exports `CredentialError`, `CredentialCipher`,
+    `CredentialStore`, `CredentialStoreFactory` and `InMemoryCredentialStore` lazily; importing the
+    package loads no credential module.
 
 ### 6. Registry (`core/registry.py`, `identity/registry/`)
 
@@ -2237,6 +2273,13 @@ class AKConfig(...):
   same reason one level up: `agent:` written for `agents:` would drop every restriction beneath
   it. A bring-your-own registry is built with no arguments, so nothing reads a key of its own
   here.
+- The credential store's blocks refuse a `ttl` too (`_CredentialStoreBackendConfig`,
+  `AKConfigError` naming `identity.credentials.store.<store>.ttl`): each entry expires with the
+  token it holds, so a store-wide expiry would keep one past it or drop it while its run still
+  needs it; `inbound_ttl` caps how long an inbound credential is kept, and must be positive.
+  `_CredentialsConfig` refuses unknown keys (a misspelt `encryption_key` would keep credentials in
+  plaintext); `_CredentialStoreConfig` and `_ExchangerConfig` keep them in `model_extra` for a
+  bring-your-own store or exchanger (iteration 24).
 - The registry's store blocks refuse a `ttl` (`_RegistryStoreConfig`, `AKConfigError` naming
   `registry.<store>.ttl`). They reuse the connection models, which carry the field, and the
   registry cannot honour it: nothing registers a hosted agent again, so an expiry would remove
@@ -3377,3 +3420,11 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    Tools a provider runs are warned about, not refused, as design Q12 settled; this iteration
    adds the report (`Agent.provider_tool_names`) and the warning (section 9; behavioural changes
    48 to 50).
+23. **The credential store encrypts** (iteration 24, 2026-11-26). Section 5 handed the broker a
+   store and a cipher beside it, which left every caller to seal a value before `put` and open it
+   after `get`, and a caller that forgot would write a credential to a shared database as it came.
+   The store now owns its cipher: `put` seals, `get` opens, the store key is the associated data,
+   and a backend sees ciphertext only. A store shared with other processes refuses to be built
+   without a key, which also covers a bring-your-own one. Redis and Valkey write a value and its
+   expiry in one command rather than two, and DynamoDB checks the expiry on read, since its own
+   TTL removes items late (section 5, "As built").

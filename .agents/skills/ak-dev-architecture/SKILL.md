@@ -31,7 +31,7 @@ metadata:
 2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and Claude Agent SDK) implements `Agent`, `Runner`, and `Module` subclasses that wrap native framework objects, plus a `*ToolBuilder` that binds plain Python functions to the framework's native tool type (for Claude, `ClaudeToolBuilder` produces SDK MCP tools). The Claude Agent SDK has no named agent object, so its adapter wraps a thin `ClaudeAgentSpec` (name, description, native `ClaudeAgentOptions`, tools) instead.
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
 4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore). Session stores also provide the WebSocket gateway's `WSConnectionStore` on their backend via `SessionStore.get_connection_store()` (spec #495 §9): the ABC lives beside `SessionStore` in `core/session/base.py`, and each store file carries (or explicitly declines) its implementation, encapsulating its database operations over the shared drivers: `InMemoryWSConnectionStore` (`in_memory.py`, process-wide class-level state), `RedisLikeWSConnectionStore` (`core/session/redis_like.py`, client-library-agnostic; constructed by the redis/valkey stores with their own drivers), `DynamoDBWSConnectionStore` (`dynamodb.py`, over an existing table named by `session.connection_store.table_name`, same schema as the AWS adapters' connections table); cosmosdb/firestore raise actionably, as does the base default (so pre-method BYO stores keep working until a WS mode is enabled). The Kafka and Pub/Sub transports' retry/dedup bookkeeping keeps its own factory in `pipeline/transport/bookkeeping.py`: a Redis/Valkey session store (Q5), else a Redis/Valkey `execution.response_store` (#886, since GCP sessions usually live in Firestore), else process-local with a warning. It also remembers acknowledged messages (`mark_acked`/`was_acked`), which Pub/Sub can redeliver.
-5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, identity providers and role mappers, authorizers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider, identity provider and role mapper, authorizer, integration outbound adapter) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
+5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, identity providers and role mappers, authorizers, credential stores, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider, identity provider and role mapper, authorizer, integration outbound adapter) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core`, `api` and the core-only `secret` package; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
 7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, `nats`, `pubsub`, `servicebus`) and process topology selected by configuration.
 
@@ -886,7 +886,7 @@ authorization: the authorizer contract, the static backend, its factory and the
 a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
 realtime surfaces (iteration 20, the Protocol surfaces bullet below). Phase E gates tools from the published tool filter (the Tool gates bullet below): the OpenAI,
 Pydantic AI, MAF and Claude adapters since iteration 21, ADK and CrewAI since iteration 22,
-LangGraph, smolagents and realtime calls since iteration 23. The credentials capability is a later phase: `Principal.credential_ref` is inert. Authentication is
+LangGraph, smolagents and realtime calls since iteration 23. Phase F adds credentials: iteration 24 the encrypted credential store (the Credentials bullet below), which nothing writes to until iteration 25, so `Principal.credential_ref` is still inert. Authentication is
 configuration: one identity provider per deployment, named by the `identity` block, and no
 handler or entry point takes a validator or authoriser argument any more (`agentkernel.auth` is
 deleted).
@@ -1292,19 +1292,45 @@ deleted).
   names no other. Every sandbox tool and all five schedule tools are `write`, as are `write_kb` and
   `update_agui_state`; everything else keeps the `read` default. A new system tool that changes
   anything outside the conversation declares `tier=AccessLevel.WRITE`.
+- **Credentials** (`identity/credential/`, #603 phase F, iteration 24; spec section 5 and
+  refinement 23). `CredentialStore` (`store.py`) keeps one value per key until it expires, and the
+  **store encrypts**: `put(key, value, expires_at)` refuses an `expires_at` that has passed
+  (`ValueError`) and seals the value with its `CredentialCipher` (AES-GCM, a fresh 12-byte nonce
+  prefixed, the store key as associated data), `get` opens it (`CredentialError`,
+  `identity/errors.py`, for a value under another key or reference, or changed), and `delete` /
+  `clear` remove. A backend implements only `_write` / `_read` (None for missing or expired) /
+  `_remove` / `_clear` over ciphertext, so no caller handles ciphertext. `shared` (class attribute,
+  default `True`) makes the base constructor refuse a store without a cipher (`AKConfigError` naming
+  `identity.credentials.encryption_key`), a bring-your-own one included; `InMemoryCredentialStore`
+  (`shared = False`, a class-level dict, expiry checked on read) is the one that may run keyless,
+  keeping plaintext in memory with one warning. `RedisCredentialStore` / `ValkeyCredentialStore`
+  over `_RedisLikeCredentialStore` write value and expiry in one `SET ... PX`
+  (`_RedisLikeDriver.set_with_expiry`, new beside `rpush_with_expiry`), under `ak:cred:`;
+  `DynamoDBCredentialStore` keeps `credential_key`, `value`, `expires_at` (checked on read, since
+  DynamoDB's TTL removes items late) and `expiry_time` (rounded up, for that TTL). Neither driver has
+  a store-wide TTL, and the config blocks refuse one. `CredentialCipher.from_config` reads the key
+  named by `encryption_key` through `SecretManager`, decodes base64url strictly and requires 32
+  bytes, never quoting the value; None without a key. `CredentialStoreFactory.create(credentials)`
+  builds the cipher, then `in_memory` / `redis` / `valkey` / `dynamodb` from explicit settings (a
+  shared type without its block is an `AKConfigError`, the registry's rule), else a dotted path
+  through `CredentialStore.from_config(store_config, cipher)`. Exchange and the broker are
+  iteration 25.
 - **Contract suites** (imported from test code only): `identity/provider/testing.py` has
   `IdentityProviderContract` (fixtures `provider`, `valid_credential` as `(credential, expected
   fields)`, `invalid_credentials`) and `RoleMapperContract` (`mapper`, `cases`);
   `identity/authz/testing.py` has `AuthorizerContract`, which states one policy (`GRANTS`, `TOOLS`,
   over `DESCRIPTORS`) and a set of principals and asserts what each may do, so a new backend
-  overrides the `authorizer` fixture with one holding that policy. The `static_identity` fixture
+  overrides the `authorizer` fixture with one holding that policy; `identity/credential/testing.py`
+  has `CredentialStoreContract` (override `make_store`, a function from a cipher to a store over one
+  shared backend). The `static_identity` fixture
   in `tests/conftest.py` installs a recording static provider on `IdentityProviderFactory.get`.
 - **Exports**: `agentkernel.identity` resolves lazily (PEP 562): `IdentityProvider`,
   `RequestContext`, `AuthenticationError`, `IdentityProviderFactory`, `RequestAuthenticator`,
   `StaticIdentityProvider`, `OIDCIdentityProvider`, `JWKSCache`, `CognitoIdentityProvider`,
   `EntraIdentityProvider`, `FirebaseIdentityProvider`, `RoleMapper`, `MappingRoleMapper`,
   `MappedIdentityProvider`, `RoleMapperFactory`, `Authorizer`, `AuthorizerCapabilities`,
-  `Decision`, `AuthorizerFactory`, `StaticAuthorizer`.
+  `Decision`, `AuthorizerFactory`, `StaticAuthorizer`, `CredentialError`, `CredentialCipher`,
+  `CredentialStore`, `CredentialStoreFactory`, `InMemoryCredentialStore`.
 
 ### Configuration (`_IdentityConfig` in `config.py`)
 
@@ -1799,6 +1825,8 @@ ak-py/src/agentkernel/
 │   ├── authz/               # Authorizer ABC + Decision (base.py), AuthorizerFactory, StaticAuthorizer with
 │   │                        #   GrantTable/ToolPolicyTable/SubjectMatcher (static.py), AccessGate (gate.py),
 │   │                        #   testing.py (AuthorizerContract)
+│   ├── credential/          # Credentials: store.py (CredentialStore, CredentialCipher, CredentialStoreFactory),
+│   │                        #   in_memory.py, redis_like.py, redis.py, valkey.py, dynamodb.py, testing.py (CredentialStoreContract)
 │   ├── registry/            # Store-backed agent registries: base.py (StoreBackedAgentRegistry), redis_like.py,
 │   │                        #   redis.py, valkey.py, dynamodb.py, testing.py (AgentRegistryContract)
 │   └── provider/            # IdentityProvider ABC + RequestContext (base.py), RequestAuthenticator (request.py),

@@ -1411,6 +1411,20 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
 - **Verify:** the store and cipher cases of new `tests/test_identity_credentials.py` (contract
   over in-memory and the redis-like and DynamoDB backends through fake drivers, cipher round
   trip, TTL).
+- **As built** (2026-11-26, branch `feature/603-credentials`; spec section 5 "As built" and
+  refinement 23):
+  - The store encrypts and decrypts itself (`put` / `get` concrete on `CredentialStore`, backends
+    implement `_write` / `_read` / `_remove` / `_clear` over ciphertext), so iteration 25's broker
+    takes no cipher. `CredentialStore.shared` makes a shared store refuse to be built without a key.
+  - `CredentialError` lands here, for a value that does not decrypt; `put` of an expired credential
+    is a `ValueError`.
+  - New on the shared driver: `_RedisLikeDriver.set_with_expiry` (one `SET ... PX`), with its cases
+    in `test_shared_drivers.py`. DynamoDB items carry `expires_at`, checked on read, and
+    `expiry_time` for DynamoDB's TTL.
+  - Config: the store blocks refuse a `ttl`, `_CredentialsConfig` refuses unknown keys,
+    `inbound_ttl` must be positive; cases in `test_config.py` (`TestCredentialsConfig`).
+  - Exports added to `agentkernel.identity`. No user docs or changelog fragment yet: nothing reads
+    the store until iteration 25, which documents the capability as a whole.
 
 ### Iteration 25: Exchange, broker and retention
 

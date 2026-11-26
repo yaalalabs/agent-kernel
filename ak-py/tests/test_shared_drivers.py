@@ -354,6 +354,36 @@ class TestRedisCommandSurface:
         driver._client.rpush.assert_called_once_with("k", "v")
         driver._client.pipeline.assert_not_called()
 
+    def test_set_with_expiry_sets_the_value_and_its_expiry_in_one_command(self):
+        """SET then EXPIRE would leave a key that must expire alive forever if anything came between them.
+
+        The expiry is in milliseconds, so a lifetime of a fraction of a second is kept rather than rounded to whole
+        seconds, and it overrides the configured TTL.
+        """
+        driver = _driver(ttl=604800)
+
+        driver.set_with_expiry("k", b"v", 1.2)
+
+        driver._client.set.assert_called_once_with("k", b"v", px=1200)
+        driver._client.expire.assert_not_called()
+
+    def test_set_with_expiry_never_rounds_a_lifetime_down_to_nothing(self):
+        driver = _driver()
+
+        driver.set_with_expiry("k", b"v", 0.0001)
+
+        driver._client.set.assert_called_once_with("k", b"v", px=1)
+
+    @pytest.mark.parametrize("ttl", [0, -1.5])
+    def test_set_with_expiry_refuses_a_lifetime_that_is_over(self, ttl):
+        # Falling back to a plain SET would keep forever a value whose whole purpose is to expire.
+        driver = _driver()
+
+        with pytest.raises(ValueError, match="positive"):
+            driver.set_with_expiry("k", b"v", ttl)
+
+        driver._client.set.assert_not_called()
+
     def test_key_applies_prefix(self):
         driver = _driver(prefix="ak:test:")
         assert driver.key("s1:meta") == "ak:test:s1:meta"

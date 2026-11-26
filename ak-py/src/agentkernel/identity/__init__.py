@@ -4,9 +4,9 @@ Names resolve lazily through the PEP 562 ``__getattr__`` below, the ``agentkerne
 pattern, so that ``import agentkernel.identity`` costs one module import and pulls no optional SDK:
 the OIDC family's JWT and HTTP dependencies (the ``auth`` extra) load only when a provider needs them.
 
-The contract suites live in ``agentkernel.identity.provider.testing`` and
-``agentkernel.identity.authz.testing`` and are imported explicitly from test code (they depend on
-pytest), so they are deliberately not re-exported.
+The contract suites live in ``agentkernel.identity.provider.testing``,
+``agentkernel.identity.authz.testing`` and ``agentkernel.identity.credential.testing`` and are imported
+explicitly from test code (they depend on pytest), so they are deliberately not re-exported.
 """
 
 import importlib
@@ -15,6 +15,11 @@ from typing import TYPE_CHECKING, Any
 # name -> submodule providing it, resolved lazily by __getattr__.
 _LAZY_EXPORTS = {
     "AuthenticationError": ".errors",
+    "CredentialError": ".errors",
+    "CredentialCipher": ".credential.store",
+    "CredentialStore": ".credential.store",
+    "CredentialStoreFactory": ".credential.store",
+    "InMemoryCredentialStore": ".credential.in_memory",
     "IdentityProvider": ".provider.base",
     "RequestContext": ".provider.base",
     "IdentityProviderFactory": ".provider.factory",
@@ -43,7 +48,9 @@ if TYPE_CHECKING:
     from .authz.base import Authorizer, AuthorizerCapabilities, Decision
     from .authz.factory import AuthorizerFactory
     from .authz.static import StaticAuthorizer
-    from .errors import AuthenticationError
+    from .credential.in_memory import InMemoryCredentialStore
+    from .credential.store import CredentialCipher, CredentialStore, CredentialStoreFactory
+    from .errors import AuthenticationError, CredentialError
     from .provider.base import IdentityProvider, RequestContext
     from .provider.cognito import CognitoIdentityProvider
     from .provider.entra import EntraIdentityProvider

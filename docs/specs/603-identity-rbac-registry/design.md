@@ -373,6 +373,8 @@ and `research/design-options.md` section 4).
   encrypted at the application level (AES-GCM) with the key named by
   `identity.credentials.encryption_key`, resolved through the `secret` capability; a shared store
   without a key fails at startup with `AKConfigError`.
+  - As built (spec refinement 23): the store owns the cipher, so `put` encrypts and `get` decrypts;
+    no caller handles ciphertext, and the broker takes no cipher.
 - When an exchanger is configured, the tokens it issues are cached in the same store under
   `(subject, provider, agent id, audience, scopes)` with TTL equal to the token's `exp` minus
   leeway, so every session of the same user reuses them.
