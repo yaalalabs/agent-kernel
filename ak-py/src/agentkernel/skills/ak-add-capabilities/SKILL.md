@@ -1749,10 +1749,11 @@ Tell the user what changes once the block exists:
   caller through `provider:realtime:livekit`, a caller with no credential (and a CLI run without
   `--token`) through `*`.
 - The tool policy is published for each run (`ToolContext.get().access_level`) and narrows the tools
-  and skills the listings show. A denied tool is kept from the model on the OpenAI Agents SDK,
-  Pydantic AI, Microsoft Agent Framework, the Claude Agent SDK, Google ADK and CrewAI. On LangGraph
-  and smolagents, and on realtime calls, it is not stopped yet, so there do not rely on `deny` or
-  `tiers` alone: check `access_level` inside the tool, or do not grant the agent.
+  and skills the listings show. A denied tool is kept from the model on every supported framework
+  and on realtime calls, except tools the model provider runs (hosted and built-in tools), which
+  are logged at startup.
+- Under the block a LangGraph agent must bind its tools with `LangGraphToolBuilder.bind`, and a
+  smolagents code agent must use the local executor; otherwise the agent does not load.
 - A run keeps the policy of the agent it started with, so state the tiers of the tools it can reach
   (a handoff target's, a sub-agent's, a CrewAI coworker's) in that agent's policy.
 - The policy covers the tools an agent declares when it loads. Tools that exist only inside a run (an

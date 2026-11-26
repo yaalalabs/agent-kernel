@@ -1464,6 +1464,14 @@ is.
   arrived last, so a tool called in reply to one participant can run as another and the session
   owner is recorded from that race. Phase B keeps the behaviour; iteration 23 (tool gates), which
   keys decisions on that principal, settles which identity a multi-participant room runs as.
+  Settled in iteration 23 (design refinement 22): for tools the room runs as all of its
+  speakers. The connection keeps the tool filter of every participant who has spoken and
+  publishes their intersection (`RealtimeConnection._room_tool_filter`): a tool is offered only
+  when every one of them may use it, at the lowest of their levels, and a participant holding no
+  level on the agent leaves the room no tool. The order of speakers changes nothing, so the race
+  decides no tool. The principal a tool reads, and the owner recorded, are still the last
+  speaker's; whether a participant may speak to the agent at all is still asked only of the
+  caller who opened the call.
 - `RealtimeConnectionPool.dispatch(body, request_id, user_id, attributes, chat_service)`
   (`pipeline/realtime_pool.py:520-558`): the connection stores `body.principal` on every input
   (`RealtimeConnection.principal`, None when the input named nobody); on first connect
@@ -1998,6 +2006,35 @@ Shared pieces (`core/`):
     fails): a failure refuses the call. The delegation tools CrewAI adds (`BaseAgentTool`)
     are left alone, and `get_tool_names` declares the tools of the coworkers when the agent
     may delegate, since a delegated call runs under the first agent's filter.
+- As built (iteration 23), the wrap-time adapters and realtime (design refinement 22):
+  - **LangGraph.** As the table has it, with `LangGraphToolGate`: `LangGraphToolBuilder.bind` wraps
+    each function (`functools.wraps`, so the argument schema is the function's) and marks the tool
+    `metadata={"ak_gated": True}`; the wrapper reads the tool's name when a call is checked, so a
+    tool renamed after binding is asked about under its served name. `get_tool_names` and
+    `ungated_tool_names` walk the tool nodes of the graph and of every compiled subgraph
+    (`get_subgraphs(recurse=True)`), which closes the subgraph gap. The wrapper is always present
+    (it is the builder's own tool, not an object the application made). A tool that paused on
+    `interrupt()` is asked about again on resume, because LangGraph runs the node again.
+    `ToolNode` also takes a per-call `wrap_tool_call`, but only as a constructor argument kept in
+    a private attribute, so gating native tools that way would mean changing a compiled graph's
+    private state; Q12's refusal stands.
+  - **smolagents.** `SmolagentsToolGate` wraps `forward` on the instance of every tool a run can
+    call (marked `__ak_gated__`), only when the block is configured, at wrap and in `attach_tool`.
+    `agents(root)` adds the managed agents, whose tools are declared under the manager and
+    gated. `final_answer` is neither declared nor gated, and calling a managed agent is not gated
+    (both are how a run moves or ends). A code agent whose executor is not the
+    `LocalPythonExecutor` is not wrapped and all its tools are ungated: a remote executor rebuilds
+    each tool from its source in the sandbox.
+  - **Realtime.** No pool-side check: the gates on the native agents are what the native
+    sessions call (ADK's live flow runs `before_tool_callback`; OpenAI's realtime session asks
+    `is_enabled` on every call). What was missing is a filter, so `publish_principal` now
+    publishes the room's (section 8.4). OpenAI's realtime session runs no input guardrail for an
+    ordinary call, so a denied tool there answers `Tool <name> not found`, not the reason.
+  - **Provider-run tools** (design Q12's warning). `Agent.provider_tool_names()` (base `[]`): an
+    OpenAI agent's non-function tools, an ADK agent's tools with no function declaration
+    (`google_search`, `url_context`), a Claude agent's Claude Code built-ins (all of them unless
+    `options.tools` is a list) and its other MCP servers. `validate_configuration` logs them once
+    per agent and does not refuse.
 - Composition rule everywhere: AK's check runs first; a user-set hook, callback, middleware,
   capability or `is_enabled` value is preserved and runs after (OpenAI `is_enabled` is an AND of
   both; ADK and MAF lists are AK-first; CrewAI's global hook list keeps the user's hooks).
@@ -2362,6 +2399,16 @@ Each is intentional; the justification is design section 10 unless stated.
     refused on ADK and CrewAI as well: a toolset's tools on ADK, for one. The tools the two
     frameworks move a run with (ADK's transfer and structured response, CrewAI's delegation
     tools) are not gated.
+48. Two adapters declare differently with no `authorization` block (iteration 23; section 9). A
+    LangGraph agent also declares the tools of its compiled subgraphs. A smolagents agent no
+    longer declares `final_answer`, and declares the tools of its managed agents.
+49. With an `authorization` block (iteration 23), the Q12 refusal is live: a LangGraph agent with
+    a tool not bound through `LangGraphToolBuilder.bind`, and a smolagents code agent on a remote
+    executor, fail `Module.load` with the `AKConfigError` of an ungated tool. A tool a provider
+    runs is logged, not refused.
+50. With an `authorization` block (iteration 23), a realtime call publishes a tool filter, the
+    room's (section 8.4), so its tools are gated: a participant with a lower level narrows what
+    the model is offered for the rest of the call.
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (the optional
 `last_error`, `surface` and `principal` on a task's document aside); the queue envelope
@@ -2568,6 +2615,15 @@ New files under `ak-py/tests/`:
   runs real crews over a scripted `BaseLLM` on the ReAct path, where the result of a call is
   text the test reads; it needs the CrewAI overlay and is skipped without it, like the other
   CrewAI suites.
+  As built (iteration 23): `test_tool_gates_langgraph.py` on real compiled graphs with a scripted
+  model node (run, stream, async tool, a renamed tool, an interrupt resumed under a denying
+  filter, subgraph declaration, ungated native tools and the load refused);
+  `test_tool_gates_smolagents.py` on real agents over a scripted `Model` (a managed agent's tool
+  refused in its manager's run, `final_answer` never refused, a remote executor reported and
+  refused); `test_tool_gates_realtime.py` (the room's filter at the connection, and a denied tool
+  through OpenAI's native realtime session and through ADK's live flow, each with two
+  participants). `test_access_gate.py` holds the provider-run warning; the Q12 refusal on real
+  adapters is in the LangGraph, smolagents and OpenAI gate suites.
 - `test_agent_registry.py` also holds `TestAvailability`: a named agent known only through the
   registry is available, an unknown one is not, an unnamed request needs some descriptor (asked
   through `is_empty`, never a listing), a hosted agent is answered without a store read, and the
@@ -3244,3 +3300,24 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    Both gates are put in place only when the block is configured, as the OpenAI one is: ADK's
    callback list and CrewAI's process-wide hook lists are otherwise as the application left
    them (section 9; behavioural changes 46 and 47).
+22. **The last gates, the realtime room and provider-run tools** (iteration 23, 2026-11-25).
+   Five points, each written into section 9 or 8.4.
+   A multi-participant call runs its tools as all of its speakers. Section 8.4 left open which
+   identity a room runs as, because the connection's principal is whoever spoke last. Keying the
+   gate on the last speaker would let a participant borrow another's level by speaking after
+   them; keying it on the caller who opened the call would let every later participant use that
+   caller's level. The room's filter is the intersection of every speaker's, which no order of
+   speech changes. The principal a tool reads stays the last speaker's.
+   smolagents' `final_answer` and a call to a managed agent are not gated, as refinement 21 set
+   for other control-flow tools, and the managed agents' tools are declared under the manager.
+   The phase C review had found `final_answer` declared, which an `allow` list would have had to
+   name.
+   A smolagents code agent on a remote executor is ungated as a whole. Wrapping `forward` there
+   does nothing at best: the executor rebuilds each tool from its source in the sandbox.
+   OpenAI's realtime session does not tell the model the reason. It runs input guardrails for an
+   ordinary call only when pre-approval guardrails are configured, and it asks `is_enabled` on
+   every call, so a denied tool is one it does not find. Adding a third hook to every native tool
+   (`on_invoke_tool`) to carry the reason was judged not worth the change.
+   Tools a provider runs are warned about, not refused, as design Q12 settled; this iteration
+   adds the report (`Agent.provider_tool_names`) and the warning (section 9; behavioural changes
+   48 to 50).

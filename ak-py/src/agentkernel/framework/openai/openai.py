@@ -932,6 +932,10 @@ class OpenAIToolGate:
     def _enabled(tool: FunctionTool, native: Any) -> Callable[[Any, Any], Awaitable[bool]]:
         """
         Returns the `is_enabled` check of a gated tool: the run's filter, and then what the application set.
+
+        On a realtime call this is the only gate. The realtime session asks `is_enabled` again on every call,
+        runs no input guardrail for an ordinary one, and answers a disabled tool `Tool <name> not found`, so
+        the model is not told the reason there.
         :param tool: The tool; its name is read when the check runs.
         :param native: The `is_enabled` the tool had, a bool or a callable the SDK would have asked.
         """
@@ -1063,6 +1067,13 @@ class OpenAIAgent(BaseAgent):
         among them: it is declared, and the provider runs it where no gate reaches.
         """
         return OpenAIToolGate.ungated(self.agent)
+
+    def provider_tool_names(self) -> list[str]:
+        """
+        Returns the hosted tools a run of the agent can call (web search, file search, code interpreter and the
+        like): declared, and run by the provider, which asks the SDK neither question the gate answers.
+        """
+        return [name for name, tool in self._declared_tools().items() if not isinstance(tool, FunctionTool)]
 
     def _declared_tools(self) -> dict[str, Any]:
         """

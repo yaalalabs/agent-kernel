@@ -354,6 +354,22 @@ class TestADKsOwnTools:
         }
 
 
+class TestToolsTheModelRuns:
+    def test_a_built_in_tool_is_reported_as_run_by_the_provider(self):
+        from google.adk.tools import google_search
+
+        def lookup(order_id: str) -> str:
+            """Look an order up."""
+            return "order"
+
+        researcher = LlmAgent(name="researcher", model=_model(), tools=[google_search])
+        root = LlmAgent(name="desk", model=_model(), tools=[lookup, AgentTool(agent=researcher)])
+        wrapped = GoogleADKAgent("desk", GoogleADKRunner(), root)
+
+        assert wrapped.provider_tool_names() == ["google_search"]
+        assert GoogleADKAgent("plain", GoogleADKRunner(), LlmAgent(name="plain", model=_model(), tools=[lookup])).provider_tool_names() == []
+
+
 class TestACallOutsideARun:
     def _refund(self) -> FunctionTool:
         def refund(order_id: str) -> str:

@@ -1310,6 +1310,32 @@ objects in `tests/test_tool_<adapter>.py`:
 - **Verify:** `test_tool_gates_langgraph.py`, `test_tool_gates_smolagents.py`, the realtime
   gate cases; the Q12 refusal cases in `test_access_gate`; `test_cross_surface_parity`
   unchanged.
+- **As built (2026-11-25):** the three steps, with what was settled along the way written into
+  spec 9, 8.4 and refinement 22:
+  - **LangGraph:** `LangGraphToolGate`, as step 1 has it. The walk includes compiled subgraphs,
+    which closes the phase C gap. The `ToolNode` `wrap_tool_call` hook was considered and left:
+    it is kept in a private attribute of a compiled graph.
+  - **smolagents:** `SmolagentsToolGate`, as step 2 has it, installed only under the block.
+    Managed agents' tools are declared and gated, `final_answer` and managed-agent calls are left
+    alone (closing the phase C gap), and a code agent on a remote executor is ungated as a whole.
+  - **Realtime:** step 3 needed no seam of its own. The OpenAI and ADK gates are already what the
+    native sessions call; the connection now publishes a filter, the room's (the intersection of
+    every speaker's), which settles the open point of spec 8.4. OpenAI's realtime session answers
+    a denied tool `Tool <name> not found`.
+  - **The warning left from iteration 21:** `Agent.provider_tool_names` on OpenAI, ADK and Claude,
+    logged once per agent by `validate_configuration`. MAF's hosted tools are not reported: the
+    adapter cannot name a hosted tool given as a dict.
+  - **Q12 refusal cases:** on real agents in the LangGraph, smolagents and OpenAI gate suites, and
+    with a stub in `test_access_gate.py`, which also holds the warning.
+  - **`test_cross_surface_parity`:** unchanged and passing. One existing test changed:
+    `test_realtime_pool.py`'s stub of `Runtime._publish` takes the filter.
+  - **Docs and changelog, in step:** the framework table in `advanced/identity-and-access.md`
+    covers all eight frameworks and realtime, the not-yet caution is gone, and the startup checks
+    name the refusal and the warning; the short mentions and the pending `603.added.md` say every
+    framework; new `603.breaking.3.md` for the agents that no longer load under the block; and
+    `603.changed.2.md` covers behavioural change 48.
+  - **Phase E's code is complete.** Left open: whether a participant who joins a call opened by
+    someone else may speak to the agent at all (only their tools are narrowed today).
 
 ## Phase F: Credentials (iterations 24 to 25)
 

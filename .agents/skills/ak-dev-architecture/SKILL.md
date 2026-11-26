@@ -885,9 +885,8 @@ authorization: the authorizer contract, the static backend, its factory and the
 (`AgentService.ensure_agent_available`), the queue pipeline's precheck before anything is enqueued,
 a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
 realtime surfaces (iteration 20, the Protocol surfaces bullet below). Phase E gates tools from the published tool filter (the Tool gates bullet below): the OpenAI,
-Pydantic AI, MAF and Claude adapters since iteration 21, ADK and CrewAI since iteration 22;
-LangGraph, smolagents and the realtime runners follow in iteration 23, and until then enforce
-nothing at call time. The credentials capability is a later phase: `Principal.credential_ref` is inert. Authentication is
+Pydantic AI, MAF and Claude adapters since iteration 21, ADK and CrewAI since iteration 22,
+LangGraph, smolagents and realtime calls since iteration 23. The credentials capability is a later phase: `Principal.credential_ref` is inert. Authentication is
 configuration: one identity provider per deployment, named by the `identity` block, and no
 handler or entry point takes a validator or authoriser argument any more (`agentkernel.auth` is
 deleted).
@@ -1153,7 +1152,7 @@ deleted).
   `ChatService.execute`), run the question on a thread of their own. A new surface asks the gate
   before it commits anything and maps `PermissionError` to 403 and `AgentNotFoundError` to 404;
   it never asks the authorizer directly.
-- **Tool gates** (phase E, iterations 21 and 22 so far; spec section 9 and refinements 20 and 21). Shape is consistent,
+- **Tool gates** (phase E, iterations 21 to 23; spec section 9 and refinements 20 to 22). Shape is consistent,
   behaviour is not: each adapter applies the run's filter through `ToolGate` at list time where its
   framework has a hook and at call time through a hook, AK's check first and the application's own
   hook, guardrail, middleware or capability kept behind it. A refused call is answered with the
@@ -1203,6 +1202,23 @@ deleted).
   blocked call. A hook gets the sanitized name a tool is served under (`sanitize_tool_name`), so
   the call is matched to the declared name that sanitizes to it. The hooks never raise: CrewAI
   lets a call through when a hook fails, so a failure refuses the call.
+  **LangGraph** (`LangGraphToolGate`): a compiled graph cannot be changed, so the gate is inside
+  the tools `LangGraphToolBuilder.bind` makes: each function is wrapped (`functools.wraps`, so the
+  schema is unchanged) and the tool marked `metadata={"ak_gated": True}`; the wrapper returns the
+  reason. `tool_nodes(graph)` covers compiled subgraphs (`get_subgraphs(recurse=True)`), for
+  `get_tool_names` and for `ungated_tool_names`, which names every unmarked tool; under the block
+  such an agent does not load (Q12). An interrupted tool runs again on resume, so it is asked again.
+  **smolagents** (`SmolagentsToolGate`): `forward` wrapped on each tool instance (marked
+  `__ak_gated__`) under the block, at wrap and in `attach_tool`; managed agents are walked
+  (`agents`), `final_answer` and managed-agent calls left alone; a code agent whose
+  `python_executor` is not a `LocalPythonExecutor` is not wrapped and is ungated as a whole.
+  **Realtime**: no pool-side check. `RealtimeConnection.publish_principal` publishes the room's
+  filter (`_room_tool_filter`: the intersection of every participant who has spoken, the lowest
+  level, no tool while one holds no level), and the gates on the native agents act on it (ADK's live
+  flow calls `before_tool_callback`; OpenAI's realtime session asks `is_enabled` per call and answers
+  a denied tool `Tool <name> not found`). **Provider-run tools**: `Agent.provider_tool_names()`
+  (OpenAI non-function tools, ADK tools with no function declaration, Claude Code built-ins and
+  other MCP servers) is logged once per agent by `validate_configuration`, never refused.
 - **Protocol surfaces** (iteration 20). Each answers for the caller in its own protocol's terms,
   and a hidden agent is never told apart from one the surface does not serve.
   **MCP** (`api/mcp/akmcp.py`): every agent tool is registered with

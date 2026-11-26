@@ -1110,6 +1110,25 @@ class ClaudeAgent(BaseAgent):
         """
         return {tool.name: tool.description or "" for tool in self.agent.tools}
 
+    def provider_tool_names(self) -> list[str]:
+        """
+        Returns the tools Claude Code runs itself, which the tool gate leaves to the SDK's own permission settings:
+        its built-in tools (all of them unless the options' `tools` is a list, then the ones listed) and the
+        tools of every MCP server in the options but the one this adapter serves the agent's tools from.
+        """
+        options = self.agent.options
+        if isinstance(options.tools, list):
+            names = list(options.tools)
+        else:
+            # None, or a preset: Claude Code's own set, which the SDK does not enumerate.
+            names = ["Claude Code's built-in tools"]
+        servers = options.mcp_servers
+        if isinstance(servers, Mapping):
+            names.extend(f"the tools of MCP server '{name}'" for name in servers if name != ClaudeToolBuilder.MCP_SERVER)
+        elif servers:
+            names.append(f"the tools of the MCP servers in '{servers}'")
+        return names
+
 
 class ClaudeModule(Module):
     """

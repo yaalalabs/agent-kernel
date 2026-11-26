@@ -275,3 +275,19 @@ class TestARun:
         assert str(reply) == "done"
         assert (options.allowed_tools, options.disallowed_tools) == ([LOOKUP], [REFUND])
         assert await _hook(options)({"tool_name": REFUND}, "tu-1", {}) == DENIED
+
+
+class TestToolsClaudeCodeRuns:
+    def test_with_no_tools_list_claude_codes_built_in_tools_are_reported(self, runtime):
+        assert _billing().provider_tool_names() == ["Claude Code's built-in tools"]
+
+    def test_a_tools_list_names_the_built_in_tools_it_keeps(self, runtime):
+        assert _billing(tools=["Read", "Grep"]).provider_tool_names() == ["Read", "Grep"]
+
+    def test_an_empty_tools_list_and_no_other_server_report_nothing(self, runtime):
+        assert _billing(tools=[]).provider_tool_names() == []
+
+    def test_the_tools_of_another_mcp_server_are_reported(self, runtime):
+        agent = _billing(tools=[], mcp_servers={"files": {"type": "stdio", "command": "files-server"}})
+
+        assert agent.provider_tool_names() == ["the tools of MCP server 'files'"]

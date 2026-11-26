@@ -14,7 +14,7 @@ from ..core.base import Agent as BaseAgent
 from ..core.base import Session
 from ..core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, MessageEnd, StreamEvent, TextDelta
 from ..core.hooks import StreamHalt
-from ..core.model import AgentRequest, AgentRequestText, AgentRequestVoice, Principal, StreamChunk
+from ..core.model import AccessLevel, AgentRequest, AgentRequestText, AgentRequestVoice, Principal, StreamChunk, ToolFilter
 from ..core.runtime import Runtime
 from ..core.session.serde import BinarySerde
 from ..core.tool import ToolContext
@@ -142,6 +142,9 @@ class RealtimeConnection:
         # calls the native session makes in reply (spec #603, section 8.4). None runs them anonymous.
         self.principal: Principal | None = None
         self._principal_published = False
+        # The tool decision for each participant who has spoken in the call, by provider, namespace and
+        # subject; None for one holding no level on the agent. Only filled with an `authorization` block.
+        self._participants: dict[tuple[str, str | None, str], ToolFilter | None] = {}
         # Lifecycle. Moved from consumer threads (mark_closed) and from the loop (connect, close), so
         # every move happens under the lock.
         self._state = RealtimeConnection._State.CONNECTING
@@ -338,13 +341,62 @@ class RealtimeConnection:
         input's audio or text, and only a changed principal is republished, since every audio chunk
         is an input.
 
+        With an ``authorization`` block the call's tool filter is published with it: the room's
+        (``_room_tool_filter``), which the tool gates of the framework adapters read.
+
         :param principal: The input's principal, or None when it named nobody (anonymous).
         """
         if self._principal_published and principal == self.principal:
             return
         self.principal = principal
         self._principal_published = True
-        self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal)
+        tool_filter = self._room_tool_filter(principal)
+        self.loop.call_soon_threadsafe(self.runtime._publish, self.agent, self.session, principal, tool_filter)
+
+    def _room_tool_filter(self, principal: Principal | None) -> ToolFilter | None:
+        """The tool decision for the call, with ``principal`` among those who have spoken in it.
+
+        Several participants can speak into one call (a LiveKit room), and the model answers all of them,
+        so the decision is the room's, not the speaker's: a tool is offered only when every participant
+        who has spoken may use it, at the lowest level among them, and one holding no level on the agent
+        leaves the room no tool. Who spoke last changes nothing, so no participant borrows another's level
+        (spec #603, section 8.4, design refinement 22). Each participant is asked about once.
+
+        :param principal: The principal of the input just dispatched, or None for an anonymous one.
+        :return: The room's filter, or None without an ``authorization`` block.
+        """
+        gate = Runtime.access_gate()
+        if gate is None:
+            return None
+        acting = self.runtime._acting(self.agent, principal)
+        key = (acting.provider, acting.namespace, acting.subject)
+        if key not in self._participants:
+            try:
+                self._participants[key] = gate.tool_filter(acting, self.agent)
+            except PermissionError:
+                self._participants[key] = None
+        return self._shared(list(self._participants.values()))
+
+    def _shared(self, filters: list[ToolFilter | None]) -> ToolFilter:
+        """The tool decision every participant's allows.
+
+        :param filters: Each participant's filter, None for one holding no level on the agent.
+        :return: The tools all of them are offered, the lowest of their levels, and for every other tool the
+            reason of a participant denied it.
+        """
+        holding = [each for each in filters if each is not None]
+        allowed = frozenset.intersection(*(each.allowed for each in holding)) if holding and len(holding) == len(filters) else frozenset()
+        reasons: dict[str, str] = {}
+        for name in self.agent.get_tool_names():
+            if name in allowed:
+                continue
+            denial = next((each.reason(name) for each in holding if not each.allows(name)), None)
+            reasons[name] = denial or (
+                f"Tool '{name}' is not available while a participant in this call holds no level on agent '{self.agent.descriptor.id}'"
+            )
+        # The call was opened for a caller holding a level, so one participant at least holds one.
+        level = min((each.level for each in holding), default=AccessLevel.READ)
+        return ToolFilter(level=level, allowed=allowed, reasons=reasons)
 
     def update_delivery_context(self, request_id: str | None, user_id: str | None, integration: str | None, reply_context: dict) -> None:
         """Record where this connection's output goes, for text input as well as audio.

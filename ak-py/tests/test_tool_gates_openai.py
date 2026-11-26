@@ -333,6 +333,13 @@ class TestWhatCannotBeGated:
     def test_an_agent_with_only_function_and_hosted_tools_has_none(self):
         assert _wrapped(_native(tools=[lookup, WebSearchTool()])).ungated_tool_names() == []
 
+    def test_hosted_tools_are_reported_as_run_by_the_provider(self):
+        billing = _native("billing", tools=[refund, WebSearchTool()])
+        triage = _wrapped(_native("triage", tools=[lookup], handoffs=[billing]))
+
+        assert triage.provider_tool_names() == ["web_search"]
+        assert _wrapped(_native(tools=[lookup, refund])).provider_tool_names() == []
+
     def test_an_mcp_server_is_named(self):
         native = _native(tools=[lookup], mcp_servers=[MCPServerStdio(params={"command": "true"}, name="files")])
 

@@ -503,7 +503,16 @@ agent is built with:
 | Microsoft Agent Framework | Is still shown to the model; the call is answered with the reason and the tool is not run. |
 | Google ADK | Is still shown to the model; the call is answered with the reason and the tool is not run. |
 | CrewAI | Is still shown to the model; the call is blocked and the model reads the reason. |
-| LangGraph, smolagents; realtime calls | Not stopped yet. |
+| LangGraph | Is still shown to the model; the call is answered with the reason and the tool is not run. Only tools bound with `LangGraphToolBuilder` can be gated. |
+| smolagents | Is still shown to the model; the call is answered with the reason and the tool is not run. |
+
+On a realtime call the OpenAI and Google ADK gates act as on a turn, with two differences. OpenAI's
+realtime session answers a denied tool `Tool <name> not found` rather than with the reason. And a call
+can have several participants (a LiveKit room), all speaking into one conversation, so the policy is
+the room's: a tool is offered only when every participant who has spoken may use it, at the lowest
+level among them, and a participant holding no level on the agent leaves the room no tool. Who
+spoke last does not matter, so no participant can borrow another's level. A tool still reads the
+identity of the participant who spoke last as its principal.
 
 The reason is the sentence `Session.get_tool_filter().reason(name)` gives, for example
 `Tool 'refund_order' requires level admin; the current principal has write`. The model reads it as the
@@ -523,21 +532,24 @@ entry lists:
   take their tiers from its policy; state them there. That covers the agents an OpenAI agent hands
   off to or uses as tools, the sub-agents, workflow nodes and agent tools under a Google ADK root,
   and the coworkers of a CrewAI agent that may delegate.
-- **Moves between agents are not gated.** An OpenAI handoff, an ADK transfer to another agent and
-  the tools CrewAI adds for delegation are how a run moves, not tools you declared, so a policy
-  cannot deny them. The tools the run reaches afterwards are gated as above.
+- **Moves between agents are not gated.** An OpenAI handoff, an ADK transfer to another agent, the
+  tools CrewAI adds for delegation and a call to a smolagents managed agent are how a run moves, not
+  tools you declared, so a policy cannot deny them. Nor is smolagents' `final_answer`, which ends a
+  run. The tools the run reaches afterwards are gated as above, and a smolagents manager lists the
+  tools of its managed agents.
+- **Tools OAK cannot gate stop the agent from loading.** With an `authorization` block, a LangGraph
+  agent with a tool not bound through `LangGraphToolBuilder` (a `@tool` from LangChain, a
+  `StructuredTool` you built), and a smolagents code agent that runs its tools in a remote sandbox
+  (E2B, Docker, Modal), fail to load and the error names the tools. A LangGraph tool in a compiled
+  subgraph counts too. Rebind the tools with the tool builder, or run the code agent on the local
+  executor.
 - **Hosted and built-in tools are not stopped.** A tool the provider runs (OpenAI's web search, file
-  search and code interpreter, Google Search and code execution on ADK), Claude Code's built-in
-  tools and the tools of other MCP servers on a Claude agent are outside the gate. Use the
-  framework's own settings for those.
+  search and code interpreter, Google Search and URL context on ADK), Claude Code's built-in tools
+  and the tools of other MCP servers on a Claude agent are outside the gate. The application starts
+  and logs a warning naming them; use the framework's own settings for those.
 - **A paused call.** A tool that waits for a human's approval is asked about again when the approval
   arrives: if the policy denies it by then, it is not run.
 
-:::caution Not every framework stops a denied tool yet
-On LangGraph and smolagents, and on realtime calls, an agent still calls every tool it was built
-with. Until those are covered, keep a tool away from a caller there by not granting
-the caller the agent, or check `access_level` inside the tool as above.
-:::
 
 ### Startup checks
 
@@ -549,8 +561,12 @@ would have affected:
   `authorization.static.grants[2]`.
 - A tool policy that names a tool its agent does not have stops the application, with the tools the
   agent does have. A misspelt `deny` would otherwise deny nothing.
+- An agent with tools OAK cannot gate (a LangGraph tool not bound with `LangGraphToolBuilder`, the
+  tools of a smolagents code agent on a remote executor, an OpenAI agent's `mcp_servers`) stops the
+  application, naming the tools.
 - A grant that names an agent id or a tag no agent carries, and a `role:` subject with no role mapper
-  configured, are logged as warnings: they match nothing today.
+  configured, are logged as warnings: they match nothing today. So are an agent's hosted and
+  built-in tools, which the tool policy does not reach.
 
 ### Where the block goes
 

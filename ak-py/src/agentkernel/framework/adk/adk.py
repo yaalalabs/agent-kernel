@@ -1334,6 +1334,22 @@ class GoogleADKAgent(AKBaseAgent):
                     found.setdefault(served.name, served)
         return found
 
+    def provider_tool_names(self) -> list[str]:
+        """
+        Returns the model's built-in tools a run can reach (`google_search`, `url_context` and the like). They
+        carry no function declaration: the model runs them itself, and ADK calls no `before_tool_callback`.
+        """
+        return [name for name, tool in self._named_tools().items() if not self._declares_a_function(tool)]
+
+    @staticmethod
+    def _declares_a_function(tool: BaseTool) -> bool:
+        """Whether ADK declares a tool to the model as a function it calls back, which is what a callback sees."""
+        try:
+            return tool._get_declaration() is not None
+        except Exception:
+            # A tool that cannot build its declaration here is still one the application bound, not a built-in.
+            return True
+
     @staticmethod
     def _served_tool(tool: Any) -> BaseTool | None:
         """

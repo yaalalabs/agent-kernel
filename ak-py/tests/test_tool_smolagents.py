@@ -187,10 +187,12 @@ class TestSmolagentsAgentToolReporting:
         # get_description() answers with the system prompt for this agent; the descriptor must not.
         assert self._agent([]).descriptor.description == ""
 
-    def test_tool_names_are_the_native_agents_tools_and_the_frameworks_own_final_answer(self):
+    def test_tool_names_are_the_native_agents_tools_without_the_frameworks_own_final_answer(self):
+        # `final_answer` is how a smolagents run ends, not a tool the application declared (#603, iteration 23).
         agent = self._agent(SmolagentsToolBuilder.bind([get_weather, add]))
 
-        assert agent.get_tool_names() == ["get_weather", "add", "final_answer"]
+        assert agent.get_tool_names() == ["get_weather", "add"]
+        assert "final_answer" in agent.agent.tools
 
     def test_each_skill_carries_its_tools_description(self):
         from agentkernel.core.model import AgentSkillDescriptor
@@ -198,5 +200,4 @@ class TestSmolagentsAgentToolReporting:
         skills = self._agent(SmolagentsToolBuilder.bind([get_weather])).descriptor.skills
 
         assert skills[0] == AgentSkillDescriptor(id="get_weather", name="get_weather", description="Returns the weather for a given city.")
-        # One skill per reported tool, each once: the framework's own final_answer is a tool the agent calls too.
-        assert [skill.id for skill in skills] == ["get_weather", "final_answer"]
+        assert [skill.id for skill in skills] == ["get_weather"]

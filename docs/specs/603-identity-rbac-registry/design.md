@@ -738,6 +738,17 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
     reason in place of CrewAI's own line.
   - CrewAI: an agent that may delegate declares its coworkers' tools.
   - Both are put in place only when the block is configured.
+- As built (spec refinement 22), LangGraph, smolagents and realtime:
+  - A realtime call with several participants runs its tools as all of them: a tool is offered
+    only when every participant who has spoken may use it, at the lowest of their levels.
+    - The principal a tool reads is still the last speaker's.
+  - smolagents: `final_answer` and calls to managed agents are not gated; managed agents' tools
+    are declared under the manager.
+  - smolagents: a code agent on a remote executor is ungated as a whole, so it does not load
+    under `authorization`.
+  - LangGraph: the tools of compiled subgraphs are declared and checked.
+  - OpenAI realtime answers a denied tool `Tool <name> not found`, without the reason.
+  - Tools a provider runs are logged once per agent at startup (`Agent.provider_tool_names`).
 - Every adapter resolves nothing itself: it reads `TOOL_FILTER_CACHE_KEY` from the session's
   volatile cache (set by `Runtime`), so with no `authorization` block the filter is absent and the
   native calls are keyword-for-keyword what they are today (the #754 invariant).
