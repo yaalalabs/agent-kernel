@@ -158,6 +158,10 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
             if principal.is_anonymous:
                 # Unreachable with the provider the constructor demanded; refused rather than keyed on "anonymous".
                 return self.build_error_http_response(401, "Authentication failed")
+            credentials = self._authenticator.credentials
+            if credentials is not None:
+                # Kept for the connection (a conn: reference), renewed by each frame and forgotten at $disconnect.
+                principal = await credentials.retain(principal, token, connection=True)
 
             await self._offload(self.get_websocket_handler().on_connect, connection_id=connection_id, principal=principal)
             return self.build_success_http_response("WebSocket connection established", user_id=principal.subject)
@@ -335,6 +339,10 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         principal = await self._offload(self.get_websocket_handler().get_principal, connection_id)
         if principal is None:
             raise self.WSRouteError(401, f"No principal found for connection_id: {connection_id}")
+        # Each frame keeps the connection's credential alive, when its token has no expiry of its own (#603).
+        from ......identity.credential.manager import CredentialManager
+
+        await self._offload(CredentialManager.renew_for, principal)
 
         endpoint_url = self._construct_endpoint_url(request)
         if not endpoint_url:

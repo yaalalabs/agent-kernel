@@ -225,6 +225,10 @@ class PipelineWebSocketHandler(RESTRequestHandler):
     # -- frame dispatch -----------------------------------------------------------------------
 
     async def _dispatch(self, websocket: WebSocket, principal: Principal, raw_frame: str) -> None:
+        credentials = self._authenticator.credentials
+        if credentials is not None:
+            # Each frame keeps the connection's credential alive, when its token has no expiry of its own.
+            await asyncio.to_thread(credentials.renew, principal)
         try:
             payload = json.loads(raw_frame)
         except json.JSONDecodeError:

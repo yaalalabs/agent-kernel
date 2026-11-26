@@ -376,8 +376,10 @@ and `research/design-options.md` section 4).
   - As built (spec refinement 23): the store owns the cipher, so `put` encrypts and `get` decrypts;
     no caller handles ciphertext, and the broker takes no cipher.
   - As built (spec refinement 24): authenticating keeps nothing; each surface that keeps a credential
-    retains it through one process-wide `CredentialManager`, beside the code that releases it. The AWS
-    adapters retain nothing until iteration 25b.
+    retains it through one process-wide `CredentialManager`, beside the code that releases it.
+  - As built (spec refinement 25): a connection's credential is renewed by reading it from the store and
+    writing it again, so Lambda renews too; the Lambda REST router retains from the request's header,
+    never the cached authorizer.
 - When an exchanger is configured, the tokens it issues are cached in the same store under
   `(subject, provider, agent id, audience, scopes)` with TTL equal to the token's `exp` minus
   leeway, so every session of the same user reuses them.

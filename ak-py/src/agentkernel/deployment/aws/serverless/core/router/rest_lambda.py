@@ -7,6 +7,7 @@ from typing import Any
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
 from ......core.model import BaseRequest, ExecutionMode, Principal
+from ......core.util.async_bridge import run_async_sync
 from ......core.util.factory import AKConfigError
 from ....core.response_store import ResponseStoreFactory
 from ....core.sqs_handler import SQSHandler
@@ -63,6 +64,8 @@ class DefaultEndpointsHandler:
             raise ValueError(
                 "execution.response_store is required when using queue-based execution. " "Please configure a response store in your configuration."
             )
+        # The request Lambda keeps a request's credential and the agent runner Lambda reads it.
+        self._require_shared_credential_store()
 
         if exec_mode == ExecutionMode.REST_SYNC:
             self._log.info("Initialized REST_SYNC endpoint.")
@@ -99,6 +102,51 @@ class DefaultEndpointsHandler:
             # The request entered by the REST API: only an agent whose descriptor is on `rest` is served to it.
             request.body.surface = "rest"
         return request
+
+    def _require_shared_credential_store(self) -> None:
+        """Refuse an in-memory credential store for queued routes: another Lambda runs the agent."""
+        if getattr(getattr(self._config, "identity", None), "credentials", None) is None:
+            return
+        from ......identity.credential.manager import CredentialManager
+
+        CredentialManager.require_shared_store(self._config, "on AWS Lambda with queues")
+
+    def _retain_credential(self, request: BaseRequest, event: dict[str, Any] | None) -> None:
+        """
+        Keeps the request's credential for the run it is about to start (#603), from the request's own
+        ``Authorization`` header: never from the authorizer, whose result API Gateway caches and hands to every
+        request with the same token. Nothing is kept for a request without a bearer header, without
+        ``identity.credentials``, or for the anonymous principal (``retain`` keeps nothing for it).
+
+        :param request: The parsed request, whose body's principal gets the ``credential_ref``.
+        :param event: The API Gateway event the request came in.
+        """
+        body = request.body
+        if body is None or body.principal is None or event is None:
+            return
+        token = self._bearer_token(event)
+        if token is None:
+            return
+        from ......identity.credential.manager import CredentialManager
+
+        manager = CredentialManager.get()
+        if manager is not None:
+            body.principal = run_async_sync(manager.retain(body.principal, token))
+
+    @staticmethod
+    def _bearer_token(event: dict[str, Any]) -> str | None:
+        """
+        :param event: An API Gateway event.
+        :return: The token of its ``Authorization: Bearer`` header, whatever the header name's case, or None.
+        """
+        headers = event.get("headers")
+        if not isinstance(headers, dict):
+            return None
+        for name, value in headers.items():
+            if isinstance(name, str) and name.lower() == "authorization" and isinstance(value, str):
+                scheme, _, token = value.partition(" ")
+                return token.strip() if scheme.lower() == "bearer" and token.strip() else None
+        return None
 
     @staticmethod
     def principal_from_event(event: dict[str, Any]) -> Principal:
@@ -154,11 +202,12 @@ class DefaultEndpointsHandler:
             self._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
             return (500, self._build_failure_body(request_id))  # (statusCode, body) will be handled in aklambda.py
 
-    def _send_to_queue(self, payload: BaseRequest) -> dict[str, Any]:
+    def _send_to_queue(self, payload: BaseRequest, event: dict[str, Any] | None = None) -> dict[str, Any]:
         """
-        Send request payload to SQS queue.
+        Send request payload to SQS queue, the request's credential kept for its run first.
 
         :param payload: Request payload containing a request_id and nested run body
+        :param event: The API Gateway event, whose ``Authorization`` header carries the credential to keep
         :return: Queue submission status
         :raises ValueError: If body, request_id, or session_id is missing
         """
@@ -172,6 +221,7 @@ class DefaultEndpointsHandler:
         if not session_id:
             raise ValueError("session_id is required")
 
+        self._retain_credential(payload, event)
         response = SQSHandler.send_message_to_input_queue(
             message_body=request_body.model_dump(exclude_none=True),
             attributes={"message_deduplication_id": payload.request_id},
@@ -223,7 +273,7 @@ class DefaultEndpointsHandler:
         def sync_operation(payload: BaseRequest) -> tuple[int, dict[str, Any]]:
             request_id = payload.request_id
             self._log.info(f"Performing REST_SYNC operation for payload: '{payload}'")
-            queue_result = self._send_to_queue(payload)
+            queue_result = self._send_to_queue(payload, event)
             self._log.info(f"Message sent to input queue, response from send_message function: '{queue_result}'")
 
             record = self._get_record(payload)
@@ -257,7 +307,7 @@ class DefaultEndpointsHandler:
 
         def submit_operation(payload: BaseRequest) -> tuple[int, dict[str, Any]]:
             self._log.info(f"Performing REST_ASYNC submit operation for payload: '{payload}'")
-            queue_result = self._send_to_queue(payload)
+            queue_result = self._send_to_queue(payload, event)
 
             self._log.info(f"Message sent to input queue, response from send_message function: '{queue_result}'")
             response_body = {"status": "ACCEPTED", "request_id": payload.request_id}
@@ -322,6 +372,7 @@ class DefaultEndpointsHandler:
             }
 
         try:
+            self._retain_credential(request, event)
             status_code, res_body = self._chat_service.process_chat_request(request.body)
 
             return {

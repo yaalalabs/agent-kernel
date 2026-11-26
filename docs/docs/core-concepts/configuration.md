@@ -691,7 +691,8 @@ export AK_IDENTITY__CREDENTIALS__INBOUND_TTL=300  # seconds a request's credenti
   run's tools, which ask for a token with `ToolContext.get().credentials.token_for(audience)`
   ([credentials for downstream calls](../advanced/identity-and-access.md#credentials-for-downstream-calls)).
   Every store but `in_memory` needs `encryption_key`, the store blocks take no `ttl`, an unknown key in the
-  block stops the application, and an `in_memory` store on a broker transport is refused.
+  block stops the application, and an `in_memory` store is refused on a broker transport and on AWS Lambda (queued
+  routes, WebSocket routes).
 
 ### Authorization
 

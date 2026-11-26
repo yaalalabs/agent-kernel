@@ -452,9 +452,11 @@ How it works:
 - **It ends with the run.** OAK deletes the credential when the run it was kept for ends, however it ends,
   and in any case when `inbound_ttl` has passed or the token itself expires.
 - **Where it is kept.** The REST, A2A and AG-UI routes keep the credential of each authenticated request, and
-  MCP the credential of each call. The WebSocket gateway (`/ws`) and the CLI keep theirs for the whole
-  connection or session, forget it when that ends, and keep it as long as the token's `exp`, or `inbound_ttl`
-  for a token without one; such a connection must reconnect to use a credential again after that.
+  MCP the credential of each call; on AWS Lambda the request-handler Lambda keeps it from the request's
+  `Authorization` header when it starts a run (the authorizer keeps nothing, since API Gateway caches its
+  answer for every request with the same token). A WebSocket connection (the `/ws` gateway, the ECS and the
+  Lambda WebSocket APIs) and a CLI session keep theirs for the connection and forget it when it ends. It lasts
+  as long as the token's `exp`; a token without one is kept for `inbound_ttl` from the latest frame.
 - **Exchange.** A tool asks for an audience, and the exchanger configured for exactly that audience issues
   the token, which is cached per user, agent, audience and scopes until 30 seconds before it expires. Only
   `passthrough` ships, and it logs a warning at startup: it forwards the inbound token as it came, which an
@@ -466,14 +468,14 @@ How it works:
   the store cannot be reached. Return it to the model as the tool's result.
 
 The stores: `in_memory` keeps credentials in the process, unencrypted unless you set a key, and refuses to start
-on a broker transport, where the process that accepts a request is not the one that runs it. `redis` and
+on a broker transport and on AWS Lambda (queued routes, WebSocket routes), where the process that keeps a
+credential is not the one that runs the agent. `redis` and
 `valkey` keep each credential under `ak:cred:` with its own expiry; `dynamodb` needs a table keyed by
 `credential_key` (S) with TTL on `expiry_time`. Generate a key with
 `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` and store it as the
 secret `encryption_key` names.
 
-Not yet: the AWS Lambda and ECS WebSocket deployments keep no credential, so `token_for` raises there. A queued
-request that is delivered again after its run started finds its credential gone. An authenticated request that
+A queued request that is delivered again after its run started finds its credential gone. An authenticated request that
 runs no agent (a catalog listing, a poll for a reply) leaves its encrypted entry to expire within `inbound_ttl`.
 
 ## Authorization
@@ -805,10 +807,12 @@ credential of a static provider reaches that process as an environment variable 
   registered with `Lambda.register` reads that connection's principal with `Lambda.principal(event)`
   as well. The authorizer module keeps
   its `handler_path` contract and the connections table its `user_id` hash key: the Terraform modules
-  are unchanged.
+  are unchanged. With `identity.credentials`, use a shared store (`redis`, `valkey` or `dynamodb`) that
+  the request-handler, `$connect` and agent-runner Lambdas can all reach.
 - **AWS ECS** ([guide](../deployment/aws-containerized.md)): the REST service authenticates every
   request; in WebSocket mode the service authenticates the handshake's `?token=`, and custom WebSocket
-  routes receive `{"message": ..., "principal": ...}`.
+  routes receive `{"message": ..., "principal": ...}`. With `identity.credentials` and more than one
+  task, use a shared store: a frame can reach a task other than the one that took the handshake.
 - **Azure Functions** ([guide](../deployment/azure-serverless.md)): `AzureFunctions.handler`
   authenticates the bearer header before parsing the request and answers a refused credential with
   `401` and `{"error": ..., "session_id": null}`.

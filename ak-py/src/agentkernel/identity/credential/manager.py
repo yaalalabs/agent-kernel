@@ -13,10 +13,11 @@ import threading
 import time
 import uuid
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ...core.config import AKConfig
 from ...core.model import Principal
+from ...core.util.factory import AKConfigError
 from .broker import CredentialBroker
 from .exchange import TokenExchanger, TokenExchangerFactory
 from .store import CredentialStore, CredentialStoreFactory
@@ -104,8 +105,7 @@ class CredentialManager:
         if principal.is_anonymous or not credential:
             return principal
         now = time.time()
-        exp = principal.claims.get("exp")
-        exp = float(exp) if isinstance(exp, (int, float)) and not isinstance(exp, bool) else None
+        exp = self._expiry(principal)
         if connection:
             expires_at = exp if exp is not None else now + self._inbound_ttl
         else:
@@ -142,6 +142,63 @@ class CredentialManager:
         if reference and reference.startswith(self.CONNECTION_PREFIX):
             self._delete(reference)
 
+    def renew(self, principal: Principal | None) -> None:
+        """
+        Keeps a connection's credential another ``inbound_ttl`` from now, on each frame the connection sends.
+
+        Only a connection credential whose token carries no ``exp`` is renewed: one with an expiry already lasts
+        exactly as long as its token, and a run's credential is the run's. A credential that has expired is not
+        brought back. Reads the stored credential and writes it again, so any process that can reach the store
+        can renew it. Never raises.
+
+        :param principal: The connection's principal.
+        """
+        if principal is None:
+            return
+        reference = principal.credential_ref
+        if not reference or not reference.startswith(self.CONNECTION_PREFIX) or self._expiry(principal) is not None:
+            return
+        try:
+            credential = self._store.get(reference)
+            if credential is not None:
+                self._store.put(reference, credential, time.time() + self._inbound_ttl)
+        except Exception as error:
+            self._log.warning(f"A connection's credential could not be renewed; it expires with its TTL: {type(error).__name__}")
+
+    @classmethod
+    def renew_for(cls, principal: Principal | None) -> None:
+        """``renew`` on the process's manager, for code that holds none (the AWS WebSocket handlers). Never raises."""
+        manager = cls._quietly()
+        if manager is not None:
+            manager.renew(principal)
+
+    @classmethod
+    def forget_for(cls, principal: Principal | None) -> None:
+        """``forget`` on the process's manager, for code that holds none (the AWS WebSocket handlers). Never raises."""
+        if principal is None or not principal.credential_ref:
+            return
+        manager = cls._quietly()
+        if manager is not None:
+            manager.forget(principal)
+
+    @staticmethod
+    def require_shared_store(config: Any, where: str) -> None:
+        """
+        Refuses an in-memory credential store where the process that keeps a request's credential is not the one
+        that reads it: a broker transport, the AWS Lambda functions.
+
+        :param config: The configuration.
+        :param where: Where the deployment runs, completing "cannot work ...".
+        :raises AKConfigError: If ``identity.credentials`` names the ``in_memory`` store.
+        """
+        identity = getattr(config, "identity", None)
+        credentials = getattr(identity, "credentials", None) if identity is not None else None
+        if credentials is not None and credentials.store.type.lower() == "in_memory":
+            raise AKConfigError(
+                f"identity.credentials.store.type in_memory cannot work {where}: the process that keeps a request's "
+                "credential is not the one that runs its agent. Use a shared store (redis, valkey or dynamodb)"
+            )
+
     @classmethod
     def release_for(cls, principal: Principal | None) -> None:
         """
@@ -151,13 +208,24 @@ class CredentialManager:
         """
         if principal is None or not principal.credential_ref:
             return
-        try:
-            manager = cls.get()
-        except Exception as error:
-            cls._log.warning(f"The inbound credential of a run could not be deleted; it expires with its TTL: {type(error).__name__}")
-            return
+        manager = cls._quietly()
         if manager is not None:
             manager.release(principal)
+
+    @classmethod
+    def _quietly(cls) -> Optional["CredentialManager"]:
+        """The process's manager, or None when there is none or it cannot be built (logged)."""
+        try:
+            return cls.get()
+        except Exception as error:
+            cls._log.warning(f"The credentials capability could not be built; a credential expires with its TTL: {type(error).__name__}")
+            return None
+
+    @staticmethod
+    def _expiry(principal: Principal) -> float | None:
+        """The token's ``exp`` claim, when the principal carries a numeric one."""
+        exp = principal.claims.get("exp")
+        return float(exp) if isinstance(exp, (int, float)) and not isinstance(exp, bool) else None
 
     def broker(self, principal: Principal | None, agent_id: str) -> CredentialBroker:
         """

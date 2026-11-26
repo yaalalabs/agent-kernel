@@ -886,7 +886,7 @@ authorization: the authorizer contract, the static backend, its factory and the
 a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
 realtime surfaces (iteration 20, the Protocol surfaces bullet below). Phase E gates tools from the published tool filter (the Tool gates bullet below): the OpenAI,
 Pydantic AI, MAF and Claude adapters since iteration 21, ADK and CrewAI since iteration 22,
-LangGraph, smolagents and realtime calls since iteration 23. Phase F adds credentials (the Credentials bullet below): iteration 24 the encrypted credential store, iteration 25 retention, release, exchange and the broker, so `Principal.credential_ref` names the request's retained credential; the AWS adapters retain nothing until iteration 25b. Authentication is
+LangGraph, smolagents and realtime calls since iteration 23. Phase F adds credentials (the Credentials bullet below): iteration 24 the encrypted credential store, iteration 25 retention, release, exchange and the broker, so `Principal.credential_ref` names the request's retained credential; iteration 25b the AWS adapters and per-frame renewal. Authentication is
 configuration: one identity provider per deployment, named by the `identity` block, and no
 handler or entry point takes a validator or authoriser argument any more (`agentkernel.auth` is
 deleted).
@@ -1328,12 +1328,23 @@ deleted).
   `conn:` one, `release_for` is the never-raising classmethod. **Retention is explicit at each surface**,
   never inside authentication: the identity dependency (HTTP: REST, A2A, AG-UI, threads), the MCP
   verifier (each call), the pipeline WebSocket gateway and the CLI (both for the connection, forgotten
-  when it ends). The AWS adapters do not retain yet: the Lambda authorizer's result is cached per token,
-  so a reference it minted would be shared by requests that each release it (iteration 25b).
+  when it ends). On AWS (iteration 25b, refinement 25): the Lambda REST router retains where a run
+  starts (`_send_to_queue`, `_handle_agent_chat`) from the event's own `Authorization` header, never in
+  `_parse_body` (a poll) and never in the authorizer, whose result is cached per token; the Lambda and
+  ECS `$connect` handlers retain for the connection, and `AWSWebSocketHandler.on_disconnect` forgets for
+  both. `renew(principal)` keeps a `conn:` credential whose principal has no `exp` another `inbound_ttl`
+  by reading it from the store and writing it again (never reviving an expired one, never raising), so
+  any process renews it: the pipeline gateway's `_dispatch`, the Lambda frame's `_connection_principal`
+  and the ECS `build_route_context` (via `renew_for`) call it on every frame. `forget_for` and
+  `renew_for` are the never-raising classmethods. The serverless runners release in `process_message`'s
+  `finally`. `CredentialManager.require_shared_store(config, where)` refuses an `in_memory` store
+  wherever one process keeps and another reads: a broker transport, the queued Lambda router, the
+  Lambda connection routes.
   **Release**: `Runtime.run` / `Runtime.stream` call `release_for` off the loop in their `finally`
   (after a gate refusal too); `AgentRunner.process` in its `finally`, reading the body principal only
   when it names a `credential_ref`, so a redelivered message finds none. `AgentRunner._validate_credential_store`
-  (from `AgentRunner.run` and `IOHandler._validate_topology`) refuses an `in_memory` store on a broker.
+  (from `AgentRunner.run` and `IOHandler._validate_topology`) refuses an `in_memory` store on a broker,
+  through `require_shared_store`.
   `TokenExchanger(config)` (`exchange.py`) keeps `audience` and `scopes`; `PassthroughTokenExchanger`
   (warns at construction) forwards the inbound token, expiring at `min(exp, now + inbound_ttl)`;
   `TokenExchangerFactory.create(config, inbound_ttl)` refuses the reserved `rfc8693`, `entra_obo`,

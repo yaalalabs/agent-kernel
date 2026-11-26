@@ -103,15 +103,11 @@ class AgentRunner:
         :param config: The configuration.
         :raises AKConfigError: If the store is in-memory and the transport is a broker.
         """
-        identity = getattr(config, "identity", None)
-        credentials = getattr(identity, "credentials", None) if identity is not None else None
-        if credentials is None or transport_type == "in_memory":
+        if transport_type == "in_memory" or getattr(getattr(config, "identity", None), "credentials", None) is None:
             return
-        if credentials.store.type.lower() == "in_memory":
-            raise AKConfigError(
-                f"identity.credentials.store.type in_memory cannot work on the {transport_type} transport: the process that "
-                "keeps a request's credential is not the one that runs its agent. Use a shared store (redis, valkey or dynamodb)"
-            )
+        from ..identity.credential.manager import CredentialManager
+
+        CredentialManager.require_shared_store(config, f"on the {transport_type} transport")
 
     def _process_run(self, message: QueueMessage) -> None:
         """Run one unmarked request and forward the reply to the output queue with its status."""

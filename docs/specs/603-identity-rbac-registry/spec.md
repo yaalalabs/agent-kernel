@@ -521,12 +521,30 @@ class RequestAuthenticator:
   connection or session ends). The constructor is `RequestAuthenticator(provider, credentials:
   CredentialManager | None = None)`; `from_config` hands it `CredentialManager.get()` when a provider is
   configured, and `credentials` exposes it. `release(principal)` stays async and delegates to the
-  manager off the loop. The AWS adapters (the Lambda authorizer and WebSocket handler, the ECS WebSocket
-  handler) retain nothing yet: the authorizer's result is cached (150 s by default, keyed on the token),
-  so a reference it minted would be shared by requests whose runs each release it (iteration 25b).
+  manager off the loop. The Lambda authorizer retains nothing: its result is cached (150 s by default,
+  keyed on the token), so a reference it minted would be shared by requests whose runs each release it.
   TTLs as specified: a run's credential until `min(exp, now + inbound_ttl)`, a connection's until `exp`,
-  else `now + inbound_ttl`, with no per-frame renewal yet; an expired token keeps nothing, and a store
-  that cannot be reached is logged (no token) and leaves the request without a credential.
+  else `now + inbound_ttl`; an expired token keeps nothing, and a store that cannot be reached is logged
+  (no token) and leaves the request without a credential.
+- As built (iteration 25b, design refinement 25), the AWS adapters and renewal:
+  - The Lambda REST router (`DefaultEndpointsHandler`) retains where a run starts, `_send_to_queue`
+    (REST_SYNC and the REST_ASYNC submit) and the direct `_handle_agent_chat`, from the event's own
+    `Authorization: Bearer` header found whatever its case (`_bearer_token`); `_parse_body`, which a
+    poll uses too, retains nothing. With queues, `get_routes` refuses an `in_memory` store.
+  - The Lambda `$connect` (`ConnectionRoutesHandler`) and the ECS `$connect`
+    (`ECSWebSocketSystemRequestHandler`) retain for the connection; the Lambda connection routes refuse
+    an `in_memory` store at construction. `AWSWebSocketHandler.on_disconnect`, shared by both, reads the
+    stored principal before the row goes and forgets its credential (`CredentialManager.forget_for`).
+  - Renewal is `CredentialManager.renew(principal)`: for a `conn:` reference whose principal carries no
+    `exp`, it reads the stored credential and writes it again for `inbound_ttl` from now; a credential
+    that has expired is not brought back; it never raises. Because it goes through the store it works on
+    Lambda too, which the design thought could not renew. Called on every frame: the pipeline gateway's
+    `_dispatch`, the Lambda frame's `_connection_principal` and the ECS `build_route_context` (both
+    through `CredentialManager.renew_for`).
+  - The serverless runners release in `process_message`'s `finally` (`_ServerlessCredentials.release`).
+  - One check for every place that keeps a credential in one process and reads it in another:
+    `CredentialManager.require_shared_store(config, where)`, which `AgentRunner._validate_credential_store`
+    now calls too.
 
 **`IdentityProviderContract`** (`provider/testing.py`, subclassed by every built-in): a valid
 credential yields the expected subject, groups, namespace and claims with `roles == []`; expired,
@@ -2561,12 +2579,15 @@ Each is intentional; the justification is design section 10 unless stated.
 51. With an `identity.credentials` block (iteration 25; sections 4 and 5), every authenticated HTTP
     request and MCP call writes its credential, encrypted, to the credential store and its principal
     carries a `credential_ref`; the run deletes it when it ends. A request that runs no agent leaves
-    its entry to expire within `inbound_ttl`. The pipeline WebSocket gateway and the CLI keep one for
-    the connection or session. Without the block nothing is written and no principal carries a ref.
+    its entry to expire within `inbound_ttl`. The WebSocket APIs (the pipeline gateway, ECS, Lambda) and
+    the CLI keep one for the connection or session, renewed by each frame when the token has no `exp`,
+    and the Lambda REST router keeps one from the request's header when it starts a run (iteration 25b).
+    Without the block nothing is written and no principal carries a ref.
 52. `ToolContext.credentials` is new: a broker whose `token_for(audience, scopes=None)` hands a tool a
     token, or raises `CredentialError` (iteration 25).
 53. An `in_memory` credential store on a broker transport stops `IOHandler` and `AgentRunner` at
-    startup (iteration 25).
+    startup (iteration 25), and on AWS Lambda it stops the queued REST router and the WebSocket
+    connection routes (iteration 25b).
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (the optional
 `last_error`, `surface` and `principal` on a task's document aside); the queue envelope
@@ -3479,6 +3500,13 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    Tools a provider runs are warned about, not refused, as design Q12 settled; this iteration
    adds the report (`Agent.provider_tool_names`) and the warning (section 9; behavioural changes
    48 to 50).
+25. **A connection's credential is renewed through the store** (iteration 25b, 2026-11-26). Design 3.1
+   renewed a token without `exp` from the token a gateway still held in memory, which left Lambda, with
+   no memory between frames, unable to renew. Renewal reads the stored credential and writes it again
+   with a fresh `inbound_ttl`, so every frame on every deployment keeps it, and nothing holds the token
+   in memory. The Lambda REST router retains from the request's own header where a run starts, never
+   the authorizer, and both AWS WebSocket APIs retain at `$connect` and forget at `$disconnect`
+   (section 4, "As built").
 24. **Retention is the surface's call, and one manager holds it** (iteration 25, 2026-11-26).
    Section 4 minted a `credential_ref` inside authentication, so every caller of
    `authenticate_bearer` and `authenticate_token` would keep a credential whether or not it could

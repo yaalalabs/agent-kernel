@@ -1462,6 +1462,14 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
   cached); the Lambda and ECS WebSocket handlers retain for the connection at `$connect` and forget at
   `$disconnect`; the serverless runner releases; per-frame renewal of a connection credential whose
   token has no `exp` (pipeline and ECS gateways).
+  - **As built** (2026-11-26; spec section 4 "As built" and refinement 25): the router retains where a
+    run starts (`_send_to_queue`, `_handle_agent_chat`), not when it parses a request, so a poll keeps
+    nothing. `AWSWebSocketHandler.on_disconnect` forgets for both WebSocket deployments. Renewal goes
+    through the store (`CredentialManager.renew`), so Lambda frames renew as well as the pipeline and ECS
+    gateways. `CredentialManager.require_shared_store` refuses an `in_memory` store on the queued Lambda
+    router and the Lambda connection routes, and backs the broker-transport check. Tests in
+    `test_deployment_identity.py` (the router, both WebSocket APIs, the serverless runners),
+    `test_identity_credentials.py` (renewal, the shared-store rule) and `test_pipeline_ws.py`.
 
 ## Phase G: Tests, docs and skills (iterations 26 to 28)
 

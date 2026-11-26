@@ -435,6 +435,18 @@ class TestTheConnectionsCredential:
             assert manager.store.get(ref) == b"good"
             assert "good" not in message.body
 
+    def test_every_frame_renews_the_connections_credential(self, monkeypatch, manager):
+        renewed = []
+        monkeypatch.setattr(manager, "renew", lambda principal: renewed.append(principal.credential_ref))
+        app, _ = self._app(monkeypatch, manager)
+        with TestClient(app).websocket_connect(f"{WS_PATH}?token=good") as websocket:
+            for _ in range(2):
+                websocket.send_json({"route": "nope"})
+                websocket.receive_json()
+            [ref] = list(type(manager.store)._entries)
+
+        assert renewed == [ref, ref]
+
     def test_the_connection_forgets_its_credential_when_it_ends(self, monkeypatch, manager):
         app, _ = self._app(monkeypatch, manager)
         with TestClient(app).websocket_connect(f"{WS_PATH}?token=good") as websocket:

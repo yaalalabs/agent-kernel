@@ -1178,3 +1178,114 @@ class TestNoTokenLeaks:
         assert runner.answers == [token]  # the tool had it
         assert token not in caplog.text
         assert InMemoryCredentialStore._entries.keys() <= {key for key in InMemoryCredentialStore._entries if key.startswith("cred:issued:")}
+
+
+# --- iteration 25b: a connection's credential lasts while the connection does -----------------------
+
+
+class TestRenewingAConnectionsCredential:
+    @pytest.fixture
+    def recorded(self, credentials, monkeypatch):
+        manager = credentials(inbound_ttl=120)
+        puts: list[tuple] = []
+        put = manager.store.put
+
+        def recording(key, value, expires_at):
+            puts.append((key, expires_at))
+            put(key, value, expires_at)
+
+        monkeypatch.setattr(manager.store, "put", recording)
+        return manager, puts
+
+    @pytest.mark.asyncio
+    async def test_a_connection_credential_without_an_expiry_is_kept_another_inbound_ttl(self, recorded):
+        manager, puts = recorded
+        principal = await manager.retain(_alice(), "connection-token", connection=True)
+        puts.clear()
+
+        manager.renew(principal)
+
+        [(key, expires_at)] = puts
+        assert key == principal.credential_ref and round(expires_at - time.time()) == 120
+        assert manager.store.get(key) == b"connection-token"
+
+    @pytest.mark.asyncio
+    async def test_one_whose_token_has_an_expiry_is_never_kept_past_it(self, recorded):
+        manager, puts = recorded
+        principal = await manager.retain(_alice(exp=int(time.time()) + 3600), "connection-token", connection=True)
+        puts.clear()
+
+        manager.renew(principal)
+
+        assert puts == []
+
+    @pytest.mark.asyncio
+    async def test_a_runs_credential_is_not_renewed(self, recorded):
+        manager, puts = recorded
+        principal = await manager.retain(_alice(), "run-token")
+        puts.clear()
+
+        manager.renew(principal)
+
+        assert puts == []
+
+    @pytest.mark.asyncio
+    async def test_a_credential_that_has_expired_is_not_brought_back(self, recorded):
+        manager, puts = recorded
+        principal = await manager.retain(_alice(), "connection-token", connection=True)
+        manager.store.delete(principal.credential_ref)  # as its expiry would
+        puts.clear()
+
+        manager.renew(principal)
+
+        assert puts == [] and manager.store.get(principal.credential_ref) is None
+
+    @pytest.mark.asyncio
+    async def test_a_store_that_fails_on_renewal_is_logged_not_raised(self, recorded, monkeypatch, caplog):
+        manager, _ = recorded
+        principal = await manager.retain(_alice(), "connection-token", connection=True)
+
+        def unreachable(key):
+            raise ConnectionError("the store is down")
+
+        monkeypatch.setattr(manager.store, "get", unreachable)
+        with caplog.at_level(logging.WARNING, logger="ak.identity.credential.manager"):
+            manager.renew(principal)
+
+        assert "could not be renewed" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_the_classmethods_reach_the_process_manager_and_do_nothing_without_one(self, credentials, monkeypatch):
+        from agentkernel.core.config import AKConfig
+
+        manager = credentials()
+        principal = await manager.retain(_alice(), "connection-token", connection=True)
+
+        CredentialManager.forget_for(principal)
+        assert manager.store.get(principal.credential_ref) is None
+
+        monkeypatch.setattr(AKConfig.get(), "identity", None)
+        CredentialManager.reset()
+        CredentialManager.renew_for(principal)
+        CredentialManager.forget_for(principal)
+        CredentialManager.renew_for(None)
+
+
+class TestASharedStoreIsRequired:
+    @staticmethod
+    def _config(store_type: str):
+        from types import SimpleNamespace
+
+        store = {"type": store_type, **({"redis": {}} if store_type == "redis" else {})}
+        return SimpleNamespace(identity=SimpleNamespace(credentials=_CredentialsConfig(store=store)))
+
+    def test_an_in_memory_store_is_refused_where_one_process_keeps_and_another_reads(self):
+        with pytest.raises(AKConfigError, match="identity.credentials.store.type in_memory cannot work on AWS Lambda"):
+            CredentialManager.require_shared_store(self._config("in_memory"), "on AWS Lambda")
+
+    def test_a_shared_store_or_no_credentials_block_is_accepted(self):
+        from types import SimpleNamespace
+
+        CredentialManager.require_shared_store(self._config("redis"), "on AWS Lambda")
+        CredentialManager.require_shared_store(SimpleNamespace(identity=None), "on AWS Lambda")
+        CredentialManager.require_shared_store(SimpleNamespace(identity=SimpleNamespace(credentials=None)), "on AWS Lambda")

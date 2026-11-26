@@ -10,6 +10,24 @@ from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
 
 
+class _ServerlessCredentials:
+    """The serverless runners' end of a request's credential (#603)."""
+
+    @staticmethod
+    def release(body: BaseRunRequest) -> None:
+        """
+        Deletes the inbound credential of a run once its message is done, however it went: the queued path's
+        counterpart of ``Runtime``'s release. A connection's credential is left alone. Never raises.
+
+        :param body: The run's body.
+        """
+        if body.principal is None or not body.principal.credential_ref:
+            return
+        from ....identity.credential.manager import CredentialManager
+
+        CredentialManager.release_for(body.principal)
+
+
 class ServerlessAgentRunner(LambdaSQSConsumer):
     """
     handle() dispatches to ServerlessStreamAgentRunner when execution.message_type is delta.
@@ -172,14 +190,17 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         """
         cls._log.info(f"Processing message: {record}")
         body = cls._parse_body(record)
-        # ChatService(rest_api_mode=False) returns (status_code, response_dict). The status travels
-        # to the output message as an attribute so the deferred-schedule 202 and the validation 4xx
-        # survive the queue round trip instead of collapsing to 200 at the REST surface.
-        status_code, agent_response = cls._get_chat_service().process_chat_request(req=body, requests=body.requests)
-        cls._log.info(f"Chat service response: '{agent_response}' with status_code: {status_code}")
-        record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
-        cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes, status_code=status_code)
-        cls._log.info(f"Sent Response message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
+        try:
+            # ChatService(rest_api_mode=False) returns (status_code, response_dict). The status travels
+            # to the output message as an attribute so the deferred-schedule 202 and the validation 4xx
+            # survive the queue round trip instead of collapsing to 200 at the REST surface.
+            status_code, agent_response = cls._get_chat_service().process_chat_request(req=body, requests=body.requests)
+            cls._log.info(f"Chat service response: '{agent_response}' with status_code: {status_code}")
+            record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
+            cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes, status_code=status_code)
+            cls._log.info(f"Sent Response message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
+        finally:
+            _ServerlessCredentials.release(body)
 
     @classmethod
     def on_permanent_failure(cls, record: dict) -> None:
@@ -340,20 +361,23 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
             return ServerlessAgentRunner.process_message(record)
         cls._log.info(f"Processing stream message: {record}")
         body = cls._parse_body(record)
-        record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
-        # Included in the dedup suffix below so a retry's chunks never collide with a prior attempt's.
-        receive_count = record.get("attributes", {}).get("ApproximateReceiveCount", "1")
+        try:
+            record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
+            # Included in the dedup suffix below so a retry's chunks never collide with a prior attempt's.
+            receive_count = record.get("attributes", {}).get("ApproximateReceiveCount", "1")
 
-        chunk_count = 0
-        for raw_chunk in cls._get_chat_service().process_stream_chat_sync(req=body, requests=body.requests):
-            chunk_dict = json.loads(raw_chunk)
-            cls._send_chunk_to_output_queue(
-                chunk_body=chunk_dict,
-                record_attributes=record_attributes,
-                chunk_dedup_suffix=f"{receive_count}-{chunk_count}",
-            )
-            chunk_count += 1
-        cls._log.info(f"Streamed {chunk_count} chunks to output queue for request_id: {record_attributes['request_id']}")
+            chunk_count = 0
+            for raw_chunk in cls._get_chat_service().process_stream_chat_sync(req=body, requests=body.requests):
+                chunk_dict = json.loads(raw_chunk)
+                cls._send_chunk_to_output_queue(
+                    chunk_body=chunk_dict,
+                    record_attributes=record_attributes,
+                    chunk_dedup_suffix=f"{receive_count}-{chunk_count}",
+                )
+                chunk_count += 1
+            cls._log.info(f"Streamed {chunk_count} chunks to output queue for request_id: {record_attributes['request_id']}")
+        finally:
+            _ServerlessCredentials.release(body)
 
     @classmethod
     def on_permanent_failure(cls, record: dict) -> None:
