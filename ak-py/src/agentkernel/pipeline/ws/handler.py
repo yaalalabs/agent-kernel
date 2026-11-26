@@ -261,6 +261,7 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             group_id=body.session_id,
             dedup_id=request_id,
         )
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
         try:
             # Offload the sync send so a slow broker doesn't block the event loop for
             # every other connection.
@@ -270,7 +271,6 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             await self._send_system(websocket, "Request processing failed")
             return
 
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
         self._log.info(f"Enqueued: request_id={request_id}, session_id={body.session_id}, subject={user_id}")
         await websocket.send_json(
             {

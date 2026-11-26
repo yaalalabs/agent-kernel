@@ -159,12 +159,12 @@ class ResponseHandler(LambdaSQSConsumer):
         execution = AKConfig.get().execution
         if execution.is_websocket:
             message_type = LambdaWSHandler.MessageType.STREAM_CHUNK if execution.is_delta else LambdaWSHandler.MessageType.CHAT_RESPONSE
-            cls._broadcast_via_websocket(record, message_type=message_type)
             cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+            cls._broadcast_via_websocket(record, message_type=message_type)
         else:
             message = cls._construct_message_for_store(record)
-            cls._get_response_store().add_message(message)
             cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+            cls._get_response_store().add_message(message)
             cls._log.info(f"Stored message for session_id: {message['session_id']}, request_id: {message['request_id']}")
 
     @classmethod

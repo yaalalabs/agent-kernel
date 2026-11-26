@@ -89,6 +89,7 @@ class IntegrationProducer:
             requests=request.requests,
             principal=self._principal(adapter_name, request, source),
         )
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request.request_id)
         result = self._producer.enqueue(
             body,
             request_id=request.request_id,
@@ -98,7 +99,6 @@ class IntegrationProducer:
         )
         # A voice edge enqueues a frame every ~100 ms, so those are logged at debug.
         level = logging.DEBUG if any(isinstance(item, AgentRequestVoice) for item in request.requests) else logging.INFO
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request.request_id)
         self._log.log(level, f"Enqueued: integration={adapter_name}, session_id={request.session_id}, request_id={request.request_id}")
         return result
 

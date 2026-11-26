@@ -243,8 +243,8 @@ class ResponseHandler:
             "status_code": int(message.attributes.get(ATTR_STATUS_CODE, "200")),
             "body": body,
         }
-        self._get_store().add_message(record)
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+        self._get_store().add_message(record)
         self._log.info(f"Output done: stored response: request_id={request_id}, status_code={record['status_code']}")
 
     def _store_failure_record(self, message: QueueMessage, request_id: str | None, error_text: str) -> None:
@@ -268,8 +268,8 @@ class ResponseHandler:
                 "rest_sync + delta (SSE) and AG-UI delivery require a chunk-streaming response store (in_memory, redis, valkey, "
                 "or a BYO store with the capability)"
             )
-        store.add_chunk(request_id, json.loads(message.body))
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+        store.add_chunk(request_id, json.loads(message.body))
 
     def _broadcast(self, message: QueueMessage, message_type: WebSocketHandlerABC.MessageType) -> None:
         """Push an output message to the user's current WebSocket connections.
@@ -289,10 +289,10 @@ class ResponseHandler:
             body = {"response": body}
 
         # endpoint_url is the API Gateway return address on ECS; pod push ignores it.
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, message.attributes.get(ATTR_REQUEST_ID))
         self._get_ws_handler().broadcast(
             endpoint_url=message.attributes.get(ATTR_ENDPOINT_URL), message=body, user_id=user_id, message_type=message_type
         )
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, message.attributes.get(ATTR_REQUEST_ID))
         # Chunks are one message per token: INFO here would log the whole reply token by token.
         log = self._log.debug if message_type == WebSocketHandlerABC.MessageType.STREAM_CHUNK else self._log.info
         log(f"Output done: broadcasted {message_type.value} via WebSocket: user_id={user_id}")
