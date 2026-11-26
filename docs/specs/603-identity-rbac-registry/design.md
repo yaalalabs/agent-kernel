@@ -753,6 +753,7 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
   - OpenAI: a tool the SDK runs in the process without asking the gate (a local shell, an
     apply-patch editor, a computer, a custom tool) is ungated, so the agent does not load under
     `authorization`; only the hosted tool types and a shell in a hosted container are the provider's.
+    Both are allowlists: a tool type or environment a later SDK adds is refused until it is classified.
   - MAF: a denied tool is also kept from the model (a chat middleware), and both middleware sit
     first on the native agent, ahead of the application's own, only under `authorization`.
   - ADK's `FinishTaskTool` is a control-flow tool like transfer.

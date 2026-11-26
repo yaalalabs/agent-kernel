@@ -1372,7 +1372,9 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
   That closes what iteration 28 step 2 left for phase E.
 - **Review of #1018** (spec section 9, "As built (review of #1018)"). Fixed: OpenAI tools the SDK
   runs in the process (a local shell, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool`,
-  `CustomTool`) were counted as the provider's and are now ungated, so the agent does not load;
+  `CustomTool`) were counted as the provider's and are now ungated, so the agent does not load (and,
+  as a follow-up, a shell environment or tool type the adapter does not know is ungated too, a tool
+  with no `name` is refused by its type's name, and a test fails when an SDK upgrade adds a tool type);
   MAF now hides a denied tool (`AKToolOfferMiddleware`) and puts both middleware first on the
   native agent, so the application's middleware never sees a refused call and a denied approval
   tool never pauses; ADK's `FinishTaskTool` is a control-flow tool; CrewAI's before hook goes first

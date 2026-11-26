@@ -2043,8 +2043,13 @@ Shared pieces (`core/`):
     them. They are named by `ungated_tool_names`, so the agent does not load under the block.
     `OpenAIToolGate.provider_run(tool)` decides what is the provider's: the hosted types
     (`WebSearchTool`, `FileSearchTool`, `CodeInterpreterTool`, `ImageGenerationTool`,
-    `HostedMCPTool`, `ToolSearchTool`, `ProgrammaticToolCallingTool`) and a `ShellTool` in a hosted
-    container; `provider_tool_names` reports only those.
+    `HostedMCPTool`, `ToolSearchTool`, `ProgrammaticToolCallingTool`) and a `ShellTool` whose
+    environment is one of `HOSTED_ENVIRONMENTS` (`container_auto`, `container_reference`);
+    `provider_tool_names` reports only those. Both are lists of what is known to be hosted, so a tool
+    type or a shell environment a later SDK adds is ungated until it is classified, and
+    `test_every_tool_type_the_sdk_defines_is_classified` fails on the upgrade that adds one. A tool
+    with no `name` is declared and refused under the name of its type (`OpenAIToolGate.tool_name`),
+    so the load fails with the refusal rather than an `AttributeError`.
   - **MAF, list time and placement.** The table's per-run middleware is replaced by two middleware
     the adapter puts first on the native agent at wrap time, only under the block
     (`MAFAgent._gate_tools`): `AKToolGateMiddleware` (function, call time, as the table has it) and

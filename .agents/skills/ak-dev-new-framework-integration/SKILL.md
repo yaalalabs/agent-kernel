@@ -348,6 +348,10 @@ The rules every gate follows:
   is logged once at startup, not refused. A tool type the framework runs in this process, on the
   application's code, is not the provider's even when it is not a function tool (the OpenAI SDK's local
   `ShellTool`, `ApplyPatchTool`, `ComputerTool`, `CustomTool`): if your gate cannot reach it, it is ungated.
+  Classify by allowlist: list what is known to be the provider's and treat any other tool type as ungated,
+  so a type a later SDK adds is refused rather than trusted, and add a test that compares the SDK's own
+  list of tool types with your classification, so the dependency bump that adds one fails until it is
+  classified (`test_every_tool_type_the_sdk_defines_is_classified` in the OpenAI suite).
 - **A paused call is asked again.** When the framework pauses for approval, the resume must be decided by
   the resume's filter: a policy or a level can change in between (Pydantic AI turns such an approval into a
   denial; LangGraph and Claude re-check in the gate itself).

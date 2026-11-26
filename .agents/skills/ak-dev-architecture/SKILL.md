@@ -1167,8 +1167,11 @@ deleted).
   agent and gated. `ungated_tool_names()` names an `mcp_servers` entry and a handoff that does not
   hold its agent, and a tool the SDK runs in this process without asking the gate (a local
   `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool`, `CustomTool`), which the access
-  gate refuses at load. `OpenAIToolGate.provider_run(tool)` is what the provider runs (the hosted
-  types and a `ShellTool` in a hosted container): declared and not gated.
+  gate refuses at load. `OpenAIToolGate.provider_run(tool)` is what the provider runs (`HOSTED_TOOLS`,
+  and a `ShellTool` whose environment is in `HOSTED_ENVIRONMENTS`): declared and not gated. Both are
+  allowlists, so a type or environment a later SDK adds is ungated until classified, and
+  `test_every_tool_type_the_sdk_defines_is_classified` fails on that upgrade. `tool_name(tool)` falls
+  back to the type's name for a tool with no `name`.
   **Pydantic AI** (`AKToolGateCapability`): a per-run capability added by `PydanticAIRunner._gated`
   at all four native calls, ahead of the run options' `capabilities`; `prepare_tools` drops what
   the filter refuses and `wrap_tool_execute` returns the reason without running the handler.

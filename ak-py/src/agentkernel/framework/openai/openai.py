@@ -882,17 +882,32 @@ class OpenAIToolGate:
     The tool types OpenAI runs itself. A shell is hosted only in a hosted environment; anything else that is not
     a function tool is taken to run here, so a tool type the SDK adds later is refused, not trusted
     """
+    HOSTED_ENVIRONMENTS: ClassVar[frozenset[str]] = frozenset({"container_auto", "container_reference"})
+    """
+    The `ShellTool` environments OpenAI hosts. Any other, one the SDK adds later included, is taken to run here
+    """
 
     @classmethod
     def provider_run(cls, tool: Any) -> bool:
         """
-        Whether OpenAI runs a tool itself, rather than the SDK running the application's code in this process.
+        Whether OpenAI runs a tool itself, rather than the SDK running the application's code in this process. Both
+        lists are of what is known to be hosted, so a tool or an environment this adapter does not know is not.
         :param tool: A tool of a native agent.
         """
         if isinstance(tool, ShellTool):
             environment: Mapping[str, object] = tool.environment or {}
-            return environment.get("type", "local") != "local"
+            return environment.get("type") in cls.HOSTED_ENVIRONMENTS
         return isinstance(tool, cls.HOSTED_TOOLS)
+
+    @staticmethod
+    def tool_name(tool: Any) -> str:
+        """
+        The name a tool is declared and reported by: its own, or the name of its type when it has none, so a tool
+        type the SDK adds without a `name` is refused by name at load rather than failing it.
+        :param tool: A tool of a native agent.
+        """
+        name = getattr(tool, "name", None)
+        return name if isinstance(name, str) and name else type(tool).__name__
 
     @classmethod
     def install(cls, agents: Iterable[Any]) -> None:
@@ -935,8 +950,8 @@ class OpenAIToolGate:
         names: list[str] = []
         for agent in cls.reachable(root):
             for tool in getattr(agent, "tools", None) or []:
-                if not isinstance(tool, FunctionTool) and not cls.provider_run(tool) and tool.name not in names:
-                    names.append(tool.name)
+                if not isinstance(tool, FunctionTool) and not cls.provider_run(tool) and cls.tool_name(tool) not in names:
+                    names.append(cls.tool_name(tool))
         for agent in cls.reachable(root):
             for server in getattr(agent, "mcp_servers", None) or []:
                 names.append(f"the tools of MCP server '{server.name}' on agent '{agent.name}'")
@@ -1128,7 +1143,7 @@ class OpenAIAgent(BaseAgent):
         declared: dict[str, Any] = {}
         for agent in OpenAIToolGate.reachable(self.agent):
             for tool in getattr(agent, "tools", None) or []:
-                declared.setdefault(tool.name, tool)
+                declared.setdefault(OpenAIToolGate.tool_name(tool), tool)
         return declared
 
 

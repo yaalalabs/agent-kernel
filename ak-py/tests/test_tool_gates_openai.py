@@ -5,6 +5,8 @@ its own `ToolInputGuardrail.run` decides what a call answers, so the gate is tes
 SDK calls it by. A run through `Runtime` shows the filter the access gate publishes reaching those seams.
 """
 
+import dataclasses
+import typing
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -360,12 +362,57 @@ class TestWhatCannotBeGated:
         assert wrapped.ungated_tool_names() == ["shell", "local_shell", "sql", "apply_patch", "computer_use_preview"]
         assert wrapped.provider_tool_names() == []
 
-    def test_a_shell_in_a_hosted_container_is_provider_run(self):
+    @pytest.mark.parametrize("environment", [{"type": "container_auto"}, {"type": "container_reference", "container_id": "cntr_1"}])
+    def test_a_shell_in_a_hosted_container_is_provider_run(self, environment):
         from agents import ShellTool
 
-        wrapped = _wrapped(_native(tools=[lookup, ShellTool(environment={"type": "container_auto"})]))
+        wrapped = _wrapped(_native(tools=[lookup, ShellTool(environment=environment)]))
 
         assert (wrapped.ungated_tool_names(), wrapped.provider_tool_names()) == ([], ["shell"])
+
+    def test_a_shell_in_an_environment_the_adapter_does_not_know_is_ungated(self):
+        # Only the hosted environments the SDK defines are trusted: one added later may run in this process.
+        from agents import ShellTool
+
+        wrapped = _wrapped(_native(tools=[lookup, ShellTool(environment={"type": "container_gpu"})]))
+
+        assert (wrapped.ungated_tool_names(), wrapped.provider_tool_names()) == (["shell"], [])
+
+    def test_a_tool_type_the_adapter_does_not_know_is_ungated(self):
+        # A tool type the SDK adds later is refused until it is classified, never trusted as the provider's.
+        @dataclasses.dataclass
+        class VideoGenerationTool:
+            name: str = "video_generation"
+
+        wrapped = _wrapped(_native(tools=[lookup, VideoGenerationTool()]))
+
+        assert (wrapped.ungated_tool_names(), wrapped.provider_tool_names()) == (["video_generation"], [])
+
+    def test_a_tool_with_no_name_is_refused_by_its_type_at_load(self, gated):
+        # The refusal names the type, rather than the load failing on the missing attribute.
+        @dataclasses.dataclass
+        class Nameless:
+            kind: str = "unknown"
+
+        with Runtime(InMemorySessionStore()) as runtime:
+            with pytest.raises(AKConfigError, match=r"cannot gate: \['Nameless'\]"):
+                from agentkernel.framework.openai.openai import OpenAIModule
+
+                OpenAIModule([_native(tools=[lookup, Nameless()])])
+            assert runtime.agents() == {}
+
+    def test_every_tool_type_the_sdk_defines_is_classified(self):
+        # Fails when an `openai-agents` upgrade adds or removes a tool type. Classify a new one here: a type OpenAI
+        # runs on its side goes into `OpenAIToolGate.HOSTED_TOOLS`; one the SDK runs in this process stays ungated.
+        import agents
+        from agents import ApplyPatchTool, ComputerTool, CustomTool, LocalShellTool, ShellTool
+
+        from agentkernel.framework.openai.openai import OpenAIToolGate
+
+        gated, local, by_environment = {FunctionTool}, {ApplyPatchTool, ComputerTool, CustomTool, LocalShellTool}, {ShellTool}
+        defined = {typing.get_origin(member) or member for member in typing.get_args(agents.Tool)}
+
+        assert defined == gated | set(OpenAIToolGate.HOSTED_TOOLS) | local | by_environment
 
     def test_an_agent_with_a_local_sdk_tool_does_not_load_under_the_block(self, gated):
         from agents import ShellTool
