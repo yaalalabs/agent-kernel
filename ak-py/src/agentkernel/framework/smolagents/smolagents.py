@@ -1,14 +1,15 @@
 import asyncio
+import contextvars
 import functools
 import inspect
 from collections.abc import AsyncGenerator, Callable, Mapping
 from typing import Any, ClassVar
 
-from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
+from smolagents import CodeAgent, LocalPythonExecutor, MultiStepAgent, ToolCallingAgent
 from smolagents import tool as smol_tool
 
 from ...core import Agent as BaseAgent
-from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
+from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext, ToolGate
 from ...core.config import AKConfig
 from ...core.event import StreamEvent
 from ...core.model import (
@@ -205,6 +206,167 @@ class SmolagentsRunner(Runner):
         yield  # make this an async generator to satisfy the type contract
 
 
+class SmolagentsToolGate:
+    """
+    Puts the tool decision of a run on the tools of a smolagents agent (#603).
+
+    smolagents runs a tool through `Tool.__call__`, which calls the instance's `forward`, whether a tool-calling
+    agent dispatches the call or a code agent's local executor runs it. So the gate wraps `forward` on each
+    tool: a call to a tool the run's ToolFilter does not allow returns the reason, which the model reads as
+    the tool's result, and the tool is not run.
+
+    A run's filter is the agent's it started with, while the agents it manages run their own tools inside it,
+    so `agents` walks them: their tools are declared under the first agent and carry the gate too. Calling a
+    managed agent is how the run moves work to it, and is not gated, nor is `final_answer`, which is how a run
+    ends; no agent declares either.
+
+    What the gate cannot reach is named by `ungated`: a tool added to an agent after it was loaded, and every
+    tool of a code agent whose executor is not the local one, since a remote executor rebuilds each tool from
+    its source in the sandbox. With an `authorization` block such an agent does not load (design Q12).
+
+    The local executor runs each code action on a thread of its own, to put a time limit on it, and that thread
+    does not inherit the caller's context: a tool called from the code would find no run, and nothing would be
+    refused. `carry_the_run_into_code` makes the thread run in the context of the call that started it.
+    """
+
+    FINAL_ANSWER: ClassVar[str] = "final_answer"
+    """
+    The name smolagents keeps the tool that ends a run under
+    """
+    MARK: ClassVar[str] = "__ak_gated__"
+    """
+    The attribute the gate sets on a wrapped `forward`
+    """
+
+    @classmethod
+    def agents(cls, root: Any) -> list[Any]:
+        """
+        Returns the agents a run of `root` can have call a tool: `root`, then the agents it manages and theirs,
+        nearest first and each once.
+        :param root: The native agent a run starts with.
+        """
+        reached = [root]
+        seen = {id(root)}
+        for agent in reached:
+            for managed in (getattr(agent, "managed_agents", None) or {}).values():
+                if id(managed) not in seen:
+                    seen.add(id(managed))
+                    reached.append(managed)
+        return reached
+
+    @classmethod
+    def tools(cls, agent: Any) -> dict[str, Any]:
+        """
+        Returns one agent's tools by the name it calls them under, without `final_answer`. smolagents keys them
+        by name; a list is accepted too, for an agent object that holds one.
+        :param agent: A native agent.
+        """
+        tools = getattr(agent, "tools", None) or {}
+        named = dict(tools) if isinstance(tools, dict) else {tool.name: tool for tool in tools}
+        named.pop(cls.FINAL_ANSWER, None)
+        return named
+
+    @staticmethod
+    def runs_tools_here(agent: Any) -> bool:
+        """
+        Whether an agent runs its tools in this process, where a wrapped `forward` is what is called: a code agent
+        does only on the local executor, a tool-calling agent always.
+        :param agent: A native agent.
+        """
+        executor = getattr(agent, "python_executor", None)
+        return executor is None or isinstance(executor, LocalPythonExecutor)
+
+    @classmethod
+    def gated(cls, tool: Any) -> bool:
+        """
+        Whether a tool's `forward` carries the gate.
+        :param tool: A native tool.
+        """
+        return bool(getattr(getattr(tool, "forward", None), cls.MARK, False))
+
+    @classmethod
+    def install(cls, root: Any) -> None:
+        """
+        Wraps `forward` on every tool a run of `root` can call, where the tool runs in this process. A tool that
+        carries the gate already is left alone.
+        :param root: The native agent a run starts with.
+        """
+        cls.carry_the_run_into_code()
+        for agent in cls.agents(root):
+            if not cls.runs_tools_here(agent):
+                continue
+            for tool in cls.tools(agent).values():
+                if not cls.gated(tool):
+                    tool.forward = cls._gate(tool)
+
+    @classmethod
+    def carry_the_run_into_code(cls) -> None:
+        """
+        Makes the local executor run a code action in the context of the call that started it.
+
+        smolagents puts a time limit on a code action by running it on a fresh thread, through the `timeout`
+        helper of `smolagents.local_python_executor`, which it looks up each time it runs code. The thread
+        starts with an empty context, so the run's ToolContext, and with it the tool filter, would not reach a
+        tool the code calls. The helper is replaced, once and for the process, by one that captures the
+        caller's context and runs the code action in it; the time limit and its error are smolagents' own.
+        Called only under an `authorization` block, with the gate.
+        """
+        from smolagents import local_python_executor
+
+        original = local_python_executor.timeout
+        if getattr(original, cls.MARK, False):
+            return
+
+        def timeout(timeout_seconds: int) -> Callable[[Callable], Callable]:
+            limit = original(timeout_seconds)
+
+            def decorator(func: Callable) -> Callable:
+                @functools.wraps(func)
+                def in_the_callers_context(*args: Any, **kwargs: Any) -> Any:
+                    context = contextvars.copy_context()
+                    return limit(functools.partial(context.run, func))(*args, **kwargs)
+
+                return in_the_callers_context
+
+            return decorator
+
+        setattr(timeout, cls.MARK, True)
+        local_python_executor.timeout = timeout
+
+    @classmethod
+    def ungated(cls, root: Any) -> list[str]:
+        """
+        Names the tools a run of `root` can call that carry no gate, each once.
+        :param root: The native agent a run starts with.
+        """
+        names: list[str] = []
+        for agent in cls.agents(root):
+            local = cls.runs_tools_here(agent)
+            for name, tool in cls.tools(agent).items():
+                if (not local or not cls.gated(tool)) and name not in names:
+                    names.append(name)
+        return names
+
+    @classmethod
+    def _gate(cls, tool: Any) -> Callable:
+        """
+        Returns the gated `forward` of a tool: the reason for a call the run's filter refuses, the tool's own
+        `forward` for any other. The tool's name is read when a call is checked.
+        :param tool: The tool whose bound `forward` is wrapped.
+        """
+        forward = tool.forward
+
+        @functools.wraps(forward)
+        def gated_forward(*args: Any, **kwargs: Any) -> Any:
+            reason = ToolGate.refusal(tool.name)
+            if reason is not None:
+                return reason
+            return forward(*args, **kwargs)
+
+        setattr(gated_forward, cls.MARK, True)
+        return gated_forward
+
+
 class SmolagentsAgent(BaseAgent):
     """
     SmolagentsAgent class provides an agent wrapping for smolagents based agents.
@@ -230,6 +392,15 @@ class SmolagentsAgent(BaseAgent):
         self._agent = agent
         self._attach_system_tools()
         self._setup_system_prompt()
+        self._gate_tools()
+
+    def _gate_tools(self) -> None:
+        """
+        Puts the tool gate on the tools a run of this agent can call, when an `authorization` block is configured.
+        Without the block the native tools are left exactly as the application built them.
+        """
+        if Runtime.access_gate() is not None:
+            SmolagentsToolGate.install(self._agent)
 
     @property
     def agent(self) -> SmolagentsSupportedAgent:
@@ -302,6 +473,7 @@ class SmolagentsAgent(BaseAgent):
                     self.agent.memory.system_prompt.system_prompt = new_prompt
             except Exception:
                 pass
+        self._gate_tools()
 
     def _native_description(self) -> str:
         """
@@ -312,25 +484,37 @@ class SmolagentsAgent(BaseAgent):
 
     def get_tool_names(self) -> list[str]:
         """
-        Returns the names the native agent holds its tools under, the framework's own `final_answer` included.
+        Returns the names of the tools a run of the agent can call: the native agent's own, then those of the
+        agents it manages and theirs, each under the name it is called by and each once. A run's tool filter is
+        this agent's whichever of them calls a tool, so a policy for this agent names their tools too.
 
-        Not reported: the agent's managed agents, which the model can call like tools.
+        Not reported: the framework's own `final_answer`, which is how a run ends, and the managed agents
+        themselves, which the model calls to hand them work. The tool gate leaves both alone.
         """
-        return list(self._named_tools())
+        return list(self._declared_tools())
 
     def _tool_descriptions(self) -> dict[str, str]:
         """
-        Returns the description of each native tool by name.
+        Returns the description of each declared tool by name.
         """
-        return {name: getattr(tool, "description", None) or "" for name, tool in self._named_tools().items()}
+        return {name: getattr(tool, "description", None) or "" for name, tool in self._declared_tools().items()}
 
-    def _named_tools(self) -> dict[str, Any]:
+    def ungated_tool_names(self) -> list[str]:
         """
-        Returns the native agent's tools by the name it calls them under. smolagents keys them by name; a list is
-        accepted too, for an agent object that holds one.
+        Returns the tools a run of the agent can call that carry no gate: one added to an agent after it was
+        loaded, and every tool of a code agent whose executor is not the local one.
         """
-        tools = getattr(self.agent, "tools", None) or {}
-        return dict(tools) if isinstance(tools, dict) else {tool.name: tool for tool in tools}
+        return SmolagentsToolGate.ungated(self.agent)
+
+    def _declared_tools(self) -> dict[str, Any]:
+        """
+        Returns the tools a run can call by name, the agent's own first; a name two agents share is kept once.
+        """
+        declared: dict[str, Any] = {}
+        for agent in SmolagentsToolGate.agents(self.agent):
+            for name, tool in SmolagentsToolGate.tools(agent).items():
+                declared.setdefault(name, tool)
+        return declared
 
 
 class SmolagentsModule(Module):

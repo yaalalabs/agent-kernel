@@ -246,7 +246,9 @@ class AccessGate:
 
         Two things stop the process: an agent with tools Agent Kernel cannot gate at call time (the policy
         would not hold for them), and whatever the authorizer finds unworkable in its own policy for one of
-        the agents. What the authorizer only finds worth a warning is logged, once per finding.
+        the agents. What the authorizer only finds worth a warning is logged, once per finding, and so are the
+        tools an agent's model provider or framework runs itself, which no gate reaches and no deployment can
+        rebind (`Agent.provider_tool_names`).
 
         :param agents: The hosted agents to check.
         :param registry_wide: Whether every agent has registered, so the findings that compare the policy with
@@ -261,11 +263,21 @@ class AccessGate:
                     f"authorization is configured but agent '{agent.descriptor.id}' on {agent.runner.name} "
                     f"has tools Agent Kernel cannot gate: {ungated}"
                 )
+            provider_run = sorted(agent.provider_tool_names())
+            if provider_run:
+                self._warn_once(
+                    f"agent '{agent.descriptor.id}' on {agent.runner.name} has tools its model provider or framework runs itself, "
+                    f"which the authorization tool policy does not reach: {provider_run}"
+                )
         descriptors = Runtime.current().registry.descriptors() if registry_wide else None
         for finding in self._authorizer.validate(hosted, descriptors):
-            if finding not in self._warned:
-                self._warned.add(finding)
-                self._log.warning(finding)
+            self._warn_once(finding)
+
+    def _warn_once(self, finding: str) -> None:
+        """Log a finding, unless it was logged already: a module loaded later does not repeat it."""
+        if finding not in self._warned:
+            self._warned.add(finding)
+            self._log.warning(finding)
 
     # -- internals -------------------------------------------------------------------------------
 
