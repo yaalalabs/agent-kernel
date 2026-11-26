@@ -935,9 +935,7 @@ class TestGoogleADKAgentToolReporting:
             """Cancel an order."""
             return "cancelled"
 
-        root = LlmAgent(
-            name="billing", model=self.MODEL, tools=[lookup_order, Refund(), functools.partial(cancel_order, reason="late")]
-        )
+        root = LlmAgent(name="billing", model=self.MODEL, tools=[lookup_order, Refund(), functools.partial(cancel_order, reason="late")])
         agent = self._agent(root)
 
         assert agent.get_tool_names() == [FunctionTool(func=tool).name for tool in root.tools]
