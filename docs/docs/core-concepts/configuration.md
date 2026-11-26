@@ -67,7 +67,7 @@ mcp:
   enabled: true
   expose_agents: true  # Every agent becomes a tool unless its descriptor's surfaces leave mcp out
   url: "http://localhost:8000/mcp"  # Public URL of the endpoint, named by the OAuth resource metadata (default: http://localhost:8000/mcp)
-  stateless_http: false  # Run in stateless HTTP mode (default: false)
+  stateless_http: false  # Serve older (2025-11-25) MCP clients statelessly; 2026-07-28 clients always are (default: false)
 
 # WebSocket API configuration (for AWS serverless deployments)
 websocket_api:
@@ -243,6 +243,25 @@ identity:
     claims: []  # claim paths whose string or list values are also looked up in mapping; only groups by default,
                 # since a user sets many of their own claims (a display name, a username, an email)
 
+# Authorization (optional - presence enables it. Without this block nothing is restricted. With it a caller
+# runs only the agents a grant gives it a level on, and sees only the agents it may see. See "Authorization" below)
+authorization:
+  type: static  # static, or a dotted path to an Authorizer subclass (its own settings arrive in model_extra)
+  static:  # required when type is static
+    grants:  # who holds which level on which agents; with none, every agent is denied to every principal
+      - subjects: [group:ops]  # '*' | authenticated | user:<subject> | group:<name> | role:<name> | provider:<name>
+        agents: [support-triage]  # an agent id | '*' | tag:<name>
+        level: write  # read | write | admin; a principal holds the highest level its grants give
+      - subjects: [provider:messaging:slack]  # a name ending in ':' matches by prefix (provider:messaging:)
+        agents: ["tag:help"]
+        level: read
+    tools:  # per agent: which tools each level is offered. Published for each run and applied to the
+            # listings; a tool call is not refused by it yet (see "Authorization" below)
+      - agent: support-triage
+        tiers: {refund_order: admin}  # tool -> the lowest level offered it; unlisted tools are read
+        allow: null  # when set, the only tools the agent offers
+        deny: [purge_queue]  # never offered; wins over allow
+
 # Agent registry (optional - without this block agent descriptors live in the memory of the process that
 # loads the agents, and an agent is on every surface unless its code narrows them with Module.describe.
 # See "Agent Registry" below)
@@ -262,7 +281,7 @@ registry:
       version: "1.2.0"  # quoted: YAML reads 1.2 or 2 as a number, which is refused
       owner: cx-platform
       tags: [support]
-      visibility: internal  # private | internal | public; recorded, not enforced yet (see below)
+      visibility: internal  # private | internal | public; who may see the agent once an authorization block exists (see below)
       surfaces: [rest, agui]  # rest | a2a | mcp | agui; [] = none; omitted = what the code declared (every surface by default)
 
 # Messaging platform integrations
@@ -658,6 +677,31 @@ export AK_IDENTITY__PROVIDER__ENTRA__TENANT_ID=<tenant-id>  # entra only
 export AK_IDENTITY__PROVIDER__FIREBASE__PROJECT_ID=<project-id>  # firebase only
 ```
 
+### Authorization
+
+An `authorization` block decides which agents each principal may run and see. Without it nothing is restricted.
+See [Authorization](../advanced/identity-and-access.md#authorization) for grants, levels, visibility and what each
+surface answers.
+
+```bash
+export AK_AUTHORIZATION__TYPE=static  # Options: 'static', or a dotted path to an Authorizer subclass (default: 'static')
+export AK_AUTHORIZATION__STATIC__GRANTS='[{"subjects": ["group:ops"], "agents": ["support-triage"], "level": "write"}]'  # JSON list of grants
+export AK_AUTHORIZATION__STATIC__TOOLS='[{"agent": "support-triage", "deny": ["purge_queue"]}]'  # JSON list of per-agent tool policies
+```
+
+- **Grants.** Each grant gives its subjects a level (`read`, `write` or `admin`) on its agents, and a principal
+  holds the highest level its grants give. The policy denies by default: an agent nobody is granted is run by
+  nobody, a caller without a credential included, unless a grant names `*`.
+- **Tool policy.** `tiers`, `allow` and `deny` decide which tools each level is offered. The decision is published
+  for every run and narrows the tools and skills the catalog and A2A cards list. A call to a denied tool is
+  not run on any supported framework (the OpenAI Agents SDK, Pydantic AI, Microsoft Agent Framework, the Claude Agent SDK, Google ADK, CrewAI, LangGraph and smolagents) or realtime call, and is answered with the reason,
+  except on an OpenAI Agents SDK realtime call, which answers `Tool <name> not found`. On the OpenAI Agents SDK, Pydantic AI, the Claude Agent SDK and Microsoft Agent Framework the tool is also hidden from the model. Tools the provider runs are logged, not gated
+  ([where a denied tool is stopped](../advanced/identity-and-access.md#where-a-denied-tool-is-stopped)).
+- **Every process.** Put the same block in the configuration of the process that accepts requests and of the
+  process that runs the agents: the first answers early and filters the listings, the second enforces every run.
+- **Startup checks.** An unusable grant or policy, and a tool policy naming a tool its agent does not have, stop the
+  application. A grant that matches no agent or tag is logged as a warning.
+
 ### Agent Registry
 
 Every agent has a **descriptor**: its id, name, version, description, tags, the tools it reports and the surfaces
@@ -697,16 +741,31 @@ export AK_REGISTRY__AGENTS__BILLING__SURFACES='["rest"]'  # a per-agent field; t
   exactly. A registry passed to `Runtime(sessions, registry=...)` in code is used as given, without these fields.
 - **Surfaces.** `surfaces` lists where the agent is served: `rest`, `a2a`, `mcp`, `agui`. An agent that declares
   none, in code or here, is on every surface; `[]` puts it on none. `a2a`, `mcp` and `agui` decide whether the
-  agent can be reached on that protocol at all. `rest` decides whether the agent is listed in the catalog
-  (`GET /api/v1/agents`); a chat request that names the agent is still served. This replaces the `a2a.agents`,
+  agent can be reached on that protocol at all. `rest` does the same for the REST API: an agent kept off it is
+  left out of the catalog (`GET /api/v1/agents`), a chat request that names it is answered with the 404 an unknown
+  agent gets, and a chat request that names no agent runs the first agent that is on `rest`. That covers the chat
+  and multipart routes, the thread chat routes, WebSocket chat and a chat request that schedules a task. The four
+  surfaces are all `surfaces` governs: a messaging integration, the CLI, a task an agent schedules with the
+  schedule tool and another agent handing off still reach an agent whatever its `surfaces`, `[]` included. A task
+  created by a chat request keeps the surface that request came in by, and its occurrences are served the agents
+  on it. Where requests are queued to an agent runner in another process, both processes decide, each from the
+  agent's descriptor as it holds it. The process that accepts a request answers the 404 itself, before anything
+  is queued, for a named agent its registry does not know or keeps off the surface, and the runner checks again
+  when the request runs. So a restriction set in either process holds, and neither can add an agent to a surface
+  the other keeps it off. The accepting process checks only when its registry knows at least one agent: load the
+  same agent modules there as in the runner, or share the registry, since an agent it does not know is a 404
+  there. A process that knows no agent at all queues every request and leaves the answer to the runner. This
+  replaces the `a2a.agents`,
   `mcp.agents` and `agui.agents` lists. Those lists named the agents a surface served, where `surfaces` is set per
   agent, so removing a list is not enough to keep what it did: give every agent the list left out a `surfaces`
   value without that surface. There is no allow-list any more: an agent added later with no `surfaces` is on
   every surface, so set it for each new agent that should not be.
 - **Visibility.** `visibility` (`private`, `internal`, `public`) is recorded on the descriptor and published in the
-  catalog. It is not enforced yet: until authorization ships, every agent listed on a surface is listed to every
-  caller, and the catalog route answers a caller with no credential. `surfaces` is what keeps an agent off a
-  listing today.
+  catalog. With an [`authorization`](#authorization) block it decides who may see an agent they hold no level on:
+  `private` (the default) nobody, `internal` every authenticated caller, `public` everyone. A caller is then listed
+  only the agents it holds a level on or may see, on the catalog, A2A, MCP and AG-UI alike, and an agent it may not
+  see answers like one that does not exist. Without the block `visibility` changes nothing: every agent on a surface
+  is listed to every caller, and `surfaces` is what keeps an agent off a listing.
 - **Description.** The description is catalog text for people and other agents. It is what an A2A card and an
   MCP tool publish; an agent's instructions are never published. Left undeclared, it is the description the
   agent's framework keeps for it, where it has one apart from the instructions
@@ -1073,7 +1132,8 @@ mcp:
   expose_agents: false          # Expose agents as MCP tools
   url: "http://localhost:8000/mcp"  # Public URL clients reach the endpoint at (behind a proxy, the public one). With an
                                 # OpenID-family identity provider it is the resource the RFC 9728 metadata names
-  stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
+  stateless_http: false         # Older (2025-11-25) clients only: each request is independent, no Mcp-Session-Id;
+                                # set it when several replicas serve /mcp. 2026-07-28 clients are always stateless (default: false)
 
 # Messaging platform integrations
 slack:

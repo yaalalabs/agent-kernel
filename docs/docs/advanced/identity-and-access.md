@@ -10,7 +10,9 @@ OpenID Connect issuer such as Auth0, Keycloak or Okta, Amazon Cognito, Microsoft
 static credential map, or your own class), and every surface the agent is reached through (REST,
 WebSocket, AG-UI, MCP, A2A, the CLI, the messaging integrations) resolves the caller through it. Tools
 and hooks read the same principal, threads and scheduled tasks belong to it, and a credential value is
-never written in a configuration file.
+never written in a configuration file. An optional `authorization` block then decides what each
+principal may do: which agents it may run and see, and which of their tools it is offered
+([Authorization](#authorization)).
 
 ```yaml
 identity:
@@ -37,8 +39,72 @@ def whoami() -> str:
 | **Credential** | A bearer token on HTTP (`Authorization: Bearer <token>`), `?token=<credential>` on the WebSocket handshake, `--token` or `AK_CLI_TOKEN` on the CLI. |
 | **Principal** | The subject, its namespace, groups, roles and claims, plus the agent acting on its behalf. Read it with `ToolContext.get().principal` in tools and `Session.get_principal()` in hooks. |
 | **Anonymous** | With a provider configured, a request without a credential is anonymous and a credential that does not validate is a `401`. Which routes refuse the anonymous principal is each surface's rule (below). |
-| **Roles** | The token providers issue no roles; a `static` entry may list them. An optional `role_mapper` replaces them with roles derived from groups and listed claims. Nothing enforces `roles` yet: authorization arrives in a later phase. |
+| **Roles** | The token providers issue no roles; a `static` entry may list them. An optional `role_mapper` replaces them with roles derived from groups and listed claims. A grant names one as `role:<name>`. |
+| **Authorization** | An `authorization` block grants principals a level (`read`, `write`, `admin`) on agents. With it, a caller runs only the agents it is granted and sees only the ones it may see; without it nothing is restricted. See [Authorization](#authorization). |
 | **Extra** | `oidc`, `cognito`, `entra` and `firebase` need `agentkernel[auth]` (PyJWT, cryptography, httpx). `static` needs nothing extra. |
+
+## How it fits together
+
+Authentication decides who is calling; authorization decides what that caller may do. OAK does the
+first once, where a request enters, and the second twice: at the surface, before anything is queued, and
+again where every run starts, down to the tools the agent may call.
+
+```mermaid
+flowchart TD
+    Caller["Caller<br/>person, service, messaging sender, voice caller, CLI"]
+    Surface["Surface<br/>REST · A2A · MCP · AG-UI · WebSocket · messaging · LiveKit · CLI"]
+    Caller -->|"bearer token, or the platform's identity"| Surface
+
+    subgraph authn ["1 · Authentication: who is calling"]
+        Provider["Identity provider<br/>oidc · cognito · entra · firebase · static · your own"]
+        Mapper["Role mapper<br/>groups and claims to roles"]
+        Principal(["Principal<br/>subject · provider · namespace · groups · roles"])
+        Provider --> Mapper --> Principal
+    end
+
+    Surface -->|"verify the credential"| Provider
+    Surface -.->|"messaging and voice edges name the platform's sender"| Principal
+    Provider -.->|"credential refused"| Unauthorized["401"]
+
+    subgraph authz ["2 · Authorization: what the caller may do"]
+        Registry[("Agent registry<br/>visibility · surfaces · tags · tools")]
+        Authorizer["Authorizer<br/>grants and tool policy, static or your own"]
+        Gate{{"Access gate"}}
+        Registry --> Gate
+        Authorizer --> Gate
+    end
+
+    Principal --> Gate
+    Gate -->|"at the surface, before anything is queued"| Edge["Agent check and the caller's catalog"]
+    Edge -.->|"hidden: 404 · no level: 403"| Refused["Refused"]
+    Gate -->|"where every run starts"| Admit["Run admitted<br/>level · session owner · tool filter"]
+    Admit --> Run["Agent run<br/>principal and tool filter published for the run"]
+    Run --> ToolGate["Framework tool gate<br/>every adapter, voice calls included"]
+    ToolGate -->|"allowed"| Tool["Tool runs"]
+    ToolGate -->|"denied"| Reason["Hidden, or answered with the reason"]
+```
+
+1. **A caller presents a credential** to the surface it uses: a bearer token on HTTP, a token on the
+   WebSocket handshake or the CLI. A messaging platform or a voice room vouches for its own sender
+   instead.
+2. **The identity provider verifies it** and returns a [principal](#the-principal): who the caller is,
+   which provider and namespace vouched for it, and its groups. The role mapper adds roles. A credential
+   that does not verify is a `401`; a request with none runs as the anonymous principal. Messaging and
+   voice edges build the principal from the platform's sender (`messaging:<platform>`,
+   `realtime:<gateway>`).
+3. **The access gate decides** from two things: the agent registry, which says which agents exist and
+   how each is described, and the authorizer, which holds the grants and the tool policy of the
+   [`authorization` block](#authorization). Without the block nothing is restricted.
+4. **At the surface**, before a session is loaded or anything is queued, the gate checks that the
+   caller may use the agent it named and narrows what the caller is listed. An agent it may not see is a
+   `404`, exactly as if it did not exist; one it sees and holds no level on is a `403`.
+5. **Where every run starts**, the gate asks again, whichever surface the request came through: the
+   caller's level on the agent, whether the [session](#sessions) is its to continue, and the run's tool
+   filter. The principal and the filter are published for the run, where tools and hooks read them.
+6. **The framework adapter's tool gate** applies the filter: a denied tool is kept from the model, or a
+   call to it is answered with the reason instead of running ([where a denied tool is
+   stopped](#where-a-denied-tool-is-stopped)). [Scheduled tasks](#scheduled-tasks) are decided again
+   when they fire, and a paused tool call when its approval arrives.
 
 ## Configuration
 
@@ -314,7 +380,7 @@ identity:
 | `provider` | The provider's short name (`oidc`, `static`, ...), or `messaging:<platform>` and `realtime:<gateway>` for the integrations. |
 | `namespace` | The scope the subject is unique within: the OIDC issuer, `static`, a Slack workspace id. |
 | `groups` | The memberships the provider asserted. |
-| `roles` | What the role mapper derived; without one, a `static` entry's own roles (the token providers issue none). Nothing enforces them yet. |
+| `roles` | What the role mapper derived; without one, a `static` entry's own roles (the token providers issue none). A grant names one as `role:<name>`. |
 | `claims` | Every other fact the provider kept, for the role mapper and the tools. |
 | `actor` | The party acting on the subject's behalf: the agent principal (`kind: agent`, `provider: agentkernel`) the runtime attaches while a run executes. |
 
@@ -340,6 +406,282 @@ class OpsOnly(PreHook):
 
 A `principal` a client puts in a request body is never trusted: the surface that authenticated the
 request overwrites it.
+
+## Authorization
+
+Authentication establishes who is calling. An `authorization` block decides what that caller may do:
+which agents it may run, which it may see, and which of an agent's tools it is offered. The block is
+optional. Without it nothing is restricted, and every caller reaches every agent a surface serves.
+
+```yaml
+authorization:
+  type: static                         # static, or a dotted path to an Authorizer subclass
+  static:
+    grants:
+      - subjects: [group:support]      # who
+        agents: [support-triage]       # on which agents
+        level: write                   # read | write | admin
+      - subjects: [authenticated]
+        agents: [tag:help]             # every agent carrying the tag
+        level: read
+      - subjects: [provider:messaging:slack]
+        agents: [support-triage]
+        level: read
+    tools:
+      - agent: support-triage
+        tiers: {refund_order: admin}   # the lowest level that is offered the tool
+        deny: [purge_queue]            # never offered, at any level
+```
+
+The policy denies by default. Once the block exists, a principal runs an agent only when a grant gives
+it a level on that agent, and a block with no grants denies every agent to everyone. The environment
+form is `AK_AUTHORIZATION__TYPE` and `AK_AUTHORIZATION__STATIC__GRANTS` (a JSON list).
+
+### Grants
+
+A grant gives every subject it names a level on every agent it names. A principal holds the highest
+level its grants give it. `subjects` and `agents` each take one entry or a list.
+
+| Subject | Who it names |
+| --- | --- |
+| `*` | Everyone, the anonymous principal included. |
+| `authenticated` | Every principal that is not anonymous, messaging and realtime senders included. |
+| `user:<subject>` | The principal with that subject, as the identity provider authenticated it. It never names a messaging or realtime sender, whose subject is a platform id, nor the anonymous principal. |
+| `group:<name>` | A principal whose `groups` include the name. |
+| `role:<name>` | A principal whose `roles` include the name. Roles come from the [role mapper](#role-mapper), or from a `static` entry. |
+| `provider:<name>` | A principal the named provider established (`oidc`, `static`, `messaging:slack`). A name ending in a colon matches by prefix: `provider:messaging:` is every messaging sender, `provider:realtime:` every realtime caller. |
+
+| Agent entry | Which agents |
+| --- | --- |
+| an agent id | That agent. |
+| `*` | Every agent. |
+| `tag:<name>` | Every agent whose descriptor carries the tag (`Module.describe(agent, tags=[...])` or `registry.agents.<id>.tags`). |
+
+The levels are ordered: `read`, then `write`, then `admin`. Any level runs the agent. The level decides
+which of the agent's tools the caller is offered ([Tool policy](#tool-policy)).
+
+Every caller needs a grant, not only the ones that send a token. A Slack user arrives as a
+`messaging:slack` principal, a LiveKit caller as `realtime:livekit`, and a CLI run without `--token`
+as the anonymous principal, so grant them through `provider:messaging:slack`, `provider:realtime:livekit`
+or `*` when they should reach an agent.
+
+### Visibility
+
+Each agent's descriptor declares a `visibility`, set with `Module.describe(agent, visibility=...)` or
+`registry.agents.<id>.visibility`. It decides who may see an agent they hold no level on:
+
+| `visibility` | Seen by |
+| --- | --- |
+| `private` (default) | Only the principals a grant names. |
+| `internal` | Those, and every authenticated principal. |
+| `public` | Everyone. |
+
+Seeing an agent is not using it: visibility never gives a level. The difference shows in the answer.
+A caller that names an agent it may not see gets the answer an agent that does not exist gets, so a
+response never confirms that a hidden agent is there. A caller that sees an agent and holds no level
+on it is told so.
+
+### What a caller gets
+
+| Surface | An agent the caller may not see | An agent it sees, with no level | Listing |
+| --- | --- | --- | --- |
+| REST chat and the thread chat routes | `404`, `Agent '<name>' not found`, the answer for an unknown agent | `403`, `Principal '<subject>' holds no level on agent '<name>'` | `GET /api/v1/agents` lists the agents the caller may see |
+| AG-UI | `404`, as for an unknown agent | `403` | `GET {prefix}/agents` lists the agents the caller may see |
+| A2A | `404` on every route of the agent, card included, as for an agent that is not served | `403` on the message and task routes; the card is still served | `/a2a/catalog` lists the cards the caller may see |
+| MCP | The tool is not listed, and a call is answered as a call to an unknown tool | The tool is listed; a call is the tool error `Agent not available` | `tools/list` lists the agents the caller may see |
+| Messaging integrations | The platform's error message is delivered | The same | n/a |
+| LiveKit realtime | No session is opened; the room gets one error, `Realtime session could not start: ...` | The same | n/a |
+| Scheduled tasks | Not created (the chat route's `404`); a task whose owner later loses access is [skipped](./scheduling.md#skipped-occurrences) when it fires | Not created (`403`); skipped when it fires | n/a |
+
+On the HTTP routes a refusal comes before anything is done for the request: no session is loaded, no
+thread message is written, and on a streaming route the status is sent before the stream opens. A
+request that names no agent runs the default agent, and when the caller may not see that agent the
+answer is `400`, `No agent available`, which names no agent.
+
+A listing carries only what the caller is offered. In a catalog entry and on an A2A card, `tools` and
+the skills that stand for a tool are narrowed to the ones the caller's level reaches; a skill you
+declared yourself, which names no tool, stays. Because the catalog and a card now depend on who asks,
+those A2A responses carry `Vary: Authorization`.
+
+### Sessions
+
+With the block, a session belongs to the first authenticated principal that ran in it, and only that
+principal continues it. Anyone else who sends its `session_id`, an anonymous caller included, gets a
+`403`, `Session '<id>' belongs to another principal`. A session nobody authenticated in has no owner
+and stays open.
+
+A conversation on a messaging platform or a realtime call is shared by nature: several people post in
+one Slack thread. Such a session belongs to the place it started in (the platform and its workspace,
+tenant or project) and not to one sender. Anyone from the same place continues it, and a caller from
+another workspace, another platform or the REST API does not.
+
+### Scheduled tasks
+
+A task runs as its owner. The owner must hold a level on the task's agent when the task is created,
+and is asked about again every time the task fires, since a grant can be taken away in between. An
+occurrence the owner may no longer run is not run: it is recorded on the task with the reason and
+answered `403`. See [Skipped occurrences](./scheduling.md#skipped-occurrences).
+
+The task keeps its owner as it was when the task was created, groups and roles included, because an
+unattended run has no token to read them from again. A group the identity provider later removes is
+therefore still on the task. To stop a task, change the grants, which are read each time it fires, or
+cancel it.
+
+### Tool policy
+
+A tool policy sets, per agent, which tools each level is offered:
+
+- **`tiers`** names the lowest level that is offered a tool. A tool with no tier is `read`, except
+  OAK's own tools that change something outside the conversation, which declare `write`: the sandbox
+  tools, the schedule tools, `write_kb` and `update_agui_state`.
+- **`allow`**, when set, is the whole list of tools the agent offers, whatever the level.
+- **`deny`** lists tools the agent never offers. It wins over `allow`.
+
+The policy is decided once per run and published. Tools and hooks read it:
+
+```python
+from agentkernel.core import AccessLevel, ToolContext
+
+def refund_order(order_id: str) -> str:
+    level = ToolContext.get().access_level   # None when no authorization block gates the run
+    if level is not None and level < AccessLevel.ADMIN:
+        return "Refunds need the admin level."
+    ...
+```
+
+`Session.get_tool_filter()` returns the whole decision in a hook or a tool: `level`, `allows(name)` and
+`reason(name)`, the sentence that says why a tool is refused.
+
+#### Where a denied tool is stopped
+
+On every framework the policy narrows what the catalog and A2A cards list and is published for your
+own code to read. Whether OAK also keeps the model from a denied tool depends on the framework the
+agent is built with:
+
+| Framework | A denied tool |
+|---|---|
+| OpenAI Agents SDK | Is not offered to the model, and a call that reaches it is answered with the reason. |
+| Pydantic AI | Is not offered to the model, and a call that reaches it is answered with the reason. |
+| Claude Agent SDK | Is not offered to the model (`disallowed_tools`), and a call that reaches it is denied with the reason. |
+| Microsoft Agent Framework | Is not offered to the model, and a call that reaches it is answered with the reason. A call to a hidden tool bound with `approval_mode="always_require"` is still put to a person first, since MAF asks before any middleware runs, and is refused when the approval arrives. |
+| Google ADK | Is still shown to the model; the call is answered with the reason and the tool is not run. |
+| CrewAI | Is still shown to the model; the call is blocked and the model reads the reason. |
+| LangGraph | Is still shown to the model; the call is answered with the reason and the tool is not run. Only tools bound with `LangGraphToolBuilder` can be gated: a bound tool is checked however it is called, while a node that calls an unbound tool or a plain function itself is outside the gate and the startup check. |
+| smolagents | Is still shown to the model; the call is answered with the reason and the tool is not run. |
+
+On a realtime call the OpenAI and Google ADK gates act as on a turn, with two differences. OpenAI's
+realtime session answers a denied tool `Tool <name> not found` rather than with the reason. And a call
+can have several participants (a LiveKit room), all speaking into one conversation, so the policy is
+the room's: a tool is offered only when every participant who has spoken may use it, at the lowest
+level among them, and a participant holding no level on the agent leaves the room no tool. Who
+spoke last does not matter, so no participant can borrow another's level. A tool still reads the
+identity of the participant who spoke last as its principal.
+
+The reason is the sentence `Session.get_tool_filter().reason(name)` gives, for example
+`Tool 'refund_order' requires level admin; the current principal has write`. The model reads it as the
+tool's result and carries on, so a refusal never fails the run.
+
+What the policy covers is the tools an agent declares when it loads, which are the tools its catalog
+entry lists:
+
+- **Tools that exist only inside a run are not offered.** The tools of an MCP server, or of a
+  toolset handed over for one run, have no name a policy could offer. On Pydantic AI, Microsoft
+  Agent Framework and Google ADK they are left out of, or refused in, a run that has an
+  `authorization` block. An OpenAI Agents SDK agent with `mcp_servers`, or with a handoff built by
+  hand that does not hold its agent, does not load while the block is configured: the error names
+  what could not be gated. A Claude Agent SDK agent's other MCP servers are the exception: they stay
+  outside the gate, as the hosted and built-in tools below do.
+- **Agents a run can reach.** A run keeps the policy of the agent it started with, whichever agent
+  ends up calling a tool. So the tools of the agents it can reach are listed under that agent and
+  take their tiers from its policy; state them there. That covers the agents an OpenAI agent hands
+  off to or uses as tools, the sub-agents, workflow nodes and agent tools under a Google ADK root,
+  and the coworkers of a CrewAI agent that may delegate.
+- **Moves between agents are not gated.** An OpenAI handoff, an ADK transfer to another agent, the
+  tools CrewAI adds for delegation and a call to a smolagents managed agent are how a run moves, not
+  tools you declared, so a policy cannot deny them. Nor is smolagents' `final_answer`, which ends a
+  run. The tools the run reaches afterwards are gated as above, and a smolagents manager lists the
+  tools of its managed agents.
+- **Tools OAK cannot gate stop the agent from loading.** With an `authorization` block, a LangGraph
+  agent with a tool not bound through `LangGraphToolBuilder` (a `@tool` from LangChain, a
+  `StructuredTool` you built), a smolagents code agent that runs its tools in a remote sandbox
+  (E2B, Docker, Modal), and an OpenAI Agents SDK agent with a tool the SDK runs in your process
+  without a guardrail (a local `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool` or
+  `CustomTool`) fail to load and the error names the tools. A LangGraph tool in a compiled
+  subgraph counts too. Rebind the tools with the tool builder or as function tools, or run the code
+  agent on the local executor.
+- **Hosted and built-in tools are not stopped.** A tool the provider runs (OpenAI's web search, file
+  search and code interpreter, Google Search and URL context on ADK), Claude Code's built-in tools
+  and the tools of other MCP servers on a Claude agent are outside the gate. The application starts
+  and logs a warning naming them; use the framework's own settings for those.
+- **A paused call.** A tool that waits for a human's approval is asked about again when the approval
+  arrives: if the policy denies it by then, it is not run.
+
+
+### Startup checks
+
+The policy is checked when the application starts, so a mistake does not wait for the request it
+would have affected:
+
+- A key the block does not take, a subject that is not one of the six forms, or a level outside the
+  three stops the application with an error that names the entry, for example
+  `authorization.static.grants[2]`.
+- A tool policy that names a tool its agent does not have stops the application, with the tools the
+  agent does have. A misspelt `deny` would otherwise deny nothing.
+- An agent with tools OAK cannot gate (a LangGraph tool not bound with `LangGraphToolBuilder`, the
+  tools of a smolagents code agent on a remote executor, an OpenAI agent's `mcp_servers`, a handoff
+  that does not hold its agent or an SDK tool that runs in the process) stops the application,
+  naming the tools.
+- A grant that names an agent id or a tag no agent carries, and a `role:` subject with no role mapper
+  configured, are logged as warnings: they match nothing today. So are an agent's hosted and
+  built-in tools, which the tool policy does not reach.
+
+### Where the block goes
+
+Put the same `authorization` block in the configuration of every process. The process that runs the
+agents is where the decision is enforced, for every run and whatever route the request took. The
+process that accepts requests answers early from the same policy: it filters the listings, and it
+refuses a request before queueing it when its [agent registry](../core-concepts/configuration.md#agent-registry)
+knows the agents. Where that process knows no agent at all, or the request arrives another way (a
+WebSocket frame, a messaging webhook), the runner's refusal is the one the caller gets.
+
+A handoff from one agent to another inside a framework is not a new request. The level is checked for
+the agent a request enters by.
+
+### Bring your own authorizer
+
+`type` also takes a dotted path to an `Authorizer` subclass, for a policy held somewhere else. The
+class is handed the whole block, with its own settings in `config.model_extra`, and answers two
+questions:
+
+```yaml
+authorization:
+  type: my_app.authz.TeamAuthorizer
+  team_service_url: https://teams.internal
+```
+
+```python
+from agentkernel.core import AccessLevel
+from agentkernel.identity import Authorizer, Decision
+
+class TeamAuthorizer(Authorizer):
+    def __init__(self, config):
+        self._url = config.model_extra["team_service_url"]
+
+    async def agent_level(self, principal, agent_id) -> AccessLevel | None:
+        """The level the principal holds on the agent, or None for no access."""
+        ...
+
+    async def check_tool(self, principal, agent_id, tool) -> Decision:
+        """Whether the principal may call the tool; a refusal carries the reason."""
+        return Decision(allowed=True)
+```
+
+Everything else has a default built on those two: `filter_tools` and `visible_agents` ask them once
+per item, and a backend that can answer a whole list at once overrides them. `validate` is where a
+backend checks its own policy at startup. An authorizer can be awaited from more than one event loop,
+so it must not tie a connection to the first one. `agentkernel.identity.authz.testing.AuthorizerContract`
+is a reusable pytest suite for an implementation. `casbin`, `openfga`, `cedar` and `authzen` are reserved
+type names for engines that are not shipped yet.
 
 ## What each surface does
 

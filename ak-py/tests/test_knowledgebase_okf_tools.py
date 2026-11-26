@@ -116,6 +116,17 @@ class TestToolSet:
 
         assert names(OKFToolFactory.get_tools("agent")) == WRITE_TOOLS
 
+    def test_write_kb_alone_declares_the_write_tier(self, monkeypatch, tmp_path):
+        """What an authorization policy applies when its `tiers` names no other (#603): a principal held to `read`
+        on the agent keeps the six read tools and is not offered the write."""
+        from agentkernel.core.model import AccessLevel
+
+        configure(monkeypatch, {"warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path), producer=["agent"])})
+
+        tiers = {tool.name: tool.tier for tool in OKFToolFactory.get_tools("agent")}
+
+        assert tiers == {**dict.fromkeys(READ_TOOLS, AccessLevel.READ), "write_kb": AccessLevel.WRITE}
+
     def test_write_kb_is_granted_by_any_writable_database(self, monkeypatch, tmp_path):
         # The tool's presence is per agent; whether a given call succeeds is per (agent, database).
         configure(

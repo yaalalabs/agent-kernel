@@ -132,7 +132,7 @@ Set up testing and debug common issues. Covers test modes (score, llm, fallback)
 
 ## Developer Skills: Accelerating Contributions with AI
 
-OAK doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains nineteen developer skills that teach coding assistants how to work on the OAK codebase itself.
+OAK doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains twenty developer skills that teach coding assistants how to work on the OAK codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards, eliminating the onboarding curve for new contributors.
 
@@ -152,6 +152,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-new-identity-provider` | How to add a new identity provider (beyond `oidc`, `cognito`, `entra`, `firebase` and `static`; Auth0, Keycloak and Okta are `oidc` configurations): the `IdentityProvider` contract (`authenticate` raising `AuthenticationError`, `security_scheme`, never writing `roles`), the config sub-block, factory registration behind `require_extra("auth")`, the dotted-path bring-your-own route, the role mapper, the `IdentityProviderContract`/`RoleMapperContract` suites, and docs, skills and example expectations |
 | `ak-dev-sync-skills-from-branch` | How to inspect branch commits plus uncommitted changes, then add/update/remove developer and user skills so the skill trees stay aligned with the implemented capability set |
 | `ak-dev-sync-docs-from-branch` | How to inspect branch commits plus uncommitted changes, then update root docs, package docs, website docs, deployment READMEs, and example READMEs so documentation matches the implemented behavior |
+| `ak-dev-sync-changelog-from-branch` | How to decide whether a branch changes anything users of OAK would notice, then add `changelog.d/<issue>.<type>.md` fragments written for users (never an edit to `CHANGELOG.md`) and check them the way the Changelog Check workflow and the release will |
 | `ak-dev-sync-skills-and-docs-from-commit` | How to process a specific commit hash (typically merged to develop), update dev/user skills and documentation based on that commit delta, and support automation PR flows with loop prevention |
 | `ak-dev-write-spec` | How to spec a planned change under `docs/specs/<issue-number>-<short-title>/` in three ordered stages: a concise point-form design spec (`design.md`) reviewed first, then a detailed implementation spec (`spec.md`), then a concise iteration-by-iteration plan (`plan.md`) the PR review checks the code against — plus an optional `research/` subfolder preserving the supporting investigation the design cites |
 | `ak-dev-review-pr` | Given a PR number or URL, fetch it with the GitHub CLI, review the delta against the architecture/code-quality/testing skills, dedupe findings, and post a single batched review with inline comments |

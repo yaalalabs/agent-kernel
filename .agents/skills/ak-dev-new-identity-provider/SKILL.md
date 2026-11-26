@@ -206,7 +206,11 @@ pins every dependency with.
   `title` saying so, as Auth0, Okta and Keycloak have); and the provider lines in the `points` of
   the **Identity and access** capability under Guard in `docs/src/pages/features.tsx`. The home
   page announcement (`HomeSections/Announcement.tsx`) names the providers while identity is the
-  newest capability. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`.
+  newest capability. A new short `type` name also joins the provider list of the two access
+  diagrams: `PROVIDERS` in `docs/src/components/AccessFlowDiagram` (the features page's closer
+  look) and the identity provider node of the Mermaid diagram under *How it fits together* in
+  `docs/docs/advanced/identity-and-access.md`. Logo sourcing and the build check are in
+  `ak-dev-sync-docs-from-branch`.
 
 ## Gotchas
 
@@ -244,3 +248,4 @@ pins every dependency with.
 - [ ] Factory tests (`TestFactoryBranches` in `test_identity_oidc.py` for a token issuer, `TestIdentityProviderFactory` in `test_identity_providers.py` otherwise)
 - [ ] Docs: `identity-and-access.md`, `configuration.md`, `ak-py/README.md`, root `README.md`, architecture skill, bundled skills and evals, landing inventories
 - [ ] `cd ak-py && uv run pytest tests/test_identity_*.py` and `make lint-check-all` clean
+- [ ] Changelog fragment `changelog.d/<issue>.added.md` (`+<short-slug>.added.md` when the PR has no issue; `.breaking.md` only when existing code, config or deployments stop working), written for users with `ak-dev-sync-changelog-from-branch`

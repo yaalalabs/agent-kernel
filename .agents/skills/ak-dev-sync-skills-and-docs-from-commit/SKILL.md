@@ -240,6 +240,7 @@ If example inventory changed, update docs-site overview/index pages that referen
 - If an example changed, update both its README and docs-site references.
 - If setup steps changed, update both quick-start/getting-started and deeper reference pages where relevant.
 - Write the product name by the rules in the *Naming and brand* section of `AGENTS.md`: "Open Agent Kernel" in titles and on first mention, "OAK" after that, identifiers and quoted product output unchanged.
+- Never create, edit or delete changelog fragments under `changelog.d/` or edit `CHANGELOG.md`. The source PR owns its changelog entry; a follow-up sync PR that added one would duplicate it.
 
 ## Step 8: Validation Checklist
 

@@ -17,7 +17,6 @@ one-item list of messages.
 import datetime
 import decimal
 import json
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -144,7 +143,7 @@ async def test_mcp_carries_the_same_pair(labelled_reply, monkeypatch):
     from agentkernel.api.mcp.akmcp import MCP
 
     monkeypatch.setattr(MCP, "_client", _QueueClient(labelled_reply))
-    result = await MCP.Executor("expenses").execute("s1", "hi", AsyncMock())
+    result = await MCP.Executor("expenses").execute("s1", "hi")
 
     assert result.structured_content == EXPECTED_CONTENT
     assert result.meta == {"media_type": MEDIA_TYPE}
@@ -186,7 +185,7 @@ async def test_an_array_payload_is_reshaped_only_by_mcp(monkeypatch):
     assert get_data_parts([await _a2a_part(reply, monkeypatch)]) == [content]
 
     monkeypatch.setattr(MCP, "_client", _QueueClient(reply))
-    mcp = await MCP.Executor("expenses").execute("s1", "hi", AsyncMock())
+    mcp = await MCP.Executor("expenses").execute("s1", "hi")
 
     assert mcp.structured_content == {"result": content}
     assert mcp.meta == {"media_type": MEDIA_TYPE, "fastmcp": {"wrap_result": True}}

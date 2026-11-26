@@ -92,6 +92,13 @@ Bring your own delivery for any platform by pointing its `outbound_adapter` sett
 path to your own `OutboundAdapter` subclass; bring your own parsing by passing your own
 `InboundAdapter` subclass to the handler.
 
+A sender runs the agent as a `messaging:<platform>` principal: the platform's user id as the subject,
+the workspace or tenant as the namespace. With an
+[`authorization`](../advanced/identity-and-access.md#authorization) block that principal needs a grant
+like any other caller, and a `user:<subject>` grant never names it. Grant the platform instead, for
+example `subjects: [provider:messaging:slack]`, or `provider:messaging:` for every platform. A sender
+without a grant gets the platform's error message in place of a reply.
+
 ### Custom
 For REST API based 'custom integrations' you can implement **RESTRequestHandler** and pass it to the `IOHandler.run(handlers=[...])` method alongside the messaging handlers.
 

@@ -224,3 +224,114 @@ def descriptor_only_registry():
             return list(self._descriptors.values())
 
     return DescriptorOnlyRegistry
+
+
+@pytest.fixture
+def surface_agent():
+    """The class of an agent served on the surfaces it is built with, whose reply is its own name (#603).
+
+    ``surface_agent("internal", ["a2a"])`` is on ``a2a`` only, ``surface_agent("public")`` on every surface. A run
+    replies with the agent's name, streamed or not, so a test reads from the reply which agent a request reached.
+    """
+    from agentkernel.core.base import Agent, Runner
+    from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
+    from agentkernel.core.model import AgentReplyText
+
+    class WhoRanRunner(Runner):
+        def __init__(self):
+            super().__init__("WhoRanRunner")
+
+        async def run(self, agent, session, requests):
+            return AgentReplyText(response=agent.name)
+
+        async def stream(self, agent, session, requests):
+            yield MessageStart(message_id="who-1")
+            yield TextDelta(message_id="who-1", content=agent.name)
+            yield MessageEnd(message_id="who-1")
+
+    class SurfaceAgent(Agent):
+        def __init__(self, name, surfaces=None):
+            super().__init__(name, WhoRanRunner())
+            self._set_descriptor(self.descriptor.model_copy(update={"surfaces": surfaces}))
+
+        def get_description(self):
+            return "Surface test agent"
+
+        def override_system_prompt(self, prompt):
+            pass
+
+        def attach_tool(self, tool):
+            pass
+
+    return SurfaceAgent
+
+
+@pytest.fixture
+def kept_off_rest(surface_agent):
+    """A runtime of the test's own hosting an agent kept off ``rest`` beside one on every surface (#603).
+
+    ``internal`` is on ``a2a`` only and registered first, so it is the agent a request naming none would reach
+    were surfaces ignored; ``public`` is on every surface. Not entered: a test runs under it with ``with``.
+    """
+    from agentkernel.core.runtime import Runtime
+    from agentkernel.core.session.in_memory import InMemorySessionStore
+
+    runtime = Runtime(InMemorySessionStore())
+    runtime.register(surface_agent("internal", ["a2a"]))
+    runtime.register(surface_agent("public"))
+    return runtime
+
+
+@pytest.fixture
+def authorization(monkeypatch):
+    """Returns a function that installs an ``authorization`` block of type ``static`` on the live configuration (#603).
+
+    ``authorization(grants=[...], tools=[...])`` puts the block where ``AuthorizerFactory`` and the access gate
+    read it, so everything from the gate down runs as it does in a configured process: the real factory, the real
+    static backend with the lookups it supplies itself, the real gate. The shared authorizer and gate are dropped
+    before and after, and the block is removed when the test ends. A test that replaces or resets ``AKConfig``
+    calls it afterwards.
+    """
+    from agentkernel.core.config import AKConfig, _AuthorizationConfig
+    from agentkernel.identity.authz.factory import AuthorizerFactory
+    from agentkernel.identity.authz.gate import AccessGate
+
+    def _forget() -> None:
+        AuthorizerFactory.reset()
+        AccessGate.reset()
+
+    def _install(grants=(), tools=()):
+        block = _AuthorizationConfig.model_validate({"type": "static", "static": {"grants": list(grants), "tools": list(tools)}})
+        monkeypatch.setattr(AKConfig.get(), "authorization", block)
+        _forget()
+        return block
+
+    _forget()
+    yield _install
+    _forget()
+
+
+@pytest.fixture
+def mcp_asgi_transport():
+    """Returns a function that builds a FastMCP HTTP transport to an ASGI app, served in-process.
+
+    ``mcp_asgi_transport(app, auth=...)`` gives a ``StreamableHttpTransport`` whose client talks to ``app``
+    with no socket. FastMCP 4's transport takes an ``httpx2`` client only, so the factory builds one.
+    """
+    import httpx2
+    from fastmcp.client.transports import StreamableHttpTransport
+
+    def _transport(app, auth=None):
+        def factory(headers=None, timeout=None, auth=None, **kwargs):
+            return httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app),
+                base_url="http://mcp.test",
+                headers=headers,
+                timeout=timeout or httpx2.Timeout(30),
+                auth=auth,
+                **kwargs,
+            )
+
+        return StreamableHttpTransport("http://mcp.test/", auth=auth, httpx_client_factory=factory)
+
+    return _transport

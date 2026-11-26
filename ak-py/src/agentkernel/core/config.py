@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .model import AgentIdentitySpec, AgentSurface, ExecutionMode, ReplyMessageType
+from .model import AccessLevel, AgentIdentitySpec, AgentSurface, ExecutionMode, ReplyMessageType
 from .util.config_yaml_util import YamlBaseSettingsModified
 from .util.factory import AKConfigError
 
@@ -176,9 +176,10 @@ class _MCPConfig(_SurfaceConfig):
     )
     stateless_http: bool = Field(
         default=False,
-        description="Run MCP in stateless HTTP mode. Each request is independent (no Mcp-Session-Id). "
-        "Useful for debugging with MCP Inspector and clients that don't support sessions. "
-        "Trade-off: server-side session features (sampling, mid-call notifications) are unavailable.",
+        description="Serve older (2025-11-25) MCP clients statelessly: each request is independent "
+        "(no Mcp-Session-Id), so any replica can answer it. Set it when more than one replica serves /mcp. "
+        "2026-07-28 clients are always stateless and are not affected. "
+        "Trade-off for older clients: server-side session features (sampling, mid-call notifications) are unavailable.",
     )
 
 
@@ -1553,6 +1554,105 @@ class _IdentityConfig(BaseModel):
     )
 
 
+class _GrantConfig(BaseModel):
+    """One grant of the static authorizer: every subject it names holds ``level`` on every agent it names.
+
+    Unknown keys are refused: ``agent:`` written for ``agents:`` has to fail where it is written.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    subjects: list[str] = Field(
+        description=(
+            "Who the grant applies to, one entry or a list: '*' (everyone, anonymous callers included), 'authenticated', "
+            "'user:<subject>', 'group:<name>', 'role:<name>', or 'provider:<name>' (a name ending in ':' matches by prefix, "
+            "so 'provider:messaging:' is every messaging sender)"
+        )
+    )
+    agents: list[str] = Field(
+        description="The agents the grant applies to, one entry or a list: an agent id, '*' (every agent), or 'tag:<name>' (the agents carrying the tag)"
+    )
+    level: AccessLevel = Field(description="The access level granted: read, write or admin. A principal holds the highest level its grants give")
+
+    @field_validator("subjects", "agents", mode="before")
+    @classmethod
+    def _one_entry_is_a_list(cls, value: Any) -> Any:
+        """Accept a bare string for a single subject or agent, the common case in a hand-written grant."""
+        return [value] if isinstance(value, str) else value
+
+
+class _ToolPolicyConfig(BaseModel):
+    """The static authorizer's tool policy for one agent: the tier of each tool, and the tools it allows or denies.
+
+    Unknown keys are refused: a misspelt ``deny`` or ``tiers`` silently ignored would leave a tool more
+    reachable than the configuration reads.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent: str = Field(description="The id of the agent the policy applies to")
+    tiers: dict[str, AccessLevel] = Field(
+        default_factory=dict,
+        description=(
+            "Tool name -> the lowest level that may call it (read, write or admin). A tool not listed keeps the tier it "
+            "declares when it is one of Agent Kernel's own tools, and is read otherwise"
+        ),
+    )
+    allow: list[str] | None = Field(
+        default=None, description="When set, the only tools the agent offers, whatever the level; omitted, every tool the level reaches"
+    )
+    deny: list[str] = Field(default_factory=list, description="Tools the agent never offers, at any level; deny wins over allow")
+
+
+class _StaticAuthorizerConfig(BaseModel):
+    """Settings of the `static` authorizer: its policy, as grants and a per-agent tool policy.
+
+    Unknown keys are refused: ``tool:`` written for ``tools:`` would drop every tier and deny list beneath
+    it without a word.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    grants: list[_GrantConfig] = Field(
+        default_factory=list, description="Who holds which level on which agents. With none, every agent is denied to every principal"
+    )
+    tools: list[_ToolPolicyConfig] = Field(
+        default_factory=list, description="The tool policy, one entry per agent: tiers, an allow-list and a deny list"
+    )
+
+
+class _AuthorizationConfig(BaseModel):
+    """Authorization capability: which authorizer decides, and each built-in backend's settings. Presence enables it.
+
+    A built-in backend keeps its settings in a section named after it (``static``), and the block refuses
+    any other key for one: a policy written beside ``type``, or under a misspelt section, would be dropped
+    without a word. A bring-your-own authorizer (a dotted-path type) reads the settings of its own from
+    ``model_extra``, and owns its policy.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(
+        default="static",
+        description="Authorizer: static, or a dotted path to an Authorizer subclass. casbin, openfga, cedar and authzen are reserved names, not shipped yet",
+    )
+    static: _StaticAuthorizerConfig | None = Field(default=None, description="Settings of the static authorizer: its grants and tool policy")
+
+    @model_validator(mode="after")
+    def _check_authorizer_settings(self) -> "_AuthorizationConfig":
+        """Fail at load time for a key the block does not take, or a built-in backend whose section is missing.
+
+        A dotted-path authorizer is there to read the keys of its own, and validates them in its constructor.
+        """
+        unknown = sorted(self.model_extra or {})
+        if unknown and "." not in self.type:
+            names = ", ".join(f"authorization.{key}" for key in unknown)
+            raise AKConfigError(f"{names} is not a setting of the authorization block; it takes type and static")
+        if self.type.lower() == "static" and self.static is None:
+            raise AKConfigError("authorization.type static requires the authorization.static block")
+        return self
+
+
 class _RegistryStoreConfig(BaseModel):
     """What the registry's store blocks share: a descriptor does not expire.
 
@@ -1721,6 +1821,10 @@ class AKConfig(YamlBaseSettingsModified):
     identity: _IdentityConfig | None = Field(
         default=None,
         description="Identity capability configurations (the provider that authenticates callers, the role mapper). Absent = every request is the anonymous principal.",
+    )
+    authorization: _AuthorizationConfig | None = Field(
+        default=None,
+        description="Authorization capability configurations (the authorizer that decides who may use which agent and tool, and the settings of each built-in backend). Absent = nothing is restricted.",
     )
     registry: _RegistryConfig | None = Field(
         default=None,

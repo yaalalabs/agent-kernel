@@ -436,6 +436,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
             # The connection's principal is the run's: `from_payload` dropped anything the frame named.
             body.principal = ctx.principal
+            # A chat frame is a REST-family request: only an agent on `rest` is served to it.
+            body.surface = "rest"
             if self._is_queue_mode():
                 return await self._enqueue_chat(body, ctx.user_id, ctx.message.request_id, session_id, ctx.endpoint_url)
             if self._config.execution.is_delta:

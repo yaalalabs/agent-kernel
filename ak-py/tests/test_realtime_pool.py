@@ -438,7 +438,7 @@ class TestRealtimePrincipal:
         """Every audio chunk is an input, so an unchanged principal is not republished per chunk."""
         conn = _connection(loop=asyncio.get_running_loop())
         published = []
-        monkeypatch.setattr(conn.runtime, "_publish", lambda agent, session, principal: published.append(principal))
+        monkeypatch.setattr(conn.runtime, "_publish", lambda agent, session, principal, tool_filter=None: published.append(principal))
         other = Principal(subject="guest", provider="realtime:livekit", namespace="lk-key")
 
         for principal in (HUMAN, HUMAN, other, other, None):
@@ -1079,6 +1079,17 @@ class TestRealtimeEndSession:
         assert pool.get_connection("s1") is None
         assert chat_service.prepare_agent_handler.call_count == 1
 
+    def test_the_agent_check_of_a_new_connection_is_made_for_the_inputs_principal(self, pool):
+        """With an authorization block the access gate decides for the caller of the first input, not for nobody
+        (#603, iteration 18)."""
+        chat_service = self._chat_service()
+        caller = Principal(subject="caller-1", provider="realtime:livekit", namespace="lk-project")
+        body = BaseRunRequest(prompt="", session_id="s1", requests=[AgentRequestText(prompt="hi")], principal=caller)
+
+        pool.dispatch(body, "r1", None, {}, chat_service)
+
+        chat_service.prepare_agent_handler.assert_called_once_with("s1", None, principal=caller)
+
     def test_the_control_for_a_session_with_no_connection_creates_none(self, pool):
         chat_service = self._chat_service()
 
@@ -1144,6 +1155,186 @@ class TestRealtimeFailedStart:
         assert len(errors) == 1
         assert "invalid API key" in errors[0]["error"] and errors[0]["done"] is True
         assert chat_service.prepare_agent_handler.call_count == 1
+
+
+class TestRealtimeRefusedCaller:
+    """A call whose caller the access gate refuses the agent never opens a native session (#603, plan iteration
+    20). The room is told once, with a terminal error chunk, the input is not handed back to the queue to be
+    retried, and what the caller says next is dropped for a while instead of being asked about frame by frame."""
+
+    # No request id among them: the runner resolves it (from the body, for some producers) and hands it to dispatch.
+    ATTRIBUTES = {ATTR_INTEGRATION: "livekit", "reply_session_id": "s1"}
+    CALLER = Principal(subject="caller-1", provider="realtime:livekit", namespace="lk-project")
+
+    @pytest.fixture
+    def clock(self, monkeypatch):
+        now = [1000.0]
+        monkeypatch.setattr("agentkernel.realtime.pool.time", types.SimpleNamespace(time=lambda: now[0]))
+        return now
+
+    @pytest.fixture
+    def served(self, monkeypatch, clock):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        yield pool, transport
+        ThreadRunner.shutdown_event.set()
+        thread.join(timeout=5)
+
+    @staticmethod
+    def _refusing(error):
+        from unittest.mock import MagicMock
+
+        chat_service = MagicMock()
+        chat_service.prepare_agent_handler.side_effect = error
+        return chat_service
+
+    def _input(self, session_id="s1"):
+        return BaseRunRequest(prompt="", session_id=session_id, agent="concierge", requests=[AgentRequestText(prompt="hi")], principal=self.CALLER)
+
+    def test_a_refusal_reaches_the_room_as_one_terminal_error_chunk_and_is_not_raised(self, served):
+        from agentkernel.core.registry import AgentNotFoundError
+
+        pool, transport = served
+        chat_service = self._refusing(AgentNotFoundError("concierge"))
+
+        pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, chat_service)  # raised, the queue would redeliver it
+
+        [message] = _drain_output(transport)
+        chunk = json.loads(message.body)
+        assert (chunk["done"], chunk["error"]) == (True, "Realtime session could not start: Agent 'concierge' not found")
+        # Marked and addressed like any realtime output, so the response handler finds the room it belongs to.
+        assert message.attributes[ATTR_REALTIME] == "true" and message.attributes[ATTR_INTEGRATION] == "livekit"
+        assert (message.attributes["reply_session_id"], message.attributes["request_id"], message.group_id) == ("s1", "r1", "s1")
+        assert pool.get_connection("s1") is None
+
+    def test_a_caller_with_no_level_is_told_the_same_way(self, served):
+        pool, transport = served
+        chat_service = self._refusing(PermissionError("Principal 'caller-1' holds no level on agent 'concierge'"))
+
+        pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, chat_service)
+
+        [message] = _drain_output(transport)
+        assert json.loads(message.body)["error"] == "Realtime session could not start: Principal 'caller-1' holds no level on agent 'concierge'"
+
+    def test_what_the_caller_says_next_is_dropped_without_asking_again(self, served):
+        from agentkernel.core.registry import AgentNotFoundError
+
+        pool, transport = served
+        chat_service = self._refusing(AgentNotFoundError("concierge"))
+
+        for _ in range(5):  # every audio frame is an input
+            pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, chat_service)
+
+        assert chat_service.prepare_agent_handler.call_count == 1
+        assert len(_drain_output(transport)) == 1
+
+    def test_the_caller_is_asked_about_again_after_a_delay_that_doubles(self, served, clock):
+        from agentkernel.core.registry import AgentNotFoundError
+
+        pool, _ = served
+        chat_service = self._refusing(AgentNotFoundError("concierge"))
+        asked = lambda: chat_service.prepare_agent_handler.call_count
+
+        for attempt, delay in enumerate([1.0, 2.0, 4.0], start=1):
+            pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, chat_service)
+            assert asked() == attempt
+            assert pool._failures["s1"] == (attempt, clock[0] + delay)
+            clock[0] += delay - 0.1
+            pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, chat_service)  # still held back
+            assert asked() == attempt
+            clock[0] += 0.1
+
+    def test_each_refusal_of_a_redelivered_input_is_a_message_of_its_own(self, served, clock):
+        from agentkernel.core.registry import AgentNotFoundError
+
+        pool, transport = served
+        chat_service = self._refusing(AgentNotFoundError("concierge"))
+
+        pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, chat_service)
+        clock[0] += 1.0
+        pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, chat_service)
+
+        # A FIFO queue drops a message whose deduplication id it has seen: the second telling must not be one.
+        first, second = _drain_output(transport)
+        assert first.dedup_id and second.dedup_id and first.dedup_id != second.dedup_id
+
+    def test_a_grant_given_meanwhile_opens_the_call_at_the_next_attempt(self, served, clock):
+        from agentkernel.core.registry import AgentNotFoundError
+
+        pool, _ = served
+        chat_service = self._refusing(AgentNotFoundError("concierge"))
+        pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, chat_service)
+        granted = TestRealtimeEndSession._chat_service()
+
+        clock[0] += 1.0
+        pool.dispatch(self._input(), "r2", None, self.ATTRIBUTES, granted)
+
+        assert pool.get_connection("s1") is not None
+
+    def test_the_end_of_the_call_forgets_the_refusal(self, served):
+        from agentkernel.core.registry import AgentNotFoundError
+
+        pool, _ = served
+        chat_service = self._refusing(AgentNotFoundError("concierge"))
+        pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, chat_service)
+
+        pool.dispatch(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r2", None, {ATTR_REALTIME_END: "true"}, chat_service)
+
+        assert "s1" not in pool._failures
+
+    def test_another_call_is_not_held_back(self, served):
+        from agentkernel.core.registry import AgentNotFoundError
+
+        pool, _ = served
+        pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, self._refusing(AgentNotFoundError("concierge")))
+
+        pool.dispatch(TestRealtimeEndSession._input("s2"), "r2", None, {}, TestRealtimeEndSession._chat_service("s2"))
+
+        assert pool.get_connection("s2") is not None
+
+    @pytest.mark.parametrize("error", [ValueError("No agent available"), RuntimeError("the session store is down")], ids=["no-agent", "failure"])
+    def test_anything_but_a_refusal_is_still_raised_for_the_queue_to_retry(self, served, error):
+        pool, transport = served
+
+        with pytest.raises(type(error), match=str(error)):
+            pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, self._refusing(error))
+
+        assert "s1" not in pool._failures
+        assert _drain_output(transport) == []
+
+    def test_a_chunk_that_cannot_be_sent_does_not_turn_the_refusal_into_a_retry(self, served, monkeypatch):
+        from agentkernel.core.registry import AgentNotFoundError
+
+        pool, transport = served
+        monkeypatch.setattr(transport, "send", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("the output queue is down")))
+
+        pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, self._refusing(AgentNotFoundError("concierge")))
+
+        assert pool._failures["s1"][0] == 1
+
+    def test_the_real_gate_refuses_a_caller_the_policy_does_not_name(self, served, authorization, monkeypatch):
+        """Nothing mocked below the pool: the chat service, the runtime hosting a realtime agent, the access gate."""
+        from agentkernel.core.chat_service import ChatService
+        from agentkernel.core.config import AKConfig
+
+        pool, transport = served
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+        authorization(grants=[{"subjects": ["user:someone-else"], "agents": ["concierge"], "level": "read"}])
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(_Agent("concierge"))
+        try:
+            with runtime:
+                pool.dispatch(self._input(), "r1", None, self.ATTRIBUTES, ChatService())
+        finally:
+            AKConfig._reset()
+
+        [message] = _drain_output(transport)
+        assert json.loads(message.body)["error"] == "Realtime session could not start: Agent 'concierge' not found"
+        assert pool.get_connection("s1") is None
 
 
 class TestRealtimeReconnectBackoff:
@@ -1545,7 +1736,7 @@ class TestCloseBarrier:
     def _chat_service():
         from unittest.mock import MagicMock
 
-        def prepare(session_id, agent):
+        def prepare(session_id, agent, principal=None):
             return types.SimpleNamespace(
                 service=types.SimpleNamespace(
                     agent=_Agent(realtime_runner_cls=_SlowCloseAdapter), runtime=Runtime(InMemorySessionStore()), session=Session(session_id)

@@ -108,6 +108,11 @@ read it through `session.get_principal()` and `ToolContext.get().principal`. A r
 credential, or with one the provider refuses, is a 401. See
 [Identity and access](../advanced/identity-and-access.md).
 
+Authenticating a caller does not by itself limit which agents it runs. An optional
+[`authorization`](../advanced/identity-and-access.md#authorization) block does: the listing then holds
+the agents the caller may see, a run for an agent hidden from it is the same 404 an unknown agent gets,
+and a run for an agent it sees and holds no level on is a 403.
+
 An agent that is not exposed on AG-UI is treated exactly as an unknown agent, a 404, so the
 surface never confirms that a name exists but is hidden. So is an agent the handler does not serve:
 `AGUIRequestHandler` runs agents in its own process and lists and serves only the ones loaded there,

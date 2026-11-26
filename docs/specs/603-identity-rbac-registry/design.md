@@ -498,9 +498,12 @@ and `research/design-options.md` section 4).
   extra), `authzen` (HTTP, no extra), else a dotted path to an `Authorizer` subclass, else
   `AKConfigError`. Only `static` is implemented in the first iteration; `casbin` is the first
   engine after it (settled, Q11: in-process, runs in CI with no service) and the others are named
-  branches whose adapters subclass the contract suite when they land.
-- `StaticAuthorizer` (`static`) evaluates the `authorization.grants` and `authorization.tools`
-  blocks (its policy source; engine backends ignore these blocks and own their policy):
+  branches whose adapters subclass the contract suite when they land. Every backend is built from
+  the block alone: a built-in one reads the section of the block named after it, a dotted path
+  is handed the whole block (spec refinement 15).
+- `StaticAuthorizer` (`static`) evaluates the `grants` and `tools` of its own section of the
+  block, `authorization.static` (its policy source, the shape `identity.provider.static` has;
+  an engine backend has a section of its own and owns its policy; spec refinement 15):
   - A grant is `subjects`, `agents`, `level`. `subjects` and `agents` are lists; a bare string is
     coerced to a one-element list, so `agents: support-triage` and `agents: [a, b]` are both
     valid. A grant applies to every (subject, agent) pair it names.
@@ -523,19 +526,52 @@ and `research/design-options.md` section 4).
     `tier`, else `read`.
   - `check_tool` allows when the tool is not in `deny`, is in `allow` when `allow` is set, and its
     tier is at or below `agent_level`; `agent_level` of `None` denies everything.
-  - With the block present and no grants at all, every agent is denied for every principal except
-    through `visibility`; one warning at startup names the empty block.
+  - With a `static` section that states no grants, every agent is denied for every principal
+    except through `visibility`; one warning at startup names the empty grants. A block of type
+    `static` with no `static` section is refused when the configuration is loaded (spec
+    refinement 15).
 - `AccessGate` (class, `identity/authz/gate.py`): the one consumer of registry plus authorizer.
   `get()` returns `None` when authorization is not configured. Methods: `authorize_agent(principal,
-  agent_id) -> AccessLevel` (raises `PermissionError` when `None`; raises `LookupError("Agent
-  '<id>' not found")` when the registry has no descriptor, the error and the 404 of an agent the
-  caller may not see and of an unknown agent named in a request, spec refinement 9),
+  agent_id) -> AccessLevel` (raises `PermissionError` when `None`; raises `AgentNotFoundError`,
+  a `LookupError` reading `Agent '<id>' not found`, when the registry has no descriptor: the
+  error and the 404 of an agent the caller may not see and of an unknown agent named in a
+  request, spec refinement 9),
   `visible(principal, descriptor) -> bool` (`agent_level is not None`,
   or `visibility` admits: `public` everyone, `internal` non-anonymous, `private` nobody; settled Q5:
   visibility never confers a level), `visible_agents(principal) -> list[AgentDescriptor]`,
   `tool_filter(principal, agent) -> ToolFilter` (the per-run allow set over
   `agent.get_tool_names()`, with `reason` per denied tool and the resolved `level`, which
   `ToolContext.access_level` exposes).
+- As built (spec refinement 16):
+  - The policy checks below are the backend's own (`Authorizer.validate`, which the gate calls).
+  - `Module.load` leaves the registry-wide warnings to the `get_router()` call.
+  - A shared-channel session is matched on provider and namespace alone.
+  - A request naming no agent is decided for the default agent where the agent runs.
+- As built (spec refinement 17):
+  - A scheduled task keeps the surface of the request that created it, and its occurrences are
+    served the agents on it.
+  - The precheck at the accepting process covers a named agent.
+    - A process whose registry knows no agent skips it, which leaves the answer to the runner.
+  - An occurrence is skipped whenever the availability check refuses its named agent, with or
+    without an `authorization` block.
+  - A catalog entry is narrowed over the tools its descriptor records (`AccessGate.narrow`).
+- As built (spec refinement 18):
+  - A2A answers a refusal in front of the SDK, which has no permission error.
+    - A hidden agent is the bare 404 of an unmounted path, on every route.
+    - A visible agent the caller holds no level on is a 403.
+  - A card's ETag is the SDK's, over the card as served.
+  - A2A and the direct AG-UI handler decide among the agents they serve, without reading the
+    registry per request.
+  - A realtime call whose caller is refused is told once and held back.
+  - A2A's routes are mounted per agent, so one fallback route behind them answers every request
+    no A2A route served the same for every name: a name that is not mounted, a wrong method, a
+    refused credential, a trailing slash.
+    - Cost: with an `authorization` block a wrong method is a 404, not a 405.
+- As built (spec refinement 19):
+  - A `tag:` entry is matched against a hosted agent's own descriptor, so no run reads the
+    registry for a tag.
+  - The registry is listed only for an agent hosted elsewhere, at most once per question or
+    listing.
 - Startup validation (`AccessGate.validate_configuration()`, called from `Module.load` for the
   agents it loads and from the handlers' `get_router()`): an `allow`, `deny` or `tiers` entry naming
   a tool the loaded agent does not have raises `AKConfigError`; a grant naming an unknown agent id
@@ -567,18 +603,19 @@ identity:
   role_mapper: {type: mapping, mapping: {sre-oncall: [operator], platform-admins: [admin]}}
 authorization:
   type: static
-  grants:
-    - {subjects: role:admin,     agents: "*",                     level: admin}
-    - {subjects: role:operator,  agents: k8s-troubleshooter,      level: write}
-    - {subjects: group:support,  agents: [support-triage, faq],   level: write}
-    - {subjects: authenticated,  agents: support-triage,          level: read}
-    - {subjects: "*",            agents: faq,                     level: read}
-  tools:
-    - agent: k8s-troubleshooter
-      tiers: {kubectl_get: read, kubectl_describe: read, kubectl_apply: write, kubectl_delete_namespace: admin}
-    - agent: support-triage
-      tiers: {lookup_ticket: read, create_ticket: write, refund: admin}
-      deny: [delete_ticket]
+  static:
+    grants:
+      - {subjects: role:admin,     agents: "*",                     level: admin}
+      - {subjects: role:operator,  agents: k8s-troubleshooter,      level: write}
+      - {subjects: group:support,  agents: [support-triage, faq],   level: write}
+      - {subjects: authenticated,  agents: support-triage,          level: read}
+      - {subjects: "*",            agents: faq,                     level: read}
+    tools:
+      - agent: k8s-troubleshooter
+        tiers: {kubectl_get: read, kubectl_describe: read, kubectl_apply: write, kubectl_delete_namespace: admin}
+      - agent: support-triage
+        tiers: {lookup_ticket: read, create_ticket: write, refund: admin}
+        deny: [delete_ticket]
 registry:
   agents:
     faq: {visibility: public}
@@ -607,7 +644,7 @@ registry:
   limits the offer to the tools it names.
 - A higher level widens which tools are offered; it never changes what a tool does. A
   `read`-tier tool behaves the same for Carol as for Dave. The tier is a static property of the
-  tool on that agent (`authorization.tools`); the level is the per-principal value resolved from
+  tool on that agent (`authorization.static.tools`); the level is the per-principal value resolved from
   `grants`. A capability whose read and write forms should reach different principals is
   modelled as two tools with two tiers (`lookup_ticket` at `read`, `create_ticket` at `write`),
   the recommended pattern. A tool that cannot be split declares the tier of its least-privileged
@@ -667,7 +704,7 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 
 | Adapter | List time | Call time | Not covered |
 |---|---|---|---|
-| Microsoft Agent Framework (agent-framework-core 1.20.0, `framework/maf/`) | none (the tool list is static on the agent) | a per-run `FunctionMiddleware` passed through `Agent.run(middleware=...)` that sets a denial result instead of calling next | hosted and provider-executed tools |
+| Microsoft Agent Framework (agent-framework-core 1.20.0, `framework/maf/`) | none (the tool list is static on the agent); as built, a chat middleware leaves denied tools out of each request (review of #1018) | a per-run `FunctionMiddleware` passed through `Agent.run(middleware=...)` that sets a denial result instead of calling next; as built, first on the native agent | hosted and provider-executed tools |
 | Realtime runners (`core/realtime/runner.py:124`) | none (the session's tool list is declared at connect) | the AK-owned `execute_tool` entry point, before the adapter runs the tool | none: this is the one place AK already owns the call |
 | OpenAI Agents SDK (0.20.0) | `FunctionTool.is_enabled` composed with any user-set callable (AND) | `tool_input_guardrails` entry returning `reject_content(reason)` | Hosted tools (web search, file search, computer use) |
 | Pydantic AI (2.13.0) | a per-run `capabilities=[AKToolGateCapability]` whose `prepare_tools` drops denied definitions, composed AK-first with any caller capabilities (2.13.0 has no `prepare_tools` on `Agent`; spec refinement 2) | the same capability's `before_tool_execute` raising `ModelRetry(reason)` | none: the capability sees every `ToolDefinition`, attached toolsets included |
@@ -677,6 +714,53 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 | smolagents | none | `Tool.forward` wrapped on every tool in `agent.tools` at wrap time, native ones included | tools added to `agent.tools` after wrap time: refused at startup with `authorization` configured, as for LangGraph (settled, Q12; spec refinement 4) |
 | Claude Agent SDK (`framework/claude/`, #833) | per run: a denied `mcp__ak__<name>` is left out of the `allowed_tools` the runner builds and added to `disallowed_tools` on the run's `ClaudeAgentOptions`, so the SDK never offers it | the per-run `PreToolUse` matcher the HITL gate already installs (`framework/claude/claude.py:512`) answers `permissionDecision: "deny"` with the reason in `permissionDecisionReason`; AK's check runs ahead of the approval branch, so a denied tool never pauses | Claude Code's built-in tools and tools from other `mcp_servers`: `get_tool_names` lists only the tools the in-process `ak` server serves, and the gate leaves the rest to the SDK's own permission settings |
 
+- As built (spec refinement 20), for OpenAI, Pydantic AI, MAF and Claude:
+  - A gate refuses a tool the filter never listed, so an adapter declares every tool its gate
+    can see.
+  - OpenAI: the tools of the agents a run hands off to, or uses as tools, are declared under
+    the agent the run started with and gated by its filter.
+    - A policy for that agent states their tiers; the other agent's policy is not consulted.
+  - OpenAI: an MCP server, and a handoff that does not hold its agent, are ungated and refused
+    at startup under `authorization` (the Q12 rule). A hosted tool is declared and not gated.
+  - OpenAI: the gate is put on the native tools only when the block is configured.
+  - Pydantic AI: a denied call is answered with the reason as its result, not with a retry.
+  - Pydantic AI: a tool behind a prefixed or renamed toolset is declared under the name the
+    model calls.
+  - A call approved while paused is decided again by the filter of the resume.
+  - A gate that cannot answer refuses the tool.
+- As built (spec refinement 21), for ADK and CrewAI:
+  - A framework's own control-flow tools are not gated: ADK's transfer and structured-response
+    tools, CrewAI's delegation tools.
+    - A policy cannot deny a move between agents; the tools reached next are gated.
+  - ADK: the callback is on every agent a run can reach, agents used as tools and the nodes of
+    nested workflows included, and their tools are declared under the root.
+  - CrewAI: a refused call is blocked by a before hook, and an after hook gives the model the
+    reason in place of CrewAI's own line.
+  - CrewAI: an agent that may delegate declares its coworkers' tools.
+  - Both are put in place only when the block is configured.
+- As built (spec refinement 22), LangGraph, smolagents and realtime:
+  - A realtime call with several participants runs its tools as all of them: a tool is offered
+    only when every participant who has spoken may use it, at the lowest of their levels.
+    - The principal a tool reads is still the last speaker's.
+  - smolagents: `final_answer` and calls to managed agents are not gated; managed agents' tools
+    are declared under the manager.
+  - smolagents: a code agent on a remote executor is ungated as a whole, so it does not load
+    under `authorization`.
+  - LangGraph: the tools of compiled subgraphs are declared and checked.
+  - OpenAI realtime answers a denied tool `Tool <name> not found`, without the reason.
+  - Tools a provider runs are logged once per agent at startup (`Agent.provider_tool_names`).
+- As built (review of #1018):
+  - OpenAI: a tool the SDK runs in the process without asking the gate (a local shell, an
+    apply-patch editor, a computer, a custom tool) is ungated, so the agent does not load under
+    `authorization`; only the hosted tool types and a shell in a hosted container are the provider's.
+    Both are allowlists: a tool type or environment a later SDK adds is refused until it is classified.
+  - MAF: a denied tool is also kept from the model (a chat middleware), and both middleware sit
+    first on the native agent, ahead of the application's own, only under `authorization`.
+  - ADK's `FinishTaskTool` is a control-flow tool like transfer.
+  - CrewAI: the gate's before hook runs first, and a call is decided by the tool's declared name.
+  - smolagents: a code agent's tools see the run's context on the local executor's worker thread.
+  - Realtime: a participant the authorizer cannot answer for leaves the room no tool, whoever speaks
+    next, and their next input asks again.
 - Every adapter resolves nothing itself: it reads `TOOL_FILTER_CACHE_KEY` from the session's
   volatile cache (set by `Runtime`), so with no `authorization` block the filter is absent and the
   native calls are keyword-for-keyword what they are today (the #754 invariant).
@@ -753,15 +837,16 @@ identity:
       # when required: {audience: "api://billing", type: entra_obo, scopes: [Invoices.Read]}
 authorization:
   type: static                      # static | casbin | openfga | cedar | authzen | dotted path
-  grants:
-    - {subjects: role:admin, agents: "*", level: admin}
-    - {subjects: [group:support, role:cx-lead], agents: [support-triage, faq], level: write}
-    - {subjects: authenticated, agents: faq, level: read}
-  tools:
-    - agent: support-triage
-      tiers: {create_ticket: write, lookup_ticket: read}
-      allow: null                   # optional allow-list over the agent's bound tools
-      deny: [delete_ticket]
+  static:                           # the static authorizer's policy; each built-in backend has its own section
+    grants:
+      - {subjects: role:admin, agents: "*", level: admin}
+      - {subjects: [group:support, role:cx-lead], agents: [support-triage, faq], level: write}
+      - {subjects: authenticated, agents: faq, level: read}
+    tools:
+      - agent: support-triage
+        tiers: {create_ticket: write, lookup_ticket: read}
+        allow: null                 # optional allow-list over the agent's bound tools
+        deny: [delete_ticket]
 registry:
   type: in_memory                   # in_memory | redis | valkey | dynamodb | dotted path
   redis: {url: redis://localhost:6379, prefix: "ak:registry:", ttl: 0}
@@ -790,7 +875,7 @@ registry:
 | `identity.role_mapper` (`type`, `mapping`, `pass_through`) | `RoleMapperFactory`, the `mapping` mapper | IdP groups are identity facts, AK roles are policy; optional by design |
 | `identity.credentials.store`, `encryption_key`, `inbound_ttl`, `exchangers` | `CredentialStoreFactory`, `CredentialBroker`, `TokenExchangerFactory` | where tokens live and how they are exchanged cannot be derived from the provider block (section 3.1); only `passthrough` ships in this change |
 | `authorization.type` | `AuthorizerFactory` | backend selection |
-| `authorization.grants`, `authorization.tools` | `StaticAuthorizer` | the policy itself |
+| `authorization.static.grants`, `authorization.static.tools` | `StaticAuthorizer` | the policy itself |
 | `registry.type` and backend blocks | `AgentRegistryFactory` | settled Q9 |
 | `registry.agents.<id>.*` | `Runtime.register` overlay | deployment-owned metadata not known to code |
 | `AgentDescriptor.surfaces` | catalog routes and the four protocol surfaces | replaces three lists (section 10) |
@@ -829,15 +914,20 @@ registry:
   carry the declared description, else the framework's own description field for the agent
   where it keeps one, else a neutral sentence naming the agent. A card's `version` is the
   descriptor's, not the library's (spec refinements 8 and 14).
-- From iteration 17b a chat request entering by the REST API for an agent whose `surfaces`
-  leaves out `rest` is answered like one for an unknown agent, where the agent was only left
-  out of the catalog (spec refinement 13).
+- A chat request entering by the REST API for an agent whose `surfaces` leaves out `rest` is
+  answered like one for an unknown agent, where the agent was only left out of the catalog, and
+  a request naming no agent runs the first agent on `rest` (iteration 17b; spec refinement 13).
+  The request carries the surface it entered by (`BaseChatRequest.surface`), which the entry
+  point sets and a client may not send: a body that used `surface` as a context key of its own
+  is a 422.
 - `GET /api/v1/agents` returns `{"agents": [<descriptor>...], "next_cursor": ...}`, the agents on
   the `rest` surface in id order and without their `identity`, where it returned a list of
   names. AG-UI's `/agents` lists ids in id order too.
 - A request naming an agent the registry does not know is answered 404 `Agent '<name>' not found`
   on the HTTP routes, where it was 400 `No agent available`, the answer a hidden agent gets
-  (spec refinement 9).
+  (spec refinement 9). A process that runs agents itself answers the same for an agent only
+  another process hosts. The error is `AgentNotFoundError`, which the surfaces map by its own
+  class so that a `KeyError` out of a run stays a 500.
 - `api.enabled_routes.agents` (`core/config.py:111-112`) stays declared and unread; not in scope.
 - `a2ui.agents` (`core/config.py:1093`) scopes the A2UI labelling post-hook, not access, and stays
   with the capability scopes of Q8.

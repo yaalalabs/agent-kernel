@@ -187,6 +187,10 @@ store it, whatever `execution.mode` is, because these callers wait for one whole
   not load answers it with an error. A shared registry shares what is known about the agents, not
   the queue: on the single-process `in_memory` transport, an agent the registry only knows from
   another process is listed and cannot be run.
+- **Authorization in both processes**: with an
+  [`authorization`](./identity-and-access.md#authorization) block, give the IO process and the agent
+  runners the same block. The runner enforces every run; the IO process answers a refused request
+  before queueing it and filters what it lists.
 - **Wait budget**: the same `execution.response_store.retry_count × delay` as `rest_sync` (60 × 1 s
   without a block). Replies arrive on the next poll, so expect at least one `delay` of latency.
 - **Rolling upgrades** in a WebSocket mode: upgrade the agent runners first. A runner from before

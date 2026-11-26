@@ -5,6 +5,7 @@ import logging
 from collections.abc import AsyncGenerator
 from threading import RLock
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 from singleton_type import Singleton
 
@@ -13,6 +14,7 @@ from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
+from .config import AKConfig
 from .event import MessageEnd, ReasoningEnd, RunPaused, StepEnd, StreamEvent, TextDelta, ToolCallEnd
 from .hooks import PostHook, StreamHalt
 from .model import (
@@ -32,11 +34,15 @@ from .model import (
     Principal,
     SessionOwner,
     StreamChunk,
+    ToolFilter,
 )
 from .multimodal import MultimodalPreHookFactory
 from .paused_run import PausedRun, PausedRunState
-from .registry import AgentRegistry, AgentRegistryFactory
+from .registry import AgentNotFoundError, AgentRegistry, AgentRegistryFactory
 from .session import SessionStore
+
+if TYPE_CHECKING:
+    from ..identity.authz.gate import AccessGate
 
 # The provider of the agent principal Runtime attaches as the run principal's actor.
 AGENT_PRINCIPAL_PROVIDER = "agentkernel"
@@ -156,6 +162,25 @@ class Runtime:
         :return: The currently active runtime instance.
         """
         return Runtime._current or GlobalRuntime.instance()
+
+    @staticmethod
+    def access_gate() -> AccessGate | None:
+        """
+        Returns the access gate that decides this process's runs, or None when no `authorization` block is
+        configured, in which case nothing is restricted.
+
+        The enabled-check `core` uses: the authorization package is imported only once the block exists, so a
+        process without one never loads it.
+
+        :return: The shared gate, or None.
+        :raises AKConfigError: If the `authorization` block cannot be built into an authorizer.
+        """
+        # A configuration object from before the block existed simply has no authorization.
+        if getattr(AKConfig.get(), "authorization", None) is None:
+            return None
+        from ..identity.authz.gate import AccessGate
+
+        return AccessGate.get()
 
     def __enter__(self) -> "Runtime":
         """
@@ -434,23 +459,65 @@ class Runtime:
             raise ValueError(f"Runner '{agent.runner.name}' for agent '{agent.name}' does not support resuming a paused run.")
         return record
 
-    def _publish(self, agent: Agent, session: Session, principal: Principal | None) -> Principal:
+    @staticmethod
+    def _acting(agent: Agent, principal: Principal | None) -> Principal:
         """
-        Resolves the run's principal, publishes it and records the session's owner.
+        Returns the principal a run acts as: the one the surface authenticated, or the anonymous principal,
+        with the agent attached as its actor.
 
-        Runs before the pre-hooks so nothing acts on an unpublished identity. The access gate's
-        checks (agent level, session ownership, the tool filter) slot in here once an
-        authorization block exists; until then the tool filter is absent.
+        :param agent: The agent about to run.
+        :param principal: The principal the surface authenticated, or None for an anonymous run.
+        :return: The run's principal.
+        """
+        descriptor = agent.descriptor
+        actor = Principal(kind="agent", subject=descriptor.identity.subject or descriptor.id, provider=AGENT_PRINCIPAL_PROVIDER)
+        return (principal or Principal.anonymous()).with_actor(actor)
+
+    async def _admit(self, agent: Agent, session: Session, principal: Principal | None) -> Principal:
+        """
+        Decides whether the run may happen, then publishes its identity.
+
+        Where every run passes, so a caller that reached the agent by any route is decided the same way.
+        With an `authorization` block the access gate is asked, in this order and before anything is
+        published or any pre-hook runs: the level the principal holds on the agent, whether the session is
+        its to continue, and the tool filter of the run. Without the block nothing is asked and the run is
+        published with no filter.
+
+        :param agent: The agent about to run.
+        :param session: The session the run uses.
+        :param principal: The principal the surface authenticated, or None for an anonymous run.
+        :return: The published principal.
+        :raises PermissionError: If the principal holds no level on an agent it may see, or the session belongs
+            to another principal.
+        :raises AgentNotFoundError: If the principal may not see the agent: the error of an agent that does not exist.
+        """
+        gate = self.access_gate()
+        if gate is None:
+            return self._publish(agent, session, principal)
+        acting = self._acting(agent, principal)
+        # Decided on the descriptor of the agent in hand, which need not be registered in the current runtime.
+        descriptor = agent.descriptor
+        level = await gate.authorize_agent_async(acting, descriptor.id, descriptor=descriptor)
+        gate.authorize_session(acting, session)
+        tool_filter = await gate.tool_filter_async(acting, agent, level=level)
+        return self._publish(agent, session, principal, tool_filter)
+
+    def _publish(self, agent: Agent, session: Session, principal: Principal | None, tool_filter: ToolFilter | None = None) -> Principal:
+        """
+        Resolves the run's principal, publishes it with the run's tool filter and records the session's owner.
+
+        Runs before the pre-hooks so nothing acts on an unpublished identity. A run reaches it through
+        `_admit`, which asks the access gate first; the realtime connection, which runs no `Runtime.run`,
+        publishes the principal of each input here directly.
 
         :param agent: The agent about to run, attached to the principal as its actor.
         :param session: The session the run uses.
         :param principal: The principal the surface authenticated, or None for an anonymous run.
+        :param tool_filter: The gate's tool decision for the run, or None when the run is not gated.
         :return: The published principal.
         """
-        descriptor = agent.descriptor
-        actor = Principal(kind="agent", subject=descriptor.identity.subject or descriptor.id, provider=AGENT_PRINCIPAL_PROVIDER)
-        principal = (principal or Principal.anonymous()).with_actor(actor)
-        session._publish_run(principal, None)
+        principal = self._acting(agent, principal)
+        session._publish_run(principal, tool_filter)
         if not principal.is_anonymous:
             # A shared-channel principal is recorded too: its owner binds the session to the
             # platform scope (the gate admits any principal from the same provider and namespace),
@@ -518,11 +585,13 @@ class Runtime:
                         Session.get_principal() for the duration of the run, with the agent as its actor, and recorded
                         as the session's owner the first time an authenticated principal runs here.
         :return: The result of the agent's execution.
-        :raises PermissionError: If a resume answers a run paused by another principal.
+        :raises PermissionError: If, with an `authorization` block, the principal holds no level on the agent or the
+                        session belongs to another principal; or if a resume answers a run paused by another principal.
+        :raises AgentNotFoundError: If, with an `authorization` block, the principal may not see the agent.
         """
         async with session:
             try:
-                self._publish(agent, session, principal)
+                await self._admit(agent, session, principal)
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self.run_pre_hooks(agent, session, requests)
@@ -578,12 +647,19 @@ class Runtime:
         :param session: The session to use for the agent.
         :param requests: The multi-modal inputs provided to the agent.
         :param principal: The principal the surface authenticated, or None for an anonymous run (see run()).
-        :return: An async generator of StreamChunk objects.
+        :return: An async generator of StreamChunk objects. A run the access gate refuses (no level on the
+                        agent, an agent the principal may not see, a session that belongs to another principal) is
+                        one chunk carrying the refusal with done=True; nothing runs and nothing is stored.
         :raises PermissionError: If a resume answers a run paused by another principal.
         """
         async with session:
             try:
-                self._publish(agent, session, principal)
+                try:
+                    await self._admit(agent, session, principal)
+                except (PermissionError, AgentNotFoundError) as refusal:
+                    self._log.warning(f"Stream refused for agent '{agent.name}': {refusal}")
+                    yield StreamChunk(error=str(refusal), done=True)
+                    return
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self.run_pre_hooks(agent, session, requests)

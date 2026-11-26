@@ -10,6 +10,10 @@ Expose agents using the Model Context Protocol (MCP).
 
 MCP (Model Context Protocol) is a standardized protocol for AI systems to interact with external tools and data sources.
 
+> **Protocol versions**: the server speaks MCP 2026-07-28 and 2025-11-25, agreed per connection. A 2026-07-28 client
+> sends no handshake and no `Mcp-Session-Id`, so `fastmcp.Client.ping()` is not available on it; call `list_tools()`
+> to check the server is up. Conversation state never depends on the MCP session: it follows the `session_id` tool argument.
+
 ## Enabling MCP
 
 ```bash
@@ -98,13 +102,15 @@ back from the response store. The tool's `session_id` argument is the Open Agent
   whose registry knows no agent logs a warning and lists no agent tools. A call goes to whichever agent runner takes
   it from the input queue, so every runner on that queue has to host every agent exposed here. The
   response store must be shared (`redis`, `valkey` or `dynamodb`) in every execution mode. With more
-  than one IO replica behind a load balancer, set `mcp.stateless_http: true`, since a stateful MCP
-  session is pinned to one replica.
+  than one IO replica behind a load balancer, set `mcp.stateless_http: true` for older (2025-11-25)
+  clients, since their stateful MCP session is pinned to one replica. 2026-07-28 clients are always
+  stateless and can reach any replica.
 - **Latency**: the reply is picked up by polling the response store, so it takes at least one
   `execution.response_store.delay` (1 s without a `response_store` block), and the wait gives up
   after `retry_count` reads (about 59 s without a block).
 - **Errors**: a failed run, a timeout or any other error reaches the client as a `ToolError` with a
-  fixed message; the details go to the server logs only.
+  fixed message; the details go to the server logs only. A call for an agent that is not the caller's
+  to run is the `ToolError` `Agent not available` (see [Access](#access)).
 - **Execution mode**: MCP ignores `execution.mode` and always waits for one whole reply.
 
 ## Custom Tools
@@ -148,6 +154,16 @@ authorization server. `<origin>` is the scheme and host of `mcp.url`, so set `mc
 clients use (behind a proxy or load balancer, the public one); the default `http://localhost:8000/mcp`
 fits a local run only. A bearer-scheme provider such as `static` publishes no metadata.
 
+### Access
+
+An [`authorization`](../advanced/identity-and-access.md#authorization) block makes the tool list the
+caller's own. `tools/list` returns the agent tools of the agents the caller may see, and a call to the
+tool of an agent it may not see is answered like a call to a tool that does not exist. An agent the
+caller sees and holds no level on is listed, and calling it is the `ToolError` `Agent not available`,
+refused before the request is queued. The check runs on every request, for that request's caller.
+Tools your application adds itself are not agent tools and are not filtered. Without the block every
+agent exposed on `mcp` is listed to every caller.
+
 ## Configuration
 
 ```yaml
@@ -155,7 +171,7 @@ mcp:
   enabled: true
   expose_agents: true
   url: https://agents.example.com/mcp  # Public URL of the endpoint (default: http://localhost:8000/mcp)
-  stateless_http: false  # Set to true for stateless mode (no Mcp-Session-Id)
+  stateless_http: false  # Serve older (2025-11-25) clients statelessly; 2026-07-28 clients always are
 ```
 
 ## Integration

@@ -190,8 +190,8 @@ OpenAIModule([triage, math]).describe(
 | `description` | Catalog text for people and other agents. An A2A card and an MCP tool publish it. Defaults to the description your framework keeps for the agent, where it has one apart from the instructions (see below); the agent's instructions are never published |
 | `version` | The agent's version (default `0.0.0`) |
 | `owner`, `tags` | Free-form metadata; the catalog route filters by tag |
-| `visibility` | `private` (default), `internal` or `public`. Recorded and published in the catalog, not enforced yet: until authorization ships every listed agent is listed to every caller, and `surfaces` is what keeps an agent off a listing |
-| `surfaces` | Where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Unset means every surface, `[]` none |
+| `visibility` | `private` (default), `internal` or `public`: who may see the agent without holding a level on it, once an [`authorization`](../advanced/identity-and-access.md#authorization) block exists (`private` nobody, `internal` every authenticated caller, `public` everyone). Without the block it is recorded and changes nothing: every listed agent is listed to every caller, and `surfaces` is what keeps an agent off a listing |
+| `surfaces` | Where the agent is served: `rest`, `a2a`, `mcp`, `agui`. Unset means every surface, `[]` none. An agent kept off a surface is not reachable on it: off `rest`, it is left out of the catalog and a chat request naming it is a 404 |
 | `skills` | The skills an A2A card lists; by default one per tool |
 | `identity` | How the agent identifies itself when it acts as a principal |
 
@@ -215,8 +215,8 @@ text off every surface.
 Repeated calls merge, the later call winning per field. A field the descriptor does not have, a value it
 does not accept, or the agent's `id` raises `ValueError` at declaration. So do `tools`, `runner`,
 `supports_streaming` and `updated_at`, which the agent's adapter, its runner and the registry report: a
-surface decides from them whether the agent can be served, and the tool list is what an authorization
-policy names tools by. Configuration sets `description`, `version`, `owner`, `tags`, `visibility`, `surfaces`
+surface decides from them whether the agent can be served, and the tool list is what an
+[authorization](../advanced/identity-and-access.md#tool-policy) policy names tools by. Configuration sets `description`, `version`, `owner`, `tags`, `visibility`, `surfaces`
 and `identity` per agent id under `registry.agents.<id>`, which wins over what the code declares (`skills` is
 declared in code only); see [Configuration → Agent Registry](./configuration.md#agent-registry).
 
