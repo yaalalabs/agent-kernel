@@ -892,6 +892,10 @@ flowchart TD
     - **Auth is not traced.** `REQUEST_HANDLER_START` (renamed from `REQUEST_RECEIVED`, PR #1002 review) marks the start
       of AK's handler, not the request's arrival: the identity dependency, an API Gateway authorizer and FastAPI's body
       parsing and validation run before it and have no trace line.
+    - The send call's own time is in the next stage: the input-queue send in `AGENT_RECEIVED`, the output-queue send
+      in `OUTPUT_RECEIVED` (so `OUTPUT_ENQUEUED` is about 0 in complete mode), the WebSocket broadcast (connection
+      lookup and push) in `CLIENT_RECEIVED`. If the AWS runs show these calls matter, a trace point after the call is
+      added (e.g. `OUTPUT_SEND_DONE`) rather than moving the existing one back.
 - **Trace lines are added next to the existing stage-style INFO lines, not in place of them:**
   - The INFO lines on the request path stay at `INFO` with their text but **drop their `[...]` tag** (e.g.
     `[AGENT DONE] request_id=...` → `Agent done: request_id=...`), so normal logs still show them.

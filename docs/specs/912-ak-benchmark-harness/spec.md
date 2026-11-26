@@ -1005,7 +1005,7 @@ Always over requests (or raw samples), never over per-worker results.
 - one `<STAGE>_s` per request-path stage, then `CLIENT_RECEIVED_s`.
 
 Durations, for the chain `[client sent] + driver_cls.trace_stages + [client complete]`: each stage's duration is
-previous point → this point, so `REQUEST_RECEIVED_s` = sent → `REQUEST_RECEIVED`, `AGENT_DONE_s` =
+previous point → this point, so `REQUEST_HANDLER_START_s` = sent → `REQUEST_HANDLER_START`, `AGENT_DONE_s` =
 `AGENT_START` → `AGENT_DONE` in complete, and `CLIENT_RECEIVED_s` = `RESPONSE_DELIVERED` → complete. A stage not in
 the driver's chain (`AGENT_FIRST_CHUNK_s` for complete) stays empty; a missing point on either side → empty.
 
@@ -1045,10 +1045,10 @@ and graphs comparing the steps" section (decided 2026-11-25).
   version (`importlib.metadata.version("agentkernel")`) and git commit (`git rev-parse HEAD`, empty when unavailable),
   agent (`mock` / `real`) and both delays, then every #786 Run metadata field from `deployment.settings`; a field the
   host doesn't give is written as `null`.
-- `step-metadata.json` (by `Step`): test type, step, min / max send interval, load time, before window, max cool-down
-  (after the host override), after-step wait, cool-down poll interval and lookback, every resolved poll interval by
-  fetcher name, client timeout, time window, percentile method (`linear`), the schedule seed, and the step window
-  times.
+- `step-metadata.json` (by `Step`): test type, step, min / max send interval and load time (steady only: `null` for
+  burst, like the seed), before window, max cool-down (after the host override), after-step wait, cool-down poll
+  interval and lookback, every resolved poll interval by fetcher name, client timeout, time window, percentile method
+  (`linear`), the schedule seed, and the step window times.
 
 #### Graphs (`results/graphs/`)
 
@@ -1063,6 +1063,9 @@ class CostReport:     def draw(self, deployment_dir: Path) -> None: ...      # g
   `whis=(0, 100)` boxes with a p99 marker, bands with p50 and dashed p99 lines, one panel per tier / stage / queue, no
   twin axes, no threshold lines) are #786's; `Scratches/25.Benchmarking-Design/graph-examples/plot_examples.py` is the
   layout reference.
+- `04-every-request`'s bands are the percentiles of the `ok` requests **sent** in each window, computed from
+  `per-request.csv`, matching its send-time x axis (`per-time-window.csv` groups latency by completion, which suits
+  `03-timeline`).
 - Inputs are only the CSVs (and the host / deployment for panel layout), so `plot` redraws anything at any time.
 - A panel with no data is drawn with its axes, title and a "no data" note, never skipped.
 - Each PNG is written to a temp name and renamed, so a failed draw never leaves a half file; a draw that raises is a
@@ -1125,7 +1128,7 @@ For the reviewer: none changes a `design.md` requirement, but each fills a gap i
    failed every time still gets empty columns.
 3. **`StageFetchers.validate()` also refuses a fetcher without a `name`.**
 4. **Carry-forward limit for non-polled series** = the series' smallest sample gap (no new fetcher parameter).
-5. **`REQUEST_RECEIVED_s`** = client sent → `REQUEST_RECEIVED` (the chain starts at the client), and the stage chain
+5. **`REQUEST_HANDLER_START_s`** = client sent → `REQUEST_HANDLER_START` (the chain starts at the client), and the stage chain
    comes from `ClientDriver.trace_stages`.
 6. **Reply matching**: frame `request_id` when present, else the connection's in-flight id found in the frame text
    (the complete reply body carries no request id), else for an error reply the connection's only in-flight request
@@ -1210,7 +1213,7 @@ All tests run without a cloud account or network beyond `127.0.0.1`. Async tests
 | `run/test_state_and_lock.py` | stale lock (dead pid, this host) taken over with log; live lock refused; other-host lock refused; `--force-unlock` prints holder, honours `--yes` / declined prompt, logs; lock released on success, exception and `KeyboardInterrupt` |
 | `run/test_commands.py` (mock folder + MockWsServer) | full deploy → step (steady and burst) → plot → finish → post-run produces every CSV, every graph, `run-metadata.json`, `step-metadata.json`, `cost.csv` and the cost graph; script env contains the contract variables (mock delays only with `mock_agent`); `state.json` round-trips `Deployment` unchanged and loses `auth_secret` after finish; refusals: existing step folder without `--replace` (and `--replace` replaces folder + row), step not in saved load steps, every command refused while another holds the deployment lock, `run --steps 7` before any deploy, unknown `fetchers.<name>` and missing folder before any script; existing host × mode × message type in a run id refused |
 | `run/test_teardown_guarantee.py` | `run` with a step that raises → `destroy.sh` ran and the error surfaces (also when `destroy.sh` then fails); `deploy.sh` failure → `destroy.sh` ran, exit 1; `destroy.sh` failure → run-log `ERROR`, exit 1, `finish` can run again; Ctrl-C in `deploy`, `step` and `run` → no `destroy.sh`, lock released, `teardown_at` unset, one run-log `WARNING` with the deployment id, exit 130, and `run` calls no `finish`; `finish` tears down a deployment whose `deploy.sh` was interrupted |
-| `results/test_results.py` (recorded CSV fixtures) | percentiles match `numpy.percentile(..., method="linear")` and are empty for no data; per-request durations incl. `REQUEST_RECEIVED_s`, `CLIENT_RECEIVED_s`, empty `AGENT_FIRST_CHUNK_s`; per-window Tx / Rx / errors / timeouts / latency; carry-forward limit (poll interval, and sample gap for after-step series); declared-but-empty columns for a fetcher that stored nothing; step folder padding |
+| `results/test_results.py` (recorded CSV fixtures) | percentiles match `numpy.percentile(..., method="linear")` and are empty for no data; per-request durations incl. `REQUEST_HANDLER_START_s`, `CLIENT_RECEIVED_s`, empty `AGENT_FIRST_CHUNK_s`; per-window Tx / Rx / errors / timeouts / latency; carry-forward limit (poll interval, and sample gap for after-step series); declared-but-empty columns for a fetcher that stored nothing; step folder padding |
 | `results/test_plots.py` | every phase-1 graph file is produced from recorded data, including one with all-empty resource data (panels drawn, not skipped); cost graph only when `cost.csv` exists |
 | `load/test_token_cross_check.py` | a `TokenSigner` token is accepted by `BenchIdentityProvider` (imports the app module by path; the app's dependencies are a subset of the harness's) |
 | `app/tests/test_mock_agent.py` | `run()` sleeps within [min, max] (patched `asyncio.sleep` records the delay; `random.uniform` bounds over many draws), echo content, nothing added to the session, variables read once at creation; `agent.py` registers `MockAgent` with both variables, the real agent with neither, and raises with one |

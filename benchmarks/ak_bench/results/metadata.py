@@ -5,7 +5,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
-from ak_bench.config import BenchConfig
+from ak_bench.config import BenchConfig, TestType
 from ak_bench.hosts.host import Deployment, Host, RunInfo
 from ak_bench.results.common.keyed_csv import KeyedCsv
 from ak_bench.results.common.percentiles import METHOD
@@ -61,14 +61,15 @@ class StepMetadataWriter:
 
     def write(self, step_dir: Path, config: BenchConfig, host: Host, run: RunInfo, record: StepRecord) -> None:
         cfg, traffic = config.step_run, config.steady_traffic
+        steady = record.test_type == TestType.STEADY  # the steady-traffic settings don't apply to burst: null, like seed
         JsonFile.write(
             step_dir / "step-metadata.json",
             {
                 "test_type": record.test_type,
                 "step": record.step,
-                "min_send_interval_s": traffic.min_send_interval_s,
-                "max_send_interval_s": traffic.max_send_interval_s,
-                "load_time_s": traffic.load_time_s,
+                "min_send_interval_s": traffic.min_send_interval_s if steady else None,
+                "max_send_interval_s": traffic.max_send_interval_s if steady else None,
+                "load_time_s": traffic.load_time_s if steady else None,
                 "before_window_s": cfg.before_window_s,
                 "max_cooldown_s": config.max_cooldown_for(run.host),
                 "after_step_wait_s": cfg.after_step_wait_s,

@@ -98,7 +98,7 @@ class LoadGenerator:
             if connect_error is not None:
                 self._settle(record, RequestStatus.ERROR, f"connect failed: {type(connect_error).__name__}: {connect_error}")
                 continue
-            # Taken before the send, like AK's trace lines: the server can log REQUEST_RECEIVED before send() returns.
+            # Taken before the send, like AK's trace lines: the server can log REQUEST_HANDLER_START before send() returns.
             record.sent_mono = time.monotonic()
             record.sent = self._wall(record.sent_mono)
             try:

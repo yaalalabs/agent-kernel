@@ -1,5 +1,6 @@
 import json
 import shutil
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -95,15 +96,15 @@ def test_per_request_durations(step_dir, record):
 
     r1 = rows["r1"]
     assert r1["latency_s"] == 3
-    assert r1["REQUEST_RECEIVED_s"] == pytest.approx(0.5)  # client sent -> REQUEST_RECEIVED
+    assert r1["REQUEST_HANDLER_START_s"] == pytest.approx(0.5)  # client sent -> REQUEST_HANDLER_START
     assert r1["AGENT_DONE_s"] == pytest.approx(1.0)  # AGENT_START -> AGENT_DONE in complete
     assert r1["CLIENT_RECEIVED_s"] == pytest.approx(0.2)  # RESPONSE_DELIVERED -> complete
     assert r1["AGENT_FIRST_CHUNK_s"] is None  # not in the complete chain
-    assert rows["r2"]["REQUEST_RECEIVED_s"] is None and rows["r2"]["CLIENT_RECEIVED_s"] is None  # no trace points
+    assert rows["r2"]["REQUEST_HANDLER_START_s"] is None and rows["r2"]["CLIENT_RECEIVED_s"] is None  # no trace points
     assert rows["r3"]["latency_s"] is None
 
     written = KeyedCsv(step_dir / "per-request.csv", [], []).read()
-    assert written[0]["REQUEST_RECEIVED_ts"] == "2026-11-24T10:00:12.500Z"
+    assert written[0]["REQUEST_HANDLER_START_ts"] == "2026-11-24T10:00:12.500Z"
     assert written[0]["status"] == "ok" and written[0]["AGENT_FIRST_CHUNK_s"] == ""
     assert "RESPONSE_FOUND_ts" not in written[0] and "RESPONSE_POLL_START_s" not in written[0]
 
@@ -196,6 +197,11 @@ def test_step_metadata(tmp_path, config, host, run_info, record):
     assert data["poll_intervals_s"] == {"scaling": 2, "transport": 5, "trace": 5, "resource": 5, "resource2": 5}
     assert data["percentile_method"] == "linear" and data["time_window_s"] == 10
     assert data["t_load_down"] == "2026-11-24T10:00:40.000Z"
+    assert data["min_send_interval_s"] == config.steady_traffic.min_send_interval_s and data["load_time_s"] == config.steady_traffic.load_time_s
+
+    StepMetadataWriter().write(tmp_path, config, host, run_info, replace(record, test_type="burst", seed=None))
+    data = json.loads((tmp_path / "step-metadata.json").read_text())
+    assert [data[k] for k in ("min_send_interval_s", "max_send_interval_s", "load_time_s", "seed")] == [None] * 4  # steady only
 
 
 def test_step_folder_padding(tmp_path):

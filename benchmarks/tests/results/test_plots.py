@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy
 import pytest
 from mocks.fetchers import MockCostFetcher
 from test_results import at, config, deployment, host, record, step_dir  # noqa: F401  (fixtures shared with the CSV tests)
@@ -59,6 +60,21 @@ def test_burst_with_all_empty_resource_data_still_draws_every_panel(step_dir, re
     assert sorted(p.name for p in (step_dir / "graphs").iterdir()) == expected
     assert sorted(p.name for p in (second / "graphs").iterdir()) == expected
     assert errors(run_log) == []
+
+
+def test_every_request_bands_group_requests_by_send_window():
+    windows = [{"window_start": "2026-11-24T10:00:00.000Z"}, {"window_start": "2026-11-24T10:00:01.000Z"}]
+    row = lambda sent, latency, status="ok": {"sent": sent, "latency_s": latency, "status": status}
+    requests = [
+        row("2026-11-24T10:00:00.900Z", "0.5"),  # completes in window 1, but was sent in window 0
+        row("2026-11-24T10:00:01.000Z", "0.2"),  # on the boundary: window 1
+        row("2026-11-24T10:00:01.100Z", "", "timeout"),  # drawn on the timeout line, not in the bands
+    ]
+
+    p = StepPlots.by_send_window(windows, requests)
+
+    assert list(p["p50"]) == [0.5, 0.2] and list(p["p100"]) == [0.5, 0.2]
+    assert numpy.isnan(StepPlots.by_send_window(windows, [])["p50"]).all()
 
 
 def test_a_failing_graph_is_logged_and_the_others_still_draw(step_dir, record, config, host, deployment, run_info, run_log, monkeypatch):  # noqa: F811

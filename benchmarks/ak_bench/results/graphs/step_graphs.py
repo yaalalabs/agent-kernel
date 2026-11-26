@@ -1,4 +1,5 @@
 import json
+from bisect import bisect_right
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -34,7 +35,7 @@ class StepPlots(Plots):
             self.save(
                 graphs / "04-every-request.png",
                 lambda: self._every_request(step_dir, requests, windows, name),
-                "Timed-out requests are drawn on the timeout line.",
+                "Bands and line: percentiles of the requests sent in each window. Timed-out requests are drawn on the timeout line.",
             )
         self.save(
             graphs / "05-resource-usage.png", lambda: self._resource_usage(windows, host, deployment, name), "Same time axis as 03-timeline.png."
@@ -170,8 +171,7 @@ class StepPlots(Plots):
             if timed_out:  # drawn only when used: it would stretch the axis far above every answered request
                 ax.axhline(timeout, color=MUTED, lw=1, ls=":")
         width = x[1] - x[0] if len(x) > 1 else 0.0
-        latency = {p: self.values(windows, f"latency_{p}") for p in PCTS}
-        self.bands(ax, x + width / 2, latency)
+        self.bands(ax, x + width / 2, self.by_send_window(windows, requests))
         self.seconds_axis(ax)
         ax.set_xlabel("send time (s from step start)")
         ax.set_ylabel("end-to-end latency")
@@ -179,6 +179,17 @@ class StepPlots(Plots):
         self.no_data(ax, bool(ok or timed_out))
         ax.legend(loc="upper right", ncol=3, markerscale=2)
         return fig
+
+    @staticmethod
+    def by_send_window(windows: list[dict[str, str]], requests: list[dict[str, str]]) -> dict[str, numpy.ndarray]:
+        """Latency percentiles of the ok requests *sent* in each window (per-time-window.csv groups them by completion)."""
+        starts = [KeyedCsv.parse_ts(w["window_start"]) for w in windows]
+        sent: list[list[float]] = [[] for _ in starts]
+        for r in requests:
+            if r["status"] == "ok" and r["sent"] and (k := bisect_right(starts, KeyedCsv.parse_ts(r["sent"])) - 1) >= 0:
+                sent[k].append(float(r["latency_s"]))
+        pcts = [percentiles(v) for v in sent]
+        return {p: numpy.array([numpy.nan if q[p] is None else q[p] for q in pcts], dtype=float) for p in PCTS}
 
     def _resource_usage(self, windows, host: Host, deployment: Deployment, name: str) -> Figure:
         x = self._time_axis(windows)

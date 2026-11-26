@@ -146,4 +146,4 @@ def test_trace_stages_skip_streaming_and_polling_stages():
     assert TraceStage.AGENT_FIRST_CHUNK not in stages
     assert TraceStage.RESPONSE_POLL_START not in stages and TraceStage.RESPONSE_FOUND not in stages
     assert list(stages) == [s for s in TraceStage if s in stages]
-    assert stages[0] == TraceStage.REQUEST_RECEIVED and stages[-1] == TraceStage.RESPONSE_DELIVERED
+    assert stages[0] == TraceStage.REQUEST_HANDLER_START and stages[-1] == TraceStage.RESPONSE_DELIVERED

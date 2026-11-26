@@ -58,13 +58,13 @@ def test_resource_none_worker_is_empty_cell_and_key_replaces(tmp_path):
 
 def test_trace_writes_one_row_per_request_stage(tmp_path):
     f = MockTraceCollector("trace")
-    f.store(TraceInfo({"r1": {TraceStage.REQUEST_RECEIVED: T0, TraceStage.AGENT_DONE: T0}}), tmp_path)
+    f.store(TraceInfo({"r1": {TraceStage.REQUEST_HANDLER_START: T0, TraceStage.AGENT_DONE: T0}}), tmp_path)
     f.store(TraceInfo({"r1": {TraceStage.AGENT_DONE: T1}}), tmp_path)
 
     columns, data = rows(tmp_path / "stage-timestamps.csv")
     assert columns == ["request_id", "stage", "ts"]
     assert data == [
-        {"request_id": "r1", "stage": "REQUEST_RECEIVED", "ts": "2026-11-23T10:04:00.000Z"},
+        {"request_id": "r1", "stage": "REQUEST_HANDLER_START", "ts": "2026-11-23T10:04:00.000Z"},
         {"request_id": "r1", "stage": "AGENT_DONE", "ts": "2026-11-23T10:04:01.005Z"},
     ]
 
