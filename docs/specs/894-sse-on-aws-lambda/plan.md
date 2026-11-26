@@ -26,8 +26,10 @@
   3. Run `curl -N` and record the timing, the `Authorization` header the app sees, and `scope["path"]`.
   4. Confirm `lambda:InvokeFunction` is enough for the streaming invocation (§8d).
   5. Leave `timeout_milliseconds` unset and confirm a 40 s run completes (§8d).
-- **Verify:** all four facts are marked **verified** in the research note. If one fails, update
-  `design.md` before iteration 3, and tell Malitha (PR #1005).
+- **Verify:** all four facts are marked **verified** in the research note.
+- **Gate:** this is a hard stop. If fact 1 fails (frames arrive in one block), stop and reopen `design.md`;
+  no later iteration starts. If another fact fails, update `design.md` before iteration 3. Either way, tell
+  Malitha (PR #1005).
 
 ## Iteration 1: Shared pieces
 
@@ -35,7 +37,8 @@
 - **Files:** `pipeline/io_handler.py`, `deployment/aws/serverless/core/paths.py` (new),
   `core/router/common.py`, `core/webhook_host.py`.
 - **Steps:**
-  1. Add `IOHandler.check_deployment`, and make `run` call it (§1). Match PR #989 exactly.
+  1. Add `IOHandler.check_deployment`, and make `run` call it (§1). Match PR #989 exactly. If #989 merges
+     first, rebase onto it and drop this step; if this PR merges first, pulindu-yl drops it from #989.
   2. Add `LambdaPaths` (§2).
   3. Make `BaseLambdaRouter._get_base_paths_from_env` and `LambdaWebhookGuard._check_base_path_env`
      delegate to it (§2).
@@ -60,7 +63,7 @@
   `core/router/rest_lambda.py`.
 - **Steps:**
   1. `LambdaStreamGuard` (§3).
-  2. `LambdaChatPathMiddleware` and `LambdaStreamServer` (§4).
+  2. `LambdaChatPathMiddleware` and `LambdaStreamServer`, including the logged guard failure in `run` (§4).
   3. The lazy export (§7).
   4. The new refusal text (§6).
 - **Verify:** `uv run pytest tests/test_lambda_stream_server.py tests/test_aws_lazy_exports.py tests/test_lambda_router.py`.
@@ -72,7 +75,7 @@
   `modules/api-gateway/{main,variables}.tf`.
 - **Steps:**
   1. `local.is_sse_mode` and the module wiring (§8a).
-  2. The three `message_type` validations and the description fix (§8b).
+  2. The four `message_type` validations (queue mode, FIFO, store, authorizer) and the description fix (§8b).
   3. `response_streaming` on the request-handler module (§8c).
   4. `response_streaming` and `lambda_function_arn` on the api-gateway module (§8d).
 - **Verify:**
@@ -110,7 +113,7 @@
   | File | Line | Change |
   |---|---|---|
   | `docs/docs/deployment/aws-serverless.md` | `:19` (mode table) | Add the `rest_sync` + `delta` row |
-  | `docs/docs/deployment/aws-serverless.md` | `:23-24` ("No SSE on Lambda" box) | Replace with the `LambdaStreamServer` setup, auth (design §5), limits (design §7) |
+  | `docs/docs/deployment/aws-serverless.md` | `:23-24` ("No SSE on Lambda" box) | Replace with the `LambdaStreamServer` setup, auth and the `authorizer` → `identity` migration (design §5), which routes reach the app (design §3), limits incl. concurrency and retry repeats (design §7) |
   | `docs/docs/deployment/aws-serverless.md` | `:1023` | `delta` works with `rest_sync` (SSE, `LambdaStreamServer`) and `async` |
   | `docs/docs/architecture/execution-flow.md` | `:207`, `:429` | SSE row's target column includes AWS Lambda |
 

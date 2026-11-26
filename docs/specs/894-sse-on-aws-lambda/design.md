@@ -9,6 +9,8 @@
 > - **Scope:** queue mode only. No new config flag and no new Terraform variable. Every other mode plans no change.
 > - **Decided:** one function; auth inside the app, as on ECS; the existing checks reused; ECS's chat-path
 >   rule; the app's packaging owns the adapter version. See [Decisions](#decisions).
+> - **Gate:** the spike in the research note must pass before implementation. If SSE frames do not arrive
+>   one by one through LWA and a `STREAM` integration, this design is reopened.
 
 Evidence is cited against `develop` at `93885bf1b`. The AWS facts are in
 [`research/aws-response-streaming.md`](research/aws-response-streaming.md).
@@ -22,7 +24,7 @@ Evidence is cited against `develop` at `93885bf1b`. The AWS facts are in
 | `ServerlessStreamAgentRunner` | ❌ Needs a WebSocket `endpoint_url` | 🟡 Needs it only in WebSocket mode |
 | Serverless `ResponseHandler` | ❌ Stores whole replies only | 🟡 Writes SSE chunks and an error chunk |
 | API Gateway integration | ❌ Buffered | 🆕 `STREAM` + streaming invoke URI |
-| Terraform checks | ❌ Allows the pair, fails at cold start | 🆕 Refuses no queue, a DynamoDB store or an authorizer at `plan` |
+| Terraform checks | ❌ Allows the pair, fails at cold start | 🆕 Refuses no queue, a non-FIFO queue, a DynamoDB store or an authorizer at `plan` |
 
 ✅ reused · 🟡 small fix · 🆕 new · ❌ gap today
 
@@ -87,8 +89,9 @@ graph LR
   No second function.
   - The SSE path is the shared `RequestHandler` code, unchanged.
   - No response-handler thread and no agent runner in this process: on Lambda those are their own functions.
-  - Every route of the function is served by that app, the ECS way: the chat route, A2A and MCP mounts,
-    messaging webhooks (`WebhookRESTRequestHandler`) and application `RESTRequestHandler`s.
+  - The app serves every request **the gateway forwards** (section 3). The gateway forwards only the chat
+    route and the paths listed in `gateway_endpoints`, as ECS's gateway forwards only its listed routes.
+    The function adds no catch-all `{proxy+}` route.
 - 🆕 New class `LambdaStreamServer` (`deployment/aws/serverless/`). One responsibility: start that app
   for LWA.
   - `run(handlers=None)`: runs `LambdaStreamGuard` (section 2), then serves on `api.port`.
@@ -130,6 +133,14 @@ graph LR
   `BaseLambdaRouter._get_base_paths_from_env` holds (`core/router/common.py:48-61`), moved to one shared
   class rather than copied.
 - A non-default `agent_endpoint` therefore works, as it does on ECS.
+- **What reaches the app besides chat.** The serverless gateway nests every listed path under
+  `/<API_BASE_PATH>/<API_VERSION>/`, at most three segments, with no path parameters
+  (`modules/api-gateway/main.tf:2-32`). Such a path reaches the app unchanged, so it works only when the app
+  serves that full path.
+  - Works: `gateway_endpoints = [{ path = "agents", method = "GET" }]` reaches `/api/v1/agents`
+    (`AGENTS_PATH`), and a `RESTRequestHandler` mounted under `/api/v1/...`.
+  - Does not work: the A2A (`/a2a/...`, `api/a2a/handler.py:137`) and MCP (`/mcp`, `api/http.py:203`)
+    mounts, which sit outside the prefix. See Non-goals.
 
 ### 4. Queue workers (Lambda-only fixes)
 
@@ -155,12 +166,17 @@ graph LR
 - Terraform refuses `authorizer` together with SSE mode at `plan`, naming the `identity` block as the
   replacement.
 - Without an `identity` block every caller is anonymous, as on ECS. The docs and the example say so.
+- **Migration:** a deployment that uses `authorizer` today must move its token check into the `identity`
+  block to turn SSE on. The docs give this as a step.
 
 ### 6. Terraform (`ak-deployment/ak-aws/serverless`)
 
 - **No new variable.** The existing pair `execution_mode = "rest_sync"` + `message_type = "delta"`
   turns streaming on. It requires:
   - `queue_mode = true`
+  - FIFO queues (`queue_config.fifo_queue`, default `true`). A standard queue can deliver chunks out of
+    order, and the caller would get jumbled text. FIFO keeps one session's chunks in order through the
+    runner, the output queue and the response handler.
   - no DynamoDB response store (`create_dynamodb_response_store`): it cannot stream chunks. The Redis or
     Valkey store is checked at cold start (section 2), since the app may name its own.
   - no `authorizer` (section 5).
@@ -192,6 +208,15 @@ graph LR
 >   (`variables.tf:354`), so the docs tell users to raise it.
 > - A client that disconnects does **not** stop the function or the agent run, and the function is
 >   still billed.
+> - **Each open stream holds one request-handler instance** for the whole agent run. Concurrent streams
+>   count against the function's concurrency (reserved or account-wide), not just its bill.
+> - **A runner retry can repeat text.** When the agent runner fails mid-run, SQS retries the whole run.
+>   The chunks from the failed attempt are already in the store, so the caller sees the reply start again.
+>   WebSocket delta mode has the same behaviour today; #894 does not change it.
+
+- **Cold-start errors must be visible.** When `LambdaStreamGuard` fails, LWA only sees a readiness check
+  that never passes and reports an init timeout. `LambdaStreamServer` therefore logs the `AKConfigError`
+  in full before the process exits, so the real cause is in the function log.
 
 ### 8. Example, docs, skills, tests
 
@@ -220,6 +245,8 @@ graph LR
 | 3 | Startup checks | **`LambdaStreamGuard`** for Lambda-only checks + **`IOHandler.check_deployment`** for topology | Same split as `LambdaWebhookGuard` and #989's protocol guard; no third copy |
 | 4 | Non-default chat path | **Supported**: the chat path maps to `/api/v1/chat`, other paths pass unchanged | ECS's `overwrite_path` rule; stripping every prefix would break `/api/v1/agents` |
 | 5 | Adapter version | **Pinned by the app's packaging** (the `layers` ARN, or a Dockerfile tag) | The module never hardcodes layers or base images today |
+| 6 | Which routes reach the app | **The chat route + listed `gateway_endpoints`**; no `{proxy+}` | ECS also forwards only listed routes; a catch-all would change every other mode's gateway |
+| 7 | Chunk order | **FIFO required** at `plan` | The only thing that keeps one session's chunks in order across three hops |
 
 ## Non-goals
 
@@ -229,6 +256,11 @@ graph LR
 - `rest_async` + `delta`: still refused by config (`core/config.py:959`).
 - WebSocket (`async`) mode, which already streams.
 - Streamed A2A or MCP replies (`message:stream`).
+- Serving the A2A and MCP mounts through this function. Their paths sit outside the gateway prefix
+  (section 3). Serverless A2A/MCP routing is #932 (PR #989); whichever merges second aligns with the other.
+- A catch-all `{proxy+}` gateway route.
+- Removing repeated text after a runner retry (section 7). It is shared with WebSocket mode and needs its
+  own issue.
 - Function URLs. They do not stream inside a VPC.
 - `Lambda.register` routes in this mode. They were never served here, because the router refuses every
   route. Custom routes are `RESTRequestHandler`s, as on ECS.
@@ -239,7 +271,7 @@ graph LR
 
 | Item | Owner | Overlap |
 |---|---|---|
-| PR #989 / #932 | pulindu-yl | Adds `IOHandler.check_deployment`, which the guard reuses. Merge order decides who adds it. |
+| PR #989 / #932 | pulindu-yl | Adds `IOHandler.check_deployment`, which the guard reuses, and owns serverless A2A/MCP routing. Merge order decides who adds `check_deployment`; the author of the PR that merges second (pulindu-yl either way) drops the duplicate in that rebase. |
 | PR #1005 / #978 | malithaYL | The same API Gateway `STREAM` feature on ECS. Share the spike result. |
 | #985 | malithaYL | Changes the same `is_websocket` / `else` branch in `akresponsehandler.py:155`. |
 | PR #1002 | lakindu-yl | Adds trace log lines inside both queue-worker files. Only the merge order matters. |

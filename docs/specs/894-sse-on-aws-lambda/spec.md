@@ -7,7 +7,7 @@
 > 3. `LambdaStreamGuard` + `LambdaStreamServer` + `LambdaChatPathMiddleware` (the Lambda host)
 > 4. two queue-worker fixes.
 >
-> Then Terraform (two module inputs, three validations), one example, the docs and skills. No `AKConfig`
+> Then Terraform (two module inputs, four validations), one example, the docs and skills. No `AKConfig`
 > change and no new root Terraform variable.
 
 `design.md` is the requirements source. Evidence is cited against `develop` at `93885bf1b`. The AWS facts
@@ -134,9 +134,15 @@ class LambdaStreamServer:
 
     @classmethod
     def run(cls, handlers: list[RESTRequestHandler] | None = None) -> None:
-        """Build the app and serve it on api.host:api.port until LWA stops the process."""
+        """Build the app and serve it on api.host:api.port until LWA stops the process.
+        A guard failure is logged in full, then re-raised (design section 7: LWA reports only an init timeout)."""
         config = AKConfig.get()
-        uvicorn.Server(uvicorn.Config(app=cls.build_app(handlers), host=config.api.host, port=config.api.port)).run()
+        try:
+            app = cls.build_app(handlers)
+        except AKConfigError:
+            cls._log.exception("LambdaStreamServer refused to start; LWA will report a readiness timeout")
+            raise
+        uvicorn.Server(uvicorn.Config(app=app, host=config.api.host, port=config.api.port)).run()
 ```
 
 **Rules**
@@ -151,6 +157,9 @@ class LambdaStreamServer:
 4. **Middleware, not a second route.** Mounting `RequestHandler` at the configured path would need a
    second instance. Rewriting the path keeps one chat route, as ECS does.
 5. **The guard runs in `build_app`,** so `run` cannot serve an app whose checks were skipped.
+6. **Only the chat path is rewritten.** A listed `gateway_endpoints` path arrives as
+   `/<API_BASE_PATH>/<API_VERSION>/<path>` and reaches the app unchanged (design section 3). The middleware
+   does not try to map it onto `/a2a` or `/mcp`.
 
 ### 5. Queue workers (Lambda-only fixes)
 
@@ -212,12 +221,13 @@ is_sse_mode = var.execution_mode == "rest_sync" && var.message_type == "delta"
 - `module "api_gateway"` gets `response_streaming = local.is_sse_mode` and
   `lambda_function_arn = module.request_handler[0].lambda_function_arn`.
 
-**8b. Root `variables.tf`: three validations on `message_type`** (cross-variable, Terraform ≥ 1.9; the
+**8b. Root `variables.tf`: four validations on `message_type`** (cross-variable, Terraform ≥ 1.9; the
 module needs `>= 1.9.5`, `main.tf:14`)
 
 | Condition | Error message (gist) |
 |---|---|
 | `!(sse) \|\| var.queue_mode` | `rest_sync with message_type delta (SSE) needs queue_mode = true` |
+| `!(sse) \|\| try(var.queue_config.fifo_queue, true)` | `... needs FIFO queues (queue_config.fifo_queue = true) so stream chunks stay in order` |
 | `!(sse) \|\| !var.create_dynamodb_response_store` | `... needs a response store that can stream chunks (Redis or Valkey); DynamoDB cannot` |
 | `!(sse) \|\| var.authorizer == null` | `... is authenticated inside the app through the identity block in config.yaml; remove authorizer` |
 
@@ -295,7 +305,7 @@ Modelled on `examples/aws-serverless/scalable-openai` (queue mode, `S3Zip` reque
 
 - **`AKConfig`:** none. `execution.mode`, `execution.message_type`, `execution.queues`,
   `execution.response_store` and `api.port` already say everything the feature needs.
-- **Terraform root:** no new variable. Three validations on `message_type` (8b).
+- **Terraform root:** no new variable. Four validations on `message_type` (8b).
 - **Terraform modules:** two internal inputs, `response_streaming` and `lambda_function_arn`, both
   defaulted, so a caller of the modules that sets neither plans no change.
 - **Existing YAML and `AK_*` env vars:** unaffected. A deployment in SSE mode could not start before
@@ -306,7 +316,7 @@ Modelled on `examples/aws-serverless/scalable-openai` (queue mode, `S3Zip` reque
 1. **Intentional:** `rest_sync` + `delta` on Lambda now works with `LambdaStreamServer`. Before, every
    route of the function failed at cold start.
 2. **Intentional:** `terraform plan` fails for SSE mode without `queue_mode`, with
-   `create_dynamodb_response_store`, or with an `authorizer`. Before, such a plan applied and the
+   `queue_config.fifo_queue = false`, with `create_dynamodb_response_store`, or with an `authorizer`. Before, such a plan applied and the
    function failed at cold start.
 3. **Intentional:** `ServerlessStreamAgentRunner` in a non-WebSocket mode no longer raises
    `endpoint_url is required for async + delta`. Before, an SSE message was retried until permanent failure.
@@ -328,10 +338,10 @@ Modelled on `examples/aws-serverless/scalable-openai` (queue mode, `S3Zip` reque
 
 | Failure | Where | What the caller or operator sees |
 |---|---|---|
-| Wrong mode, transport, base-path env, or store | `LambdaStreamGuard` at init | `AKConfigError`. LWA's readiness check never passes, so the invocation fails, and the error is in the function log |
+| Wrong mode, transport, base-path env, or store | `LambdaStreamGuard` at init | LWA reports a readiness (init) timeout. `LambdaStreamServer.run` logs the `AKConfigError` with its traceback first, so the cause is in the function log |
 | Plan-time misconfiguration | Terraform validation | `terraform plan` fails with the 8b message |
 | Request refused before the queue (unknown agent, bad body, store cannot stream) | `RequestHandler` | The same 4xx JSON as on ECS, before the stream opens |
-| Runner fails one attempt | SQS retry | Nothing yet; chunks continue on the retry (dedup suffix carries the receive count, `akagentrunner.py:345-355`) |
+| Runner fails one attempt | SQS retry | The retry reruns the agent from the start. Chunks of the failed attempt are already in the store, so the caller sees the reply start again (design section 7; same as WebSocket delta today). The dedup suffix carries the receive count (`akagentrunner.py:345-355`), so the retry's chunks are not dropped as duplicates |
 | Runner exhausts retries | `ServerlessStreamAgentRunner.on_permanent_failure` | An error chunk `{"error", "done": true}` reaches the stream |
 | Response handler exhausts retries on a chunk | Serverless `ResponseHandler.on_permanent_failure` | An error chunk reaches the stream; the stream ends |
 | No chunk within the store's wait | `_sse_stream` (`request_handler.py:680-687`) | `data: {"error": "Stream timed out", "done": true, ...}` |
@@ -351,6 +361,7 @@ Modelled on `examples/aws-serverless/scalable-openai` (queue mode, `S3Zip` reque
 - `TestLambdaChatPathMiddleware` (a one-route Starlette app that echoes `scope["path"]`):
   - the default chat path, a non-default `agent_endpoint` (`/v2/api/talk` → `/api/v1/chat`), a trailing
     slash, `/api/v1/agents` unchanged, `/health` unchanged, a websocket or lifespan scope unchanged.
+  - a listed prefixed path such as `/api/v1/a2a/x` stays unchanged (it is not mapped to `/a2a/x`).
 - `TestLambdaStreamServerApp` (over `httpx.ASGITransport` and `LambdaStreamServer.build_app`):
   - SSE end to end through the configured chat path. The guard is patched to pass, because it requires
     `sqs`. The app runs over the `in_memory` transport and store, with a thread that drains the input
@@ -358,6 +369,7 @@ Modelled on `examples/aws-serverless/scalable-openai` (queue mode, `S3Zip` reque
     and the terminal frame.
   - `handlers` are mounted beside `RequestHandler`.
   - the guard runs before `RESTAPI.build_app` (patched to fail if reached).
+  - `run` logs a guard's `AKConfigError` and re-raises it, without starting uvicorn.
 
 **Extended files**
 
@@ -374,6 +386,6 @@ Modelled on `examples/aws-serverless/scalable-openai` (queue mode, `S3Zip` reque
 keeps its name.
 
 **Terraform:** `terraform validate` in `ak-aws/serverless`; `terraform plan` of `examples/aws-serverless/scalable-openai`
-shows no change; a plan of `sse-openai` shows `STREAM` integrations; each 8b validation fails a plan.
+shows no change; a plan of `sse-openai` shows `STREAM` integrations; each of the four 8b validations fails a plan.
 
 **Run:** `cd ak-py && uv run pytest tests/test_lambda_stream_server.py tests/test_akresponsehandler.py tests/test_akagentrunner_stream.py tests/test_lambda_router.py tests/test_lambda_webhook_host.py tests/test_pipeline_io_handler.py tests/test_aws_lazy_exports.py`, then the full `uv run pytest` and `make lint-check-all`.
