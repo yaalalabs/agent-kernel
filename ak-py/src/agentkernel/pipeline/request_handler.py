@@ -194,9 +194,11 @@ class RestHandler(AgentRESTRequestHandler):
         refusal = await self._availability_refusal(body)
         if refusal is not None:
             status_code, error = refusal
-            self._log.warning(f"[REFUSED] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}")
+            self._log.warning(
+                f"Request refused: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}"
+            )
             return QueuedReply(request_id=request_id, status_code=status_code, body={"error": error, "session_id": body.session_id})
-        self._log.info(f"[ENQUEUE] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
+        self._log.info(f"Request enqueued: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
         # Offload the sync send so it doesn't block the event loop.
         await asyncio.to_thread(RequestProducer(self.get_transport()).enqueue, body, request_id, {ATTR_PROTOCOL: protocol})
 
@@ -204,7 +206,7 @@ class RestHandler(AgentRESTRequestHandler):
         if record is None:
             raise ReplyTimeoutError(request_id, *self._response_retry_config())
         reply = QueuedReply.from_record(record)
-        self._log.info(f"[REPLY] protocol={protocol}, request_id={request_id}, status_code={reply.status_code}")
+        self._log.info(f"Reply received: protocol={protocol}, request_id={request_id}, status_code={reply.status_code}")
         return reply
 
     @staticmethod
@@ -302,29 +304,30 @@ class RestHandler(AgentRESTRequestHandler):
         body.principal = getattr(request.state, "principal", None)
         # The surface rides the queued body, so the process that runs the agent serves only the agents on `rest`.
         body.surface = "rest"
-        return await self._enqueue_and_wait(body)
+        return await self._enqueue_and_wait(body, self._receive_request())
 
     def _receive_request(self) -> str:
-        """Give a new chat request its id and trace its arrival, before any validation or I/O runs for it.
+        """Give a new chat request its id and trace that its handler started, before any validation or I/O runs for it.
+
+        Not traced: the identity dependency (auth) and FastAPI's body parsing run before the route method does.
 
         :return: The request id, unique and distinct from the session id.
         """
         request_id = str(uuid.uuid4())
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, request_id)
         return request_id
 
-    async def _enqueue_and_wait(self, body: BaseRunRequest, admitted: bool = False, request_id: str | None = None) -> Any:
+    async def _enqueue_and_wait(self, body: BaseRunRequest, request_id: str, admitted: bool = False) -> Any:
         """Validate, enqueue and answer one chat request whose principal and surface are assigned.
 
         :param body: The chat request.
+        :param request_id: The id ``_receive_request`` gave the request.
         :param admitted: True when the caller has already asked whether the agent is available to the
             request's principal (``RequestHandler.run_chat`` asks before it saves any file), so the
             registry is read once for a request.
-        :param request_id: The id ``_receive_request`` gave the request, when the caller received it; None receives it here.
         :return: The reply (REST_SYNC) or the acknowledgement carrying the request id (REST_ASYNC).
         :raises HTTPException: For a request this route refuses, a wait that timed out, or a failed run.
         """
-        request_id = request_id or self._receive_request()
         try:
             if not body.session_id:
                 raise HTTPException(status_code=400, detail="session_id is required")
@@ -503,8 +506,8 @@ class RequestHandler(RestHandler):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
         # The surface assigns the principal and names itself; a client value is overwritten (see enqueue_and_wait).
         body.principal = getattr(request.state, "principal", None)
-        body.surface = "rest"
         request_id = self._receive_request()
+        body.surface = "rest"
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
@@ -519,7 +522,7 @@ class RequestHandler(RestHandler):
         await self._offload_attachments(body)
         if self._config.execution.is_sse:
             return await self._run_chat_stream(body, request_id)
-        return await self._enqueue_and_wait(body, admitted=True, request_id=request_id)
+        return await self._enqueue_and_wait(body, request_id, admitted=True)
 
     def _reject_unqueueable_attachments(self, body: BaseRunRequest) -> None:
         """Refuse files that cannot cross a broker, before anything is saved, recorded or enqueued.

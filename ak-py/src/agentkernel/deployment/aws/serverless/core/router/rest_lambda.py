@@ -165,7 +165,7 @@ class DefaultEndpointsHandler:
         """
         if payload.request_id:
             # Here, not in _handle_request: that also serves the async status polls, which reuse the request_id.
-            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, payload.request_id)
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, payload.request_id)
         request_body = payload.body
         if request_body is None:
             raise ValueError("body is required")

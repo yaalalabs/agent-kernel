@@ -16,7 +16,7 @@ logging.addLevelName(TRACE, "TRACE")
 class TraceStage(StrEnum):
     """Request-path stages written at ``TRACE``, in request order. The logged value is the name."""
 
-    REQUEST_RECEIVED = "REQUEST_RECEIVED"
+    REQUEST_HANDLER_START = "REQUEST_HANDLER_START"
     INPUT_ENQUEUED = "INPUT_ENQUEUED"
     AGENT_RECEIVED = "AGENT_RECEIVED"
     AGENT_START = "AGENT_START"
@@ -38,9 +38,11 @@ class TraceLine:
     request_id: str
     message: str | None = None
 
-    # Matches the lines AKLogger's formatter writes at TRACE; the two change together
+    # Matches the lines AKLogger's formatter writes at TRACE; the two change together. The optional AK-written
+    # message comes first (`[STAGE] message="..." request_id=...`) and the client-supplied request_id runs to end
+    # of line, so an id containing spaces or a look-alike `message="..."` still parses whole. A CRLF line ending is dropped.
     _PATTERN: ClassVar[re.Pattern] = re.compile(
-        r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) - \S+ - TRACE - \[([A-Z_]+)\] request_id=(.+?)(?: message="(.*)")?$'
+        r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) - \S+ - TRACE - \[([A-Z_]+)\] (?:message="(.*?)" )?request_id=(.+?)\r?$'
     )
 
     @classmethod
@@ -53,7 +55,7 @@ class TraceLine:
         match = cls._PATTERN.search(line)
         if not match or match.group(2) not in TraceStage.__members__:
             return None
-        timestamp, stage, request_id, message = match.groups()
+        timestamp, stage, message, request_id = match.groups()
         try:
             parsed_timestamp = datetime.fromisoformat(timestamp)
         except ValueError:

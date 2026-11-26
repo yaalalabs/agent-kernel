@@ -100,7 +100,7 @@ class IntegrationDelivery:
 
         if status_code >= 400:
             self._log.error(
-                f"[OUTPUT ERROR] integration={integration}, session_id={session_id}, "
+                f"Output error: integration={integration}, session_id={session_id}, "
                 f"request_id={request_id}, status_code={status_code}, error={body.get('error')}"
             )
             self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
@@ -112,7 +112,7 @@ class IntegrationDelivery:
             if paused is not None:
                 self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
                 run_async_sync(adapter.deliver_paused(paused, reply_context))
-                self._log.info(f"[OUTPUT PAUSED] Delivered a pause to {integration}: session_id={session_id}, request_id={request_id}")
+                self._log.info(f"Output paused: delivered a pause to {integration}: session_id={session_id}, request_id={request_id}")
                 return
 
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)

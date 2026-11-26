@@ -402,7 +402,7 @@ class SystemRoutesHandler(LambdaWSHandler):
             request = self._parse_body(event)
             if request.request_id:
                 # Before the principal lookup, so that read is inside the traced request.
-                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request.request_id)
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, request.request_id)
             ws_message_info = self._parse_event_to_wsmessage(event, request)
             user_id = ws_message_info.user_id
             request_body = request.body

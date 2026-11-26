@@ -3,6 +3,7 @@ import json
 import pytest
 
 from agentkernel.core.config import _ExecutionConfig
+from agentkernel.core.logger import TRACE, TraceStage
 from agentkernel.core.model import ExecutionMode
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.adapter.base import OutboundAdapter
@@ -154,6 +155,21 @@ class TestWebSocketDeltaDelivery:
         assert call["message_type"] == WebSocketHandlerABC.MessageType.STREAM_CHUNK
         with pytest.raises(TimeoutError):  # nothing was routed into the SSE chunk store
             next(store.stream("r1", chunk_timeout=0.1))
+
+    def test_only_the_last_chunk_is_traced(self, monkeypatch, caplog):
+        """#911 L2: one trace line per stage per request, however many chunks it has."""
+        _use_mode(monkeypatch, ExecutionMode.ASYNC, "delta")
+        handler, _, ws = _ws_handler()
+        attributes = {"request_id": "r1", "user_id": "u1"}
+        with caplog.at_level(TRACE, logger="ak"):
+            handler.process(_output_msg({"delta": "x", "done": False, "session_id": "s1"}, attributes=attributes))
+            handler.process(_output_msg({"done": True, "session_id": "s1"}, attributes=attributes))
+
+        assert len(ws.broadcasts) == 2
+        assert [record.args for record in caplog.records if record.levelno == TRACE] == [
+            (TraceStage.OUTPUT_RECEIVED, "r1"),
+            (TraceStage.RESPONSE_DELIVERED, "r1"),
+        ]
 
     def test_a_chunk_without_user_id_raises_for_retry_instead_of_reaching_the_store(self, monkeypatch):
         _use_mode(monkeypatch, ExecutionMode.ASYNC, "delta")

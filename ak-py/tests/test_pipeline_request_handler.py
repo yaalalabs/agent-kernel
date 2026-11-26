@@ -458,7 +458,7 @@ class TestTraceStages:
 
         lines = _trace_lines(caplog)
         assert [line.stage for line in lines["ak.pipeline.request_handler"]] == [
-            TraceStage.REQUEST_RECEIVED,
+            TraceStage.REQUEST_HANDLER_START,
             TraceStage.INPUT_ENQUEUED,
             TraceStage.RESPONSE_POLL_START,
             TraceStage.RESPONSE_FOUND,
@@ -475,7 +475,7 @@ class TestTraceStages:
         # RESPONSE_POLL_START is left out: the edge starts polling while the runner works, in either order.
         written = [record.args[0] for record in caplog.records if record.levelno == TRACE and record.args[0] != TraceStage.RESPONSE_POLL_START]
         assert written == [
-            TraceStage.REQUEST_RECEIVED,
+            TraceStage.REQUEST_HANDLER_START,
             TraceStage.INPUT_ENQUEUED,
             TraceStage.AGENT_RECEIVED,
             TraceStage.AGENT_START,
@@ -486,12 +486,12 @@ class TestTraceStages:
             TraceStage.RESPONSE_FOUND,
         ]
 
-    def test_request_received_before_validation(self, monkeypatch, caplog):
+    def test_request_handler_start_before_validation(self, monkeypatch, caplog):
         _configure(monkeypatch, mode="rest_sync")
         with caplog.at_level(TRACE, logger="ak"):
             assert _client().post(CHAT, json={"prompt": "hello", "agent": AGENT_NAME}).status_code == 400
 
-        assert [record.args[0] for record in caplog.records if record.levelno == TRACE] == [TraceStage.REQUEST_RECEIVED]
+        assert [record.args[0] for record in caplog.records if record.levelno == TRACE] == [TraceStage.REQUEST_HANDLER_START]
 
     def test_delta_sse(self, monkeypatch, dummy_agent, workers, caplog):
         _configure(monkeypatch, mode="rest_sync", message_type="delta")
@@ -499,10 +499,10 @@ class TestTraceStages:
         with caplog.at_level(TRACE, logger="ak"):
             with _client().stream("POST", CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME}) as response:
                 frames = [line for line in response.iter_lines() if line.startswith("data: ")]
-            _await_deliveries(caplog, len(frames))
+            _await_deliveries(caplog, 1)
 
         lines = _trace_lines(caplog)
-        assert [line.stage for line in lines["ak.pipeline.request_handler"]] == [TraceStage.REQUEST_RECEIVED, TraceStage.INPUT_ENQUEUED]
+        assert [line.stage for line in lines["ak.pipeline.request_handler"]] == [TraceStage.REQUEST_HANDLER_START, TraceStage.INPUT_ENQUEUED]
         assert [line.stage for line in lines["ak.pipeline.stream_agent_runner"]] == [
             TraceStage.AGENT_RECEIVED,
             TraceStage.AGENT_START,
@@ -510,11 +510,9 @@ class TestTraceStages:
             TraceStage.AGENT_DONE,
             TraceStage.OUTPUT_ENQUEUED,
         ]
-        # One output message per chunk, each traced (#911 Q1).
-        assert [line.stage for line in lines["ak.pipeline.response_handler"]] == [
-            TraceStage.OUTPUT_RECEIVED,
-            TraceStage.RESPONSE_DELIVERED,
-        ] * len(frames)
+        # One output message per chunk; only the last (done) chunk is traced (#911 L2).
+        assert len(frames) > 1
+        assert [line.stage for line in lines["ak.pipeline.response_handler"]] == [TraceStage.OUTPUT_RECEIVED, TraceStage.RESPONSE_DELIVERED]
         assert len({line.request_id for group in lines.values() for line in group}) == 1
 
 

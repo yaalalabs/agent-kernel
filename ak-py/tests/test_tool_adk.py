@@ -918,7 +918,7 @@ class TestGoogleADKAgentToolReporting:
 
     def test_a_callable_object_is_reported_under_the_name_adk_serves_it_by(self):
         """ADK wraps a bare callable in a `FunctionTool` and names it itself: an instance by its class, a
-        `functools.partial` as `partial`. A policy has to use the name the model calls."""
+        `functools.partial` by the function it wraps. A policy has to use the name the model calls."""
         import functools
 
         from google.adk.agents import LlmAgent
@@ -929,10 +929,10 @@ class TestGoogleADKAgentToolReporting:
             def __call__(self, order_id: str) -> str:
                 return "refunded"
 
-        root = LlmAgent(name="billing", model=self.MODEL, tools=[lookup_order, Refund(), functools.partial(lookup_order, "7")])
+        root = LlmAgent(name="billing", model=self.MODEL, tools=[lookup_order, Refund(), functools.partial(add, 1)])
         agent = self._agent(root)
 
-        assert agent.get_tool_names() == ["lookup_order", "Refund", "partial"]
+        assert agent.get_tool_names() == ["lookup_order", "Refund", "add"]
         assert agent.get_tool_names() == [FunctionTool(func=tool).name for tool in root.tools]
         assert agent._tool_descriptions()["Refund"] == "Refund an order."
 

@@ -443,14 +443,17 @@ class TestTrace:
         assert match
         assert abs((datetime.now(UTC) - datetime.fromisoformat(match.group(1))).total_seconds()) < 60
 
-    # A client may supply a request_id with spaces; the parser keeps it whole.
-    @pytest.mark.parametrize("request_id", ["r-2", "r 1", "6f1c2e0a-8b9d-4c3e-a1f2-0d4b5c6e7f80"])
-    def test_parse_round_trip(self, request_id):
-        message = 'said "hi" and left'
-        out = _ak_output(
-            "TRACE",
-            lambda log: log.log(TRACE, '[%s] request_id=%s message="%s"', TraceStage.AGENT_DONE, request_id, message),
-        )
+    # A client may supply any request_id; it is the last field, so it parses whole, even with a look-alike message.
+    @pytest.mark.parametrize("request_id", ["r-2", "r 1", 'r 1 message="x"', "6f1c2e0a-8b9d-4c3e-a1f2-0d4b5c6e7f80"])
+    @pytest.mark.parametrize("message", [None, 'said "hi" and left'])
+    def test_parse_round_trip(self, request_id, message):
+        if message is None:
+            out = _ak_output("TRACE", lambda log: log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id))
+        else:
+            out = _ak_output(
+                "TRACE",
+                lambda log: log.log(TRACE, '[%s] message="%s" request_id=%s', TraceStage.AGENT_DONE, message, request_id),
+            )
         line = TraceLine.parse(out)
         assert line is not None
         assert line.stage is TraceStage.AGENT_DONE
@@ -463,6 +466,11 @@ class TestTrace:
     def test_parse_without_message(self, request_id):
         line = TraceLine.parse(f"2026-10-21T08:15:12.345Z - ak.pipeline - TRACE - [INPUT_ENQUEUED] request_id={request_id}")
         assert line == TraceLine(datetime(2026, 10, 21, 8, 15, 12, 345000, tzinfo=UTC), TraceStage.INPUT_ENQUEUED, request_id, None)
+
+    def test_parse_drops_crlf(self):
+        line = TraceLine.parse("2026-10-21T08:15:12.345Z - ak.x - TRACE - [AGENT_START] request_id=r 1\r\n")
+        assert line is not None
+        assert line.request_id == "r 1"
 
     def test_parse_tolerates_prefix(self):
         line = TraceLine.parse("2026-10-21T08:15:13.000Z\tabc-123\t2026-10-21T08:15:12.345Z - ak.x - TRACE - [AGENT_START] request_id=r")

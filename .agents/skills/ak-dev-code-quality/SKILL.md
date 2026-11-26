@@ -313,3 +313,4 @@ The following log levels are supported (in order of verbosity):
 
 A trace point is one `%`-style call, nothing else: `self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)`.
 Only trace lines carry a `[STAGE]` tag; `TraceLine.parse` (`core/logger.py`) reads them back, so the call shape and the parser change together.
+An optional message goes before the id, never after: `"[%s] message=\"%s\" request_id=%s"`. A client can supply the request id, so it is always the last field and parses to end of line.

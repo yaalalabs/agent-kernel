@@ -4,7 +4,7 @@ from collections.abc import Callable
 from enum import Enum, StrEnum
 from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from .event import PausedInterruption, StreamEvent
 from .util.payload import JSONPayload
@@ -794,6 +794,14 @@ class BaseRequest(BaseModel):
     route: str | None = None  # RouteKey of the Websocket, needed for WS implementation
     body: BaseRunRequest | None = None
     model_config = ConfigDict(extra="allow")
+
+    @field_validator("request_id")
+    @classmethod
+    def _reject_unprintable_request_id(cls, value: str | None) -> str | None:
+        # The id is client-supplied and written into one-line TRACE records; a newline would split or forge them.
+        if value is not None and not value.isprintable():
+            raise ValueError("request_id must not contain control characters")
+        return value
 
     @classmethod
     def from_payload(cls, payload: "BaseRequest | BaseRunRequest | dict[str, Any]") -> "BaseRequest":

@@ -140,8 +140,11 @@ class ResponseHandler(LambdaSQSConsumer):
         """
         message_attributes = SQSHandler.get_message_custom_attributes(record)
         request_id = message_attributes.get("request_id")
-        # Delta sends one output message per chunk, so this fires per chunk (#911 Q1).
-        cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_RECEIVED, request_id)
+        # Delta sends one output message per chunk; only the last (done) chunk is traced (#911 L2).
+        body = cls._decode_body(record.get("body"))
+        traced = not (isinstance(body, dict) and body.get("done") is False)
+        if traced:
+            cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_RECEIVED, request_id)
         cls._log.info(f"Processing message: {record}")
         integration = IntegrationDelivery.integration_of(message_attributes)
         if integration:
@@ -149,7 +152,7 @@ class ResponseHandler(LambdaSQSConsumer):
             cls._get_integration_delivery().deliver(
                 integration,
                 message_attributes,
-                cls._decode_body(record.get("body")),
+                body,
                 status_code=cls._resolve_status_code(message_attributes),
                 session_id=SQSHandler.get_message_system_attributes(record).get("MessageGroupId"),
             )
@@ -158,11 +161,13 @@ class ResponseHandler(LambdaSQSConsumer):
         execution = AKConfig.get().execution
         if execution.is_websocket:
             message_type = LambdaWSHandler.MessageType.STREAM_CHUNK if execution.is_delta else LambdaWSHandler.MessageType.CHAT_RESPONSE
-            cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+            if traced:
+                cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
             cls._broadcast_via_websocket(record, message_type=message_type)
         else:
             message = cls._construct_message_for_store(record)
-            cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
+            if traced:
+                cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_DELIVERED, request_id)
             cls._get_response_store().add_message(message)
             cls._log.info(f"Stored message for session_id: {message['session_id']}, request_id: {message['request_id']}")
 

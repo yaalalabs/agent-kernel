@@ -112,7 +112,7 @@ class AgentRunner:
 
         body = AGUIRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
-        self._log.info(f"[AGUI AGENT START] request_id={request_id}, session_id={body.session_id} (receive_count={message.receive_count})")
+        self._log.info(f"AG-UI agent start: request_id={request_id}, session_id={body.session_id} (receive_count={message.receive_count})")
 
         handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent, surface=body.surface, principal=body.principal)
         session = handler.service.session if handler.service is not None else None
@@ -146,7 +146,7 @@ class AgentRunner:
             self._send_to_output(message, terminal, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
             chunk_count += 1
 
-        self._log.info(f"[AGUI AGENT DONE] request_id={request_id}, chunks={chunk_count}")
+        self._log.info(f"AG-UI agent done: request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
         """Surface an input message that exhausted its retries as an error reply. Catches own exceptions.
@@ -453,7 +453,7 @@ class RealtimeAgentRunner(AgentRunner):
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
         RealtimeConnectionPool.initialize().dispatch(body, request_id, message.attributes.get(ATTR_USER_ID), message.attributes, self._chat_service)
-        self._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={message.receive_count})")
+        self._log.debug(f"Realtime chunk: request_id={request_id} (receive_count={message.receive_count})")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
         """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions.

@@ -488,7 +488,7 @@ class TestWebSocketChat:
                 websocket.receive_json()
 
         traces = [record.args for record in caplog.records if record.levelno == TRACE]
-        assert traces == [(TraceStage.REQUEST_RECEIVED, "r-1"), (TraceStage.INPUT_ENQUEUED, "r-1")]
+        assert traces == [(TraceStage.REQUEST_HANDLER_START, "r-1"), (TraceStage.INPUT_ENQUEUED, "r-1")]
 
     def test_chat_frame_is_enqueued_with_the_pipeline_attributes(self, monkeypatch):
         app, _, transport, _ = _ws_app(monkeypatch)
