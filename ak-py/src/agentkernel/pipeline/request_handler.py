@@ -194,9 +194,11 @@ class RestHandler(AgentRESTRequestHandler):
         refusal = await self._availability_refusal(body)
         if refusal is not None:
             status_code, error = refusal
-            self._log.warning(f"[REFUSED] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}")
+            self._log.warning(
+                f"Request refused: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}"
+            )
             return QueuedReply(request_id=request_id, status_code=status_code, body={"error": error, "session_id": body.session_id})
-        self._log.info(f"[ENQUEUE] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
+        self._log.info(f"Request enqueued: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
         # Offload the sync send so it doesn't block the event loop.
         await asyncio.to_thread(RequestProducer(self.get_transport()).enqueue, body, request_id, {ATTR_PROTOCOL: protocol})
 
@@ -204,7 +206,7 @@ class RestHandler(AgentRESTRequestHandler):
         if record is None:
             raise ReplyTimeoutError(request_id, *self._response_retry_config())
         reply = QueuedReply.from_record(record)
-        self._log.info(f"[REPLY] protocol={protocol}, request_id={request_id}, status_code={reply.status_code}")
+        self._log.info(f"Reply received: protocol={protocol}, request_id={request_id}, status_code={reply.status_code}")
         return reply
 
     @staticmethod

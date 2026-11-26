@@ -780,9 +780,10 @@ flowchart TD
   `RESPONSE_DELIVERED`; `rest_sync` only: `RESPONSE_POLL_START`, `RESPONSE_FOUND` (traced like the rest, but `rest_sync`
   isn't benchmarked, so they get no duration column and no point in the stage graphs).
 - **One call per trace point:** `log.log(TRACE, "[%s] request_id=%s", stage, request_id)`, with an optional
-  quoted `message` last. `%`-style args so nothing is formatted when off.
+  quoted `message` before the id (`[%s] message="%s" request_id=%s`). The id can be client-supplied, so it is the
+  last field and parses to end of line (PR #1002 review). `%`-style args so nothing is formatted when off.
 - **Line format**, same on every host:
-  `2026-10-21T08:15:12.345Z - ak.pipeline.agent_runner - TRACE - [AGENT_DONE] request_id=<id> message="..."`.
+  `2026-10-21T08:15:12.345Z - ak.pipeline.agent_runner - TRACE - [AGENT_DONE] message="..." request_id=<id>`.
   - Timestamp = the log record's creation time, **UTC, millisecond precision**, ISO 8601 with `Z`.
   - Stage in square brackets first. **Only trace lines carry the stage in `[...]`.**
   - The formatter change (`core/logger.py:42`) applies to **every** AK log line, not only `TRACE`.
@@ -807,7 +808,7 @@ flowchart TD
   - The INFO lines on the request path stay at `INFO` with their text but **drop their `[...]` tag** (e.g.
     `[AGENT DONE] request_id=...` → `Agent done: request_id=...`), so normal logs still show them.
   - The trace call for the matching stage goes where the stage is (which may differ from where the INFO line sits).
-  - At `TRACE` both show. Nothing in the repo matches on the old tags (no docs, metric filters or dashboards).
+  - At `TRACE` both show. No metric filters or dashboards match on the old tags; the one example README that quoted one is updated.
   - Per-chunk debug lines, `[OUTPUT STORE]` and off-path lines without a `request_id` are left as they are.
 - Trace lines carry no worker id. Worker counts come only from the fetchers.
 

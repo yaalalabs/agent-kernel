@@ -385,7 +385,7 @@ marker, the inbound envelope and the store round trip are all exercised — just
 The suite cannot cover the two-process topology, so these four are worth a manual pass. Each is
 something mode A structurally cannot show you:
 
-1. **The run leaves the API process.** Ask the agent anything and watch `[AGUI AGENT START]` appear
+1. **The run leaves the API process.** Ask the agent anything and watch `AG-UI agent start` appear
    in **terminal 2** while terminal 1 holds the browser's connection. The `request_id` on both lines
    is the same run.
 2. **The conversation survives the hop.** Add a task, then ask how many are left. Terminal 2 reads

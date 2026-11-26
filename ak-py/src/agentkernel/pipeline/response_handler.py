@@ -207,7 +207,7 @@ class ResponseHandler:
         status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
         if status_code >= 400:
             self._log.error(
-                f"[OUTPUT ERROR] integration={integration}, session_id={message.group_id}, "
+                f"Output error: integration={integration}, session_id={message.group_id}, "
                 f"request_id={message.attributes.get(ATTR_REQUEST_ID)}, status_code={status_code}, error={body.get('error')}"
             )
             run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
@@ -219,7 +219,7 @@ class ResponseHandler:
             loop = asyncio.new_event_loop()
             self._delivery_local.loop = loop
         loop.run_until_complete(adapter.deliver_chunk(chunk, reply_context))
-        self._log.debug(f"[OUTPUT DONE] Delivered chunk to {integration}: session_id={message.group_id}")
+        self._log.debug(f"Output done: delivered chunk to {integration}: session_id={message.group_id}")
 
     def _deliver_realtime_failure(self, message: QueueMessage, integration: str) -> None:
         """Tell the live edge that a realtime output message failed for good, if it is still connected."""
