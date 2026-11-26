@@ -128,7 +128,7 @@ async def test_late_send_does_not_shift_later_sends(run_log):
     await gen.close()
     base = result.records[0].scheduled_send
     sent = [(r.sent - base).total_seconds() for r in result.records]
-    assert sent[0] == pytest.approx(0.25, abs=0.03)
+    assert sent[0] == pytest.approx(0.0, abs=0.03)  # sent is taken as the send starts; this one takes 0.25 s
     assert sent[1] == pytest.approx(0.25, abs=0.03)  # was due at 0.2: sent at once, not 0.2 after the late one
     assert sent[2] == pytest.approx(0.4, abs=0.03)
     assert sent[3] == pytest.approx(0.6, abs=0.03)

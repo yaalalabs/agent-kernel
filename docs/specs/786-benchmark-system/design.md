@@ -610,7 +610,8 @@ flowchart TD
     in flight, as in steady steps, it can't be attributed and those requests show as `timeout`);
   - sets the `request_id` itself (the WS handler accepts a client id, `pipeline/ws/handler.py:228`; the Lambda WS
     path requires one, `deployment/aws/serverless/core/router/ws_lambda.py:386-387`);
-  - records scheduled send, sent, first chunk and complete times per request from the client clock: timestamps are
+  - records scheduled send, sent (taken just before the send, like AK's trace lines; decided 2026-11-26), first chunk
+    and complete times per request from the client clock: timestamps are
     UTC wall-clock time (to line up with AK's UTC trace lines); latency and other client-side durations come from a
     monotonic clock (decided 2026-11-23, #912);
   - stops waiting for a request after the client timeout and records `status = timeout`.

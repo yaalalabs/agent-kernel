@@ -98,13 +98,14 @@ class LoadGenerator:
             if connect_error is not None:
                 self._settle(record, RequestStatus.ERROR, f"connect failed: {type(connect_error).__name__}: {connect_error}")
                 continue
+            # Taken before the send, like AK's trace lines: the server can log REQUEST_RECEIVED before send() returns.
+            record.sent_mono = time.monotonic()
+            record.sent = self._wall(record.sent_mono)
             try:
                 await driver.send(record.request_id, record.session_id, record.request_id)
             except Exception as e:  # noqa: BLE001 - a failed send is that request's error, never the step's
                 self._settle(record, RequestStatus.ERROR, f"send failed: {type(e).__name__}: {e}")
                 continue
-            record.sent_mono = time.monotonic()
-            record.sent = self._wall(record.sent_mono)
             if record.status is None:
                 self._waiting[record.request_id] = record
 
