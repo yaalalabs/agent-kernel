@@ -283,8 +283,9 @@ class <Name>Agent(Agent):
         return [tool.name for tool in self._reachable_tools()]  # framework-specific walk, deduplicated by name
 
     def _tool_descriptions(self) -> dict[str, str]:
-        # Tool name -> the native tool's description; the descriptor's skills carry it
-        return {tool.name: tool.description or "" for tool in self._native_agent.tools}
+        # Tool name -> the native tool's description, over the same walk as get_tool_names, so a reachable
+        # agent's tool carries its description too; the descriptor's skills carry it
+        return {tool.name: tool.description or "" for tool in self._reachable_tools()}
 ```
 
 **Key requirements:**

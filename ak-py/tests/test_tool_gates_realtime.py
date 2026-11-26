@@ -200,6 +200,7 @@ class TestTheRoomsFilter:
         # Failing closed: the room loses its tools, not keeps the last filter, and the next input asks again.
         from agentkernel.identity.authz.gate import AccessGate
 
+        monkeypatch.setattr(RealtimeConnection, "RETRY_PAUSE_SECONDS", 0.0)
         connection = call()
         await _speak(connection, ALICE)
         asked: list[str] = []
@@ -228,6 +229,7 @@ class TestTheRoomsFilter:
         # asked for again on his next input, and then the room is what both of them may use.
         from agentkernel.identity.authz.gate import AccessGate
 
+        monkeypatch.setattr(RealtimeConnection, "RETRY_PAUSE_SECONDS", 0.0)
         connection = call()
         asked: list[str] = []
         working = AccessGate.tool_filter
@@ -251,6 +253,33 @@ class TestTheRoomsFilter:
         published = connection.session.get_tool_filter()
         assert (published.level, published.allowed) == (AccessLevel.READ, frozenset({"lookup"}))
         assert published.reason("refund") == REFUND_FOR_READ
+
+    @pytest.mark.asyncio
+    async def test_a_participant_the_authorizer_failed_for_is_not_asked_again_until_the_pause_has_passed(self, call, monkeypatch):
+        # Every audio chunk is an input: without a pause an authorizer that is down would be asked on each one.
+        from agentkernel.identity.authz.gate import AccessGate
+
+        connection = call()
+        asked: list[str] = []
+        working = AccessGate.tool_filter
+
+        def down_once(self, principal, agent, level=None):
+            asked.append(principal.subject)
+            if len(asked) == 1:
+                raise RuntimeError("the policy engine is down")
+            return working(self, principal, agent, level)
+
+        monkeypatch.setattr(AccessGate, "tool_filter", down_once)
+        monkeypatch.setattr(RealtimeConnection, "RETRY_PAUSE_SECONDS", 3600.0)
+        await _speak(connection, BOB, BOB, BOB)
+        during_the_pause = connection.session.get_tool_filter()
+        monkeypatch.setattr(RealtimeConnection, "RETRY_PAUSE_SECONDS", 0.0)
+        await _speak(connection, BOB)
+
+        assert during_the_pause.allowed == frozenset()
+        assert during_the_pause.reason("lookup") == "tool gate failed: RuntimeError"
+        assert asked == ["bob", "bob"]
+        assert connection.session.get_tool_filter().allowed == frozenset({"lookup"})
 
     @pytest.mark.asyncio
     async def test_a_room_decision_that_fails_for_another_reason_leaves_no_tool_and_raises_nothing(self, call, monkeypatch):

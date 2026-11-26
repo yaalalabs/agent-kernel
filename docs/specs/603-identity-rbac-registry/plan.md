@@ -1382,7 +1382,7 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
   smolagents code agents ran their tools outside the run's context on the local executor and so
   were not gated; a realtime participant the authorizer cannot answer for leaves the room no tool,
   whoever speaks next, instead of failing the input (the second review round caught that another
-  speaker's input had restored the room's tools). The docs, changelog and bundled skill now say a denied tool is
+  speaker's input had restored the room's tools), and is asked about again at most once a second. The docs, changelog and bundled skill now say a denied tool is
   stopped on every framework and hidden from the model on four. Declined: moving the Claude
   refusal hook ahead of the application's `PreToolUse` hooks, since the SDK combines their
   decisions with deny first whatever the order.

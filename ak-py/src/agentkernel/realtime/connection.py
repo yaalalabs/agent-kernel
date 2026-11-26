@@ -97,6 +97,10 @@ class RealtimeConnection:
 
     _log = logging.getLogger("ak.realtime.connection")
 
+    # How long a participant the authorizer failed for waits before it is asked about them again. Every audio
+    # chunk is an input, so without a pause an authorizer that is down would be asked on each one.
+    RETRY_PAUSE_SECONDS: ClassVar[float] = 1.0
+
     # Bound on a consumer thread's wait for a model send to complete before the input is acked.
     SEND_TIMEOUT_SECONDS = 10.0
     # Output backlog the pacing loop may hold. Audio arrives faster than it plays, so this must be deep enough
@@ -146,8 +150,9 @@ class RealtimeConnection:
         # subject; None for one holding no level on the agent. Only filled with an `authorization` block.
         self._participants: dict[tuple[str, str | None, str], ToolFilter | None] = {}
         # Participants who have spoken but whose decision the authorizer could not give, with the reason each
-        # tool is refused meanwhile. While one is here the room is offered no tool.
-        self._unanswered: dict[tuple[str, str | None, str], str] = {}
+        # tool is refused meanwhile and when it was last asked (`time.monotonic`). While one is here the room is
+        # offered no tool.
+        self._unanswered: dict[tuple[str, str | None, str], tuple[str, float]] = {}
         # Lifecycle. Moved from consumer threads (mark_closed) and from the loop (connect, close), so
         # every move happens under the lock.
         self._state = RealtimeConnection._State.CONNECTING
@@ -385,7 +390,7 @@ class RealtimeConnection:
         leaves the room no tool. Who spoke last changes nothing, so no participant borrows another's level
         (spec #603, section 8.4, design refinement 22). Each participant is asked about once their decision
         is given; one the authorizer could not answer for leaves the room no tool, whoever speaks next, and
-        is asked again on their own next input.
+        is asked again on their own next input once ``RETRY_PAUSE_SECONDS`` have passed.
 
         :param principal: The principal of the input just dispatched, or None for an anonymous one.
         :return: The room's filter, or None without an ``authorization`` block.
@@ -394,7 +399,7 @@ class RealtimeConnection:
         if gate is None:
             return None
         acting, key = self._participant(principal)
-        if key not in self._participants:
+        if key not in self._participants and self._retry_due(key):
             try:
                 self._participants[key] = gate.tool_filter(acting, self.agent)
                 self._unanswered.pop(key, None)
@@ -405,8 +410,16 @@ class RealtimeConnection:
                 self._log.warning(
                     f"Realtime session {self.session_id}: the tool filter of a participant could not be decided, so no tool is offered: {error!r}"
                 )
-                self._unanswered[key] = f"{ToolGate.FAILED}: {type(error).__name__}"
-        return self._shared(list(self._participants.values()), list(self._unanswered.values()))
+                self._unanswered[key] = (f"{ToolGate.FAILED}: {type(error).__name__}", time.monotonic())
+        return self._shared(list(self._participants.values()), [reason for reason, _ in self._unanswered.values()])
+
+    def _retry_due(self, key: tuple[str, str | None, str]) -> bool:
+        """Whether a participant's decision may be asked for: never asked, or last asked ``RETRY_PAUSE_SECONDS`` ago.
+
+        :param key: The participant's provider, namespace and subject.
+        """
+        unanswered = self._unanswered.get(key)
+        return unanswered is None or time.monotonic() - unanswered[1] >= self.RETRY_PAUSE_SECONDS
 
     def _shared(self, filters: list[ToolFilter | None], unanswered: list[str]) -> ToolFilter:
         """The tool decision every participant's allows.

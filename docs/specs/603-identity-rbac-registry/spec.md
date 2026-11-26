@@ -2085,7 +2085,9 @@ Shared pieces (`core/`):
     (`RealtimeConnection._unanswered`, with the reason `tool gate failed: <type>`) and the room is
     offered no tool while any participant is unanswered, whoever speaks next; a warning is logged.
     The speaker's input is not counted as published while they are unanswered, so their next input
-    asks the authorizer again, and a decision it gives replaces the unanswered entry. Any other
+    asks the authorizer again once `RealtimeConnection.RETRY_PAUSE_SECONDS` (1 s) have passed since
+    the last attempt, and a decision it gives replaces the unanswered entry. The pause exists because
+    every audio chunk is an input: without it an authorizer that is down would be asked on each one. Any other
     failure in deciding the room's filter publishes a filter that allows no tool, with the same
     reason, and is retried on the next input. Raising would have handed the input back to the pool's
     queue to be retried, every audio chunk of it.
