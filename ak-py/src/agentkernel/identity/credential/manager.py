@@ -147,8 +147,9 @@ class CredentialManager:
         Keeps a connection's credential another ``inbound_ttl`` from now, on each frame the connection sends.
 
         Only a connection credential whose token carries no ``exp`` is renewed: one with an expiry already lasts
-        exactly as long as its token, and a run's credential is the run's. A credential that has expired is not
-        brought back. Reads the stored credential and writes it again, so any process that can reach the store
+        exactly as long as its token, and a run's credential is the run's. The store extends the entry only if
+        it is still live (``CredentialStore.touch``), so a credential that has expired, or that a disconnect in
+        another process deleted between two frames, is not brought back. Any process that can reach the store
         can renew it. Never raises.
 
         :param principal: The connection's principal.
@@ -159,9 +160,7 @@ class CredentialManager:
         if not reference or not reference.startswith(self.CONNECTION_PREFIX) or self._expiry(principal) is not None:
             return
         try:
-            credential = self._store.get(reference)
-            if credential is not None:
-                self._store.put(reference, credential, time.time() + self._inbound_ttl)
+            self._store.touch(reference, time.time() + self._inbound_ttl)
         except Exception as error:
             self._log.warning(f"A connection's credential could not be renewed; it expires with its TTL: {type(error).__name__}")
 
@@ -184,19 +183,21 @@ class CredentialManager:
     @staticmethod
     def require_shared_store(config: Any, where: str) -> None:
         """
-        Refuses an in-memory credential store where the process that keeps a request's credential is not the one
-        that reads it: a broker transport, the AWS Lambda functions.
+        Refuses a credential store that is not shared between processes where the process that keeps a request's
+        credential is not the one that reads it: a broker transport, the AWS Lambda functions, the ECS WebSocket
+        API. The store class's ``shared`` decides, so ``in_memory`` is refused by its short name or its dotted
+        path, and so is a bring-your-own store that declares itself not shared.
 
         :param config: The configuration.
         :param where: Where the deployment runs, completing "cannot work ...".
-        :raises AKConfigError: If ``identity.credentials`` names the ``in_memory`` store.
+        :raises AKConfigError: If ``identity.credentials`` names a store that is not shared, or an unknown one.
         """
         identity = getattr(config, "identity", None)
         credentials = getattr(identity, "credentials", None) if identity is not None else None
-        if credentials is not None and credentials.store.type.lower() == "in_memory":
+        if credentials is not None and not CredentialStoreFactory.is_shared(credentials.store):
             raise AKConfigError(
-                f"identity.credentials.store.type in_memory cannot work {where}: the process that keeps a request's "
-                "credential is not the one that runs its agent. Use a shared store (redis, valkey or dynamodb)"
+                f"identity.credentials.store.type {credentials.store.type} cannot work {where}: the process that keeps "
+                "a request's credential is not the one that runs its agent. Use a shared store (redis, valkey or dynamodb)"
             )
 
     @classmethod
@@ -239,4 +240,5 @@ class CredentialManager:
         try:
             self._store.delete(reference)
         except Exception as error:
-            self._log.warning(f"An inbound credential could not be deleted; it expires with its TTL: {error!r}")
+            # The type alone: a client's message can quote its connection URL or the reference.
+            self._log.warning(f"An inbound credential could not be deleted; it expires with its TTL: {type(error).__name__}")

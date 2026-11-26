@@ -1002,10 +1002,14 @@ deleted).
   (`WS_POLICY_VIOLATION`). FastAPI is imported inside
   `dependency()`: the Lambda authorizer and the WebSocket connection handler authenticate through
   this class too and their packages carry no FastAPI. Authenticating keeps nothing; with
-  `identity.credentials` the dependency then retains the request's credential
-  (`CredentialManager.retain`, the constructor's `credentials` argument, which `from_config` fills
-  with `CredentialManager.get()`), so `state.principal` carries a `credential_ref`. `release(principal)`
-  deletes it through the manager, off the loop.
+  `identity.credentials` the dependency then retains the credential of an HTTP request that can start a
+  run (`CredentialManager.retain`, the constructor's `credentials` argument, which `from_config` fills
+  with `CredentialManager.get()`), so `state.principal` carries a `credential_ref`. It retains nothing
+  for `READ_ONLY_METHODS` (`GET`, `HEAD`, `OPTIONS`: a listing or a poll, which no run would release)
+  and nothing on a WebSocket handshake (a run's reference would die with the first frame's run).
+  `from_config(retains=False)` builds no manager, for a surface that never starts a run (the Lambda
+  authorizer). `bearer_token(header)` is the one bearer parser (public, never raises), which the Lambda
+  REST router uses too. `release(principal)` deletes it through the manager, off the loop.
 - **Which routes refuse the anonymous principal** is the handlers' decision, not the
   authenticator's. `AuthorisedRESTRequestHandler` (`api/handler.py`) reads
   `request.state.principal` back in `_resolve_user` and answers 401 `Authentication required`
@@ -1304,8 +1308,11 @@ deleted).
   (`ValueError`) and seals the value with its `CredentialCipher` (AES-GCM, a fresh 12-byte nonce
   prefixed, the store key as associated data), `get` opens it (`CredentialError`,
   `identity/errors.py`, for a value under another key or reference, or changed), and `delete` /
-  `clear` remove. A backend implements only `_write` / `_read` (None for missing or expired) /
-  `_remove` / `_clear` over ciphertext, so no caller handles ciphertext. `shared` (class attribute,
+  `clear` remove; `touch(key, expires_at)` extends a live entry without reading it and never revives
+  one that expired or was deleted. A backend implements only `_write` / `_read` (None for missing or
+  expired) / `_touch` (one step: a class-level lock in memory, `EXPIRE` on Redis and Valkey, a
+  conditional `update_item` on DynamoDB) / `_remove` / `_clear` over ciphertext, so no caller handles
+  ciphertext. `shared` (class attribute,
   default `True`) makes the base constructor refuse a store without a cipher (`AKConfigError` naming
   `identity.credentials.encryption_key`), a bring-your-own one included; `InMemoryCredentialStore`
   (`shared = False`, a class-level dict, expiry checked on read) is the one that may run keyless,
@@ -1313,13 +1320,15 @@ deleted).
   over `_RedisLikeCredentialStore` write value and expiry in one `SET ... PX`
   (`_RedisLikeDriver.set_with_expiry`, new beside `rpush_with_expiry`), under `ak:cred:`;
   `DynamoDBCredentialStore` keeps `credential_key`, `value`, `expires_at` (checked on read, since
-  DynamoDB's TTL removes items late) and `expiry_time` (rounded up, for that TTL). Neither driver has
+  DynamoDB's TTL removes items late) and `expiry_time` (rounded up, for that TTL), and reads with
+  `DynamoDBDriver.get(..., consistent=True)`, since another process wrote it a moment earlier. Neither driver has
   a store-wide TTL, and the config blocks refuse one. `CredentialCipher.from_config` reads the key
   named by `encryption_key` through `SecretManager`, decodes base64url strictly and requires 32
   bytes, never quoting the value; None without a key. `CredentialStoreFactory.create(credentials)`
   builds the cipher, then `in_memory` / `redis` / `valkey` / `dynamodb` from explicit settings (a
   shared type without its block is an `AKConfigError`, the registry's rule), else a dotted path
-  through `CredentialStore.from_config(store_config, cipher)`.
+  through `CredentialStore.from_config(store_config, cipher)`. `CredentialStoreFactory.is_shared(store)`
+  answers without building: False for `in_memory` (short name or dotted path), a dotted class's `shared`.
   **Retention, exchange and the broker** (iteration 25, refinement 24). `CredentialManager`
   (`manager.py`) is the process's store and exchangers, built once (`get()` None without the block,
   `reset()`), and owns the lifecycle. `retain(principal, credential, connection=False)` keeps the token
@@ -1327,36 +1336,43 @@ deleted).
   `conn:<hex>` until `exp`, else `now + inbound_ttl`, not renewed), returns the principal with
   `credential_ref`, keeps nothing for the anonymous principal or an expired token, and on a store failure
   logs (no token) and returns the principal unchanged. `release` deletes a run's reference, `forget` a
-  `conn:` one, `release_for` is the never-raising classmethod. **Retention is explicit at each surface**,
-  never inside authentication: the identity dependency (HTTP: REST, A2A, AG-UI, threads), the MCP
-  verifier (each call), the pipeline WebSocket gateway and the CLI (both for the connection, forgotten
+  `conn:` one (a failed delete logs the error's type only), `release_for` is the never-raising
+  classmethod. **Retention is explicit at each surface**, never inside authentication: the identity
+  dependency (HTTP requests that can start a run: REST, A2A, AG-UI, threads), the MCP
+  executor (each tool call, from the verified access token's token, deleted once the reply is in and
+  left to the runner on a timeout; never `AKTokenVerifier`, which FastMCP asks on every HTTP request of
+  a session), the pipeline WebSocket gateway and the CLI (both for the connection, forgotten
   when it ends). On AWS (iteration 25b, refinement 25): the Lambda REST router retains where a run
   starts (`_send_to_queue`, `_handle_agent_chat`) from the event's own `Authorization` header, never in
   `_parse_body` (a poll) and never in the authorizer, whose result is cached per token; the Lambda and
   ECS `$connect` handlers retain for the connection, and `AWSWebSocketHandler.on_disconnect` forgets for
   both. `renew(principal)` keeps a `conn:` credential whose principal has no `exp` another `inbound_ttl`
-  by reading it from the store and writing it again (never reviving an expired one, never raising), so
-  any process renews it: the pipeline gateway's `_dispatch`, the Lambda frame's `_connection_principal`
-  and the ECS `build_route_context` (via `renew_for`) call it on every frame. `forget_for` and
+  through `CredentialStore.touch` (so an expired or forgotten one stays gone, even when a disconnect in
+  another process races the frame; never raising), so any process renews it: the pipeline gateway's
+  `_dispatch`, the Lambda frame's `_connection_principal` and the ECS `build_route_context` (via
+  `renew_for`) call it on every frame, and the CLI before each prompt's run. `forget_for` and
   `renew_for` are the never-raising classmethods. The serverless runners release in `process_message`'s
-  `finally`. `CredentialManager.require_shared_store(config, where)` refuses an `in_memory` store
-  wherever one process keeps and another reads: a broker transport, the queued Lambda router, the
-  Lambda connection routes.
+  `finally`. `CredentialManager.require_shared_store(config, where)` refuses a store that is not shared
+  (`CredentialStoreFactory.is_shared`) wherever one process keeps and another reads: a broker transport,
+  the queued Lambda router, the Lambda connection routes, the ECS WebSocket API.
   **Release**: `Runtime.run` / `Runtime.stream` call `release_for` off the loop in their `finally`
   (after a gate refusal too); `AgentRunner.process` in its `finally`, reading the body principal only
   when it names a `credential_ref`, so a redelivered message finds none. `AgentRunner._validate_credential_store`
   (from `AgentRunner.run` and `IOHandler._validate_topology`) refuses an `in_memory` store on a broker,
   through `require_shared_store`.
-  `TokenExchanger(config)` (`exchange.py`) keeps `audience` and `scopes`; `PassthroughTokenExchanger`
-  (warns at construction) forwards the inbound token, expiring at `min(exp, now + inbound_ttl)`;
+  `TokenExchanger(config)` (`exchange.py`) keeps `audience` and `scopes`, and `cacheable` (class
+  attribute, True) says whether the broker may cache what it issues; `PassthroughTokenExchanger` (warns
+  at construction, `cacheable = False`) forwards the inbound token, expiring at `min(exp, now + inbound_ttl)`;
   `TokenExchangerFactory.create(config, inbound_ttl)` refuses the reserved `rfc8693`, `entra_obo`,
   `id_jag`, builds a dotted path with its entry, and `create_all` keys by audience (duplicates refused);
   `IssuedToken` hides its token from `repr`. `CredentialBroker` (`broker.py`, no cipher):
   `token_for(audience, scopes=None)` raises `CredentialError` for no store ("not configured", or
-  "unavailable" when `for_run` could not build the manager), a run without `credential_ref` (before the
-  cache, so nothing is borrowed), no exchanger, a failed exchange (type only, never the token) or an
-  unreachable store; it caches issued tokens under `cred:issued:<sha256 of [subject, provider,
-  namespace, agent_id, audience, sorted scopes]>` until 30 s before expiry. `ToolContext.credentials`
+  "unavailable" when `for_run` could not build the manager), a run without `credential_ref`, no
+  exchanger, an inbound entry that is gone (read before the cache, so a released or expired run is
+  served nothing), a failed exchange (type only, never the token) or an unreachable store; when the
+  exchanger is `cacheable` it caches issued tokens under `cred:issued:<sha256 of [subject, provider,
+  namespace, agent_id, audience, sorted scopes, sha256 of the inbound credential]>` until 30 s before
+  expiry. `ToolContext.credentials`
   is `CredentialBroker.for_run(principal, agent.descriptor.id)` and never raises.
 - **Contract suites** (imported from test code only): `identity/provider/testing.py` has
   `IdentityProviderContract` (fixtures `provider`, `valid_credential` as `(credential, expected

@@ -8,7 +8,7 @@ server is built with, so MCP callers are authenticated exactly as REST callers a
 """
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import urlsplit
 
 from fastmcp.server.auth.auth import AuthProvider, RemoteAuthProvider, TokenVerifier
@@ -20,9 +20,6 @@ from ...core.model import Principal
 from ...identity.errors import AuthenticationError
 from ...identity.provider.base import IdentityProvider, RequestContext
 from ...identity.provider.factory import IdentityProviderFactory
-
-if TYPE_CHECKING:
-    from ...identity.credential.manager import CredentialManager
 
 # The claim the verifier stores the principal under. FastMCP copies the verifier's token into its
 # own AccessToken before a tool sees it, keeping only the SDK fields, so a subclass field does not
@@ -66,14 +63,12 @@ class AKTokenVerifier(TokenVerifier):
 
     _log = logging.getLogger("ak.api.mcp.auth")
 
-    def __init__(self, provider: IdentityProvider, credentials: "CredentialManager | None" = None):
+    def __init__(self, provider: IdentityProvider):
         """
         :param provider: The configured identity provider.
-        :param credentials: Where each call's credential is retained for the run it may start; None keeps none.
         """
         super().__init__()
         self._provider = provider
-        self._credentials = credentials
 
     async def verify_token(self, token: str) -> AccessToken | None:
         try:
@@ -81,9 +76,6 @@ class AKTokenVerifier(TokenVerifier):
         except AuthenticationError as exc:
             self._log.info(f"Refused MCP credential: {exc}")
             return None
-        if self._credentials is not None:
-            # Kept for the run a tool call starts, which deletes it when the run ends (#603).
-            principal = await self._credentials.retain(principal, token)
         expires_at = principal.claims.get("exp")
         return AKAccessToken(
             token=token,
@@ -114,9 +106,7 @@ class AKMCPAuthProvider:
         provider = IdentityProviderFactory.get()
         if provider is None:
             return None
-        from ...identity.credential.manager import CredentialManager
-
-        verifier = AKTokenVerifier(provider, CredentialManager.get())
+        verifier = AKTokenVerifier(provider)
         scheme, settings = provider.security_scheme()
         discovery: Any = settings.get("url") if scheme == "openIdConnect" else None
         if not isinstance(discovery, str):

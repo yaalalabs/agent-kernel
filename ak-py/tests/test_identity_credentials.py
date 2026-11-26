@@ -191,8 +191,35 @@ class _FakeRedisLikeClient:
             self.values.pop(key, None)
             self.expiries.pop(key, None)
 
+    _clock = staticmethod(time.time)  # the parameter redis names `time` hides the module inside `expire`
+
+    def expire(self, name: str, time: int) -> bool:
+        # As EXPIRE does: only a key that still exists gets the new expiry.
+        if self.get(name) is None:
+            return False
+        self.expiries[name] = self._clock() + time
+        return True
+
     def scan_iter(self, match: str, count: int | None = None):
         return [key for key in list(self.values) if fnmatch.fnmatch(key, match)]
+
+
+class _FakeDynamoDBTable:
+    """The boto3 Table calls the store makes itself: a conditional update that only extends a live item."""
+
+    def __init__(self, items: dict):
+        self._items = items
+        self.updates: list[dict] = []
+
+    def update_item(self, Key, UpdateExpression, ConditionExpression, ExpressionAttributeValues, ExpressionAttributeNames=None):
+        from botocore.exceptions import ClientError
+
+        self.updates.append({"Key": Key, "ConditionExpression": ConditionExpression})
+        item = self._items.get(Key["credential_key"])
+        if item is None or float(item["expires_at"]) <= float(ExpressionAttributeValues[":now"]):
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException", "Message": "the item is gone"}}, "UpdateItem")
+        item["expires_at"] = float(ExpressionAttributeValues[":expires_at"])
+        item["expiry_time"] = int(ExpressionAttributeValues[":expiry_time"])
 
 
 class _FakeDynamoDBDriver:
@@ -200,11 +227,14 @@ class _FakeDynamoDBDriver:
 
     def __init__(self):
         self.items: dict[str, dict] = {}
+        self.table = _FakeDynamoDBTable(self.items)
+        self.reads: list[bool] = []
 
     def put(self, item: dict) -> None:
         self.items[item["credential_key"]] = dict(item)
 
-    def get(self, pk_value: str, sk_value=None) -> dict | None:
+    def get(self, pk_value: str, sk_value=None, consistent: bool = False) -> dict | None:
+        self.reads.append(consistent)
         item = self.items.get(pk_value)
         return None if item is None else dict(item)
 
@@ -331,6 +361,36 @@ class TestDynamoDBCredentialStore(CredentialStoreContract):
         with pytest.raises(AKConfigError, match="identity.credentials.encryption_key"):
             DynamoDBCredentialStore(table_name="ak-credentials", cipher=None)
 
+    def test_a_credential_is_read_with_a_strongly_consistent_read(self, store, driver):
+        # The process that runs the agent reads what another process wrote a moment earlier.
+        store.put("ref-1", TOKEN, time.time() + 60)
+
+        store.get("ref-1")
+
+        assert driver.reads == [True]
+
+    def test_touch_extends_the_item_only_on_condition_that_it_is_still_live(self, store, driver):
+        store.put("ref-1", TOKEN, time.time() + 60)
+
+        store.touch("ref-1", time.time() + 120)
+
+        [update] = driver.table.updates
+        assert "attribute_exists(credential_key)" in update["ConditionExpression"] and ":now" in update["ConditionExpression"]
+
+    def test_touch_raises_any_error_but_the_failed_condition(self, store, driver, monkeypatch):
+        # Only "the item is gone" is an answer; a throttled or refused update is the store failing.
+        from botocore.exceptions import ClientError
+
+        store.put("ref-1", TOKEN, time.time() + 60)
+
+        def throttled(**kwargs):
+            raise ClientError({"Error": {"Code": "ProvisionedThroughputExceededException", "Message": "slow down"}}, "UpdateItem")
+
+        monkeypatch.setattr(driver.table, "update_item", throttled)
+
+        with pytest.raises(ClientError):
+            store.touch("ref-1", time.time() + 120)
+
 
 # --- the factory --------------------------------------------------------------------------------------
 
@@ -354,11 +414,20 @@ class _VaultCredentialStore(CredentialStore):
     def _read(self, key):
         return None
 
+    def _touch(self, key, expires_at):
+        pass
+
     def _remove(self, key):
         pass
 
     def _clear(self):
         pass
+
+
+class _SharedVaultCredentialStore(_VaultCredentialStore):
+    """The same bring-your-own store, declared shared between processes."""
+
+    shared = True
 
 
 class TestCredentialStoreFactory:
@@ -492,6 +561,10 @@ class TestPassthroughExchanger(TokenExchangerContract):
     @pytest.mark.asyncio
     async def test_the_inbound_token_is_forwarded_as_it_came(self, exchanger, inbound):
         assert (await exchanger.exchange(inbound, self.AUDIENCE, [], None)).access_token == inbound
+
+    def test_what_it_issues_is_never_cached(self, exchanger):
+        # It is the user's token: a cached copy would outlive the run it was kept for.
+        assert (PassthroughTokenExchanger.cacheable, TokenExchanger.cacheable) == (False, True)
 
     @pytest.mark.asyncio
     async def test_it_expires_with_the_inbound_token(self, exchanger):
@@ -718,13 +791,15 @@ class TestCredentialManager:
         retained = await manager.retain(_alice(), "run-token")
 
         def unreachable(key):
-            raise ConnectionError("the store is down")
+            # A client's error can quote its connection URL, password and all, or the key it was given.
+            raise ConnectionError(f"redis://:hunter2@cache:6379 refused DEL {key}")
 
         monkeypatch.setattr(manager.store, "delete", unreachable)
         with caplog.at_level(logging.WARNING, logger="ak.identity.credential.manager"):
             manager.release(retained)
 
-        assert "could not be deleted" in caplog.text
+        assert "could not be deleted" in caplog.text and "ConnectionError" in caplog.text
+        assert "hunter2" not in caplog.text and retained.credential_ref not in caplog.text
 
     @pytest.mark.asyncio
     async def test_a_store_that_fails_on_retain_leaves_the_run_without_a_credential(self, credentials, monkeypatch, caplog):
@@ -806,9 +881,40 @@ class TestCredentialBroker:
 
     @pytest.mark.asyncio
     async def test_the_cache_key_names_no_one(self, manager, principal):
-        key = manager.broker(principal, "billing")._cache_key(AUDIENCE, ["a"])
+        key = manager.broker(principal, "billing")._cache_key(AUDIENCE, ["a"], b"inbound-token")
 
-        assert key.startswith("cred:issued:") and "alice" not in key and AUDIENCE not in key
+        assert key.startswith("cred:issued:") and "alice" not in key and AUDIENCE not in key and "inbound-token" not in key
+
+    @pytest.mark.asyncio
+    async def test_a_token_is_never_served_once_the_runs_own_credential_is_gone(self, manager, exchanger, principal):
+        # A redelivered message keeps its reference, but the first attempt's release deleted the credential.
+        broker = manager.broker(principal, "billing")
+        await broker.token_for(AUDIENCE)
+
+        manager.release(principal)
+
+        with pytest.raises(CredentialError, match="no inbound credential for this run"):
+            await broker.token_for(AUDIENCE)
+
+    @pytest.mark.asyncio
+    async def test_a_different_inbound_token_of_the_same_user_is_exchanged_afresh(self, manager, exchanger, principal):
+        # Two tokens of one user can carry different claims: one's cached token must not carry its authority to the other.
+        await manager.broker(principal, "billing").token_for(AUDIENCE)
+        narrower = (await manager.retain(_alice(), "narrower-token")).with_actor(principal.actor)
+
+        await manager.broker(narrower, "billing").token_for(AUDIENCE)
+
+        assert [call[0] for call in exchanger.calls] == ["inbound-token", "narrower-token"]
+
+    @pytest.mark.asyncio
+    async def test_an_exchanger_that_is_not_cacheable_never_reads_the_cache(self, manager, exchanger, principal, monkeypatch):
+        # A shared store can still hold what this audience's earlier, cacheable exchanger issued (a deploy that
+        # moved it to passthrough); that token must not be served.
+        broker = manager.broker(principal, "billing")
+        await broker.token_for(AUDIENCE)
+        monkeypatch.setattr(type(exchanger), "cacheable", False)
+
+        assert await broker.token_for(AUDIENCE) == "issued-2"
 
     @pytest.mark.asyncio
     async def test_a_run_without_an_inbound_credential_gets_none(self, manager, principal):
@@ -1177,7 +1283,7 @@ class TestNoTokenLeaks:
 
         assert runner.answers == [token]  # the tool had it
         assert token not in caplog.text
-        assert InMemoryCredentialStore._entries.keys() <= {key for key in InMemoryCredentialStore._entries if key.startswith("cred:issued:")}
+        assert InMemoryCredentialStore._entries == {}  # gone with the run: passthrough leaves no cached copy behind
 
 
 # --- iteration 25b: a connection's credential lasts while the connection does -----------------------
@@ -1186,59 +1292,60 @@ class TestNoTokenLeaks:
 class TestRenewingAConnectionsCredential:
     @pytest.fixture
     def recorded(self, credentials, monkeypatch):
+        """The manager, and the (key, expires_at) of every touch its store is asked for."""
         manager = credentials(inbound_ttl=120)
-        puts: list[tuple] = []
-        put = manager.store.put
+        touches: list[tuple] = []
+        touch = manager.store.touch
 
-        def recording(key, value, expires_at):
-            puts.append((key, expires_at))
-            put(key, value, expires_at)
+        def recording(key, expires_at):
+            touches.append((key, expires_at))
+            touch(key, expires_at)
 
-        monkeypatch.setattr(manager.store, "put", recording)
-        return manager, puts
+        monkeypatch.setattr(manager.store, "touch", recording)
+        return manager, touches
 
     @pytest.mark.asyncio
     async def test_a_connection_credential_without_an_expiry_is_kept_another_inbound_ttl(self, recorded):
-        manager, puts = recorded
+        manager, touches = recorded
         principal = await manager.retain(_alice(), "connection-token", connection=True)
-        puts.clear()
+        touches.clear()
 
         manager.renew(principal)
 
-        [(key, expires_at)] = puts
+        [(key, expires_at)] = touches
         assert key == principal.credential_ref and round(expires_at - time.time()) == 120
         assert manager.store.get(key) == b"connection-token"
 
     @pytest.mark.asyncio
     async def test_one_whose_token_has_an_expiry_is_never_kept_past_it(self, recorded):
-        manager, puts = recorded
+        manager, touches = recorded
         principal = await manager.retain(_alice(exp=int(time.time()) + 3600), "connection-token", connection=True)
-        puts.clear()
+        touches.clear()
 
         manager.renew(principal)
 
-        assert puts == []
+        assert touches == []
 
     @pytest.mark.asyncio
     async def test_a_runs_credential_is_not_renewed(self, recorded):
-        manager, puts = recorded
+        manager, touches = recorded
         principal = await manager.retain(_alice(), "run-token")
-        puts.clear()
+        touches.clear()
 
         manager.renew(principal)
 
-        assert puts == []
+        assert touches == []
 
     @pytest.mark.asyncio
-    async def test_a_credential_that_has_expired_is_not_brought_back(self, recorded):
-        manager, puts = recorded
+    async def test_a_credential_that_is_gone_is_not_brought_back(self, recorded):
+        # Renewal asks the store to extend a live entry, so a disconnect or an expiry between two frames is final.
+        manager, _ = recorded
         principal = await manager.retain(_alice(), "connection-token", connection=True)
-        manager.store.delete(principal.credential_ref)  # as its expiry would
-        puts.clear()
+        manager.store.delete(principal.credential_ref)
 
         manager.renew(principal)
 
-        assert puts == [] and manager.store.get(principal.credential_ref) is None
+        assert manager.store.get(principal.credential_ref) is None
 
     @pytest.mark.asyncio
     async def test_a_store_that_fails_on_renewal_is_logged_not_raised(self, recorded, monkeypatch, caplog):
@@ -1248,7 +1355,7 @@ class TestRenewingAConnectionsCredential:
         def unreachable(key):
             raise ConnectionError("the store is down")
 
-        monkeypatch.setattr(manager.store, "get", unreachable)
+        monkeypatch.setattr(manager.store, "touch", lambda key, expires_at: unreachable(key))
         with caplog.at_level(logging.WARNING, logger="ak.identity.credential.manager"):
             manager.renew(principal)
 
@@ -1282,6 +1389,21 @@ class TestASharedStoreIsRequired:
     def test_an_in_memory_store_is_refused_where_one_process_keeps_and_another_reads(self):
         with pytest.raises(AKConfigError, match="identity.credentials.store.type in_memory cannot work on AWS Lambda"):
             CredentialManager.require_shared_store(self._config("in_memory"), "on AWS Lambda")
+
+    @pytest.mark.parametrize(
+        "store_type",
+        [
+            pytest.param("agentkernel.identity.credential.in_memory.InMemoryCredentialStore", id="the in-memory store by its path"),
+            pytest.param(f"{__name__}._VaultCredentialStore", id="a store of your own that is not shared"),
+        ],
+    )
+    def test_a_store_named_by_a_dotted_path_is_refused_when_it_is_not_shared(self, store_type):
+        # What decides is the class's `shared`, so naming the in-memory store by its path changes nothing.
+        with pytest.raises(AKConfigError, match="cannot work on AWS Lambda"):
+            CredentialManager.require_shared_store(self._config(store_type), "on AWS Lambda")
+
+    def test_a_store_of_your_own_that_is_shared_is_accepted(self):
+        CredentialManager.require_shared_store(self._config(f"{__name__}._SharedVaultCredentialStore"), "on AWS Lambda")
 
     def test_a_shared_store_or_no_credentials_block_is_accepted(self):
         from types import SimpleNamespace

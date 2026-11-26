@@ -687,12 +687,12 @@ export AK_IDENTITY__CREDENTIALS__STORE__TYPE=redis  # in_memory (default) | redi
 export AK_IDENTITY__CREDENTIALS__INBOUND_TTL=300  # seconds a request's credential is kept, at most
 ```
 
-- **Credentials.** `identity.credentials` keeps each authenticated request's credential, encrypted, for the
-  run's tools, which ask for a token with `ToolContext.get().credentials.token_for(audience)`
+- **Credentials.** `identity.credentials` keeps the credential of each authenticated request that can start a
+  run, encrypted, for the run's tools, which ask for a token with `ToolContext.get().credentials.token_for(audience)`
   ([credentials for downstream calls](../advanced/identity-and-access.md#credentials-for-downstream-calls)).
   Every store but `in_memory` needs `encryption_key`, the store blocks take no `ttl`, an unknown key in the
-  block stops the application, and an `in_memory` store is refused on a broker transport and on AWS Lambda (queued
-  routes, WebSocket routes).
+  block stops the application, and an `in_memory` store is refused on a broker transport, on AWS Lambda (queued
+  routes, WebSocket routes) and on the ECS WebSocket API.
 
 ### Authorization
 

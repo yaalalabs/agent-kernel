@@ -2,8 +2,10 @@
 
 Layout: one key per credential, ``{prefix}{key}``, holding the ciphertext and expiring with it. The value and
 its expiry are written in one command (``SET ... PX``), so nothing leaves a credential without its expiry.
+A renewal is ``EXPIRE``, which sets nothing on a key that has expired or been deleted.
 """
 
+import math
 import time
 
 from ...core.util.driver.redis_like import _RedisLikeDriver
@@ -31,6 +33,10 @@ class _RedisLikeCredentialStore(CredentialStore):
     def _read(self, key: str) -> bytes | None:
         held: bytes | None = self._driver.get(self._driver.key(key))
         return held
+
+    def _touch(self, key: str, expires_at: float) -> None:
+        # Whole seconds, rounded up: a renewal may outlast what was asked by under a second, never fall short.
+        self._driver.expire_in(self._driver.key(key), math.ceil(expires_at - time.time()))
 
     def _remove(self, key: str) -> None:
         self._driver.delete(self._driver.key(key))

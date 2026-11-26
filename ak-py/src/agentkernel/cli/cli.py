@@ -62,6 +62,19 @@ class CLI:
             self._principal = await credentials.retain(self._principal, self._token, connection=True)
         ak_cli_logger.info(f"Authenticated as {self._principal.subject}")
 
+    async def _renew_credential(self) -> None:
+        """
+        Keeps the session's credential another ``inbound_ttl`` before a prompt's run, as each frame of a WebSocket
+        connection does, so a token with no expiry lasts the session. One that has expired is not brought back.
+        """
+        if self._principal is None or not self._principal.credential_ref:
+            return
+        from ..identity.credential.manager import CredentialManager
+
+        credentials = CredentialManager.get()
+        if credentials is not None:
+            await asyncio.to_thread(credentials.renew, self._principal)
+
     def _forget_credential(self) -> None:
         """Forget the credential the session was opened with, if one was kept."""
         if self._principal is None or not self._principal.credential_ref:
@@ -174,6 +187,7 @@ class CLI:
                     continue
 
                 if self._service.agent:
+                    await self._renew_credential()
                     reply = await self._service.run_multi([AgentRequestText(prompt=prompt)], principal=self._principal)
                     self._print(f"\033[35m{reply}\033[0m")
                     self._print()

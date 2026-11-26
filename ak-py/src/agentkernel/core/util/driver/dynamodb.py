@@ -152,17 +152,20 @@ class DynamoDBDriver(BaseDriver):
             self._log.error("Failed to put item into table %s: %s", self._table_name, e)
             raise
 
-    def get(self, pk_value: Any, sk_value: Any = None) -> dict | None:
+    def get(self, pk_value: Any, sk_value: Any = None, consistent: bool = False) -> dict | None:
         """
         Get a single item by key.
 
         :param pk_value: Partition key value.
         :param sk_value: Sort key value (required when the table has a sort key).
+        :param consistent: Ask for a strongly consistent read, which sees every write that succeeded before it.
+            The default eventually consistent read costs half as much and may miss a write made a moment earlier.
         :return: The raw item dict, or None if the item does not exist. Value
             attribute extraction stays in the stores.
         """
         try:
-            resp = self.table.get_item(Key=self._item_key(pk_value, sk_value))
+            options = {"ConsistentRead": True} if consistent else {}
+            resp = self.table.get_item(Key=self._item_key(pk_value, sk_value), **options)
             return DynamoDecimalCodec.from_dynamo(resp.get("Item"))
         except Exception as e:
             self._log.error("Failed to get item from table %s: %s", self._table_name, e)

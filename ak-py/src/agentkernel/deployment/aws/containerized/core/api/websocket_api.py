@@ -119,13 +119,20 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
         """Build the handler over the configured identity provider.
 
         :raises AKConfigError: If no identity provider is configured: the connection is keyed by the
-            authenticated subject, so a handshake nobody can authenticate cannot be served.
+            authenticated subject, so a handshake nobody can authenticate cannot be served. Also if
+            ``identity.credentials`` names a store that is not shared between processes.
         """
         super().__init__()
         self._log = logging.getLogger("ak.ecs.ws_system_handler")
         self._authenticator = RequestAuthenticator.from_config()
         if self._authenticator.provider is None:
             raise AKConfigError("the ECS WebSocket routes require an identity block: the connection is keyed by the authenticated subject")
+        if self._authenticator.credentials is not None:
+            from ......identity.credential.manager import CredentialManager
+
+            # $connect keeps the credential in one task; API Gateway can route a later frame to another, and does
+            # under every rolling deploy, so even a one-task service needs a store the tasks share.
+            CredentialManager.require_shared_store(AKConfig.get(), "on the ECS WebSocket API")
 
     def get_router(self) -> APIRouter:
         """Return an APIRouter with one POST endpoint per protocol route."""

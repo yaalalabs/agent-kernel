@@ -12,13 +12,17 @@ Item layout (one item per credential):
     expiry_time    -> the same, rounded up to whole seconds, for DynamoDB's own TTL
 
 DynamoDB removes an expired item when it gets to it, which can be long after it expired, so a read checks
-``expires_at`` itself rather than trusting the item to be gone.
+``expires_at`` itself rather than trusting the item to be gone. A read is strongly consistent, since the process
+that reads a credential is often not the one that wrote it a moment earlier. A renewal is a conditional update
+that only extends an item still live, so it cannot bring back one that expired or was deleted.
 """
 
 import math
 import time
 
-from ...core.util.driver.dynamodb import DynamoDBDriver
+from botocore.exceptions import ClientError
+
+from ...core.util.driver.dynamodb import DynamoDBDriver, DynamoDecimalCodec
 from .store import CredentialCipher, CredentialStore
 
 
@@ -40,11 +44,27 @@ class DynamoDBCredentialStore(CredentialStore):
         self._driver.put({"credential_key": key, "value": data, "expires_at": expires_at, "expiry_time": math.ceil(expires_at)})
 
     def _read(self, key: str) -> bytes | None:
-        item = self._driver.get(key)
+        item = self._driver.get(key, consistent=True)
         if item is None or item["expires_at"] <= time.time():
             return None
         # boto3 hands a binary attribute back as a Binary wrapper, which bytes() unwraps.
         return bytes(item["value"])
+
+    def _touch(self, key: str, expires_at: float) -> None:
+        try:
+            self._driver.table.update_item(
+                Key={"credential_key": key},
+                UpdateExpression="SET #expires_at = :expires_at, #expiry_time = :expiry_time",
+                ConditionExpression="attribute_exists(credential_key) AND #expires_at > :now",
+                ExpressionAttributeNames={"#expires_at": "expires_at", "#expiry_time": "expiry_time"},
+                ExpressionAttributeValues=DynamoDecimalCodec.to_dynamo(
+                    {":expires_at": expires_at, ":expiry_time": math.ceil(expires_at), ":now": time.time()}
+                ),
+            )
+        except ClientError as error:
+            # The item is gone or has expired; it stays that way.
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
 
     def _remove(self, key: str) -> None:
         self._driver.delete(key)

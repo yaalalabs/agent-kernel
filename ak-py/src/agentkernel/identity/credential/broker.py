@@ -18,11 +18,14 @@ T = TypeVar("T")
 class CredentialBroker:
     """Hands a tool a token for an audience, from the inbound credential its run was started with.
 
-    Built per run by ``ToolContext.credentials`` and holding nothing beyond its arguments. A run must carry an
-    inbound credential of its own (``principal.credential_ref``): one started without (a scheduled occurrence)
-    gets ``CredentialError`` rather than a token another run left in the cache. An issued token is cached in the
-    credential store per principal, agent, audience and scopes, and reused until 30 seconds before it expires.
-    Every failure is a ``CredentialError``, which a tool returns as its result; nothing here logs a token.
+    Built per run by ``ToolContext.credentials`` and holding nothing beyond its arguments. A run must still hold
+    an inbound credential of its own (``principal.credential_ref``, read from the store before anything else):
+    one started without (a scheduled occurrence), or whose credential is gone (a redelivered message, an expired
+    connection), gets ``CredentialError``, never a token another run left in the cache. An issued token is cached
+    in the credential store per principal, agent, audience, scopes and inbound credential (a digest of it), so a
+    narrower token of the same user is never handed a broader one's token, and reused until 30 seconds before it
+    expires; an exchanger that is not ``cacheable`` (``passthrough``) is never cached. Every failure is a
+    ``CredentialError``, which a tool returns as its result; nothing here logs a token.
     """
 
     REFRESH_MARGIN: ClassVar[float] = 30.0
@@ -85,16 +88,16 @@ class CredentialBroker:
         if exchanger is None:
             raise CredentialError(f"no exchanger configured for audience '{audience}'")
         wanted = list(scopes) if scopes is not None else list(exchanger.scopes)
-        key = self._cache_key(audience, wanted)
+        inbound = await self._stored(self._store.get, principal.credential_ref)
+        if inbound is None:
+            raise CredentialError("no inbound credential for this run")
 
-        cached = await self._stored(self._store.get, key)
+        key = self._cache_key(audience, wanted, inbound)
+        cached = await self._stored(self._store.get, key) if exchanger.cacheable else None
         if cached is not None:
             issued = IssuedToken.model_validate_json(cached)
             if issued.expires_at - self.REFRESH_MARGIN > time.time():
                 return issued.access_token
-        inbound = await self._stored(self._store.get, principal.credential_ref)
-        if inbound is None:
-            raise CredentialError("no inbound credential for this run")
         try:
             issued = await exchanger.exchange(inbound.decode(), audience, wanted, principal.actor)
         except CredentialError:
@@ -102,16 +105,17 @@ class CredentialBroker:
         except Exception as error:
             # Not chained into the message: an exchange error can quote the token it was handed.
             raise CredentialError(f"the token exchange for audience '{audience}' failed: {type(error).__name__}") from None
-        if issued.expires_at > time.time():
+        if exchanger.cacheable and issued.expires_at > time.time():
             await self._stored(self._store.put, key, issued.model_dump_json().encode(), issued.expires_at)
         return issued.access_token
 
-    def _cache_key(self, audience: str, scopes: list[str]) -> str:
+    def _cache_key(self, audience: str, scopes: list[str], inbound: bytes) -> str:
         """
-        The store key of an issued token: a digest, so the key names no user and no audience.
+        The store key of an issued token: a digest, so the key names no user, no audience and no token.
 
         :param audience: The audience.
         :param scopes: The scopes asked for, in any order.
+        :param inbound: The run's inbound credential, so a token is reused only for the credential it was issued for.
         """
         principal = self._principal
         parts = [
@@ -121,6 +125,7 @@ class CredentialBroker:
             self._agent_id,
             audience,
             sorted(scopes),
+            hashlib.sha256(inbound).hexdigest(),
         ]
         return "cred:issued:" + hashlib.sha256(json.dumps(parts).encode()).hexdigest()
 

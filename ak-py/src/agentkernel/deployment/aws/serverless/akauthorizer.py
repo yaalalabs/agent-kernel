@@ -54,7 +54,9 @@ class APIGatewayAuthorizer:
         :raises AKConfigError: If no identity provider is configured: an authorizer nobody can
             authenticate to would deny every request.
         """
-        self._authenticator = RequestAuthenticator.from_config()
+        # Keeps no credential: its result is cached per token and shared by many requests, so the REST router
+        # keeps each request's own where its run starts.
+        self._authenticator = RequestAuthenticator.from_config(retains=False)
         if self._authenticator.provider is None:
             raise AKConfigError("APIGatewayAuthorizer requires an identity block: it authenticates every request the bypass does not claim")
         self._bypass = bypass

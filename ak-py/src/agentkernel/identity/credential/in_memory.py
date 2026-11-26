@@ -1,6 +1,7 @@
 """In-process credential store: the default, for development and single-process deployments."""
 
 import logging
+import threading
 import time
 from typing import ClassVar
 
@@ -16,6 +17,8 @@ class InMemoryCredentialStore(CredentialStore):
 
     shared: ClassVar[bool] = False
     _entries: ClassVar[dict[str, tuple[bytes, float]]] = {}
+    # Held by every change, so a touch never writes back an entry another thread replaced or deleted.
+    _lock: ClassVar[threading.Lock] = threading.Lock()
     _log = logging.getLogger("ak.identity.credential.in_memory")
 
     def __init__(self, cipher: CredentialCipher | None = None):
@@ -30,7 +33,8 @@ class InMemoryCredentialStore(CredentialStore):
             )
 
     def _write(self, key: str, data: bytes, expires_at: float) -> None:
-        self._entries[key] = (data, expires_at)
+        with self._lock:
+            self._entries[key] = (data, expires_at)
 
     def _read(self, key: str) -> bytes | None:
         entry = self._entries.get(key)
@@ -42,8 +46,16 @@ class InMemoryCredentialStore(CredentialStore):
             return None
         return data
 
+    def _touch(self, key: str, expires_at: float) -> None:
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is not None and entry[1] > time.time():
+                self._entries[key] = (entry[0], expires_at)
+
     def _remove(self, key: str) -> None:
-        self._entries.pop(key, None)
+        with self._lock:
+            self._entries.pop(key, None)
 
     def _clear(self) -> None:
-        self._entries.clear()
+        with self._lock:
+            self._entries.clear()

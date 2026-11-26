@@ -141,6 +141,21 @@ class TestTheSessionsCredential:
         assert manager.store.get(ref) is None  # forgotten when the session ended
 
     @pytest.mark.asyncio
+    async def test_the_sessions_credential_is_renewed_before_each_prompts_run(self, stub_service, provider, manager, monkeypatch):
+        # As a connection's frame does: a token with no expiry would otherwise lapse inbound_ttl into the session.
+        renewed: list[tuple] = []
+        renew = manager.renew
+        monkeypatch.setattr(
+            manager, "renew", lambda principal: renewed.append((len(_runs(stub_service)), principal.credential_ref)) or renew(principal)
+        )
+        monkeypatch.setattr(builtins, "input", ScriptedInput(["hello", "!h", "again", "!q"]))
+
+        await CLI(token="alice-secret").run()
+
+        [(_, _, principal), _] = _runs(stub_service)
+        assert renewed == [(0, principal.credential_ref), (1, principal.credential_ref)]  # one per run, before it
+
+    @pytest.mark.asyncio
     async def test_the_credential_is_forgotten_when_the_session_is_interrupted(self, stub_service, provider, manager, monkeypatch):
         def interrupted(prompt=""):
             raise KeyboardInterrupt

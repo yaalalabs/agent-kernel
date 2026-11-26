@@ -424,9 +424,11 @@ Auth0 block in its README), `examples/aws-serverless/websocket-openai`,
 When tools call other services as the caller, add `identity.credentials` to the same block. The process
 that accepts a request keeps its token, encrypted, until the run ends, and the process that runs the
 agent reads it, so wherever those differ (a broker transport, any AWS Lambda deployment with queues or
-WebSocket routes, ECS or Kubernetes with more than one replica) use a shared store (`redis`, `valkey`,
-or `dynamodb` on a table you create, keyed by `credential_key` with TTL on `expiry_time`); the
-`in_memory` store refuses to start there. Every store but `in_memory` needs `encryption_key`, a
+WebSocket routes, the ECS WebSocket API, whose frames can reach another task) use a shared store
+(`redis`, `valkey`, or `dynamodb` on a table you create, keyed by `credential_key` with TTL on
+`expiry_time`); the `in_memory` store refuses to start in each of those. A REST service without queues
+runs each agent in the process that kept its token, however many replicas it has. Every store but
+`in_memory` needs `encryption_key`, a
 secret holding a base64url-encoded 32-byte key. The Terraform modules and the chart provision none of
 this: create the table or reach the cache, grant the request, connection and agent-runner processes
 access, and deliver the key like any other secret.

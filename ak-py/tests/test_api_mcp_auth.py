@@ -13,7 +13,9 @@ from unittest.mock import patch
 
 import httpx2
 import pytest
+import pytest_asyncio
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import RemoteAuthProvider
 from mcp.server.auth.provider import AccessToken
 
@@ -62,6 +64,20 @@ class FakeClient:
 def _reply(text="hi") -> QueuedReply:
     _status, body = ResponseBuilder.build_response(200, "s1", rest_api_mode=False, result=AgentReplyText(response=text))
     return QueuedReply(request_id="r1", status_code=200, body=body)
+
+
+@pytest.fixture
+def credentials_manager(monkeypatch):
+    """An `identity.credentials` manager over an in-process store, as `CredentialManager.get` returns it."""
+    from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
+    from agentkernel.identity.credential.manager import CredentialManager
+
+    store = InMemoryCredentialStore(None)
+    store.clear()
+    manager = CredentialManager(store, {}, 300)
+    monkeypatch.setattr(CredentialManager, "get", classmethod(lambda cls: manager))
+    yield manager
+    store.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -114,22 +130,12 @@ class TestTokenVerifier:
         assert AKAccessToken.principal_of(rebuilt).subject == "alice"
 
     @pytest.mark.asyncio
-    async def test_with_credentials_the_token_is_kept_for_the_call(self):
-        from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
-        from agentkernel.identity.credential.manager import CredentialManager
+    async def test_the_verifier_keeps_no_credential_even_with_credentials_configured(self, provider, credentials_manager):
+        # FastMCP asks the verifier on every HTTP request (initialize, notifications, listings); only a tool call runs.
+        token = await AKMCPAuthProvider.from_config().verify_token("alice-secret")
 
-        store = InMemoryCredentialStore(None)
-        token = await AKTokenVerifier(_Provider(), CredentialManager(store, {}, 300)).verify_token("alice-secret")
-
-        ref = token.principal.credential_ref
-        assert ref and not ref.startswith("conn:")
-        assert store.get(ref) == b"alice-secret"
-        assert AKAccessToken.principal_of(token).credential_ref == ref
-        store.clear()
-
-    @pytest.mark.asyncio
-    async def test_without_credentials_nothing_is_kept(self):
-        assert (await AKTokenVerifier(_Provider()).verify_token("alice-secret")).principal.credential_ref is None
+        assert token.principal.credential_ref is None
+        assert credentials_manager.store._entries == {}
 
     @pytest.mark.asyncio
     async def test_a_refused_token_is_none_and_the_reason_is_logged(self, caplog):
@@ -265,6 +271,105 @@ class TestExecutorPrincipal:
         await MCP.Executor("triage").execute("s1", "hi")
 
         assert client.calls[0][0].principal.is_anonymous
+
+
+class TestTheCallsCredential:
+    """With `identity.credentials`, a tool call keeps its token for the run it starts and deletes it once its reply is
+    in (#603): the executor does it, not the verifier, so only a call that runs writes to the store."""
+
+    @pytest_asyncio.fixture
+    async def token(self):
+        return await AKTokenVerifier(_Provider()).verify_token("alice-secret")
+
+    @pytest.mark.asyncio
+    async def test_the_call_runs_with_a_reference_to_its_token(self, credentials_manager, token, monkeypatch):
+        held = []
+
+        class Recording(FakeClient):
+            async def request(self, body, protocol):
+                held.append(credentials_manager.store.get(body.principal.credential_ref))
+                return await super().request(body, protocol)
+
+        MCP._client = client = Recording(_reply())
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: token)
+
+        await MCP.Executor("triage").execute("s1", "hi")
+
+        [(body, _)] = client.calls
+        assert body.principal.credential_ref and not body.principal.credential_ref.startswith("conn:")
+        assert held == [b"alice-secret"]
+        assert "alice-secret" not in body.model_dump_json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reply", [_reply("done"), QueuedReply(request_id="r1", status_code=404, body={"error": "Agent 'triage' not found"})])
+    async def test_the_token_is_deleted_once_the_reply_is_in(self, credentials_manager, token, monkeypatch, reply):
+        # A refusal made before the queue is a reply too: no runner saw that call to delete its token.
+        MCP._client = FakeClient(reply)
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: token)
+
+        try:
+            await MCP.Executor("triage").execute("s1", "hi")
+        except ToolError:
+            pass
+
+        assert credentials_manager.store._entries == {}
+
+    @pytest.mark.asyncio
+    async def test_a_call_that_timed_out_leaves_its_token_to_the_run(self, credentials_manager, token, monkeypatch):
+        from agentkernel.pipeline.request_handler import ReplyTimeoutError
+
+        class Slow(FakeClient):
+            async def request(self, body, protocol):
+                await super().request(body, protocol)
+                raise ReplyTimeoutError("r1", 60, 1)
+
+        MCP._client = client = Slow(_reply())
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: token)
+
+        with pytest.raises(ToolError):
+            await MCP.Executor("triage").execute("s1", "hi")
+
+        ref = client.calls[0][0].principal.credential_ref
+        assert credentials_manager.store.get(ref) == b"alice-secret"  # the run may still be going; its runner deletes it
+
+    @pytest.mark.asyncio
+    async def test_an_anonymous_call_keeps_nothing(self, credentials_manager, monkeypatch):
+        MCP._client = client = FakeClient(_reply())
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: None)
+
+        await MCP.Executor("triage").execute("s1", "hi")
+
+        assert client.calls[0][0].principal.credential_ref is None
+        assert credentials_manager.store._entries == {}
+
+    @pytest.mark.asyncio
+    async def test_without_credentials_nothing_is_kept(self, token, monkeypatch):
+        MCP._client = client = FakeClient(_reply())
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.get_access_token", lambda: token)
+
+        await MCP.Executor("triage").execute("s1", "hi")
+
+        assert client.calls[0][0].principal.credential_ref is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["auto", "legacy"])
+    async def test_a_session_writes_once_per_tool_call_and_leaves_nothing(self, credentials_manager, mcp_asgi_transport, monkeypatch, mode):
+        writes = []
+        put = credentials_manager.store.put
+        monkeypatch.setattr(credentials_manager.store, "put", lambda key, value, expires_at: writes.append(key) or put(key, value, expires_at))
+        server = FastMCP(MCP_NAME, auth=AKTokenVerifier(_Provider()))
+        server.tool(MCP.Executor("triage").execute, name="triage", description="test agent")
+        MCP._client = FakeClient(_reply("done"))
+        app = server.http_app(path="/")
+
+        async with app.router.lifespan_context(app):
+            async with Client(mcp_asgi_transport(app, auth="alice-secret"), mode=mode) as client:
+                await client.list_tools()
+                await client.call_tool("triage", {"session_id": "s1", "prompt": "one"})
+                await client.call_tool("triage", {"session_id": "s1", "prompt": "two"})
+
+        assert len(writes) == 2
+        assert credentials_manager.store._entries == {}
 
 
 class TestThroughARealClient:

@@ -40,6 +40,9 @@ class TokenExchanger(ABC):
     settings of its own from ``config.model_extra``. An exchanger never logs a token.
     """
 
+    cacheable: ClassVar[bool] = True
+    """Whether the broker may cache what this exchanger issues. False for a token that is the inbound one."""
+
     def __init__(self, config: "_ExchangerConfig"):
         """
         :param config: The exchanger's entry in ``identity.credentials.exchangers``.
@@ -62,10 +65,11 @@ class PassthroughTokenExchanger(TokenExchanger):
     """Forwards the inbound token unchanged. For development only, and says so when it is built.
 
     The token is reported to expire with the inbound credential: at its ``exp`` claim when one can be read, and
-    never later than ``inbound_ttl`` from now, so a cached copy outlives its run no longer than the inbound
-    credential would.
+    never later than ``inbound_ttl`` from now. It is never cached: the token is the user's own, and a copy in the
+    store would outlive the run it was kept for.
     """
 
+    cacheable: ClassVar[bool] = False
     _log = logging.getLogger("ak.identity.credential.exchange")
 
     def __init__(self, config: "_ExchangerConfig", inbound_ttl: int):

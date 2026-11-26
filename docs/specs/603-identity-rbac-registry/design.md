@@ -377,12 +377,17 @@ and `research/design-options.md` section 4).
     no caller handles ciphertext, and the broker takes no cipher.
   - As built (spec refinement 24): authenticating keeps nothing; each surface that keeps a credential
     retains it through one process-wide `CredentialManager`, beside the code that releases it.
-  - As built (spec refinement 25): a connection's credential is renewed by reading it from the store and
-    writing it again, so Lambda renews too; the Lambda REST router retains from the request's header,
-    never the cached authorizer.
+  - As built (spec refinement 25): a connection's credential is renewed through the store
+    (`CredentialStore.touch`, which extends only an entry still live), so Lambda renews too; the
+    Lambda REST router retains from the request's header, never the cached authorizer.
 - When an exchanger is configured, the tokens it issues are cached in the same store under
-  `(subject, provider, agent id, audience, scopes)` with TTL equal to the token's `exp` minus
-  leeway, so every session of the same user reuses them.
+  `(subject, provider, namespace, agent id, audience, scopes, a digest of the inbound credential)`
+  with TTL equal to the token's `exp` minus leeway, so every run that holds the same inbound
+  credential reuses them.
+  - As built (spec refinement 24): `namespace` is in the key because a subject is unique only within
+    its namespace, and the inbound digest because a token must never be served to a run whose own
+    credential is gone; the broker reads the inbound credential before the cache. `passthrough`
+    caches nothing, since what it issues is the inbound token itself.
 - `TokenExchanger` ABC: `exchange(inbound, audience, scopes, actor) -> IssuedToken(access_token,
   expires_at, token_type)`, selected per audience by `identity.credentials.exchangers[]` through
   `TokenExchangerFactory`. Only `passthrough` is implemented in this change (dev only: returns

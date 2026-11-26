@@ -169,6 +169,21 @@ class CredentialStore(ABC):
             return None
         return held if self._cipher is None else self._cipher.decrypt(held, key)
 
+    def touch(self, key: str, expires_at: float) -> None:
+        """
+        Keeps a credential the store still holds until ``expires_at``, without reading or rewriting it.
+
+        A credential that has expired or been deleted stays gone. The backend checks and extends in one step,
+        so a renewal that races a delete in another process never brings the credential back.
+
+        :param key: The reference the credential was kept under.
+        :param expires_at: The new expiry, in UNIX epoch seconds.
+        :raises ValueError: If ``expires_at`` has passed.
+        """
+        if expires_at <= time.time():
+            raise ValueError("the new expiry has already passed; nothing was changed")
+        self._touch(key, expires_at)
+
     def delete(self, key: str) -> None:
         """
         Removes a credential; a key holding none is not an error.
@@ -194,6 +209,15 @@ class CredentialStore(ABC):
         """
         :param key: The reference.
         :return: What was kept, or None when nothing is or it has expired.
+        """
+
+    @abstractmethod
+    def _touch(self, key: str, expires_at: float) -> None:
+        """
+        Moves the expiry of a live entry, in one step that cannot revive an entry that is gone.
+
+        :param key: The reference.
+        :param expires_at: The new expiry, in UNIX epoch seconds; in the future.
         """
 
     @abstractmethod
@@ -247,12 +271,36 @@ class CredentialStoreFactory:
                 from .dynamodb import DynamoDBCredentialStore
 
             return DynamoDBCredentialStore(table_name=dynamodb.table_name, cipher=cipher)
+        return CredentialStoreFactory._own(store).from_config(store, cipher)
+
+    @staticmethod
+    def is_shared(store: "_CredentialStoreConfig") -> bool:
+        """
+        Whether the store ``store.type`` selects is shared between processes, decided without building it.
+
+        :param store: The ``identity.credentials.store`` block.
+        :return: False for ``in_memory``, True for the other built-ins, and a bring-your-own store's ``shared``.
+        :raises AKConfigError: If the type is unknown.
+        """
+        key = store.type.lower()
+        if key in CredentialStoreFactory.BUILTINS:
+            return key != "in_memory"
+        return CredentialStoreFactory._own(store).shared
+
+    @staticmethod
+    def _own(store: "_CredentialStoreConfig") -> type[CredentialStore]:
+        """
+        :param store: The ``identity.credentials.store`` block, whose type is no built-in.
+        :return: The bring-your-own store class its dotted path names.
+        :raises AKConfigError: If the type is not a dotted path to a ``CredentialStore`` subclass.
+        """
         if "." not in store.type:
             raise AKConfigError(
                 f"unknown credential store type '{store.type}'; expected one of {list(CredentialStoreFactory.BUILTINS)} "
                 "or a dotted path to a CredentialStore subclass"
             )
-        return resolve_dotted(store.type, base=CredentialStore).from_config(store, cipher)
+        own: type[CredentialStore] = resolve_dotted(store.type, base=CredentialStore)
+        return own
 
     @staticmethod
     def _settings(store: "_CredentialStoreConfig", backend: str) -> Any:

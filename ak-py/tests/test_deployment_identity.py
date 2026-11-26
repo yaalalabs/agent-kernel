@@ -575,6 +575,22 @@ class TestTheLambdaRESTRouterKeepsTheRequestsCredential:
         assert Principal.model_validate_json(policy["context"]["principal"]).credential_ref is None
         assert credentials_on_aws.store._entries == {}
 
+    def test_the_authorizer_never_builds_the_credentials_capability(self, static_identity, config, monkeypatch):
+        # It keeps nothing, so a store its role cannot reach or an extra its package lacks must not fail it.
+        from agentkernel.core.config import _CredentialsConfig
+        from agentkernel.identity.credential.manager import CredentialManager
+
+        config.identity = SimpleNamespace(credentials=_CredentialsConfig(store={"type": "redis", "redis": {}}, encryption_key="AK_CREDENTIAL_KEY"))
+
+        def unbuildable(cls):
+            raise ImportError("the 'redis' extra is not installed")
+
+        monkeypatch.setattr(CredentialManager, "get", classmethod(unbuildable))
+
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+
+        assert Principal.model_validate_json(policy["context"]["principal"]).subject == "alice"
+
     @pytest.mark.parametrize("header_name", ["Authorization", "authorization"])
     def test_the_queued_body_carries_a_reference_to_the_requests_credential(self, static_identity, credentials_on_aws, header_name):
         handler = _endpoints_handler()
@@ -620,6 +636,22 @@ class TestTheLambdaRESTRouterKeepsTheRequestsCredential:
 
         assert request.body.principal.credential_ref is None
         assert credentials_on_aws.store._entries == {}
+
+    def test_a_header_that_is_not_bearer_keeps_nothing(self, static_identity, credentials_on_aws, monkeypatch):
+        from agentkernel.identity.provider.request import RequestAuthenticator
+
+        handler = _endpoints_handler()
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+        event = _rest_event_with_header(policy["context"], body={**CHAT_BODY, "request_id": "r1"})
+        event["headers"] = {"Authorization": "Basic YWxpY2U6c2VjcmV0"}
+        parsed = []
+        monkeypatch.setattr(RequestAuthenticator, "bearer_token", staticmethod(lambda header: parsed.append(header)))
+
+        with patch(f"{REST_LAMBDA_MODULE}.SQSHandler.send_message_to_input_queue", return_value={}) as send:
+            handler._send_to_queue(handler._parse_body(event), event)
+
+        assert parsed == ["Basic YWxpY2U6c2VjcmV0"]  # parsed by the authenticator's own rule
+        assert "credential_ref" not in send.call_args.kwargs["message_body"]["principal"]
 
     def test_an_anonymous_request_keeps_nothing(self, static_identity, credentials_on_aws):
         handler = _endpoints_handler()
@@ -694,6 +726,15 @@ class TestTheECSWebSocketKeepsTheConnectionsCredential:
         principal = ws.on_connect.call_args.kwargs["principal"]
         assert principal.credential_ref.startswith("conn:")
         assert credentials_on_aws.store.get(principal.credential_ref) == b"alice-secret"
+
+    def test_the_connection_routes_refuse_an_in_memory_store(self, static_identity, config):
+        # A frame can reach another task than the one that kept the credential: always under a rolling deploy.
+        from agentkernel.core.config import _CredentialsConfig
+
+        config.identity = SimpleNamespace(credentials=_CredentialsConfig())
+
+        with pytest.raises(AKConfigError, match="in_memory cannot work on the ECS WebSocket API"):
+            ECSWebSocketSystemRequestHandler()
 
     @pytest.mark.asyncio
     async def test_every_frame_renews_the_connections_credential(self, static_identity, credentials_on_aws, monkeypatch):

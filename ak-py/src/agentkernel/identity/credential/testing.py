@@ -117,6 +117,43 @@ class CredentialStoreContract:
         with pytest.raises(CredentialError):
             store.get("ref-2")
 
+    def test_touch_keeps_a_live_credential_longer(self, store):
+        store.put("ref-1", TOKEN, self._later(0.3))
+
+        store.touch("ref-1", self._later(60))
+        time.sleep(0.45)
+
+        assert store.get("ref-1") == TOKEN
+
+    def test_touch_refuses_an_expiry_that_has_passed(self, store):
+        store.put("ref-1", TOKEN, self._later())
+
+        with pytest.raises(ValueError):
+            store.touch("ref-1", time.time() - 1)
+
+        assert store.get("ref-1") == TOKEN
+
+    def test_touch_never_creates_a_credential(self, store):
+        store.touch("never-put", self._later(60))
+
+        assert store.get("never-put") is None
+
+    def test_touch_never_brings_back_an_expired_credential(self, store):
+        store.put("ref-1", TOKEN, self._later(0.2))
+        time.sleep(0.35)
+
+        store.touch("ref-1", self._later(60))
+
+        assert store.get("ref-1") is None
+
+    def test_touch_never_brings_back_a_deleted_credential(self, store):
+        store.put("ref-1", TOKEN, self._later())
+        store.delete("ref-1")
+
+        store.touch("ref-1", self._later(60))
+
+        assert store.get("ref-1") is None
+
     def test_another_store_over_the_same_backend_reads_it(self, store, make_store, cipher):
         store.put("ref-1", TOKEN, self._later())
 

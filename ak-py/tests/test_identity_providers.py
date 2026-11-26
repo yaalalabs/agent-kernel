@@ -10,7 +10,7 @@ bearer header. The OIDC family's cases are in `test_identity_oidc`, run through 
 """
 
 import pytest
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, WebSocket
 from fastapi.testclient import TestClient
 from test_secret_manager import _DictSecretProvider
 
@@ -455,11 +455,26 @@ class TestRequestAuthenticator:
         assert (credential, context.path, context.http_method) == ("alice-secret", "/whoami", "GET")
         assert context.headers["authorization"] == "Bearer alice-secret"
 
+    @pytest.mark.parametrize(
+        ("header", "token"),
+        [
+            ("Bearer alice-secret", "alice-secret"),
+            ("bearer   alice-secret  ", "alice-secret"),
+            ("Basic abc", None),
+            ("Bearer ", None),
+            ("alice-secret", None),
+            (None, None),
+        ],
+    )
+    def test_bearer_token_reads_a_bearer_header_and_never_raises(self, header, token):
+        # The one parser: the dependency refuses what it returns None for, and the Lambda router keeps nothing for it.
+        assert RequestAuthenticator.bearer_token(header) == token
+
     def test_current_is_none_outside_a_request(self):
         assert RequestAuthenticator.current() is None
 
     @staticmethod
-    def _seen_principal(authenticator: RequestAuthenticator, headers: dict) -> Principal:
+    def _seen_principal(authenticator: RequestAuthenticator, headers: dict, method: str = "POST") -> Principal:
         seen: dict = {}
         app = FastAPI()
 
@@ -467,17 +482,45 @@ class TestRequestAuthenticator:
             seen["principal"] = request.state.principal
             return {}
 
-        app.add_api_route("/capture", capture, methods=["GET"], dependencies=[Depends(authenticator.dependency())])
-        TestClient(app).get("/capture", headers=headers)
+        app.add_api_route("/capture", capture, methods=[method], dependencies=[Depends(authenticator.dependency())])
+        TestClient(app).request(method, "/capture", headers=headers)
         return seen["principal"]
 
-    def test_with_credentials_the_dependency_keeps_the_credential_for_the_request(self, provider, credentials):
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+    def test_with_credentials_the_dependency_keeps_the_credential_of_a_request_that_may_start_a_run(self, provider, credentials, method):
         manager = credentials()
 
-        principal = self._seen_principal(RequestAuthenticator(provider, manager), {"Authorization": "Bearer alice-secret"})
+        principal = self._seen_principal(RequestAuthenticator(provider, manager), {"Authorization": "Bearer alice-secret"}, method)
 
         assert principal.credential_ref
         assert manager.store.get(principal.credential_ref) == b"alice-secret"
+
+    @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
+    def test_a_request_that_only_reads_keeps_nothing(self, provider, credentials, method):
+        # A catalog listing or a REST_ASYNC poll starts no run, so nothing would release what it kept.
+        manager = credentials()
+
+        principal = self._seen_principal(RequestAuthenticator(provider, manager), {"Authorization": "Bearer alice-secret"}, method)
+
+        assert principal.subject == "alice" and principal.credential_ref is None
+        assert InMemoryCredentialStore._entries == {}
+
+    def test_a_websocket_handshake_on_a_guarded_router_keeps_nothing(self, provider, credentials):
+        # A run's reference would be deleted by the first frame's run, leaving every later frame without one.
+        manager = credentials()
+        app = FastAPI()
+
+        async def endpoint(websocket: WebSocket):
+            await websocket.accept()
+            await websocket.send_json({"subject": websocket.state.principal.subject, "ref": websocket.state.principal.credential_ref})
+            await websocket.close()
+
+        app.add_api_websocket_route("/ws", endpoint, dependencies=[Depends(RequestAuthenticator(provider, manager).dependency())])
+        with TestClient(app).websocket_connect("/ws", headers={"Authorization": "Bearer alice-secret"}) as socket:
+            seen = socket.receive_json()
+
+        assert seen == {"subject": "alice", "ref": None}
+        assert InMemoryCredentialStore._entries == {}
 
     def test_without_credentials_the_dependency_keeps_nothing(self, authenticator):
         assert self._seen_principal(authenticator, {"Authorization": "Bearer alice-secret"}).credential_ref is None

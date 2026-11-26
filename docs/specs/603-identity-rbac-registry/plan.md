@@ -1445,7 +1445,7 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
 - **As built** (2026-11-26; spec sections 4 and 5 "As built", refinement 24):
   - Retention is explicit: `CredentialManager.retain` (new `credential/manager.py`, which also holds
     the store, the exchangers, `release`, `forget` and the broker) is called by the identity
-    dependency, the MCP verifier, the pipeline WebSocket gateway and the CLI (the last two for the
+    dependency, the MCP executor (each tool call), the pipeline WebSocket gateway and the CLI (the last two for the
     connection); authentication keeps nothing. Released by `Runtime` and `AgentRunner.process`;
     forgotten by the gateway and the CLI when the connection or session ends.
   - `deployment/aws/containerized/akagentrunner.py` no longer exists (#870): the ECS containers run the
@@ -1480,7 +1480,8 @@ What phase F delivered, and what it settled beyond the iteration plans, before i
   in-memory, Redis, Valkey and DynamoDB backends, `CredentialStoreFactory`,
   `CredentialStoreContract`), the process-wide `CredentialManager`, exchange (`passthrough` only,
   `TokenExchangerContract`), `CredentialBroker` and `ToolContext.credentials`. A request's credential is
-  retained by the identity dependency (REST, A2A, AG-UI, threads), the MCP verifier and the Lambda
+  retained by the identity dependency (REST, A2A, AG-UI, threads), the MCP executor (each tool
+  call, not the verifier FastMCP asks on every request) and the Lambda
   REST router, and a connection's by the pipeline, ECS and Lambda WebSocket handlers and the CLI; it is
   released by `Runtime`, the pipeline `AgentRunner` and the serverless runners, renewed by every frame
   when its token has no `exp`, and forgotten when the connection ends. Spec refinements 23 to 25 hold
@@ -1488,6 +1489,17 @@ What phase F delivered, and what it settled beyond the iteration plans, before i
   surface's explicit call through one manager, never a side effect of authentication (the Lambda
   authorizer's cached result made that necessary); renewal goes through the store, so Lambda renews
   too. An `in_memory` store is refused wherever one process keeps a credential and another reads it.
+- **Review of PR #1023** (2026-11-26), each change in the spec section it touches:
+  - the broker reads the run's own inbound credential before its cache, keys the cache on a digest of
+    it, and never caches `passthrough`, so no copy of the inbound token outlives the run;
+  - renewal is `CredentialStore.touch`, which extends only a live entry in one step, so a disconnect
+    between two frames is final; DynamoDB reads are strongly consistent;
+  - the identity dependency keeps nothing for `GET`, `HEAD` or `OPTIONS` or on a WebSocket handshake,
+    and the Lambda authorizer builds no manager;
+  - `require_shared_store` decides by `CredentialStoreFactory.is_shared`, and the ECS WebSocket API
+    calls it too;
+  - the CLI renews before each prompt, one bearer parser serves the dependency and the Lambda router,
+    and a failed delete is logged by type alone.
 - **Docs.** Written iteration by iteration, then checked at the end of the phase: the identity page's
   "Credentials for downstream calls" section and its deployment notes, `core-concepts/configuration.md`,
   `ak-py/README.md`, the bundled `ak-add-capabilities` skill; and in the end-of-phase pass, a seventh

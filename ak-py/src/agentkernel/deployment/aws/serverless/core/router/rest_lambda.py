@@ -9,6 +9,7 @@ from ......core.config import AKConfig
 from ......core.model import BaseRequest, ExecutionMode, Principal
 from ......core.util.async_bridge import run_async_sync
 from ......core.util.factory import AKConfigError
+from ......identity.provider.request import RequestAuthenticator
 from ....core.response_store import ResponseStoreFactory
 from ....core.sqs_handler import SQSHandler
 from .common import BaseLambdaRouter
@@ -137,15 +138,15 @@ class DefaultEndpointsHandler:
     def _bearer_token(event: dict[str, Any]) -> str | None:
         """
         :param event: An API Gateway event.
-        :return: The token of its ``Authorization: Bearer`` header, whatever the header name's case, or None.
+        :return: The token of its ``Authorization: Bearer`` header, whatever the header name's case, or None. The
+            header is parsed by ``RequestAuthenticator``, so what the authorizer accepts is what is kept.
         """
         headers = event.get("headers")
         if not isinstance(headers, dict):
             return None
         for name, value in headers.items():
             if isinstance(name, str) and name.lower() == "authorization" and isinstance(value, str):
-                scheme, _, token = value.partition(" ")
-                return token.strip() if scheme.lower() == "bearer" and token.strip() else None
+                return RequestAuthenticator.bearer_token(value)
         return None
 
     @staticmethod

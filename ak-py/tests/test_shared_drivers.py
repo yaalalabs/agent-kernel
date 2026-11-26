@@ -456,6 +456,15 @@ class TestDynamoDBDriver:
         driver.put(message)
         assert "expiry_time" not in message
 
+    def test_get_asks_for_a_strongly_consistent_read_only_when_told_to(self):
+        driver = self._driver(sort_key=None)
+        driver._table.get_item.return_value = {}
+
+        driver.get("p1")
+        driver.get("p1", consistent=True)
+
+        assert [call.kwargs.get("ConsistentRead") for call in driver._table.get_item.call_args_list] == [None, True]
+
     def test_get_returns_raw_item_or_none(self):
         driver = self._driver()
         driver._table.get_item.return_value = {"Item": {"pk": "p", "sk": "s", "value": b"x"}}

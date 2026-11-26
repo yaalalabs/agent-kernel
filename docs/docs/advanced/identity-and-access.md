@@ -456,17 +456,23 @@ How it works:
   `encryption_key`, in the credential store under a random reference. The principal carries the reference
   (`credential_ref`), never the token, so the token is not in the session, a queue message or a log line.
 - **It ends with the run.** OAK deletes the credential when the run it was kept for ends, however it ends,
-  and in any case when `inbound_ttl` has passed or the token itself expires.
-- **Where it is kept.** The REST, A2A and AG-UI routes keep the credential of each authenticated request, and
-  MCP the credential of each call; on AWS Lambda the request-handler Lambda keeps it from the request's
-  `Authorization` header when it starts a run (the authorizer keeps nothing, since API Gateway caches its
-  answer for every request with the same token). A WebSocket connection (the `/ws` gateway, the ECS and the
-  Lambda WebSocket APIs) and a CLI session keep theirs for the connection and forget it when it ends. It lasts
-  as long as the token's `exp`; a token without one is kept for `inbound_ttl` from the latest frame.
+  and in any case when `inbound_ttl` has passed or the token itself expires. No copy of it outlives the run:
+  `passthrough` caches nothing.
+- **Where it is kept.** The REST, A2A and AG-UI routes keep the credential of each authenticated request that
+  can start a run (not of a `GET`, `HEAD` or `OPTIONS` request such as a catalog listing or a poll for a
+  reply), and MCP the credential of each tool call (not of the session's other requests); on AWS Lambda the
+  request-handler Lambda keeps it from the request's `Authorization` header when it starts a run (the
+  authorizer keeps nothing, since API Gateway caches its answer for every request with the same token). A
+  WebSocket connection (the `/ws` gateway, the ECS and the Lambda WebSocket APIs) and a CLI session keep
+  theirs for the connection and forget it when it ends. It lasts as long as the token's `exp`; a token
+  without one is kept for `inbound_ttl` from the latest frame (on the CLI, the latest prompt). A WebSocket
+  route you add to a router behind the identity dependency keeps none.
 - **Exchange.** A tool asks for an audience, and the exchanger configured for exactly that audience issues
-  the token, which is cached per user, agent, audience and scopes until 30 seconds before it expires. Only
-  `passthrough` ships, and it logs a warning at startup: it forwards the inbound token as it came, which an
-  MCP server or an API that checks its audience will refuse. For a real exchange (RFC 8693, Entra on-behalf-of),
+  the token. A token a real exchanger issues is a token of its own, for that audience: it is cached per user,
+  agent, audience, scopes and inbound credential until 30 seconds before it expires, so only a run that still
+  holds the same inbound credential is served it. Only `passthrough` ships, and it logs a warning at startup:
+  it forwards the inbound token as it came, which an MCP server or an API that checks its audience will
+  refuse. For a real exchange (RFC 8693, Entra on-behalf-of),
   write a `TokenExchanger` subclass and name it by its dotted path; it receives its entry, with any settings of
   its own in `model_extra`. The names `rfc8693`, `entra_obo` and `id_jag` are reserved for later releases.
 - **Errors.** `token_for` raises `CredentialError` when the block is not configured, the run has no credential
@@ -474,15 +480,17 @@ How it works:
   the store cannot be reached. Return it to the model as the tool's result.
 
 The stores: `in_memory` keeps credentials in the process, unencrypted unless you set a key, and refuses to start
-on a broker transport and on AWS Lambda (queued routes, WebSocket routes), where the process that keeps a
-credential is not the one that runs the agent. `redis` and
-`valkey` keep each credential under `ak:cred:` with its own expiry; `dynamodb` needs a table keyed by
-`credential_key` (S) with TTL on `expiry_time`. Generate a key with
+on a broker transport, on AWS Lambda (queued routes, WebSocket routes) and on the ECS WebSocket API, where the
+process that keeps a credential is not the one that runs the agent. A store of your own is refused in the same
+places when its class sets `shared = False`. `redis` and `valkey` keep each credential under `ak:cred:` with
+its own expiry; `dynamodb` needs a table keyed by `credential_key` (S) with TTL on `expiry_time`, and reads it
+with strongly consistent reads. Generate a key with
 `python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` and store it as the
 secret `encryption_key` names.
 
-A queued request that is delivered again after its run started finds its credential gone. An authenticated request that
-runs no agent (a catalog listing, a poll for a reply) leaves its encrypted entry to expire within `inbound_ttl`.
+A queued request that is delivered again after its run started finds its credential gone. An authenticated request
+that can start a run but does not (amending or cancelling a schedule, an A2A `tasks/get`) leaves its encrypted entry
+to expire within `inbound_ttl`.
 
 ## Authorization
 
@@ -817,8 +825,9 @@ credential of a static provider reaches that process as an environment variable 
   the request-handler, `$connect` and agent-runner Lambdas can all reach.
 - **AWS ECS** ([guide](../deployment/aws-containerized.md)): the REST service authenticates every
   request; in WebSocket mode the service authenticates the handshake's `?token=`, and custom WebSocket
-  routes receive `{"message": ..., "principal": ...}`. With `identity.credentials` and more than one
-  task, use a shared store: a frame can reach a task other than the one that took the handshake.
+  routes receive `{"message": ..., "principal": ...}`. With `identity.credentials` in WebSocket mode,
+  use a shared store, which the service requires: a frame can reach a task other than the one that took
+  the handshake, as it does during every rolling deploy.
 - **Azure Functions** ([guide](../deployment/azure-serverless.md)): `AzureFunctions.handler`
   authenticates the bearer header before parsing the request and answers a refused credential with
   `401` and `{"error": ..., "session_id": null}`.
