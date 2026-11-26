@@ -825,6 +825,17 @@ class Agent(ABC):
         """
         return []
 
+    def provider_tool_names(self) -> list[str]:
+        """
+        Returns the tools the agent can call that its model provider or its framework runs itself, where no tool
+        gate reaches: a hosted tool (OpenAI's web search), a model's built-in tool (ADK's `google_search`), the
+        built-in tools of a coding agent (Claude Code's). Unlike `ungated_tool_names`, no deployment can rebind
+        these, so with an `authorization` block they are reported and the agent still loads (design Q12).
+        The base implementation reports none.
+        :return: The names, or a phrase naming a set the framework does not enumerate.
+        """
+        return []
+
     async def resolve_run_options(self, session: Session, requests: list[AgentRequest]) -> dict[str, Any]:
         """
         Returns the run options for one run: a copy of the static `run_options` with the factory's result, when a

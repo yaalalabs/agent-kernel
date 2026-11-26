@@ -153,7 +153,7 @@ Read the current data before editing and confirm identifiers with `grep -n "^con
 | Branch changes ... | Integration row and role | Architecture card | Capability rail point (home `STAGES`) | `features.tsx` capability |
 |---|---|---|---|---|
 | A headline capability worth announcing | (none) | (none) | a point on its stage, when it changes what the stage offers | a new capability under its stage when it is durable; plus `Announcement.tsx`, and an entry at the top of `docs/docs/whats-new.md` |
-| A framework adapter | Agent frameworks & dev tools, `Framework` | Agent frameworks | Build: "Adapters for eight agent frameworks" | Framework adapters (Build): the count in `summary` and a `more` link to the new page |
+| A framework adapter | Agent frameworks & dev tools, `Framework` | Agent frameworks | Build: "Adapters for eight agent frameworks" | Framework adapters (Build): the count in `summary` and a `more` link to the new page; plus `FRAMEWORKS` in `docs/src/components/AccessFlowDiagram` (the tool gate node of the access closer look) |
 | A messaging integration | Channels & protocols, `Channel` | Messaging channels | Connect: the list of channels | Messaging channels (Connect): the count in `summary` and a `more` link to the new page |
 | A protocol surface (MCP, A2A, AG-UI) | Channels & protocols, `Protocol` | Protocols and APIs | Connect: the protocols point | its own capability under Connect |
 | A session, thread, response, schedule, or attachment store backend | Memory, knowledge & data, `Memory` (list every store it backs in `title`) | Memory and knowledge | Remember: the session stores point | Sessions (Remember): the backend list in `points` |
@@ -164,7 +164,7 @@ Read the current data before editing and confirm identifiers with `grep -n "^con
 | A schedule provider | Cloud & infrastructure, `Scheduler` | (none) | (none) | Scheduled tasks (Scale), when its text names providers |
 | A secret provider | Cloud & infrastructure, `Secrets` | (none) | (none) | Secret resolution (Guard): `summary` names each provider |
 | A guardrail provider | Observability, safety & testing, `Guardrail` | (none) | Guard: the guardrails point | Guardrails (Guard): a `more` link to the provider's page |
-| An identity provider, or an issuer documented as an `oidc` configuration | Observability, safety & testing, `Identity` (an `oidc` configuration says so in `title`) | (none) | (none) | Identity and access (Guard): the provider lines in `points` |
+| An identity provider, or an issuer documented as an `oidc` configuration | Observability, safety & testing, `Identity` (an `oidc` configuration says so in `title`) | (none) | (none) | Identity and access (Guard): the provider lines in `points`; plus `PROVIDERS` in `docs/src/components/AccessFlowDiagram` and the identity provider node of the Mermaid diagram under *How it fits together* in `docs/docs/advanced/identity-and-access.md`, for a new short `type` name only |
 | A tracing provider | Observability, safety & testing, `Tracing` | Clouds and observability (optional) | Observe: the tracing point | Tracing (Observe): the provider list in `points` |
 | A test evaluator | Observability, safety & testing, `Evaluator` | (none) | (none) | Pluggable evaluators (Observe): `summary` names the built-in evaluators |
 | A bundled user skill (`ak-py/src/agentkernel/skills/`) | (none) | (none) | (none) | (none); only `docs/docs/agent-skills.md` lists individual skills |

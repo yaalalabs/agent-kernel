@@ -1221,6 +1221,40 @@ objects in `tests/test_tool_<adapter>.py`:
      its approval branch (spec 9).
 - **Verify:** `test_tool_gates_openai.py`, `test_tool_gates_pydanticai.py`,
   `test_tool_gates_maf.py`, `test_tool_gates_claude.py`.
+- **As built (2026-11-25):** on `feature/603-tool-gates`. Settled along the way and written
+  into spec 9 and refinement 20:
+  - **`ToolGate.refusal(name, session=None)`** is the one question every hook asks, beside
+    `current` and `deny_result`. It fails closed (`tool gate failed: <type>`) and gates nothing
+    outside a run. New `tests/test_tool_gate.py`.
+  - **A tool the filter never listed is refused**, so the undeclared tools the phase C review
+    listed had to be closed here or refused:
+    - OpenAI handoff targets and agents used as tools: closed. Their tools are declared under
+      the agent the run starts with and gated (`OpenAIToolGate.reachable`).
+    - OpenAI MCP servers, and a handoff that does not hold its agent: `ungated_tool_names`,
+      so the agent does not load under `authorization`.
+    - Pydantic AI prefixed and renamed toolsets: closed (`_served_tools`). A toolset listed
+      only inside a run is left out of a gated run.
+    - MAF: the functions of an MCP tool are refused. Not seen: the calls a nested agent makes
+      inside a tool.
+  - **OpenAI:** the gate goes on the native tools only when the block is configured, at wrap
+    and in `attach_tool`; it is first among the tool's input guardrails.
+  - **Pydantic AI:** step 3 named `before_tool_execute`; the call is answered through
+    `wrap_tool_execute` with the reason as its result. A resumed approval of a tool denied by
+    then becomes `ToolDenied(reason)`.
+  - **Claude:** a denied tool the application approved by name leaves the run's
+    `allowed_tools`; `_native_options` takes the session.
+  - **Not run by a test:** an OpenAI call approved while paused and denied by the resume. The
+    SDK runs a tool's input guardrails right before the function on every invocation
+    (`run_internal/tool_execution.py`), which is where the gate answers.
+  - **Left to iteration 23:** the warning for tools a provider runs (OpenAI hosted tools,
+    Claude's built-in tools), and the realtime runners, which set no `ToolContext`, so the
+    OpenAI gate stands aside on a realtime call.
+  - **Docs and changelog, in step:** the Tool policy part of `advanced/identity-and-access.md`
+    says which framework stops a denied tool and what is outside the gate; the short mentions
+    in `core-concepts/configuration.md`, `ak-py/README.md` and the bundled
+    `ak-add-capabilities` skill name the four frameworks. `changelog.d/603.added.md` (pending)
+    is corrected the same way and `603.changed.2.md` records what the catalog now lists
+    (spec behavioural change 44). Iterations 22 and 23 update both again.
 
 ### Iteration 22: ADK and CrewAI
 
@@ -1232,6 +1266,31 @@ objects in `tests/test_tool_<adapter>.py`:
   2. CrewAI: the process-wide `register_before_tool_call_hook` registered on first module load,
      returning `False` for a denied tool (spec 9).
 - **Verify:** `test_tool_gates_adk.py`, `test_tool_gates_crewai.py`.
+- **As built (2026-11-25):** both steps, with what was settled along the way written into spec
+  9 and refinement 21:
+  - **ADK:** `GoogleADKToolGate`. One walk (`agents`) serves the gate and `get_tool_names`:
+    it adds agents used as tools and the nodes of a nested workflow, which closes the nested
+    `Workflow` gap, and a bare callable is declared under the name ADK serves it by, which
+    closes the callable-object and `partial` gap. The gate leaves ADK's transfer and
+    structured-response tools alone.
+  - **CrewAI:** `CrewAIToolGate`, a before hook and an after hook. Step 2 expected CrewAI's own
+    blocked-by-hook line to reach the agent; the after hook puts the reason in its place. The
+    delegation tools are left alone and an agent that may delegate declares its coworkers'
+    tools. Registered with the public `register_*_hook` functions, so the application's hooks
+    registered earlier run ahead of the gate: a refusal still holds, since any hook that
+    blocks a call blocks it.
+  - **Both** are put in place only when the block is configured, as the OpenAI gate is.
+  - **Not covered:** a tool the model provider runs on ADK (Google Search, code execution),
+    for which ADK calls no callback; a CrewAI tool not run through an executor; a
+    hierarchical crew's manager, whose coworkers' tools are declared only under an agent that
+    may delegate.
+  - **Verified through the overlay only:** CrewAI is not installed beside the test extra, so
+    `test_tool_gates_crewai.py` is skipped in the ordinary run and was run with
+    `uv run --no-sync --with "crewai>=1.15.0,<2.0.0"`, against CrewAI 1.15.18.
+  - **Docs and changelog, in step:** the table in `advanced/identity-and-access.md` gains the
+    two frameworks and the points on agents a run can reach and on moves between agents; the
+    short mentions and the pending `603.added.md` name six frameworks; `603.changed.2.md`
+    covers spec behavioural change 46 as well.
 
 ### Iteration 23: LangGraph, smolagents and realtime; Q12 live
 
@@ -1251,6 +1310,88 @@ objects in `tests/test_tool_<adapter>.py`:
 - **Verify:** `test_tool_gates_langgraph.py`, `test_tool_gates_smolagents.py`, the realtime
   gate cases; the Q12 refusal cases in `test_access_gate`; `test_cross_surface_parity`
   unchanged.
+- **As built (2026-11-25):** the three steps, with what was settled along the way written into
+  spec 9, 8.4 and refinement 22:
+  - **LangGraph:** `LangGraphToolGate`, as step 1 has it. The walk includes compiled subgraphs,
+    which closes the phase C gap. The `ToolNode` `wrap_tool_call` hook was considered and left:
+    it is kept in a private attribute of a compiled graph.
+  - **smolagents:** `SmolagentsToolGate`, as step 2 has it, installed only under the block.
+    Managed agents' tools are declared and gated, `final_answer` and managed-agent calls are left
+    alone (closing the phase C gap), and a code agent on a remote executor is ungated as a whole.
+  - **Realtime:** step 3 needed no seam of its own. The OpenAI and ADK gates are already what the
+    native sessions call; the connection now publishes a filter, the room's (the intersection of
+    every speaker's), which settles the open point of spec 8.4. OpenAI's realtime session answers
+    a denied tool `Tool <name> not found`.
+  - **The warning left from iteration 21:** `Agent.provider_tool_names` on OpenAI, ADK and Claude,
+    logged once per agent by `validate_configuration`. MAF's hosted tools are not reported: the
+    adapter cannot name a hosted tool given as a dict.
+  - **Q12 refusal cases:** on real agents in the LangGraph, smolagents and OpenAI gate suites, and
+    with a stub in `test_access_gate.py`, which also holds the warning.
+  - **`test_cross_surface_parity`:** unchanged and passing. One existing test changed:
+    `test_realtime_pool.py`'s stub of `Runtime._publish` takes the filter.
+  - **Docs and changelog, in step:** the framework table in `advanced/identity-and-access.md`
+    covers all eight frameworks and realtime, the not-yet caution is gone, and the startup checks
+    name the refusal and the warning; the short mentions and the pending `603.added.md` say every
+    framework; new `603.breaking.3.md` for the agents that no longer load under the block; and
+    `603.changed.2.md` covers behavioural change 48.
+  - **Phase E's code is complete.** Left open: whether a participant who joins a call opened by
+    someone else may speak to the agent at all (only their tools are narrowed today).
+
+### Phase E as shipped
+
+What phase E delivered, and what it settled beyond the iteration plans, before it merged
+(2026-11-26). Each point is recorded in the spec section it changes.
+
+- **Code.** `ToolGate` in `core/tool.py` and a gate in all eight adapters (iterations 21 to 23),
+  with the realtime call gated through the room's filter and the Q12 refusal live. Spec
+  refinements 20 to 22 hold what building them settled: a gate refuses a tool the agent does
+  not declare; what a run can reach is declared under the agent it started with; a framework's
+  own control-flow tools are not gated; a gate that changes a native object is put in place only
+  under the block; a realtime room runs its tools as all of its speakers.
+- **The phase C review's undeclared tools.** Closed: Pydantic AI prefixed and renamed toolsets,
+  LangGraph compiled subgraphs, ADK nested workflows and callable objects, smolagents managed
+  agents (and `final_answer` no longer declared), OpenAI handoff targets and agents used as
+  tools. Refused under the block instead: an OpenAI agent's `mcp_servers` and a handoff that
+  does not hold its agent (`realtime_handoff` among them).
+- **Docs.** Written iteration by iteration, then checked at the end of the phase:
+  `advanced/identity-and-access.md` (the framework table, the realtime room, the startup refusal
+  and warning), `core-concepts/configuration.md`, `ak-py/README.md`, the bundled
+  `ak-add-capabilities` skill; and in the end-of-phase pass, What's New, the features page's
+  Authorization capability, the landing page's Guard point and the root `README.md` Guard row.
+  Added at the user's request (2026-11-26): one diagram of authentication and authorization
+  together, components and flow, as a Mermaid flowchart under *How it fits together* on the
+  identity page and as `AccessFlowDiagram`, a closer look below the sandbox's on the features
+  page. Both name the providers and the frameworks, so the docs-sync, identity-provider and
+  framework-integration skills list them among the roll calls to update.
+- **Changelog.** Phase D's pending `603.added.md` corrected in place, since it has not been
+  released, where the phase D plan expected a new `603.added.1.md`; `603.changed.2.md` (what the
+  catalog lists) and `603.breaking.3.md` (the agents that no longer load under the block) added.
+- **Dev skills.** `ak-dev-architecture` and `ak-dev-testing-conventions` in step with each
+  iteration, and `ak-dev-new-framework-integration` gains Step 4b, the tool gate a new adapter
+  must ship (its rules, the mechanisms by framework, the test suite and the checklist items).
+  That closes what iteration 28 step 2 left for phase E.
+- **Review of #1018** (spec section 9, "As built (review of #1018)"). Fixed: OpenAI tools the SDK
+  runs in the process (a local shell, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool`,
+  `CustomTool`) were counted as the provider's and are now ungated, so the agent does not load (and,
+  as a follow-up, a shell environment or tool type the adapter does not know is ungated too, a tool
+  with no `name` is refused by its type's name, and a test fails when an SDK upgrade adds a tool type);
+  MAF now hides a denied tool (`AKToolOfferMiddleware`) and puts both middleware first on the
+  native agent, so the application's middleware never sees a refused call and a denied approval
+  tool never pauses; ADK's `FinishTaskTool` is a control-flow tool; CrewAI's before hook goes first
+  and a call is decided by the tool's declared name; LangGraph names every native tool instance;
+  smolagents code agents ran their tools outside the run's context on the local executor and so
+  were not gated; a realtime participant the authorizer cannot answer for leaves the room no tool,
+  whoever speaks next, instead of failing the input (the second review round caught that another
+  speaker's input had restored the room's tools), and is asked about again at most once a second. The docs, changelog and bundled skill now say a denied tool is
+  stopped on every framework and hidden from the model on four. Declined: moving the Claude
+  refusal hook ahead of the application's `PreToolUse` hooks, since the SDK combines their
+  decisions with deny first whatever the order.
+- **Known limits, each in the spec:** OpenAI's realtime session answers a denied tool `Tool <name>
+  not found`; MAF's hosted tools given as dicts are not reported, and a call to a hidden MAF tool
+  bound with `approval_mode="always_require"` is still put to a person before it is refused; a tool a LangGraph node calls
+  without a `ToolNode` is seen by nothing; CrewAI is verified through the uv overlay only.
+- **Left open:** whether a participant who joins a call opened by someone else may speak to the
+  agent at all. Today their presence only narrows the room's tools.
 
 ## Phase F: Credentials (iterations 24 to 25)
 
@@ -1294,8 +1435,9 @@ The docs and skills for phases A and B landed with phase B itself (PR #937: the 
 the docs-site and README updates, the landing-page tiles, `ak-dev-new-identity-provider` and the
 user-skill updates), those for phase C with phase C (see "Phase C as shipped"), and the docs for
 phase D with phase D (see "Phase D as shipped", decided 2026-11-25: a phase is not merged with
-its user documentation behind it), so iterations 27 and 28 cover what phases E and F add, the
-one dev skill phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
+its user documentation behind it), and the docs and dev skills for phase E with phase E (see
+"Phase E as shipped"), so iterations 27 and 28 cover what phase F adds, the one dev skill
+phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
 
 ### Iteration 26: Test walk
 
@@ -1355,8 +1497,9 @@ one dev skill phase D still owes (`ak-dev-new-authorizer`), and re-verify the re
   2. Landed with phase C, re-verify here: `ak-dev-new-framework-integration` describes the
      adapter contract without `get_a2a_card`, with `get_tool_names` and `_tool_descriptions` in
      its place (the card comes from the descriptor), and the stub agent in
-     `ak-dev-testing-conventions` lost the method. Still to add: `ungated_tool_names` and the tool
-     gate, with phase E. Verify no update is needed for `ak-dev-write-spec`,
+     `ak-dev-testing-conventions` lost the method. The tool gate, `ungated_tool_names` and
+     `provider_tool_names` landed with phase E (Step 4b; see "Phase E as shipped"); re-verify them
+     here. Verify no update is needed for `ak-dev-write-spec`,
      `ak-dev-review-pr`, the other `ak-dev-new-*` skills, `ak-build`, `ak-init` and `ak-test`.
   3. Wherever `ak-add-capabilities` and `ak-cloud-deploy` list the identity providers, Auth0 is
      named as a supported provider with its `oidc` block (decided 2026-11-10), and the

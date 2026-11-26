@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import functools
 import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Mapping, Sequence
@@ -26,7 +27,7 @@ from pydantic import BaseModel
 from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
 from ...core import Runner as BaseRunner
-from ...core import Runtime, Session, ToolBuilder, ToolContext
+from ...core import Runtime, Session, ToolBuilder, ToolContext, ToolGate
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -323,6 +324,72 @@ class LangGraphSessionConfigModel(BaseModel):
     configurable: LangGraphSessionConfigurable
 
 
+class LangGraphToolGate:
+    """
+    The tool gate of LangGraph runs (#603), inside the tools `LangGraphToolBuilder` binds.
+
+    A compiled graph cannot be changed after it is built, and nothing in it is asked before a tool node runs a
+    tool, so the gate is the tool itself: the builder wraps each function in a check of the run's ToolFilter,
+    which answers a call to a tool the filter does not allow with the reason in place of the function's result.
+    The model reads the reason as the tool message. LangGraph runs an interrupted node again when it resumes,
+    so a tool that paused for a human is asked about again with the filter of the resume.
+
+    A bound tool is marked in its `metadata`, and a tool in the graph without the mark (one the application
+    built itself) is one no gate reaches: `LangGraphAgent.ungated_tool_names` names it, and with an
+    `authorization` block such an agent does not load (design Q12). A node that calls a tool without a
+    `ToolNode` is seen by neither.
+    """
+
+    METADATA_KEY: ClassVar[str] = "ak_gated"
+
+    @classmethod
+    def gated(cls, tool: Any) -> bool:
+        """
+        Whether a tool carries the gate: whether `LangGraphToolBuilder` bound it.
+        :param tool: A tool a graph's tool node holds.
+        """
+        return bool((getattr(tool, "metadata", None) or {}).get(cls.METADATA_KEY))
+
+    @staticmethod
+    def wrap(func: Callable, name: Callable[[], str]) -> Callable:
+        """
+        Returns a function that runs `func` only when the run's tool filter allows the tool.
+        :param func: The tool's function, synchronous or a coroutine function; its signature is kept, so the
+            tool's argument schema is the function's.
+        :param name: Returns the tool's name when a call is checked, so a tool renamed after binding is asked
+            about under the name the graph serves it by.
+        :return: The wrapper, of the same kind as `func`.
+        """
+        if asyncio.iscoroutinefunction(func):
+
+            @functools.wraps(func)
+            async def gated_coroutine(*args: Any, **kwargs: Any) -> Any:
+                reason = ToolGate.refusal(name())
+                if reason is not None:
+                    return reason
+                return await func(*args, **kwargs)
+
+            return gated_coroutine
+
+        @functools.wraps(func)
+        def gated_function(*args: Any, **kwargs: Any) -> Any:
+            reason = ToolGate.refusal(name())
+            if reason is not None:
+                return reason
+            return func(*args, **kwargs)
+
+        return gated_function
+
+    @staticmethod
+    def tool_nodes(graph: Any) -> list[ToolNode]:
+        """
+        Returns the tool nodes of a compiled graph and of every compiled subgraph mounted in it, outermost first.
+        :param graph: The compiled graph.
+        """
+        graphs = [graph, *(subgraph for _, subgraph in graph.get_subgraphs(recurse=True))]
+        return [node.bound for each in graphs for node in each.nodes.values() if isinstance(getattr(node, "bound", None), ToolNode)]
+
+
 class LangGraphAgent(BaseAgent):
     """
     LangGraphAgent class provides an agent wrapping for LangGraph Agents SDK based agents.
@@ -394,11 +461,25 @@ class LangGraphAgent(BaseAgent):
 
     def get_tool_names(self) -> list[str]:
         """
-        Returns the names of the tools the compiled graph's tool nodes hold.
+        Returns the names of the tools the tool nodes of the compiled graph hold, and those of every compiled
+        subgraph mounted in it as a node.
 
-        Not reported: tools of a compiled subgraph mounted as a node, and tools a node calls without a `ToolNode`.
+        Not reported: tools a node calls without a `ToolNode`.
         """
         return list(self._graph_tools())
+
+    def ungated_tool_names(self) -> list[str]:
+        """
+        Returns the tools of the graph that `LangGraphToolBuilder` did not bind: the gate is inside the tools it
+        binds, so a tool built any other way runs with no check of the run's tool filter. Every tool node is
+        checked, so a native tool is named even where a gated one elsewhere in the graph shares its name.
+        """
+        names: list[str] = []
+        for tool_node in LangGraphToolGate.tool_nodes(self.agent):
+            for name, tool in tool_node.tools_by_name.items():
+                if not LangGraphToolGate.gated(tool) and name not in names:
+                    names.append(name)
+        return names
 
     def _tool_descriptions(self) -> dict[str, str]:
         """
@@ -408,15 +489,14 @@ class LangGraphAgent(BaseAgent):
 
     def _graph_tools(self) -> dict[str, Any]:
         """
-        Returns the tools of every `ToolNode` in the compiled graph, by name. The graph is immutable once compiled,
-        so its tool nodes are the one place its tools can be read from; a node that calls tools some other way holds
-        none this can see.
+        Returns the tools of every `ToolNode` in the compiled graph and in its compiled subgraphs, by name; a name
+        two nodes share is kept once. The graph is immutable once compiled, so its tool nodes are the one place its
+        tools can be read from; a node that calls tools some other way holds none this can see.
         """
         found: dict[str, Any] = {}
-        for node in self.agent.nodes.values():
-            bound = getattr(node, "bound", None)
-            if isinstance(bound, ToolNode):
-                found.update(bound.tools_by_name)
+        for tool_node in LangGraphToolGate.tool_nodes(self.agent):
+            for name, tool in tool_node.tools_by_name.items():
+                found.setdefault(name, tool)
         return found
 
     def attach_tool(self, tool: Any) -> None:
@@ -1136,6 +1216,9 @@ class LangGraphToolBuilder(ToolBuilder):
         Bind generic tool functions to LangChain StructuredTool instances.
         Also automatically appends global system tools (such as multimodal attachments).
 
+        Each function is wrapped in the tool gate (`LangGraphToolGate`) and the tool is marked as gated in its
+        `metadata`. The wrapper asks the run's tool filter and does nothing else when the run is not gated.
+
         :param funcs: List of generic tool functions to bind.
         :param agent_name: When known, the agent these tools are bound for, so per-capability
                            `agents` scoping (e.g. `sandbox.agents`, `multimodal.agents`) is
@@ -1156,20 +1239,21 @@ class LangGraphToolBuilder(ToolBuilder):
             if not callable(func):
                 raise TypeError(f"Expected a callable, got {type(func).__name__}")
 
+            name = func.__name__
+            built: list[StructuredTool] = []
+            # The tool does not exist yet when the wrapper is made; it reads the name the tool has when called.
+            gated = LangGraphToolGate.wrap(func, functools.partial(cls._current_name, built, name))
+            description = func.__doc__ or name
+            metadata = {LangGraphToolGate.METADATA_KEY: True}
             if asyncio.iscoroutinefunction(func):
-                tools.append(
-                    StructuredTool.from_function(
-                        coroutine=func,
-                        name=func.__name__,
-                        description=func.__doc__ or func.__name__,
-                    )
-                )
+                structured = StructuredTool.from_function(coroutine=gated, name=name, description=description, metadata=metadata)
             else:
-                tools.append(
-                    StructuredTool.from_function(
-                        func=func,
-                        name=func.__name__,
-                        description=func.__doc__ or func.__name__,
-                    )
-                )
+                structured = StructuredTool.from_function(func=gated, name=name, description=description, metadata=metadata)
+            built.append(structured)
+            tools.append(structured)
         return tools
+
+    @staticmethod
+    def _current_name(built: list[StructuredTool], name: str) -> str:
+        """The name a bound tool has now: the one it was bound under until the tool exists, then the tool's own."""
+        return built[0].name if built else name

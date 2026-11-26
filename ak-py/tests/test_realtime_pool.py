@@ -438,7 +438,7 @@ class TestRealtimePrincipal:
         """Every audio chunk is an input, so an unchanged principal is not republished per chunk."""
         conn = _connection(loop=asyncio.get_running_loop())
         published = []
-        monkeypatch.setattr(conn.runtime, "_publish", lambda agent, session, principal: published.append(principal))
+        monkeypatch.setattr(conn.runtime, "_publish", lambda agent, session, principal, tool_filter=None: published.append(principal))
         other = Principal(subject="guest", provider="realtime:livekit", namespace="lk-key")
 
         for principal in (HUMAN, HUMAN, other, other, None):
