@@ -87,6 +87,7 @@ back from the response store. The tool's `session_id` argument is the Open Agent
 | `RESTAPI.run()` with no `execution.queues` block (the laptop default) | ✅ one process, in-memory queue |
 | `IOHandler.run(handlers=[...])`, any transport | ✅ through the queue |
 | `CloudRun.run()` on GCP, any transport | ✅ through the queue (it starts `IOHandler`) |
+| `LambdaProtocolHost` in the AWS Lambda request handler (REST modes, `sqs` transport) | ✅ through the queue, see [On AWS Lambda](#on-aws-lambda) |
 | `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub/Service Bus, `AWSWebsocketAPI` with no queue (with one it starts `IOHandler`) | ❌ refuses to start (`AKConfigError`): these start no agent runner |
 
 - **Split deployments** (SQS, Kafka, NATS, Pub/Sub or Service Bus, with the agent runner in its own process): agent
@@ -107,6 +108,21 @@ back from the response store. The tool's `session_id` argument is the Open Agent
   fixed message; the details go to the server logs only. A call for an agent that is not the caller's
   to run is the `ToolError` `Agent not available` (see [Access](#access)).
 - **Execution mode**: MCP ignores `execution.mode` and always waits for one whole reply.
+
+### On AWS Lambda
+
+The request-handler Lambda serves MCP through `LambdaProtocolHost`, in `rest_sync` or `rest_async` with
+`queue_mode = true` (set up in [A2A and MCP on Lambda](../deployment/aws-serverless.md#a2a-and-mcp-on-lambda)). On Lambda:
+
+- **Stateless only.** Set `mcp.stateless_http: true`: the next call may reach another Lambda instance. The host refuses to start without it.
+- **`GET /mcp` is a 405.** A stateless server has no server push.
+- **29 seconds.** The same wait budget as A2A: API Gateway stops waiting at 29 s.
+- **No streaming.** The streamed reply is buffered and returned whole.
+- **Authentication.** The `/mcp` routes carry no API Gateway authorizer: FastMCP, in the request handler, refuses a missing or bad
+  token, so that Lambda's `config.yaml` must carry the `identity` block.
+- **Login metadata.** The OAuth metadata an OpenID provider advertises lives at the root of the host, which neither this deployment
+  nor ECS routes, so that discovery is not supported.
+- **Public URL.** `mcp.url` has to be the API's public URL.
 
 ## Custom Tools
 

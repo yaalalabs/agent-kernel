@@ -183,6 +183,27 @@ class TestProtocolResponseStore:
             IOHandler._validate_topology("kafka", _cfg(ExecutionMode.ASYNC, push_auth_token="s3cret", mcp=True, expose_agents=True))
 
 
+class TestCheckDeployment:
+    """The public entry the Lambda protocol host shares with ``run``: topology fail-fasts, then the no-agents warning."""
+
+    def test_it_runs_the_topology_checks_and_the_warning_with_the_callers_arguments(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            IOHandler,
+            "_validate_topology",
+            classmethod(lambda cls, transport, config, pod_push=True: calls.append(("topology", transport, pod_push))),
+        )
+        monkeypatch.setattr(IOHandler, "_warn_if_no_agents", classmethod(lambda cls, config: calls.append(("warn",))))
+
+        IOHandler.check_deployment("sqs", _cfg(), pod_push=False)
+
+        assert calls == [("topology", "sqs", False), ("warn",)]
+
+    def test_an_unusable_topology_is_refused(self):
+        with pytest.raises(AKConfigError, match="need a shared response store"):
+            IOHandler.check_deployment("sqs", _cfg(ExecutionMode.REST_SYNC))
+
+
 class TestNoAgentsWarning:
     """Cards and tools are built from the registry's descriptors: an IO process whose registry knows no
     agent serves empty catalogs, so it says so (decision 4: a warning, not an error)."""

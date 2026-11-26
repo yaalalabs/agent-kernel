@@ -56,6 +56,27 @@ variable "endpoints" {
   default = []
 }
 
+variable "proxy_routes" {
+  description = <<-EOT
+    Names of the {proxy+} routes to create under the base path and version, for example ["a2a", "mcp"]. Each name creates
+    /<name> and /<name>/{proxy+}, both answering GET, POST and DELETE (one method each: the Lambda router looks a route up by resource template and verb) and both integrated with the request-handler Lambda, so
+    a path of any depth below /<name> reaches it. The existing `endpoints` list allows three path levels and no catch-all,
+    which is why these are separate. Empty by default: an existing deployment plans no change.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for name in var.proxy_routes : can(regex("^[a-z][a-z0-9-]*$", name))])
+    error_message = "Each proxy_routes entry must be a lowercase path segment (letters, digits and hyphens, starting with a letter), such as \"a2a\"."
+  }
+
+  validation {
+    condition     = length(distinct(var.proxy_routes)) == length(var.proxy_routes)
+    error_message = "proxy_routes must not list a name twice."
+  }
+}
+
 variable "authorizer" {
   description = "Authorizer configuration object"
   type = object({

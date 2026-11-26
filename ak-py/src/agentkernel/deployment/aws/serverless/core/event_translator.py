@@ -1,6 +1,7 @@
+import asyncio
 import base64
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlencode
 
@@ -10,16 +11,18 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response
+from starlette.types import ASGIApp, Message
 
 
 class LambdaEventTranslator:
-    """API Gateway REST (v1) proxy events <-> Starlette, for the Lambda webhook host (#760).
+    """API Gateway REST (v1) proxy events <-> Starlette, for the Lambda hosts: the webhook host (#760) and the protocol host (#932).
 
-    It builds the real ``starlette.requests.Request`` every webhook adapter reads, and turns what
-    the handler produced back into the proxy response FastAPI would have sent. It holds no state.
+    It builds the real ``starlette.requests.Request`` every webhook adapter reads, or runs a whole ASGI
+    app on the event, and turns what the handler produced back into the proxy response FastAPI would
+    have sent. It holds no state.
 
     FastAPI and Starlette are imported at module scope, so ``deployment.aws.serverless.core`` never
-    imports this module: only ``LambdaWebhookHost`` reaches it, through ``agentkernel.aws``'s lazy export.
+    imports this module: only the Lambda hosts reach it, through ``agentkernel.aws``'s lazy exports.
     """
 
     _log = logging.getLogger("ak.aws.lambda.webhook")
@@ -31,29 +34,7 @@ class LambdaEventTranslator:
         :return: A request whose body is the exact bytes the platform sent.
         :raises binascii.Error: If a body flagged as base64 is not valid base64.
         """
-        headers = self._headers(event)
-        header_map = dict(headers)
-        request_context = event.get("requestContext") or {}
-        path = event.get("path") or "/"
-
-        host = header_map.get(b"host", b"").decode("latin-1") or request_context.get("domainName")
-        port = self._forwarded_port(header_map.get(b"x-forwarded-port", b""))
-        source_ip = (request_context.get("identity") or {}).get("sourceIp")
-
-        scope = {
-            "type": "http",
-            "asgi": {"version": "3.0"},
-            "http_version": "1.1",
-            "method": str(event.get("httpMethod") or "GET").upper(),
-            "scheme": self._first_value(header_map.get(b"x-forwarded-proto", b"")) or "https",
-            "path": path,
-            "raw_path": path.encode("utf-8"),
-            "root_path": "",
-            "query_string": self._query_string(event),
-            "headers": headers,
-            "server": (host, port) if host else None,
-            "client": (source_ip, 0) if source_ip else None,
-        }
+        scope = self._scope(event, event.get("path") or "/")
         body = self._body(event)
         delivered = False
 
@@ -65,6 +46,61 @@ class LambdaEventTranslator:
             return {"type": "http.request", "body": body, "more_body": False}
 
         return Request(scope, receive)
+
+    async def call_app(self, app: ASGIApp, event: Mapping[str, Any], app_path: str) -> dict[str, Any]:
+        """Run a whole ASGI app (FastAPI, with its routing and middleware) on an API Gateway proxy event.
+
+        ``to_request`` hands one endpoint a request; this hands an app the same request, as the ASGI
+        server would, and buffers what it answers into one proxy response. The app sees ``app_path``
+        rather than the event's path, so a host can strip the API Gateway prefix first.
+
+        A streamed answer is buffered whole: MCP answers a tool call as one ``text/event-stream`` body,
+        and a proxy response is a single body. Streaming to the client is out of scope here (#894).
+
+        ``receive`` gives the app the body once. Any later call waits until the response is complete
+        and then reports ``http.disconnect``, so an app that listens for a client disconnect while it
+        streams (Starlette does) is not told the client left before it has answered.
+
+        :param app: The ASGI app, for example the one ``RESTAPI.build_app`` returns.
+        :param event: The API Gateway REST (v1) proxy event.
+        :param app_path: The path the app routes on.
+        :return: The API Gateway proxy response.
+        :raises RuntimeError: If the app returns without starting a response.
+        :raises binascii.Error: If a body flagged as base64 is not valid base64.
+        """
+        scope = self._scope(event, app_path)
+        body = self._body(event)
+        delivered = False
+        response_complete = asyncio.Event()
+        status: int | None = None
+        raw_headers: list[tuple[bytes, bytes]] = []
+        chunks: list[bytes] = []
+
+        async def receive() -> Message:
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            await response_complete.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message: Message) -> None:
+            nonlocal status, raw_headers
+            if message["type"] == "http.response.start":
+                status = message["status"]
+                raw_headers = list(message.get("headers", []))
+            elif message["type"] == "http.response.body":
+                chunks.append(message.get("body", b""))
+                if not message.get("more_body", False):
+                    response_complete.set()
+
+        try:
+            await app(scope, receive, send)
+        finally:
+            response_complete.set()  # release a disconnect listener the app left waiting
+        if status is None:
+            raise RuntimeError("The ASGI app returned without starting a response")
+        return self.proxy_response_from_parts(status, raw_headers, b"".join(chunks))
 
     async def to_proxy_response(self, request: Request | None, result: Any) -> dict[str, Any]:
         """Turn an endpoint's return value into the proxy response FastAPI would have sent.
@@ -94,8 +130,41 @@ class LambdaEventTranslator:
         """
         if isinstance(exc, HTTPException):
             return self._proxy_response(await http_exception_handler(request, exc))
-        self._log.error(f"Webhook request failed: {exc!r}", exc_info=exc)
+        self._log.error(f"Lambda host request failed: {exc!r}", exc_info=exc)
         return self._proxy_response(PlainTextResponse("Internal Server Error", status_code=500))
+
+    def _scope(self, event: Mapping[str, Any], path: str) -> dict[str, Any]:
+        """The ASGI scope for a proxy event, serving ``path``.
+
+        The one place the event's method, headers, query string, server and client become a scope,
+        so a request handed to an endpoint and one handed to an app read the same values.
+
+        :param event: The API Gateway REST (v1) proxy event.
+        :param path: The path the scope carries: the event's own for ``to_request``, the app's for ``call_app``.
+        :return: The ASGI HTTP scope.
+        """
+        headers = self._headers(event)
+        header_map = dict(headers)
+        request_context = event.get("requestContext") or {}
+
+        host = header_map.get(b"host", b"").decode("latin-1") or request_context.get("domainName")
+        port = self._forwarded_port(header_map.get(b"x-forwarded-port", b""))
+        source_ip = (request_context.get("identity") or {}).get("sourceIp")
+
+        return {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": str(event.get("httpMethod") or "GET").upper(),
+            "scheme": self._first_value(header_map.get(b"x-forwarded-proto", b"")) or "https",
+            "path": path,
+            "raw_path": path.encode("utf-8"),
+            "root_path": "",
+            "query_string": self._query_string(event),
+            "headers": headers,
+            "server": (host, port) if host else None,
+            "client": (source_ip, 0) if source_ip else None,
+        }
 
     @staticmethod
     def _first_value(value: bytes) -> str:
@@ -162,12 +231,25 @@ class LambdaEventTranslator:
         """
         if not hasattr(response, "body"):
             raise TypeError("streaming responses are not supported on Lambda")
+        return LambdaEventTranslator.proxy_response_from_parts(response.status_code, response.raw_headers, bytes(response.body))
+
+    @staticmethod
+    def proxy_response_from_parts(status: int, raw_headers: Sequence[tuple[bytes, bytes]], body: bytes) -> dict[str, Any]:
+        """The one place an API Gateway proxy response is built: a status, raw ASGI headers and the whole body.
+
+        ``multiValueHeaders`` keeps repeated headers such as ``set-cookie``. A body that is not
+        UTF-8 is sent as base64.
+
+        :param status: The HTTP status code.
+        :param raw_headers: The response headers as ASGI sends them, name and value as bytes.
+        :param body: The whole response body.
+        :return: The API Gateway proxy response.
+        """
         headers: dict[str, list[str]] = {}
-        for name, value in response.raw_headers:
+        for name, value in raw_headers:
             headers.setdefault(name.decode("latin-1"), []).append(value.decode("latin-1"))
-        body = bytes(response.body)
         try:
             text, is_base64 = body.decode("utf-8"), False
         except UnicodeDecodeError:
             text, is_base64 = base64.b64encode(body).decode("ascii"), True
-        return {"statusCode": response.status_code, "multiValueHeaders": headers, "body": text, "isBase64Encoded": is_base64}
+        return {"statusCode": status, "multiValueHeaders": headers, "body": text, "isBase64Encoded": is_base64}

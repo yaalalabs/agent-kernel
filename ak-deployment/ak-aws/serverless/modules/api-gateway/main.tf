@@ -31,6 +31,22 @@ locals {
     "${v.mainpath}/${v.subpath}/${v.childpath}" => v...
     if v.subpath != "" && v.childpath != ""
   }
+
+  # {proxy+} routes (A2A, MCP). Their ids join the deployment hash only when there are any, so a deployment without
+  # them keeps the hash it had and plans no change.
+  proxy_routes = toset(var.proxy_routes)
+  # The verbs the application registers for every route (ProtocolPaths.ROUTES): the router looks a route up by resource
+  # template and verb, so each verb is its own method.
+  proxy_methods      = ["GET", "POST", "DELETE"]
+  proxy_method_pairs = { for pair in setproduct(local.proxy_routes, local.proxy_methods) : "${pair[0]}/${pair[1]}" => { route = pair[0], method = pair[1] } }
+  proxy_route_triggers = length(local.proxy_routes) == 0 ? [] : [
+    values(aws_api_gateway_resource.protocol)[*].id,
+    values(aws_api_gateway_resource.protocol_proxy)[*].id,
+    values(aws_api_gateway_method.protocol)[*].id,
+    values(aws_api_gateway_method.protocol_proxy)[*].id,
+    values(aws_api_gateway_integration.protocol)[*].id,
+    values(aws_api_gateway_integration.protocol_proxy)[*].id,
+  ]
 }
 
 # API Gateway REST API
@@ -116,6 +132,61 @@ resource "aws_api_gateway_integration" "endpoint" {
   uri                     = var.lambda_function_invoke_arn
 }
 
+# {proxy+} routes (proxy_routes): /<name> and /<name>/{proxy+}, one method per verb in local.proxy_methods, straight to the
+# request-handler Lambda.
+# The router looks a route up by the resource template, so these templates are the keys the application registers
+# (ProtocolPaths.ROUTES). Methods carry no authorizer, as on ECS: the application authenticates the bearer token itself
+# (the identity block in config.yaml), so a call with no token runs as the anonymous principal and a bad one gets 401.
+resource "aws_api_gateway_resource" "protocol" {
+  for_each    = local.proxy_routes
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  parent_id   = aws_api_gateway_resource.version.id
+  path_part   = each.key
+}
+
+resource "aws_api_gateway_resource" "protocol_proxy" {
+  for_each    = local.proxy_routes
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
+  parent_id   = aws_api_gateway_resource.protocol[each.key].id
+  path_part   = "{proxy+}"
+}
+
+resource "aws_api_gateway_method" "protocol" {
+  for_each      = local.proxy_method_pairs
+  rest_api_id   = aws_api_gateway_rest_api.rest_api.id
+  resource_id   = aws_api_gateway_resource.protocol[each.value.route].id
+  http_method   = each.value.method
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "protocol_proxy" {
+  for_each      = local.proxy_method_pairs
+  rest_api_id   = aws_api_gateway_rest_api.rest_api.id
+  resource_id   = aws_api_gateway_resource.protocol_proxy[each.value.route].id
+  http_method   = each.value.method
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "protocol" {
+  for_each                = local.proxy_method_pairs
+  rest_api_id             = aws_api_gateway_rest_api.rest_api.id
+  resource_id             = aws_api_gateway_resource.protocol[each.value.route].id
+  http_method             = aws_api_gateway_method.protocol[each.key].http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = var.lambda_function_invoke_arn
+}
+
+resource "aws_api_gateway_integration" "protocol_proxy" {
+  for_each                = local.proxy_method_pairs
+  rest_api_id             = aws_api_gateway_rest_api.rest_api.id
+  resource_id             = aws_api_gateway_resource.protocol_proxy[each.value.route].id
+  http_method             = aws_api_gateway_method.protocol_proxy[each.key].http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = var.lambda_function_invoke_arn
+}
+
 # Lambda permission for API Gateway
 resource "aws_lambda_permission" "endpoint" {
   action        = "lambda:InvokeFunction"
@@ -128,20 +199,22 @@ resource "aws_lambda_permission" "endpoint" {
 resource "aws_api_gateway_deployment" "deployment" {
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   triggers = {
-    redeployment = sha1(jsonencode([
+    redeployment = sha1(jsonencode(concat([
       values(aws_api_gateway_resource.main)[*].id,
       values(aws_api_gateway_resource.sub)[*].id,
       values(aws_api_gateway_resource.child)[*].id,
       values(aws_api_gateway_method.endpoint)[*].id,
       values(aws_api_gateway_integration.endpoint)[*].id,
       [for a in aws_api_gateway_authorizer.lambda_authorizer : [a.identity_source, a.authorizer_result_ttl_in_seconds, a.authorizer_uri]]
-    ]))
+    ], local.proxy_route_triggers)))
   }
   lifecycle {
     create_before_destroy = true
   }
   depends_on = [
-    aws_api_gateway_integration.endpoint
+    aws_api_gateway_integration.endpoint,
+    aws_api_gateway_integration.protocol,
+    aws_api_gateway_integration.protocol_proxy,
   ]
 }
 

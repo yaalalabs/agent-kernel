@@ -247,6 +247,8 @@ module "api_gateway" {
   lambda_function_invoke_arn = local.request_handler_lambda_invoke_arn
   lambda_function_name       = local.request_handler_lambda_function_name
   endpoints                  = local.complete_gateway_endpoints
+  # A2A and MCP: /<name> and /<name>/{proxy+}, the templates ProtocolPaths.ROUTES registers in the request-handler Lambda.
+  proxy_routes = concat(var.enable_a2a_server ? ["a2a"] : [], var.enable_mcp_server ? ["mcp"] : [])
 
   authorizer                            = var.authorizer
   authorizer_lambda_function_name       = local.create_authorizer ? module.authorizer[0].lambda_function_name : ""

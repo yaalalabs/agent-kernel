@@ -1,0 +1,73 @@
+logging:
+  ak:
+    level: INFO
+
+# The agent runner keeps every session here. The request-handler Lambda registers the agents but never runs one, and
+# Terraform gives it no session table in queue mode, so deploy/main.tf sets AK_SESSION__TYPE=in_memory on it.
+session:
+  type: dynamodb
+  dynamodb:
+    table_name: ""   # injected by Terraform via AK_SESSION__DYNAMODB__TABLE_NAME (agent runner only)
+
+# A2A and MCP run through the queue like REST chat: the request-handler Lambda enqueues, the agent-runner Lambda
+# executes, and the caller's reply waits in the response store.
+#
+# `url` is the PUBLIC URL of the API, stage and base path included: the agent card advertises it. It is known only
+# once the API exists, so Terraform injects it as AK_A2A__URL / AK_MCP__URL on the second apply that deploy.sh runs
+# (see the README). Left at its localhost default, the agent card advertises an address no client can reach; nothing checks it.
+a2a:
+  enabled: true
+mcp:
+  enabled: true
+  expose_agents: true
+  # The next MCP call may reach another Lambda instance, which holds none of this one's sessions.
+  stateless_http: true
+
+# What the agent publishes about itself: the A2A card and the MCP tool carry this catalog text, never the
+# agent's instructions. Both Lambdas that load the agents read this file.
+registry:
+  agents:
+    assistant:
+      description: A concise general-purpose assistant. Ask it a question and it answers in a sentence.
+
+# The request handler returns the reply the agent runner stored, so a rest_sync call waits for it:
+# (retry_count - 1) x delay = 18 s, inside API Gateway's 29 s limit (the Lambda refuses to start with more).
+execution:
+  mode: rest_sync
+  queues:
+    # The transport every component runs on. Mandatory: the queue URLs below are injected per component.
+    type: sqs
+    input:
+      # url injected via AK_EXECUTION__QUEUES__INPUT__URL
+      max_receive_count: 3
+    output:
+      # url injected via AK_EXECUTION__QUEUES__OUTPUT__URL (the request handler builds the SQS transport,
+      # which needs both URLs)
+      max_receive_count: 3
+  response_store:
+    type: dynamodb
+    retry_count: 10
+    delay: 2
+    dynamodb:
+      table_name: ""   # injected via AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME
+      ttl: 300
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX
+
+# Who may call. The static provider maps one credential to the `demo-user` principal; the value is never written
+# here: Terraform passes it as the DEMO_AUTH_TOKEN environment variable (var.demo_auth_token) to the authorizer
+# Lambda and to the request-handler Lambda, which the secret capability resolves at startup.
+#   - the authorizer checks the bearer token of the chat route;
+#   - the A2A and MCP routes have no authorizer: the request handler checks the token (FastMCP refuses a missing or
+#     bad one; A2A reads the caller's principal: a call with no token is the anonymous principal, as on ECS).
+# The request handler reads this block, so it must be in the config.yaml that Lambda carries.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user

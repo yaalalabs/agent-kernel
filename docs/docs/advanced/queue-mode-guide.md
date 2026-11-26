@@ -170,7 +170,9 @@ store it, whatever `execution.mode` is, because these callers wait for one whole
 - **Entry points**: a bare `RESTAPI.run()` (in-memory queue) and `IOHandler.run(handlers=[...])`
   serve them. With `a2a.enabled`, or `mcp.enabled` plus `mcp.expose_agents`, every entry point
   that starts no agent runner (`RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on a broker,
-  `AWSWebsocketAPI` with no queue) raises `AKConfigError` at startup.
+  `AWSWebsocketAPI` with no queue) raises `AKConfigError` at startup. On AWS Lambda the
+  request handler serves them through `LambdaProtocolHost` (REST modes, `sqs` transport), which hands the
+  call to the unchanged workers: see [A2A and MCP on Lambda](../deployment/aws-serverless.md#a2a-and-mcp-on-lambda).
 - **Broker transports**: the response store must be shared (`redis`, `valkey` or `dynamodb`) in
   every execution mode, not only the REST ones. Cards and agent tools are built from the
   [agent registry](../core-concepts/configuration.md#agent-registry), so the IO process has to know

@@ -978,6 +978,39 @@ response_handler = {
   Redis/Valkey store the request handler can reach).
 - Full example: `examples/aws-serverless/slack-openai`.
 
+### G) A2A and MCP on Lambda
+
+The request-handler Lambda serves A2A and MCP next to chat in queue mode (`queue_mode = true`) with `rest_sync` or
+`rest_async` (not `async`), on the `sqs` transport. Build `LambdaProtocolHost()` after the agents are registered and
+register its `handle` for every route in `ProtocolPaths.ROUTES`:
+
+```python
+from agentkernel.aws import Lambda, LambdaProtocolHost, ProtocolPaths
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([assistant])
+protocol = LambdaProtocolHost()
+
+for path, method in ProtocolPaths.ROUTES:
+    Lambda.register(path, method=method)(protocol.handle)
+
+handler = Lambda.handler
+```
+
+- Terraform: `enable_a2a_server = true` and/or `enable_mcp_server = true` on the module (one API Gateway method per verb; both need `queue_mode = true`).
+- Auth: as on ECS, the A2A and MCP routes carry no API Gateway authorizer. The request-handler Lambda authenticates the bearer
+  token itself, so the `config.yaml` it carries must have the `identity` block. A2A: a call with no token runs as the anonymous
+  principal, a bad token gets a 401. MCP (with an `identity` block): no token or a bad one gets a 401 from FastMCP. An authorizer, if any, protects the chat route only.
+- Config (the host checks `mcp.stateless_http: true`, the response store and its wait; not the URLs): `mcp.stateless_http: true`, `a2a.url` and `mcp.url` set to the
+  API's public URL (stage and base path included; deploy twice, since the API id exists only after the first apply), and a
+  response store with `(retry_count - 1) x delay` at most 29 s.
+- The request handler builds the agent registry, so deploy it as a container image with 2 GB of memory, and set
+  `AK_SESSION__TYPE=in_memory` on it (the module gives it no session table in queue mode).
+- Limits: 29 s API Gateway wait, no cross-instance `tasks/{id}` (both task stores are per-process), no streaming, MCP OIDC login discovery unsupported (the root `.well-known` path is not routed, on ECS either).
+- Declare it in two places (`Lambda.register` for each `ProtocolPaths.ROUTES`, the Terraform flags): not registered gives a 500;
+  no flag gives a 403 from API Gateway. There is no authorizer bypass.
+- Full example: `examples/aws-serverless/a2a-mcp-openai`.
+
 ## AWS Containerized (ECS/Fargate)
 
 ### A) Basic Mode (single container, direct execution)

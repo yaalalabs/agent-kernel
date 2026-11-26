@@ -9,6 +9,7 @@ This is an internal submodule used by the root serverless stack in `state.tf`; t
 - Creates a regional REST API
 - Builds `/api/{api_version}/{endpoint}` resources
 - Supports nested endpoints up to three path segments
+- Optionally adds `{proxy+}` routes (`proxy_routes`) for protocols with deep paths, such as A2A and MCP
 - Optionally configures a Lambda authorizer
 - Creates CloudWatch log groups and stage logging
 
@@ -48,6 +49,7 @@ module "api_gateway" {
 | `lambda_function_invoke_arn` | Request handler invoke ARN |
 | `lambda_function_name` | Request handler Lambda name |
 | `endpoints` | Additional REST endpoints |
+| `proxy_routes` | Names of `{proxy+}` routes to create, e.g. `["a2a", "mcp"]`. Each creates `/<name>` and `/<name>/{proxy+}`, both answering `GET`, `POST` and `DELETE` (one method each: the Lambda router looks a route up by resource template and verb) and both integrated with the request-handler Lambda (default `[]`: none) |
 | `authorizer` | Optional authorizer configuration |
 | `create_authorizer` | Whether to create the authorizer |
 | `enable_api_gateway_logs` | Create the CloudWatch log group and enable stage access logging (default `false`) |
@@ -71,7 +73,8 @@ module "api_gateway" {
 ## Notes
 
 - Endpoint paths are normalized into a maximum of three nested resource levels.
-- When an authorizer is enabled, the API uses `CUSTOM` authorization for all methods.
+- When an authorizer is enabled, the API uses `CUSTOM` authorization for all methods except the `proxy_routes` ones, which carry none: the Lambda behind them authenticates the bearer token itself, as the ECS deployment does.
+- `proxy_routes` resources, methods and integrations are added to the deployment hash only when the list is not empty, so a deployment that sets none plans no change. The route templates (`/a2a`, `/a2a/{proxy+}`, `/mcp`, `/mcp/{proxy+}`) are the keys the application registers with `Lambda.register` (`ProtocolPaths.ROUTES`): the Lambda router looks a route up by the resource template API Gateway matched. A `gateway_endpoints` entry under the same first segment is refused by a validation on the `enable_*_server` flags (the module itself would create the same resource twice).
 - Access logging is opt-in via `enable_api_gateway_logs` (default `false`). When `false`, no CloudWatch log group is created and the stage has no `access_log_settings`.
 - Enabling access logging requires the account-level API Gateway CloudWatch role (`aws_api_gateway_account`), which the parent module provisions via `shared-api-gateway-resources` only when `enable_api_gateway_logs` is `true`.
 - `aws_api_gateway_account` is a **singleton per AWS account + region**. If more than one deployment in the same account/region enables logging, they will contend over this resource. Disabling the toggle after it was enabled **destroys** the account role, which can affect other REST APIs in the account that depend on it.

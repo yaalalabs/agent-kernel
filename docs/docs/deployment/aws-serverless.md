@@ -1512,6 +1512,108 @@ and one reply.
   in a second stack in `rest_async`, or on the pipeline.
 - Gmail (a poller) is not supported on Lambda.
 
+## A2A and MCP on Lambda
+
+The request-handler Lambda can serve [A2A](../api/a2a-server.md) and [MCP](../api/mcp-server.md) next to the chat route, in the
+REST modes (`rest_sync`, `rest_async`) with `queue_mode = true`. Both reach the agent the way chat does: the request handler
+enqueues the call, the agent-runner Lambda runs it, and the request handler reads the reply from the response store. The queue
+workers are unchanged.
+[`examples/aws-serverless/a2a-mcp-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/a2a-mcp-openai)
+deploys the whole path.
+
+```
+A2A / MCP client --> API Gateway (no authorizer on these routes)
+                                          |
+                                          v
+                               Request-handler Lambda (authenticates the bearer token)
+                               LambdaProtocolHost -> the A2A routes + the MCP mount
+                                          |  enqueue, protocol = a2a | mcp
+                                          v
+                Input Queue --> Agent-runner Lambda --> Output Queue --> Response-handler Lambda
+                                          the request handler reads the reply from the response store
+```
+
+### Hosting the routes
+
+Build `LambdaProtocolHost` at module scope in the request-handler Lambda and register its `handle` for every route in
+`ProtocolPaths.ROUTES`:
+
+```python
+from agentkernel.aws import Lambda, LambdaProtocolHost, ProtocolPaths
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([assistant])  # the cards and tools are built from the agents registered in this Lambda
+protocol = LambdaProtocolHost()
+
+for path, method in ProtocolPaths.ROUTES:
+    Lambda.register(path, method=method)(protocol.handle)
+
+handler = Lambda.handler
+```
+
+The host runs the same FastAPI app the pipeline's `IOHandler` serves, so the A2A and MCP code is not copied. Enable the
+protocols in `config.yaml` as usual (`a2a.enabled`, `mcp.enabled`, `mcp.stateless_http: true`).
+
+### Terraform
+
+Set the two flags on the `ak-serverless` module. Each adds the `/a2a` or `/mcp` resources to API Gateway, one method per verb
+(`GET`, `POST`, `DELETE`), because the Lambda router looks a route up by resource template and verb:
+
+```hcl
+module "ak_serverless" {
+  # ...
+  queue_mode        = true
+  enable_a2a_server = true
+  enable_mcp_server = true
+}
+```
+
+Both flags need `queue_mode = true`, which the module checks at plan. A REST mode is checked when the request handler starts: it refuses `async`.
+
+### Authentication
+
+The A2A and MCP routes carry **no API Gateway authorizer**, the same as on ECS. The request-handler Lambda authenticates the
+bearer token itself, through the `identity` block of its own `config.yaml`: A2A reads the caller's principal from it, and
+MCP (FastMCP) refuses a missing or bad token.
+
+- **The request handler's `config.yaml` must carry the `identity` block.** Without one, every caller is the anonymous
+  principal, exactly as on ECS. An authorizer Lambda on the same API protects the chat route only.
+- **A2A:** a call with **no token** reaches the agent as the anonymous principal (API Gateway used to answer such a call with a
+  401 when an authorizer sat in front); a call with a **bad token** gets a 401 from the app.
+- **MCP:** with an `identity` block, a call with **no token or a bad one** gets a 401 from FastMCP.
+- Authenticated-only A2A access is a feature for both deployments (ECS and Lambda), not a Lambda setting.
+
+### Declare the protocols in two places
+
+| Where | What | When it is missing |
+|---|---|---|
+| Request-handler Lambda | `Lambda.register(path, method=method)(protocol.handle)` for each `ProtocolPaths.ROUTES` | a 500: the router has no route |
+| Terraform | `enable_a2a_server`, `enable_mcp_server` | a 403 from API Gateway: no `/a2a` or `/mcp` route |
+
+### Public URL
+
+The agent card advertises `a2a.url`, and MCP names `mcp.url` in its login metadata. Both have to be the API's public URL,
+stage and base path included (`https://<id>.execute-api.<region>.amazonaws.com/<stage>/api/v1/a2a`). Set both: they default to `localhost`,
+which the host does not check, so a missed second apply leaves the card advertising an address no client can reach. The API id exists only after the API does, so deploy twice: the second apply passes the
+first one's URL to the request handler as `AK_A2A__URL` and `AK_MCP__URL`. With a custom domain you know the URL up front.
+
+### Session store
+
+Registering an agent builds the runtime's session store. In queue mode the module gives the request handler no session table
+(the agent runner owns the sessions), so a `dynamodb` session type in `config.yaml` fails the request handler at start. Set
+`AK_SESSION__TYPE=in_memory` on the request-handler Lambda, as the example does; it never runs an agent and holds no session.
+
+### Limits
+
+- **29 seconds.** API Gateway stops waiting at 29 s. When A2A or agent MCP runs, `(execution.response_store.retry_count - 1) x delay` has to be at most 29, or the host refuses to start.
+- **A2A tasks**: `tasks/{id}` across instances is not supported, on Lambda or ECS. Both `a2a.task_store_type` values (`in_memory`, `redis`) keep tasks in the memory of one process.
+- **No streaming**: `message:stream` and streamed MCP replies are not supported.
+- **MCP login metadata** (RFC 9728, with an OpenID identity provider) is served at the root of the host, a path this deployment does not route, so that OAuth discovery is not supported (ECS does not route it either).
+- **Memory**: the request handler loads the agents, so deploy it as a container image with far more than the 128 MB default.
+- **WebSocket `async` mode** is not supported (#985); direct mode is tracked in #959.
+
+On cold start the host checks what is specific to Lambda (a REST mode, the base-path variables, `mcp.stateless_http: true` since any call can land on another instance, the `sqs` transport, the 29 s budget) and the same topology checks ECS runs (a shared response store), and fails the Lambda's init with a message naming the setting. The public URLs are not checked.
+
 ## Cost Optimization
 
 ### Lambda Configuration

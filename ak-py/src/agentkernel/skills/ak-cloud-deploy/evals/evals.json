@@ -386,6 +386,25 @@
         "terraform apply",
         "yaalalabs/ak-serverless/aws"
       ]
+    },
+    {
+      "id": "deploy-aws-a2a-mcp-serverless",
+      "name": "Serve A2A and MCP from AWS Lambda",
+      "input": "Expose my agent over A2A and MCP on our AWS Lambda deployment",
+      "expected_outputs": [
+        "LambdaProtocolHost",
+        "ProtocolPaths.ROUTES",
+        "Lambda.register",
+        "enable_a2a_server",
+        "enable_mcp_server",
+        "identity",
+        "stateless_http: true",
+        "examples/aws-serverless/a2a-mcp-openai"
+      ],
+      "must_not_contain": [
+        "RESTAPI.run()",
+        "execution.mode: async"
+      ]
     }
   ]
 }

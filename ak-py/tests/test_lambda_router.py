@@ -1,9 +1,12 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentkernel.core.config import _ExecutionConfig, _ResponseStoreConfig
+from agentkernel.core.config import AKConfig, _ExecutionConfig, _ResponseStoreConfig
 from agentkernel.core.util.factory import AKConfigError
+from agentkernel.deployment.aws.serverless.aklambda import Lambda
+from agentkernel.deployment.aws.serverless.core.protocol_paths import ProtocolPaths
 from agentkernel.deployment.aws.serverless.core.router import RESTLambdaRouter
 
 DEFAULT_METHOD = "POST"  # must be same as _default_agent_registered_method in LambdaRouter
@@ -196,3 +199,112 @@ def test_rest_sync_delta_is_refused_at_router_init(monkeypatch, input_queue_url)
 @pytest.mark.parametrize("input_queue_url", [None, "https://sqs.us-east-1.amazonaws.com/123/input"])
 def test_rest_sync_complete_builds_the_router(monkeypatch, input_queue_url):
     _router_with_execution(monkeypatch, input_queue_url, mode="rest_sync", message_type="complete")
+
+
+class TestProtocolProxyRoutes:
+    """A2A and MCP events reach routes registered with ``Lambda.register`` (#932, spec Deviation 10).
+
+    API Gateway sends every ``/a2a/...`` call to one ``{proxy+}`` resource, so the router has to look a route up by the
+    resource template (``/api/v1/a2a/{proxy+}``) and not by the concrete path. The events are the shapes API Gateway
+    really sent in the Iteration 1 spike, on a stage and base path ``/api/v1``.
+    """
+
+    METHODS = ("GET", "POST", "DELETE")
+
+    @pytest.fixture(autouse=True)
+    def _lambda(self, monkeypatch):
+        """A REST deployment on sqs with the base-path variables, and a stubbed chat route so the router builds."""
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_EXECUTION__MODE", "rest_async")
+        monkeypatch.setenv("AK_EXECUTION__QUEUES__TYPE", "sqs")
+        for name, value in (("API_BASE_PATH", "api"), ("API_VERSION", "v1"), ("AGENT_ENDPOINT", "agent")):
+            monkeypatch.setenv(name, value)
+        AKConfig._reset()
+        Lambda._router = None
+        Lambda._config = None
+        self.chat = MagicMock(return_value=(200, {"via": "chat"}))
+        endpoints = MagicMock()
+        endpoints.get_default_endpoint_info.return_value = ("default_chat_path", "POST", "GET")
+        endpoints.get_routes.return_value = {"default_chat_path": {"POST": self.chat}}
+        with patch("agentkernel.deployment.aws.serverless.core.router.rest_lambda.DefaultEndpointsHandler", return_value=endpoints):
+            yield
+        Lambda._router = None
+        Lambda._config = None
+        AKConfig._reset()
+
+    @staticmethod
+    def _register():
+        """Register one recording handler for every route in ``ProtocolPaths.ROUTES``, as the application does."""
+        seen: list[dict] = []
+
+        def handler(event, context):
+            seen.append(event)
+            return {"statusCode": 200, "body": json.dumps({"via": "protocol"})}
+
+        for path, method in ProtocolPaths.ROUTES:
+            Lambda.register(path, method=method)(handler)
+        return seen
+
+    @staticmethod
+    def _event(method, path, resource, **path_parameters):
+        return {
+            "httpMethod": method,
+            "path": f"/api/v1{path}",
+            "resource": f"/api/v1{resource}",
+            "pathParameters": path_parameters or None,
+        }
+
+    @pytest.mark.parametrize("method", METHODS)
+    @pytest.mark.parametrize(
+        "path, resource, path_parameters",
+        [
+            ("/a2a/catalog", "/a2a/{proxy+}", {"proxy": "catalog"}),
+            ("/a2a/triage/message:send", "/a2a/{proxy+}", {"proxy": "triage/message:send"}),
+            ("/a2a/triage/tasks/123:cancel", "/a2a/{proxy+}", {"proxy": "triage/tasks/123:cancel"}),
+            ("/a2a/triage/.well-known/agent-card.json", "/a2a/{proxy+}", {"proxy": "triage/.well-known/agent-card.json"}),
+            ("/a2a", "/a2a", {}),
+            ("/mcp", "/mcp", {}),
+            ("/mcp/", "/mcp", {}),
+            ("/mcp/session/1", "/mcp/{proxy+}", {"proxy": "session/1"}),
+        ],
+    )
+    def test_an_a2a_or_mcp_event_dispatches_to_the_registered_handler(self, method, path, resource, path_parameters):
+        seen = self._register()
+
+        response = Lambda.handler(self._event(method, path, resource, **path_parameters), None)
+
+        assert response == {"statusCode": 200, "body": json.dumps({"via": "protocol"})}
+        assert len(seen) == 1
+        assert seen[0]["path"] == f"/api/v1{path}"
+        assert seen[0]["pathParameters"] == (path_parameters or None)
+
+    def test_the_handler_receives_the_whole_event_so_the_host_can_read_the_real_path(self):
+        seen = self._register()
+
+        Lambda.handler(self._event("POST", "/a2a/triage/message:send", "/a2a/{proxy+}", proxy="triage/message:send"), None)
+
+        assert seen[0]["resource"] == "/api/v1/a2a/{proxy+}"
+        assert seen[0]["httpMethod"] == "POST"
+
+    def test_the_chat_route_still_dispatches_to_the_chat_handler(self):
+        seen = self._register()
+
+        response = Lambda.handler({"httpMethod": "POST", "path": "/api/v1/agent", "resource": "/api/v1/agent"}, None)
+
+        assert json.loads(response["body"]) == {"via": "chat"}
+        assert seen == []
+
+    def test_a_method_nobody_registered_is_refused(self):
+        self._register()
+
+        response = Lambda.handler(self._event("PUT", "/a2a/triage/message:send", "/a2a/{proxy+}", proxy="triage/message:send"), None)
+
+        assert response["statusCode"] == 500
+        assert "No registered route found" in response["body"]
+
+    def test_without_the_routes_registered_an_a2a_event_fails_as_it_does_today(self):
+        """Break 2: the router knows only the chat route until the application registers the protocol routes."""
+        response = Lambda.handler(self._event("POST", "/a2a/triage/message:send", "/a2a/{proxy+}", proxy="triage/message:send"), None)
+
+        assert response["statusCode"] == 500
+        assert "No registered route found" in response["body"]
