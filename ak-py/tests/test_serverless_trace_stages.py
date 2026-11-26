@@ -77,7 +77,7 @@ def test_complete_rest_sync(caplog):
         )
 
     assert _traces(caplog, "ak.aws.lambda.default_endpoints") == [
-        (TraceStage.REQUEST_RECEIVED, "req-1"),
+        (TraceStage.REQUEST_HANDLER_START, "req-1"),
         (TraceStage.INPUT_ENQUEUED, "req-1"),
         (TraceStage.RESPONSE_POLL_START, "req-1"),
         (TraceStage.RESPONSE_FOUND, "req-1"),
@@ -128,7 +128,7 @@ def test_delta_websocket(caplog):
         ResponseHandler.process_message(_output_record({"delta": "Hello", "done": False, "session_id": "s1"}))
         ResponseHandler.process_message(_output_record({"done": True, "session_id": "s1"}))
 
-    assert _traces(caplog, "ak.pipeline.ws.handler") == [(TraceStage.REQUEST_RECEIVED, "req-1"), (TraceStage.INPUT_ENQUEUED, "req-1")]
+    assert _traces(caplog, "ak.pipeline.ws.handler") == [(TraceStage.REQUEST_HANDLER_START, "req-1"), (TraceStage.INPUT_ENQUEUED, "req-1")]
     assert _traces(caplog, "ak.aws.streamagentrunner") == [
         (TraceStage.AGENT_RECEIVED, "req-1"),
         (TraceStage.AGENT_START, "req-1"),

@@ -54,6 +54,6 @@ async def test_ws_enqueue(caplog, monkeypatch, message_type):
     with caplog.at_level(TRACE, logger="ak"):
         seen = await _enqueue_ws_chat(monkeypatch, caplog, message_type=message_type)
 
-    assert _traces(caplog, "ak.ecs.ws_handler") == [(TraceStage.REQUEST_RECEIVED, "req-1"), (TraceStage.INPUT_ENQUEUED, "req-1")]
+    assert _traces(caplog, "ak.ecs.ws_handler") == [(TraceStage.REQUEST_HANDLER_START, "req-1"), (TraceStage.INPUT_ENQUEUED, "req-1")]
     # Each stage is traced before the work it names starts.
-    assert seen == {"principal lookup": [TraceStage.REQUEST_RECEIVED], "send": [TraceStage.REQUEST_RECEIVED, TraceStage.INPUT_ENQUEUED]}
+    assert seen == {"principal lookup": [TraceStage.REQUEST_HANDLER_START], "send": [TraceStage.REQUEST_HANDLER_START, TraceStage.INPUT_ENQUEUED]}

@@ -16,7 +16,7 @@ logging.addLevelName(TRACE, "TRACE")
 class TraceStage(StrEnum):
     """Request-path stages written at ``TRACE``, in request order. The logged value is the name."""
 
-    REQUEST_RECEIVED = "REQUEST_RECEIVED"
+    REQUEST_HANDLER_START = "REQUEST_HANDLER_START"
     INPUT_ENQUEUED = "INPUT_ENQUEUED"
     AGENT_RECEIVED = "AGENT_RECEIVED"
     AGENT_START = "AGENT_START"

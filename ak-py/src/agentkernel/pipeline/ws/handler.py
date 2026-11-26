@@ -238,7 +238,7 @@ class PipelineWebSocketHandler(RESTRequestHandler):
     async def _handle_chat(self, websocket: WebSocket, principal: Principal, request: BaseRequest) -> None:
         """Enqueue a chat frame; the Response Handler pushes the reply back to this pod."""
         request_id = request.request_id or str(uuid.uuid4())
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, request_id)
         body = request.body
         if body is None:
             await self._send_system(websocket, "body is required")

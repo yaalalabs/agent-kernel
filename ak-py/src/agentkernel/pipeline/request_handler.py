@@ -307,12 +307,14 @@ class RestHandler(AgentRESTRequestHandler):
         return await self._enqueue_and_wait(body, self._receive_request())
 
     def _receive_request(self) -> str:
-        """Give a new chat request its id and trace its arrival, before any validation or I/O runs for it.
+        """Give a new chat request its id and trace that its handler started, before any validation or I/O runs for it.
+
+        Not traced: the identity dependency (auth) and FastAPI's body parsing run before the route method does.
 
         :return: The request id, unique and distinct from the session id.
         """
         request_id = str(uuid.uuid4())
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, request_id)
         return request_id
 
     async def _enqueue_and_wait(self, body: BaseRunRequest, request_id: str, admitted: bool = False) -> Any:

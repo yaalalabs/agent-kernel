@@ -224,6 +224,9 @@ path.
     (`RESPONSE_DELIVERED` → client received). Empty when either point is missing. `AGENT_DONE` follows
     `AGENT_FIRST_CHUNK` in delta and `AGENT_START` in complete (`AGENT_FIRST_CHUNK` is delta only), so a stage that
     doesn't run in a message type is simply empty (PR #893 review).
+  - **Not traced: work before the handler.** The first stage, `REQUEST_HANDLER_START`, is written when AK's handler
+    starts. Authentication (the identity dependency, an API Gateway authorizer) and request parsing run before it, so
+    their time is in the client's `sent → REQUEST_HANDLER_START` duration, not in any AK stage (PR #1002 review).
   - Percentiles are computed over requests, never per worker first.
 
 ### Scaling
@@ -775,7 +778,7 @@ flowchart TD
   - Benchmark runs set `logging.ak.level: TRACE`. **No other new configuration.**
   - Departure noted: Python's logging HOWTO advises against custom levels in libraries; taken on purpose so the normal
     level hierarchy works.
-- **`TraceStage`**, a `str` enum in `core/logger.py`: `REQUEST_RECEIVED`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`,
+- **`TraceStage`**, a `str` enum in `core/logger.py`: `REQUEST_HANDLER_START`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`,
   `AGENT_START`, `AGENT_FIRST_CHUNK` (delta only), `AGENT_DONE`, `OUTPUT_ENQUEUED`, `OUTPUT_RECEIVED`,
   `RESPONSE_DELIVERED`; `rest_sync` only: `RESPONSE_POLL_START`, `RESPONSE_FOUND` (traced like the rest, but `rest_sync`
   isn't benchmarked, so they get no duration column and no point in the stage graphs).
@@ -788,7 +791,7 @@ flowchart TD
   - Stage in square brackets first. **Only trace lines carry the stage in `[...]`.**
   - The formatter change (`core/logger.py:42`) applies to **every** AK log line, not only `TRACE`.
   - **Clocks:** a duration between two points logged on different machines (e.g. `INPUT_ENQUEUED` →
-    `AGENT_RECEIVED`, client sent → `REQUEST_RECEIVED`, and `CLIENT_RECEIVED`) includes the clock offset between
+    `AGENT_RECEIVED`, client sent → `REQUEST_HANDLER_START`, and `CLIENT_RECEIVED`) includes the clock offset between
     them. It isn't corrected; the load-generator machine must have clock sync (NTP) on. Durations inside one component
     and end-to-end latency use one clock and aren't affected (PR #893 review).
 - **Parser** in `core/logger.py` next to `TraceStage`, so format and parser change together. The benchmark imports it.
@@ -798,12 +801,15 @@ flowchart TD
     dequeue).
   - **Every trace line is written before the work it names, never after:** `INPUT_ENQUEUED` / `OUTPUT_ENQUEUED` just
     before the queue send, `RESPONSE_DELIVERED` just before the push / store write / platform delivery;
-    `REQUEST_RECEIVED`, `AGENT_RECEIVED`, `OUTPUT_RECEIVED` as soon as the request id is known, before validation,
+    `REQUEST_HANDLER_START`, `AGENT_RECEIVED`, `OUTPUT_RECEIVED` as soon as the request id is known, before validation,
     lookups (e.g. the connection's principal) or payload logging. Stages are then written in request order across
     components; logged after the send, `INPUT_ENQUEUED` came after `AGENT_RECEIVED` on the in_memory transport.
     - Delta exception: chunks are sent while the agent runs, so `AGENT_DONE` and `OUTPUT_ENQUEUED` are written once
       the stream ends (#911 Q2).
-    - A rejected request still has its `REQUEST_RECEIVED` line, with no later stages.
+    - A rejected request still has its `REQUEST_HANDLER_START` line, with no later stages.
+    - **Auth is not traced.** `REQUEST_HANDLER_START` (renamed from `REQUEST_RECEIVED`, PR #1002 review) marks the start
+      of AK's handler, not the request's arrival: the identity dependency, an API Gateway authorizer and FastAPI's body
+      parsing and validation run before it and have no trace line.
 - **Trace lines are added next to the existing stage-style INFO lines, not in place of them:**
   - The INFO lines on the request path stay at `INFO` with their text but **drop their `[...]` tag** (e.g.
     `[AGENT DONE] request_id=...` → `Agent done: request_id=...`), so normal logs still show them.

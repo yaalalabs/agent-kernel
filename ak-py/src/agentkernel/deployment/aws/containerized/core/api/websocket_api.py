@@ -334,7 +334,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         message = BaseRequest.from_payload(payload) if is_chat_request else payload
         if is_chat_request:
             # As soon as the frame names its request_id: before the principal lookup and validation.
-            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, message.request_id)
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, message.request_id)
 
         principal = await self._offload(self.get_websocket_handler().get_principal, connection_id)
         if principal is None:

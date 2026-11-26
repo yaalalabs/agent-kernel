@@ -384,8 +384,9 @@ logging:
 > Logging is auto-configured when the configuration is first loaded, i.e., at the first `Config.get()` call, which every application entry point performs during startup. Merely importing the library does not read `config.yaml` or change logging. Once configuration loads, OAK may configure the OAK logger and the system/root logger and may add or change handlers/formatters.
 > Use `logging.ak.level` to control OAK's own logger verbosity, and `logging.system.level` only if you want OAK to affect the process-wide/root logger. If you do **not** want OAK to modify application-wide logging, avoid enabling root/system logger.
 > Every line OAK's formatter writes starts with a UTC timestamp at millisecond precision, e.g. `2026-10-21T08:15:12.345Z`.
-> `TRACE` sits below `DEBUG` and adds one line per request-path stage (`REQUEST_RECEIVED`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`, `AGENT_START`, `AGENT_FIRST_CHUNK`, `AGENT_DONE`, `OUTPUT_ENQUEUED`, `OUTPUT_RECEIVED`, `RESPONSE_DELIVERED`, and `RESPONSE_POLL_START` / `RESPONSE_FOUND` for synchronous REST), for benchmarking where a request spends its time:
+> `TRACE` sits below `DEBUG` and adds one line per request-path stage (`REQUEST_HANDLER_START`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`, `AGENT_START`, `AGENT_FIRST_CHUNK`, `AGENT_DONE`, `OUTPUT_ENQUEUED`, `OUTPUT_RECEIVED`, `RESPONSE_DELIVERED`, and `RESPONSE_POLL_START` / `RESPONSE_FOUND` for synchronous REST), for benchmarking where a request spends its time:
 > `2026-10-21T08:15:12.345Z - ak.pipeline.agent_runner - TRACE - [AGENT_DONE] request_id=<id>`
+> **Note:** the first stage, `REQUEST_HANDLER_START`, is written when OAK's request handler starts. Authentication (the identity dependency or an API Gateway authorizer) and request body parsing run before it and are not traced.
 > `agentkernel.core.TraceLine.parse(line)` reads such a line back (timestamp, stage, request id, and an optional `message="..."` written before `request_id`) and returns `None` for any other line, so it also works on lines with a log-backend prefix such as CloudWatch's.
 
 ### JSON Configuration
