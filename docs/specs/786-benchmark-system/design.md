@@ -921,7 +921,10 @@ Q1-Q8 were resolved on 2026-10-30 and Q9 on 2026-11-01. None are open.
 
 Parked on purpose; decided when that part is built.
 
-- **L2.** WebSocket delta: trace every chunk or only the first (`AGENT_FIRST_CHUNK`) and last (`AGENT_DONE`).
+- **L2 (decided 2026-11-26, PR #1002 review).** WebSocket delta: no per-chunk trace lines. The agent runner traces the
+  first chunk (`AGENT_FIRST_CHUNK`) and the stream end (`AGENT_DONE`); the Response Handler writes `OUTPUT_RECEIVED`
+  and `RESPONSE_DELIVERED` for the last chunk only (`done: true`), so a request has one line per stage. Per-chunk
+  timing comes from the client.
 - **L3.** Config vs CLI: `hosts`, `modes`, `message_types`, `test_types` and `load_steps` are in `ak-bench.yaml` and
   also come in through the commands (`--host`, `--mode`, `--message-type`, `--test-type`, `--steps` / `--step`). The
   design keeps them in the config; during implementation, if one of them can be dropped from the config or from the
