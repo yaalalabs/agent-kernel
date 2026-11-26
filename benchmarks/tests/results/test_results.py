@@ -50,7 +50,9 @@ def host() -> Host:
     broken.metrics = frozenset({("cpu_pct", "max")})
     return Host(
         "mock",
-        StageFetchers(during_step=[scaling, transport], cooldown_checks=[transport, scaling], after_step=[MockTraceCollector("trace"), resource, broken]),
+        StageFetchers(
+            during_step=[scaling, transport], cooldown_checks=[transport, scaling], after_step=[MockTraceCollector("trace"), resource, broken]
+        ),
     )
 
 
@@ -116,6 +118,22 @@ def test_per_window_client_columns(step_dir, record, config, host, deployment):
     assert [r["timeouts"] for r in rows] == [0, 0, 0, 0, 0, 1]
     assert [r["latency_p50"] for r in rows] == [None, 3, 12, None, None, None]
     assert (step_dir / "per-time-window.csv").exists()
+
+
+@pytest.mark.parametrize(
+    "before_end, t_load_down, ended, parts",
+    [
+        # steady: each boundary a few ms after the grid line (the real runner's timing)
+        (2.001, 12.006, 13.009, ["before", "before", *["load"] * 10, "cooldown", "cooldown"]),
+        # burst: the whole load is 0.45 s inside one window, the step ends with the last response
+        (2.001, 2.455, 2.455, ["before", "before", "load"]),
+    ],
+)
+def test_per_window_step_part_is_the_part_covering_most_of_the_window(record, before_end, t_load_down, ended, parts):
+    record = StepRecord("steady", 1, at(0), at(before_end), at(before_end), at(t_load_down), at(ended), False, record.load, 0, 1)
+    grid = WindowGrid(record.started, record.ended, 1)
+
+    assert [PerWindowWriter._part(start, end, record) for start, end in grid.windows] == parts
 
 
 def test_per_window_carry_forward_limit(step_dir, record, config, host, deployment):

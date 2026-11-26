@@ -1014,7 +1014,9 @@ the driver's chain (`AGENT_FIRST_CHUNK_s` for complete) stays empty; a missing p
 `WindowGrid(started, ended, time_window_s)`: window `k` covers `[started + k·w, started + (k+1)·w)`, the last window
 ends at or after `ended`. Columns:
 
-- `window_start, step_part` (`before` / `load` / `cooldown` by window start against `before_end` and `t_load_down`);
+- `window_start, step_part` (`before` / `load` / `cooldown`: the part covering most of the window within
+  `[started, ended)`, split at `before_end` and `t_load_down`; those fall a few ms off the grid, so labelling by window
+  start would give `before` one window too many and a short burst no `load` window);
 - `tx_per_s, rx_per_s` (sent / `ok`-completed in the window ÷ `w`), `errors, timeouts` (by `settled` time);
 - `latency_p0 … latency_p100` over `ok` requests completed in the window;
 - per queue × fetcher: `<queue>.waiting.<fetcher>`, `<queue>.in_flight.<fetcher>` (from `queue-depth.csv`);

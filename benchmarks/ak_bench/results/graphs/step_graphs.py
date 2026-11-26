@@ -51,7 +51,7 @@ class StepPlots(Plots):
         self.boxes(ax, stages, [percentiles([float(r[f"{s}_s"]) for r in requests if r[f"{s}_s"]]) for s in stages])
         self.seconds_axis(ax)
         ax.set_ylabel("time from the previous point")
-        ax.set_title(f"Stage times ({name}, {len(requests)} requests)")
+        ax.set_title(f"Stage times ({name}, {len(requests)} request{'s' * (len(requests) != 1)})")
         return fig
 
     def _stage_breakdown(self, requests: list[dict[str, str]], name: str) -> Figure:
@@ -164,10 +164,11 @@ class StepPlots(Plots):
         ok = [r for r in requests if start and r["sent"] and r["latency_s"]]
         timed_out = [r for r in requests if start and r["sent"] and r["status"] == "timeout"]
         sent = lambda rows: [(KeyedCsv.parse_ts(r["sent"]) - start).total_seconds() for r in rows]
-        ax.scatter(sent(ok), [float(r["latency_s"]) for r in ok], s=4, color=SERIES[0], alpha=0.3, linewidths=0, label="one request")
+        ax.scatter(sent(ok), [float(r["latency_s"]) for r in ok], s=8, color=SERIES[0], alpha=0.6, linewidths=0, label="one request")
         if timeout is not None:
             ax.scatter(sent(timed_out), [timeout] * len(timed_out), s=28, marker="x", color=SERIES[7], label=f"timed out ({len(timed_out)})")
-            ax.axhline(timeout, color=MUTED, lw=1, ls=":")
+            if timed_out:  # drawn only when used: it would stretch the axis far above every answered request
+                ax.axhline(timeout, color=MUTED, lw=1, ls=":")
         width = x[1] - x[0] if len(x) > 1 else 0.0
         latency = {p: self.values(windows, f"latency_{p}") for p in PCTS}
         self.bands(ax, x + width / 2, latency)

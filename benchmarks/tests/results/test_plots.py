@@ -11,6 +11,7 @@ from ak_bench.load.driver.ws_complete import WebSocketCompleteDriver
 from ak_bench.results.csv.per_request import PerRequestWriter
 from ak_bench.results.csv.per_window import PerWindowWriter
 from ak_bench.results.graphs.cost_graph import CostReport
+from ak_bench.results.graphs.plots import Plots
 from ak_bench.results.graphs.step_graphs import StepPlots
 from ak_bench.results.metadata import StepMetadataWriter
 from ak_bench.run.run_log import RunLog
@@ -81,6 +82,29 @@ def test_a_failing_graph_is_logged_and_the_others_still_draw(step_dir, record, c
     StepPlots(run_log).draw(step_dir, "steady", host, deployment)
     assert (step_dir / "graphs" / "02-stage-breakdown.png").read_bytes() == before
     assert errors(run_log)[-1].endswith("the previous graph is kept and is out of date")
+
+
+@pytest.mark.parametrize(
+    "values, labels",
+    [
+        ([0.2, 0.5], ["200 ms", "300 ms", "400 ms", "500 ms"]),  # inside one decade: every digit, never unlabelled
+        ([0.21, 0.52, 30], ["200 ms", "500 ms", "1 s", "2 s", "5 s", "10 s", "20 s"]),  # wider: 1, 2, 5 per decade
+    ],
+)
+def test_seconds_axis_labels_every_range(values, labels):
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    ax.plot(range(len(values)), values)
+    Plots.seconds_axis(ax)
+    fig.canvas.draw()
+    lo, hi = ax.get_ylim()
+    try:
+        assert [t.get_text() for t, v in zip(ax.get_yticklabels(), ax.get_yticks(), strict=True) if lo <= v <= hi] == labels
+        t_lo, t_top, t_hi = ax.yaxis.get_transform().transform([lo, max(values), hi])
+        assert (t_hi - t_top) / (t_hi - t_lo) > 0.04  # headroom measured in symlog space: the top value is off the edge
+    finally:
+        plt.close(fig)
 
 
 def test_cost_graph_only_when_cost_csv_exists(tmp_path, run_log):

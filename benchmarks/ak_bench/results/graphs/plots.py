@@ -11,7 +11,7 @@ import numpy
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, SymmetricalLogLocator
 
 from ak_bench.fetchers.core.resources import ResourceUsageFetcher
 from ak_bench.hosts.host import Host
@@ -93,7 +93,12 @@ class Plots:
     def seconds_axis(ax: Axes) -> None:
         """symlog, not log: a duration of 0 or below (client / server clock skew) stays on the graph."""
         ax.set_yscale("symlog", linthresh=1e-3)
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g} s" if v == 0 or abs(v) >= 0.01 else f"{v * 1000:g} ms"))
+        ax.autoscale_view(scalex=False)  # margins again in symlog space; the linear ones leave the top value on the edge
+        lo, hi = ax.get_ylim()
+        narrow = lo * hi > 0 and max(abs(lo), abs(hi)) < 10 * min(abs(lo), abs(hi))
+        # ticks at 1, 2, 5 per decade, every digit when the view is under a decade (0.2-0.5 s), so it is never unlabelled
+        ax.yaxis.set_major_locator(SymmetricalLogLocator(base=10, linthresh=1e-3, subs=range(1, 10) if narrow else [1, 2, 5]))
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g} s" if v == 0 or abs(v) >= 1 else f"{v * 1000:g} ms"))
 
     @staticmethod
     def bands(ax: Axes, x: Sequence[float], p: dict[str, numpy.ndarray], color: str = SERIES[0], label: str = "") -> None:
@@ -142,7 +147,9 @@ class Plots:
             for metric, stat in sorted(f.metrics):
                 metrics.setdefault(metric, []).append((stat, f.name))
         tiers = tiers or [""]
-        fig, axes = plt.subplots(len(tiers), max(len(metrics), 1), figsize=(5 * max(len(metrics), 1), 2.4 * len(tiers) + 0.6), squeeze=False)
+        # at least 03-timeline's width, so a one-panel grid fits its titles and lines up with it
+        width = max(5 * len(metrics), 9)
+        fig, axes = plt.subplots(len(tiers), max(len(metrics), 1), figsize=(width, 2.4 * len(tiers) + 0.6), squeeze=False)
         for row, tier in zip(axes, tiers, strict=True):
             row[0].set_title(f"tier: {tier}" if tier else "no tiers", color=INK2, pad=14)  # room for the step-part names
             for ax, (metric, series) in zip(row, metrics.items(), strict=False):

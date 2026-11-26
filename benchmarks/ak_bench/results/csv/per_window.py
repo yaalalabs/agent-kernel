@@ -96,7 +96,7 @@ class PerWindowWriter:
         latency = [percentiles(latencies) for latencies in ok]
         return {
             "window_start": [start for start, _ in grid.windows],
-            "step_part": [self._part(start, record) for start, _ in grid.windows],
+            "step_part": [self._part(start, end, record) for start, end in grid.windows],
             "tx_per_s": [len(b) / w for b in sent],
             "rx_per_s": [len(b) / w for b in ok],
             "errors": [len(b) for b in errors],
@@ -120,7 +120,12 @@ class PerWindowWriter:
         return columns
 
     @staticmethod
-    def _part(start: datetime, record: StepRecord) -> str:
-        if start < record.before_end:
-            return "before"
-        return "load" if start < record.t_load_down else "cooldown"
+    def _part(start: datetime, end: datetime, record: StepRecord) -> str:
+        """The part covering most of the window within the step; the boundaries are not on the grid (ms after it)."""
+        parts = {
+            "before": (record.started, record.before_end),
+            "load": (record.before_end, record.t_load_down),
+            "cooldown": (record.t_load_down, record.ended),
+        }
+        overlap = {part: min(end, b) - max(start, a) for part, (a, b) in parts.items()}
+        return max(overlap, key=overlap.__getitem__)
