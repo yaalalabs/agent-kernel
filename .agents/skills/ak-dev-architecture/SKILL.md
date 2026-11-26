@@ -323,7 +323,7 @@ Pydantic-based configuration:
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
 
-- **`ToolContext`**: Execution context available inside tool functions via `ToolContext.get()`. Provides access to `runtime`, `agent`, `session`, `requests`, and `principal` (the run's principal as `Runtime` published it, read through `session.get_principal()`: the authenticated caller with the agent as `actor`, or the anonymous principal when the surface authenticated nobody).
+- **`ToolContext`**: Execution context available inside tool functions via `ToolContext.get()`. Provides access to `runtime`, `agent`, `session`, `requests`, and `principal` (the run's principal as `Runtime` published it, read through `session.get_principal()`: the authenticated caller with the agent as `actor`, or the anonymous principal when the surface authenticated nobody), and `credentials` (#603: the run's `CredentialBroker`; `await ToolContext.get().credentials.token_for(audience)`, `CredentialError` as the tool's result).
 - **`ToolGate`** (#603, iteration 21): what a framework adapter asks before it offers or runs a tool. It decides nothing: with an `authorization` block `Runtime` publishes one `ToolFilter` per run, and the gate reads it. `current(session=None)` returns the run's filter (the session handed in, else the one of the current `ToolContext`; `None` when the run is not gated or no run is in progress), `deny_result(name, filter)` the reason string, and `refusal(name, session=None)` is the one question every hook asks: the reason, or `None` when the run is not gated or the tool is allowed. `refusal` never raises (a native hook has no place for an exception) and fails closed: a filter that cannot be read or asked refuses the tool with `tool gate failed: <type>`. An adapter adds its hook, or lets it act, only when `current()` returns a filter, which is what keeps the native call keyword-for-keyword unchanged without the block. The filter is over `Agent.get_tool_names()` and `allows(name)` is false for a name it never listed, so **what an adapter declares must be what its gate matches**: the name the model calls, and every tool the gate can see.
 - **`ToolBuilder`**: Base class for framework-specific tool builders. Each framework implements `bind(funcs)` to wrap plain Python functions into framework-native tool objects. An adapter may accept more than `funcs`: OpenAI, Google ADK, Pydantic AI and MAF each take `**options` and forward them to the native wrapper (`function_tool`, `FunctionTool`, `Tool`, `tool()`), which is how a gated tool is declared without the native decorator — `needs_approval`, `require_confirmation` and `requires_approval` are each that framework's human-in-the-loop flag. Options apply to every function in the call, so tools wanting different ones are bound separately. LangGraph's `bind` takes `agent_name` instead; smolagents' native wrapper takes nothing but the function, so it has nothing to forward.
 - Write plain Python functions → bind via the framework's ToolBuilder → tools work across frameworks
@@ -886,7 +886,7 @@ authorization: the authorizer contract, the static backend, its factory and the
 a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
 realtime surfaces (iteration 20, the Protocol surfaces bullet below). Phase E gates tools from the published tool filter (the Tool gates bullet below): the OpenAI,
 Pydantic AI, MAF and Claude adapters since iteration 21, ADK and CrewAI since iteration 22,
-LangGraph, smolagents and realtime calls since iteration 23. Phase F adds credentials: iteration 24 the encrypted credential store (the Credentials bullet below), which nothing writes to until iteration 25, so `Principal.credential_ref` is still inert. Authentication is
+LangGraph, smolagents and realtime calls since iteration 23. Phase F adds credentials (the Credentials bullet below): iteration 24 the encrypted credential store, iteration 25 retention, release, exchange and the broker, so `Principal.credential_ref` names the request's retained credential; the AWS adapters retain nothing until iteration 25b. Authentication is
 configuration: one identity provider per deployment, named by the `identity` block, and no
 handler or entry point takes a validator or authoriser argument any more (`agentkernel.auth` is
 deleted).
@@ -896,7 +896,8 @@ deleted).
   channels, `Principal.SHARED_CHANNEL_PREFIXES`), `namespace` (the scope the subject is unique
   within: an OIDC issuer, `static`, a Slack team id), `groups`, `roles`, `claims`, `actor` (the
   agent principal `Runtime` attaches: `kind="agent"`, `subject=agent.name`,
-  `provider=AGENT_PRINCIPAL_PROVIDER`, that is `"agentkernel"`) and `credential_ref` (inert).
+  `provider=AGENT_PRINCIPAL_PROVIDER`, that is `"agentkernel"`) and `credential_ref` (the reference of the
+  request's retained credential, never the token; see Credentials).
   Frozen; `Principal.anonymous()`, `is_anonymous`, `is_shared_channel`, `with_actor(actor)`,
   `Principal.subject_of(principal)`. `SessionOwner` (`subject`, `provider`, `namespace`) is the
   principal a session was first used by. Every `BaseChatRequest` carries `principal`, set by the
@@ -998,8 +999,11 @@ deleted).
   (`BEARER_CHALLENGE`, RFC 6750 section 3), on a WebSocket a `WebSocketException` closing with 1008
   (`WS_POLICY_VIOLATION`). FastAPI is imported inside
   `dependency()`: the Lambda authorizer and the WebSocket connection handler authenticate through
-  this class too and their packages carry no FastAPI. `release()` is a no-op until the
-  credentials capability.
+  this class too and their packages carry no FastAPI. Authenticating keeps nothing; with
+  `identity.credentials` the dependency then retains the request's credential
+  (`CredentialManager.retain`, the constructor's `credentials` argument, which `from_config` fills
+  with `CredentialManager.get()`), so `state.principal` carries a `credential_ref`. `release(principal)`
+  deletes it through the manager, off the loop.
 - **Which routes refuse the anonymous principal** is the handlers' decision, not the
   authenticator's. `AuthorisedRESTRequestHandler` (`api/handler.py`) reads
   `request.state.principal` back in `_resolve_user` and answers 401 `Authentication required`
@@ -1313,8 +1317,34 @@ deleted).
   bytes, never quoting the value; None without a key. `CredentialStoreFactory.create(credentials)`
   builds the cipher, then `in_memory` / `redis` / `valkey` / `dynamodb` from explicit settings (a
   shared type without its block is an `AKConfigError`, the registry's rule), else a dotted path
-  through `CredentialStore.from_config(store_config, cipher)`. Exchange and the broker are
-  iteration 25.
+  through `CredentialStore.from_config(store_config, cipher)`.
+  **Retention, exchange and the broker** (iteration 25, refinement 24). `CredentialManager`
+  (`manager.py`) is the process's store and exchangers, built once (`get()` None without the block,
+  `reset()`), and owns the lifecycle. `retain(principal, credential, connection=False)` keeps the token
+  under a fresh `uuid4().hex` reference until `min(exp, now + inbound_ttl)` (a connection's under
+  `conn:<hex>` until `exp`, else `now + inbound_ttl`, not renewed), returns the principal with
+  `credential_ref`, keeps nothing for the anonymous principal or an expired token, and on a store failure
+  logs (no token) and returns the principal unchanged. `release` deletes a run's reference, `forget` a
+  `conn:` one, `release_for` is the never-raising classmethod. **Retention is explicit at each surface**,
+  never inside authentication: the identity dependency (HTTP: REST, A2A, AG-UI, threads), the MCP
+  verifier (each call), the pipeline WebSocket gateway and the CLI (both for the connection, forgotten
+  when it ends). The AWS adapters do not retain yet: the Lambda authorizer's result is cached per token,
+  so a reference it minted would be shared by requests that each release it (iteration 25b).
+  **Release**: `Runtime.run` / `Runtime.stream` call `release_for` off the loop in their `finally`
+  (after a gate refusal too); `AgentRunner.process` in its `finally`, reading the body principal only
+  when it names a `credential_ref`, so a redelivered message finds none. `AgentRunner._validate_credential_store`
+  (from `AgentRunner.run` and `IOHandler._validate_topology`) refuses an `in_memory` store on a broker.
+  `TokenExchanger(config)` (`exchange.py`) keeps `audience` and `scopes`; `PassthroughTokenExchanger`
+  (warns at construction) forwards the inbound token, expiring at `min(exp, now + inbound_ttl)`;
+  `TokenExchangerFactory.create(config, inbound_ttl)` refuses the reserved `rfc8693`, `entra_obo`,
+  `id_jag`, builds a dotted path with its entry, and `create_all` keys by audience (duplicates refused);
+  `IssuedToken` hides its token from `repr`. `CredentialBroker` (`broker.py`, no cipher):
+  `token_for(audience, scopes=None)` raises `CredentialError` for no store ("not configured", or
+  "unavailable" when `for_run` could not build the manager), a run without `credential_ref` (before the
+  cache, so nothing is borrowed), no exchanger, a failed exchange (type only, never the token) or an
+  unreachable store; it caches issued tokens under `cred:issued:<sha256 of [subject, provider,
+  namespace, agent_id, audience, sorted scopes]>` until 30 s before expiry. `ToolContext.credentials`
+  is `CredentialBroker.for_run(principal, agent.descriptor.id)` and never raises.
 - **Contract suites** (imported from test code only): `identity/provider/testing.py` has
   `IdentityProviderContract` (fixtures `provider`, `valid_credential` as `(credential, expected
   fields)`, `invalid_credentials`) and `RoleMapperContract` (`mapper`, `cases`);
@@ -1330,7 +1360,8 @@ deleted).
   `EntraIdentityProvider`, `FirebaseIdentityProvider`, `RoleMapper`, `MappingRoleMapper`,
   `MappedIdentityProvider`, `RoleMapperFactory`, `Authorizer`, `AuthorizerCapabilities`,
   `Decision`, `AuthorizerFactory`, `StaticAuthorizer`, `CredentialError`, `CredentialCipher`,
-  `CredentialStore`, `CredentialStoreFactory`, `InMemoryCredentialStore`.
+  `CredentialStore`, `CredentialStoreFactory`, `InMemoryCredentialStore`, `CredentialManager`, `CredentialBroker`,
+  `TokenExchanger`, `IssuedToken`, `PassthroughTokenExchanger`, `TokenExchangerFactory`.
 
 ### Configuration (`_IdentityConfig` in `config.py`)
 

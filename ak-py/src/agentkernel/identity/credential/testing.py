@@ -1,4 +1,4 @@
-"""Reusable conformance suite for credential store backends (#603).
+"""Reusable conformance suites for credential store backends and token exchangers (#603).
 
 Import from test code only: the module imports ``pytest`` and is kept out of the package exports.
 """
@@ -9,7 +9,9 @@ from collections.abc import Callable
 
 import pytest
 
+from ...core.model import Principal
 from ..errors import CredentialError
+from .exchange import IssuedToken, TokenExchanger
 from .store import CredentialCipher, CredentialStore
 
 # Shaped like a bearer token, and distinctive enough that finding it in a stored value means it was kept as it came.
@@ -119,3 +121,46 @@ class CredentialStoreContract:
         store.put("ref-1", TOKEN, self._later())
 
         assert make_store(cipher).get("ref-1") == TOKEN
+
+
+class TokenExchangerContract:
+    """What every token exchanger must do. Subclass it and override ``exchanger`` and ``inbound``.
+
+    Deliberately not named ``Test*``: pytest collects it only through a subclass that supplies the fixtures.
+    """
+
+    AUDIENCE = "https://api.contract.example"
+
+    @pytest.fixture
+    def exchanger(self) -> TokenExchanger:
+        raise NotImplementedError("override exchanger in the exchanger's test class")
+
+    @pytest.fixture
+    def inbound(self) -> str:
+        raise NotImplementedError("override inbound: a credential the exchanger accepts")
+
+    @pytest.fixture
+    def actor(self) -> Principal:
+        return Principal(kind="agent", subject="billing", provider="agentkernel")
+
+    @pytest.mark.asyncio
+    async def test_an_exchange_issues_a_token(self, exchanger, inbound, actor):
+        issued = await exchanger.exchange(inbound, self.AUDIENCE, ["read"], actor)
+
+        assert isinstance(issued, IssuedToken)
+        assert issued.access_token and issued.token_type
+
+    @pytest.mark.asyncio
+    async def test_the_issued_token_has_not_expired(self, exchanger, inbound, actor):
+        issued = await exchanger.exchange(inbound, self.AUDIENCE, [], actor)
+
+        assert issued.expires_at > time.time()
+
+    @pytest.mark.asyncio
+    async def test_an_exchange_without_an_actor_is_accepted(self, exchanger, inbound):
+        assert (await exchanger.exchange(inbound, self.AUDIENCE, [], None)).access_token
+
+    def test_the_issued_token_is_not_in_its_repr(self):
+        issued = IssuedToken(access_token="secret-access-token", expires_at=time.time() + 60)
+
+        assert "secret-access-token" not in repr(issued)

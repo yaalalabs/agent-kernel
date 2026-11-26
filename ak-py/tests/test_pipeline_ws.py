@@ -391,6 +391,62 @@ class TestWebSocketAuthentication:
         assert store.get_connections("user-1") == [], "the shared mapping is cleaned on disconnect"
 
 
+class TestTheConnectionsCredential:
+    """With credentials, a connection keeps its token for its life (a ``conn:`` reference), every chat frame's body
+    carries the reference, a run's release leaves it, and the connection forgets it when it ends (#603, iteration 25)."""
+
+    @pytest.fixture
+    def manager(self):
+        from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
+        from agentkernel.identity.credential.manager import CredentialManager
+
+        store = InMemoryCredentialStore(None)
+        store.clear()
+        yield CredentialManager(store, {}, 300)
+        store.clear()
+
+    def _app(self, monkeypatch, manager):
+        _use_config(monkeypatch)
+        transport = InMemoryTransport()
+        handler = PipelineWebSocketHandler(
+            authenticator=RequestAuthenticator(_Provider(), manager),
+            registry=LocalConnectionRegistry(),
+            transport=transport,
+            connection_store=_store(),
+        )
+        app = FastAPI()
+        app.include_router(handler.get_router())
+        return app, transport
+
+    def test_every_chat_frame_carries_the_connections_reference(self, monkeypatch, manager):
+        app, transport = self._app(monkeypatch, manager)
+        with TestClient(app).websocket_connect(f"{WS_PATH}?token=good") as websocket:
+            for prompt in ("one", "two"):
+                websocket.send_json({"body": {"session_id": "s1", "prompt": prompt}})
+                websocket.receive_json()
+            consumer = transport.create_consumer(QueueName.INPUT)
+            refs = set()
+            for _ in range(2):
+                [message] = consumer.fetch(batch_size=1, wait_seconds=1)
+                refs.add(json.loads(message.body)["principal"]["credential_ref"])
+                consumer.ack(message)
+            [ref] = refs
+            assert ref.startswith("conn:")
+            assert manager.store.get(ref) == b"good"
+            assert "good" not in message.body
+
+    def test_the_connection_forgets_its_credential_when_it_ends(self, monkeypatch, manager):
+        app, _ = self._app(monkeypatch, manager)
+        with TestClient(app).websocket_connect(f"{WS_PATH}?token=good") as websocket:
+            websocket.send_json({"route": "nope"})
+            websocket.receive_json()
+            [ref] = list(type(manager.store)._entries)
+        deadline = time.monotonic() + 2
+        while manager.store.get(ref) is not None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert manager.store.get(ref) is None
+
+
 class TestCoHostedThroughRESTAPI:
     """Single-process async mode mounts ``/ws`` and the push endpoint through ``RESTAPI.build_app``,
     whose routers get the identity dependency unless they authenticate their own callers (#603)."""

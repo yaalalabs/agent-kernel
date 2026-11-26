@@ -115,6 +115,24 @@ class TestTokenVerifier:
         assert AKAccessToken.principal_of(rebuilt).subject == "alice"
 
     @pytest.mark.asyncio
+    async def test_with_credentials_the_token_is_kept_for_the_call(self):
+        from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
+        from agentkernel.identity.credential.manager import CredentialManager
+
+        store = InMemoryCredentialStore(None)
+        token = await AKTokenVerifier(_Provider(), CredentialManager(store, {}, 300)).verify_token("alice-secret")
+
+        ref = token.principal.credential_ref
+        assert ref and not ref.startswith("conn:")
+        assert store.get(ref) == b"alice-secret"
+        assert AKAccessToken.principal_of(token).credential_ref == ref
+        store.clear()
+
+    @pytest.mark.asyncio
+    async def test_without_credentials_nothing_is_kept(self):
+        assert (await AKTokenVerifier(_Provider()).verify_token("alice-secret")).principal.credential_ref is None
+
+    @pytest.mark.asyncio
     async def test_a_refused_token_is_none_and_the_reason_is_logged(self, caplog):
         with caplog.at_level("INFO", logger="ak.api.mcp.auth"):
             assert await AKTokenVerifier(_Provider()).verify_token("nope") is None

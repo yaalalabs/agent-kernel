@@ -1442,6 +1442,26 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
      `ToolContext.credentials` returns the live broker (spec 3, 4, 8.3).
 - **Verify:** the remaining `test_identity_credentials` cases (broker, no token in a queue body
   or log line, deletion on both paths, reserved exchanger names).
+- **As built** (2026-11-26; spec sections 4 and 5 "As built", refinement 24):
+  - Retention is explicit: `CredentialManager.retain` (new `credential/manager.py`, which also holds
+    the store, the exchangers, `release`, `forget` and the broker) is called by the identity
+    dependency, the MCP verifier, the pipeline WebSocket gateway and the CLI (the last two for the
+    connection); authentication keeps nothing. Released by `Runtime` and `AgentRunner.process`;
+    forgotten by the gateway and the CLI when the connection or session ends.
+  - `deployment/aws/containerized/akagentrunner.py` no longer exists (#870): the ECS containers run the
+    pipeline `AgentRunner`, so its release covers them, and ECS REST modes retain through the
+    dependency. Not done here, so moved to **iteration 25b**: the Lambda authorizer, the Lambda REST
+    router and WebSocket handler, the ECS WebSocket handler and the serverless runner's release. Those
+    deployments keep no credential until then, and the docs say so.
+  - Added: the startup refusal of an `in_memory` credential store on a broker transport
+    (`AgentRunner._validate_credential_store`, also from `IOHandler`).
+  - Docs: an identity page section ("Credentials for downstream calls"), the configuration reference,
+    the `ak-py` README, the bundled `ak-add-capabilities` skill, and `changelog.d/603.added.1.md`.
+- **Iteration 25b (added): AWS adapters.** The Lambda REST router retains from the request's
+  `Authorization` header when it rebuilds the principal (never the authorizer, whose result is
+  cached); the Lambda and ECS WebSocket handlers retain for the connection at `$connect` and forget at
+  `$disconnect`; the serverless runner releases; per-frame renewal of a connection credential whose
+  token has no `exp` (pipeline and ECS gateways).
 
 ## Phase G: Tests, docs and skills (iterations 26 to 28)
 

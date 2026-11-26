@@ -242,6 +242,17 @@ identity:
       ops: [admin]
     claims: []  # claim paths whose string or list values are also looked up in mapping; only groups by default,
                 # since a user sets many of their own claims (a display name, a username, an email)
+  credentials:  # optional - keeps each request's credential, encrypted, so a tool can get a token for a downstream service
+    encryption_key: AK_CREDENTIAL_KEY  # secret key name of a base64url-encoded 32-byte key; required by every store but in_memory
+    inbound_ttl: 300  # seconds a request's credential is kept, at most
+    store:
+      type: in_memory  # in_memory | redis | valkey | dynamodb, or a dotted path to a CredentialStore subclass
+      redis: {url: "redis://localhost:6379", prefix: "ak:cred:"}  # no ttl: each credential expires with its token
+      dynamodb: {table_name: ak-credentials}  # partition key credential_key (S), TTL on expiry_time
+    exchangers:  # one per downstream audience
+      - audience: https://api.example.com
+        type: passthrough  # forwards the inbound token unchanged (development only), or a dotted path to a TokenExchanger
+        scopes: []
 
 # Authorization (optional - presence enables it. Without this block nothing is restricted. With it a caller
 # runs only the agents a grant gives it a level on, and sees only the agents it may see. See "Authorization" below)
@@ -671,7 +682,16 @@ export AK_IDENTITY__PROVIDER__COGNITO__REGION=eu-west-1  # cognito only
 export AK_IDENTITY__PROVIDER__COGNITO__USER_POOL_ID=eu-west-1_XXXXXXXXX  # cognito only
 export AK_IDENTITY__PROVIDER__ENTRA__TENANT_ID=<tenant-id>  # entra only
 export AK_IDENTITY__PROVIDER__FIREBASE__PROJECT_ID=<project-id>  # firebase only
+export AK_IDENTITY__CREDENTIALS__ENCRYPTION_KEY=AK_CREDENTIAL_KEY  # secret key name of the credential store's AES-GCM key
+export AK_IDENTITY__CREDENTIALS__STORE__TYPE=redis  # in_memory (default) | redis | valkey | dynamodb
+export AK_IDENTITY__CREDENTIALS__INBOUND_TTL=300  # seconds a request's credential is kept, at most
 ```
+
+- **Credentials.** `identity.credentials` keeps each authenticated request's credential, encrypted, for the
+  run's tools, which ask for a token with `ToolContext.get().credentials.token_for(audience)`
+  ([credentials for downstream calls](../advanced/identity-and-access.md#credentials-for-downstream-calls)).
+  Every store but `in_memory` needs `encryption_key`, the store blocks take no `ttl`, an unknown key in the
+  block stops the application, and an `in_memory` store on a broker transport is refused.
 
 ### Authorization
 

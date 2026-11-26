@@ -283,6 +283,35 @@ def kept_off_rest(surface_agent):
 
 
 @pytest.fixture
+def credentials(monkeypatch):
+    """Returns a function that installs an ``identity.credentials`` block on the live configuration (#603, iteration 25).
+
+    ``credentials(**fields)`` puts the block (with a static identity provider beside it, which nothing here builds)
+    where ``CredentialManager.get`` reads it, resets the process-wide manager and returns it, so retention, the
+    broker and release run as in a configured process: the real store, the real exchangers. The manager and the
+    in-memory store are emptied before and after. Code that authenticates builds ``RequestAuthenticator(provider,
+    manager)`` itself, since the static provider's secret is not seeded.
+    """
+    from agentkernel.core.config import AKConfig, _IdentityConfig
+    from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
+    from agentkernel.identity.credential.manager import CredentialManager
+
+    def _forget() -> None:
+        CredentialManager.reset()
+        InMemoryCredentialStore._entries.clear()
+
+    def _install(**fields):
+        provider = {"type": "static", "static": {"principals": {"ALICE_TOKEN": {"subject": "alice"}}}}
+        monkeypatch.setattr(AKConfig.get(), "identity", _IdentityConfig.model_validate({"provider": provider, "credentials": fields}))
+        _forget()
+        return CredentialManager.get()
+
+    _forget()
+    yield _install
+    _forget()
+
+
+@pytest.fixture
 def authorization(monkeypatch):
     """Returns a function that installs an ``authorization`` block of type ``static`` on the live configuration (#603).
 

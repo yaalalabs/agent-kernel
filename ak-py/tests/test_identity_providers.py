@@ -18,6 +18,7 @@ from agentkernel.core.config import _IdentityConfig, _IdentityProviderConfig, _R
 from agentkernel.core.model import Principal
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator, RequestContext, RoleMapper
+from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
 from agentkernel.identity.provider.base import ClaimPath
 from agentkernel.identity.provider.roles import MappedIdentityProvider, MappingRoleMapper, RoleMapperFactory
 from agentkernel.identity.provider.static import StaticIdentityProvider
@@ -457,9 +458,54 @@ class TestRequestAuthenticator:
     def test_current_is_none_outside_a_request(self):
         assert RequestAuthenticator.current() is None
 
+    @staticmethod
+    def _seen_principal(authenticator: RequestAuthenticator, headers: dict) -> Principal:
+        seen: dict = {}
+        app = FastAPI()
+
+        async def capture(request: Request):
+            seen["principal"] = request.state.principal
+            return {}
+
+        app.add_api_route("/capture", capture, methods=["GET"], dependencies=[Depends(authenticator.dependency())])
+        TestClient(app).get("/capture", headers=headers)
+        return seen["principal"]
+
+    def test_with_credentials_the_dependency_keeps_the_credential_for_the_request(self, provider, credentials):
+        manager = credentials()
+
+        principal = self._seen_principal(RequestAuthenticator(provider, manager), {"Authorization": "Bearer alice-secret"})
+
+        assert principal.credential_ref
+        assert manager.store.get(principal.credential_ref) == b"alice-secret"
+
+    def test_without_credentials_the_dependency_keeps_nothing(self, authenticator):
+        assert self._seen_principal(authenticator, {"Authorization": "Bearer alice-secret"}).credential_ref is None
+
+    def test_an_anonymous_request_keeps_nothing(self, provider, credentials):
+        manager = credentials()
+
+        assert self._seen_principal(RequestAuthenticator(provider, manager), {}).credential_ref is None
+        assert InMemoryCredentialStore._entries == {}
+
     @pytest.mark.asyncio
-    async def test_release_is_a_no_op_until_credentials_land(self, authenticator):
-        await authenticator.release(Principal(subject="alice", provider="recording", namespace="recording"))
+    async def test_release_deletes_the_credential_a_run_was_started_with(self, provider, credentials):
+        manager = credentials()
+        retained = await manager.retain(Principal(subject="alice", provider="recording", namespace="recording"), "alice-secret")
+
+        await RequestAuthenticator(provider, manager).release(retained)
+
+        assert manager.store.get(retained.credential_ref) is None
+
+    @pytest.mark.asyncio
+    async def test_release_without_credentials_does_nothing(self, authenticator):
+        await authenticator.release(Principal(subject="alice", provider="recording", namespace="recording", credential_ref="ref-1"))
+
+    def test_from_config_keeps_credentials_in_the_process_manager(self, provider, credentials, monkeypatch):
+        manager = credentials()
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
+
+        assert RequestAuthenticator.from_config().credentials is manager
 
     @pytest.mark.asyncio
     async def test_from_config_without_an_identity_block_authenticates_nobody(self, monkeypatch, context):

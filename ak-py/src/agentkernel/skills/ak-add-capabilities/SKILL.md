@@ -1773,6 +1773,13 @@ Tell the user what changes once the block exists:
   restrict them with the SDK's own permission settings (`allowed_tools`, `disallowed_tools`).
 - Put the same block in the configuration of every process (the one that accepts requests and the
   one that runs agents).
+- **Credentials for downstream calls**: an `identity.credentials` block keeps each authenticated
+  request's credential, encrypted, until its run ends; a tool asks
+  `await ToolContext.get().credentials.token_for(audience)` and returns `CredentialError` as its
+  result. Set `encryption_key` (a secret holding a base64url 32-byte key) and a shared store
+  (`redis`, `valkey`, `dynamodb`) whenever requests and agents run in different processes, and one
+  `exchangers` entry per audience. Only `passthrough` ships (development only: it forwards the
+  user's token unchanged); a real exchange is a `TokenExchanger` subclass named by dotted path.
 
 ---
 

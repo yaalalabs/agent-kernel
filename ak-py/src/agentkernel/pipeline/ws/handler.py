@@ -174,12 +174,19 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             # loop behind driver connect/retry backoffs when the store is unreachable, freezing
             # every other socket on the pod exactly when clients are churning.
             threading.Thread(
-                target=self._delete_connection_mapping,
-                args=(user_id, connection_id),
+                target=self._end_connection,
+                args=(user_id, connection_id, principal),
                 daemon=True,
                 name=f"ws-deregister-{connection_id[:8]}",
             ).start()
             self._log.info(f"Disconnected: user_id={user_id}, connection_id={connection_id}")
+
+    def _end_connection(self, user_id: str, connection_id: str, principal: Principal) -> None:
+        """Deregister a closed connection and forget the credential it was opened with."""
+        self._delete_connection_mapping(user_id, connection_id)
+        credentials = self._authenticator.credentials
+        if credentials is not None:
+            credentials.forget(principal)
 
     def _delete_connection_mapping(self, user_id: str, connection_id: str) -> None:
         try:
@@ -208,6 +215,11 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             # Unreachable with the provider the constructor demanded; closed rather than keyed on "anonymous".
             await websocket.close(code=_WS_POLICY_VIOLATION, reason="Authentication failed")
             return None
+        credentials = self._authenticator.credentials
+        if credentials is not None:
+            # Kept for the connection (a conn: reference): every frame's run reads it and leaves it, and the
+            # connection forgets it when it ends (#603).
+            principal = await credentials.retain(principal, token, connection=True)
         return principal
 
     # -- frame dispatch -----------------------------------------------------------------------

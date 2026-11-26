@@ -407,6 +407,75 @@ class OpsOnly(PreHook):
 A `principal` a client puts in a request body is never trusted: the surface that authenticated the
 request overwrites it.
 
+## Credentials for downstream calls
+
+A tool that calls another service on the user's behalf needs a token for that service. With an
+`identity.credentials` block, Open Agent Kernel (OAK) keeps the credential a request was authenticated with and
+hands a tool a token for an audience you configure:
+
+```python
+from agentkernel.core.tool import ToolContext
+from agentkernel.identity import CredentialError
+
+async def list_invoices(customer_id: str) -> str:
+    """List a customer's invoices."""
+    try:
+        token = await ToolContext.get().credentials.token_for("https://api.billing.example")
+    except CredentialError as error:
+        return f"Cannot reach billing: {error}"
+    ...  # call the billing API with Authorization: Bearer <token>
+```
+
+```yaml
+identity:
+  provider:
+    type: oidc
+    ...
+  credentials:
+    encryption_key: AK_CREDENTIAL_KEY  # names a secret: a base64url-encoded 32-byte key; required by every store but in_memory
+    inbound_ttl: 300                   # seconds a request's credential is kept, at most
+    store:
+      type: redis                      # in_memory (default) | redis | valkey | dynamodb | a dotted path
+      redis:
+        url: redis://cache:6379
+    exchangers:
+      - audience: https://api.billing.example
+        type: passthrough              # forwards the inbound token unchanged: development only
+        scopes: [invoices.read]        # asked for when a tool names none
+```
+
+How it works:
+
+- **The token never travels.** The credential is kept, encrypted with AES-GCM under the key named by
+  `encryption_key`, in the credential store under a random reference. The principal carries the reference
+  (`credential_ref`), never the token, so the token is not in the session, a queue message or a log line.
+- **It ends with the run.** OAK deletes the credential when the run it was kept for ends, however it ends,
+  and in any case when `inbound_ttl` has passed or the token itself expires.
+- **Where it is kept.** The REST, A2A and AG-UI routes keep the credential of each authenticated request, and
+  MCP the credential of each call. The WebSocket gateway (`/ws`) and the CLI keep theirs for the whole
+  connection or session, forget it when that ends, and keep it as long as the token's `exp`, or `inbound_ttl`
+  for a token without one; such a connection must reconnect to use a credential again after that.
+- **Exchange.** A tool asks for an audience, and the exchanger configured for exactly that audience issues
+  the token, which is cached per user, agent, audience and scopes until 30 seconds before it expires. Only
+  `passthrough` ships, and it logs a warning at startup: it forwards the inbound token as it came, which an
+  MCP server or an API that checks its audience will refuse. For a real exchange (RFC 8693, Entra on-behalf-of),
+  write a `TokenExchanger` subclass and name it by its dotted path; it receives its entry, with any settings of
+  its own in `model_extra`. The names `rfc8693`, `entra_obo` and `id_jag` are reserved for later releases.
+- **Errors.** `token_for` raises `CredentialError` when the block is not configured, the run has no credential
+  of its own (an anonymous caller, a scheduled task), no exchanger serves the audience, the exchange fails or
+  the store cannot be reached. Return it to the model as the tool's result.
+
+The stores: `in_memory` keeps credentials in the process, unencrypted unless you set a key, and refuses to start
+on a broker transport, where the process that accepts a request is not the one that runs it. `redis` and
+`valkey` keep each credential under `ak:cred:` with its own expiry; `dynamodb` needs a table keyed by
+`credential_key` (S) with TTL on `expiry_time`. Generate a key with
+`python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` and store it as the
+secret `encryption_key` names.
+
+Not yet: the AWS Lambda and ECS WebSocket deployments keep no credential, so `token_for` raises there. A queued
+request that is delivered again after its run started finds its credential gone. An authenticated request that
+runs no agent (a catalog listing, a poll for a reply) leaves its encrypted entry to expire within `inbound_ttl`.
+
 ## Authorization
 
 Authentication establishes who is calling. An `authorization` block decides what that caller may do:

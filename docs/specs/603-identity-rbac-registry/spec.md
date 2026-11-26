@@ -512,6 +512,21 @@ class RequestAuthenticator:
   entry makes `CredentialBroker` raise `CredentialError` until the client reconnects (design 3.1).
 - `dependency()` returns an `async def identity_dependency(request: Request)` that sets
   `request.state.principal` and `RequestAuthenticator._current` for the request's task.
+- As built (iteration 25, design refinement 24): authenticating keeps nothing. `authenticate_bearer`
+  and `authenticate_token` stay pure; retention is `CredentialManager.retain(principal, credential,
+  connection=False)` (`credential/manager.py`), called by the surfaces that keep a credential: the
+  dependency (every authenticated HTTP request, so REST, A2A, AG-UI and the threads), the MCP verifier
+  (each call, `AKTokenVerifier(provider, credentials)`), the pipeline WebSocket gateway and the CLI
+  (both `connection=True`, a `conn:` reference forgotten with `CredentialManager.forget` when the
+  connection or session ends). The constructor is `RequestAuthenticator(provider, credentials:
+  CredentialManager | None = None)`; `from_config` hands it `CredentialManager.get()` when a provider is
+  configured, and `credentials` exposes it. `release(principal)` stays async and delegates to the
+  manager off the loop. The AWS adapters (the Lambda authorizer and WebSocket handler, the ECS WebSocket
+  handler) retain nothing yet: the authorizer's result is cached (150 s by default, keyed on the token),
+  so a reference it minted would be shared by requests whose runs each release it (iteration 25b).
+  TTLs as specified: a run's credential until `min(exp, now + inbound_ttl)`, a connection's until `exp`,
+  else `now + inbound_ttl`, with no per-frame renewal yet; an expired token keeps nothing, and a store
+  that cannot be reached is logged (no token) and leaves the request without a credential.
 
 **`IdentityProviderContract`** (`provider/testing.py`, subclassed by every built-in): a valid
 credential yields the expected subject, groups, namespace and claims with `roles == []`; expired,
@@ -614,6 +629,41 @@ and a fake exchanger.
   - **Exports**: `agentkernel.identity` exports `CredentialError`, `CredentialCipher`,
     `CredentialStore`, `CredentialStoreFactory` and `InMemoryCredentialStore` lazily; importing the
     package loads no credential module.
+- As built (iteration 25, design refinement 24), exchange, the broker and the manager:
+  - **`CredentialManager`** (`credential/manager.py`, not in the outline): the process's store and
+    exchangers, built once from `identity.credentials` (`get()` None without the block, `reset()` for
+    tests, `from_config`), so a bad store or exchanger fails when it is first built: at the app build for
+    the processes that mount routes, at the first credential use in a runner. It owns the lifecycle:
+    `retain`, `release` (a run's reference only), `forget` (a `conn:` reference only), `release_for`
+    (the classmethod `Runtime` and the runners call; never raises) and `broker(principal, agent_id)`.
+    A store that fails on delete is logged; the entry expires with its TTL.
+  - **Exchange** (`credential/exchange.py`): `IssuedToken` is a frozen model whose `repr` leaves the
+    token out. `TokenExchanger(config)` keeps its entry's `audience` and `scopes`; a dotted-path
+    exchanger is built with its entry and reads `model_extra`. `PassthroughTokenExchanger(config,
+    inbound_ttl)` reads `exp` from the JWT payload without verifying it and reports `min(exp, now +
+    inbound_ttl)`, so a cached copy of the inbound token outlives its run no longer than the inbound
+    credential could. `TokenExchangerFactory.create(config, inbound_ttl)` and `create_all(credentials)`
+    (by audience; two entries for one audience are an `AKConfigError`).
+  - **The broker** takes no cipher (refinement 23). Its order: no store raises "identity.credentials is
+    not configured" (or "credentials are unavailable: <type>" when `for_run` could not build the
+    manager, so reading `ToolContext.credentials` never raises); then a run without `credential_ref`
+    raises "no inbound credential for this run" before the cache is read, so a run started without a
+    credential of its own (a scheduled occurrence) does not borrow one another run cached; then the
+    exchanger for the audience; then the cache, then the inbound entry. Store calls run off the loop and
+    a store that cannot be reached is a `CredentialError` too. The cache key is a digest of the JSON
+    list `[subject, provider, namespace, agent_id, audience, sorted scopes]`, so it names no one.
+  - **`ToolContext.credentials`** is `CredentialBroker.for_run(self.principal, agent.descriptor.id)`.
+  - **Exports**: `agentkernel.identity` also exports `CredentialManager`, `CredentialBroker`,
+    `TokenExchanger`, `IssuedToken`, `PassthroughTokenExchanger` and `TokenExchangerFactory` lazily.
+  - **Release**: `Runtime.run` and `Runtime.stream` call `CredentialManager.release_for` off the loop in
+    their `finally`, after the cache is cleared (also for a run the access gate refuses), and
+    `AgentRunner.process` in its `finally` for every runner subclass and both branches, reading the
+    principal from the body only when it names a `credential_ref`. A queued message delivered again
+    after its run started therefore finds its credential gone. The serverless runner's release moves to
+    iteration 25b with the AWS adapters.
+  - **Topology**: `AgentRunner._validate_credential_store(transport, config)`, called by
+    `AgentRunner.run` and `IOHandler._validate_topology`, refuses an `in_memory` credential store on a
+    broker transport.
 
 ### 6. Registry (`core/registry.py`, `identity/registry/`)
 
@@ -2508,6 +2558,15 @@ Each is intentional; the justification is design section 10 unless stated.
 50. With an `authorization` block (iteration 23), a realtime call publishes a tool filter, the
     room's (section 8.4), so its tools are gated: a participant with a lower level narrows what
     the model is offered for the rest of the call.
+51. With an `identity.credentials` block (iteration 25; sections 4 and 5), every authenticated HTTP
+    request and MCP call writes its credential, encrypted, to the credential store and its principal
+    carries a `credential_ref`; the run deletes it when it ends. A request that runs no agent leaves
+    its entry to expire within `inbound_ttl`. The pipeline WebSocket gateway and the CLI keep one for
+    the connection or session. Without the block nothing is written and no principal carries a ref.
+52. `ToolContext.credentials` is new: a broker whose `token_for(audience, scopes=None)` hands a tool a
+    token, or raises `CredentialError` (iteration 25).
+53. An `in_memory` credential store on a broker transport stops `IOHandler` and `AgentRunner` at
+    startup (iteration 25).
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (the optional
 `last_error`, `surface` and `principal` on a task's document aside); the queue envelope
@@ -3420,6 +3479,16 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    Tools a provider runs are warned about, not refused, as design Q12 settled; this iteration
    adds the report (`Agent.provider_tool_names`) and the warning (section 9; behavioural changes
    48 to 50).
+24. **Retention is the surface's call, and one manager holds it** (iteration 25, 2026-11-26).
+   Section 4 minted a `credential_ref` inside authentication, so every caller of
+   `authenticate_bearer` and `authenticate_token` would keep a credential whether or not it could
+   release it: the Lambda authorizer's cached result would hand one reference to many requests, and a
+   WebSocket handshake would get a reference the first frame's run deleted. Authentication now keeps
+   nothing, and each surface that keeps a credential calls `CredentialManager.retain` itself, for a run
+   or for a connection, beside the code that ends it. The store, the exchangers and the lifecycle sit
+   on one process-wide `CredentialManager`. The broker asks for a credential of the run's own before it
+   reads its cache, so a run started without one borrows nothing, and `passthrough` caps the expiry it
+   reports at `inbound_ttl`. The AWS adapters follow in iteration 25b (sections 4 and 5, "As built").
 23. **The credential store encrypts** (iteration 24, 2026-11-26). Section 5 handed the broker a
    store and a cipher beside it, which left every caller to seal a value before `put` and open it
    after `get`, and a caller that forgot would write a credential to a shared database as it came.

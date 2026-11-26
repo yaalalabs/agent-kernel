@@ -20,6 +20,12 @@ _LAZY_EXPORTS = {
     "CredentialStore": ".credential.store",
     "CredentialStoreFactory": ".credential.store",
     "InMemoryCredentialStore": ".credential.in_memory",
+    "CredentialManager": ".credential.manager",
+    "CredentialBroker": ".credential.broker",
+    "TokenExchanger": ".credential.exchange",
+    "IssuedToken": ".credential.exchange",
+    "PassthroughTokenExchanger": ".credential.exchange",
+    "TokenExchangerFactory": ".credential.exchange",
     "IdentityProvider": ".provider.base",
     "RequestContext": ".provider.base",
     "IdentityProviderFactory": ".provider.factory",
@@ -48,7 +54,10 @@ if TYPE_CHECKING:
     from .authz.base import Authorizer, AuthorizerCapabilities, Decision
     from .authz.factory import AuthorizerFactory
     from .authz.static import StaticAuthorizer
+    from .credential.broker import CredentialBroker
+    from .credential.exchange import IssuedToken, PassthroughTokenExchanger, TokenExchanger, TokenExchangerFactory
     from .credential.in_memory import InMemoryCredentialStore
+    from .credential.manager import CredentialManager
     from .credential.store import CredentialCipher, CredentialStore, CredentialStoreFactory
     from .errors import AuthenticationError, CredentialError
     from .provider.base import IdentityProvider, RequestContext
