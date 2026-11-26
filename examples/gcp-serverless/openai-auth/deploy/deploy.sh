@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Create a deployment package for Cloud Run
 create_deployment_package() {
