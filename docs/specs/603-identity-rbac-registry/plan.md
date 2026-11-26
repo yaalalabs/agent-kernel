@@ -1393,7 +1393,7 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
 - **Left open:** whether a participant who joins a call opened by someone else may speak to the
   agent at all. Today their presence only narrows the room's tools.
 
-## Phase F: Credentials (iterations 24 to 25)
+## Phase F: Credentials (iterations 24 to 25b)
 
 ### Iteration 24: Credential store
 
@@ -1471,15 +1471,54 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
     `test_deployment_identity.py` (the router, both WebSocket APIs, the serverless runners),
     `test_identity_credentials.py` (renewal, the shared-store rule) and `test_pipeline_ws.py`.
 
+### Phase F as shipped
+
+What phase F delivered, and what it settled beyond the iteration plans, before it merged
+(2026-11-26). Each point is recorded in the spec section it changes.
+
+- **Code.** Iterations 24, 25 and 25b (added): the encrypted credential store (`CredentialCipher`,
+  in-memory, Redis, Valkey and DynamoDB backends, `CredentialStoreFactory`,
+  `CredentialStoreContract`), the process-wide `CredentialManager`, exchange (`passthrough` only,
+  `TokenExchangerContract`), `CredentialBroker` and `ToolContext.credentials`. A request's credential is
+  retained by the identity dependency (REST, A2A, AG-UI, threads), the MCP verifier and the Lambda
+  REST router, and a connection's by the pipeline, ECS and Lambda WebSocket handlers and the CLI; it is
+  released by `Runtime`, the pipeline `AgentRunner` and the serverless runners, renewed by every frame
+  when its token has no `exp`, and forgotten when the connection ends. Spec refinements 23 to 25 hold
+  what building it settled: the store encrypts, so no caller handles ciphertext; retention is each
+  surface's explicit call through one manager, never a side effect of authentication (the Lambda
+  authorizer's cached result made that necessary); renewal goes through the store, so Lambda renews
+  too. An `in_memory` store is refused wherever one process keeps a credential and another reads it.
+- **Docs.** Written iteration by iteration, then checked at the end of the phase: the identity page's
+  "Credentials for downstream calls" section and its deployment notes, `core-concepts/configuration.md`,
+  `ak-py/README.md`, the bundled `ak-add-capabilities` skill; and in the end-of-phase pass, a seventh
+  step and a credential store node in both diagrams of *How it fits together* (the Mermaid one and
+  `AccessFlowDiagram` on the features page), the features page's Identity and access capability, What's
+  New and the intro tip, the root `README.md` Guard row, the Redis, Valkey and DynamoDB items of the
+  landing page's integrations ("credential stores"), the AWS serverless README and the bundled
+  `ak-cloud-deploy` skill.
+- **Changelog.** `603.added.1.md`, corrected in place as iteration 25b closed the AWS gap it named.
+- **Dev skills.** `ak-dev-architecture` and `ak-dev-testing-conventions` in step with each iteration;
+  `ak-dev-new-identity-provider` asks a provider to keep `exp` in `claims`, and
+  `ak-dev-sync-docs-from-branch` counts credential stores among the store backends whose integration
+  items list what they back.
+- **Known limits, each in the spec or the docs:** only `passthrough` ships, so a downstream API that
+  checks its audience refuses the forwarded token; a queued message delivered again after its run
+  started finds its credential gone; an authenticated request that runs no agent leaves its encrypted
+  entry to expire within `inbound_ttl`; the Terraform modules and the chart provision no credential
+  table, cache access or key.
+- **Left open:** an exchange flow (RFC 8693, Entra on-behalf-of, ID-JAG; design Q19), and wiring the
+  frameworks' own MCP clients to the broker (spec 5: a tool calls `token_for` itself).
+
 ## Phase G: Tests, docs and skills (iterations 26 to 28)
 
 The docs and skills for phases A and B landed with phase B itself (PR #937: the identity page,
 the docs-site and README updates, the landing-page tiles, `ak-dev-new-identity-provider` and the
 user-skill updates), those for phase C with phase C (see "Phase C as shipped"), and the docs for
 phase D with phase D (see "Phase D as shipped", decided 2026-11-25: a phase is not merged with
-its user documentation behind it), and the docs and dev skills for phase E with phase E (see
-"Phase E as shipped"), so iterations 27 and 28 cover what phase F adds, the one dev skill
-phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
+its user documentation behind it), the docs and dev skills for phase E with phase E (see
+"Phase E as shipped"), and those for phase F with phase F (see "Phase F as shipped"), so
+iterations 27 and 28 cover the one dev skill phase D still owes (`ak-dev-new-authorizer`) and
+re-verify the rest.
 
 ### Iteration 26: Test walk
 
@@ -1513,9 +1552,8 @@ phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
      routes is served there after a restart (spec 6, A2A card); `api/mcp-server.md` says the same
      of an agent's MCP tool (spec 8.6). What the access gate changes on each of these pages
      (caller filtering, the 403 and 404) landed with phase D, with the Authorization section of
-     the identity page, the What's New entry and the features-page capability. Still to write:
-     the call-time tool gates of phase E (the pages say today that a tool policy narrows what is
-     listed and does not stop a call, which phase E reverses) and the credentials of phase F.
+     the identity page, the What's New entry and the features-page capability. The call-time tool
+     gates landed with phase E and the credentials with phase F; re-verify both here.
 - **Verify:** `grep -rnF -e AuthValidator -e Authoriser -e acting_user_id -e mcp.agents
   -e a2a.agents -e agui.agents -e userId -e get_a2a_card docs/docs ak-py/README.md README.md
   ak-deployment` (fixed strings, one `-e` per term, so no term is lost to a line break in the

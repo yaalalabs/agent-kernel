@@ -82,6 +82,8 @@ flowchart TD
     Run --> ToolGate["Framework tool gate<br/>every adapter, voice calls included"]
     ToolGate -->|"allowed"| Tool["Tool runs"]
     ToolGate -->|"denied"| Reason["Hidden, or answered with the reason"]
+    Surface -.->|"identity.credentials: the caller's token, encrypted"| Creds[("Credential store<br/>by reference, until the run ends")]
+    Tool -.->|"token_for(audience)"| Creds
 ```
 
 1. **A caller presents a credential** to the surface it uses: a bearer token on HTTP, a token on the
@@ -105,6 +107,10 @@ flowchart TD
    call to it is answered with the reason instead of running ([where a denied tool is
    stopped](#where-a-denied-tool-is-stopped)). [Scheduled tasks](#scheduled-tasks) are decided again
    when they fire, and a paused tool call when its approval arrives.
+7. **With `identity.credentials`**, the surface also keeps the caller's token, encrypted, under a
+   reference the principal carries, and a tool that calls another service asks for a token for it; the
+   token is deleted when the run ends ([credentials for downstream
+   calls](#credentials-for-downstream-calls)).
 
 ## Configuration
 
@@ -819,7 +825,9 @@ credential of a static provider reaches that process as an environment variable 
 - **Kubernetes** ([guide](../deployment/onprem-kubernetes.md)): the io handler and the WebSocket
   gateway build the provider, so a static credential reaches them through the chart's per-tier
   `ioHandler.extraEnv` and `wsGateway.extraEnv` from a Secret, which keeps it off the agent runner;
-  the `secretStore` mount reaches only the agent-executing tier.
+  the `secretStore` mount reaches only the agent-executing tier. With `identity.credentials`, the
+  `encryption_key` secret reaches every tier, since the io handler and the gateway keep tokens and the
+  agent runner reads them, and the store is a shared one.
 - **GCP** ([guides](../deployment/gcp-serverless.md)): the examples authenticate Google identity
   tokens at the API Gateway, and the application runs as the anonymous principal. The gateway calls
   Cloud Run with its own token in `Authorization` and forwards the caller's header as
