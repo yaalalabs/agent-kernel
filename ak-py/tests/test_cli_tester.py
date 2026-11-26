@@ -61,6 +61,18 @@ class _CountingFakeEvaluator(_FakeEvaluator):
         type(self).construction_count += 1
 
 
+class _CriteriaRecordingEvaluator(_FakeEvaluator):
+    """Same behaviour as _FakeEvaluator; keeps the criteria each llm evaluation received, per instance."""
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.criteria_seen: list[str | None] = []
+
+    def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult:
+        self.criteria_seen.append(case.criteria)
+        return super().evaluate_by_llm(case)
+
+
 class _FailingLlmEvaluator(AKEvaluator):
     """Simulates a broken judge backend: score mode works, llm mode always fails."""
 
@@ -95,6 +107,7 @@ _FAKE_MODULE_NAME = "tests._fake_evaluator"
 _fake_module = types.ModuleType(_FAKE_MODULE_NAME)
 _fake_module._FakeEvaluator = _FakeEvaluator
 _fake_module._CountingFakeEvaluator = _CountingFakeEvaluator
+_fake_module._CriteriaRecordingEvaluator = _CriteriaRecordingEvaluator
 _fake_module._FailingLlmEvaluator = _FailingLlmEvaluator
 _fake_module._ScoreUnsupportedEvaluator = _ScoreUnsupportedEvaluator
 _fake_module._NotAnEvaluator = _NotAnEvaluator
@@ -165,6 +178,15 @@ async def test_expect_forwards_return_metrics(monkeypatch):
     assert result.passed is False
 
 
+@pytest.mark.asyncio
+async def test_expect_forwards_criteria(monkeypatch):
+    _use_evaluator(monkeypatch, "_CriteriaRecordingEvaluator")
+    t = CliTest(path="dummy.py", match_threshold=0.5, mode=Mode.LLM)
+    t.last_agent_response = "Paris is lovely"
+    await t.expect(["Paris"], criteria="rubric")
+    assert CliTest._resolve_evaluator().criteria_seen == ["rubric"]
+
+
 # --- mode routing ------------------------------------------------------------------------- #
 
 
@@ -189,6 +211,13 @@ def test_compare_llm_mode_routes_to_evaluate_by_llm(monkeypatch):
     CliTest.compare("Paris is lovely", ["Paris"], threshold=0.5, mode=Mode.LLM)
     with pytest.raises(AssertionError, match="didn't pass llm evaluation"):
         CliTest.compare("Hello", ["Goodbye forever"], threshold=0.5, mode=Mode.LLM)
+
+
+@pytest.mark.parametrize("criteria", ["rubric", None])
+def test_compare_llm_mode_hands_criteria_to_the_evaluator(monkeypatch, criteria):
+    _use_evaluator(monkeypatch, "_CriteriaRecordingEvaluator")
+    CliTest.compare("Paris is lovely", ["Paris"], threshold=0.5, mode=Mode.LLM, criteria=criteria)
+    assert CliTest._resolve_evaluator().criteria_seen == [criteria]
 
 
 def test_compare_fallback_mode_tries_score_then_llm(monkeypatch):

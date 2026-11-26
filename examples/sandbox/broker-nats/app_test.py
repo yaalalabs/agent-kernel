@@ -141,7 +141,8 @@ def test_sandbox_executes_within_the_bounded_wait(deployment):
 def test_long_execution_promotes_to_a_pending_task(deployment):
     response = _chat(
         "Run python in the sandbox: import time, socket; time.sleep(30); print('LATE-' + socket.gethostname()) . "
-        "If the sandbox reports the execution as pending, reply with exactly PENDING and the task id.",
+        "If the sandbox reports the execution as pending, reply at once with exactly PENDING and the task id; "
+        "do not call check_sandbox_task or any other tool to wait for it.",
         SESSION_SLOW,
     )
     assert "PENDING" in response.upper()

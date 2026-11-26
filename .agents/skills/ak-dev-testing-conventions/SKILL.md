@@ -508,6 +508,12 @@ for session stores, sandbox providers, and trace backends — a custom evaluator
 the `AKEvaluationResult` instead of raising `AssertionError` on a failing comparison (other errors,
 e.g. `AKEvaluationError`/`AKMetricNotSupported`, still propagate).
 
+They also take `criteria: str | None = None`, a plain-language rubric handed to the evaluator as
+`AKEvaluationCase.criteria` that replaces the judge's default rubric (`llm`/`fallback` modes; `score`
+ignores it). Use it, instead of an exact expected string, when an example's agent adds wording the
+test cannot predict, such as its own follow-up question: assert the stable part in `expected` and
+say what to accept in `criteria`. Never assert a free-form follow-up question word for word.
+
 ### Test.compare() for API Tests
 
 For HTTP API tests, use `Test.compare()`:
