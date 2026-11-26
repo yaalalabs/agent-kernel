@@ -48,7 +48,7 @@ Every claim below was checked by running it, not just by reading the code:
   ```
 
 - Run `uv lock` in `ak-py/`. The expected lock diff is `fastmcp`/`fastmcp-slim` going to 4.2.x,
-  `mcp` going to 1.28.1 + 2.3.0, and `mcp-types` and `httpx2` being added. Some transitive packages
+  `mcp` going to 1.28.1 + 2.3.0, and `mcp-types` being added (`httpx2` was already locked). Some transitive packages
   that only FastMCP 3 pulled in (`keyring` and its deps) are dropped.
 - `ak-py/build.sh:12-13` already runs `uv sync --all-extras --no-extra crewai`, so the dev and CI
   environment installs `mcp` without `crewai` and needs no change. Only the comment on line 12

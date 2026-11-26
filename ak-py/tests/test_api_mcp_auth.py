@@ -261,11 +261,12 @@ class TestThroughARealClient:
         return server.http_app(path="/"), client
 
     @pytest.mark.asyncio
-    async def test_a_bearer_token_authenticates_the_call_and_the_principal_reaches_the_queue(self, served, mcp_asgi_transport):
+    @pytest.mark.parametrize("mode", ["auto", "legacy"])  # 2026-07-28 and the 2025-11-25 handshake
+    async def test_a_bearer_token_authenticates_the_call_and_the_principal_reaches_the_queue(self, served, mcp_asgi_transport, mode):
         app, queue_client = served
         async with app.router.lifespan_context(app):
             transport = mcp_asgi_transport(app, auth="alice-secret")
-            async with Client(transport) as client:
+            async with Client(transport, mode=mode) as client:
                 result = await client.call_tool("triage", {"session_id": "s1", "prompt": "hi"})
 
         assert result.content[0].text == "done"
@@ -340,20 +341,21 @@ class TestTheToolsOfACaller:
         finally:
             AKConfig._reset()
 
-    @pytest.fixture(autouse=True)
-    def _transport(self, mcp_asgi_transport):
+    @pytest.fixture(autouse=True, params=["auto", "legacy"])  # every case on 2026-07-28 and on the 2025-11-25 handshake
+    def _transport(self, mcp_asgi_transport, request):
         self.transport = mcp_asgi_transport
+        self.mode = request.param
 
     async def _tools(self, app, token: str) -> list[str]:
         async with app.router.lifespan_context(app):
             transport = self.transport(app, auth=token)
-            async with Client(transport) as client:
+            async with Client(transport, mode=self.mode) as client:
                 return sorted(tool.name for tool in await client.list_tools())
 
     async def _call(self, app, token: str, tool: str):
         async with app.router.lifespan_context(app):
             transport = self.transport(app, auth=token)
-            async with Client(transport) as client:
+            async with Client(transport, mode=self.mode) as client:
                 return await client.call_tool(tool, {"session_id": "s1", "prompt": "hi"}, raise_on_error=False)
 
     @pytest.mark.asyncio

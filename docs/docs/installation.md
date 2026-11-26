@@ -289,8 +289,13 @@ uv sync
 ```
 
 The `crewai` and `mcp` extras cannot be installed together: every CrewAI release pins `mcp<2`, and the MCP
-server (FastMCP 4) needs `mcp>=2.3`. Install `agentkernel[crewai]` and `agentkernel[mcp]` in separate environments,
-for example the agent runner and the IO process of a split deployment.
+server (FastMCP 4) needs `mcp>=2.3`. Install `agentkernel[crewai]` and `agentkernel[mcp]` in separate environments.
+
+To serve a CrewAI agent over MCP, run a split deployment on a queue transport (SQS, Kafka, NATS, Pub/Sub or
+Service Bus): the agent runner on `agentkernel[crewai]`, the IO process on `agentkernel[mcp]`, and a shared agent
+registry (`registry.type: redis`, `valkey` or `dynamodb`) so the IO process can list the agent without importing
+it. The `in_memory` transport cannot do this, since its agent runner shares the IO process's environment. See
+[MCP Server](./api/mcp-server.md).
 
 ### Import Errors
 

@@ -55,12 +55,14 @@ Four short iterations. Each one leaves the branch green. Details are in [spec.md
   `stateless_http` meaning.
 - **Files:** everything in the spec's Docs and skills table.
 - **Steps:**
-  1. Apply each row of the table.
+  1. Apply each row of the table, and add the changelog fragments `changelog.d/933.added.md` and
+     `changelog.d/933.breaking.md`.
   2. Run the `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows, to catch
      anything the table missed.
 - **Verify:**
-  - `git grep -n -e 'fastmcp.tools.tool' -e 'ping()' -- ak-py/src docs/docs examples .agents`
-    returns nothing;
+  - `git grep -n -F -e 'fastmcp.tools.tool' -e 'await client.ping()' -- ak-py/src docs/docs examples .agents`
+    returns nothing (`-F` and `await` keep out the Redis driver's own `client.ping()`, and the
+    `mcp-server.md` note naming `fastmcp.Client.ping()` on purpose);
   - `git grep -n stateless_http -- docs/docs .agents ak-py/src/agentkernel/skills` shows only
     reworded lines.
 
