@@ -13,6 +13,7 @@ module "rest_service" {
 
   alb_security_group_id         = var.rest_service.alb_security_group_id
   ecs_service_security_group_id = var.rest_service.ecs_service_security_group_id
+  alb_idle_timeout              = var.alb_idle_timeout
 
   ecs_cluster_arn = module.ecs.cluster_arn
 

@@ -47,23 +47,46 @@ locals {
       "${upper(local.multipart_gateway_endpoint.method)} ${local.multipart_gateway_endpoint.path}" = local.multipart_gateway_endpoint
     } : {}
   )
+  # distinct(): two endpoints may share one path with different methods (duplicate map key otherwise).
+  user_endpoint_paths = {
+    for raw in distinct([for ep in var.gateway_endpoints : try(ep["path"], "")]) :
+    raw => join("/", compact([local.api_base_segment_with_version, trim(raw, "/")]))
+  }
   user_gateway_map = {
     for ep in var.gateway_endpoints :
     (
       lower(try(ep["method"], "")) == "$default"
       ? "$default"
-      : "${upper(try(ep["method"], "ANY"))} ${join("/", compact([local.api_base_segment_with_version, trim(try(ep["path"], ""), "/")]))}"
-    ) => ep
+      : "${upper(try(ep["method"], "ANY"))} ${local.user_endpoint_paths[ep.path]}"
+      ) => {
+      path           = local.user_endpoint_paths[ep.path]
+      method         = try(ep["method"], "ANY")
+      overwrite_path = try(ep["overwrite_path"], null)
+    }
   }
   mcp_endpoint_path = join("/", compact([local.api_base_segment_with_version, "mcp"]))
   mcp_gateway_map = var.enable_mcp_server ? {
     "ANY ${local.mcp_endpoint_path}" = {
-      path           = "mcp"
+      path           = local.mcp_endpoint_path
       method         = "ANY"
       overwrite_path = "/mcp/"
     }
   } : {}
   gateway_endpoints_map = merge(local.default_gateway_map, local.mcp_gateway_map, local.user_gateway_map)
+
+  # rest_async polling: the backend path is hardcoded, not derived from the external path.
+  poll_gateway_endpoint = {
+    path           = local.default_endpoint_path
+    method         = "GET"
+    overwrite_path = "/api/v1/chat"
+  }
+
+  rest_endpoints_map = merge(
+    local.gateway_endpoints_map,
+    var.queue_mode && var.execution_mode == "rest_async" ? {
+      "GET ${local.default_endpoint_path}" = local.poll_gateway_endpoint
+    } : {},
+  )
 }
 
 module "vpc" {
@@ -75,6 +98,15 @@ module "vpc" {
   private_subnet_cidrs = var.private_subnet_cidrs
   prefix               = var.prefix
   tags                 = var.tags
+}
+
+check "sse_requires_streaming_response_store" {
+  assert {
+    condition = !(var.queue_mode && var.execution_mode == "rest_sync" && var.message_type == "delta") || (
+      var.create_redis_cluster || var.create_valkey_cluster
+    )
+    error_message = "[IMPORTANT] SSE (execution_mode = \"rest_sync\" with message_type = \"delta\") needs a response store that can stream chunks. This deployment creates neither a Redis nor a Valkey cluster, so unless execution.response_store in config.yaml points at an external Redis or Valkey, the service will fail at startup. Set create_redis_cluster = true or create_valkey_cluster = true."
+  }
 }
 
 module "redis" {

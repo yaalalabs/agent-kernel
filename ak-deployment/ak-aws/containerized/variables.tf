@@ -44,7 +44,7 @@ variable "api_base_path" {
 }
 
 variable "gateway_endpoints" {
-  description = "List of HTTP API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} endpoint is created."
+  description = "List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} endpoint is created."
   type = list(object({
     path           = string # The URL path segment that clients will access (e.g., "chat", "users", "webhook"). This becomes part of the full URL: https://your-domain.com/{api_base_path}/{api_version}/{path}
     method         = string # HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE", "ANY"). "ANY" accepts all HTTP methods. "$default" is a special catch-all route.
@@ -61,6 +61,26 @@ variable "gateway_endpoints" {
       )
     ])
     error_message = "Each gateway_endpoints object must have non-empty 'path', 'method', and 'overwrite_path' fields, and 'method' must be one of: GET, POST, PUT, DELETE, PATCH, ANY, $default."
+  }
+  validation {
+    # Allowlist, not blocklist: strip every supported reference, then require nothing is left. The
+    # REST API gateway resolves a reference by mapping it onto an integration path parameter, which
+    # only works for a name the external path already declares.
+    condition = alltrue([
+      for ep in var.gateway_endpoints :
+      length(regexall("\\$\\{?request", replace(ep.overwrite_path, "/\\$\\{?request\\.path\\.[A-Za-z0-9_-]+\\}?/", ""))) == 0
+    ])
+    error_message = "gateway_endpoints overwrite_path supports a literal path and $request.path.<name> only. Header and query-string sources, and the bare $request.path form, worked on the previous HTTP API gateway but have no equivalent on the REST API gateway."
+  }
+  validation {
+    condition = alltrue([
+      for ep in var.gateway_endpoints :
+      alltrue([
+        for m in regexall("\\$\\{?request\\.path\\.([A-Za-z0-9_-]+)\\}?", ep.overwrite_path) :
+        contains([for t in regexall("\\{([A-Za-z0-9_-]+)\\+?\\}", ep.path) : t[0]], m[0])
+      ])
+    ])
+    error_message = "Each $request.path.<name> in a gateway_endpoints overwrite_path must name a parameter the endpoint's own path declares, e.g. path = \"schedules/{task_id}\" with overwrite_path = \"/api/v1/schedules/$request.path.task_id\"."
   }
   validation {
     condition     = var.execution_mode != "async" || length(var.gateway_endpoints) == 0
@@ -178,10 +198,11 @@ variable "container_type" {
   }
 }
 
-# CORS configuration for HTTP API (API Gateway v2)
+# CORS configuration. The REST API proxies preflight to the container, which answers it from its own
+# CORSMiddleware policy, so these values no longer reach the gateway.
 variable "enable_cors" {
   type        = bool
-  description = "Enable CORS on the HTTP API"
+  description = "When true, emits a CORS pre-flight (OPTIONS) operation on every REST API path that has no ANY method. The cors_allow_* values below are not applied: the container answers preflight itself."
   default     = true
 }
 
@@ -235,9 +256,21 @@ variable "throttling_burst_limit" {
   default     = null
 }
 
+variable "alb_idle_timeout" {
+  type        = number
+  description = "Seconds the ALB holds a connection open with no bytes in either direction, before closing it. Raise it when an agent can stay silent mid-stream for longer than the default, such as a long tool call under SSE. Two API Gateway limits cap this from above and neither is configurable here: a Regional REST API cuts a streamed response after 5 minutes of silence, and gateway_integration_timeout caps the total. Values above 300 therefore only affect callers that reach the ALB directly inside the VPC."
+  default     = 300
+}
+
+variable "gateway_integration_timeout" {
+  type        = number
+  description = "Seconds API Gateway allows one integration request to run in total, including a streamed response. Caps the length of an SSE stream. Distinct from alb_idle_timeout, which bounds a silent gap rather than the total: a stream emitting steadily for longer than this is cut even though the ALB never sees an idle period."
+  default     = 900
+}
+
 variable "enable_api_gateway_logs" {
   type        = bool
-  description = "When true, creates the API Gateway CloudWatch log group and enables access logging on the HTTP API stage (or the WebSocket API stage, in WebSocket modes). Off by default."
+  description = "When true, creates the API Gateway CloudWatch log group and enables access logging on the REST API stage (or the WebSocket API stage, in WebSocket modes). Off by default."
   default     = false
 }
 
@@ -275,15 +308,11 @@ variable "execution_mode" {
 
 variable "message_type" {
   type        = string
-  description = "Reply delivery: 'complete' (whole reply) or 'delta' (chunks: SSE under rest_sync, WebSocket under async). SSE is rejected with queue_mode = true. null leaves it to Agent Kernel's default (delta for realtime, complete otherwise). Injected as AK_EXECUTION__MESSAGE_TYPE."
+  description = "Reply delivery: 'complete' (whole reply) or 'delta' (chunks: SSE under rest_sync, WebSocket under async). null leaves it to Agent Kernel's default (delta for realtime, complete otherwise). Injected as AK_EXECUTION__MESSAGE_TYPE."
   default     = null
   validation {
     condition     = contains(["complete", "delta"], coalesce(var.message_type, "complete")) # null passes
     error_message = "message_type must be null, 'complete' or 'delta'."
-  }
-  validation {
-    condition     = !(var.queue_mode && var.execution_mode == "rest_sync" && var.message_type == "delta")
-    error_message = "rest_sync with message_type = \"delta\" (SSE) is not supported with queue_mode = true: the HTTP API buffers streamed responses. Use execution_mode = \"async\" with message_type = \"delta\" (WebSocket)."
   }
 }
 

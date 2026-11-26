@@ -377,12 +377,13 @@ jobs:
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.agent_runner_security_group_id }}" --response-handler-security-group-id "${{ needs.get-base-outputs.outputs.response_handler_security_group_id }}")
           fi
           # aws-containerized deploys reuse the shared ALB and ECS service security groups (#823).
-          # Only openai-dynamodb-scalable and openai-schedule (the two queue-mode examples in the
-          # weekly matrix) have an agent runner tier, so only they also get the shared agent runner SG.
+          # Only openai-dynamodb-scalable, openai-schedule and openai-sse-queue-mode (the queue-mode
+          # examples in the weekly matrix) have an agent runner tier, so only they also get the
+          # shared agent runner SG.
           if [[ "${{ matrix.type }}" == "aws-containerized" ]]; then
             ARGS+=(--alb-security-group-id "${{ needs.get-base-outputs.outputs.containerized_alb_security_group_id }}" --ecs-service-security-group-id "${{ needs.get-base-outputs.outputs.containerized_ecs_service_security_group_id }}")
           fi
-          if [[ "${{ matrix.path }}" == "examples/aws-containerized/openai-dynamodb-scalable" || "${{ matrix.path }}" == "examples/aws-containerized/openai-schedule" ]]; then
+          if [[ "${{ matrix.path }}" == "examples/aws-containerized/openai-dynamodb-scalable" || "${{ matrix.path }}" == "examples/aws-containerized/openai-schedule" || "${{ matrix.path }}" == "examples/aws-containerized/openai-sse-queue-mode" ]]; then
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.containerized_agent_runner_security_group_id }}")
           fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
@@ -446,7 +447,7 @@ jobs:
           if [[ "${{ matrix.type }}" == "aws-containerized" ]]; then
             ARGS+=(--alb-security-group-id "${{ needs.get-base-outputs.outputs.containerized_alb_security_group_id }}" --ecs-service-security-group-id "${{ needs.get-base-outputs.outputs.containerized_ecs_service_security_group_id }}")
           fi
-          if [[ "${{ matrix.path }}" == "examples/aws-containerized/openai-dynamodb-scalable" || "${{ matrix.path }}" == "examples/aws-containerized/openai-schedule" ]]; then
+          if [[ "${{ matrix.path }}" == "examples/aws-containerized/openai-dynamodb-scalable" || "${{ matrix.path }}" == "examples/aws-containerized/openai-schedule" || "${{ matrix.path }}" == "examples/aws-containerized/openai-sse-queue-mode" ]]; then
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.containerized_agent_runner_security_group_id }}")
           fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"

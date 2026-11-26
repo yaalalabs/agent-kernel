@@ -1,0 +1,43 @@
+logging:
+  ak:
+    level: DEBUG
+
+session:
+  type: dynamodb
+  dynamodb:
+    table_name: "ak-oai-sse-q-dev-session_store"
+
+execution:
+  # SSE: the chat route answers text/event-stream instead of JSON. rest_sync is what makes the
+  # request wait for the reply; delta is what makes the reply arrive chunk by chunk.
+  mode: rest_sync
+  message_type: delta
+  queues:
+    # The transport every component of this deployment runs on. Mandatory: the queue URLs
+    # below are injected per component, so only this declaration tells each process which
+    # transport it is on.
+    type: sqs
+    input:
+      url: "" # injected by Terraform via AK_EXECUTION__QUEUES__INPUT__URL
+      max_receive_count: 4
+    output:
+      url: "" # injected by Terraform via AK_EXECUTION__QUEUES__OUTPUT__URL
+      max_receive_count: 4
+  response_store:
+    # Redis, not DynamoDB: SSE needs a store that can stream chunks as they arrive, and DynamoDB
+    # cannot. IOHandler refuses to start with a non-streaming store under these settings.
+    #
+    # Points at the long-lived shared examples cluster in the base VPC, the same one every other
+    # CI-tested example uses, rather than creating a per-deployment cluster. Hence
+    # create_redis_cluster = false in deploy/main.tf.
+    type: redis
+    redis:
+      prefix: "ak:sse-queue-mode:response:"
+      url: "redis://ak-openai-serverless-dev-examples-redis.rhjs7r.0001.use2.cache.amazonaws.com:6379"
+    retry_count: 6
+    delay: 10
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

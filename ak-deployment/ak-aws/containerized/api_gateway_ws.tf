@@ -39,9 +39,9 @@ resource "aws_api_gateway_vpc_link" "ws" {
 resource "aws_apigatewayv2_integration" "ws" {
   for_each = local.ws_routes_all
 
-  api_id             = aws_apigatewayv2_api.ws_api[0].id
-  integration_type   = "HTTP_PROXY"
-  integration_method = "POST"
+  api_id               = aws_apigatewayv2_api.ws_api[0].id
+  integration_type     = "HTTP_PROXY"
+  integration_method   = "POST"
   integration_uri      = "http://${module.rest_service.nlb_dns_name}${local.ws_route_backend_paths[each.value]}"
   connection_type      = "VPC_LINK"
   connection_id        = aws_api_gateway_vpc_link.ws[0].id
@@ -71,7 +71,7 @@ resource "aws_cloudwatch_log_group" "ws_api" {
 
 # WebSocket access logging requires an account-level CloudWatch Logs role (region-wide singleton); else CreateStage fails.
 resource "aws_iam_role" "apigw_cloudwatch" {
-  count = local.is_websocket_mode && var.enable_api_gateway_logs ? 1 : 0
+  count = var.enable_api_gateway_logs ? 1 : 0
   name  = "${var.prefix}-apigw-cw-role-${var.region}"
 
   assume_role_policy = jsonencode({
@@ -87,13 +87,13 @@ resource "aws_iam_role" "apigw_cloudwatch" {
 }
 
 resource "aws_iam_role_policy_attachment" "apigw_cloudwatch" {
-  count      = local.is_websocket_mode && var.enable_api_gateway_logs ? 1 : 0
+  count      = var.enable_api_gateway_logs ? 1 : 0
   role       = aws_iam_role.apigw_cloudwatch[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
 }
 
 resource "aws_api_gateway_account" "this" {
-  count               = local.is_websocket_mode && var.enable_api_gateway_logs ? 1 : 0
+  count               = var.enable_api_gateway_logs ? 1 : 0
   cloudwatch_role_arn = aws_iam_role.apigw_cloudwatch[0].arn
 
   depends_on = [aws_iam_role_policy_attachment.apigw_cloudwatch]

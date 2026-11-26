@@ -742,9 +742,8 @@ graph TB
 **WebSocket delivery is available on ECS in `async` mode, with `message_type` `complete` or
 `delta`**: see [WebSocket (Async) Mode in ECS](#websocket-async-mode-in-ecs) below. `rest_sync` and
 `rest_async` always deliver replies through the response store; `async` always pushes over
-the WebSocket connection instead. `terraform plan` rejects `rest_sync` with `message_type: delta`
-(SSE) in queue mode, because the HTTP API buffers streamed responses: use `async` with `delta` for
-streaming on ECS.
+the WebSocket connection instead. **`rest_sync` with `message_type: delta` (SSE) also works in queue
+mode**, because the ECS gateway is a REST API that streams rather than an HTTP API that buffers; it needs a Redis or Valkey response store, because DynamoDB cannot stream chunks.
 :::
 
 ### Python Class Hierarchy

@@ -34,10 +34,22 @@ locals {
       AK_EXECUTION__QUEUES__OUTPUT__URL = var.output_queue_url
       AK_EXECUTION__QUEUES__BATCH_SIZE  = tostring(var.queue_config.batch_size)
     } : {},
-    # Response store is only used in REST queue modes (not WebSocket)
-    (var.queue_mode && !var.websocket_mode) ? {
-      AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
-    } : {},
+    # Response store is only used in REST queue modes (not WebSocket). Connection detail only:
+    # AK_EXECUTION__RESPONSE_STORE__TYPE is never injected, so config.yaml picks the backend, exactly
+    # like thread.type and schedule.store.type above.
+    (var.queue_mode && !var.websocket_mode) ? merge(
+      {
+        AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
+      },
+      # Skipped when the caller set the URL itself: rest_service.environment_variables is merged
+      # first, so injecting here would silently redirect responses away from the store it chose.
+      var.redis_url != null && !contains(keys(var.rest_service.environment_variables), "AK_EXECUTION__RESPONSE_STORE__REDIS__URL") ? {
+        AK_EXECUTION__RESPONSE_STORE__REDIS__URL = var.redis_url
+      } : {},
+      var.valkey_url != null && !contains(keys(var.rest_service.environment_variables), "AK_EXECUTION__RESPONSE_STORE__VALKEY__URL") ? {
+        AK_EXECUTION__RESPONSE_STORE__VALKEY__URL = var.valkey_url
+      } : {},
+    ) : {},
     # WebSocket mode (async) — push responses over the connection
     var.websocket_mode ? {
       AK_EXECUTION__MODE                             = var.execution_mode
@@ -222,6 +234,7 @@ resource "aws_lb" "app" {
   load_balancer_type = "application"
   subnets            = var.subnet_ids
   security_groups    = [local.alb_security_group_id]
+  idle_timeout       = var.alb_idle_timeout
 
   tags = var.tags
 }

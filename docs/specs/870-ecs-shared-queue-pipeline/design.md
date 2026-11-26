@@ -286,6 +286,9 @@ flowchart LR
 - Adding `dedup_id` to the shared `QueueTransportContract`. That is a follow-up, once Kafka and NATS
   receive-side mapping is checked.
 - SSE on ECS. It would need a streaming-enabled API Gateway REST API in place of the HTTP API.
+  - **Done in #978**, exactly that way: the HTTP API is replaced by a REST API with
+    `responseTransferMode: STREAM`, and the Terraform refusal below is lifted. The reasoning recorded
+    here is the state as of #870 and is kept as the record.
   - Not checked on a live stack: the HTTP API buffering claim rests on AWS documenting streaming for REST APIs
     only. The ECS docs say SSE works in direct mode (`docs/docs/deployment/aws-containerized.md:18`), but that
     line goes away with direct mode.

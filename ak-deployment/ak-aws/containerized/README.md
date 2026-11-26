@@ -280,17 +280,17 @@ scaling_config = {
 
 | Variable | Description | Type | Default | Required |
 |---|---|---|---|---|
-| `enable_api_gateway_logs` | Create the CloudWatch log group and enable access logging on the HTTP API stage (or the WebSocket API stage, in WebSocket modes) | `bool` | `false` | no |
+| `enable_api_gateway_logs` | Create the CloudWatch log group and enable access logging on the REST API stage (or the WebSocket API stage, in WebSocket modes) | `bool` | `false` | no |
 
 ```hcl
 enable_api_gateway_logs = true
 ```
 
 - Off by default, matching the AWS serverless deployment. When `false`:
-  - **REST/queue modes:** no `/aws/apigateway/{prefix}-http-api` log group is created and the HTTP API stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
+  - **REST/queue modes:** no `/aws/apigateway/{prefix}-http-api` log group is created and the REST API stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
   - **WebSocket modes:** no `/aws/apigateway/{prefix}-ws-api` log group is created, the WebSocket API stage carries no `access_log_settings`, and the account-level CloudWatch role (`aws_iam_role.apigw_cloudwatch` / `aws_api_gateway_account.this`) is not created; the `websocket_api_cloudwatch_log_group_arn` / `websocket_api_cloudwatch_log_group_name` outputs return `null`.
 - When `true`, the relevant log group is created with 90-day retention (tagged with `var.tags`). REST/queue modes log request ID, source IP, request time, protocol, HTTP method, route key, status, response length, and integration error message; WebSocket modes log the same fields plus `connectionId` in place of HTTP method.
-- Unlike the serverless REST API, the HTTP API (`aws_apigatewayv2_*` with `protocol_type = "HTTP"`) does **not** require the account-level `aws_api_gateway_account` CloudWatch role for access logging, so enabling it there does not contend with other deployments in the same account/region. The WebSocket API (`protocol_type = "WEBSOCKET"`) **does** require that account-level role; it is created only when `enable_api_gateway_logs = true` in a WebSocket mode, and it is a region-wide singleton shared with any other API Gateway in the account that also enables access logging.
+- **Both** the REST API and the WebSocket API require the account-level `aws_api_gateway_account` CloudWatch role for access logging. It is created whenever `enable_api_gateway_logs = true`, in any mode, and it is a region-wide singleton shared with every other API Gateway in the account that enables access logging: concurrent deployments contend over it, and setting the toggle back to `false` **destroys** it, which can stop access logging for other APIs in the same account and region. Earlier releases served these modes through an HTTP API, which needed no such role, so REST/queue deployments did not meet this hazard; they do now.
 - **Upgrade note:** deployments created before this toggle existed always had logging on. Applying with the new default (`false`) removes the stage's access log settings and destroys the log group (and, in WebSocket modes, the account-level CloudWatch role resources). Set `enable_api_gateway_logs = true` to keep the existing behaviour.
 - **Upgrade note (keeping logging on):** the log groups (and, in WebSocket modes, the IAM role/policy attachment/account resources) are now gated by `count`, so their state addresses gained a `[0]` index. Before the first apply with `enable_api_gateway_logs = true`, move each affected resource, e.g.:
 
@@ -314,7 +314,40 @@ enable_api_gateway_logs = true
     'module.<module_name>.aws_api_gateway_account.this[0]'
   ```
 
+  The first command uses the log group's **old** name on both sides. It is renamed `http_api` →
+  `rest_api` in this release, but `state mv` runs against the pre-upgrade state, and the module's
+  `moved` block carries the rename across on the apply that follows.
+
   Skipping this makes Terraform destroy and recreate these resources, discarding any retained logs.
+
+### Request-Path Timeouts
+
+Three separate caps bound a request, and raising one does not extend what the other two are
+cutting. The common mistake is to raise the ALB timeout and expect a longer stream.
+
+| Variable | Description | Type | Default | Required |
+|---|---|---|---|---|
+| `alb_idle_timeout` | Seconds the ALB holds a connection open with **no bytes in either direction**. Bounds a silent gap, such as a long tool call mid-stream | `number` | `300` | no |
+| `gateway_integration_timeout` | Seconds API Gateway allows one integration request to run **in total**, streamed response included. Bounds the overall length of an SSE stream | `number` | `900` | no |
+
+The third cap is API Gateway's own, and it is **not configurable**: a streamed response on a
+Regional (or private) endpoint is cut after **5 minutes** with no bytes sent, and after 30 seconds
+on an edge-optimized one. This is separate from `gateway_integration_timeout`, which bounds the
+total rather than a gap.
+
+So `alb_idle_timeout` above 300 buys nothing for traffic arriving through the gateway: the gateway
+cuts a silent stream at 5 minutes whatever the ALB allows. It still matters for callers inside the
+VPC that reach the ALB directly on `alb_dns_name`.
+
+A stream emitting a chunk every two seconds for twenty minutes never trips either idle cap, because it
+is never idle, and is cut by `gateway_integration_timeout`. A request whose agent thinks silently
+for six minutes and then replies is cut by the gateway's 5-minute idle cap while well inside the
+total.
+
+`gateway_integration_timeout`'s default is provisional. AWS documents the integration timeout as
+configurable "up to 15 minutes" and its own example sets 900000 ms, but the same page says that
+switching an integration to `STREAM` *removes* a customised timeout. Which of those holds is
+unmeasured; 900 follows the example.
 
 ### Security Groups
 
@@ -408,7 +441,7 @@ create_dynamodb_schedule_table = true
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `execution_mode` | Execution mode: `rest_sync` (client waits on the same HTTP connection), `rest_async` (client polls a separate GET endpoint; requires `queue_mode = true`), `async` (WebSocket only; `message_type` picks one message per reply or one per chunk), or `realtime` (persistent model sockets behind a stateful edge such as the LiveKit gateway). `stream` was removed and fails at `terraform plan`: use `async` with `message_type = "delta"`. | `string` | `"rest_sync"` | no |
-| `message_type` | Reply delivery: `complete` (whole reply) or `delta` (one message per chunk). `null` leaves OAK's default (`delta` for `realtime`, `complete` otherwise). Injected as `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and the agent runner whenever non-null, in every mode, so the two containers always agree. For chunked replies use `delta` with `async` (WebSocket chunks): in queue mode `terraform plan` rejects `rest_sync` + `delta` (SSE), because the HTTP API buffers streamed responses, and OAK rejects `rest_async` + `delta` and `realtime` + `complete` at config load. | `string` | `null` | no |
+| `message_type` | Reply delivery: `complete` (whole reply) or `delta` (one message per chunk). `null` leaves OAK's default (`delta` for `realtime`, `complete` otherwise). Injected as `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and the agent runner whenever non-null, in every mode, so the two containers always agree. For chunked replies use `delta` with either `async` (WebSocket chunks) or `rest_sync` (SSE); SSE needs a Redis or Valkey response store, since DynamoDB cannot stream chunks. OAK rejects `rest_async` + `delta` and `realtime` + `complete` at config load. | `string` | `null` | no |
 
 ### Non-Queue Mode (Default)
 
@@ -480,14 +513,14 @@ is added once ECS moves onto the shared queue pipeline (#870). From then on, que
 `multimodal.enabled: true` with a shared store (`storage_type: redis`, which `create_redis_cluster` can
 provide, or `dynamodb`, which holds files up to about 300 KB), with identical settings in both containers.
 
-API Gateway HTTP APIs cap a request body at 10 MB, multipart overhead included, so a file just under the
+API Gateway caps a request body at 10 MB, multipart overhead included, so a file just under the
 default 10 MB `api.max_file_size` is refused at the gateway with a 413.
 
 ### WebSocket Mode (`async`)
 
 Creates a **WebSocket API Gateway** that proxies frames to the ECS ingress service over a
 dedicated VPC Link (V1) and an internal NLB that fronts the same internal ALB; WebSocket
-private integrations require a V1, NLB-backed link, so the HTTP API's V2 link is not created
+private integrations require a V1, NLB-backed link, so the REST API's V2 link is not created
 in these modes. The ingress service handles the connection lifecycle
 (`$connect`/`$disconnect`) and pushes replies back to the client via `PostToConnection`.
 
@@ -716,6 +749,9 @@ output "private_subnet_ids"         # Private subnet IDs
 output "alb_security_group_id"          # ALB security group ID (created or provided)
 output "ecs_service_security_group_id"  # ECS service security group ID (created or provided)
 output "agent_runner_security_group_id" # Agent Runner security group ID (queue mode only; created or provided)
+
+output "redis_url"                  # Module-created Redis URL (null unless create_redis_cluster)
+output "valkey_url"                 # Module-created Valkey URL (null unless create_valkey_cluster)
 
 output "api_gateway_cloudwatch_log_group_arn"   # API Gateway log group ARN (null when logging disabled)
 output "api_gateway_cloudwatch_log_group_name"  # API Gateway log group name (null when logging disabled)

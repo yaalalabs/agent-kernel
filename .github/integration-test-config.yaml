@@ -62,6 +62,11 @@ weekly:
     - type: aws-containerized
       path: examples/aws-containerized/openai-schedule
       deploy_dir: deploy
+    # Queue-mode SSE (#978). The only example that streams over plain HTTP, and the only one that
+    # creates a Redis cluster, which its response store needs: DynamoDB cannot stream chunks.
+    - type: aws-containerized
+      path: examples/aws-containerized/openai-sse-queue-mode
+      deploy_dir: deploy
 
     # AWS Serverless
     - type: aws-serverless

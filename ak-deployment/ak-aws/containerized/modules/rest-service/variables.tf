@@ -30,6 +30,12 @@ variable "alb_security_group_id" {
   default     = null
 }
 
+variable "alb_idle_timeout" {
+  type        = number
+  description = "Seconds the ALB holds a connection open with no bytes in either direction, before closing it. Raise it when an agent can stay silent mid-stream for longer than the default, such as a long tool call under SSE. The gateway's integration timeout caps the total stream length separately, so raising this alone does not extend a stream past what API Gateway allows."
+  default     = 300
+}
+
 variable "ecs_service_security_group_id" {
   type        = string
   description = "ECS service security group ID. If not provided, a new one will be created"

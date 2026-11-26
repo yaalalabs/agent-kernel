@@ -15,7 +15,7 @@ Three topologies are supported:
 | **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` in Terraform (`message_type = "delta"` for chunks) | Real-time, bidirectional, connection-based interactions |
 
 :::note Protocol support
-ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. In queue mode `terraform plan` rejects it, because the HTTP API buffers streamed responses; stream over WebSocket instead. **WebSocket mode** is also available on ECS via a WebSocket API Gateway (see [WebSocket Mode](#websocket-mode) below) as `execution_mode = "async"` with either `message_type = "complete"` (one `CHAT_RESPONSE` push per reply, the default) or `message_type = "delta"` (one `STREAM_CHUNK` push per stream event). `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"`.
+ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. It is also available in **queue mode**, where the gateway is a REST API with `responseTransferMode: STREAM` rather than an HTTP API that buffers; queue-mode SSE needs a Redis or Valkey response store, because DynamoDB cannot stream chunks. **WebSocket mode** is also available on ECS via a WebSocket API Gateway (see [WebSocket Mode](#websocket-mode) below) as `execution_mode = "async"` with either `message_type = "complete"` (one `CHAT_RESPONSE` push per reply, the default) or `message_type = "delta"` (one `STREAM_CHUNK` push per stream event). `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"`.
 :::
 
 ## Simple REST Architecture
@@ -770,6 +770,51 @@ curl -X POST "$AGENT_INVOKE_URL" \
 
 See [examples/aws-containerized/crewai-auth](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai-auth) for a complete authentication example.
 
+
+## Upgrading to the streaming REST gateway
+
+This release replaces the module's API Gateway HTTP API (`aws_apigatewayv2_api`) with a REST API
+(`aws_api_gateway_rest_api`), so that SSE can stream instead of being buffered. Two things change for
+an existing deployment.
+
+**1. The invoke URL changes.** Swapping the API type is a create-and-destroy, not an in-place update,
+so the deployment gets a new API id and a new `agent_invoke_url`. Every externally registered URL
+points at a dead endpoint until it is re-registered:
+
+- Re-register webhooks with each messaging platform (Slack, WhatsApp, Messenger, Instagram, Telegram,
+  Teams) from the new `agent_invoke_url`.
+- Update any client, cron job or monitor that holds the old URL.
+- Deployments whose webhook URLs are built from the `api_gateway_id` and `api_gateway_stage` outputs
+  pick the new values up on re-apply. That covers the URL Terraform computes, not where it was sent:
+  a URL registered by hand in a platform console still points at the deleted API and must be
+  re-registered.
+
+**2. The ALB idle timeout rises from 60 to 300 seconds.** `aws_lb.app` previously set no
+`idle_timeout` and so took the AWS default of 60 seconds. It is now `alb_idle_timeout`, default
+`300`. The ALB is updated in place, not replaced. This applies to every containerized deployment,
+including ones that never stream: a connection abandoned by a closed laptop is now held for the
+timeout rather than 60 seconds before the ALB reaps it.
+
+Also worth knowing on the first apply:
+
+- With `enable_api_gateway_logs = true`, REST/queue deployments now create the account-level
+  `aws_api_gateway_account` CloudWatch role. It is a region-wide singleton, so concurrent deployments
+  contend over it and turning the toggle off destroys it. WebSocket deployments already had this.
+- **The `cors_allow_*` variables stop having any effect, which widens browser access.** The container
+  answers preflight from its own policy, and that policy is `allow_origins=["*"]` with
+  `allow_credentials=True`. A deployment that used `cors_allow_origins` to restrict which sites could
+  call it **loses that restriction on upgrade**. There is no Terraform setting that restores it;
+  #1006 makes the container's policy configurable, and until it lands the restriction has to come
+  from in front of the gateway (a WAF rule, or a CloudFront distribution). Weigh this before
+  upgrading a deployment that relied on origin restrictions. `enable_cors` still controls whether a
+  preflight operation is emitted at all.
+- **`overwrite_path` no longer accepts header or query-string sources.** The HTTP API resolved
+  `$request.header.<name>` and `$request.querystring.<name>` in `overwrite:path`, and accepted a bare
+  `$request.path`. A REST API can only resolve a reference by mapping it onto an integration path
+  parameter, so `gateway_endpoints` now rejects those forms at `terraform plan` rather than
+  mistranslating them. A literal path and `$request.path.<name>` are unchanged.
+- The first plan shows the API Gateway deployment as `(known after apply)`, because the OpenAPI body
+  embeds the ALB DNS name and the VPC link id. Later plans are stable.
 
 ## Best Practices
 
