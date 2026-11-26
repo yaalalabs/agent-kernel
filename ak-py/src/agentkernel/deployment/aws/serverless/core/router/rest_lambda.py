@@ -161,6 +161,9 @@ class DefaultEndpointsHandler:
         :return: Queue submission status
         :raises ValueError: If body, request_id, or session_id is missing
         """
+        if payload.request_id:
+            # Here, not in _handle_request: that also serves the async status polls, which reuse the request_id.
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, payload.request_id)
         request_body = payload.body
         if request_body is None:
             raise ValueError("body is required")
@@ -171,7 +174,6 @@ class DefaultEndpointsHandler:
         if not session_id:
             raise ValueError("session_id is required")
 
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, payload.request_id)
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, payload.request_id)
         response = SQSHandler.send_message_to_input_queue(
             message_body=request_body.model_dump(exclude_none=True),

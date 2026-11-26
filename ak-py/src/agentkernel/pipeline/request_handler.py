@@ -242,6 +242,25 @@ class RestHandler(AgentRESTRequestHandler):
         # with the one the identity dependency RESTAPI installs put on the request (the anonymous
         # principal without an identity block). The default covers a router mounted on a bare app.
         body.principal = getattr(request.state, "principal", None)
+        return await self._enqueue_and_wait(body, self._receive_request())
+
+    def _receive_request(self) -> str:
+        """Give a new chat request its id and trace its arrival, before any validation or I/O runs for it.
+
+        :return: The request id, unique and distinct from the session id.
+        """
+        request_id = str(uuid.uuid4())
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
+        return request_id
+
+    async def _enqueue_and_wait(self, body: ChatRunRequest, request_id: str):
+        """Validate, enqueue and answer one chat request whose principal is assigned.
+
+        :param body: The chat request.
+        :param request_id: The id ``_receive_request`` gave the request.
+        :return: The reply (REST_SYNC) or the acknowledgement carrying the request id (REST_ASYNC).
+        :raises HTTPException: For a request this route refuses, a wait that timed out, or a failed run.
+        """
         try:
             if not body.session_id:
                 raise HTTPException(status_code=400, detail="session_id is required")
@@ -253,10 +272,6 @@ class RestHandler(AgentRESTRequestHandler):
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
-            # Unique request_id, distinct from session_id.
-            request_id = str(uuid.uuid4())
-
-            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
             self._log.info(
                 f"Request start: session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
             )
@@ -420,6 +435,7 @@ class RequestHandler(RestHandler):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
         # The surface assigns the principal; a client value is overwritten (see enqueue_and_wait).
         body.principal = getattr(request.state, "principal", None)
+        request_id = self._receive_request()
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
@@ -431,8 +447,8 @@ class RequestHandler(RestHandler):
         self._reject_unqueueable_attachments(body)
         await self._offload_attachments(body)
         if self._config.execution.is_sse:
-            return await self._run_chat_stream(body)
-        return await self.enqueue_and_wait(body, request)
+            return await self._run_chat_stream(body, request_id)
+        return await self._enqueue_and_wait(body, request_id)
 
     def _reject_unqueueable_attachments(self, body: BaseRunRequest) -> None:
         """Refuse files that cannot cross a broker, before anything is saved, recorded or enqueued.
@@ -587,10 +603,8 @@ class RequestHandler(RestHandler):
             return False
         return store.shared or QueueTransportFactory.resolve_type() == "in_memory"
 
-    async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
+    async def _run_chat_stream(self, body: BaseRunRequest, request_id: str) -> StreamingResponse:
         """Enqueue and serve the chunks over SSE; _reject_unroutable has vouched for the store."""
-        request_id = str(uuid.uuid4())
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
         self._log.info(f"Stream request: session_id={body.session_id}, request_id={request_id}")
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
         await asyncio.to_thread(self._enqueue_request, body, request_id)

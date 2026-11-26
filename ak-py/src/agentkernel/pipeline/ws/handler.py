@@ -237,6 +237,8 @@ class PipelineWebSocketHandler(RESTRequestHandler):
 
     async def _handle_chat(self, websocket: WebSocket, principal: Principal, request: BaseRequest) -> None:
         """Enqueue a chat frame; the Response Handler pushes the reply back to this pod."""
+        request_id = request.request_id or str(uuid.uuid4())
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
         body = request.body
         if body is None:
             await self._send_system(websocket, "body is required")
@@ -251,8 +253,6 @@ class PipelineWebSocketHandler(RESTRequestHandler):
         # The connection's principal is the run's: `from_payload` dropped anything the frame named.
         body.principal = principal
         user_id = principal.subject
-        request_id = request.request_id or str(uuid.uuid4())
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
         # USER_ID doubles as the WS-entered marker (spec §2 invariant): the Response Handler
         # resolves delivery from the connection store, so no return address is stamped.
         message = QueueMessage(
