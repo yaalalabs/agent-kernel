@@ -1503,7 +1503,10 @@ What phase F delivered, and what it settled beyond the iteration plans, before i
   - a second CodeRabbit round: one `Authorization` header rule for the authorizer and the Lambda
     router (two that disagree count as none), the Lambda direct route releasing in a `finally`, both
     AWS `$connect`s forgetting a credential whose connection row failed, and the in-memory read never
-    deleting an entry renewed since its lookup.
+    deleting an entry renewed since its lookup;
+  - the re-review: a request every HTTP surface answers without a run (a refusal, a failed send)
+    releases its credential (`CredentialManager.release_unclaimed` and `released_on_error`), on the
+    pipeline, direct REST, thread and AG-UI routes and A2A's shared `request()`.
 - **Docs.** Written iteration by iteration, then checked at the end of the phase: the identity page's
   "Credentials for downstream calls" section and its deployment notes, `core-concepts/configuration.md`,
   `ak-py/README.md`, the bundled `ak-add-capabilities` skill; and in the end-of-phase pass, a seventh

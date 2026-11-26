@@ -1284,6 +1284,83 @@ def edge(descriptor_only_registry):
         yield registry
 
 
+def _kept(manager, principal: Principal = ALICE) -> Principal:
+    """The principal as the identity dependency leaves it with credentials configured: carrying a run reference."""
+    import asyncio
+
+    return asyncio.run(manager.retain(principal, "alice-token"))
+
+
+class TestARequestNoRunTookOverKeepsNoCredential:
+    """The identity dependency keeps a POST's credential before the route runs; only the runner releases a queued one,
+    so a request the edge answers itself (a refusal, a failed send) releases its own (#603)."""
+
+    def test_a_request_for_an_unknown_agent_releases_it(self, monkeypatch, edge, credential_manager):
+        _configure(monkeypatch, mode="rest_async")
+        kept = _kept(credential_manager)
+
+        response = _edge_client(principal=kept).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "nobody"})
+
+        assert response.status_code == 404
+        assert credential_manager.store.get(kept.credential_ref) is None
+
+    def test_a_request_refused_by_validation_releases_it(self, monkeypatch, edge, credential_manager):
+        _configure(monkeypatch, mode="rest_async")
+        kept = _kept(credential_manager)
+
+        response = _edge_client(principal=kept).post(CHAT, json={"prompt": "", "session_id": "s1", "agent": "assistant"})
+
+        assert response.status_code == 400
+        assert credential_manager.store.get(kept.credential_ref) is None
+
+    def test_a_request_whose_send_fails_releases_it(self, monkeypatch, edge, credential_manager):
+        _configure(monkeypatch, mode="rest_async")
+        kept = _kept(credential_manager)
+        handler = RequestHandler()
+        monkeypatch.setattr(handler, "_enqueue_request", lambda body, request_id: (_ for _ in ()).throw(ConnectionError("broker down")))
+
+        response = _edge_client(handler, principal=kept).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "assistant"})
+
+        assert response.status_code == 500
+        assert credential_manager.store.get(kept.credential_ref) is None
+
+    def test_an_enqueued_request_leaves_it_to_the_runner(self, monkeypatch, edge, credential_manager):
+        _configure(monkeypatch, mode="rest_async")
+        kept = _kept(credential_manager)
+
+        response = _edge_client(principal=kept).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "assistant"})
+
+        assert response.status_code == 200
+        assert credential_manager.store.get(kept.credential_ref) == b"alice-token"
+
+    def test_a_wait_that_times_out_after_the_send_leaves_it_to_the_runner(self, monkeypatch, edge, credential_manager):
+        # The message is on the queue: the run may still start, and it needs the credential.
+        _configure(monkeypatch, mode="rest_sync")
+        kept = _kept(credential_manager)
+        handler = RequestHandler()
+
+        async def nothing_stored(request_id):
+            return None
+
+        monkeypatch.setattr(handler, "_await_response_record", nothing_stored)
+
+        response = _edge_client(handler, principal=kept).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": "assistant"})
+
+        assert response.status_code == 504
+        assert credential_manager.store.get(kept.credential_ref) == b"alice-token"
+
+    @pytest.mark.asyncio
+    async def test_a_protocol_request_refused_at_the_edge_releases_it(self, monkeypatch, knows_triage, credential_manager):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+        kept = await credential_manager.retain(ALICE, "alice-token")
+
+        reply = await _protocol_handler(FakeStore()).request(_protocol_body(agent="nobody", principal=kept), protocol="a2a")
+
+        assert reply.status_code == 404
+        assert credential_manager.store.get(kept.credential_ref) is None
+
+
 class TestThePrecheckBeforeTheQueue:
     """A request for an agent its caller cannot have is answered by the process that accepts it, with the status
     and body the runner would have answered, and nothing is enqueued (#603, spec 8.3). The edge reads the agent

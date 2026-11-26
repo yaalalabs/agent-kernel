@@ -1279,6 +1279,41 @@ class TestTheStoreAcrossProcesses:
         assert checked == ["sqs"]
 
 
+class TestADirectRequestAnsweredWithoutARun:
+    """The direct REST route runs the agent in-process, so once it has answered nothing will use the credential: a
+    request refused before its run (an unknown agent) releases it, as does one whose stream never starts (#603)."""
+
+    @staticmethod
+    def _client(kept: Principal):
+        from fastapi import Depends, FastAPI, Request
+        from fastapi.testclient import TestClient
+
+        from agentkernel.api.handler import AgentRESTRequestHandler
+
+        async def _identity(request: Request) -> None:
+            request.state.principal = kept
+
+        app = FastAPI()
+        app.include_router(AgentRESTRequestHandler().get_router(), dependencies=[Depends(_identity)])
+        return TestClient(app)
+
+    @pytest.mark.parametrize("message_type", ["complete", "delta"])
+    @pytest.mark.parametrize("route", ["/api/v1/chat", "/api/v1/chat-multipart"])
+    def test_a_request_for_an_unknown_agent_releases_its_credential(self, credential_manager, monkeypatch, message_type, route):
+        from agentkernel.core.config import AKConfig, _ExecutionConfig
+
+        monkeypatch.setattr(AKConfig.get(), "execution", _ExecutionConfig(message_type=message_type))
+        kept = asyncio.run(credential_manager.retain(_alice(), "run-token"))
+        fields = {"prompt": "hello", "session_id": "s1", "agent": "nobody"}
+
+        with Runtime(InMemorySessionStore()):
+            client = self._client(kept)
+            response = client.post(route, json=fields) if route.endswith("chat") else client.post(route, data=fields)
+
+        assert response.status_code == 404
+        assert credential_manager.store.get(kept.credential_ref) is None
+
+
 class TestNoTokenLeaks:
     def test_no_log_record_carries_the_token_from_request_to_release(self, credentials, caplog):
         from fastapi import Depends, FastAPI, Request

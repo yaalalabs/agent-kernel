@@ -1339,7 +1339,12 @@ deleted).
   `credential_ref`, keeps nothing for the anonymous principal or an expired token, and on a store failure
   logs (no token) and returns the principal unchanged. `release` deletes a run's reference, `forget` a
   `conn:` one (a failed delete logs the error's type only), `release_for` is the never-raising
-  classmethod. **Retention is explicit at each surface**, never inside authentication: the identity
+  classmethod, and `release_unclaimed` (async) and `released_on_error` (an async context manager) are
+  what a surface uses for a request it answers without a run: the pipeline router wraps everything
+  before the send to the queue, the direct REST and thread routes release once the in-process reply is
+  in (`AgentRESTRequestHandler._reply`) or the stream never starts (`_stream_reply`), and AG-UI's
+  `_run` (direct and queued) before its hand-off. Only a `422` (FastAPI refuses the body after the
+  dependency ran) or a request that changes a record without a run leaves an entry to its TTL. **Retention is explicit at each surface**, never inside authentication: the identity
   dependency (HTTP requests that can start a run: REST, A2A, AG-UI, threads), the MCP
   executor (each tool call, from the verified access token's token, deleted once the reply is in and
   left to the runner on a timeout; never `AKTokenVerifier`, which FastMCP asks on every HTTP request of

@@ -528,7 +528,16 @@ class RequestAuthenticator:
   the manager off the loop. The Lambda authorizer retains nothing: its result is cached (150 s by default,
   keyed on the token), so a reference it minted would be shared by requests whose runs each release it.
   It builds through `from_config(retains=False)`, so no manager is built there and a store its role
-  cannot reach does not fail it. `bearer_token(header)` is the one bearer parser, public and
+  cannot reach does not fail it. A request a surface answers without a run releases its credential
+  itself (from the #1023 re-review), through `CredentialManager.release_unclaimed` (off the loop, never
+  raising) or `released_on_error` (an async context manager that releases when its block raises): the
+  pipeline router wraps everything before the message is on the queue (`run_chat`, `_enqueue_and_wait`,
+  the SSE enqueue, `request()`, the thread router's `run_chat`, the queued AG-UI `_run`), so a refusal
+  or a failed send releases and a wait that times out after the send does not; the direct REST and
+  thread routes release once their in-process reply is in (`AgentRESTRequestHandler._reply`) or when
+  the stream never starts (`_stream_reply`); the direct AG-UI `_run` releases when it raises before
+  the stream. A body FastAPI refuses (`422`) is answered before any route code runs, after the
+  dependency retained, so that entry expires within `inbound_ttl`. `bearer_token(header)` is the one bearer parser, public and
   non-raising; the dependency's raising `_bearer_token` and the Lambda REST router both use it.
   TTLs as specified: a run's credential until `min(exp, now + inbound_ttl)`, a connection's until `exp`,
   else `now + inbound_ttl`; an expired token keeps nothing, and a store that cannot be reached is logged
@@ -2611,8 +2620,10 @@ Each is intentional; the justification is design section 10 unless stated.
 51. With an `identity.credentials` block (iteration 25; sections 4 and 5), every authenticated HTTP
     request that can start a run (not `GET`, `HEAD` or `OPTIONS`) and every MCP tool call writes its
     credential, encrypted, to the credential store and its principal carries a `credential_ref`; the run
-    deletes it when it ends, and `passthrough` leaves no cached copy. A request that can start a run but
-    does not leaves its entry to expire within `inbound_ttl`. The WebSocket APIs (the pipeline gateway,
+    deletes it when it ends, and `passthrough` leaves no cached copy. A request the surface answers without a
+    run (a refusal, a failed send to the queue) deletes it too. One that changes a record without a run (a
+    schedule amended, an A2A `tasks/get`) or whose body FastAPI cannot parse (a `422`, after the dependency
+    ran) leaves its entry to expire within `inbound_ttl`. The WebSocket APIs (the pipeline gateway,
     ECS, Lambda) and the CLI keep one for the connection or session, renewed by each frame (the CLI: each
     prompt) when the token has no `exp`, and the Lambda REST router keeps one from the request's header
     when it starts a run (iteration 25b). A WebSocket route of the application's own on a router behind

@@ -456,9 +456,10 @@ How it works:
   `encryption_key`, in the credential store under a random reference. The principal carries the reference
   (`credential_ref`), never the token, so the token is not in the session, a queue message or a log line.
 - **It ends with the run, or the connection.** OAK deletes a request's credential when the run it was kept
-  for ends, however it ends, and a WebSocket connection's or CLI session's when the connection or session
-  ends; in any case when `inbound_ttl` has passed or the token itself expires. No copy outlives it:
-  `passthrough` caches nothing.
+  for ends, however it ends, or when the request is answered without a run (refused, say, for an unknown
+  agent), and at the latest when `inbound_ttl` has passed or the token itself expires. A WebSocket
+  connection's or CLI session's is deleted when the connection or session ends, and lasts as the next point
+  says. No copy outlives either: `passthrough` caches nothing.
 - **Where it is kept.** The REST, A2A and AG-UI routes keep the credential of each authenticated request that
   can start a run (not of a `GET`, `HEAD` or `OPTIONS` request such as a catalog listing or a poll for a
   reply), and MCP the credential of each tool call (not of the session's other requests); on AWS Lambda the
@@ -490,8 +491,8 @@ with strongly consistent reads. Generate a key with
 secret `encryption_key` names.
 
 A queued request that is delivered again after its run started finds its credential gone. An authenticated request
-that can start a run but does not (amending or cancelling a schedule, an A2A `tasks/get`) leaves its encrypted entry
-to expire within `inbound_ttl`.
+that changes a record without running an agent (amending or cancelling a schedule, an A2A `tasks/get`), or whose
+body the route cannot parse (a `422`), leaves its encrypted entry to expire within `inbound_ttl`.
 
 ## Authorization
 

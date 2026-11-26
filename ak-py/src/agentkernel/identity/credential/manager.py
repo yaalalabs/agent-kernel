@@ -8,11 +8,12 @@ which a run's release leaves alone and the connection *forgets* when it ends.
 """
 
 import asyncio
+import contextlib
 import logging
 import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ...core.config import AKConfig
@@ -212,6 +213,35 @@ class CredentialManager:
         manager = cls._quietly()
         if manager is not None:
             manager.release(principal)
+
+    @classmethod
+    async def release_unclaimed(cls, principal: Principal | None) -> None:
+        """
+        ``release_for`` off the event loop, for a surface that answers a request no run took over: a refusal before
+        the run, a send to the queue that failed, a direct reply already in. Neither ``Runtime`` nor a runner will
+        release it then. A second release after ``Runtime``'s is a no-op. Never raises.
+
+        :param principal: The request's principal.
+        """
+        if principal is None or not principal.credential_ref:
+            return
+        await asyncio.to_thread(cls.release_for, principal)
+
+    @classmethod
+    @contextlib.asynccontextmanager
+    async def released_on_error(cls, principal: Principal | None) -> AsyncIterator[None]:
+        """
+        Releases the request's credential if the block raises. A surface wraps what it does before a run takes the
+        request over (validation, the agent check, the send to the queue), so a request refused there keeps nothing,
+        and leaves out what follows, where the run owns the credential.
+
+        :param principal: The request's principal.
+        """
+        try:
+            yield
+        except BaseException:
+            await cls.release_unclaimed(principal)
+            raise
 
     @classmethod
     def _quietly(cls) -> Optional["CredentialManager"]:

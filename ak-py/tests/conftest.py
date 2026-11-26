@@ -312,6 +312,25 @@ def credentials(monkeypatch):
 
 
 @pytest.fixture
+def credential_manager(monkeypatch):
+    """The process's ``CredentialManager`` over an empty in-memory store, as ``CredentialManager.get`` returns it (#603).
+
+    For a surface test that needs credentials kept and released without an ``identity`` block on the configuration:
+    hand it to ``RequestAuthenticator(provider, credential_manager)`` where a route retains, and read
+    ``credential_manager.store`` (or ``InMemoryCredentialStore._entries``) for what is left.
+    """
+    from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
+    from agentkernel.identity.credential.manager import CredentialManager
+
+    store = InMemoryCredentialStore(None)
+    store.clear()
+    manager = CredentialManager(store, {}, 300)
+    monkeypatch.setattr(CredentialManager, "get", classmethod(lambda cls: manager))
+    yield manager
+    store.clear()
+
+
+@pytest.fixture
 def authorization(monkeypatch):
     """Returns a function that installs an ``authorization`` block of type ``static`` on the live configuration (#603).
 
