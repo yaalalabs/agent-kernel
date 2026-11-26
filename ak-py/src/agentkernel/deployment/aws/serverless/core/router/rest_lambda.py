@@ -174,12 +174,12 @@ class DefaultEndpointsHandler:
             raise ValueError("session_id is required")
 
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, payload.request_id)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, payload.request_id)
         response = SQSHandler.send_message_to_input_queue(
             message_body=request_body.model_dump(exclude_none=True),
             attributes={"message_deduplication_id": payload.request_id},
             request_id=payload.request_id,
         )
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, payload.request_id)
         return response
 
     def _get_record(self, payload: BaseRequest) -> dict[str, Any] | None:

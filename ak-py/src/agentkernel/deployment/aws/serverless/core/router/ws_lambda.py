@@ -416,6 +416,7 @@ class SystemRoutesHandler(LambdaWSHandler):
 
             endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
 
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request.request_id)
             response = SQSHandler.send_message_to_input_queue(
                 message_body=request_body.model_dump(exclude_none=True),
                 attributes={"message_deduplication_id": request.request_id},
@@ -426,7 +427,6 @@ class SystemRoutesHandler(LambdaWSHandler):
                 ],
             )
 
-            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request.request_id)
             self._log.info(f"Request sent to input queue successfully: {response}")
 
             response_body = self._build_lambda_response(user_id=user_id, msg="Request queued successfully", success=True)

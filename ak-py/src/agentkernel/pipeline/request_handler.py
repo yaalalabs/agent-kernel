@@ -335,10 +335,10 @@ class RestHandler(AgentRESTRequestHandler):
                 f"Request start: session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
             )
 
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
             # Offload the sync send so it doesn't block the event loop.
             queue_result = await asyncio.to_thread(self._enqueue_request, body, request_id)
 
-            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
             self._log.info(f"Enqueued: MessageId={queue_result.get('MessageId')}, request_id={request_id}")
 
             mode = self._effective_mode()
@@ -671,8 +671,8 @@ class RequestHandler(RestHandler):
         request_id = str(uuid.uuid4())
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
         self._log.info(f"Stream request: session_id={body.session_id}, request_id={request_id}")
-        await asyncio.to_thread(self._enqueue_request, body, request_id)
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
+        await asyncio.to_thread(self._enqueue_request, body, request_id)
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: str | None) -> AsyncGenerator[str, None]:
