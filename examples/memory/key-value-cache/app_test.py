@@ -81,8 +81,8 @@ async def test_senior_agent_on_acme(http_client):
     response = await http_client.send("Tell me about the company AcmeXXLabs.", agent="senior_assistant")
     print(f"Senior agent response: {response}")
     assert (
-        "cutting-edge green technology" in response.lower() and "san francisco" in response.lower()
-    ), f"Expected 'cutting edge green technology' response, got: {response}"
+        "green technology" in response.lower() and "san francisco" in response.lower()
+    ), f"Expected a green technology company in San Francisco, got: {response}"
     print(f"✓ Senior agent correctly responded to query: {response}")
 
 

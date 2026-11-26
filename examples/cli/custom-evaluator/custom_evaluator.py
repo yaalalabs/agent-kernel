@@ -4,6 +4,7 @@
 import re
 
 import litellm
+from agentkernel.core.util.reasoning import reasoning_off_params
 from agentkernel.test import (
     AKEvaluationCase,
     AKEvaluationError,
@@ -59,6 +60,7 @@ class TokenOverlapEvaluator(AKEvaluator):
                 model=f"{llm.provider}/{llm.model}",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
+                **reasoning_off_params(llm.model),  # a reasoning model rejects temperature=0 unless its reasoning is off
             )
             content = response.choices[0].message.content.strip()
             match = _SCORE_PATTERN.search(content)

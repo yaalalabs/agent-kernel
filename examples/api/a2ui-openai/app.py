@@ -61,6 +61,10 @@ For anything that does not need an interface — a greeting, a question, an expl
 ordinary prose. Most turns are prose. A surface built only from Card, Heading and Text carries
 nothing a sentence does not: send the sentence instead.
 
+When the user asks to file, submit or fill in something that needs several values from them, such as
+an expense claim, send a form: a Card holding a Heading, one input per value (TextField, NumberField,
+DateField or Select) and a Button. Do not ask for the values one by one in prose.
+
 When the user's message is a list of "field: value" pairs, that is a form you already showed coming
 back submitted. Never show the editable form again — that reads as if the submission was lost.
 

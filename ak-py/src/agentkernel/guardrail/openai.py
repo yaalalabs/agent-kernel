@@ -10,6 +10,7 @@ from guardrails import GuardrailsOpenAI, GuardrailTripwireTriggered
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.model import AgentReply, AgentReplyText, AgentRequest
+from ..core.util.reasoning import reasoning_off_params
 from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
 log = logging.getLogger("ak.guardrail.openai")
@@ -99,13 +100,16 @@ class OpenAIInputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, InputGuardrai
             try:
                 # Check input against configured guardrails
                 # Run the synchronous guardrails client in executor to avoid blocking event loop
+                input_model = AKConfig.get().guardrail.input.model
                 await asyncio.to_thread(
                     self._guardrails_client.chat.completions.create,
-                    model=AKConfig.get().guardrail.input.model,
+                    model=input_model,
                     messages=[{"role": "user", "content": input_text}],
                     # We only need the checks, not the reply. Every OpenAI chat model accepts max_completion_tokens
-                    # (reasoning models reject max_tokens), and it caps reasoning tokens too.
+                    # (reasoning models reject max_tokens), and it caps reasoning tokens too, so a reasoning model
+                    # gets reasoning turned off or it spends the one token on thinking and the call fails.
                     max_completion_tokens=1,
+                    **reasoning_off_params(input_model),
                 )
                 # If we get here, no guardrail was triggered
                 log.debug("Input passed guardrail validation")
@@ -183,16 +187,19 @@ class OpenAIOutputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, OutputGuardr
             try:
                 # Check output against configured guardrails
                 # Run the synchronous guardrails client in executor to avoid blocking event loop
+                output_model = AKConfig.get().guardrail.output.model
                 await asyncio.to_thread(
                     self._guardrails_client.chat.completions.create,
-                    model=AKConfig.get().guardrail.output.model,  # Model for guardrail checks
+                    model=output_model,  # Model for guardrail checks
                     messages=[
                         {"role": "user", "content": agent_reply.prompt if hasattr(agent_reply, "prompt") else ""},
                         {"role": "assistant", "content": output_text},
                     ],
                     # We only need the checks, not the reply. Every OpenAI chat model accepts max_completion_tokens
-                    # (reasoning models reject max_tokens), and it caps reasoning tokens too.
+                    # (reasoning models reject max_tokens), and it caps reasoning tokens too, so a reasoning model
+                    # gets reasoning turned off or it spends the one token on thinking and the call fails.
                     max_completion_tokens=1,
+                    **reasoning_off_params(output_model),
                 )
                 # If we get here, no guardrail was triggered
                 log.debug("Output passed guardrail validation")
