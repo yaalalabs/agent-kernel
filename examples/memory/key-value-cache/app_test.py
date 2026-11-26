@@ -70,7 +70,9 @@ async def test_junior_agent_on_acme(http_client):
     response = await http_client.send("What is AcmeXXLabs?", agent="junior_assistant")
     print(f"Junior agent response: {response}")
     assert (
-        "i don't know" in response.lower() or "no relevant information" in response.lower()
+        # newer models write a curly apostrophe ("don’t"), so compare with it straightened
+        "i don't know" in response.lower().replace("’", "'")
+        or "no relevant information" in response.lower()
     ), f"Expected 'I don't know' response, got: {response}"
     print(f"✓ Junior agent correctly responded to query: {response}")
 
@@ -92,7 +94,9 @@ async def test_junior_agent_on_softlabs(http_client):
     response = await http_client.send("What is SoftYYLabs?", agent="junior_assistant")
     print(f"Junior agent response: {response}")
     assert (
-        "i don't know" in response.lower() or "no relevant information" in response.lower()
+        # newer models write a curly apostrophe ("don’t"), so compare with it straightened
+        "i don't know" in response.lower().replace("’", "'")
+        or "no relevant information" in response.lower()
     ), f"Expected 'I don't know' response, got: {response}"
     print(f"✓ Junior agent correctly responded to query: {response}")
 

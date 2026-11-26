@@ -11,16 +11,16 @@ resolution-markers = [
 [[package]]
 name = "agentkernel"
 version = "0.10.2"
-source = { registry = "https://pypi.org/simple" }
+source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1f/1f/880522d187c6848a5ddc50f0a83e9cbe006f4e47bfb04b27f3d98622dfac/agentkernel-0.10.2.tar.gz", hash = "sha256:ed3730a8bbea83306fc3c8e60af2610fc218fe2daef5457fa548083128823f37", size = 925430, upload-time = "2026-11-20T11:17:01.924Z" }
+sdist = { path = "agentkernel-0.10.2.tar.gz" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/19/3f/eda7b7644e5b5219dccd6d24131f4214c70490c8319f759ae82611230fc1/agentkernel-0.10.2-py3-none-any.whl", hash = "sha256:d6eda607a486f9d4855673887dabae0032bf07984b4dddadcb428d6e0bc8515d", size = 1154640, upload-time = "2026-11-20T11:17:00.006Z" },
+    { path = "agentkernel-0.10.2-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]

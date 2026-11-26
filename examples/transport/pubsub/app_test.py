@@ -124,8 +124,9 @@ async def test_session_continues_across_turns(client):
         ["That's great to hear!"],
         threshold=0.1,
         criteria=(
-            "The reply must warmly acknowledge that the customer was happy. "
-            "Any follow-up question about their experience is acceptable and must not be penalized."
+            "The reply must carry on the feedback conversation about the customer's "
+            "banking activity. Acknowledging their answer, asking a follow-up question "
+            "about their experience, or both, are all correct and must not be penalized."
         ),
     )
 

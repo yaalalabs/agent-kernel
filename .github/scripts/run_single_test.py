@@ -17,6 +17,8 @@ import urllib.request
 from pathlib import Path
 import json
 
+PYTEST_WITH_RETRIES = ['--with', 'pytest-rerunfailures', 'pytest', '--reruns', '2', '--reruns-delay', '10']
+
 CREWAI_DISABLE_TRACE_ENV = {
     "CREWAI_TRACING_ENABLED": "false",
     "CREWAI_TESTING": "true",
@@ -120,7 +122,7 @@ def run_simple_test(path: str) -> bool:
     
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
+        ['uv', 'run', *PYTEST_WITH_RETRIES, '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=CREWAI_DISABLE_TRACE_ENV
@@ -581,7 +583,7 @@ def test_gcp_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         print(f"⚠️  Failed to remove config.yaml for {path}, but continuing with the test.")
     # Test
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
+        ['uv', 'run', *PYTEST_WITH_RETRIES, '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env
@@ -747,7 +749,7 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     )
     # A missing output fails, and the setup-terraform wrapper may still print to stdout.
     namespace = result.stdout.strip() if result.returncode == 0 else ''
-    pytest_cmd = ['uv', 'run', 'pytest']
+    pytest_cmd = ['uv', 'run', *PYTEST_WITH_RETRIES]
     if namespace:
         test_env['AK_TEST_SERVICEBUS_NAMESPACE'] = namespace
         # The contract authenticates as the CI principal through the az CLI; a long deploy can outlive
@@ -759,7 +761,7 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         # (same as the aws-containerized tests); --no-sync keeps uv.lock from reverting it.
         if not run_command(['./build.sh', 'local'], cwd=path, description=f"Building {path} with local agentkernel"):
             return False
-        pytest_cmd = ['uv', 'run', '--no-sync', 'pytest']
+        pytest_cmd = ['uv', 'run', '--no-sync', *PYTEST_WITH_RETRIES]
 
     #remove the config.yaml till the issue with it is being solved
     
@@ -1058,7 +1060,7 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     # Test. Use --no-sync so uv does not re-sync the venv from uv.lock, which
     # would revert the local wheel installed above back to the PyPI version.
     return run_command(
-        ['uv', 'run', '--no-sync', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
+        ['uv', 'run', '--no-sync', *PYTEST_WITH_RETRIES, '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env

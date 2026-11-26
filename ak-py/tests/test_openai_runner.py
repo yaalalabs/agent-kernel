@@ -1765,3 +1765,47 @@ class TestAnOrdinaryTurnWhileAPauseIsPending:
             await runner.run(agent, session, [AgentRequestText(prompt="and the weather?")])
 
         assert PausedRunState.get(session, paused.run_id) is not None
+
+
+def _message(text: str, phase: str):
+    """An assistant message as a model call returns it, carrying the given text and phase."""
+    from openai.types.responses import ResponseOutputMessage, ResponseOutputText
+
+    return ResponseOutputMessage(
+        id=f"msg-{phase}",
+        content=[ResponseOutputText(annotations=[], text=text, type="output_text")],
+        role="assistant",
+        status="completed",
+        type="message",
+        phase=phase,
+    )
+
+
+class TestOpenAIRunnerBlankFinalAnswer:
+    """A model that writes its answer as commentary and closes with a blank final_answer still gets a reply."""
+
+    @staticmethod
+    async def _reply(final_output, *responses):
+        runner = OpenAIRunner()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            result = MagicMock()
+            result.interruptions = []
+            result.final_output = final_output
+            result.raw_responses = [SimpleNamespace(output=list(output)) for output in responses]
+            MockRunner.run = AsyncMock(return_value=result)
+            return await runner.run(_mock_agent(), Session("s"), [AgentRequestText(prompt="hi")])
+
+    @pytest.mark.asyncio
+    async def test_blank_final_answer_returns_the_commentary(self):
+        reply = await self._reply("", [_message("Hi Andy, how was the deposit?", "commentary"), _message("", "final_answer")])
+        assert reply.response == "Hi Andy, how was the deposit?"
+
+    @pytest.mark.asyncio
+    async def test_non_blank_final_output_is_kept(self):
+        reply = await self._reply("The answer.", [_message("Thinking aloud.", "commentary"), _message("The answer.", "final_answer")])
+        assert reply.response == "The answer."
+
+    @pytest.mark.asyncio
+    async def test_only_the_last_model_call_is_searched(self):
+        reply = await self._reply("", [_message("Let me check.", "commentary")], [_message("", "final_answer")])
+        assert reply.response == ""
