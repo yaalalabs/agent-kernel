@@ -41,10 +41,12 @@ locals {
       {
         AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
       },
-      var.redis_url != null ? {
+      # Skipped when the caller set the URL itself: rest_service.environment_variables is merged
+      # first, so injecting here would silently redirect responses away from the store it chose.
+      var.redis_url != null && !contains(keys(var.rest_service.environment_variables), "AK_EXECUTION__RESPONSE_STORE__REDIS__URL") ? {
         AK_EXECUTION__RESPONSE_STORE__REDIS__URL = var.redis_url
       } : {},
-      var.valkey_url != null ? {
+      var.valkey_url != null && !contains(keys(var.rest_service.environment_variables), "AK_EXECUTION__RESPONSE_STORE__VALKEY__URL") ? {
         AK_EXECUTION__RESPONSE_STORE__VALKEY__URL = var.valkey_url
       } : {},
     ) : {},

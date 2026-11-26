@@ -63,6 +63,26 @@ variable "gateway_endpoints" {
     error_message = "Each gateway_endpoints object must have non-empty 'path', 'method', and 'overwrite_path' fields, and 'method' must be one of: GET, POST, PUT, DELETE, PATCH, ANY, $default."
   }
   validation {
+    # Allowlist, not blocklist: strip every supported reference, then require nothing is left. The
+    # REST API gateway resolves a reference by mapping it onto an integration path parameter, which
+    # only works for a name the external path already declares.
+    condition = alltrue([
+      for ep in var.gateway_endpoints :
+      length(regexall("\\$\\{?request", replace(ep.overwrite_path, "/\\$\\{?request\\.path\\.[A-Za-z0-9_-]+\\}?/", ""))) == 0
+    ])
+    error_message = "gateway_endpoints overwrite_path supports a literal path and $request.path.<name> only. Header and query-string sources, and the bare $request.path form, worked on the previous HTTP API gateway but have no equivalent on the REST API gateway."
+  }
+  validation {
+    condition = alltrue([
+      for ep in var.gateway_endpoints :
+      alltrue([
+        for m in regexall("\\$\\{?request\\.path\\.([A-Za-z0-9_-]+)\\}?", ep.overwrite_path) :
+        contains([for t in regexall("\\{([A-Za-z0-9_-]+)\\+?\\}", ep.path) : t[0]], m[0])
+      ])
+    ])
+    error_message = "Each $request.path.<name> in a gateway_endpoints overwrite_path must name a parameter the endpoint's own path declares, e.g. path = \"schedules/{task_id}\" with overwrite_path = \"/api/v1/schedules/$request.path.task_id\"."
+  }
+  validation {
     condition     = var.execution_mode != "async" || length(var.gateway_endpoints) == 0
     error_message = "'gateway_endpoints' cannot be defined in the 'async' (websocket) execution mode."
   }

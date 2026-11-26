@@ -122,7 +122,7 @@ Either way this is a **different cap from the ALB's**, and the design accounts f
 | ALB `idle_timeout` | a **silent gap** between bytes | `alb_idle_timeout`, default 300 s |
 | Integration `timeoutInMillis` | **total** integration duration | not set today — defaults to 29 s |
 
-A stream that emits a chunk every two seconds for ten minutes never trips the ALB's idle timeout and
+A stream that emits a chunk every two seconds for twenty minutes never trips the ALB's idle timeout and
 is killed by the integration timeout. This is folded into claim 4 below.
 
 ## 2–4. What to test on the first deployment

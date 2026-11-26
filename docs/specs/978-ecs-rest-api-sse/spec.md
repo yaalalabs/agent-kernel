@@ -53,7 +53,7 @@ Two caps now exist on the request path, limiting different things:
 | ALB `idle_timeout` | a **silent gap** between bytes | `alb_idle_timeout` | 300 s |
 | Integration `timeoutInMillis` | **total** integration duration | `gateway_integration_timeout` | 900 s |
 
-A stream emitting a chunk every two seconds for ten minutes never trips the ALB and is killed by the
+A stream emitting a chunk every two seconds for twenty minutes never trips the ALB and is killed by the
 integration timeout, which is why one variable cannot cover both.
 
 **Both defaults are provisional.** AWS contradicts itself on one page: the streaming guide says the
@@ -301,15 +301,30 @@ one builder:
   so the hazard is removed rather than reasoned about.
 - `timeoutInMillis` is **not optional** (§0). The variable is in seconds for consistency with
   `alb_idle_timeout`; the `* 1000` lives here, at the one place the millisecond unit is required.
-- **Two of the three parameter sources are unverified against a REST API.** `_param_re` accepts
-  `path`, `header` and `querystring`, and `_ep_request_params` maps all three onto
-  `integration.request.path.*`. The HTTP API accepted all three through `overwrite:path`
-  (`origin/develop:api_gateway.tf:38-41`), so this is compatibility surface that must keep working,
-  not new capability — which is why the regex is **not** narrowed to `path`. But nothing in
-  `examples/` or `e2e/` uses the header or querystring forms, so only the `path` branch has ever
-  been applied against AWS. `path` is well covered by the weekly suite: `openai-schedule` exercises
-  `ANY` with `{task_id}` and `$request.path.task_id`, `crewai` the non-`ANY` plus generated OPTIONS
-  shape. Treat the other two as untested rather than as known-good.
+- **Only the `path` source is supported; the other two are rejected at plan time.** The HTTP API
+  accepted `$request.header.<name>`, `$request.querystring.<name>` and a bare `$request.path` in
+  `overwrite:path` (`origin/develop:api_gateway.tf:38-41`). A REST API resolves a reference only by
+  mapping it onto an **integration path parameter**, and a path parameter must correspond to a
+  segment the external path template declares, so there is nowhere for a header or query value to
+  land. Translating them anyway produced five concrete defects, two of which failed at
+  `terraform plan`: a header and a query parameter of the same name collapsed onto one
+  `integration.request.path.<name>` key; a path parameter sharing a name with a header suppressed
+  the header's declaration; the generated preflight inherited mappings it did not declare; a dotted
+  header name truncated at the first `.`; and the bare form left literal `$request.path` text in the
+  integration URI. Nothing in `examples/` or `e2e/` uses any of them — the only non-literal
+  `overwrite_path` in the repo is `$request.path.task_id` in `openai-schedule`.
+  - `gateway_endpoints` therefore carries two validations (`variables.tf`): an allowlist that strips
+    every `$request.path.<name>` and requires nothing beginning `$request` or `${request` to remain,
+    and a guard that every referenced name is one the endpoint's own `path` declares. A loud
+    plan-time rejection replaces a silent mistranslation.
+  - Because that guard holds, `mapped` is always a subset of `templated`, which is why `_ep_params`
+    enumerates only `templated` and why `_options_op` keeps `requestParameters`: the preflight `uri`
+    reuses `backend_path`, whose `{name}` placeholders need those mappings to resolve, and every
+    name in them is a path parameter the preflight operation also declares. Removing them, as a
+    review suggested, would break the preflight URI.
+  - `mapped` is deduplicated: one `overwrite_path` may reference the same parameter twice
+    (`/items/$request.path.id/related/$request.path.id`), which produced a duplicate object key.
+    Same class as the `distinct()` in `user_endpoint_paths` (§1.1).
 - `operationId` must be unique across the document. `replace(ep.method, "any", "any-method")` keeps the
   ANY operation distinct from a sibling `get` on the same path; `trim`/`replace` on the path mirror
   GCP's `operationId` construction (`ak-gcp/containerized/api_gateway.tf:77`). A path containing

@@ -339,7 +339,7 @@ So `alb_idle_timeout` above 300 buys nothing for traffic arriving through the ga
 cuts a silent stream at 5 minutes whatever the ALB allows. It still matters for callers inside the
 VPC that reach the ALB directly on `alb_dns_name`.
 
-A stream emitting a chunk every two seconds for ten minutes never trips either idle cap, because it
+A stream emitting a chunk every two seconds for twenty minutes never trips either idle cap, because it
 is never idle, and is cut by `gateway_integration_timeout`. A request whose agent thinks silently
 for six minutes and then replies is cut by the gateway's 5-minute idle cap while well inside the
 total.

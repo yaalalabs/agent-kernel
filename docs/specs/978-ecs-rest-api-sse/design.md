@@ -163,7 +163,7 @@ request handler remains, so `rest_sync` now runs the shared `RequestHandler`, wh
 
 There are **two configurable** caps on the request path and they limit different things. The ALB's
 bounds a silent gap; the gateway's bounds the whole integration. A stream that emits a chunk every two
-seconds for ten minutes never trips the ALB and is killed by the gateway. The gateway's own fixed
+seconds for twenty minutes never trips the ALB and is killed by the gateway. The gateway's own fixed
 5-minute idle cap is the third, and is covered under ALB above.
 
 - **`timeoutInMillis` must be set on every integration.** Left unset it takes AWS's documented default
@@ -267,6 +267,11 @@ already owns that resource** for WebSocket mode, so REST mode joins an existing 
   non-streaming requests that the ALB used to cut at 60 s now survive, and an abandoned connection
   is held five times longer before it is reaped. Set `alb_idle_timeout = 60` to keep the old
   behaviour.
+- **`overwrite_path` narrows to a literal path plus `$request.path.<name>`.** The HTTP API also
+  resolved `$request.header.<name>`, `$request.querystring.<name>` and a bare `$request.path`; a REST
+  API has no equivalent, since it resolves a reference only by mapping it onto an integration path
+  parameter. `gateway_endpoints` rejects the other forms at `terraform plan` rather than
+  mistranslating them. Nothing in `examples/` or `e2e/` uses them. See `spec.md` §2.2.
 - Output names and types are unchanged, repointed at the new resources: `api_gateway_id`,
   `api_gateway_stage`, `agent_invoke_url`, and the two log-group outputs. `e2e/app/deploy/outputs.tf:2`
   builds `https://<id>.execute-api.<region>.amazonaws.com/<stage>` from the first two; a REST API's

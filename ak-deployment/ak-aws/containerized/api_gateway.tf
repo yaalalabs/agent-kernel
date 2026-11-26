@@ -1,8 +1,10 @@
 locals {
-  # $request.path.x / ${request.header.x} / $request.querystring.x: the three sources HTTP API
-  # parameter mapping accepts in overwrite:path. Terraform's regex engine is RE2, so with no
-  # lookarounds the name's character class carries the right-hand boundary.
-  _param_re = "\\$\\{?request\\.(path|header|querystring)\\.([A-Za-z0-9_-]+)\\}?"
+  # $request.path.x, braced or not. The HTTP API also accepted header and querystring sources in
+  # overwrite:path; the REST API resolves a reference only by mapping it onto an integration path
+  # parameter, so gateway_endpoints rejects those forms rather than mistranslating them
+  # (variables.tf). Terraform's regex engine is RE2, so with no lookarounds the name's character
+  # class carries the right-hand boundary.
+  _param_re = "\\$\\{?request\\.path\\.([A-Za-z0-9_-]+)\\}?"
 
   _eps = {
     for key, ep in local.rest_endpoints_map :
@@ -11,41 +13,35 @@ locals {
       method   = lower(try(ep.method, "ANY"))
       is_any   = lower(try(ep.method, "ANY")) == "any"
 
-      mapped = regexall(local._param_re, try(ep.overwrite_path, ""))
+      # distinct(): one overwrite_path may reference the same parameter twice, which would make
+      # duplicate keys below.
+      mapped = distinct([for m in regexall(local._param_re, try(ep.overwrite_path, "")) : m[0]])
 
       # API Gateway rejects an import whose path template declares {x} that the operation does not
       # list in `parameters`, so these are required whether or not overwrite_path references them.
       templated = [for m in regexall("\\{([A-Za-z0-9_-]+)\\+?\\}", ep.path) : m[0]]
 
-      backend_path = replace(try(ep.overwrite_path, ""), "/${local._param_re}/", "{$2}")
+      backend_path = replace(try(ep.overwrite_path, ""), "/${local._param_re}/", "{$1}")
     }
   }
 
+  # Only `templated` is enumerated: gateway_endpoints requires every $request.path.<name> to name a
+  # parameter the external path already declares, so `mapped` is always a subset of it.
   _ep_params = {
     for key, ep in local._eps :
-    key => concat(
-      [for n in ep.templated : {
-        name     = n
-        in       = "path"
-        required = true
-        schema   = { type = "string" }
-      }],
-      [for m in ep.mapped : {
-        name     = m[1]
-        in       = m[0] == "querystring" ? "query" : m[0]
-        required = true
-        schema   = { type = "string" }
-      } if !contains(ep.templated, m[1])],
-    )
+    key => [for n in ep.templated : {
+      name     = n
+      in       = "path"
+      required = true
+      schema   = { type = "string" }
+    }]
   }
 
-  # The integration's {name} placeholders are always integration.request.path.*; only the source
-  # differs. AWS spells the query source "querystring" here while OpenAPI's `in` says "query".
   _ep_request_params = {
     for key, ep in local._eps :
     key => {
-      for m in ep.mapped :
-      "integration.request.path.${m[1]}" => "method.request.${m[0]}.${m[1]}"
+      for n in ep.mapped :
+      "integration.request.path.${n}" => "method.request.path.${n}"
     }
   }
 

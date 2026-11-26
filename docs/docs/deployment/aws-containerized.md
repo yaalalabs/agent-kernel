@@ -785,7 +785,9 @@ points at a dead endpoint until it is re-registered:
   Teams) from the new `agent_invoke_url`.
 - Update any client, cron job or monitor that holds the old URL.
 - Deployments whose webhook URLs are built from the `api_gateway_id` and `api_gateway_stage` outputs
-  pick the new values up on re-apply and need no manual step.
+  pick the new values up on re-apply. That covers the URL Terraform computes, not where it was sent:
+  a URL registered by hand in a platform console still points at the deleted API and must be
+  re-registered.
 
 **2. The ALB idle timeout rises from 60 to 300 seconds.** `aws_lb.app` previously set no
 `idle_timeout` and so took the AWS default of 60 seconds. It is now `alb_idle_timeout`, default
@@ -798,8 +800,19 @@ Also worth knowing on the first apply:
 - With `enable_api_gateway_logs = true`, REST/queue deployments now create the account-level
   `aws_api_gateway_account` CloudWatch role. It is a region-wide singleton, so concurrent deployments
   contend over it and turning the toggle off destroys it. WebSocket deployments already had this.
-- The `cors_allow_*` variables stop having any effect; the container answers preflight from its own
-  policy. `enable_cors` still controls whether a preflight operation is emitted at all.
+- **The `cors_allow_*` variables stop having any effect, which widens browser access.** The container
+  answers preflight from its own policy, and that policy is `allow_origins=["*"]` with
+  `allow_credentials=True`. A deployment that used `cors_allow_origins` to restrict which sites could
+  call it **loses that restriction on upgrade**. There is no Terraform setting that restores it;
+  #1006 makes the container's policy configurable, and until it lands the restriction has to come
+  from in front of the gateway (a WAF rule, or a CloudFront distribution). Weigh this before
+  upgrading a deployment that relied on origin restrictions. `enable_cors` still controls whether a
+  preflight operation is emitted at all.
+- **`overwrite_path` no longer accepts header or query-string sources.** The HTTP API resolved
+  `$request.header.<name>` and `$request.querystring.<name>` in `overwrite:path`, and accepted a bare
+  `$request.path`. A REST API can only resolve a reference by mapping it onto an integration path
+  parameter, so `gateway_endpoints` now rejects those forms at `terraform plan` rather than
+  mistranslating them. A literal path and `$request.path.<name>` are unchanged.
 - The first plan shows the API Gateway deployment as `(known after apply)`, because the OpenAPI body
   embeds the ALB DNS name and the VPC link id. Later plans are stable.
 
