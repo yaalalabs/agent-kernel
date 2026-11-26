@@ -5,15 +5,17 @@ from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestAny, Ag
 from agentkernel.pydanticai import PydanticAIModule, PydanticAIToolBuilder
 from fastapi import APIRouter
 from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings
 
 from tool import fetch_customer_activity
 
 # Provider-agnostic: swap for "anthropic:...", "google-gla:...", etc. (install the matching provider
 # extra, e.g. pydantic-ai-slim[anthropic]). Requires OPENAI_API_KEY for the model below.
-MODEL = "openai:gpt-4.1-mini"
+MODEL = "openai:gpt-6-luna"
 
 general_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="general",
     description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers.",
@@ -21,6 +23,7 @@ general_agent = Agent(
 
 support_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="support",
     description="Customer feedback and support agent",
     instructions="You are a customer feedback agent. When I give you the name of the customer you will generate "
@@ -46,6 +49,7 @@ async def ask_support(question: str) -> str:
 
 triage_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="triage",
     description="Front-line agent that routes each question to the right specialist",
     instructions="You determine which specialist should answer the user's question and call the matching tool: "

@@ -14,7 +14,7 @@ math_agent = Agent(
     backstory="You provide help with math problems. Explain your reasoning at each step and include examples. \
         If prompted for anything else you refuse to answer.",
     verbose=False,
-    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
+    llm=LLM(model="openai/gpt-6-luna", reasoning_effort="none", api_key=openai_key),
 )
 
 history_agent = Agent(
@@ -22,7 +22,7 @@ history_agent = Agent(
     goal="Specialist agent for historical questions",
     backstory="You provide assistance with historical queries. Explain important events and context clearly.",
     verbose=False,
-    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
+    llm=LLM(model="openai/gpt-6-luna", reasoning_effort="none", api_key=openai_key),
 )
 
 router = APIRouter()

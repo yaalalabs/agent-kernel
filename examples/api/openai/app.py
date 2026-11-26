@@ -3,16 +3,18 @@ from agentkernel import PreHook, Session
 from agentkernel.api import RESTAPI
 from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestAny, AgentRequestText
 from agentkernel.openai import OpenAIModule
-from agents import Agent
+from agents import Agent, ModelSettings
 from fastapi import APIRouter
 
+from openai.types.shared import Reasoning
 from tool import fetch_customer_activity
 
 general_agent = Agent(
     name="general",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 customer_support_agent = Agent(
@@ -24,14 +26,16 @@ customer_support_agent = Agent(
     "customer itself and mimic the conversation. Ask questions one by one and gather answers and show "
     "the summary once the conversation is over.",
     tools=[fetch_customer_activity],
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 triage_agent = Agent(
     name="triage",
     instructions="You determine which agent to use based on the user's question.",
     handoffs=[general_agent, customer_support_agent],
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 # Optional custom route to add your own endpoints

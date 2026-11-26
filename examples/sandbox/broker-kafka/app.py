@@ -17,7 +17,8 @@ import sys
 from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule
 from agentkernel.sandbox import QueueBrokerWorker
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 # The sandbox capability injects its own tool guidance into the system prompt when enabled;
 # the instructions only pin the demo's operational ground rules.
@@ -26,7 +27,8 @@ ops_agent = Agent(
     instructions="You are a Kubernetes operations assistant. Run every kubectl command through "
     "the sandbox as a shell command and answer only from what the command actually printed. "
     "Follow the user's output-format instructions exactly.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([ops_agent])

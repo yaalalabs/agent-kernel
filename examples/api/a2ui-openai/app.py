@@ -24,7 +24,8 @@ There is no post-hook here. That is the point: handling what comes back is two c
 from agentkernel.openai import OpenAIModule
 from agentkernel.pipeline import IOHandler
 from agentkernel.thread import ThreadRequestHandler
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 CATALOG = """
 You may answer with a user interface instead of prose when the answer is better shown than
@@ -77,7 +78,8 @@ reads the same today and is just a sentence tomorrow.
 expenses_agent = Agent(
     name="expenses",
     instructions=f"You help staff file expense claims.\n\n{CATALOG}",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([expenses_agent])

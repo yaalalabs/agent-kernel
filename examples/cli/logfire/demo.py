@@ -3,7 +3,8 @@ import logging
 from agentkernel.cli import CLI
 from agentkernel.core import ToolContext
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 
 def get_weather(city: str) -> str:
@@ -22,7 +23,8 @@ math_agent = Agent(
     handoff_description="Specialist agent for math questions",
     instructions="You provide help with math problems. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 general_agent = Agent(
@@ -30,14 +32,16 @@ general_agent = Agent(
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 weather_agent = Agent(
     name="weather",
     instructions="You provide weather information upon request. Use the get_weather tool for all weather-related questions.",
     tools=OpenAIToolBuilder.bind([get_weather]),
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 triage_agent = Agent(
@@ -45,7 +49,8 @@ triage_agent = Agent(
     instructions="You determine which agent to use based on the user's question. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details",
     handoffs=[general_agent, math_agent, weather_agent],
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([triage_agent, math_agent, general_agent, weather_agent])

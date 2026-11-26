@@ -163,7 +163,7 @@ docs.write(
 
 agent = Agent(
     name="docs_assistant",
-    model="gpt-4.1-mini",
+    model="gpt-6-luna",
     instructions="Use the read_kb tool with backend 'Docs' to answer from the product documentation.",
     tools=OpenAIToolBuilder.bind(KnowledgeBuilder([docs]).build()),
 )

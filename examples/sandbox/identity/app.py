@@ -1,6 +1,7 @@
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 from identity import IdentitySeedPreHook
 
@@ -13,7 +14,8 @@ coder_agent = Agent(
         "You are a coding assistant with access to an execution sandbox. Prefer running real code, "
         "and report the sandbox's actual output verbatim."
     ),
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 # IdentitySeedPreHook runs before the agent (custom pre-hooks precede system pre-hooks), so the

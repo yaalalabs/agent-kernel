@@ -4,6 +4,8 @@ import logging
 from agentkernel.gmail import AgentGmailRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
+from agents import ModelSettings
+from openai.types.shared import Reasoning
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -27,7 +29,8 @@ When replying to emails:
 8. Do NOT include "Subject:" in your response
 9. Do NOT add signature or closing (handler will add automatically)
 """,
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 # Initialize module with agent

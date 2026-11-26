@@ -60,7 +60,7 @@ class AppendRunStatsPostHook(PostHook):
         return "append_run_stats"
 
 
-model = ChatOpenAI(model="gpt-4.1-mini", temperature=0.0)
+model = ChatOpenAI(model="gpt-6-luna", reasoning_effort="none", temperature=0.0)
 
 weather_agent = create_react_agent(
     name="weather",

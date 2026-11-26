@@ -21,7 +21,7 @@ math_agent = OpenAIAgent(
 
 history_agent = ToolCallingAgent(
     tools=[],
-    model=LiteLLMModel(model_id="openai/gpt-4.1-mini"),
+    model=LiteLLMModel(model_id="openai/gpt-6-luna", reasoning_effort="none"),
     name="history",
     description="Specialist agent for history questions. You provide assistance with history queries. "
     "Give direct and correct answers. Answer the question only. Don't give any explanation",

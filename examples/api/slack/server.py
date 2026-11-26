@@ -18,6 +18,7 @@ from agentkernel.pipeline import IOHandler
 from agentkernel.pydanticai import PydanticAIModule, PydanticAIToolBuilder
 from agentkernel.slack import SlackInboundAdapter
 from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai.settings import ModelSettings
 
 
 def restart_service(name: str) -> str:
@@ -30,10 +31,11 @@ def restart_service(name: str) -> str:
     return f"{name} was restarted (simulated)."
 
 
-MODEL = "openai:gpt-4.1-mini"
+MODEL = "openai:gpt-6-luna"
 
 general_agent = Agent(
     model=MODEL,
+    model_settings=ModelSettings(openai_reasoning_effort="none"),
     name="general",
     description="Agent for general questions",
     output_type=[str, DeferredToolRequests],

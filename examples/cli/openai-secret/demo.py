@@ -1,8 +1,9 @@
 from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.secret import SecretManager
-from agents import Agent, OpenAIResponsesModel
+from agents import Agent, ModelSettings, OpenAIResponsesModel
 from openai import AsyncOpenAI
+from openai.types.shared import Reasoning
 
 openai_api_key = SecretManager.current().get("OPENAI_API_KEY")
 
@@ -35,9 +36,10 @@ weather_agent = Agent(
     tools=OpenAIToolBuilder.bind([get_weather]),
     # The OpenAI client is attached directly to the model, so no `openai/` provider prefix is needed.
     model=OpenAIResponsesModel(
-        model="gpt-4.1-mini",
+        model="gpt-6-luna",
         openai_client=openai_client,
     ),
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([weather_agent])

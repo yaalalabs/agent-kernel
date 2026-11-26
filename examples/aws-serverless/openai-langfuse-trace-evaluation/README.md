@@ -108,7 +108,7 @@ The example writes its own Opik evaluator, so it declares `opik` in its own `pyp
 
 ## Metrics
 
-All four are Opik LLM judges on `gpt-4.1-mini` (`AK_TEST__LLM__PROVIDER` / `AK_TEST__LLM__MODEL`), with
+All four are Opik LLM judges on `gpt-6-luna` (`AK_TEST__LLM__PROVIDER` / `AK_TEST__LLM__MODEL`), with
 threshold `0.5`. None needs an expected answer.
 
 | Metric | Opik metric | Reads | Runs when | Passes when |

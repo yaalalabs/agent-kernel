@@ -1,7 +1,8 @@
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.thread import AgentThreadRequestHandler
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 
 def send_summary_email(recipient: str) -> str:
@@ -19,7 +20,8 @@ assistant_agent = Agent(
     instructions="You are a helpful assistant. Give short and direct answers.",
     # Gated so the thread records the pause and its decision, not just the turns either side.
     tools=OpenAIToolBuilder.bind([send_summary_email], needs_approval=True),
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([assistant_agent])

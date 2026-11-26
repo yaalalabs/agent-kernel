@@ -303,7 +303,7 @@ from agent_framework.openai import OpenAIChatClient
 from agentkernel.maf import MAFToolBuilder
 
 support_agent = Agent(
-    OpenAIChatClient(model="gpt-4.1-mini"),   # swap the client for another MAF provider (agent-framework-anthropic, ...)
+    OpenAIChatClient(model="gpt-6-luna"),   # swap the client for another MAF provider (agent-framework-anthropic, ...)
     name="support",               # Always pass name= explicitly!
     description="Specialist for customer support and order inquiries",
     instructions="You help customers with order lookups, returns, and general support questions.",

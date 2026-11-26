@@ -13,7 +13,7 @@ general_agent = OpenAIAgent(
     name="general",
     handoff_description="Agent for general questions",
     instructions="You are an integration test agent. Reply to every message with a short, one-sentence answer.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
 )
 
 OpenAIModule([general_agent])

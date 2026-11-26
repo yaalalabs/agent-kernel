@@ -60,7 +60,7 @@ class AppendRunStatsPostHook(PostHook):
 
 weather_agent = CodeAgent(
     tools=SmolagentsToolBuilder.bind([get_weather]),
-    model=LiteLLMModel(model_id="openai/gpt-4.1-mini"),
+    model=LiteLLMModel(model_id="openai/gpt-6-luna", reasoning_effort="none"),
     name="weather",
     description="Weather assistant. Use the get_weather tool for every weather question and give short, direct answers.",
     step_callbacks=[record_step],

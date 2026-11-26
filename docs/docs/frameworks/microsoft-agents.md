@@ -62,7 +62,7 @@ from agent_framework import Agent
 from agent_framework.openai import OpenAIChatClient
 from agentkernel.maf import MAFModule
 
-client = OpenAIChatClient(model="gpt-4.1-mini")
+client = OpenAIChatClient(model="gpt-6-luna")
 
 math_agent = Agent(client, name="math", description="Specialist for math problems",
                    instructions="You solve math problems.")
@@ -142,7 +142,7 @@ def get_weather(city: str) -> str:
     return f"Weather in {city}: sunny, 25°C"
 
 agent = Agent(
-    OpenAIChatClient(model="gpt-4.1-mini"),
+    OpenAIChatClient(model="gpt-6-luna"),
     name="weather",
     description="Provides weather information.",
     instructions="You provide weather information.",
@@ -174,7 +174,7 @@ class CalendarEvent(BaseModel):
     date: str
 
 agent = Agent(
-    OpenAIChatClient(model="gpt-4.1-mini"),
+    OpenAIChatClient(model="gpt-6-luna"),
     name="extractor",
     description="Extracts calendar events from text.",
     instructions="Extract the calendar event from the text.",

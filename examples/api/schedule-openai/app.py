@@ -1,12 +1,14 @@
 from agentkernel.openai import OpenAIModule
 from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 assistant_agent = Agent(
     name="assistant",
     instructions="You are a helpful assistant. Give short and direct answers.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 # The agent itself says nothing about scheduling: the `schedule` block in config.yaml is what

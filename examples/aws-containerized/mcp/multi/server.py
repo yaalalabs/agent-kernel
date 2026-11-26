@@ -4,7 +4,8 @@ from agentkernel.openai import OpenAIModule
 from agentkernel.secret import SecretManager
 from agentkernel.smolagents import SmolagentsModule
 from agents import Agent as OpenAIAgent
-from agents import set_default_openai_key
+from agents import ModelSettings, set_default_openai_key
+from openai.types.shared import Reasoning
 from smolagents import LiteLLMModel, ToolCallingAgent
 
 # OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
@@ -17,7 +18,8 @@ general_agent = OpenAIAgent(
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and clear answers. "
     "Give direct and correct answers. Answer the question only. Don't give any explanation",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 math_agent = OpenAIAgent(
@@ -25,12 +27,13 @@ math_agent = OpenAIAgent(
     handoff_description="Specialist agent for math questions",
     instructions="You provide help with math problems. Do not provide reasoning or step-by-step explanations. Just give the final answer. \
          If prompted for anything else, refuse to answer.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 history_agent = ToolCallingAgent(
     tools=[],
-    model=LiteLLMModel(model_id="openai/gpt-4.1-mini", api_key=openai_key),
+    model=LiteLLMModel(model_id="openai/gpt-6-luna", reasoning_effort="none", api_key=openai_key),
     name="history",
     description="Specialist agent for history questions. You provide assistance with history queries. "
     "Give direct and correct answers. Answer the question only. Don't give any explanation",

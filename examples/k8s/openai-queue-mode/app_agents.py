@@ -8,26 +8,30 @@ Named app_agents rather than agents so it does not shadow the openai-agents ``ag
 imports.
 """
 
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 math_agent = Agent(
     name="math",
     handoff_description="Specialist agent for math questions",
     instructions="You provide help with math problems. Do not provide reasoning or step-by-step explanations. Just give the final answer. \
          If prompted for anything else, refuse to answer.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 history_agent = Agent(
     name="history",
     handoff_description="Specialist agent for historical questions",
     instructions="You provide assistance with historical queries. Explain important events and context clearly.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 triage_agent = Agent(
     name="triage",
     instructions="You determine which agent to use based on the user's question.",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
     handoffs=[history_agent, math_agent],
 )

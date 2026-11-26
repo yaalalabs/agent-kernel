@@ -1,6 +1,7 @@
 from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 # The sandbox capability injects the list of available profiles into the agent's system
 # prompt, so the agent's instructions only need to say *when* to use which profile.
@@ -13,7 +14,8 @@ coder_agent = Agent(
         "Use the workspace profile by default; use the scratch profile when the user asks for a quick, "
         "isolated one-off. Give short, direct answers backed by what you actually executed."
     ),
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([coder_agent])

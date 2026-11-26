@@ -12,7 +12,8 @@ import asyncio
 from agentkernel.core.model import AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.openai import OpenAIModule
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 
 from hooks import GuardRailHook, RAGHook
 
@@ -24,7 +25,8 @@ async def main():
     qa_agent = Agent(
         name="qa_assistant",
         instructions="You are a helpful AI assistant. Keep responses concise.",
-        model="openai/gpt-4.1-mini",
+        model="openai/gpt-6-luna",
+        model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
     )
 
     # Register the agent

@@ -13,6 +13,8 @@ from agentkernel.messenger import MessengerInboundAdapter
 from agentkernel.openai import OpenAIModule
 from agentkernel.pipeline import IOHandler
 from agents import Agent as OpenAIAgent
+from agents import ModelSettings
+from openai.types.shared import Reasoning
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,8 @@ general_agent = OpenAIAgent(
     - Use emojis appropriately to make messages friendly
     - Break long responses into shorter paragraphs
     - Be conversational and friendly""",
-    model="openai/gpt-4.1-mini",
+    model="openai/gpt-6-luna",
+    model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
 )
 
 OpenAIModule([general_agent])

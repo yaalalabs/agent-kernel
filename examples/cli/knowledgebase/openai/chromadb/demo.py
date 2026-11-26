@@ -3,7 +3,8 @@ ChromaDB knowledge base demo using Agent Kernel + OpenAI Agents SDK.
 
 """
 
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 from agentkernel.cli import CLI
 from agentkernel.knowledgebase.chroma import ChromaManager
 from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
@@ -75,7 +76,8 @@ EXECUTION PROTOCOL:
     # bind(...) converts those callables into OpenAI Agent tools.
     return Agent(
         name="KB_Router_Agent",
-        model="gpt-4.1-mini",
+        model="gpt-6-luna",
+        model_settings=ModelSettings(reasoning=Reasoning(effort="none")),
         instructions=instructions,
         tools=OpenAIToolBuilder.bind(knowledge_builder.build()),
     )
