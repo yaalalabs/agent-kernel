@@ -876,6 +876,14 @@ flowchart TD
   runner, response handler), ECS containerized handlers, and the Lambda serverless handlers.
   - Each stage is logged exactly where named (e.g. `AGENT_DONE` before the output send, `AGENT_RECEIVED` at
     dequeue).
+  - **Every trace line is written before the work it names, never after:** `INPUT_ENQUEUED` / `OUTPUT_ENQUEUED` just
+    before the queue send, `RESPONSE_DELIVERED` just before the push / store write / platform delivery;
+    `REQUEST_RECEIVED`, `AGENT_RECEIVED`, `OUTPUT_RECEIVED` as soon as the request id is known, before validation,
+    lookups (e.g. the connection's principal) or payload logging. Stages are then written in request order across
+    components; logged after the send, `INPUT_ENQUEUED` came after `AGENT_RECEIVED` on the in_memory transport.
+    - Delta exception: chunks are sent while the agent runs, so `AGENT_DONE` and `OUTPUT_ENQUEUED` are written once
+      the stream ends (#911 Q2).
+    - A rejected request still has its `REQUEST_RECEIVED` line, with no later stages.
 - **Trace lines are added next to the existing stage-style INFO lines, not in place of them:**
   - The INFO lines on the request path stay at `INFO` with their text but **drop their `[...]` tag** (e.g.
     `[AGENT DONE] request_id=...` → `Agent done: request_id=...`), so normal logs still show them.

@@ -55,6 +55,7 @@ def test_complete_rest_sync(caplog):
     store.get_record_with_retry.return_value = {"session_id": "s1", "request_id": "req-1", "status_code": 200, "body": {"result": "ok"}}
     chat_service = MagicMock()
     chat_service.process_chat_request.return_value = (200, {"result": "ok", "session_id": "s1"})
+    sent_after = []  # the runner's stages already traced when it sends the reply
 
     with (
         caplog.at_level(TRACE, logger="ak"),
@@ -63,9 +64,10 @@ def test_complete_rest_sync(caplog):
         patch(f"{REST_MODULE}.ChatService"),
         patch(f"{REST_MODULE}.SQSHandler.send_message_to_input_queue", return_value={}),
         patch.object(ServerlessAgentRunner, "_get_chat_service", return_value=chat_service),
-        patch(f"{RUNNER_MODULE}.SQSHandler.send_message_to_output_queue"),
+        patch(f"{RUNNER_MODULE}.SQSHandler.send_message_to_output_queue") as send_output,
         patch.object(ResponseHandler, "_get_response_store", return_value=MagicMock()),
     ):
+        send_output.side_effect = lambda **kwargs: sent_after.extend(stage for stage, _ in _traces(caplog, "ak.aws.agentrunner"))
         # The edge polls the store the runner and Response Handler fill; called in order here.
         ServerlessAgentRunner.process_message(_input_record())
         ResponseHandler.process_message(_output_record({"result": "ok", "session_id": "s1"}))
@@ -86,6 +88,7 @@ def test_complete_rest_sync(caplog):
         (TraceStage.AGENT_DONE, "req-1"),
         (TraceStage.OUTPUT_ENQUEUED, "req-1"),
     ]
+    assert sent_after[-1] == TraceStage.OUTPUT_ENQUEUED  # traced before the send, not after
     assert _traces(caplog, "ak.aws.responsehandler") == [(TraceStage.OUTPUT_RECEIVED, "req-1"), (TraceStage.RESPONSE_DELIVERED, "req-1")]
 
 

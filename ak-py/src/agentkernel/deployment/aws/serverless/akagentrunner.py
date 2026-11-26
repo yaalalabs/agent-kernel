@@ -171,11 +171,11 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         :param record: SQS record (``dict``) containing the chat request payload
         :return: None
         """
-        cls._log.info(f"Processing message: {record}")
         body = cls._parse_body(record)
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
         request_id = record_attributes["request_id"]
         cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_RECEIVED, request_id)
+        cls._log.info(f"Processing message: {record}")
         # ChatService(rest_api_mode=False) returns (status_code, response_dict). The status travels
         # to the output message as an attribute so the deferred-schedule 202 and the validation 4xx
         # survive the queue round trip instead of collapsing to 200 at the REST surface.
@@ -183,8 +183,8 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         status_code, agent_response = cls._get_chat_service().process_chat_request(req=body, requests=body.requests)
         cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)
         cls._log.info(f"Chat service response: '{agent_response}' with status_code: {status_code}")
-        cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes, status_code=status_code)
         cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_ENQUEUED, request_id)
+        cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes, status_code=status_code)
         cls._log.info(f"Sent Response message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
 
     @classmethod
@@ -344,11 +344,11 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         if IntegrationDelivery.integration_of(SQSHandler.get_message_custom_attributes(record)):
             # A platform has no streaming consumer: one reply (pipeline parity, pipeline/agent_runner.py).
             return ServerlessAgentRunner.process_message(record)
-        cls._log.info(f"Processing stream message: {record}")
         body = cls._parse_body(record)
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
         request_id = record_attributes["request_id"]
         cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_RECEIVED, request_id)
+        cls._log.info(f"Processing stream message: {record}")
         # Included in the dedup suffix below so a retry's chunks never collide with a prior attempt's.
         receive_count = record.get("attributes", {}).get("ApproximateReceiveCount", "1")
 

@@ -434,7 +434,7 @@ def _trace_lines(caplog) -> dict[str, list[TraceLine]]:
 
 
 def _await_deliveries(caplog, count: int) -> None:
-    """Wait for the Response Handler's and runner's threads: both trace after the client can already read the reply."""
+    """Wait for the Response Handler's and runner's threads: they can still be tracing once the client has the reply."""
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
         traced = [record.args[0] for record in caplog.records if record.levelno == TRACE]
@@ -471,6 +471,27 @@ class TestTraceStages:
         ]
         assert [line.stage for line in lines["ak.pipeline.response_handler"]] == [TraceStage.OUTPUT_RECEIVED, TraceStage.RESPONSE_DELIVERED]
         assert len({line.request_id for group in lines.values() for line in group}) == 1
+        # Each stage is traced before the work it names, so across components they are written in request order.
+        # RESPONSE_POLL_START is left out: the edge starts polling while the runner works, in either order.
+        written = [record.args[0] for record in caplog.records if record.levelno == TRACE and record.args[0] != TraceStage.RESPONSE_POLL_START]
+        assert written == [
+            TraceStage.REQUEST_RECEIVED,
+            TraceStage.INPUT_ENQUEUED,
+            TraceStage.AGENT_RECEIVED,
+            TraceStage.AGENT_START,
+            TraceStage.AGENT_DONE,
+            TraceStage.OUTPUT_ENQUEUED,
+            TraceStage.OUTPUT_RECEIVED,
+            TraceStage.RESPONSE_DELIVERED,
+            TraceStage.RESPONSE_FOUND,
+        ]
+
+    def test_request_received_before_validation(self, monkeypatch, caplog):
+        _configure(monkeypatch, mode="rest_sync")
+        with caplog.at_level(TRACE, logger="ak"):
+            assert _client().post(CHAT, json={"prompt": "hello", "agent": AGENT_NAME}).status_code == 400
+
+        assert [record.args[0] for record in caplog.records if record.levelno == TRACE] == [TraceStage.REQUEST_RECEIVED]
 
     def test_delta_sse(self, monkeypatch, dummy_agent, workers, caplog):
         _configure(monkeypatch, mode="rest_sync", message_type="delta")

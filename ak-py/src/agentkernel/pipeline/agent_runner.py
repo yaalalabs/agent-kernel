@@ -80,8 +80,8 @@ class AgentRunner:
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, request_id)
         status_code, agent_response = self._chat_service.process_chat_request(req=body, requests=body.requests)
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)
-        self._send_to_output(message, agent_response, status_code)
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_ENQUEUED, request_id)
+        self._send_to_output(message, agent_response, status_code)
 
         media_type = agent_response.get("media_type") if isinstance(agent_response, dict) else None
         self._record_thread_reply(message, body, status_code, self._reply_to_record(agent_response, body.session_id), media_type)

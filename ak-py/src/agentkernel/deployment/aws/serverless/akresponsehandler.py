@@ -138,12 +138,11 @@ class ResponseHandler(LambdaSQSConsumer):
         :return: None
         :raises Exception: When a platform delivery fails, so the record is retried
         """
-        cls._log.info(f"Processing message: {record}")
-
         message_attributes = SQSHandler.get_message_custom_attributes(record)
         request_id = message_attributes.get("request_id")
         # Delta sends one output message per chunk, so this fires per chunk (#911 Q1).
         cls._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_RECEIVED, request_id)
+        cls._log.info(f"Processing message: {record}")
         integration = IntegrationDelivery.integration_of(message_attributes)
         if integration:
             # IntegrationDelivery traces RESPONSE_DELIVERED itself.

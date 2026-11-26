@@ -332,6 +332,9 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         raw_body = await request.body()
         payload = json.loads(raw_body) if raw_body else {}
         message = BaseRequest.from_payload(payload) if is_chat_request else payload
+        if is_chat_request:
+            # As soon as the frame names its request_id: before the principal lookup and validation.
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, message.request_id)
 
         principal = await self._offload(self.get_websocket_handler().get_principal, connection_id)
         if principal is None:
@@ -350,9 +353,9 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
     async def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: str | None, session_id: str, endpoint_url: str) -> JSONResponse:
         """Queue mode: send to the input queue; the shared ResponseHandler pushes the reply."""
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_RECEIVED, request_id)
         self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
 
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
         await self._offload(
             SQSHandler.send_message_to_input_queue,
             message_body=body.model_dump(),
@@ -363,7 +366,6 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
                 SQSHandler.CustomAttribute(name="endpoint_url", value=endpoint_url, datatype=SQSHandler.AttributeDataType.STRING)
             ],
         )
-        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
 
         response = self._body("Request queued successfully", success=True, user_id=user_id)
         response["request_id"] = request_id
