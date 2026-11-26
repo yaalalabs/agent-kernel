@@ -1,0 +1,666 @@
+/* Authentication and authorization flow. Every node is visible without script: there is no entrance effect.
+   The visual language is the sandbox diagram's (SandboxFlowDiagram), so the two closer looks read as a pair. */
+
+.panel {
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.2);
+  border-radius: var(--ak-radius-card);
+  background: rgba(var(--ak-bg-rgb), 0.52);
+  overflow: hidden;
+  transition: border-color 300ms ease;
+}
+
+.panel:hover {
+  border-color: rgba(var(--ak-fg-rgb), 0.35);
+}
+
+.scrollHint {
+  display: none;
+  margin: 0;
+  padding: 0.625rem 1rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(var(--ak-fg-rgb), 0.45);
+  border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.1);
+}
+
+.wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-color: rgba(var(--ak-fg-rgb), 0.25) transparent;
+  padding: 2rem 1.5rem 1.75rem;
+}
+
+.diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 64rem;
+  max-width: 76rem;
+  margin: 0 auto;
+}
+
+/* ── Text ──────────────────────────────────────────────────────────────── */
+
+.nodeTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ak-fg);
+  line-height: 1.25;
+}
+
+.nodeSub {
+  margin: 0.3rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: rgba(var(--ak-fg-rgb), 0.55);
+}
+
+/* ── Connectors ────────────────────────────────────────────────────────── */
+
+.stem {
+  width: 1px;
+  height: 1.6rem;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(var(--ak-blue-rgb), 0.5), rgba(var(--ak-blue-rgb), 0.25));
+}
+
+/* ── Phase dividers ────────────────────────────────────────────────────── */
+
+.phase {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 52rem;
+}
+
+.phaseRule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: rgba(var(--ak-fg-rgb), 0.14);
+}
+
+.phaseLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.phaseNumber {
+  font-family: var(--ifm-font-family-monospace, monospace);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ak-blue);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.45);
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  line-height: 1.5;
+}
+
+.phaseTitle {
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ak-fg);
+}
+
+.phaseSub {
+  font-size: 0.875rem;
+  color: rgba(var(--ak-fg-rgb), 0.55);
+}
+
+/* ── Stacked cards (one card in front, ghost copies behind) ────────────── */
+
+.stack {
+  position: relative;
+  z-index: 0;
+  text-align: center;
+}
+
+.stack::before,
+.stack::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--ak-radius-card);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.18);
+  background: rgba(var(--ak-bg-rgb), 0.9);
+  z-index: -1;
+}
+
+.stack::before {
+  transform: translate(6px, 6px);
+}
+
+.stack::after {
+  transform: translate(12px, 12px);
+  border-color: rgba(var(--ak-fg-rgb), 0.1);
+}
+
+.stackFront {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: var(--ak-radius-card);
+  background: var(--ak-bg-alt);
+}
+
+.callerStack,
+.runStack {
+  margin-right: 12px;
+}
+
+.callerNode,
+.runNode {
+  max-width: 28rem;
+  padding: 0.9rem 1.5rem 1rem;
+  gap: 0.35rem;
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.3);
+}
+
+.callerChip {
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(var(--ak-blue-rgb), 0.9);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.35);
+  border-radius: 4px;
+  padding: 0.1rem 0.45rem;
+  line-height: 1.5;
+  margin-top: 0.15rem;
+}
+
+/* ── Plain nodes ───────────────────────────────────────────────────────── */
+
+.chipNode {
+  max-width: 44rem;
+  padding: 0.6rem 1.25rem 0.7rem;
+  text-align: center;
+  border-radius: var(--ak-radius-control);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.35);
+  background: rgba(var(--ak-blue-rgb), 0.06);
+}
+
+.chipNode > .nodeTitle {
+  color: var(--ak-blue);
+}
+
+.providerNode {
+  flex: 0 0 auto;
+  min-width: 20rem;
+  padding: 0.85rem 1.5rem 0.9rem;
+  text-align: center;
+  border-radius: var(--ak-radius-card);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.5);
+  background: rgba(var(--ak-blue-rgb), 0.08);
+}
+
+.principalNode {
+  flex: 0 0 auto;
+  padding: 0.55rem 1.25rem 0.6rem;
+  text-align: center;
+  border-radius: var(--ak-radius-control);
+  border: 1px dashed rgba(var(--ak-blue-rgb), 0.45);
+  background: rgba(var(--ak-bg-rgb), 0.8);
+}
+
+.principalNode > .nodeTitle {
+  font-family: var(--ifm-font-family-monospace, monospace);
+  font-size: 0.875rem;
+}
+
+/* ── A centred node with nodes hanging off either side ─────────────────── */
+
+.sideRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.5rem;
+  width: 100%;
+}
+
+.side {
+  position: relative;
+  flex: 0 0 15rem;
+  min-width: 0;
+  padding: 0.65rem 1rem;
+  text-align: center;
+  border-radius: var(--ak-radius-control);
+}
+
+.spacer {
+  visibility: hidden;
+  padding: 0;
+}
+
+/* the line from a side node to the centred one */
+.sideLeft::after,
+.sideRight::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 2.5rem;
+  height: 1px;
+  background: rgba(var(--ak-blue-rgb), 0.4);
+}
+
+.sideLeft::after {
+  left: 100%;
+}
+
+.sideRight::before {
+  right: 100%;
+}
+
+.helperNode {
+  border: 1px solid rgba(var(--ak-sky-rgb), 0.5);
+  background: rgba(var(--ak-sky-rgb), 0.08);
+}
+
+.helperNode > .nodeTitle {
+  font-size: 0.875rem;
+  color: var(--ak-sky);
+}
+
+.noteNode {
+  border: 1px dashed rgba(var(--ak-fg-rgb), 0.25);
+}
+
+.noteNode > .nodeTitle {
+  font-size: 0.875rem;
+}
+
+.refusalNode {
+  border: 1px dashed rgba(var(--ak-fg-rgb), 0.3);
+  background: rgba(var(--ak-fg-rgb), 0.03);
+}
+
+.refusalNode > .nodeTitle {
+  font-family: var(--ifm-font-family-monospace, monospace);
+  font-size: 0.875rem;
+  color: rgba(var(--ak-fg-rgb), 0.75);
+}
+
+/* ── The access gate: the one orange element ───────────────────────────── */
+
+.gateNode {
+  flex: 0 0 auto;
+  min-width: 20rem;
+  padding: 1rem 2rem 1.05rem;
+  text-align: center;
+  border-radius: var(--ak-radius-card);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.55);
+  background: rgba(var(--ak-blue-rgb), 0.1);
+}
+
+.gateRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+}
+
+.gateLogo {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+}
+
+.gateText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.gateEyebrow {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ak-primary-text);
+  line-height: 1.4;
+}
+
+.gateTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ak-fg);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.gateNode > .nodeSub {
+  margin-top: 0.45rem;
+}
+
+/* ── The two places the gate answers ───────────────────────────────────── */
+
+.lanesRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  max-width: 52rem;
+}
+
+/* bottom bus joining the two lanes before the single stem continues */
+.lanesRow::after {
+  content: "";
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  bottom: 0;
+  height: 1px;
+  background: rgba(var(--ak-blue-rgb), 0.3);
+}
+
+.laneCol {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.6rem 0.75rem 0;
+}
+
+/* top bus from the gate's stem */
+.laneCol::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(var(--ak-blue-rgb), 0.3);
+}
+
+.laneCol:first-child::before {
+  left: 50%;
+}
+
+.laneCol:last-child::before {
+  right: 50%;
+}
+
+/* drop from the top bus to the lane card */
+.laneCol::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 1.6rem;
+  background: rgba(var(--ak-blue-rgb), 0.4);
+}
+
+.laneNode {
+  width: 100%;
+  max-width: 24rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.7rem 0.9rem 0.85rem;
+  text-align: center;
+  border-radius: var(--ak-radius-control);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.4);
+  background: rgba(var(--ak-blue-rgb), 0.05);
+}
+
+.laneEyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(var(--ak-fg-rgb), 0.5);
+  line-height: 1.4;
+}
+
+.laneDrop {
+  flex: 1 1 auto;
+  min-height: 1.4rem;
+  width: 1px;
+  background: rgba(var(--ak-blue-rgb), 0.35);
+}
+
+.outcomes {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.outcome,
+.chainBox {
+  font-family: var(--ifm-font-family-monospace, monospace);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  line-height: 1.5;
+}
+
+.outcome {
+  color: rgba(var(--ak-fg-rgb), 0.7);
+  border: 1px dashed rgba(var(--ak-fg-rgb), 0.3);
+}
+
+.chain {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.chainBox {
+  color: rgba(var(--ak-fg-rgb), 0.85);
+  border: 1px solid rgba(var(--ak-blue-rgb), 0.4);
+}
+
+.chainLink {
+  position: relative;
+  width: 1.4rem;
+  height: 1px;
+  flex-shrink: 0;
+  background: rgba(var(--ak-blue-rgb), 0.55);
+}
+
+/* arrowhead on the receiving end */
+.chainLink::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -1px;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  border-left: 5px solid rgba(var(--ak-blue-rgb), 0.8);
+}
+
+/* ── What a tool call comes to ─────────────────────────────────────────── */
+
+.resultsRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  max-width: 40rem;
+  margin-top: 1.6rem;
+}
+
+.resultCol {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.6rem 0.75rem 0;
+}
+
+.resultCol::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(var(--ak-blue-rgb), 0.3);
+}
+
+.resultCol:first-child::before {
+  left: 50%;
+}
+
+.resultCol:last-child::before {
+  right: 50%;
+}
+
+.resultCol::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 1.6rem;
+  background: rgba(var(--ak-blue-rgb), 0.4);
+}
+
+/* the stem from the tool gate down to the bus above the two results */
+.resultsRow::before {
+  content: "";
+  position: absolute;
+  top: -1.6rem;
+  left: 50%;
+  width: 1px;
+  height: 1.6rem;
+  background: rgba(var(--ak-blue-rgb), 0.4);
+}
+
+.resultNode {
+  width: 100%;
+  max-width: 17rem;
+  padding: 0.6rem 0.9rem 0.7rem;
+  text-align: center;
+  border-radius: var(--ak-radius-control);
+  border: 1px solid rgba(var(--ak-fg-rgb), 0.25);
+  background: var(--ak-bg-alt);
+}
+
+.resultDenied {
+  border-style: dashed;
+}
+
+.resultEyebrow {
+  margin: 0 0 0.2rem;
+  font-family: var(--ifm-font-family-monospace, monospace);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgba(var(--ak-fg-rgb), 0.6);
+}
+
+/* ── Footer strip ──────────────────────────────────────────────────────── */
+
+.footer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid rgba(var(--ak-fg-rgb), 0.1);
+}
+
+.footerCard {
+  padding: 1rem 1.125rem 1.125rem;
+  border-right: 1px solid rgba(var(--ak-fg-rgb), 0.08);
+  transition: background-color 250ms ease;
+}
+
+.footerCard:hover {
+  background: rgba(var(--ak-fg-rgb), 0.03);
+}
+
+.footerCard:last-child {
+  border-right: none;
+}
+
+.footerTitle {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ak-fg);
+}
+
+.footerDesc {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: rgba(var(--ak-fg-rgb), 0.65);
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+
+@media (max-width: 996px) {
+  .scrollHint {
+    display: block;
+  }
+
+  .footer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footerCard:nth-child(2) {
+    border-right: none;
+  }
+
+  .footerCard:nth-child(1),
+  .footerCard:nth-child(2) {
+    border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
+  }
+}
+
+@media (max-width: 576px) {
+  .wrap {
+    padding: 1.25rem 1rem 1rem;
+  }
+
+  .footer {
+    grid-template-columns: 1fr;
+  }
+
+  .footerCard {
+    border-right: none;
+    border-bottom: 1px solid rgba(var(--ak-fg-rgb), 0.08);
+  }
+
+  .footerCard:last-child {
+    border-bottom: none;
+  }
+}
+
+/* Print: the page is narrower than the diagram and cannot scroll, so drop the minimum width and the
+   clipping and scale the flow down to fit; every node stays on the page. */
+@media print {
+  .panel,
+  .wrap {
+    overflow: visible;
+  }
+
+  .diagram {
+    min-width: 0;
+    zoom: 0.66;
+  }
+
+  .scrollHint {
+    display: none;
+  }
+}

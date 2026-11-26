@@ -1,0 +1,1 @@
+`Test.compare()` and `Test.expect()` take an optional `criteria` argument: a plain-language rubric for the LLM judge that replaces the default one, so a test can pin the part of a free-form reply that matters and accept the rest.

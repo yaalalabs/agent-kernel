@@ -22,7 +22,10 @@ from google.adk.events import Event, EventActions
 from google.adk.flows.llm_flows.functions import REQUEST_CONFIRMATION_FUNCTION_CALL_NAME
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService, State
-from google.adk.tools import FunctionTool, ToolContext
+from google.adk.tools import BaseTool, FunctionTool, ToolContext
+from google.adk.tools.agent_tool import AgentTool
+from google.adk.tools.set_model_response_tool import SetModelResponseTool
+from google.adk.tools.transfer_to_agent_tool import TransferToAgentTool
 from google.adk.workflow import Workflow
 from google.genai import types
 from pydantic import ValidationError
@@ -46,6 +49,7 @@ from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
+from ...core import ToolGate
 from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
@@ -66,6 +70,13 @@ from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
 from ...realtime.base import RealtimeRunner as BaseRealtimeRunner
 from ...trace import Trace
+
+try:  # the tool an agent in task mode ends its task with; ADK keeps it in a private module
+    from google.adk.agents.llm.task._finish_task_tool import FinishTaskTool
+
+    _TASK_TOOLS: tuple[type, ...] = (FinishTaskTool,)
+except ImportError:  # pragma: no cover: an ADK without task mode
+    _TASK_TOOLS = ()
 
 FRAMEWORK = "adk"
 
@@ -1111,6 +1122,92 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await runner.session_service.flush()
 
 
+class GoogleADKToolGate:
+    """
+    Puts the tool decision of a run on the agents of a Google ADK agent tree (#603).
+
+    ADK asks an agent's `before_tool_callback` before it runs a function the model called, and a callback that
+    answers with a dict has answered the call: the tool is not run and the dict is what the model receives.
+    `before_tool` is that callback. It answers a call to a tool the run's ToolFilter does not allow with
+    `{"error": <reason>}`, and it goes first, ahead of the application's own callbacks, which are kept and never
+    see a call it refused. ADK has no hook for what a turn offers (the tool list is static on an `LlmAgent`), so
+    a denied tool is still shown to the model.
+
+    A run's filter is that of the root it started with, while the call may be made by any `LlmAgent` under it:
+    a sub-agent the model transferred to, a node of a workflow, an agent used as a tool. `agents` walks them
+    all, so each carries the callback and their tools are declared under the root. The callback finds the run
+    by the tool context id the runner seeds into the ADK session state, which an agent used as a tool inherits.
+
+    Left alone: the tools ADK adds itself, the transfer to another agent, the structured response and the end of
+    a task (an agent in task mode), which are how a run moves or ends and not tools the application declared.
+    Not reached: a tool the model provider runs (Google Search, code execution), for which ADK calls no callback.
+    """
+
+    OWN_TOOLS: ClassVar[tuple[type, ...]] = (TransferToAgentTool, SetModelResponseTool, *_TASK_TOOLS)
+    """
+    The tools ADK adds on its own; no filter lists them, the gate does not refuse them and no agent declares them
+    """
+
+    @classmethod
+    def agents(cls, root: Any) -> list[LlmAgent]:
+        """
+        Returns every `LlmAgent` a run of `root` can have call a tool.
+        :param root: The native root: an agent, or a `Workflow`.
+        :return: The root when it is an `LlmAgent`, then the agents it uses as tools, the nodes of a workflow
+            (one nested in another included) and each level of `sub_agents`, nearest first and each once.
+        """
+        found: list[LlmAgent] = []
+        seen: set[int] = set()
+        pending = [root]
+        while pending:
+            node = pending.pop(0)
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
+            if isinstance(node, LlmAgent):
+                found.append(node)
+                pending.extend(tool.agent for tool in node.tools if isinstance(tool, AgentTool))
+            pending.extend(getattr(getattr(node, "graph", None), "nodes", None) or [])
+            pending.extend(getattr(node, "sub_agents", None) or [])
+        return found
+
+    @classmethod
+    def install(cls, root: Any) -> None:
+        """
+        Puts the gate first among the `before_tool_callback`s of every agent a run of `root` can reach. An agent
+        that carries it already is left alone, and the callbacks the application set are kept behind it.
+        :param root: The native root: an agent, or a `Workflow`.
+        """
+        for agent in cls.agents(root):
+            existing = agent.canonical_before_tool_callbacks
+            if cls.before_tool not in existing:
+                agent.before_tool_callback = [cls.before_tool, *existing]
+
+    @staticmethod
+    def before_tool(tool: BaseTool, args: dict[str, Any], tool_context: ToolContext) -> dict[str, Any] | None:
+        """
+        The `before_tool_callback` ADK calls ahead of a function the model called.
+        :param tool: The tool about to run.
+        :param args: The arguments of the call.
+        :param tool_context: ADK's tool context, whose state names the Agent Kernel run.
+        :return: `{"error": <reason>}` to answer the call without running the tool, or None to let it run.
+        """
+        if isinstance(tool, GoogleADKToolGate.OWN_TOOLS):
+            return None
+        state = getattr(tool_context, "state", None)
+        context_id = state.get("ak_tool_context") if state else None
+        if not context_id:
+            # No run of ours: the application is running its agent itself.
+            return None
+        try:
+            session = AKToolContext.fetch(context_id).session
+        except Exception as error:
+            # The state names a run whose filter cannot be read: no reason to run the tool.
+            return {"error": f"{ToolGate.FAILED}: {type(error).__name__}"}
+        reason = ToolGate.refusal(tool.name, session)
+        return {"error": reason} if reason is not None else None
+
+
 class GoogleADKAgent(AKBaseAgent):
     """
     GoogleADKAgent class provides an agent wrapping for Google ADK Agent SDK based agents.
@@ -1148,6 +1245,9 @@ class GoogleADKAgent(AKBaseAgent):
         else:
             self._attach_system_tools()
             self._setup_system_prompt()
+        # Only with an `authorization` block: without it the native agents keep the callbacks they were built with.
+        if Runtime.access_gate() is not None:
+            GoogleADKToolGate.install(agent)
 
     def _attach_workflow_system_tools(self, workflow: Workflow) -> None:
         """
@@ -1210,10 +1310,14 @@ class GoogleADKAgent(AKBaseAgent):
 
     def get_tool_names(self) -> list[str]:
         """
-        Returns the names of the tools of every `LlmAgent` reachable from the root, the root's first, each once.
+        Returns the names of the tools of every `LlmAgent` a run can reach from the root, the root's first, each
+        once: the agents it uses as tools, the nodes of a workflow (one nested in another included) and each
+        level of `sub_agents`. A run's tool filter is the root's whichever of them makes a call, so a policy for
+        this agent names their tools too. Each tool is reported under the name ADK serves it by.
 
-        Not reported: a toolset's tools (an MCP toolset lists them only inside a run), the agents of a `Workflow`
-        nested in another, and a callable object that has neither a `name` nor a function name.
+        Not reported: a toolset's tools (an MCP toolset lists them only inside a run). With an `authorization`
+        block the gate still sees a call to one, and because no policy could have offered a tool the agent does
+        not declare, the call is refused.
         """
         return list(self._named_tools())
 
@@ -1221,34 +1325,58 @@ class GoogleADKAgent(AKBaseAgent):
         """
         Returns the description of each reachable tool by name: a tool object's own, a plain function's docstring.
         """
-        # The docstring only for a function: asked of a tool object, getdoc answers with its class's.
-        return {
-            name: getattr(tool, "description", None) or (inspect.getdoc(tool) if inspect.isroutine(tool) else None) or ""
-            for name, tool in self._named_tools().items()
-        }
+        return {name: getattr(tool, "description", None) or "" for name, tool in self._named_tools().items()}
 
     def _named_tools(self) -> dict[str, Any]:
         """
-        Returns the tools of every `LlmAgent` reachable from the root, by name: the root itself or a workflow's
-        nodes, then each level of `sub_agents`. A tool object is named by its `name`, a plain callable by its
-        function name, as ADK names them; a toolset, which lists its tools only inside a run, has no name here and
-        is left out.
+        Returns the tools of every `LlmAgent` a run can reach from the root (`GoogleADKToolGate.agents`), by the
+        name ADK serves each under; a name two agents share is kept once. A tool object is its own; a bare
+        callable is the `FunctionTool` ADK would wrap it in, which is where its name and description come from.
         """
         found: dict[str, Any] = {}
-        seen: set[int] = set()
-        pending = GoogleADKRealtimeRunner._workflow_nodes(self._agent) if isinstance(self._agent, Workflow) else [self._agent]
-        while pending:
-            node = pending.pop(0)
-            if id(node) in seen:
-                continue
-            seen.add(id(node))
-            if isinstance(node, LlmAgent):
-                for tool in node.tools:
-                    name = self._native_tool_name(tool)
-                    if name:
-                        found.setdefault(name, tool)
-            pending.extend(getattr(node, "sub_agents", None) or [])
+        for agent in GoogleADKToolGate.agents(self._agent):
+            for tool in agent.tools:
+                served = self._served_tool(tool)
+                if served is not None and not isinstance(served, GoogleADKToolGate.OWN_TOOLS):
+                    found.setdefault(served.name, served)
         return found
+
+    def provider_tool_names(self) -> list[str]:
+        """
+        Returns the model's built-in tools a run can reach (`google_search`, `url_context` and the like). They
+        carry no function declaration: the model runs them itself, and ADK calls no `before_tool_callback`.
+        """
+        return [name for name, tool in self._named_tools().items() if not self._declares_a_function(tool)]
+
+    @staticmethod
+    def _declares_a_function(tool: BaseTool) -> bool:
+        """Whether ADK declares a tool to the model as a function it calls back, which is what a callback sees."""
+        try:
+            return tool._get_declaration() is not None
+        except Exception:
+            # A tool that cannot build its declaration here is still one the application bound, not a built-in.
+            return True
+
+    @staticmethod
+    def _served_tool(tool: Any) -> BaseTool | None:
+        """
+        Returns one entry of an agent's `tools` as the tool ADK serves.
+
+        ADK names a bare callable itself when it wraps it (`FunctionTool`): a function by its name, a callable
+        object by its class, a `functools.partial` as `partial`. Building the same wrapper here keeps the
+        reported name the one the model calls.
+        :param tool: A tool object, a bare callable, or a toolset.
+        :return: The tool, or None for a toolset (it lists its tools only inside a run) and for a callable ADK
+            cannot wrap.
+        """
+        if isinstance(tool, BaseTool):
+            return tool
+        if not callable(tool):
+            return None
+        try:
+            return FunctionTool(func=tool)
+        except Exception:
+            return None
 
 
 class GoogleADKModule(Module):

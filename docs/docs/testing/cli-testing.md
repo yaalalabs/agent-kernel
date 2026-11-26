@@ -152,6 +152,24 @@ Test.compare(
 against each expected value first. If all fail, llm evaluation is attempted against each expected
 answer.
 
+### Judging Part of a Free-Form Reply
+
+An agent often adds wording you cannot predict, such as a follow-up question. Pass `criteria`, a
+plain-language rubric for the llm judge, to say which part of the reply must hold and what to
+accept. It replaces the default rubric in `llm` and `fallback` modes and is ignored in `score`
+mode. `Test.expect()` takes it too.
+
+```python
+await test.send("I was extremely happy")
+Test.compare(
+    actual=test.last_agent_response,
+    expected=["That's great to hear!"],
+    user_input="I was extremely happy",
+    criteria="The reply must warmly acknowledge that the customer was happy. "
+             "Any follow-up question is acceptable and must not be penalized.",
+)
+```
+
 ### Configuration-Based Mode
 
 Set default mode via a `test-config.yaml` file (in the directory the tests run from, or the path in `AK_TEST_CONFIG_PATH_OVERRIDE`) instead of the constructor. Test configuration is separate from the application's `config.yaml` and is only loaded when the test harness runs:
@@ -322,7 +340,7 @@ async def test_cricket_knowledge():
         await test.expect(["Sri Lanka won the 1996 cricket world cup."])
         
         # Test follow-up question with multiple acceptable answers
-        await test.send("Which country hosted the tournament?")
+        await test.send("Which countries hosted the tournament?")
         await test.expect([
             "Co-hosted by India, Pakistan and Sri Lanka.",
             "India, Pakistan and Sri Lanka co-hosted the tournament."

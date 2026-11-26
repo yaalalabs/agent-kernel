@@ -55,10 +55,11 @@ class _Runner(Runner):
 class _Agent(Agent):
     """An agent reporting the tools it is built with, described by the fields it is given."""
 
-    def __init__(self, name: str, tools=(), ungated=(), runner: str = "stub", **described):
+    def __init__(self, name: str, tools=(), ungated=(), runner: str = "stub", provider_run=(), **described):
         super().__init__(name, _Runner(runner))
         self._tools = list(tools)
         self._ungated = list(ungated)
+        self._provider_run = list(provider_run)
         if described:
             self._set_descriptor(self.descriptor.model_copy(update=described))
 
@@ -67,6 +68,9 @@ class _Agent(Agent):
 
     def ungated_tool_names(self) -> list[str]:
         return list(self._ungated)
+
+    def provider_tool_names(self) -> list[str]:
+        return list(self._provider_run)
 
     def get_description(self) -> str:
         return "the agent's instructions"
@@ -589,6 +593,29 @@ class TestValidateConfiguration:
         assert str(refused.value) == (
             "authorization is configured but agent 'graph' on langgraph has tools Agent Kernel cannot gate: ['browse', 'native_search']"
         )
+
+    def test_tools_the_provider_runs_are_warned_about_once_and_not_refused(self, runtime, caplog):
+        # The design's Q12: a framework's hosted or built-in tools are run where no gate reaches, and no
+        # deployment can rebind them, so they are reported and the agent still loads.
+        runtime.register(_Agent("researcher", tools=["lookup", "web_search"], runner="openai", provider_run=["web_search", "file_search"]))
+        gate = _gate()
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            gate.validate_configuration(runtime.agents().values(), registry_wide=False)
+            gate.validate_configuration(runtime.agents().values(), registry_wide=False)
+
+        assert _warnings(caplog) == [
+            "agent 'researcher' on openai has tools its model provider or framework runs itself, which the authorization tool "
+            "policy does not reach: ['file_search', 'web_search']"
+        ]
+
+    def test_an_agent_with_no_such_tool_is_not_warned_about(self, runtime, caplog):
+        runtime.register(_Agent("plain", tools=["lookup"]))
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            _gate().validate_configuration(runtime.agents().values(), registry_wide=False)
+
+        assert _warnings(caplog) == []
 
     def test_a_grant_naming_an_agent_or_a_tag_nothing_carries_is_warned_about(self, runtime, caplog):
         gate = _gate(

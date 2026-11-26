@@ -1749,9 +1749,28 @@ Tell the user what changes once the block exists:
   caller through `provider:realtime:livekit`, a caller with no credential (and a CLI run without
   `--token`) through `*`.
 - The tool policy is published for each run (`ToolContext.get().access_level`) and narrows the tools
-  and skills the listings show. It does not stop a tool call yet, so do not rely on `deny` or `tiers`
-  alone to keep a caller away from a tool: check `access_level` inside the tool, or do not grant the
-  agent.
+  and skills the listings show. A call to a denied tool is not run on any supported framework or
+  realtime call, and is answered with the reason, except on an OpenAI Agents SDK realtime call, which answers `Tool <name> not found`;
+  on the OpenAI Agents SDK, Pydantic AI, the Claude Agent SDK and Microsoft Agent Framework the tool is also hidden from the model. Tools the model provider runs (hosted and built-in tools)
+  are not gated and are logged at startup.
+- Under the block a LangGraph agent must bind its tools with `LangGraphToolBuilder.bind`, a
+  smolagents code agent must use the local executor, and an OpenAI Agents SDK agent must bind tools
+  that run in the process (a local `ShellTool`, `LocalShellTool`, `ApplyPatchTool`, `ComputerTool`,
+  `CustomTool`) as function tools; otherwise the agent does not load.
+- On LangGraph the gate covers the calls a `ToolNode` makes and every tool bound with
+  `LangGraphToolBuilder.bind`, however it is called. A graph node that calls an unbound tool or a
+  plain function itself is your own code: neither the gate nor the startup check sees it, so ask
+  `ToolContext.get().session.get_tool_filter()` there (`allows(name)`, `reason(name)`), or call the
+  bound tool instead.
+- A run keeps the policy of the agent it started with, so state the tiers of the tools it can reach
+  (a handoff target's, a sub-agent's, a CrewAI coworker's) in that agent's policy.
+- The policy covers the tools an agent declares when it loads. Tools that exist only inside a run (an
+  MCP server's) are left out of, or refused in, a run under the block on Pydantic AI, Microsoft Agent
+  Framework and Google ADK; an OpenAI Agents SDK agent with `mcp_servers`, or with a handoff that does
+  not hold its agent (`realtime_handoff(...)`), does not load while it is configured. A Claude Agent
+  SDK agent is the exception: the block gates only the tools OAK serves it, so the tools of its other
+  `mcp_servers`, like Claude Code's built-in tools, are outside the gate. They are logged at startup;
+  restrict them with the SDK's own permission settings (`allowed_tools`, `disallowed_tools`).
 - Put the same block in the configuration of every process (the one that accepts requests and the
   one that runs agents).
 
