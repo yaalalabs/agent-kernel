@@ -830,9 +830,6 @@ credential of a static provider reaches that process as an environment variable 
   routes receive `{"message": ..., "principal": ...}`. With `identity.credentials` in WebSocket mode,
   use a shared store, which the service requires: a frame can reach a task other than the one that took
   the handshake, as it does during every rolling deploy.
-- **Azure Functions** ([guide](../deployment/azure-serverless.md)): `AzureFunctions.handler`
-  authenticates the bearer header before parsing the request and answers a refused credential with
-  `401` and `{"error": ..., "session_id": null}`.
 - **Kubernetes** ([guide](../deployment/onprem-kubernetes.md)): the io handler and the WebSocket
   gateway build the provider, so a static credential reaches them through the chart's per-tier
   `ioHandler.extraEnv` and `wsGateway.extraEnv` from a Secret, which keeps it off the agent runner;

@@ -1967,7 +1967,9 @@ is.
   `HTTPException` the design named belongs to the FastAPI dependency), then assigns the principal to
   the body; without a header or an `identity` block the request runs anonymously. The path, not
   the URL, is also what a refusal logs (PR #937 review follow-up): under `authLevel: function` the
-  query string can carry the function key (`?code=`).
+  query string can carry the function key (`?code=`). As built (iteration 27): `develop` removed
+  Azure Functions support, `AzureFunctions.handler` with it (#984, 2026-11-19), so this handler
+  and its cases are gone and the identity page no longer documents it.
 
 #### 8.10 Threads (`integration/thread/`)
 
@@ -2489,7 +2491,7 @@ Each is intentional; the justification is design section 10 unless stated.
     dependency: every `WebhookRESTRequestHandler`, and in single-process async mode the co-hosted
     `PipelineWebSocketHandler` and `PushEndpointHandler` (section 8.2).
 22. `AzureFunctions.handler` answers a refused credential with 401; the base had no
-    authentication on that path.
+    authentication on that path. (Moot since `develop` removed Azure Functions support, #984.)
 23. With no `identity` block an `Authorization` header is ignored without being parsed, so a
     malformed or non-bearer one runs anonymous too.
 24. `AWSWebsocketAPI.get_default_handlers()` raises `AKConfigError` without an identity block,

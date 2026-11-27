@@ -1606,6 +1606,22 @@ re-verify the rest.
   pattern and a dot matches only a dot) returns only the Gmail API's `userId="me"` and the
   sentences that say the three lists and `get_a2a_card` were removed; `docs/versioned_docs/`
   is frozen and is not searched. The docs site builds (`NODE_ENV=production`, 6 GB heap).
+- **As built (2026-11-27):** a re-verification, since every phase's docs landed with that phase. The
+  verify grep returns only Gmail's `userId="me"` and the sentences that say the names were removed;
+  every `user_id` left in the docs is a record's owner field, the connections table's key, ADK's
+  own run option or a session-id example. The identity page lists Auth0 as an `oidc` configuration
+  with its block spelled out, and `configuration.md`, `ak-py/README.md` and the root `README.md` name
+  it with the other providers; the page carries the migration note for threads and tasks recorded
+  before the change. `api/a2a-server.md` and `api/mcp-server.md` build a card and a tool from the
+  descriptor, show `Module.describe` and the per-id configuration, and say when the IO process needs
+  a restart. The Terraform is unchanged (the connections tables keep their `user_id` hash key, the
+  authorizer its `handler_path`). The per-framework tool gate table matches the code (MAF hides a
+  denied tool, which iteration 26 corrected in the spec). One change: the identity page's Azure
+  Functions bullet is gone, since `develop` removed `AzureFunctions.handler` (#984), and spec 8.9
+  and behavioural change 22 say so. The rest of the Azure Functions docs (its deployment page, the
+  overview and intro mentions, the examples list naming the removed examples, scheduling's "a 400
+  on Azure Functions") and the `ak-azure/serverless` Terraform module still standing are #957's
+  remaining iterations, not this issue's. No changelog fragment: nothing a user sees changed.
 
 ### Iteration 28: Skills
 
