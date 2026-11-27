@@ -1363,7 +1363,7 @@ class GoogleADKAgent(AKBaseAgent):
         Returns one entry of an agent's `tools` as the tool ADK serves.
 
         ADK names a bare callable itself when it wraps it (`FunctionTool`): a function by its name, a callable
-        object by its class, a `functools.partial` by the function it wraps (`partial` before google-adk 2.13).
+        object by its class, a `functools.partial` by the function it wraps (google-adk 2.13; 2.8 used `partial`).
         Building the same wrapper here keeps the reported name the one the model calls.
         :param tool: A tool object, a bare callable, or a toolset.
         :return: The tool, or None for a toolset (it lists its tools only inside a run) and for a callable ADK
