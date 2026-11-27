@@ -350,6 +350,7 @@ and `research/design-options.md` section 4).
   when a deployment requires one without touching the surfaces, the queue or the runners
   (settled, Q19). No exchange flow is implemented in this change; `passthrough` is the only
   built-in exchanger and exists so the seam is exercised end to end.
+  - Reopened 2026-11-27 (section 13.2, Q22): `rfc8693` ships in Phase H, on this seam unchanged.
 - `Principal.credential_ref` is minted by `RequestAuthenticator` when identity is configured: an
   opaque random id under which the surface stores the inbound credential in the `CredentialStore`
   with TTL `min(token exp, identity.credentials.inbound_ttl)`. `Runtime` deletes the entry in the
@@ -513,6 +514,8 @@ and `research/design-options.md` section 4).
   branches whose adapters subclass the contract suite when they land. Every backend is built from
   the block alone: a built-in one reads the section of the block named after it, a dotted path
   is handed the whole block (spec refinement 15).
+  - Replanned 2026-11-27 (section 13.1, Q21): `casbin`, `openfga` and `authzen` ship in Phase H;
+    `cedar` stays reserved. `authzen` needs the `auth` extra, which holds `httpx`.
 - `StaticAuthorizer` (`static`) evaluates the `grants` and `tools` of its own section of the
   block, `authorization.static` (its policy source, the shape `identity.provider.static` has;
   an engine backend has a section of its own and owns its policy; spec refinement 15):
@@ -1010,6 +1013,100 @@ registry:
   A2A with bearer tokens, the sandbox's default resolver, and Cognito, Entra ID and Firebase in
   their deployments. The features phases C to F add are outside its scope.
 
+### 13. Phase H, replanned (2026-11-27): engines, token exchange and examples
+
+- Phase H grows from identity examples into three parts: more authorizers (13.1), the first real
+  token exchanger (13.2), and examples for every identity provider, every authorizer and
+  downstream credentials (13.3). Azure Functions is gone from `develop` (#984), so the two
+  planned `azure-serverless` examples move or go.
+- Two branches, one PR each (Q23): Phase H is the code (13.1, 13.2), Phase I the examples
+  (13.3), which depend on it.
+
+### 13.1 Authorizer engines
+
+- `casbin`, `openfga` and `authzen` ship beside `static`; `cedar` stays a reserved name (Q21).
+  - `casbin`: in-process, a policy in files, CI with no service (Q11's first engine).
+  - `openfga`: relationship-based; lists the objects a user may reach natively, so it is the first
+    backend with `capabilities.lists_resources = True` and its own `visible_agents`.
+  - `authzen`: one HTTP client for the Authorization API 1.0 (an OpenID Final Specification since
+    January 2026), reaching any decision point that conforms to it.
+- Each one, the shape `static` set (`ak-dev-new-authorizer`):
+  - an `Authorizer` subclass in `identity/authz/<name>.py`, built by `from_config` from its own
+    section `authorization.<name>`; the section is required when `type` names it;
+  - a factory branch in place of its reserved name, its import behind `require_extra`, a lazy
+    export from `agentkernel.identity`;
+  - `AuthorizerContract` passing with the contract's policy loaded into the engine (casbin from
+    files; openfga and authzen against a fake of the service, never the network in unit tests).
+- One mapping from Open Agent Kernel's two questions to every engine, so a policy reads the same
+  across them:
+  - agent level: ask `admin`, `write`, `read` on resource `agent:<id>`, in that order; the first
+    allowed is the level, none allowed is `None` (the gate keeps deciding 404 against 403);
+  - tool call: ask `call` on `tool:<agent id>/<tool name>`; a refusal names the tool and the
+    engine, never another principal's access;
+  - subject: the principal in the static grammar's forms (`user:`, `group:`, `role:`,
+    `provider:`, `authenticated`, `*`); a messaging or realtime sender never matches `user:`,
+    the static rule;
+  - groups and roles come from the principal on each request and are never written into an
+    engine: openfga receives them as contextual tuples, authzen as subject properties, casbin
+    evaluates each of the principal's forms.
+- Configuration: one section per engine under the existing `authorization` block, no new block.
+  - `casbin`: `model` (path to a model file; a shipped default expresses the mapping above) and
+    `policy` (path to a policy file). Extra `casbin`.
+  - `openfga`: `api_url`, `store_id`, optional `authorization_model_id`, optional `api_token_key`
+    (a secret name, through the `secret` capability). Extra `openfga`; its synchronous client,
+    called off the event loop, since one authorizer serves more than one loop.
+  - `authzen`: `pdp_url`, optional `token_key` (a secret name), `timeout`. Extra `auth`, which
+    holds `httpx` (section 5's "no extra" for `authzen` is corrected here).
+- `validate`: `casbin` refuses a policy naming a tool its hosted agent lacks (the static rule);
+  `openfga` and `authzen` keep the default, since their policy lives in a service.
+- An engine that cannot answer raises, never approves: the run does not start, the tool is refused.
+
+### 13.2 Token exchange
+
+- `rfc8693` ships as the first exchanger beyond `passthrough` (Q22, reopening Q19): OAuth 2.0 Token
+  Exchange at the entry's `token_endpoint`, `subject_token` the run's inbound credential, `audience`
+  and `scope` from the entry and the tool's request. The broker's cache (section 3.1) serves
+  repeats unchanged.
+- The client credential is the agent's own: `client_id` and `client_secret_key` in the descriptor's
+  `identity` block, resolved through the `secret` capability (section 3.1, settled); an exchanger
+  entry may name a default client for an agent that declares none (Q24).
+- No `actor_token` in this version: Keycloak's standard exchange takes none, and the agent principal
+  stays the run's `actor`.
+- A refused exchange or an unreachable endpoint is a `CredentialError` carrying the endpoint's OAuth
+  `error` code, never a token.
+- `TokenExchangerContract` passing on a fake token endpoint. Extra `auth` (`httpx`). `entra_obo` and
+  `id_jag` stay reserved names.
+
+### 13.3 Examples
+
+- One per identity provider:
+  - `oidc`: `api/identity/oidc-keycloak` (a Keycloak container; Auth0 and Okta as documented
+    configurations of the same app);
+  - `static`: `api/identity/principal-in-tools` (also what most existing examples run on);
+  - bring-your-own: `api/identity/custom-provider`;
+  - `cognito`: `aws-serverless/openai-cognito`;
+  - `entra`: `azure-containerized/openai-entra`, on Azure Container Apps, in place of the removed
+    `azure-serverless/openai-entra`;
+  - `firebase`: `gcp-containerized/openai-firebase`;
+  - the GCP `openai-auth` examples gain the bring-your-own provider for `X-Forwarded-Authorization`,
+    as planned.
+- One per authorizer, each over the same small policy (two agents, two groups, one tiered tool) so
+  the four read side by side: `api/authorization/static`, `api/authorization/casbin` (no service),
+  `api/authorization/openfga` (an OpenFGA container; the test creates the store and model),
+  `api/authorization/authzen` (a decision point container that conforms to the API, Q25).
+- Downstream credentials, one example (`api/identity/token-exchange`):
+  - Keycloak 26.2 or later issues the user's token and serves the exchange (its standard token
+    exchange is RFC 8693 between two clients of one realm, the requesting client confidential);
+  - the agent's tool calls a small downstream API that accepts only tokens for its own audience;
+  - the `redis` credential store keeps the inbound credential, encrypted (the one store shown);
+  - the test asserts the downstream API received a token for its audience and not the inbound
+    token, and that an anonymous run's tool reports `CredentialError`.
+- Kept from the 2026-11-10 plan: MCP and A2A (`api/identity/protocols`), the CLI
+  (`cli/openai-identity`) and the sandbox's default resolver (`sandbox/identity-provider`).
+- Dropped: the `azure-serverless/openai` step, since the target is gone.
+- CI: local suites in `.github/test-config.yaml`, the container ones self-skipping without docker;
+  cloud ones in the weekly tier.
+
 ## Component diagram
 
 ```mermaid
@@ -1029,9 +1126,9 @@ graph TD
 ## Non-goals
 
 - A token vault for refresh tokens and third-party consent, and asynchronous approval (CIBA):
-  round 2. The exchange flows themselves (`rfc8693`, `entra_obo`, `id_jag`) and the adapter MCP
-  client header wiring: built when a deployment requires them, on the retention architecture
-  section 3.1 ships (settled, Q19). The descriptor's `identity` block gains only the
+  round 2. The exchange flows `entra_obo` and `id_jag` and the adapter MCP client header wiring:
+  built when a deployment requires them, on the retention architecture section 3.1 ships (Q19;
+  `rfc8693` moved into Phase H, Q22). The descriptor's `identity` block gains only the
   client-credential key names, which narrows the Q7 decision.
 - Migrating OKF roles and the capability `agents:` scopes (`sandbox.agents`, `schedule.agents`,
   `multimodal.agents`, `agui.state.agents`, `agui.client_context.agents`) onto tool grants: a
@@ -1044,14 +1141,15 @@ graph TD
   user; the recorded session owner is the hook for both.
 - Absorbing thread and schedule ownership checks, or sandbox policy, into the authorizer.
 - Authenticated extended A2A cards and A2A card signing.
-- Engine adapters beyond `static` are named branches of this design but ship in later iterations
-  of its plan; no remote registry discovery (A2A well-known crawling, curated registries).
+- A `cedar` adapter (a reserved name; `casbin`, `openfga` and `authzen` ship in Phase H, Q21); no
+  remote registry discovery (A2A well-known crawling, curated registries).
 - Per-run filtering of the system-prompt text about tools.
 
 ## Open questions
 
 - Q11 (settled 2026-11-05). `casbin` is the first engine after `static` (in-process, runs in CI
-  with no service); `openfga`, `cedar` and `authzen` follow as named branches.
+  with no service); `openfga`, `cedar` and `authzen` follow as named branches. Which of them ship
+  in Phase H is Q21.
 - Q12 (settled 2026-11-05). Refuse to start: with `authorization` configured, an agent on
   LangGraph or smolagents that has natively bound tools fails configuration validation with
   `AKConfigError`. Once-per-runner warnings remain only for a framework's hosted or built-in
@@ -1073,8 +1171,8 @@ graph TD
 - Q18 (settled 2026-11-05). An `agents` entry accepts `tag:<name>`, resolved through the registry
   against `AgentDescriptor.tags`; a tag no descriptor carries matches nothing and warns once at
   validation.
-- Q19 (settled 2026-11-04). Token exchange is built when a deployment requires it, not in this
-  change; what this change delivers is the architecture that allows it: the inbound credential
+- Q19 (settled 2026-11-04; reopened 2026-11-27 by Q22 for `rfc8693` only). Token exchange is
+  built when a deployment requires it, not in this change; what this change delivers is the architecture that allows it: the inbound credential
   retained by `credential_ref` in a shared, encrypted `CredentialStore` and read through the
   `CredentialBroker` seam, so no token rides the queue and a later exchanger plugs in at the
   runner, lazily, without touching the surfaces, the queue or the runners. Eager exchange at the
@@ -1088,3 +1186,20 @@ graph TD
   unverified messaging senders. The channel a turn arrived on derives from `provider`
   (`messaging:<platform>` and `realtime:<gateway>` name it, everything else is the shared direct
   channel) and needs no further plumbing in this change.
+- Q21 (open, 2026-11-27). Which engines ship in Phase H. Recommended: `casbin`, `openfga`,
+  `authzen`, leaving `cedar` reserved: one in-process, one relationship-based (the case
+  `lists_resources` exists for), one standard protocol that reaches many decision points. The
+  alternative is `cedar` (in process through its Python binding; Amazon Verified Permissions on
+  AWS) in place of `authzen`.
+- Q22 (open, 2026-11-27; reopens Q19). Ship `rfc8693` in Phase H. Recommended: yes. An exchange
+  example needs a real exchange: `passthrough` forwards the user's own token, which the MCP
+  specification forbids and an API that checks its audience refuses.
+- Q23 (open, 2026-11-27). Two phases (H: code; I: examples) or one. Recommended: two. Three engine
+  adapters and an exchanger are a reviewable PR; adding about fourteen examples to it is not.
+- Q24 (open, 2026-11-27). Where the exchange's client credential comes from. Recommended: the
+  agent's own (descriptor `identity`, as section 3.1 settled), with an exchanger entry's default
+  for an agent that declares none, so a single-agent deployment configures it once.
+- Q25 (open, 2026-11-27). The decision point the `authzen` example runs against. Recommended: a
+  published implementation's container rather than one written for the example, so the example
+  proves interoperability; which one conforms to the 1.0 Final Specification is checked when the
+  spec is written.

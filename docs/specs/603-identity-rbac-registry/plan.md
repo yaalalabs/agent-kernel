@@ -1699,6 +1699,13 @@ What phase G delivered (2026-11-27), on `feature/603-tests-docs-skills`:
 
 ## Phase H: Identity examples (iteration 29)
 
+> **Replanning (2026-11-27).** Phase H is being replanned to add the `casbin`, `openfga` and
+> `authzen` authorizers, the `rfc8693` exchanger, an example per identity provider and per
+> authorizer, and a token exchange example over the `redis` credential store, split into a code
+> phase and an examples phase (`design.md` section 13, open questions Q21 to Q25). The iteration
+> below is the 2026-11-10 plan and is superseded once the design is reviewed and `spec.md` and
+> this plan are rewritten; its `azure-serverless` steps no longer apply (#984).
+
 ### Iteration 29: Identity examples
 
 - **Goal:** every supported identity provider and every identity feature phases A and B shipped
