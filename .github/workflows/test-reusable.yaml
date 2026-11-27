@@ -155,6 +155,14 @@ jobs:
         working-directory: ak-py
         run: ./build.sh && uv run pytest -s
 
+      - name: Test benchmark harness
+        working-directory: benchmarks
+        run: uv run pytest
+
+      - name: Test benchmark app
+        working-directory: benchmarks/app
+        run: uv run pytest
+
   transport-integration-tests:
     # The QueueTransportContract against REAL brokers (spec #495 Testing): the unit suite runs
     # the same contract against in-memory fakes; this job points it at live NATS and Kafka

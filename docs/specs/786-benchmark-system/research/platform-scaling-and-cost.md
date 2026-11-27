@@ -11,12 +11,14 @@ Every cloud has its own APIs for worker counts and cost (ECS `DescribeServices` 
 Azure Monitor; AWS Cost Explorer vs. GCP BigQuery billing export vs. Azure Cost Management). GCP and Azure
 are coming later, so the platform-specific parts are kept behind interfaces and everything else is shared:
 
+Deploying isn't part of the host: each host × mode × message type has a deployment folder
+(`benchmarks/app/deploy/<host>-<mode>-<message-type>/`, Terraform + `deploy.sh` / `destroy.sh`; no `Deployer` class,
+decided 2026-11-23, #912). `deploy.sh` writes `deployment.json`, read into the `Deployment` the fetchers get:
+`endpoint` (URL only), `resources: {tier: resource id}`, `queues: {"input": ids, "output": ids}`,
+`logs: {component: log source}`, `settings` (autoscaling settings + worker size, saved in run metadata).
+
 ```
-Host (registered by name, e.g. "ecs", "lambda", later "cloud_run", "aca")
-├── Deployer            deploy() -> Deployment(endpoint(url, auth), resources: {tier: resource id},
-│                                  queues: {"input": ids, "output": ids}, logs: {component: log source})
-│                       teardown()
-│                       deployed_settings() -> dict  (autoscaling settings + worker size, saved in run metadata)
+Host (registered by built-in name, e.g. "ecs", "lambda", later "cloud_run", "aca")
 ├── ScalingInfoFetchers one or more per host; each reads worker counts one way (see Scaling info fetchers below)
 ├── ResourceUsageFetchers one or more per host; each reads worker CPU / memory one way (see resource-usage.md)
 ├── TraceCollector      fetch(run, deployment, start, end) -> TraceInfo  (stage timestamps per request, from the AK trace logs)
@@ -39,10 +41,10 @@ Host (registered by name, e.g. "ecs", "lambda", later "cloud_run", "aca")
     type checker flags a subclass whose `fetch()` returns another type, and `fetch_and_store` raises a clear error if
     it does at runtime.
   - So the runner calls all of them the same way and never reads a result type itself (see
-    [Scaling info fetchers](#scaling-info-fetchers-pluggable)). The Deployer doesn't extend it: it deploys and tears
-    down.
+    [Scaling info fetchers](#scaling-info-fetchers-pluggable)). Deploying isn't a fetcher's job: the deployment
+    folders do it.
 - **Where each fetcher runs is set by the host, not the fetcher** (decided 2026-11-06, replaces the `live_track`
-  parameter): the host's `Fetchers` holds five lists. A fetcher never knows which list it's in; the list picks the
+  parameter): the host's `StageFetchers` holds five lists. A fetcher never knows which list it's in; the list picks the
   time window passed to `fetch()`, and one fetcher can be in several lists.
 
   | List | When it runs | Window passed to `fetch()` |
@@ -57,7 +59,7 @@ Host (registered by name, e.g. "ecs", "lambda", later "cloud_run", "aca")
     fetcher there gives `running`.
 - **Shared, platform-independent code:** run orchestration, the step runner (live tracking, cool-down check, after-step fetch) and timestamps,
   turning scaling
-  source output into per-window worker counts, all derived numbers (scale-up/down times),
+  source output into per-window worker counts, the derived numbers (scale-up/down times; later, with the summary CSV),
   CSV writing and graphs. It only sees the common return types above.
 - **Per-platform code:** only the API calls that fill those types. A field with no source on a platform (e.g. `desired`
   on Lambda) is returned as empty and the column stays blank.
@@ -104,7 +106,7 @@ step's [timeline](../design.md): before → load → cool-down → wait + fetch.
 data covers the first three parts; the fourth waits for log ingestion (default 1 min) and then fetches the step's data
 with history. Live tracking runs from the start of "before" to the end of the cool-down.
 
-- The derived numbers below are computed per step, with `t_load_up` = first send of the step and `t_load_down` = end
+- The derived numbers below (later, with the summary CSV) are computed per step, with `t_load_up` = first send of the step and `t_load_down` = end
   of the load part (steady traffic: the configured time is up; burst: the last response arrived or timed out).
 - **When the cool-down ends:** on every cool-down poll the step runner runs the built-in client check, then each
   fetcher in the host's `cooldown_checks` list, in list order, through its `fetch()` and its family's `is_settled()`.
@@ -113,7 +115,7 @@ with history. Live tracking runs from the start of "before" to the end of the co
   1. **All requests settled (client; built in, always first):** every request sent in the step has a response or has timed out. This alone
      covers requests that completed normally.
   2. **Pipeline empty (`SqsTransportCollector` in `cooldown_checks`):** both queues hold nothing, counting messages still being processed.
-     The queue ids come from `deployment.queues` (`{"input": ids, "output": ids}`, filled by the deployer).
+     The queue ids come from `deployment.queues` (`{"input": ids, "output": ids}`, written by `deploy.sh` into `deployment.json`).
      This covers requests the client gave up on (timed out) that are still inside AK, so they don't finish during
      the next step.
      - `TransportCollector.is_settled()`: both queues read 0 waiting and 0 in flight. It must hold **in every poll of
@@ -219,6 +221,8 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
   - Constructor parameters: `poll_interval_s` (how often the fetcher is polled when it's in `during_step`; default
     from `ak-bench.yaml` (`fetchers.default.poll_interval_s`), settable per fetcher (`fetchers.<name>.poll_interval_s`), since sources differ: e.g. the ECS API has request rate limits) and
     `settle_window_s` (see the cool-down rule above).
+    - A `fetchers.<name>` key that no fetcher of the selected hosts has is refused before deploying, naming the key
+      and the known fetcher names (decided 2026-11-23, #912).
   - `is_settled(now, start)`: written once in `ScalingInfoFetcher`: every tier's running count equals its starting
     count.
   - `count_types`: the counts it gives, e.g. `{"desired", "running"}` for `aws.ecs_api`, `{"desired"}` for
@@ -240,24 +244,24 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
   - **Worker spans** (optional, from fetchers that see individual workers): `(tier, worker, started, stopped)`, plus
     extra fields where useful (e.g. ECS `pullStartedAt`). The shared code turns spans into a
     running count at any window size, so these give exact times, not just poll-interval resolution.
-- **Which resources to watch:** a fetcher gets the per-tier resource ids from the deployer's `Deployment.resources`
+- **Which resources to watch:** a fetcher gets the per-tier resource ids from the `Deployment.resources` in `deployment.json`
   (ECS cluster and service names, Lambda function names, ...), so it needs no extra config.
 - **One `fetch()` covers every tier:** the fetcher loops over `Deployment.resources` and runs the same code for each
   tier, tagging each count with its tier name. No per-tier code.
   - ECS: one `aws.ecs_api` call reads the agent runner service and the IO service.
   - Lambda: one `aws.cloudwatch_metric.ConcurrentExecutions` call reads every function (request handler, agent
     runner, response handler, WebSocket connection handler).
-  - Adding or removing a tier is a change to the deployer's `resources` only. Fetchers, CSV columns, the end-of-step
+  - Adding or removing a tier is a change to the deployment folder's `resources` only. Fetchers, CSV columns, the end-of-step
     check and the graphs pick it up as is.
   - Turning on autoscaling for a tier that's already listed (e.g. the ECS IO service, which our Terraform doesn't
     autoscale today) needs no benchmark change: its line just stops being flat.
 - **All fetchers are recorded side by side:** the per-time-window CSV has one column per tier × count type × fetcher
-  (e.g. `runner.running.aws.ecs_api`), and the derived numbers below are computed for every fetcher. Fetchers can
+  (e.g. `runner.running.aws.ecs_api`), and the derived numbers below (later) are computed for every fetcher. Fetchers can
   disagree (different resolution and lag); that's shown, not reconciled.
 - **Candidates for now:** where a host lists two fetchers below, both are kept as candidates while the design is
   discussed. Each host will be finalized to one fetcher; until then both are recorded side by side.
 - **The fetcher that ends the cool-down** is the scaling fetcher in the host's `cooldown_checks` list (replaces the
-  "first in the list is the primary" rule, 2026-11-06). The summary CSV records which fetcher each number came from.
+  "first in the list is the primary" rule, 2026-11-06). The (later) summary CSV records which fetcher each number came from.
   - **It must give a `running` count** (decided 2026-11-05). At start-up, before anything is deployed, the runner
     refuses a host whose `cooldown_checks` scaling fetcher doesn't list `running` in its `count_types`, with an error
     naming the host and the fetcher. Without this, a `desired`-only fetcher would give the "workers back" check
@@ -356,7 +360,9 @@ Fetchers per host (✓ = available now, later = when the platform is added):
   Terraform uses prefix `ecs`). A log-based ECS fetcher is possible but not needed: `aws.ecs_api` already gives each
   task's exact created / started / stopped times, including the image pull before the task writes any log.
 
-### Derived numbers (written to the summary CSV)
+### Derived numbers (written to the summary CSV, later)
+
+Not built in the first stage: they go in the summary CSV, which comes later ([Later](../design.md#later-summary-csv-and-graphs-comparing-the-steps)).
 
 Scale up, measured from `t_load_up` (the step's first send):
 
@@ -432,7 +438,7 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
     AK's `SQSConsumer` handles the records of a batch **one after another**, so one invocation with 10 messages and a
     2 s agent delay runs ~20 s. The agent runner timeout is 45 s by default (`ak-aws/serverless/variables.tf`, `agent_runner`),
     and `batch_size × maximum agent delay` has to stay under it: 10 × a 5 s maximum delay (e.g. `max_delay: 5`) is 50 s. So the
-    benchmark deployer sets the agent runner timeout to **60 s** (decided 2026-11-04, PR #893 review). It also sets the
+    benchmark's `lambda-*` deployment folders set the agent runner timeout to **60 s** (decided 2026-11-04, PR #893 review). It also sets the
     input queue visibility timeout to **360 s** and the output queue visibility timeout to **300 s**: AWS recommends
     at least 6× the function timeout (plus the batching window, 0 s here) for an SQS event source, so Lambda can retry
     a throttled batch; 6 × 60 s = 360 s for the agent runner, 6 × 45 s = 270 s for the response handler (AK's default
@@ -451,7 +457,7 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
     after ~20 s by ~100 environments, and the last ones finish ~20 s later. That's a `ConcurrentExecutions` peak of
     roughly 100, not 1000 (rough estimate, not measured).
 
-All autoscaling settings for the run (returned by the Deployer's `deployed_settings()`) are saved in the run metadata so the times can be explained later: min/max,
+All autoscaling settings for the run (the `settings` that `deploy.sh` writes into `deployment.json`) are saved in the run metadata so the times can be explained later: min/max,
 target, cooldowns, Lambda ESM mode / max concurrency, and the worker size (task vCPU/memory, Lambda memory).
 
 ### Graphs

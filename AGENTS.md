@@ -11,7 +11,7 @@ This repo ships two unrelated sets of "skills," named similarly but serving oppo
 
 | Skill set | Location | Audience | Purpose |
 | --- | --- | --- | --- |
-| **Dev skills** | [.agents/skills/ak-dev-*](.agents/skills/) | You, working on this repo | Architecture, testing conventions, code quality, and step-by-step guides for adding a new framework adapter / guardrail / knowledge base / messaging integration / tracing provider / multimodal storage / sandbox provider / queue transport to OAK core |
+| **Dev skills** | [.agents/skills/ak-dev-*](.agents/skills/) | You, working on this repo | Architecture, testing conventions, code quality, and step-by-step guides for adding a new framework adapter / guardrail / knowledge base / messaging integration / tracing provider / multimodal storage / sandbox provider / queue transport to OAK core; `ak-dev-bench-*` for extending the `benchmarks/` harness (fetchers, hosts, client drivers, shared-code features) |
 | **Bundled skills** | [ak-py/src/agentkernel/skills/](ak-py/src/agentkernel/skills/) (`ak-init`, `ak-build`, `ak-add-capabilities`, `ak-add-integration`, `ak-cloud-deploy`, `ak-test`) | End users of the `agentkernel` PyPI package | Shipped *inside* the package so a downstream developer's coding assistant can scaffold and extend agents built *with* OAK |
 
 If a task is about changing OAK's own source, use the dev skills under `.agents/skills/`.
@@ -44,6 +44,7 @@ ak-deployment/           Terraform modules per cloud (aws / azure / gcp) x (serv
 examples/                Runnable sample apps per framework/deployment combo
 use-cases/               End-to-end agents built from a SPEC.md using the bundled skills
 e2e/                     Messaging integration e2e harness: deployable app + Terraform + pytest suite driven against real platform accounts (see e2e/README.md)
+benchmarks/              ak-bench benchmark harness + the benchmarked app (benchmarks/app/) it deploys (see benchmarks/README.md)
 docs/                    Docusaurus site (kernel.yaala.ai/docs) — versioned_docs/ are frozen, don't edit old versions
 .agents/skills/          Dev skills (see table above)
 ```

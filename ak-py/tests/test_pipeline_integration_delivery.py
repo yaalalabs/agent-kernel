@@ -6,6 +6,7 @@ import sys
 import pytest
 
 from agentkernel.core.event import PausedInterruption
+from agentkernel.core.logger import TRACE, TraceStage
 from agentkernel.core.model import AgentPausedReplyAny, AgentReplyText
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.adapter.base import OutboundAdapter
@@ -121,6 +122,14 @@ def test_deliver_sends_the_result_text(adapter):
     assert reply == AgentReplyText(response="hi")
     assert context == {"channel": "C9", "thread_ts": "111.222"}
     assert adapter.errors == []
+
+
+@pytest.mark.parametrize("body, status_code", [({"result": "hi"}, 200), ({"error": "x"}, 500), (_paused_body(), 200)])
+def test_deliver_traces_response_delivered(adapter, caplog, body, status_code):
+    with caplog.at_level(TRACE, logger="ak"):
+        IntegrationDelivery(_log).deliver(ADAPTER_NAME, _attrs(), body, status_code, session_id="s1")
+
+    assert [record.args for record in caplog.records if record.levelno == TRACE] == [(TraceStage.RESPONSE_DELIVERED, "r1")]
 
 
 @pytest.mark.parametrize("status_code", [400, 500])

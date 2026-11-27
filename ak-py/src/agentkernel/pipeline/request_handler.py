@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from ..api.handler import AgentRESTRequestHandler
 from ..core.chat_service import ChatService, RequestBuilder
 from ..core.config import AKConfig
+from ..core.logger import TRACE, TraceStage
 from ..core.model import BaseRunRequest, ChatRunRequest, ExecutionMode, FileData, ImageData
 from ..core.multimodal.storage import AttachmentStorageManager
 from ..core.registry import AgentNotFoundError
@@ -198,11 +199,11 @@ class RestHandler(AgentRESTRequestHandler):
             if refusal is not None:
                 status_code, error = refusal
                 self._log.warning(
-                    f"[REFUSED] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}"
+                    f"Request refused: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}"
                 )
                 await CredentialManager.release_unclaimed(body.principal)
                 return QueuedReply(request_id=request_id, status_code=status_code, body={"error": error, "session_id": body.session_id})
-            self._log.info(f"[ENQUEUE] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
+            self._log.info(f"Request enqueued: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
             # Offload the sync send so it doesn't block the event loop.
             await asyncio.to_thread(RequestProducer(self.get_transport()).enqueue, body, request_id, {ATTR_PROTOCOL: protocol})
 
@@ -210,7 +211,7 @@ class RestHandler(AgentRESTRequestHandler):
         if record is None:
             raise ReplyTimeoutError(request_id, *self._response_retry_config())
         reply = QueuedReply.from_record(record)
-        self._log.info(f"[REPLY] protocol={protocol}, request_id={request_id}, status_code={reply.status_code}")
+        self._log.info(f"Reply received: protocol={protocol}, request_id={request_id}, status_code={reply.status_code}")
         return reply
 
     @staticmethod
@@ -308,12 +309,24 @@ class RestHandler(AgentRESTRequestHandler):
         body.principal = getattr(request.state, "principal", None)
         # The surface rides the queued body, so the process that runs the agent serves only the agents on `rest`.
         body.surface = "rest"
-        return await self._enqueue_and_wait(body)
+        return await self._enqueue_and_wait(body, self._receive_request())
 
-    async def _enqueue_and_wait(self, body: BaseRunRequest, admitted: bool = False) -> Any:
+    def _receive_request(self) -> str:
+        """Give a new chat request its id and trace that its handler started, before any validation or I/O runs for it.
+
+        Not traced: the identity dependency (auth) and FastAPI's body parsing run before the route method does.
+
+        :return: The request id, unique and distinct from the session id.
+        """
+        request_id = str(uuid.uuid4())
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, request_id)
+        return request_id
+
+    async def _enqueue_and_wait(self, body: BaseRunRequest, request_id: str, admitted: bool = False) -> Any:
         """Validate, enqueue and answer one chat request whose principal and surface are assigned.
 
         :param body: The chat request.
+        :param request_id: The id ``_receive_request`` gave the request.
         :param admitted: True when the caller has already asked whether the agent is available to the
             request's principal (``RequestHandler.run_chat`` asks before it saves any file), so the
             registry is read once for a request.
@@ -338,22 +351,21 @@ class RestHandler(AgentRESTRequestHandler):
                 if not admitted:
                     await self._reject_unavailable(body)
 
-                # Unique request_id, distinct from session_id.
-                request_id = str(uuid.uuid4())
-
                 self._log.info(
-                    f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
+                    f"Request start: session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
                 )
 
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
                 # Offload the sync send so it doesn't block the event loop.
                 queue_result = await asyncio.to_thread(self._enqueue_request, body, request_id)
 
-            self._log.info(f"[ENQUEUED] MessageId={queue_result.get('MessageId')}, request_id={request_id}")
+            self._log.info(f"Enqueued: MessageId={queue_result.get('MessageId')}, request_id={request_id}")
 
             mode = self._effective_mode()
             if mode == ExecutionMode.REST_SYNC:
                 # Wait for the response in the response store.
-                self._log.info(f"[WAITING] Polling response store for request_id={request_id}")
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_POLL_START, request_id)
+                self._log.info(f"Waiting: polling response store for request_id={request_id}")
 
                 response = await self._await_response_record(request_id)
 
@@ -367,7 +379,8 @@ class RestHandler(AgentRESTRequestHandler):
                         },
                     )
 
-                self._log.info(f"[RESPONSE FOUND] request_id={request_id}, response_keys={list(response.keys())}")
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_FOUND, request_id)
+                self._log.info(f"Response found: request_id={request_id}, response_keys={list(response.keys())}")
 
                 return self._build_sync_response(response)
 
@@ -503,6 +516,7 @@ class RequestHandler(RestHandler):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
         # The surface assigns the principal and names itself; a client value is overwritten (see enqueue_and_wait).
         body.principal = getattr(request.state, "principal", None)
+        request_id = self._receive_request()
         body.surface = "rest"
         from ..identity.credential.manager import CredentialManager
 
@@ -521,8 +535,8 @@ class RequestHandler(RestHandler):
             await self._reject_unavailable(body)
             await self._offload_attachments(body)
         if self._config.execution.is_sse:
-            return await self._run_chat_stream(body)
-        return await self._enqueue_and_wait(body, admitted=True)
+            return await self._run_chat_stream(body, request_id)
+        return await self._enqueue_and_wait(body, request_id, admitted=True)
 
     def _reject_unqueueable_attachments(self, body: BaseRunRequest) -> None:
         """Refuse files that cannot cross a broker, before anything is saved, recorded or enqueued.
@@ -677,12 +691,12 @@ class RequestHandler(RestHandler):
             return False
         return store.shared or QueueTransportFactory.resolve_type() == "in_memory"
 
-    async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
+    async def _run_chat_stream(self, body: BaseRunRequest, request_id: str) -> StreamingResponse:
         """Enqueue and serve the chunks over SSE; _reject_unroutable has vouched for the store."""
         from ..identity.credential.manager import CredentialManager
 
-        request_id = str(uuid.uuid4())
-        self._log.info(f"[STREAM REQUEST] session_id={body.session_id}, request_id={request_id}")
+        self._log.info(f"Stream request: session_id={body.session_id}, request_id={request_id}")
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
         async with CredentialManager.released_on_error(body.principal):
             await asyncio.to_thread(self._enqueue_request, body, request_id)
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")

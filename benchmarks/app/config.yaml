@@ -1,0 +1,17 @@
+# The benchmarked app's Agent Kernel config. Host-specific keys (transport, secret provider, deployment
+# blocks) come from each deployment folder, not from here.
+session:
+  type: in_memory
+
+logging:
+  ak:
+    level: TRACE
+
+execution:
+  mode: async
+  message_type: complete
+
+identity:
+  provider:
+    type: identity.BenchIdentityProvider
+    secret_key: AK_BENCH_AUTH_SECRET

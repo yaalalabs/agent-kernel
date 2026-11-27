@@ -4,14 +4,15 @@ A benchmark runner that deploys Agent Kernel in queue mode on each host, drives 
 open load, and records **throughput, latency (with per-stage traces), scaling, worker CPU / memory and cost** to CSVs
 and graphs. Phase 1 only records and reports; phase 2 adds SLA thresholds and an after-run pass/fail check. The runner
 is pluggable in two directions: one **client driver** per execution mode and message type, and per platform a **host**
-composed from small reusable implementations (a deployer, and fetchers placed in lists that say where in the
-run each one runs). The only change to AK itself is a `TRACE` log level with per-stage trace points on the request
-path.
+composed from small reusable implementations (fetchers placed in lists that say where in the run each one runs),
+deployed by a deployment folder (Terraform + `deploy.sh` / `destroy.sh`) per host × mode × message type. The only
+change to AK itself is a `TRACE` log level with per-stage trace points on the request path.
 
 ## Terminology
 
-- **Load:** what the benchmark controls: the number of concurrent clients. Each client is its own user, with its own
-  user identity and session. Throughput, latency, scaling, resource usage and cost are the outputs.
+- **Load:** what the benchmark controls: the number of concurrent clients. Each client is one simulated user with its
+  own WebSocket connection, user identity and session; not a process (one load-generator process runs all N).
+  Throughput, latency, scaling, resource usage and cost are the outputs.
 - **Load step N:** N clients (N users) start at the same moment. Steps are set in config before a run (`load_steps`); default
   `1, 10, 100, 1000`. N is never requests per second.
 - **Open load:** a client never waits for a response before sending its next request.
@@ -95,8 +96,8 @@ path.
 
   | Host | Platform | Deploy source | Transport | Log backend |
   |---|---|---|---|---|
-  | `ecs` | `aws` | Terraform `ak-aws/containerized` | SQS | CloudWatch Logs |
-  | `lambda` | `aws` | Terraform `ak-aws/serverless` | SQS | CloudWatch Logs |
+  | `ecs` | `aws` | deployment folder `ecs-async-complete/` (Terraform `ak-aws/containerized`) | SQS | CloudWatch Logs |
+  | `lambda` | `aws` | deployment folder `lambda-async-complete/` (Terraform `ak-aws/serverless`) | SQS | CloudWatch Logs |
 
 - Kubernetes, GCP, Azure and NATS are out of scope, but the interfaces must allow them.
 - Build order: AWS with WebSocket complete comes first.
@@ -109,6 +110,10 @@ path.
 - **Every step of both test types has four parts:** `before` → `load` → `cool-down` → `wait + fetch`. The first three
   are recorded (a step's graphs span the start of `before` to the end of `cool-down`); the fourth collects the data
   with history for the step. The next step starts only after it, so it starts from the minimum workers.
+- **Clients connect before `before`** (decided 2026-11-23, #912): the load generator opens all N client connections
+  first; `before` starts once every connect has finished or failed. So connect time is never in the latency, and
+  `before` records the idle values with the sockets open. Connections close when the cool-down ends. Connect times
+  aren't recorded (later, with the front door).
 
   ```text
   One step (not to scale; ┄ = a wait):
@@ -141,7 +146,7 @@ path.
      the next step.
   6. Waits the configured time for log ingestion.
   7. Calls `fetch_and_store` once on each fetcher in `after_step`, for (step start, step end).
-  8. Writes the step's row of `summary.csv` and its `step-metadata.json`, releases the step lock; the `step` command
+  8. Writes the step's CSVs and its `step-metadata.json`, releases the deployment lock; the `step` command
      ends (`run` then starts the next step).
 - **The step ends when every check holds in the same cool-down poll,** in this order (decided 2026-11-03, PR #877
   review; checks come from the host's `cooldown_checks` list since 2026-11-06). A later check only runs once the
@@ -202,8 +207,7 @@ path.
      `ak-bench-run-id=<run-id>-<host>-<mode>-<message-type>`, record the run metadata, print the deployment id.
   2. **`step`, once per step run:** one test type at one step number. `run` uses the default order: step numbers
      1 → 10 → 100 → 1000; for each, a steady step run, then a burst step run. Every step run is the four-part step
-     above, with its own live tracking and its own after-step fetch, and writes its own CSVs and its row of
-     `summary.csv`.
+     above, with its own live tracking and its own after-step fetch, and writes its own CSVs.
   3. **`plot`:** draw the graphs from the CSVs so far (any time, as often as needed).
   4. **`finish`:** run the `after_all_steps` list (and re-plot if it stored anything), then tear the deployment down.
   5. **`post-run`** (optional, only for a host with an `after_teardown` list), once the data is ready: AWS runs Cost
@@ -224,6 +228,9 @@ path.
     (`RESPONSE_DELIVERED` → client received). Empty when either point is missing. `AGENT_DONE` follows
     `AGENT_FIRST_CHUNK` in delta and `AGENT_START` in complete (`AGENT_FIRST_CHUNK` is delta only), so a stage that
     doesn't run in a message type is simply empty (PR #893 review).
+  - **Not traced: work before the handler.** The first stage, `REQUEST_HANDLER_START`, is written when AK's handler
+    starts. Authentication (the identity dependency, an API Gateway authorizer) and request parsing run before it, so
+    their time is in the client's `sent → REQUEST_HANDLER_START` duration, not in any AK stage (PR #1002 review).
   - Percentiles are computed over requests, never per worker first.
 
 ### Scaling
@@ -243,8 +250,8 @@ path.
     and the configured wait; `cooldown_checks` = `fetch()` + `is_settled()`.
   - `ScalingInfo` = count samples `(ts, tier, count_type, value)` + optional worker spans
     `(tier, worker, started, stopped, extra)`.
-  - Loops over the deployer's `Deployment.resources` (tier → resource ids), so adding a tier changes only the
-    deployer.
+  - Loops over the `Deployment.resources` (tier → resource ids) from `deployment.json`, so adding a tier changes
+    only the deployment folders.
   - Generic fetchers take constructor parameters (e.g. one CloudWatch metric fetcher given namespace, metric,
     dimension).
 - A host can bind several scaling fetchers. Every bound fetcher runs; there is no config switch for fetchers. All
@@ -284,8 +291,8 @@ path.
   extends `InfoFetcher[QueueInfo]`; `QueueInfo` = samples `(ts, queue, waiting, in_flight)`. SQS only gives the
   current depth, so `SqsTransportCollector` is in `during_step` and in `cooldown_checks` with
   `settle_window_s = 60`.
-- Derived per step, per tier and per fetcher (summary CSV), from `t_load_up` (first send) and `t_load_down` (end of
-  load):
+- **Later** (with the summary CSV, see [Later: summary CSV and graphs comparing the steps](#later-summary-csv-and-graphs-comparing-the-steps)):
+  derived per step, per tier and per fetcher, from `t_load_up` (first send) and `t_load_down` (end of load):
   - scale up: decision delay, first new worker, scale-up done, backlog drained;
   - scale down: scale-down start, scale-down done;
   - counts: `workers_before_up`, `workers_peak`, `workers_before_down`, `workers_after_down`;
@@ -318,7 +325,7 @@ path.
   - **`ResourceUsage`: everything one `fetch()` call returns**: a list of `ResourceSample`s across every tier, worker,
     metric and time in `[start, end]`. A wrapper rather than a bare list so per-fetch details (e.g. what the source
     was missing) can be added later without changing the signature, same as `ScalingInfo`.
-  - The shared resource collector turns the samples into the per-window percentile columns, the summary columns and
+  - The shared resource collector turns the samples into the per-window percentile columns and
     `resource-usage.csv`. Fetchers never compute percentiles; the only reduction inside a fetcher is the Lambda
     query's per log stream × window step, to stay under the Logs Insights row limit.
   - Units: CPU as % of one worker's allocation; memory in MiB and as %.
@@ -334,8 +341,8 @@ path.
   | `aws.lambda_report_memory` (`REPORT` `Max Memory Used`) | memory per environment | `lambda`: `after_step` |
   | `aws.lambda_insights` (Lambda Insights extension) | memory per environment | `lambda`: `after_step`, on by default |
 
-- Lambda Insights: the deployer adds the layer when on (the `layers` variable exists on every function,
-  `ak-aws/serverless/variables.tf:309,328,349`, ...); `host_settings.lambda.lambda_insights: false` switches it off (applied at `deploy`).
+- Lambda Insights: the `lambda-*` deployment folders add the layer when on (the `layers` variable exists on every
+  function, `ak-aws/serverless/variables.tf:309,328,349`, ...); `host_settings.lambda.lambda_insights: false` switches it off (applied at `deploy`).
 - Lambda Logs Insights queries reduce in the query (per log stream × window), not by fetching raw invocations.
 
 ### Cost
@@ -354,8 +361,8 @@ path.
     built from `deployment`), grouped by service. Whole run only.
     - Metric: **`UnblendedCost`**, the usage at the rate AWS charged, **without discounts and credits** (those are
       separate line items; `NetUnblendedCost` is the after-discount view, not used). Recorded with the billed cost.
-    - The tag is set **at deploy time**: the deployer puts `ak-bench-run-id=<run-id>-<host>-<mode>-<message-type>` on
-      every resource it creates (Terraform `default_tags`). The value is unique per host × mode × message type (decided
+    - The tag is set **at deploy time**: the deployment folder's Terraform puts
+      `ak-bench-run-id=<run-id>-<host>-<mode>-<message-type>` on every resource it creates (Terraform `default_tags`). The value is unique per host × mode × message type (decided
       2026-11-04, PR #893 review; message type added 2026-11-05), so each host × mode × message type's `cost.csv` holds
       only its own deployment's bill. A new run gets new values.
     - **All the steps together, never per step:** one deployment, tagged once, serves every step of both test types,
@@ -380,7 +387,22 @@ path.
 - A standalone project in a new top-level `benchmarks/` directory with its own `pyproject.toml` (uv), like `e2e/`.
   Not part of the `agentkernel` package.
   - Depends on `agentkernel` for `TraceStage` and the trace-line parser, and for the benchmarked app.
+  - The harness and the app use only AK's public API (`agentkernel.core`, `agentkernel.identity`,
+    `agentkernel.secret`, `agentkernel.<framework>`), never AK internals such as `core/util/` or private config
+    classes (decided 2026-11-24, #912).
+  - The benchmarked app (mock agent) is `benchmarks/app/`, its own uv project like `e2e/app/`, since it is deployed
+    and the harness isn't (decided 2026-11-23, #912).
+  - The cloud-free tests of the harness (decided 2026-11-23, #912) and of the app in `benchmarks/app/` (decided
+    2026-11-25, #912) run in the repo's test workflow.
   - Cloud SDKs (`boto3`), data and plotting libraries are dependencies of this project only.
+  - Code split by role, not by topic (decided 2026-11-24, #912):
+    - `fetchers/`: the only code that calls a cloud or platform SDK. `fetchers/core/` holds the `InfoFetcher`
+      contracts; then one folder per platform called (`aws/`, later `gcp/`, `kubernetes/`, ...), each with one
+      subfolder per fetcher family (`scaling/`, `resources/`, `trace/`, `transport/`, `cost/`).
+    - `hosts/`: the host bundles and the registry; `load/`: talks to the deployed app; `run/`: the commands and the
+      step; `results/`: the CSVs, metadata and graphs, from the stored files only.
+    - A `core/` folder only where there are contracts, a `common/` folder for shared helpers that aren't contracts
+      (e.g. `fetchers/aws/common/`); neither is created empty.
 - Components are classes with one responsibility each.
 - **Its own config file**, `ak-bench.yaml`, not `AKConfig`. Departure from the "reuse existing configuration" house
   pattern, because these are benchmark settings, not AK runtime config. Example with every key (decided 2026-11-06;
@@ -399,6 +421,8 @@ path.
     after_step_wait_s: 60          # wait before the after-step fetch
     client_timeout_s: 300
     time_window_s: 1               # no default
+    cooldown_poll_interval_s: 10   # time between two cool-down polls (step-end check)
+    cooldown_lookback_s: 180       # how far back each cooldown_checks fetch() reads
 
   steady_traffic:
     min_send_interval_s: 1
@@ -423,17 +447,21 @@ path.
     max_delay: 5                   # no default (seconds)
   ```
 
+  - Loaded with pydantic-settings' own YAML source, not AK's internal config loader (decided 2026-11-24, #912).
   - The other fetcher settings (`settle_window_s`, `metric_delay_s`) stay in the host code: they follow how that
     host's source behaves. See [Mock agent](#mock-agent) for the `mock_agent` rules.
   - `hosts`, `modes`, `message_types`, `test_types` and `load_steps` are also CLI arguments; see L3.
-- Registries follow AK's factory shape: built-in short names, dotted-path bring-your-own, unknown name → error naming
-  the built-ins.
+- The host registry and the driver factory have built-in short names only, no dotted-path bring-your-own: only the AK
+  team runs the benchmark, so a new host or driver is a new built-in (decided 2026-11-23, #912). An unknown name →
+  error naming the built-ins.
+- A `fetchers.<name>` key that no fetcher of the selected hosts has (e.g. a typo) is refused before anything is
+  deployed, naming the key and the known fetcher names (decided 2026-11-23, #912).
 
 ```mermaid
 graph LR
     CLI["CLI"] --> ORCH["Run orchestrator<br/>(per host × mode × message type)"]
     ORCH --> HOST["Host bundle<br/>(host registry)"]
-    HOST --> DEP["Deployer"]
+    ORCH --> DEP["Deployment folder<br/>(deploy.sh / destroy.sh)"]
     HOST --> IF["InfoFetchers (one base class)<br/>scaling, resource usage, trace,<br/>transport, cost"]
     ORCH --> SR["Step runner (per step)"]
     SR -->|"during_step: background,<br/>before → end of cool-down"| IF
@@ -443,7 +471,7 @@ graph LR
     SR --> LG["Load generator"]
     LG --> DRV["ClientDriver"]
     DRV -->|WebSocket| AK["AK app<br/>(mock runner, in_memory sessions, TRACE on)"]
-    ORCH --> SHARED["Shared: collectors, step-end check,<br/>derived numbers, CSVs, plots"]
+    ORCH --> SHARED["Shared: collectors, step-end check,<br/>CSVs, plots"]
 ```
 
 ### Selecting what to run (CLI)
@@ -453,12 +481,25 @@ graph LR
 
   | Command | What it does |
   |---|---|
-  | `deploy --host <h> --mode <m> --message-type <t> [--run-id <id>]` | Deploys one host × mode × message type, tags every resource, writes `run-metadata.json` and the deployment's `state.json` (the saved `Deployment`, the load steps from `ak-bench.yaml`, step windows, teardown time). Prints the **deployment id**: the tag value `<run-id>-<host>-<mode>-<message-type>`. Starts a new run id unless `--run-id` is given (to put several deployments in one run folder); refuses a host × mode × message type that already has a deployment in that run, since the tag value and folder would clash. |
-  | `step --deployment <id> --test-type steady\|burst --step <N> [--warm-up] [--replace]` | Runs **one** step run (the four parts of the [step timeline](#step-timeline)) with the host's `during_step`, `cooldown_checks` and `after_step` lists. `--step` is one number, not a list, and must be one of the load steps in `ak-bench.yaml`. Writes `step-<N>/` and its row of the test type's `summary.csv`. |
+  | `deploy --host <h> --mode <m> --message-type <t> [--run-id <id>]` | Deploys one host × mode × message type (runs its deployment folder's `deploy.sh`), tags every resource, writes `run-metadata.json` and the deployment's `state.json` (the saved `Deployment`, the load steps from `ak-bench.yaml`, step windows, teardown time). Prints the **deployment id**: the tag value `<run-id>-<host>-<mode>-<message-type>`. Starts a new run id unless `--run-id` is given (to put several deployments in one run folder); refuses a host × mode × message type that already has a deployment in that run, since the tag value and folder would clash. |
+  | `step --deployment <id> --test-type steady\|burst --step <N> [--replace]` | Runs **one** step run (the four parts of the [step timeline](#step-timeline)) with the host's `during_step`, `cooldown_checks` and `after_step` lists. `--step` is one number, not a list, and must be one of the load steps in `ak-bench.yaml`. Writes `step-<N>/`. |
   | `plot --deployment <id>` or `--run-id <id>` | Draws every graph from the CSVs of the steps run so far, written into the same `graphs/` folders. Any time, as often as needed. |
-  | `finish --deployment <id>` | Runs the `after_all_steps` list (and re-plots if it stored anything, so its data is in the graphs), tears down, records the teardown time. Says whether `post-run` is needed (an `after_teardown` list that isn't empty). |
+  | `finish --deployment <id>` | Runs the `after_all_steps` list (and re-plots if it stored anything, so its data is in the graphs), tears down (`destroy.sh`), records the teardown time. Says whether `post-run` is needed (an `after_teardown` list that isn't empty). |
   | `post-run --deployment <id>` or `--run-id <id>` (optional) | Runs the `after_teardown` list (AWS: the billed cost); fills its CSVs, re-plots. The person decides when to run it (AWS: about a day after teardown, once Cost Explorer has the bill). Can be run again. |
   | `run [--host] [--mode] [--message-type] [--steps]` | For each selected host × mode × message type: `deploy` → `step` for every configured step in the default order → `plot` → `finish`. |
+
+- **Failures never leave a deployment running unnoticed** (decided 2026-11-23, #912):
+  - `run` still runs `finish` (teardown) when a step fails;
+  - a failed `deploy.sh` is followed by `destroy.sh` for what it may have created, and `deploy` exits with an error;
+  - every command releases the deployment lock on every exit (done, error, Ctrl-C);
+  - a failed `destroy.sh` is logged in the run log and `finish` exits with an error, so the person knows resources
+    may be left running;
+  - **Ctrl-C ends only the current command** (decided 2026-11-26, #912): it tears nothing down (`destroy.sh` is not
+    started, the teardown time stays unset), releases the deployment lock, leaves `state.json` whole, writes a run-log
+    `WARNING` naming the deployment id, saying its resources may still be running and that
+    `ak-bench finish --deployment <id>` tears them down (not for a deployment already torn down), and exits with 130. `run` stops at once and runs
+    `finish` for no deployment. Ctrl-C during `deploy.sh` still leaves the deployment in `state.json` (id, auth secret,
+    deploy inputs), so a later `finish` runs `destroy.sh` for it.
 
 - `run`'s `--host <name>`, `--mode <name>` and `--message-type <name>` are each repeatable (default: all). Covers all ×
   all, one host, one mode on one host, one mode on all hosts, one message type of a mode. `--steps` picks a subset of the
@@ -466,16 +507,24 @@ graph LR
   refused (PR #893 review). Test types from config (default both).
 - `--mode` and `--message-type` take AK's config values (e.g. `--mode async --message-type complete`), the same names
   used in the results folders. `--test-type` takes `steady` or `burst`.
-- **`step` rules:**
-  - Refuses to start while another step is running on the same deployment (a lock in `state.json`), so two loads never
-    mix. The lock records the process id and machine; a lock whose process is no longer running (a step that was
+- **One command at a time per deployment** (decided 2026-11-25, #912): `deploy`, `step`, `plot`, `finish` and
+  `post-run` each hold a lock in `state.json` while they work, and another command on the same deployment is refused
+  until it ends. So two loads never mix, `finish` can't tear down under a running step, and a step can't start on a
+  deployment being torn down. `run` takes no lock of its own; each command it calls takes and releases it.
+  - The lock records the process id and machine; a lock whose process is no longer running (a command that was
     killed) counts as stale and is taken over, with a run-log entry.
+  - A lock held from another machine can't be checked, so `step --deployment <id> --force-unlock` clears it after a
+    confirmation, with a run-log entry; it's documented in `--help` and the testing checklist (decided 2026-11-23,
+    #912).
+- **`step` rules:**
   - Refuses a step whose folder already exists, unless `--replace` is given.
   - `--step` must be one of the deployment's load steps, the list `deploy` stored in `state.json` (the list the step
     folders are padded to). Changing the load steps in `ak-bench.yaml` takes a new `deploy` (PR #893 review).
   - Order is the person's choice; the default order (steady N, then burst N, then the next N) is what `run` uses and
     what the testing checklist recommends.
-  - `--warm-up`: runs the step as normal but writes it to `warm-up/`, left out of `summary.csv` and the graphs.
+  - **No warm-up step** (decided 2026-11-23): `step` has no warm-up option and `run` runs none,
+    since every step starts from the minimum workers on purpose and a one-request warm-up warms only one worker.
+    If a run needs one, it's added by hand to the run script.
   - Records the benchmark settings it ran with in `step-<N>/step-metadata.json`, since `ak-bench.yaml` can change
     between commands.
   - Starts from wherever the deployment is. Normally that's the minimum workers, because the previous step's
@@ -488,12 +537,13 @@ graph LR
 
 - For each selected host × mode × message type: **`deploy` (+ run metadata) → `step` per step run → `plot` →
   `finish` (`after_all_steps` list, tear down)**; later, the optional `post-run` runs the `after_teardown` list. Each
-  step writes its own CSVs and its row of `summary.csv`, so there's no separate "write run-level CSVs" stage.
+  step writes its own CSVs, so there's no separate "write run-level CSVs" stage (the summary CSV, when it's added, is
+  one: see [Later](#later-summary-csv-and-graphs-comparing-the-steps)).
   - **Run test types:** every step stores its own data: live tracking from the start of `before` to the end of the
     cool-down, then the data with history after the cool-down and the configured wait (see
     [Step timeline](#step-timeline)).
-  - Every resource the deployer creates carries the tag `ak-bench-run-id=<run-id>-<host>-<mode>-<message-type>` (one
-    value per host × mode × message type).
+  - Every resource the deployment folder creates carries the tag
+    `ak-bench-run-id=<run-id>-<host>-<mode>-<message-type>` (one value per host × mode × message type).
 
 **The whole flow** (one host × mode × message type):
 
@@ -519,7 +569,7 @@ flowchart TD
     DEP --> B
     H --> MORE{"More step runs?"}
     MORE -- "yes: next step run, from the minimum workers<br/>order: 1 steady → 1 burst → 10 steady → 10 burst → …" --> B
-    MORE -- "no" --> PLOT["<b>plot</b>: graphs (PNG)<br/>(each step run already wrote its CSVs<br/>and its summary.csv row)"] --> FIN["<b>finish</b>: after_all_steps list<br/>(empty on AWS), then tear down"]
+    MORE -- "no" --> PLOT["<b>plot</b>: graphs (PNG)<br/>(each step run already wrote its CSVs)"] --> FIN["<b>finish</b>: after_all_steps list<br/>(empty on AWS), then tear down"]
     FIN -.-> BILL["<b>post-run</b> (optional): after_teardown list<br/>AWS: billed cost, ~1 day later,<br/>writes cost.csv, all steps together"]
 ```
 
@@ -543,22 +593,33 @@ flowchart TD
   - the benchmark settings are recorded **per step**, in `step-<N>/step-metadata.json`, since `ak-bench.yaml` can
     change between step commands: test type and step number, min / max send interval, steady
     load time, before window, maximum cool-down, wait before the after-step fetch, poll intervals, client timeout,
-    time window size, percentile method, warm-up or not.
-  - Host-side values come from the deployer; a value a host doesn't have stays empty.
+    time window size, percentile method.
+  - Host-side values come from the `settings` in `deployment.json`; a value a host doesn't have stays empty.
 
 ### Load generation
 
 - One shared, mode-independent **load generator** (Python asyncio). It:
-  - starts N clients at the same moment, each with its own user identity and session. Clients never share a user:
+  - starts N clients at the same moment, each with its own user identity and session, and exactly one auth token per user (one user per token, decided
+    2026-11-23, #912). The token is signed: `<user>.<HMAC-SHA256 of the user with a per-deployment secret>`,
+    checked by the benchmarked app's own identity provider, so one secret covers any number of users (the secret is
+    kept in the cloud's secret store, see [Deployment folders](#deployment-folders)). A client is one simulated user
+    with its own WebSocket connection; one load-generator process runs all N clients; each client's user id is `bench-<N>`
+    (decided 2026-11-23, #912). Clients never share a user:
     AK pushes a WebSocket reply to every connection of the reply's `user_id` (`pipeline/response_handler.py:279-287`);
   - sends on a schedule (burst: once; steady: a random gap between sends) and **never waits for a response before
     sending**;
-    receiving runs separately and matches responses to requests by `request_id`;
+    receiving runs separately and matches responses to requests by `request_id` (a reply without one by the id in
+    its text; an id-less error reply, which carries neither, by the connection's only in-flight request; with several
+    in flight, as in steady steps, it can't be attributed and those requests show as `timeout`);
   - sets the `request_id` itself (the WS handler accepts a client id, `pipeline/ws/handler.py:228`; the Lambda WS
     path requires one, `deployment/aws/serverless/core/router/ws_lambda.py:386-387`);
-  - records scheduled send, sent, first chunk and complete times per request from the client clock;
+  - records scheduled send, sent (taken just before the send, like AK's trace lines; decided 2026-11-26), first chunk
+    and complete times per request from the client clock: timestamps are
+    UTC wall-clock time (to line up with AK's UTC trace lines); latency and other client-side durations come from a
+    monotonic clock (decided 2026-11-23, #912);
   - stops waiting for a request after the client timeout and records `status = timeout`.
-- Burst steps also record the **time to answer all N** (first send → last response or timeout).
+- **Later** (with the summary CSV): burst steps also record the **time to answer all N** (first send → last response
+  or timeout).
 - The load generator's own health (CPU, event-loop lag) is not recorded (decided).
 
 ### Client drivers (pluggable execution modes)
@@ -566,8 +627,9 @@ flowchart TD
 - `ClientDriver` ABC: connect → send → receive response events → close.
 - Every driver reports the same timing events (sent, first chunk, complete), so every mode has the same columns. For a
   mode with no chunks, first chunk = complete.
-- Driver factory: built-in short name for WebSocket complete (phase 1), dotted-path bring-your-own. The mode and the
-  message type are config values (`async` + `complete` in phase 1).
+- Driver factory: built-in short names only, WebSocket complete in phase 1. No bring-your-own: only the AK team runs
+  the benchmark, so a new driver is a new built-in (decided 2026-11-23, #912). The mode and the message type are
+  config values (`async` + `complete` in phase 1).
 - Later drivers (WebSocket delta with time to first chunk, `rest_async`) are new classes plus a factory branch, with
   no harness change.
 
@@ -592,8 +654,8 @@ flowchart TD
 
 ### Hosts
 
-- A `Host` is a bundle: platform name, deployer, and `fetchers`: a `Fetchers` object with five lists that say where
-  each fetcher runs (decided 2026-11-06, replaces the `live_track` parameter, the "first scaling fetcher is the
+- A `Host` is a bundle: platform name and `fetchers` (no deployer, see [Deployment folders](#deployment-folders)): a
+  `StageFetchers` object with five lists that say where each fetcher runs (decided 2026-11-06, replaces the `live_track` parameter, the "first scaling fetcher is the
   primary" rule and the separate billing reader):
 
   | List | When it runs | Time window passed to `fetch()` |
@@ -607,14 +669,14 @@ flowchart TD
   - A fetcher never knows which list it's in; the list picks the time window. One fetcher object can be in several
     lists (e.g. `aws.ecs_api` in `during_step` and `cooldown_checks`); fetchers are stateless, so that's safe.
   - Moving a fetcher to another part of the run is a one-line move between lists.
-  - Summary CSVs and graphs aren't in the lists: they don't read the platform, and they're the same shared code for
+  - CSVs and graphs aren't in the lists: they don't read the platform, and they're the same shared code for
     every host.
   - **Start-up check** (when the host is loaded, before anything is deployed): every fetcher in `cooldown_checks` has
     `is_settled()`, and a scaling fetcher there gives `running`.
 - A host registry maps names to bundles; a new host or platform is a registration, not a harness change.
-- Code is grouped in folders by cloud (`platforms/aws/`, later `platforms/gcp/`, ...), one file per implementation. No
-  per-cloud "benchmarker" classes (`AWSBenchmarker`, `GCPBenchmarker`), because cloud, compute type and
-  transport vary independently:
+- Fetchers are grouped in folders by the platform they call (`fetchers/aws/`, later `fetchers/gcp/`, ...), one file
+  per implementation. No per-cloud "benchmarker" classes (`AWSBenchmarker`, `GCPBenchmarker`), because cloud, compute
+  type and transport vary independently:
   - `lambda` and `ecs` are both AWS but read worker counts from different places; one AWS class would fill up with
     `if variant == ...` branches.
   - A later Kubernetes host on EKS would read worker counts from Kubernetes but its bill from AWS, so it would belong
@@ -632,8 +694,7 @@ flowchart TD
     HOSTS = {
         "lambda": Host(
             platform="aws",
-            deployer=TerraformDeployer("ak-aws/serverless"),
-            fetchers=Fetchers(
+            fetchers=StageFetchers(
                 during_step=[sqs],
                 cooldown_checks=[sqs, concurrent],             # after the built-in "all requests settled"
                 after_step=[traces, concurrent, LambdaInsightsResourceFetcher(),
@@ -644,8 +705,7 @@ flowchart TD
         ),
         "ecs": Host(
             platform="aws",
-            deployer=TerraformDeployer("ak-aws/containerized"),
-            fetchers=Fetchers(
+            fetchers=StageFetchers(
                 during_step=[ecs_api, sqs],
                 cooldown_checks=[sqs, ecs_api],
                 after_step=[traces, EcsScalingActivitiesScalingInfoFetcher(),
@@ -661,16 +721,18 @@ flowchart TD
   implementations, not a class with its own code. A class per host would copy the shared parts into every host:
   - `lambda` and `ecs` would each carry their own SQS queue depth and Cost Explorer code.
   - A new host would be a new class; as a bundle it's one registry entry built from existing parts.
-- The harness (load generator, timing, CSVs, derived numbers, plots) never calls a cloud API; it only sees the ABCs
+- The harness (load generator, timing, CSVs, plots) never calls a cloud API; it only sees the ABCs
   and their common return types.
-- `Deployer`: `deploy() -> Deployment`, `teardown()`, `deployed_settings() -> dict` (for the run metadata).
-  `Deployment` has four fields, all filled from the Terraform outputs (Q9, decided 2026-11-01):
-  - `endpoint(url, auth)`: where the load generator sends.
+- `Deployment`: read from the `deployment.json` that `deploy.sh` writes (filled from the Terraform outputs; Q9,
+  decided 2026-11-01; read from `deployment.json` decided 2026-11-23, #912):
+  - `endpoint`: the URL the load generator sends to (URL only; tokens come from the load generator, see
+    [Load generation](#load-generation)).
   - `resources: {tier: resource ids}`: what each tier runs on (scaling and resource usage fetchers).
   - `queues: {"input": ids, "output": ids}`: the two pipeline queues for the `TransportCollector` (e.g. an SQS queue
     URL).
   - `logs: {component: log source}`: where each component logs, for the `TraceCollector` and log-based fetchers. Read
     from the deployment, not built from tier names (ECS log groups come from the task definitions).
+  - `settings`: the host values for `run-metadata.json`.
   - Saved in the deployment's `state.json`, so `step`, `finish` and `post-run` rebuild it without deploying.
 - **`InfoFetcher[T]`: one generic base for everything read from the platform.** `ScalingInfoFetcher`,
   `ResourceUsageFetcher`, `TraceCollector`, `TransportCollector` and `CostFetcher` all extend it:
@@ -683,7 +745,7 @@ flowchart TD
     commands deploy nothing. So a fetcher stays stateless and works for any deployment;
   - a value the source gives per period (CloudWatch metrics, Logs Insights `bin()` rows) gets `ts` = the **end** of
     that period, set in `fetch()` (CloudWatch's 10:01 datapoint is stored as 10:02:00: it's the maximum over that
-    minute, known only once the minute is over). Window fill and derived times then both use `ts` as stored
+    minute, known only once the minute is over). Window fill (and the later derived times) then use `ts` as stored
     (decided 2026-11-05, PR #893 review);
   - `store(result: T, results)`: abstract, written once in each family base for its type; `results` is the step's
     folder in the step lists, the host × mode × message type folder in `after_all_steps` / `after_teardown`;
@@ -700,7 +762,7 @@ flowchart TD
   - Each family base fixes `T` (a dataclass): `ScalingInfo`, `ResourceUsage`, `TraceInfo`, `QueueInfo`, `CostInfo`.
     A type checker flags a subclass whose `fetch()` returns anything else.
   - So the runner calls them all the same way, through `fetch_and_store()` (or `fetch()` + `is_settled()` in the
-    cool-down), and never reads a result type itself. The `Deployer` doesn't extend it: it deploys and tears down.
+    cool-down), and never reads a result type itself. Deploying isn't a fetcher's job: the deployment folders do it.
 - Built-in bundles:
 
   | Host | `during_step` | `cooldown_checks` (after "all requests settled") | `after_step` | `after_all_steps` | `after_teardown` |
@@ -708,7 +770,7 @@ flowchart TD
   | `ecs` | `aws.ecs_api`, `sqs` | `sqs`, `aws.ecs_api` | trace lines, `aws.ecs_scaling_activities`, `aws.ecs_container_insights`, `aws.ecs_service_metrics` | – | Cost Explorer |
   | `lambda` | `sqs` | `sqs`, `aws.cloudwatch_metric.ConcurrentExecutions` | trace lines, `aws.cloudwatch_metric.ConcurrentExecutions`, `aws.lambda_insights`, `aws.lambda_report_memory` | – | Cost Explorer |
 
-- Benchmark deployment settings, applied by the deployers and recorded in the metadata:
+- Benchmark deployment settings, applied by the deployment folders and recorded in the metadata:
   - `ecs`: `scaling_config.enabled = true`, `min_count >= 1`.
   - `lambda`: zip packaging (Lambda Insights layer); agent runner timeout **60 s** (AK default 45 s, but 10 messages ×
     the 5 s max agent delay = 50 s); `batch_size × max agent delay` stays under the agent runner timeout (decided
@@ -728,6 +790,28 @@ flowchart TD
     `in_memory` (`session.type`, AK's default; the Terraform `create_redis_cluster`, `create_valkey_cluster` and
     `create_dynamodb_memory_table` stay `false`, their default).
 
+### Deployment folders
+
+- **No deployer class** (decided 2026-11-23, #912; replaces the `Deployer` ABC and `TerraformDeployer`): each host ×
+  mode × message type has a deployment folder, `benchmarks/app/deploy/<host>-<mode>-<message-type>/` (e.g.
+  `lambda-async-complete/`), with its Terraform files, `deploy.sh` and `destroy.sh`.
+  - `deploy` runs the folder's `deploy.sh`; `finish` runs its `destroy.sh`. A missing folder or script is refused
+    before anything runs, naming the path.
+- Script contract, the same for every folder:
+  - inputs as environment variables of the script process: `AK_BENCH_DEPLOYMENT_ID` (the tag value
+    `<run-id>-<host>-<mode>-<message-type>`), `AK_BENCH_AUTH_SECRET`, `AK_BENCH_MOCK_AGENT_MIN_DELAY_S` /
+    `AK_BENCH_MOCK_AGENT_MAX_DELAY_S` (mock agent only), `AK_BENCH_HOST_SETTINGS` (JSON of `host_settings.<host>`),
+    `AK_BENCH_OUTPUT` (where `deploy.sh` writes its result);
+  - `deploy.sh` writes `deployment.json`: `endpoint` (URL only), `resources`, `queues`, `logs`, `settings` (the host
+    values for `run-metadata.json`);
+  - exit code 0 = done; anything else = failed;
+  - Terraform state is kept per deployment id, so two deployments of the same folder never share state.
+- **Auth signing secret** (decided 2026-11-23, #912): stored in the cloud's secret store, never as an environment
+  variable on the deployed components. AWS: the folder's Terraform creates an SSM Parameter Store `SecureString` and
+  gives every component read access; the app reads it through AK's secret capability (`secret.provider.type:
+  aws_ssm`).
+- The harness imports no cloud SDK for deploying; it only runs the scripts and reads `deployment.json`.
+
 ### Mock agent
 
 - **A mock `Runner` in the benchmarked app** (decided 2026-11-06, replaces the earlier pre-hook that replied before
@@ -736,9 +820,9 @@ flowchart TD
   - `run()` waits a random delay per request, `await asyncio.sleep(random.uniform(min_delay, max_delay))` (min / max
     are `mock_agent.min_delay` / `max_delay`, recorded; no defaults; min = max gives a fixed delay), where the LLM
     call would be.
-  - **Delay set at deploy** (decided 2026-11-06): `deploy` reads min / max from `ak-bench.yaml` and sets them as
-    environment variables on the agent runner (`AK_BENCH_MOCK_AGENT_MIN_DELAY_S`, `AK_BENCH_MOCK_AGENT_MAX_DELAY_S`), through
-    the `agent_runner.environment_variables` input both Terraform modules already have
+  - **Delay set at deploy** (decided 2026-11-06): `deploy` reads min / max from `ak-bench.yaml` and passes them to
+    `deploy.sh`, which sets them as environment variables on the agent runner (`AK_BENCH_MOCK_AGENT_MIN_DELAY_S`,
+    `AK_BENCH_MOCK_AGENT_MAX_DELAY_S`), through the `agent_runner.environment_variables` input both Terraform modules already have
     (`ak-aws/serverless/variables.tf:398`, `ak-aws/containerized/variables.tf:387`). The runner reads them once when
     it's created. Fixed for the deployment: changing them takes a new `deploy`, so they're in `run-metadata.json`,
     not `step-metadata.json`.
@@ -775,32 +859,51 @@ flowchart TD
   - Benchmark runs set `logging.ak.level: TRACE`. **No other new configuration.**
   - Departure noted: Python's logging HOWTO advises against custom levels in libraries; taken on purpose so the normal
     level hierarchy works.
-- **`TraceStage`**, a `str` enum in `core/logger.py`: `REQUEST_RECEIVED`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`,
+- **`TraceStage`**, a `str` enum in `core/logger.py`: `REQUEST_HANDLER_START`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`,
   `AGENT_START`, `AGENT_FIRST_CHUNK` (delta only), `AGENT_DONE`, `OUTPUT_ENQUEUED`, `OUTPUT_RECEIVED`,
   `RESPONSE_DELIVERED`; `rest_sync` only: `RESPONSE_POLL_START`, `RESPONSE_FOUND` (traced like the rest, but `rest_sync`
   isn't benchmarked, so they get no duration column and no point in the stage graphs).
 - **One call per trace point:** `log.log(TRACE, "[%s] request_id=%s", stage, request_id)`, with an optional
-  quoted `message` last. `%`-style args so nothing is formatted when off.
+  quoted `message` before the id (`[%s] message="%s" request_id=%s`). The id can be client-supplied, so it is the
+  last field and parses to end of line (PR #1002 review). `%`-style args so nothing is formatted when off.
 - **Line format**, same on every host:
-  `2026-10-21T08:15:12.345Z - ak.pipeline.agent_runner - TRACE - [AGENT_DONE] request_id=<id> message="..."`.
+  `2026-10-21T08:15:12.345Z - ak.pipeline.agent_runner - TRACE - [AGENT_DONE] message="..." request_id=<id>`.
   - Timestamp = the log record's creation time, **UTC, millisecond precision**, ISO 8601 with `Z`.
   - Stage in square brackets first. **Only trace lines carry the stage in `[...]`.**
   - The formatter change (`core/logger.py:42`) applies to **every** AK log line, not only `TRACE`.
   - **Clocks:** a duration between two points logged on different machines (e.g. `INPUT_ENQUEUED` →
-    `AGENT_RECEIVED`, client sent → `REQUEST_RECEIVED`, and `CLIENT_RECEIVED`) includes the clock offset between
+    `AGENT_RECEIVED`, client sent → `REQUEST_HANDLER_START`, and `CLIENT_RECEIVED`) includes the clock offset between
     them. It isn't corrected; the load-generator machine must have clock sync (NTP) on. Durations inside one component
     and end-to-end latency use one clock and aren't affected (PR #893 review).
-- **Parser** in `core/logger.py` next to `TraceStage`, so format and parser change together. The benchmark imports it.
+- **Parser** in `core/logger.py` next to `TraceStage`, so format and parser change together. The benchmark imports it through
+  `agentkernel.core` (`TraceLine`, `TraceStage`).
 - **Trace points on every code path a phase-1 host runs:** shared `pipeline/` (request handler, WS handler, agent
   runner, response handler), ECS containerized handlers, and the Lambda serverless handlers.
   - Each stage is logged exactly where named (e.g. `AGENT_DONE` before the output send, `AGENT_RECEIVED` at
     dequeue).
+  - **Every trace line is written before the work it names, never after:** `INPUT_ENQUEUED` / `OUTPUT_ENQUEUED` just
+    before the queue send, `RESPONSE_DELIVERED` just before the push / store write / platform delivery;
+    `REQUEST_HANDLER_START`, `AGENT_RECEIVED`, `OUTPUT_RECEIVED` as soon as the request id is known, before validation,
+    lookups (e.g. the connection's principal) or payload logging. Stages are then written in request order across
+    components; logged after the send, `INPUT_ENQUEUED` came after `AGENT_RECEIVED` on the in_memory transport.
+    - Delta exception: chunks are sent while the agent runs, so `AGENT_DONE` and `OUTPUT_ENQUEUED` are written once
+      the stream ends (#911 Q2).
+    - A rejected request still has its `REQUEST_HANDLER_START` line, with no later stages.
+    - **Auth is not traced.** `REQUEST_HANDLER_START` (renamed from `REQUEST_RECEIVED`, PR #1002 review) marks the start
+      of AK's handler, not the request's arrival: the identity dependency, an API Gateway authorizer and FastAPI's body
+      parsing and validation run before it and have no trace line.
+    - The send call's own time is in the next stage: the input-queue send in `AGENT_RECEIVED`, the output-queue send
+      in `OUTPUT_RECEIVED` (so `OUTPUT_ENQUEUED` is about 0 in complete mode), the WebSocket broadcast (connection
+      lookup and push) in `CLIENT_RECEIVED`. If the AWS runs show these calls matter, a trace point after the call is
+      added (e.g. `OUTPUT_SEND_DONE`) rather than moving the existing one back.
 - **Trace lines are added next to the existing stage-style INFO lines, not in place of them:**
   - The INFO lines on the request path stay at `INFO` with their text but **drop their `[...]` tag** (e.g.
     `[AGENT DONE] request_id=...` → `Agent done: request_id=...`), so normal logs still show them.
   - The trace call for the matching stage goes where the stage is (which may differ from where the INFO line sits).
-  - At `TRACE` both show. Nothing in the repo matches on the old tags (no docs, metric filters or dashboards).
-  - Per-chunk debug lines, `[OUTPUT STORE]` and off-path lines without a `request_id` are left as they are.
+  - At `TRACE` both show. No metric filters or dashboards match on the old tags; the one example README that quoted one is updated.
+  - Request-path lines on paths the benchmark doesn't run (A2A/MCP protocol, AG-UI, output error/pause) and the
+    per-chunk debug lines also drop their tag, with no trace line added.
+  - Off-path lines without a `request_id` (Gmail polling, realtime voice call start/end) keep their tag.
 - Trace lines carry no worker id. Worker counts come only from the fetchers.
 
 ### Results
@@ -812,43 +915,38 @@ flowchart TD
     `deploy`), so a step's folder name stays the same for the whole deployment even if `ak-bench.yaml` changes (a
     single `step` command doesn't know which steps will follow; PR #893 review).
   - Only what ran gets a folder.
-  - Warm-up steps (`--warm-up`) go to `<message type>/warm-up/`, outside the test type folders.
 - Per run: `run.log` (incl. the missing-responses warnings); every command appends to it.
 - Per host × mode × message type: `run-metadata.json`, `state.json` (the deployment and what has run on it, read by
   the separate commands), `cost.csv` (AWS: whole-run billed cost by service, written by
   `post-run`). A host whose cost fetcher is in `after_step` writes a `cost.csv` per step instead.
-- Per test type: `summary.csv` (one row per step; each `step` writes or replaces its own row), `graphs/`.
+- Per test type: its step folders (no `summary.csv` or `graphs/` yet: see
+  [Later](#later-summary-csv-and-graphs-comparing-the-steps)).
 - Per step:
-  - `per-request.csv`: request id, session id, client id, scheduled send, sent, first chunk, complete, latency, status,
+  - `per-request.csv`: request id, session id, user id, scheduled send, sent, first chunk, complete, latency, status,
     raw stage timestamps, and one `<STAGE>_s` duration column per request-path `TraceStage` value (not the
     `rest_sync`-only ones) plus `CLIENT_RECEIVED_s`.
   - `per-time-window.csv`: step part, Tx, Rx, errors, timeouts, latency percentiles, each queue's depth, worker counts
     per tier × count type × fetcher (e.g. `runner.running.aws.ecs_api`), CPU / memory per tier × metric × stat ×
     fetcher.
   - `resource-usage.csv`: raw per-worker samples in long form (`ts, tier, worker, metric, stat, value, fetcher`).
+  - Raw files the other fetcher families store into, read by the collectors (decided 2026-11-23, #912):
+    `scaling-samples.csv` (`ts, tier, count_type, value, fetcher`), `worker-spans.csv`
+    (`tier, worker, started, stopped, extra, fetcher`), `queue-depth.csv` (`ts, queue, waiting, in_flight, fetcher`),
+    `stage-timestamps.csv` (`request_id, stage, ts`).
   - `step-metadata.json`: the benchmark settings this step ran with.
   - `graphs/`.
 - **How samples fill the time windows** (decided 2026-11-05, PR #893 review): windows start at the step start. Each window takes, for
   each series (tier, worker, metric, stat, fetcher), that series' last sample at or before the window's end, so a
   series from a fetcher polled every 60 s with 1 s windows fills 60 rows with the same value until its next sample. A sample is carried forward for at most its fetcher's poll interval (or
   the source's sample period, e.g. a Lambda Logs Insights bin); after that the window stays empty (e.g. a Lambda
-  window with no invocations). Derived scaling times (summary) use the raw sample times, not the windows.
-- Summary per step: percentiles of end-to-end latency and each stage duration (with the row count used), min / avg /
-  max of per-window Tx / Rx, error and timeout counts, time to answer all N (burst), `cooldown_max_reached`, scaling
-  numbers and CPU / memory per tier per fetcher (fetcher named).
+  window with no invocations).
 - How each measurement is summarized:
   - per-request times, per-worker CPU / memory: p0 / p25 / p50 / p75 / p99 / p100. No avg column.
   - ECS service metrics: min / avg / max (all AWS gives).
-  - Tx / Rx: min / avg / max of per-window values.
   - counts, times, costs: the value itself.
 
 ### Graphs (PNG)
 
-- Comparing the steps of one host × mode × message type × test type (`<test type>/graphs/`):
-  1. `01-latency-per-step.png`: end-to-end latency percentiles per step, timeouts counted under each step.
-  2. `02-stage-times-per-step.png`: the per-step stage-times graph for every step, one panel per step, same y scale.
-  3. `03-resource-usage-per-step.png`: CPU % and memory percentiles per step, one row of panels per tier
-     (Lambda: memory only).
 - One step (`step-<N>/graphs/`):
   1. `01-stage-times.png`: one box per stage (p25-p75, line at p50, whiskers p0 / p100, marker at p99).
   2. `02-stage-breakdown.png`: stacked stage times for the fastest, average and slowest real request (completed
@@ -870,6 +968,22 @@ flowchart TD
   - billed cost per run by service, drawn when the cost is written (AWS: by `post-run`).
 - No cross-host or cross-mode comparison graphs.
 
+### Later: summary CSV and graphs comparing the steps
+
+- Not built in the first stage (decided 2026-11-25): the per-step CSVs and graphs are enough for now. May be added
+  later.
+- When added, the summary is made **after all the step runs and before `plot`** (`run`: deploy → steps → summary →
+  plot → finish), from the step folders' CSVs, not by each `step`.
+- `summary.csv` per test type, one row per step: percentiles of end-to-end latency and each stage duration (with the
+  row count used), min / avg / max of per-window Tx / Rx, error and timeout counts, time to answer all N (burst),
+  `cooldown_max_reached`, the derived scaling numbers (see [Scaling](#scaling)) and CPU / memory per tier per fetcher
+  (fetcher named) over the step's raw samples. Derived scaling times use the raw sample times, not the windows.
+- Graphs comparing the steps of one host × mode × message type × test type (`<test type>/graphs/`):
+  1. `01-latency-per-step.png`: end-to-end latency percentiles per step, timeouts counted under each step.
+  2. `02-stage-times-per-step.png`: the per-step stage-times graph for every step, one panel per step, same y scale.
+  3. `03-resource-usage-per-step.png`: CPU % and memory percentiles per step, one row of panels per tier
+     (Lambda: memory only).
+
 ### Phase 2: SLA numbers and tuning
 
 - Computed from the phase-1 CSVs without re-running.
@@ -887,8 +1001,11 @@ flowchart TD
 - Comparing hosts with each other (no cross-host graphs).
 - Non-queue execution; `rest_sync` in any round.
 - WebSocket delta and `rest_async` drivers in phase 1 (designed for, added later).
-- WebSocket connect part and front-door scaling (later).
+- Recording WebSocket connect times and front-door scaling (later; phase 1 only opens the connections before
+  `before`).
 - Repeated runs with spread across runs (later).
+- The summary CSV and the graphs comparing the steps in the first stage (may be added later; see
+  [Later](#later-summary-csv-and-graphs-comparing-the-steps)).
 - Kubernetes hosts (EKS, then bare metal) with Kafka: right after the AWS hosts; designed when they're built.
 - GCP, Azure and NATS hosts (interfaces allow them; nothing built).
 - Vertical scaling.
@@ -900,13 +1017,17 @@ flowchart TD
 Q1-Q8 were resolved on 2026-10-30 and Q9 on 2026-11-01. None are open.
 
 - **Q9 (resolved).** Where the `TransportCollector` finds the queue ids and the `TraceCollector` the log sources:
-  two more `Deployment` fields, `queues` and `logs`, filled by the deployer (see [Hosts](#hosts)).
+  two more `Deployment` fields, `queues` and `logs`, filled by the deployer (see [Hosts](#hosts)). (2026-11-23,
+  #912: now written by the deployment folder's `deploy.sh` into `deployment.json`; there is no deployer class.)
 
 ## Decided later
 
 Parked on purpose; decided when that part is built.
 
-- **L2.** WebSocket delta: trace every chunk or only the first (`AGENT_FIRST_CHUNK`) and last (`AGENT_DONE`).
+- **L2 (decided 2026-11-26, PR #1002 review).** WebSocket delta: no per-chunk trace lines. The agent runner traces the
+  first chunk (`AGENT_FIRST_CHUNK`) and the stream end (`AGENT_DONE`); the Response Handler writes `OUTPUT_RECEIVED`
+  and `RESPONSE_DELIVERED` for the last chunk only (`done: true`), so a request has one line per stage. Per-chunk
+  timing comes from the client.
 - **L3.** Config vs CLI: `hosts`, `modes`, `message_types`, `test_types` and `load_steps` are in `ak-bench.yaml` and
   also come in through the commands (`--host`, `--mode`, `--message-type`, `--test-type`, `--steps` / `--step`). The
   design keeps them in the config; during implementation, if one of them can be dropped from the config or from the
