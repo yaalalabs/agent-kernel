@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentkernel.core.config import _ExecutionConfig
+from agentkernel.core.model import ExecutionMode
 from agentkernel.deployment.aws.serverless.akagentrunner import ServerlessStreamAgentRunner
 
 
@@ -48,6 +50,12 @@ def test_get_record_attributes_raises_when_request_id_missing():
         ServerlessStreamAgentRunner._get_record_attributes(record)
 
 
+def _config(mode, message_type="delta"):
+    config = MagicMock()
+    config.execution = _ExecutionConfig(mode=mode, message_type=message_type)
+    return config
+
+
 def test_get_record_attributes_raises_when_endpoint_url_missing():
     record = {
         "body": json.dumps({"prompt": "hello", "session_id": "s1"}),
@@ -56,8 +64,27 @@ def test_get_record_attributes_raises_when_endpoint_url_missing():
             "request_id": {"stringValue": "req-1", "DataType": "String"},
         },
     }
-    with pytest.raises(ValueError, match="endpoint_url is required"):
-        ServerlessStreamAgentRunner._get_record_attributes(record)
+    with patch("agentkernel.deployment.aws.serverless.akagentrunner.AKConfig") as config_cls:
+        config_cls.get.return_value = _config(ExecutionMode.ASYNC)
+        with pytest.raises(ValueError, match="endpoint_url is required"):
+            ServerlessStreamAgentRunner._get_record_attributes(record)
+
+
+def test_sse_record_without_endpoint_url_resolves_attributes_without_it():
+    record = _make_record({"prompt": "hello", "session_id": "s1"})
+    del record["messageAttributes"]["endpoint_url"]
+    with patch("agentkernel.deployment.aws.serverless.akagentrunner.AKConfig") as config_cls:
+        config_cls.get.return_value = _config(ExecutionMode.REST_SYNC)
+        attrs = ServerlessStreamAgentRunner._get_record_attributes(record)
+    assert "endpoint_url" not in attrs
+    assert attrs["request_id"] == "req-1"
+
+
+def test_sse_chunk_is_sent_without_the_endpoint_url_attribute():
+    attrs = {"message_group_id": "g", "message_deduplication_id": "d", "request_id": "req-1", "user_id": "u"}
+    with patch("agentkernel.deployment.aws.serverless.akagentrunner.SQSHandler") as sqs:
+        ServerlessStreamAgentRunner._send_chunk_to_output_queue({"delta": "x"}, attrs, "0")
+    assert sqs.send_message_to_output_queue.call_args.kwargs["custom_message_attributes"] == []
 
 
 def test_parse_body_returns_base_run_request():

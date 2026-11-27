@@ -192,7 +192,7 @@ resource "aws_iam_role_policy_attachment" "lambda_websocket_connections_dynamodb
 resource "aws_iam_policy" "lambda_sqs_policy" {
   count = var.queue_mode ? 1 : 0
   name  = "${var.prefix}-${var.function_name}-sqs"
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -334,6 +334,17 @@ data "aws_s3_object" "signed_component_code" {
   ]
 }
 
+locals {
+  # AWS Lambda Web Adapter settings for SSE (rest_sync + delta). The adapter binary itself comes from the app's
+  # packaging: a layer ARN in `layers` for zip packages, a Dockerfile COPY for images.
+  response_streaming_environment = var.response_streaming ? merge({
+    AWS_LWA_INVOKE_MODE          = "response_stream"
+    AWS_LWA_PORT                 = "8000"
+    AK_API__PORT                 = "8000"
+    AWS_LWA_READINESS_CHECK_PATH = "/health"
+  }, var.package_type != "Image" ? { AWS_LAMBDA_EXEC_WRAPPER = "/opt/bootstrap" } : {}) : {}
+}
+
 module "lambda_deployment" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
@@ -348,7 +359,7 @@ module "lambda_deployment" {
   local_existing_package = var.package_type == "LocalZip" ? var.package_path : null
   create_package         = false
   package_type           = var.package_type == "Image" ? "Image" : "Zip"
-  create_layer = false # to control creation of the Lambda Layer and related resources
+  create_layer           = false # to control creation of the Lambda Layer and related resources
   layers                 = var.layers
 
   use_existing_cloudwatch_log_group = false
@@ -360,7 +371,7 @@ module "lambda_deployment" {
   attach_async_event_policy         = false
 
   vpc_subnet_ids          = var.subnet_ids
-  vpc_security_group_ids = var.security_group_id != "" ? [var.security_group_id] : []
+  vpc_security_group_ids  = var.security_group_id != "" ? [var.security_group_id] : []
   code_signing_config_arn = (var.package_type == "S3Zip" && var.is_production == true) ? var.lambda_signing_config_arn : null
 
   s3_existing_package = var.is_production && var.package_type == "S3Zip" ? {
@@ -369,24 +380,24 @@ module "lambda_deployment" {
     version_id = try(data.aws_s3_object.signed_component_code[0].version_id, null)
   } : var.s3_existing_package
 
-  environment_variables = merge(var.environment_variables, {
-      API_BASE_PATH = var.api_base_path
-      API_VERSION = var.api_version
-      AGENT_ENDPOINT = var.agent_endpoint
+  environment_variables = merge(var.environment_variables, local.response_streaming_environment, {
+    API_BASE_PATH  = var.api_base_path
+    API_VERSION    = var.api_version
+    AGENT_ENDPOINT = var.agent_endpoint
     },
-      var.redis_url != null ? {
+    var.redis_url != null ? {
       AK_SESSION__REDIS__URL = var.redis_url
     } : {},
-      var.valkey_url != null ? {
+    var.valkey_url != null ? {
       AK_SESSION__VALKEY__URL = var.valkey_url
     } : {},
-      var.dynamodb_memory_table_arn != null ? {
+    var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
     } : {},
-      var.dynamodb_multimodal_memory_table_arn != null ? {
+    var.dynamodb_multimodal_memory_table_arn != null ? {
       AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
     } : {},
-      var.dynamodb_thread_table_arn != null ? {
+    var.dynamodb_thread_table_arn != null ? {
       AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
     } : {},
     # Scheduling: the group/role/queue coordinates only. `schedule.provider.type` and
@@ -404,22 +415,22 @@ module "lambda_deployment" {
     var.ssm_enabled ? {
       AK_SECRET__PREFIX = var.prefix
     } : {},
-      var.response_store_redis != null ? {
+    var.response_store_redis != null ? {
       AK_EXECUTION__RESPONSE_STORE__REDIS__URL = var.response_store_redis.url
     } : {},
-      var.response_store_valkey != null ? {
+    var.response_store_valkey != null ? {
       AK_EXECUTION__RESPONSE_STORE__VALKEY__URL = var.response_store_valkey.url
     } : {},
-      var.response_store_dynamodb != null ? {
+    var.response_store_dynamodb != null ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_dynamodb.table_name
     } : {},
-      var.input_queue_url != null ? {
+    var.input_queue_url != null ? {
       AK_EXECUTION__QUEUES__INPUT__URL = var.input_queue_url
     } : {},
-      var.output_queue_url != null ? {
+    var.output_queue_url != null ? {
       AK_EXECUTION__QUEUES__OUTPUT__URL = var.output_queue_url
     } : {},
-      var.websocket_connections_dynamodb != null ? {
+    var.websocket_connections_dynamodb != null ? {
       AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_dynamodb.table_name
     } : {}
   )

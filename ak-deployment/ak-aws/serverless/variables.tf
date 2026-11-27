@@ -75,6 +75,22 @@ variable "message_type" {
     condition     = contains(["complete", "delta"], coalesce(var.message_type, "complete")) # null passes
     error_message = "message_type must be null, 'complete' or 'delta'."
   }
+  validation {
+    condition     = !(var.execution_mode == "rest_sync" && var.message_type == "delta") || var.queue_mode
+    error_message = "execution_mode rest_sync with message_type delta (SSE) needs queue_mode = true."
+  }
+  validation {
+    condition     = !(var.execution_mode == "rest_sync" && var.message_type == "delta") || try(var.queue_config.fifo_queue, true)
+    error_message = "execution_mode rest_sync with message_type delta (SSE) needs FIFO queues (queue_config.fifo_queue = true) so stream chunks stay in order."
+  }
+  validation {
+    condition     = !(var.execution_mode == "rest_sync" && var.message_type == "delta") || !var.create_dynamodb_response_store
+    error_message = "execution_mode rest_sync with message_type delta (SSE) needs a response store that can stream chunks (Redis or Valkey); DynamoDB cannot."
+  }
+  validation {
+    condition     = !(var.execution_mode == "rest_sync" && var.message_type == "delta") || var.authorizer == null
+    error_message = "execution_mode rest_sync with message_type delta (SSE) is authenticated inside the app through the identity block in config.yaml; remove authorizer."
+  }
 }
 
 variable "tags" {

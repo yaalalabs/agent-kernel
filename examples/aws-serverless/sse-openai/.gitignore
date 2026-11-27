@@ -1,0 +1,6 @@
+.terraform
+requirements.txt
+dist*
+*.tfstate
+*.tfstate.backup
+.terraform.tfstate.lock.info

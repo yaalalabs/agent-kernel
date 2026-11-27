@@ -47,7 +47,7 @@ If missing, suggest `ak-init` first.
 - Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode; AWS serverless or containerized)
 - Asynchronous REST (`rest_async`, queue/scalable mode; AWS serverless or containerized)
 - WebSocket full-response (`async` with `message_type` unset or `complete`, works with or without queue mode — `queue_mode = false` runs the agent inline, `queue_mode = true` enqueues to a separately-scalable Agent Runner) — AWS serverless or AWS containerized/ECS
-- WebSocket token streaming (`async` with `message_type = "delta"`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: rest_sync` and `execution.message_type: delta`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container (non-queue) REST, Azure Container Apps, GCP Cloud Run — not on AWS Lambda (refused at startup), ECS queue mode (rejected at `terraform plan` only when the Terraform `message_type` variable is `delta`, so set it there as well as in `config.yaml`; use `async` + `delta` on both) or Azure Functions. The old `stream` mode was removed: `execution_mode = "stream"` fails at `terraform plan` and `execution.mode: stream` fails at config load
+- WebSocket token streaming (`async` with `message_type = "delta"`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: rest_sync` and `execution.message_type: delta`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container (non-queue) REST, Azure Container Apps, GCP Cloud Run, and on AWS Lambda in queue mode through `LambdaStreamServer` (see "SSE on AWS Lambda" below) — not with `Lambda.handler` (refused at startup), ECS queue mode (rejected at `terraform plan` only when the Terraform `message_type` variable is `delta`, so set it there as well as in `config.yaml`; use `async` + `delta` on both) or Azure Functions. The old `stream` mode was removed: `execution_mode = "stream"` fails at `terraform plan` and `execution.mode: stream` fails at config load
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: which identity provider authenticates callers (the `identity` block in `config.yaml`: `static`, `oidc` for Auth0, Keycloak, Okta or any OIDC issuer, `cognito`, `entra`, `firebase`, or your own), and on AWS serverless, is the API Gateway `authorizer` wanted (see Deploying the Identity Provider)?
@@ -846,8 +846,41 @@ On an unrecoverable error, the final chunk carries `error` instead of `delta`, w
 
 - Queue disabled (`queue_mode = false`): the request handler Lambda streams tokens directly to the WebSocket client without SQS.
 - `create_redis_response_store` / `create_valkey_response_store` / `create_dynamodb_response_store` must be `false` for `async` with either `message_type` — Terraform validation enforces this.
-- `rest_sync` + `delta` is not a Lambda alternative: the Lambda REST router does not stream, so it refuses that pair at router init.
+- `rest_sync` + `delta` is refused by `Lambda.handler`'s REST router at init: it returns one finished body. For SSE on Lambda, serve `LambdaStreamServer` instead (next block).
 - See [examples/aws-serverless/streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) for a complete working example.
+
+**SSE on AWS Lambda (`rest_sync` + `delta`)**: the request-handler Lambda runs the same app as ECS (`RESTAPI` + the pipeline `RequestHandler`) under uvicorn, behind the AWS Lambda Web Adapter, and API Gateway forwards each frame (`response_transfer_mode = "STREAM"`, set by the module).
+
+```hcl
+queue_mode                  = true
+execution_mode              = "rest_sync"
+message_type                = "delta"
+create_redis_response_store = true # or create_valkey_response_store; DynamoDB cannot stream chunks
+# queue_config.fifo_queue stays true (the default); no `authorizer`
+
+request_handler = {
+  handler_path = "run.sh"   # start script for a zip package
+  package_type = "S3Zip"
+  layers       = ["arn:aws:lambda:<region>:753240598075:layer:LambdaAdapterLayerX86:<version>"]
+  timeout      = 300        # bounds the stream (default 45 s)
+  # ...
+}
+```
+
+```python
+# app_stream_server.py, started by run.sh: `cd /var/task && exec python3 app_stream_server.py`
+from agentkernel.aws import LambdaStreamServer
+
+if __name__ == "__main__":
+    LambdaStreamServer.run()
+```
+
+- `terraform plan` refuses the pair without `queue_mode`, with a standard queue, with the DynamoDB response store, or with `authorizer`. Authenticate in the app's `identity` block instead; without one every caller is anonymous.
+- The module sets `AWS_LWA_INVOKE_MODE=response_stream`, `AWS_LWA_PORT`/`AK_API__PORT=8000`, `AWS_LWA_READINESS_CHECK_PATH=/health`, and `AWS_LAMBDA_EXEC_WRAPPER=/opt/bootstrap` (zip only). For an image, copy the adapter from a pinned `public.ecr.aws/awsguru/aws-lambda-adapter:<version>` tag instead of the layer.
+- The request handler package needs `agentkernel[api,aws,redis]` (or `valkey`), no agent framework. Build every Lambda package for the runtime: `uv pip install ... --python-platform x86_64-manylinux_2_34 --python-version 3.12 --only-binary :all:`.
+- Requests must carry `session_id`. The configured chat path maps to `/api/v1/chat`; other gateway paths reach the app unchanged; A2A and MCP mounts are not reachable.
+- Limits: 15 minutes per stream, closed after 5 minutes idle (Regional endpoint); the Lambda timeout bounds the stream; each open stream holds one request-handler instance; a disconnect does not stop the run; a runner retry repeats text.
+- See [examples/aws-serverless/sse-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/sse-openai).
 
 **Containerized / direct streaming (no Terraform WebSocket setup)**: wherever the built-in FastAPI REST server runs — local/self-hosted, AWS ECS single-container (non-queue) REST, Azure Container Apps, GCP Cloud Run — SSE event streaming can be enabled in `config.yaml`:
 
@@ -857,7 +890,7 @@ execution:
   message_type: delta
 ```
 
-`POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Under any other pair, including `async`, the direct REST handler returns JSON. With the queue pipeline (`IOHandler`), SSE works on the `in_memory` transport, and on a broker (SQS, Kafka, NATS, Service Bus) with a `redis` or `valkey` response store, the shared stores that can stream chunks; with `dynamodb` (or any store that cannot stream chunks) on a broker, `IOHandler` fails at startup. Not available on AWS Lambda (refused at REST router init), ECS queue mode (rejected at `terraform plan`) or Azure Functions — use `async` + `delta` over WebSocket on AWS.
+`POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Under any other pair, including `async`, the direct REST handler returns JSON. With the queue pipeline (`IOHandler`), SSE works on the `in_memory` transport, and on a broker (SQS, Kafka, NATS, Service Bus) with a `redis` or `valkey` response store, the shared stores that can stream chunks; with `dynamodb` (or any store that cannot stream chunks) on a broker, `IOHandler` fails at startup. On AWS Lambda use `LambdaStreamServer` (above; `Lambda.handler`'s REST router refuses the pair). Not available in ECS queue mode (rejected at `terraform plan`) or on Azure Functions — use `async` + `delta` over WebSocket there.
 
 ### E) API Gateway Authorizer (AWS)
 

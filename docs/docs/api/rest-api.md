@@ -567,7 +567,7 @@ with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
 
 **Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK support token streaming. CrewAI and smolagents declare `supports_streaming = False` and raise `NotImplementedError` when `execution.message_type: delta` is used; keep `message_type: complete` (the default) for those frameworks instead.
 
-For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
+On AWS Lambda the same SSE stream is served by `LambdaStreamServer` behind the Lambda Web Adapter; see [SSE Streaming on AWS Serverless](/docs/deployment/aws-serverless#sse-streaming-rest_sync--delta) and the [sse-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/sse-openai). For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 
 
 ## Authentication

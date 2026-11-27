@@ -78,3 +78,25 @@ with the LWA extension (image), behind a Regional REST API `STREAM` integration 
 The two authorizer questions above (authorizer on `STREAM`, authorizer context through LWA) no longer
 block the design: it puts no authorizer on this function (design section 5). They stay open only as
 facts.
+
+## Spike results (2026-11-26, us-east-2)
+
+A throwaway stack: a Starlette app writing one frame per second for 40 s, zipped with the LWA layer
+(`LambdaAdapterLayerX86:30`, `run.sh`, `AWS_LAMBDA_EXEC_WRAPPER=/opt/bootstrap`), behind a Regional REST
+API `AWS_PROXY` integration in `STREAM` mode with the streaming invocation URI, `authorization = "NONE"`
+and only `lambda:InvokeFunction` granted.
+
+- **verified**: frames reach `curl -N` about one second apart, not in one block. Brief network stalls
+  flushed up to four frames together once; this is jitter, not buffering.
+- **verified**: the app receives the `Authorization` header unchanged.
+- **verified**: `scope["path"]` is `/api/v1/chat`: the full path, with no stage prefix.
+- **verified**: `lambda:InvokeFunction` is enough for the streaming invocation.
+- **verified**: with `timeout_milliseconds` **unset**, the stream is cut after about 28 s (frame 28 of 40,
+  no `done`). API Gateway applies its 29 s default.
+- **verified**: with `timeout_milliseconds = 900000`, all 40 frames and `done` arrive, although the account
+  quota "Maximum integration timeout in milliseconds" is 29000. `STREAM` honours an explicit timeout, and
+  the quota does not block it. The design sets it explicitly.
+- **lesson**: after the timeout change, one run still stopped at 28 s because the stage had not been
+  redeployed; `aws apigateway create-deployment` fixed it. The module's redeployment trigger hashed only
+  integration ids, which do not change when `uri`, `response_transfer_mode` or `timeout_milliseconds`
+  change in place. It now hashes those attributes.

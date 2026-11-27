@@ -678,6 +678,17 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   method and path only (never headers; authorizer TTL must be 0); `PollerRunner(adapter)` hosts a `PollingInboundAdapter` in its own
   process at one replica (its `mark_handled` state is per process), waiting on
   `ThreadRunner.shutdown_event` between iterations so a long interval still drains promptly.
+- **`LambdaStreamServer`** (#894, `deployment/aws/serverless/core/stream_server.py`): SSE (`rest_sync` + `delta`)
+  on the request-handler Lambda. `run(handlers=None)` builds `RESTAPI.build_app` with the pipeline `RequestHandler`
+  (the REST half of `IOHandler.run`; the Response Handler is its own Lambda) and serves it with uvicorn on
+  `api.host:api.port`; the AWS Lambda Web Adapter forwards each invocation to it and streams the body back through a
+  `STREAM` API Gateway integration. `LambdaStreamGuard` fails the cold start on a non-`rest_sync`+`delta` pair, a
+  non-`sqs` transport, missing `API_BASE_PATH`/`API_VERSION`/`AGENT_ENDPOINT`, then `IOHandler.check_deployment`
+  (a store that cannot stream chunks); `run` logs the `AKConfigError` in full before exiting, because LWA reports
+  only a readiness timeout. `LambdaChatPathMiddleware` maps the configured chat path to `RequestHandler.CHAT_PATH`
+  and passes every other path through unchanged (ECS's rule); the path comes from `core/paths.py::LambdaPaths`, the
+  one parser `BaseLambdaRouter` and `LambdaWebhookGuard` also delegate to. Exported lazily from `agentkernel.aws`
+  (it imports FastAPI/uvicorn), like `LambdaWebhookHost`.
 - **Testing**: `adapter/testing.py::IntegrationAdapterContract` is the reusable conformance suite
   (the `QueueTransportContract` pattern), subclassed once per built-in in
   `tests/test_integration_adapter_contract.py`; `tests/test_integration_roundtrip.py` drives a
@@ -1604,7 +1615,7 @@ package:
 1. **Drivers never read `AKConfig`**: all connection parameters are explicit constructor
    arguments; config reading and validation stay in the stores and factories
 2. **Drivers own the connection lifecycle** (lazy connect, 3-retry/2s back-off, Redis/Valkey
-   ping health-check with reconnect, `socket_connect_timeout=5`, TTL plumbing) plus a generic
+   ping health-check with reconnect, `socket_connect_timeout=5` and an explicit `socket_timeout=5`, TTL plumbing) plus a generic
    command surface; key schemas, serialization, and data layouts stay in the store classes
 3. **Drivers expose their native handle** (`client` / `table` / `table_client` / `collection`)
    for consumers whose data operations exceed the generic surface (e.g. the DynamoDB/Cosmos/
@@ -1614,6 +1625,11 @@ package:
 optional; consumers import the concrete module (`from agentkernel.core.util.driver.redis import
 RedisDriver`). Connect/reconnect is serialized by a per-instance `threading.Lock`, so drivers
 are safe to share across threads (e.g. response stores under `ResponseHandler`).
+
+`_RedisLikeDriver.blpop` waits in slices shorter than the client's `socket_timeout` (`_blocking_slice`) until the
+caller's budget is spent: a blocking command keeps the socket silent for its whole wait, so one long BLPOP would die
+as a socket timeout. redis-py 8 made 5 s the default (7.x had none), which broke SSE streams whose first chunk took
+longer, such as a cold agent-runner Lambda.
 
 ## Directory Structure
 
@@ -2058,7 +2074,11 @@ User Input
             → yield StreamChunk(done=True)
             → clear volatile cache                   # cleanup
     → REST: SSE (`text/event-stream`) when execution.mode=rest_sync + execution.message_type=delta (`is_sse`)
-    → AWS Lambda serverless (async + delta; the REST router refuses rest_sync + delta at init): each StreamChunk sent as a separate SQS/WebSocket `STREAM_CHUNK` message
+    → AWS Lambda serverless (async + delta): each StreamChunk sent as a separate SQS/WebSocket `STREAM_CHUNK` message
+    → AWS Lambda serverless (rest_sync + delta, #894): `LambdaStreamServer` serves the REST SSE path above behind the
+      Lambda Web Adapter; `ServerlessStreamAgentRunner` sends one SQS output message per chunk (no `endpoint_url`
+      outside WebSocket mode), the serverless `ResponseHandler` writes each with `store.add_chunk`, and the
+      request handler reads them back with `store.stream` (Redis/Valkey). `Lambda.handler`'s REST router still refuses the pair
     → AWS ECS containerized (async + delta): queue mode: `StreamAgentRunner` fans out one SQS output message per
       chunk, `ResponseHandler` broadcasts each as `STREAM_CHUNK`; direct mode: `ECSWebSocketRequestHandler`
       broadcasts chunks inline via `ChatService.process_stream_chat_async`

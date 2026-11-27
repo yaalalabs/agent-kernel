@@ -112,3 +112,65 @@ def test_process_message_async_delta_calls_broadcast_stream_chunk(mock_config_cl
     broadcasted = call_kwargs.kwargs["message"]
     assert message_type == LambdaWSHandler.MessageType.STREAM_CHUNK
     assert broadcasted["delta"] == "token"
+
+
+def _sse_record(request_id="req-1"):
+    attrs = {"request_id": {"StringValue": request_id, "DataType": "String"}} if request_id else {}
+    return {
+        "body": json.dumps({"delta": "tok", "done": False, "session_id": "s1"}),
+        "attributes": {"MessageGroupId": "s1"},
+        "messageAttributes": attrs,
+    }
+
+
+@pytest.fixture
+def sse_store():
+    from agentkernel.core.model import ExecutionMode
+
+    config = MagicMock()
+    config.execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta")
+    store = MagicMock()
+    store.supports_chunk_streaming.return_value = True
+    with (
+        patch("agentkernel.deployment.aws.serverless.akresponsehandler.AKConfig") as config_cls,
+        patch.object(ResponseHandler, "_get_response_store", return_value=store),
+    ):
+        config_cls.get.return_value = config
+        yield store
+
+
+def test_sse_chunk_is_added_to_the_store_as_a_chunk(sse_store):
+    ResponseHandler.process_message(_sse_record())
+
+    sse_store.add_chunk.assert_called_once_with("req-1", {"delta": "tok", "done": False, "session_id": "s1"})
+    sse_store.add_message.assert_not_called()
+
+
+def test_sse_chunk_without_request_id_raises_so_it_is_retried(sse_store):
+    with pytest.raises(ValueError, match="request_id is required"):
+        ResponseHandler.process_message(_sse_record(request_id=None))
+
+
+def test_sse_chunk_on_a_store_that_cannot_stream_raises_config_error(sse_store):
+    from agentkernel.core.util.factory import AKConfigError
+
+    sse_store.supports_chunk_streaming.return_value = False
+    with pytest.raises(AKConfigError, match="chunk-streaming response store"):
+        ResponseHandler.process_message(_sse_record())
+
+
+def test_sse_permanent_failure_writes_one_error_chunk(sse_store):
+    ResponseHandler.on_permanent_failure(_sse_record())
+
+    request_id, chunk = sse_store.add_chunk.call_args.args
+    assert request_id == "req-1"
+    assert chunk["done"] is True
+    assert "Failed to process message" in chunk["error"]
+    assert chunk["session_id"] == "s1"
+    sse_store.add_message.assert_not_called()
+
+
+def test_sse_permanent_failure_without_request_id_is_dropped_not_raised(sse_store):
+    ResponseHandler.on_permanent_failure(_sse_record(request_id=None))
+
+    sse_store.add_chunk.assert_not_called()

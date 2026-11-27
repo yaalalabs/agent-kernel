@@ -260,13 +260,15 @@ module needs `>= 1.9.5`, `main.tf:14`)
     else `var.lambda_function_invoke_arn` (unchanged)
   - `response_transfer_mode` = `"STREAM"` when streaming, else `null`. A `null` keeps the provider's
     default, so existing stacks plan no change. This is checked in iteration 4 of the plan.
-  - `timeout_milliseconds` is not set (the doc conflict in the research note: the spike decides).
+  - `timeout_milliseconds` = `900000` when streaming, else `null`. Unset, API Gateway cuts every stream at
+    its 29 s default (spike, research note); an explicit value is honoured by `STREAM`.
 - `aws_api_gateway_method.endpoint` (`:94-95`) is unchanged. `create_authorizer` is false in SSE mode
   (8b), so every method is `NONE`.
 - `aws_lambda_permission.endpoint` (`:119-124`) is unchanged: `lambda:InvokeFunction` (the spike confirms
   it covers streaming invocations).
-- The redeployment trigger (`:128-139`) already hashes the integration ids. A changed `uri` or mode
-  replaces the integration, so the stage redeploys.
+- The redeployment trigger (`:128-139`) hashed only the integration ids, which do not change when `uri`,
+  `response_transfer_mode` or `timeout_milliseconds` change in place, so the stage kept the old setting.
+  It also hashes those three attributes now.
 
 ### 9. Example: `examples/aws-serverless/sse-openai`
 

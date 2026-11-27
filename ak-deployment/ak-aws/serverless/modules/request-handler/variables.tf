@@ -68,13 +68,13 @@ variable "queue_mode" {
 variable "event_source_mapping" {
   description = "Event source mapping"
   type        = any
-  default = []
+  default     = []
 }
 
 variable "environment_variables" {
   description = "Environment variables"
   type        = any
-  default = {}
+  default     = {}
 }
 
 variable "timeout" {
@@ -112,8 +112,8 @@ variable "package_type" {
 
 variable "layers" {
   description = "Lambda layers"
-  type = list(string)
-  default = []
+  type        = list(string)
+  default     = []
 }
 
 variable "api_version" {
@@ -140,7 +140,7 @@ variable "vpc_id" {
 }
 
 variable "subnet_ids" {
-  type = list(string)
+  type        = list(string)
   description = "Subnet IDs for VPC deployment"
 }
 
@@ -343,4 +343,11 @@ variable "ssm_enabled" {
   type        = bool
   description = "Whether this tier's role may read /ak/<prefix>/* from SSM Parameter Store and receive AK_SECRET__PREFIX"
   default     = false
+}
+
+variable "response_streaming" {
+  type        = bool
+  description = "Serve SSE (rest_sync + delta) through the AWS Lambda Web Adapter: sets the adapter's environment variables on the function."
+  default     = false
+  nullable    = false
 }

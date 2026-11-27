@@ -76,6 +76,10 @@ weekly:
     - type: aws-serverless
       path: examples/aws-serverless/scalable-openai
       deploy_dir: deploy
+    # SSE on Lambda (#894): the request handler streams through the Lambda Web Adapter.
+    - type: aws-serverless
+      path: examples/aws-serverless/sse-openai
+      deploy_dir: deploy
     - type: aws-serverless
       path: examples/aws-serverless/openai-auth
       deploy_dir: deploy

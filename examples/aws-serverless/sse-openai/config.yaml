@@ -1,0 +1,41 @@
+logging:
+  ak:
+    level: DEBUG
+session:
+  type: redis
+  redis:
+    prefix: "ak:sse-openai:example:"
+    # url is injected by Terraform (AK_SESSION__REDIS__URL)
+execution:
+  # SSE: the caller keeps one HTTP connection open and receives the reply as `data:` frames
+  mode: rest_sync
+  message_type: delta
+  queues:
+    type: sqs
+    input:
+      max_receive_count: 3
+    output:
+      max_receive_count: 3
+  # SSE needs a response store that can stream chunks: Redis or Valkey (DynamoDB cannot)
+  response_store:
+    type: redis
+    redis:
+      prefix: "ak:sse-openai:response:"
+      # url is injected by Terraform (AK_EXECUTION__RESPONSE_STORE__REDIS__URL)
+
+# SSE mode has no API Gateway authorizer: the app authenticates every request itself. Without this
+# block every caller is anonymous. The key names a secret: Terraform passes its value to the request
+# handler as the DEMO_AUTH_TOKEN environment variable (var.demo_auth_token), which the secret capability
+# resolves at startup. Send it as `Authorization: Bearer <value>`.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

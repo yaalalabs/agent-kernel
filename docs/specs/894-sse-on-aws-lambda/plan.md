@@ -25,7 +25,7 @@
      streaming URI, `authorization = "NONE"`.
   3. Run `curl -N` and record the timing, the `Authorization` header the app sees, and `scope["path"]`.
   4. Confirm `lambda:InvokeFunction` is enough for the streaming invocation (§8d).
-  5. Leave `timeout_milliseconds` unset and confirm a 40 s run completes (§8d).
+  5. Run once with `timeout_milliseconds` unset (cut at ~29 s) and once with `900000` (completes) (§8d). Done: see the research note.
 - **Verify:** all four facts are marked **verified** in the research note.
 - **Gate:** this is a hard stop. If fact 1 fails (frames arrive in one block), stop and reopen `design.md`;
   no later iteration starts. If another fact fails, update `design.md` before iteration 3. Either way, tell

@@ -59,10 +59,11 @@ differs per mode:
 | **Async** (WebSocket in/out) | Sends a WebSocket message | Response pushed back over the same connection |
 
 :::note As implemented
-On AWS, token streaming is delivered over a **WebSocket** connection (`execution_mode = "async"` with
-`message_type = "delta"`, one `STREAM_CHUNK` push per token), not as chunked HTTP/SSE — API Gateway's Lambda and ALB
-integrations can't stream SSE the way a long-lived process can. Plain SSE-over-HTTP is only
-available outside queue mode, in the single-container "Simple REST" topology. The queue *contract*
+On AWS, token streaming in queue mode is delivered over a **WebSocket** connection (`execution_mode = "async"` with
+`message_type = "delta"`, one `STREAM_CHUNK` push per token), or, on Lambda, as SSE (`execution_mode = "rest_sync"`
+with `message_type = "delta"`): the request handler runs `LambdaStreamServer` behind the Lambda Web Adapter with a
+streaming API Gateway integration, and reads the chunks from a Redis or Valkey response store. See
+[AWS Serverless](./aws-serverless#sse-streaming-rest_sync--delta). The queue *contract*
 for streaming is unchanged: the Agent Runner still emits one output-queue message per chunk.
 :::
 

@@ -108,6 +108,7 @@ api = [
     { name = "fastapi" },
     { name = "gunicorn" },
     { name = "httpx" },
+    { name = "python-multipart" },
     { name = "uvicorn" },
 ]
 auth = [
@@ -385,6 +386,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=6.2.1,<8.0.0" },
     { name = "pytest-html", marker = "extra == 'test'", specifier = ">=4.1.1,<5.0.0" },
     { name = "pytest-order", marker = "extra == 'test'", specifier = ">=1.3.0,<2.0.0" },
+    { name = "python-multipart", marker = "extra == 'api'", specifier = ">=0.0.12,<0.1.0" },
     { name = "python-multipart", marker = "extra == 'multimodal'", specifier = ">=0.0.12,<0.1.0" },
     { name = "pyyaml", specifier = ">=6.0.2,<7.0.0" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=7.1.0,<9.0.0" },
@@ -517,9 +519,9 @@ name = "aiologic"
 version = "0.17.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "sniffio" },
+    { name = "sniffio", marker = "python_full_version < '3.13' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-mcp') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
     { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-mcp') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
-    { name = "wrapt" },
+    { name = "wrapt", marker = "python_full_version < '3.13' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-mcp') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f1/7a/d51f2fde1e8ae8a83431f8e97b7a71e9358cdb1d4d2ce6be387fa44d68de/aiologic-0.17.1.tar.gz", hash = "sha256:2e1b93b9e88ced318c2a63ad7b382688f40cbfe40e3d42258d49dc9c5aea179d", size = 252354, upload-time = "2026-06-27T20:41:33.25Z" }
 wheels = [
@@ -1575,7 +1577,7 @@ name = "culsans"
 version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aiologic" },
+    { name = "aiologic", marker = "python_full_version < '3.13' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-mcp') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
     { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-mcp') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d9/e3/49afa1bc180e0d28008ec6bcdf82a4072d1c7a41032b5b759b60814ca4b0/culsans-0.11.0.tar.gz", hash = "sha256:0b43d0d05dce6106293d114c86e3fb4bfc63088cfe8ff08ed3fe36891447fe33", size = 107546, upload-time = "2025-12-31T23:15:38.196Z" }
@@ -1993,7 +1995,7 @@ name = "fastmcp"
 version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "fastmcp-slim", extra = ["client", "server"], marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "fastmcp-slim", extra = ["client", "server"], marker = "extra == 'extra-11-agentkernel-mcp' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a6/3f/bb84343d2fec87230659632b7c186c0f0424c9744ca24b11a994bb3d6907/fastmcp-4.2.0.tar.gz", hash = "sha256:833508360b9a5db6ae3524cf12471b31716c210feee0c726a867e38c43a9287f", size = 41447291, upload-time = "2026-11-13T17:09:01.648Z" }
 wheels = [
@@ -2007,7 +2009,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mcp-types" },
     { name = "platformdirs" },
-    { name = "pydantic", version = "2.14.3", source = { registry = "https://pypi.org/simple" }, extra = ["email"], marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "pydantic", version = "2.14.3", source = { registry = "https://pypi.org/simple" }, extra = ["email"], marker = "extra == 'extra-11-agentkernel-mcp' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "rich" },
@@ -2025,7 +2027,7 @@ client = [
     { name = "httpx2" },
     { name = "mcp", version = "2.3.0", source = { registry = "https://pypi.org/simple" } },
     { name = "opentelemetry-api", version = "1.44.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "py-key-value-aio", extra = ["filetree", "memory"], marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "py-key-value-aio", extra = ["filetree", "memory"], marker = "extra == 'extra-11-agentkernel-mcp' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
     { name = "starlette" },
 ]
 server = [
@@ -2043,7 +2045,7 @@ server = [
     { name = "openapi-pydantic" },
     { name = "opentelemetry-api", version = "1.44.0", source = { registry = "https://pypi.org/simple" } },
     { name = "packaging" },
-    { name = "py-key-value-aio", extra = ["filetree", "memory"], marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "py-key-value-aio", extra = ["filetree", "memory"], marker = "extra == 'extra-11-agentkernel-mcp' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
     { name = "pyperclip" },
     { name = "python-multipart" },
     { name = "pyyaml" },
@@ -2225,12 +2227,12 @@ name = "google-api-core"
 version = "2.34.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.13' and sys_platform == 'win32'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten'",
-    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version >= '3.13' and sys_platform == 'win32'",
     "python_full_version >= '3.13' and sys_platform == 'emscripten'",
     "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
     { name = "google-auth", marker = "python_full_version < '3.13' or extra == 'extra-11-agentkernel-crewai'" },
@@ -2617,8 +2619,8 @@ name = "httpcore2"
 version = "2.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11" },
-    { name = "truststore" },
+    { name = "h11", marker = "sys_platform != 'emscripten' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-mcp') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
+    { name = "truststore", marker = "sys_platform != 'emscripten' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-mcp') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c0/61/afa9d6b7452f9eca73f73d45324eb0bb52f098fd5e6049bf6b8263be9b4e/httpcore2-2.16.0.tar.gz", hash = "sha256:c72cd0413563b17e1cd8354677dff887466f8ec2551679759e93126534428643", size = 69886, upload-time = "2026-10-21T07:09:45.31Z" }
 wheels = [
@@ -3712,18 +3714,18 @@ resolution-markers = [
 ]
 dependencies = [
     { name = "anyio", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
-    { name = "httpx2" },
-    { name = "jsonschema" },
-    { name = "mcp-types" },
-    { name = "opentelemetry-api", version = "1.44.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "pydantic", version = "2.14.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "httpx2", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "jsonschema", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "mcp-types", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "opentelemetry-api", version = "1.44.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "pydantic", version = "2.14.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
     { name = "pyjwt", extra = ["crypto"], marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
-    { name = "python-multipart" },
+    { name = "python-multipart", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
     { name = "pywin32", marker = "(sys_platform == 'win32' and extra != 'extra-11-agentkernel-crewai') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-mcp') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
-    { name = "sse-starlette" },
+    { name = "sse-starlette", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
     { name = "starlette", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
-    { name = "typing-extensions" },
-    { name = "typing-inspection" },
+    { name = "typing-extensions", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "typing-inspection", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
     { name = "uvicorn", marker = "(sys_platform != 'emscripten' and extra != 'extra-11-agentkernel-crewai') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-mcp') or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9d/8d/e0d339616f4810e9051d4aba6887afab289ab1f81875fe908b606cdfd0e3/mcp-2.3.0.tar.gz", hash = "sha256:8b147a50441cf059dc88c684e0aeed3687f0aa0f39c6cde7b90330effd2b34d8", size = 4171955, upload-time = "2026-10-02T22:06:56.091Z" }
@@ -3736,8 +3738,8 @@ name = "mcp-types"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pydantic", version = "2.14.3", source = { registry = "https://pypi.org/simple" } },
-    { name = "typing-extensions" },
+    { name = "pydantic", version = "2.14.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "typing-extensions", marker = "extra == 'extra-11-agentkernel-mcp' or extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9e/2d/7c251e34207f6c51000312fc8839111ac45cfe02023f90b44e7f1051dd8e/mcp_types-2.3.0.tar.gz", hash = "sha256:d1e46549edb35ee19a94940fcee6d1addd7e589ab7ea92dda83f5d84781fc362", size = 65898, upload-time = "2026-10-02T22:06:57.863Z" }
 wheels = [

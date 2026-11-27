@@ -97,3 +97,16 @@ variable "cloudwatch_kms_key_arn" {
   description = "KMS key ARN for CloudWatch logs encryption"
   default     = null
 }
+
+variable "response_streaming" {
+  type        = bool
+  description = "Stream the Lambda response (response_transfer_mode STREAM) for SSE (rest_sync + delta)."
+  default     = false
+  nullable    = false
+}
+
+variable "lambda_function_arn" {
+  type        = string
+  description = "ARN of the Lambda function. Required when response_streaming is true: it builds the streaming invocation URI."
+  default     = null
+}

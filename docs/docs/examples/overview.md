@@ -131,6 +131,7 @@ AWS Lambda serverless deployment examples:
 - **`openai/`** - OpenAI agents running on AWS Lambda, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
 - **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: async` with `execution.message_type: delta`)
+- **`sse-openai/`** - SSE streaming from AWS Lambda (`execution.mode: rest_sync` with `execution.message_type: delta`): `LambdaStreamServer` behind the Lambda Web Adapter, a Redis response store and `identity` auth
 - **`schedule-openai/`** - Deferred and recurring chats on AWS Lambda: EventBridge Scheduler delivers each occurrence into the Input Queue for the agent-runner Lambda, backed by a DynamoDB schedule store
 - **`slack-openai/`** - Slack messaging integration on AWS Lambda: webhooks are served by the request-handler Lambda and replies are delivered by the response-handler Lambda
 - **`openai-langfuse-trace-evaluation/`** - Evaluation on production traffic: an OpenAI agent on AWS Lambda (queue mode) traced to Langfuse, whose traces are read back with `Trace.fetch_traces()`, graded by Opik LLM judges behind `/eval` and `/check` routes, and stored in DynamoDB

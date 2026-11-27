@@ -400,6 +400,23 @@ class TestRedisCommandSurface:
         driver.blpop("k", timeout=0)
         assert driver._client.blpop.call_args.kwargs["timeout"] > 0
 
+    def test_blpop_waits_in_slices_shorter_than_the_socket_timeout(self):
+        """redis-py 8 defaults socket_timeout to 5 s; one longer BLPOP would die as a socket timeout."""
+        driver = _driver()
+        driver._client.connection_pool.connection_kwargs = {"socket_timeout": 5}
+        driver._client.blpop.side_effect = [None, None, (b"k", b"a1")]
+        assert driver.blpop("k", timeout=25) == "a1"
+        timeouts = [c.kwargs["timeout"] for c in driver._client.blpop.call_args_list]
+        assert len(timeouts) == 3
+        assert all(0 < t < 5 for t in timeouts)
+
+    def test_blpop_uses_the_whole_budget_without_a_socket_timeout(self):
+        driver = _driver()
+        driver._client.connection_pool.connection_kwargs = {"socket_timeout": None}
+        driver._client.blpop.return_value = None
+        assert driver.blpop("k", timeout=0.05) is None
+        assert driver._client.blpop.call_args_list[0].kwargs["timeout"] == pytest.approx(0.05, abs=0.01)
+
 
 class TestDynamoDBDriver:
     """Item-dict semantics of the shared DynamoDB driver."""
