@@ -1,7 +1,7 @@
 # Deployment folders
 
 One folder per host × mode × message type, named `<host>-<mode>-<message-type>/` (for example
-`aws.ecs-async-complete/`). `ak-bench deploy` picks the folder and runs its scripts; the harness does not check what a
+`lambda-async-complete/`). `ak-bench deploy` picks the folder and runs its scripts; the harness does not check what a
 script does inside. There are none yet: they come with the host issues.
 
 ## Files

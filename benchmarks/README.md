@@ -88,6 +88,20 @@ key. Any key can also be set by an `AK_BENCH_`-prefixed environment variable, ne
 | `host_settings.<host>.max_cooldown_s` | | Overrides `step_run.max_cooldown_s` for that host; other keys go to `deploy.sh` |
 | `mock_agent.min_delay` / `max_delay` | | Both set: mock agent sleeping a random delay in [min, max]. Block left out: real agent. Only one set, a negative value, or min > max: `deploy` refuses |
 
+## Extending
+
+Adding a fetcher, a host (with its deployment folders) or an execution mode has a step-by-step dev skill each; start
+with the map in [ak-dev-bench-architecture](../.agents/skills/ak-dev-bench-architecture/SKILL.md):
+
+- [ak-dev-bench-new-fetcher](../.agents/skills/ak-dev-bench-new-fetcher/SKILL.md): a new way to read scaling, CPU /
+  memory, queue depth, trace lines or cost from a platform.
+- [ak-dev-bench-new-host](../.agents/skills/ak-dev-bench-new-host/SKILL.md): a new host bundle and its deployment
+  folders.
+- [ak-dev-bench-new-client-driver](../.agents/skills/ak-dev-bench-new-client-driver/SKILL.md): a new execution mode
+  or message type.
+- [ak-dev-bench-change-harness](../.agents/skills/ak-dev-bench-change-harness/SKILL.md): any other feature in the
+  shared code (a new kind of data, CSV column, graph, config key, command, app change).
+
 ## Tests
 
 ```bash
