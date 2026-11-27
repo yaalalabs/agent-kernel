@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -7,9 +8,10 @@ from fastmcp.server.auth import AuthCheck, AuthContext
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.http import StarletteWithLifespan
 from fastmcp.tools import ToolResult
+from mcp.server.auth.provider import AccessToken
 
 from ...core.config import AKConfig
-from ...core.model import AgentDescriptor, BaseRunRequest
+from ...core.model import AgentDescriptor, BaseRunRequest, Principal
 from ...core.runtime import Runtime
 from .auth import AKAccessToken, AKMCPAuthProvider
 
@@ -102,13 +104,20 @@ class MCP:
             A failed run, a timeout or any other error raises ``ToolError`` with a fixed message;
             the details go to this executor's log only. A call the access gate refuses (the caller
             holds no level on the agent, or may not see it) raises ``ToolError("Agent not available")``.
+
+            With ``identity.credentials`` the call keeps its token for the run it starts (#603), here
+            rather than in the verifier, which FastMCP asks on every HTTP request: an initialize, a
+            notification or a listing runs nothing and so keeps nothing. Once a reply is in, the token
+            is deleted, which also covers a call refused before the queue; a call that timed out leaves
+            it to the run, whose runner deletes it.
             """
             from ...pipeline.request_handler import ReplyTimeoutError
 
             self.log.debug(f"Executing agent '{self.agent_name}' for session_id={session_id}")
             # The principal the verifier put on this call's access token; a server built without
             # auth, or a token another verifier minted, authenticated nobody we know.
-            principal = AKAccessToken.principal_of(get_access_token())
+            access_token = get_access_token()
+            principal = await self._retain_credential(AKAccessToken.principal_of(access_token), access_token)
             # The body names the surface it entered by: the runner serves the call the agents on `mcp`, whatever the
             # agent's descriptor says of `rest`.
             body = BaseRunRequest(prompt=prompt, agent=self.agent_name, session_id=session_id, principal=principal, surface="mcp")
@@ -120,6 +129,8 @@ class MCP:
             except Exception as e:
                 self.log.exception(f"Agent request failed: {e}")
                 raise ToolError(self.ERROR_MESSAGE) from e
+            # A reply is in, so the run is over or never started: the token goes (a second delete after the runner's is harmless).
+            await self._release_credential(principal)
 
             if reply.status_code in self.REFUSED_STATUSES:
                 # The policy's reason names the principal and the agent: it is the operator's to read, not the caller's.
@@ -136,6 +147,31 @@ class MCP:
                 meta["fastmcp"] = {"wrap_result": True}
                 return ToolResult(structured_content={"result": reply.result}, meta=meta)
             return reply.result
+
+        @staticmethod
+        async def _retain_credential(principal: Principal, access_token: AccessToken | None) -> Principal:
+            """
+            Keeps the call's token for the run it starts, when ``identity.credentials`` is configured.
+
+            :param principal: The call's principal.
+            :param access_token: The access token FastMCP verified for this call, which carries the token.
+            :return: The principal with a ``credential_ref``, or as it came when nothing is kept.
+            """
+            if principal.is_anonymous or access_token is None:
+                return principal
+            from ...identity.credential.manager import CredentialManager
+
+            manager = CredentialManager.get()
+            return principal if manager is None else await manager.retain(principal, access_token.token)
+
+        @staticmethod
+        async def _release_credential(principal: Principal) -> None:
+            """Deletes the call's token once its reply is in. Never raises."""
+            if not principal.credential_ref:
+                return
+            from ...identity.credential.manager import CredentialManager
+
+            await asyncio.to_thread(CredentialManager.release_for, principal)
 
     @classmethod
     def get_client(cls) -> "RestHandler":

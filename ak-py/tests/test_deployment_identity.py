@@ -540,6 +540,320 @@ class TestEntryPointsNameTheSurface:
         assert chat.process_async_chat_request.call_args.args[0].surface == "rest"
 
 
+# --- credentials on the AWS deployments (#603, iteration 25b) ---------------------------------------
+
+
+@pytest.fixture
+def credentials_on_aws(config, monkeypatch):
+    """A shared-store credentials block in the deployment configuration, over an in-process store the test can read."""
+    from agentkernel.core.config import _CredentialsConfig
+    from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
+    from agentkernel.identity.credential.manager import CredentialManager
+
+    config.identity = SimpleNamespace(credentials=_CredentialsConfig(store={"type": "redis", "redis": {}}, encryption_key="AK_CREDENTIAL_KEY"))
+    store = InMemoryCredentialStore(None)
+    store.clear()
+    manager = CredentialManager(store, {}, 300)
+    monkeypatch.setattr(CredentialManager, "get", classmethod(lambda cls: manager))
+    yield manager
+    store.clear()
+
+
+def _rest_event_with_header(policy_context: dict, header_name: str = "Authorization", body: dict | None = None) -> dict:
+    event = _rest_event(policy_context, body=body)
+    event["headers"] = {header_name: "Bearer alice-secret"}
+    return event
+
+
+class TestTheLambdaRESTRouterKeepsTheRequestsCredential:
+    """Kept where a run starts, from the request's own header: never by the authorizer, whose cached result many
+    requests share."""
+
+    def test_the_authorizer_keeps_nothing(self, static_identity, credentials_on_aws):
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+
+        assert Principal.model_validate_json(policy["context"]["principal"]).credential_ref is None
+        assert credentials_on_aws.store._entries == {}
+
+    def test_the_authorizer_denies_two_authorization_headers_that_disagree(self, static_identity, credentials_on_aws):
+        # The router could otherwise keep a token other than the one the authorizer authenticated.
+        event = _authorizer_event("Bearer mallory-token")
+        event["headers"]["authorization"] = "Bearer alice-secret"
+
+        assert _effect(APIGatewayAuthorizer().handle(event)) == "Deny"
+
+    def test_the_authorizer_accepts_the_header_in_either_case(self, static_identity, credentials_on_aws):
+        event = _authorizer_event(None)
+        event["headers"]["authorization"] = "Bearer alice-secret"
+
+        assert _effect(APIGatewayAuthorizer().handle(event)) == "Allow"
+
+    def test_the_authorizer_never_builds_the_credentials_capability(self, static_identity, config, monkeypatch):
+        # It keeps nothing, so a store its role cannot reach or an extra its package lacks must not fail it.
+        from agentkernel.core.config import _CredentialsConfig
+        from agentkernel.identity.credential.manager import CredentialManager
+
+        config.identity = SimpleNamespace(credentials=_CredentialsConfig(store={"type": "redis", "redis": {}}, encryption_key="AK_CREDENTIAL_KEY"))
+
+        def unbuildable(cls):
+            raise ImportError("the 'redis' extra is not installed")
+
+        monkeypatch.setattr(CredentialManager, "get", classmethod(unbuildable))
+
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+
+        assert Principal.model_validate_json(policy["context"]["principal"]).subject == "alice"
+
+    @pytest.mark.parametrize("header_name", ["Authorization", "authorization"])
+    def test_the_queued_body_carries_a_reference_to_the_requests_credential(self, static_identity, credentials_on_aws, header_name):
+        handler = _endpoints_handler()
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+        request = handler._parse_body(_rest_event_with_header(policy["context"], header_name, body={**CHAT_BODY, "request_id": "r1"}))
+
+        with patch(f"{REST_LAMBDA_MODULE}.SQSHandler.send_message_to_input_queue", return_value={}) as send:
+            handler._send_to_queue(request, _rest_event_with_header(policy["context"], header_name))
+
+        sent = send.call_args.kwargs["message_body"]
+        assert "alice-secret" not in json.dumps(sent)
+        assert credentials_on_aws.store.get(sent["principal"]["credential_ref"]) == b"alice-secret"
+
+    @pytest.mark.parametrize("route", ["_handle_rest_sync", "_handle_async_submit"])
+    def test_each_queued_route_keeps_the_credential_of_the_request_it_sends(self, static_identity, credentials_on_aws, route):
+        handler = _endpoints_handler()
+        handler._get_record = MagicMock(return_value={"status_code": 200, "body": {"result": "ok"}})
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+
+        with patch(f"{REST_LAMBDA_MODULE}.SQSHandler.send_message_to_input_queue", return_value={}) as send:
+            getattr(handler, route)(_rest_event_with_header(policy["context"], body={**CHAT_BODY, "request_id": "r1"}), None)
+
+        ref = send.call_args.kwargs["message_body"]["principal"]["credential_ref"]
+        assert credentials_on_aws.store.get(ref) == b"alice-secret"
+
+    def test_the_direct_chat_route_runs_with_the_requests_credential(self, static_identity, credentials_on_aws):
+        handler = _endpoints_handler()
+        seen = []
+        handler._chat_service.process_chat_request.side_effect = lambda body: seen.append(
+            credentials_on_aws.store.get(body.principal.credential_ref)
+        ) or (200, {})
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+
+        handler._handle_agent_chat(_rest_event_with_header(policy["context"]), None)
+
+        assert seen == [b"alice-secret"]
+
+    def test_parsing_a_request_keeps_nothing(self, static_identity, credentials_on_aws):
+        # A poll for a reply parses the request too and runs nothing.
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+
+        request = _endpoints_handler()._parse_body(_rest_event_with_header(policy["context"]))
+
+        assert request.body.principal.credential_ref is None
+        assert credentials_on_aws.store._entries == {}
+
+    def test_a_header_that_is_not_bearer_keeps_nothing(self, static_identity, credentials_on_aws, monkeypatch):
+        from agentkernel.identity.provider.request import RequestAuthenticator
+
+        handler = _endpoints_handler()
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+        event = _rest_event_with_header(policy["context"], body={**CHAT_BODY, "request_id": "r1"})
+        event["headers"] = {"Authorization": "Basic YWxpY2U6c2VjcmV0"}
+        parsed = []
+        monkeypatch.setattr(RequestAuthenticator, "bearer_token", staticmethod(lambda header: parsed.append(header)))
+
+        with patch(f"{REST_LAMBDA_MODULE}.SQSHandler.send_message_to_input_queue", return_value={}) as send:
+            handler._send_to_queue(handler._parse_body(event), event)
+
+        assert parsed == ["Basic YWxpY2U6c2VjcmV0"]  # parsed by the authenticator's own rule
+        assert "credential_ref" not in send.call_args.kwargs["message_body"]["principal"]
+
+    def test_two_authorization_headers_that_disagree_keep_nothing(self, static_identity, credentials_on_aws):
+        handler = _endpoints_handler()
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+        event = _rest_event_with_header(policy["context"], body={**CHAT_BODY, "request_id": "r1"})
+        event["headers"] = {"Authorization": "Bearer mallory-token", "authorization": "Bearer alice-secret"}
+
+        with patch(f"{REST_LAMBDA_MODULE}.SQSHandler.send_message_to_input_queue", return_value={}) as send:
+            handler._send_to_queue(handler._parse_body(event), event)
+
+        assert "credential_ref" not in send.call_args.kwargs["message_body"]["principal"]
+        assert credentials_on_aws.store._entries == {}
+
+    def test_a_direct_request_refused_before_its_run_leaves_no_credential(self, static_identity, credentials_on_aws):
+        # An unknown agent is answered before Runtime starts, so Runtime's release never runs.
+        handler = _endpoints_handler()
+        handler._chat_service.process_chat_request.return_value = (404, {"error": "agent not found"})
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+
+        response = handler._handle_agent_chat(_rest_event_with_header(policy["context"]), None)
+
+        assert response["statusCode"] == 404
+        assert credentials_on_aws.store._entries == {}
+
+    def test_an_anonymous_request_keeps_nothing(self, static_identity, credentials_on_aws):
+        handler = _endpoints_handler()
+        request = handler._parse_body(_rest_event(None, body={**CHAT_BODY, "request_id": "r1"}))
+
+        with patch(f"{REST_LAMBDA_MODULE}.SQSHandler.send_message_to_input_queue", return_value={}) as send:
+            handler._send_to_queue(request, _rest_event(None))
+
+        assert "credential_ref" not in send.call_args.kwargs["message_body"]["principal"]
+
+    def test_a_queued_router_refuses_an_in_memory_store(self, static_identity, config, monkeypatch):
+        from agentkernel.core.config import _CredentialsConfig
+
+        config.identity = SimpleNamespace(credentials=_CredentialsConfig())
+        handler = _endpoints_handler()
+        config.execution.response_store = SimpleNamespace(type="redis")  # only its presence is read here
+
+        with patch(f"{REST_LAMBDA_MODULE}.SQSHandler.get_input_queue_url", return_value="https://sqs.test/input"):
+            with pytest.raises(AKConfigError, match="identity.credentials.store.type in_memory cannot work"):
+                handler.get_routes()
+
+
+class TestTheLambdaWebSocketKeepsTheConnectionsCredential:
+    def test_connect_keeps_the_credential_for_the_connection(self, static_identity, credentials_on_aws):
+        handler = _connection_handler()
+
+        handler._handle_connect(_ws_event(token="alice-secret"))
+
+        principal = handler.on_connect.call_args.kwargs["principal"]
+        assert principal.credential_ref.startswith("conn:")
+        assert credentials_on_aws.store.get(principal.credential_ref) == b"alice-secret"
+
+    def test_connect_forgets_the_credential_when_the_connection_is_not_stored(self, static_identity, credentials_on_aws):
+        # No connection row names the reference, so no $disconnect would ever forget it.
+        handler = _connection_handler()
+        handler.on_connect.side_effect = RuntimeError("the connections table is unreachable")
+
+        status, _ = handler._handle_connect(_ws_event(token="alice-secret"))
+
+        assert status == 500
+        assert credentials_on_aws.store._entries == {}
+
+    def test_the_connection_routes_refuse_an_in_memory_store(self, static_identity, config):
+        from agentkernel.core.config import _CredentialsConfig
+
+        config.identity = SimpleNamespace(credentials=_CredentialsConfig())
+
+        with patch(f"{WS_LAMBDA_MODULE}.WebSocketConnectionStore"), pytest.raises(AKConfigError, match="in_memory cannot work"):
+            ConnectionRoutesHandler()
+
+    def test_every_frame_renews_the_connections_credential(self, static_identity, credentials_on_aws, monkeypatch):
+        from agentkernel.identity.credential.manager import CredentialManager
+
+        renewed = []
+        monkeypatch.setattr(CredentialManager, "renew_for", classmethod(lambda cls, principal: renewed.append(principal)))
+
+        _system_routes_handler()._parse_event_to_wsmessage(_ws_event(body={"request_id": "r1", "body": CHAT_BODY}))
+
+        assert renewed == [ALICE]
+
+    def test_disconnect_forgets_the_connections_credential(self, credentials_on_aws):
+        import asyncio
+
+        principal = asyncio.run(credentials_on_aws.retain(ALICE, "alice-secret", connection=True))
+        connections = MagicMock()
+        connections.get_principal.return_value = principal
+        handler = AWSWebSocketHandler(connection_store=connections)
+
+        handler.on_disconnect(connection_id="c1")
+
+        assert credentials_on_aws.store.get(principal.credential_ref) is None
+        connections.delete_by_connection_id.assert_called_once_with("c1")
+
+
+class TestTheECSWebSocketKeepsTheConnectionsCredential:
+    @pytest.mark.asyncio
+    async def test_connect_keeps_the_credential_for_the_connection(self, static_identity, credentials_on_aws):
+        handler, ws = _system_handler()
+
+        await handler._handle_connect(_ecs_request(token="alice-secret"))
+
+        principal = ws.on_connect.call_args.kwargs["principal"]
+        assert principal.credential_ref.startswith("conn:")
+        assert credentials_on_aws.store.get(principal.credential_ref) == b"alice-secret"
+
+    @pytest.mark.asyncio
+    async def test_connect_forgets_the_credential_when_the_connection_is_not_stored(self, static_identity, credentials_on_aws):
+        handler, ws = _system_handler()
+        ws.on_connect.side_effect = RuntimeError("the connections table is unreachable")
+
+        response = await handler._handle_connect(_ecs_request(token="alice-secret"))
+
+        assert response.status_code == 500
+        assert credentials_on_aws.store._entries == {}
+
+    def test_the_connection_routes_refuse_an_in_memory_store(self, static_identity, config):
+        # A frame can reach another task than the one that kept the credential: always under a rolling deploy.
+        from agentkernel.core.config import _CredentialsConfig
+
+        config.identity = SimpleNamespace(credentials=_CredentialsConfig())
+
+        with pytest.raises(AKConfigError, match="in_memory cannot work on the ECS WebSocket API"):
+            ECSWebSocketSystemRequestHandler()
+
+    @pytest.mark.asyncio
+    async def test_every_frame_renews_the_connections_credential(self, static_identity, credentials_on_aws, monkeypatch):
+        from agentkernel.identity.credential.manager import CredentialManager
+
+        renewed = []
+        monkeypatch.setattr(CredentialManager, "renew_for", classmethod(lambda cls, principal: renewed.append(principal)))
+        handler, _ = _app_handler()
+
+        await handler.build_route_context(_ecs_request(body={"request_id": "r1", "body": CHAT_BODY}), is_chat_request=True)
+
+        assert renewed == [ALICE]
+
+
+class TestTheServerlessRunnersReleaseTheCredential:
+    @staticmethod
+    def _record(principal: Principal) -> dict:
+        return {
+            "body": json.dumps({"prompt": "hi", "session_id": "s1", "principal": principal.model_dump(mode="json")}),
+            "attributes": {"MessageGroupId": "s1", "MessageDeduplicationId": "req-1"},
+            "messageAttributes": {"request_id": {"stringValue": "req-1", "DataType": "String"}},
+        }
+
+    @pytest.mark.parametrize("failure", [None, RuntimeError("down")])
+    def test_the_agent_runner_deletes_it_when_the_message_is_done(self, credentials_on_aws, failure):
+        import asyncio
+
+        from agentkernel.deployment.aws.serverless.akagentrunner import ServerlessAgentRunner
+
+        principal = asyncio.run(credentials_on_aws.retain(ALICE, "alice-secret"))
+        chat = MagicMock()
+        chat.process_chat_request.side_effect = failure or (lambda req, requests=None: (200, {"result": "ok", "session_id": "s1"}))
+        with (
+            patch.object(ServerlessAgentRunner, "_get_chat_service", return_value=chat),
+            patch("agentkernel.deployment.aws.serverless.akagentrunner.SQSHandler.send_message_to_output_queue"),
+        ):
+            try:
+                ServerlessAgentRunner.process_message(self._record(principal))
+            except RuntimeError:
+                pass
+
+        assert credentials_on_aws.store.get(principal.credential_ref) is None
+
+    def test_the_stream_runner_deletes_it_too(self, credentials_on_aws):
+        import asyncio
+
+        from agentkernel.deployment.aws.serverless.akagentrunner import ServerlessStreamAgentRunner
+
+        principal = asyncio.run(credentials_on_aws.retain(ALICE, "alice-secret"))
+        chat = MagicMock()
+        chat.process_stream_chat_sync.return_value = iter([])
+        with (
+            patch.object(ServerlessStreamAgentRunner, "_get_chat_service", return_value=chat),
+            patch("agentkernel.deployment.aws.serverless.akagentrunner.SQSHandler"),
+        ):
+            try:
+                ServerlessStreamAgentRunner.process_message(self._record(principal))
+            except Exception:
+                pass
+
+        assert credentials_on_aws.store.get(principal.credential_ref) is None
+
+
 class TestRemovedNames:
     def test_the_auth_package_is_gone(self):
         with pytest.raises(ModuleNotFoundError):

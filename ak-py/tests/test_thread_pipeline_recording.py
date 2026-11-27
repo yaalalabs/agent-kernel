@@ -146,10 +146,15 @@ def identity(monkeypatch):
     return provider
 
 
-def _client(handler: ThreadRequestHandler | None = None, token: str | None = "u1-token") -> TestClient:
-    """The handler's routes behind the identity dependency, as ``RESTAPI`` mounts them; the client sends ``token`` on every request."""
+def _client(handler: ThreadRequestHandler | None = None, token: str | None = "u1-token", credentials=None) -> TestClient:
+    """The handler's routes behind the identity dependency, as ``RESTAPI`` mounts them; the client sends ``token`` on every request.
+
+    ``credentials`` is the ``CredentialManager`` the dependency keeps each request's credential in (none by default).
+    """
     app = FastAPI()
-    app.include_router((handler or ThreadRequestHandler()).get_router(), dependencies=[Depends(RequestAuthenticator(_Provider()).dependency())])
+    app.include_router(
+        (handler or ThreadRequestHandler()).get_router(), dependencies=[Depends(RequestAuthenticator(_Provider(), credentials).dependency())]
+    )
     return TestClient(app, headers={"Authorization": f"Bearer {token}"} if token else {})
 
 
@@ -250,6 +255,15 @@ class TestEdgeRecording:
         assert response.status_code == 401
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_a_request_refused_before_any_write_keeps_no_credential(self, monkeypatch, dummy_agent, credential_manager):
+        """Nothing was enqueued, so no runner would release the credential the identity dependency kept (#603)."""
+        _configure(monkeypatch, mode="rest_async")
+
+        response = _client(credentials=credential_manager).post(CHAT, json=_chat(agent="nobody"))
+
+        assert response.status_code == 404
+        assert credential_manager.store._entries == {}
 
     def test_another_users_thread_is_refused_before_any_write(self, monkeypatch, dummy_agent):
         """A thread is one caller's conversation: a second principal neither appends to it nor enqueues under it (#603)."""

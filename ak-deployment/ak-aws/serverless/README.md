@@ -439,6 +439,14 @@ module "serverless_api_auth" {
 }
 ```
 
+The authorizer keeps no credential, whatever its `result_ttl_in_seconds`. With an `identity.credentials`
+block in the application's configuration, the request-handler Lambda keeps each request's token for the
+run it starts, and the `$connect` Lambda keeps a WebSocket connection's, in the credential store; the
+agent-runner Lambda reads it there. Use a store all of them reach (`redis`, `valkey`, or `dynamodb` on a
+table you create, keyed by `credential_key` with TTL on `expiry_time`), grant those functions access to it,
+and give them the `encryption_key` secret: the module provisions none of these. See [Credentials for
+downstream calls](https://kernel.yaala.ai/docs/next/advanced/identity-and-access#credentials-for-downstream-calls).
+
 ## 📥 Inputs
 
 | Name | Description | Type | Default | Required |

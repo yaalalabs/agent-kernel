@@ -75,7 +75,9 @@ and docs.
 - **`async authenticate(credential, context=None) -> Principal`**: return a non-anonymous
   principal with `subject`, `namespace` (the scope the subject is unique within: the issuer for a
   token, `static` for the static provider) and `provider` set, plus `groups`, `claims` and `kind`
-  when the provider can vouch for them. Raise `AuthenticationError` (`identity/errors.py`) to
+  when the provider can vouch for them. Keep a token's `exp` (epoch seconds) in `claims`: with
+  `identity.credentials`, `CredentialManager.retain` keeps the token no longer than it, and a
+  credential with no `exp` falls back to `inbound_ttl`. Raise `AuthenticationError` (`identity/errors.py`) to
   refuse. The message is the operator's reason and goes to the log only; the caller sees
   `public_detail`, `Unauthorized` unless you pass another one. Never return `None` for a refusal.
 - **Never write `roles`.** The configured role mapper is their one producer: when a `role_mapper`

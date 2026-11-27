@@ -7,6 +7,7 @@ the client library via ``_from_url``, ``_error_class``, and ``_backend_name``.
 
 from __future__ import annotations
 
+import math
 import time
 from abc import abstractmethod
 from typing import Any
@@ -160,6 +161,25 @@ class _RedisLikeDriver(BaseDriver):
         if nx:
             kwargs["nx"] = True
         return bool(self.client.set(key, value, **kwargs))
+
+    def set_with_expiry(self, key: str, value: Any, ttl: float) -> None:
+        """
+        SET a key with an expiry of its own, in one command (``SET ... PX``), ignoring the configured TTL.
+
+        For a value whose lifetime is its own rather than the store's, such as a credential that expires with
+        its token. One command, not SET followed by ``expire_in``: anything that interrupted the pair would
+        leave the value alive forever. The expiry is sent in milliseconds, so a fractional lifetime is kept.
+
+        :param key: The key to set.
+        :param value: The value to store.
+        :param ttl: Seconds until the key expires; fractions are kept, and anything above zero lasts at least 1 ms.
+        :raises ValueError: If ``ttl`` is not positive. A plain SET would keep forever a value meant to expire.
+        """
+        if ttl <= 0:
+            raise ValueError(f"set_with_expiry needs a positive ttl; got {ttl}")
+        milliseconds = math.ceil(ttl * 1000)  # at least 1 for any positive ttl
+        self._log.debug(f"SET {key} PX {milliseconds}")
+        self.client.set(key, value, px=milliseconds)
 
     def get(self, key: str) -> Any:
         """

@@ -179,6 +179,7 @@ def _router_with_execution(monkeypatch, input_queue_url, **execution):
     module = "agentkernel.deployment.aws.serverless.core.router.rest_lambda"
     config = MagicMock()
     config.execution = _ExecutionConfig(response_store=_ResponseStoreConfig(type="dynamodb"), **execution)
+    config.identity = None  # no identity block, so no credentials block for the router to check
     monkeypatch.setattr(f"{module}.AKConfig.get", lambda: config)
     monkeypatch.setattr(f"{module}.ResponseStoreFactory.create", lambda: MagicMock())
     monkeypatch.setattr(f"{module}.ChatService", MagicMock())

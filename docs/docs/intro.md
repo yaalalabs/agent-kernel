@@ -8,7 +8,7 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's new
-SSE streaming on AWS Lambda, authorization and the agent registry are the latest additions.
+SSE streaming on AWS Lambda, credentials for downstream calls and authorization are the latest additions.
 [See everything that is new](./whats-new.md).
 :::
 
