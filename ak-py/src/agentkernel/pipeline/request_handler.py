@@ -189,18 +189,23 @@ class RestHandler(AgentRESTRequestHandler):
         :raises ValueError: If ``session_id``, ``prompt`` or ``protocol`` is empty; nothing is sent.
         :raises ReplyTimeoutError: If the budget runs out before the reply is stored.
         """
-        self._validate_protocol_request(body, protocol)
-        request_id = str(uuid.uuid4())
-        refusal = await self._availability_refusal(body)
-        if refusal is not None:
-            status_code, error = refusal
-            self._log.warning(
-                f"Request refused: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}"
-            )
-            return QueuedReply(request_id=request_id, status_code=status_code, body={"error": error, "session_id": body.session_id})
-        self._log.info(f"Request enqueued: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
-        # Offload the sync send so it doesn't block the event loop.
-        await asyncio.to_thread(RequestProducer(self.get_transport()).enqueue, body, request_id, {ATTR_PROTOCOL: protocol})
+        from ..identity.credential.manager import CredentialManager
+
+        # Until the message is on the queue no runner owns the request's credential, so a refusal releases it (#603).
+        async with CredentialManager.released_on_error(body.principal):
+            self._validate_protocol_request(body, protocol)
+            request_id = str(uuid.uuid4())
+            refusal = await self._availability_refusal(body)
+            if refusal is not None:
+                status_code, error = refusal
+                self._log.warning(
+                    f"Request refused: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}: {error}"
+                )
+                await CredentialManager.release_unclaimed(body.principal)
+                return QueuedReply(request_id=request_id, status_code=status_code, body={"error": error, "session_id": body.session_id})
+            self._log.info(f"Request enqueued: protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
+            # Offload the sync send so it doesn't block the event loop.
+            await asyncio.to_thread(RequestProducer(self.get_transport()).enqueue, body, request_id, {ATTR_PROTOCOL: protocol})
 
         record = await self._await_response_record(request_id)
         if record is None:
@@ -328,26 +333,31 @@ class RestHandler(AgentRESTRequestHandler):
         :return: The reply (REST_SYNC) or the acknowledgement carrying the request id (REST_ASYNC).
         :raises HTTPException: For a request this route refuses, a wait that timed out, or a failed run.
         """
+        from ..identity.credential.manager import CredentialManager
+
         try:
-            if not body.session_id:
-                raise HTTPException(status_code=400, detail="session_id is required")
-            if not body.prompt and body.resume is None:
-                raise HTTPException(status_code=400, detail="prompt is required")
-            try:
-                # What the runner's ChatService would refuse on arrival is refused here, before the queue.
-                ChatService.reject_unprocessable(body)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-            if not admitted:
-                await self._reject_unavailable(body)
+            # Until the message is on the queue no runner owns the request's credential, so a refusal or a failed
+            # send releases it; after that the runner does, even when the wait below times out (#603).
+            async with CredentialManager.released_on_error(body.principal):
+                if not body.session_id:
+                    raise HTTPException(status_code=400, detail="session_id is required")
+                if not body.prompt and body.resume is None:
+                    raise HTTPException(status_code=400, detail="prompt is required")
+                try:
+                    # What the runner's ChatService would refuse on arrival is refused here, before the queue.
+                    ChatService.reject_unprocessable(body)
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                if not admitted:
+                    await self._reject_unavailable(body)
 
-            self._log.info(
-                f"Request start: session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
-            )
+                self._log.info(
+                    f"Request start: session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
+                )
 
-            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
-            # Offload the sync send so it doesn't block the event loop.
-            queue_result = await asyncio.to_thread(self._enqueue_request, body, request_id)
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
+                # Offload the sync send so it doesn't block the event loop.
+                queue_result = await asyncio.to_thread(self._enqueue_request, body, request_id)
 
             self._log.info(f"Enqueued: MessageId={queue_result.get('MessageId')}, request_id={request_id}")
 
@@ -508,18 +518,22 @@ class RequestHandler(RestHandler):
         body.principal = getattr(request.state, "principal", None)
         request_id = self._receive_request()
         body.surface = "rest"
-        # Direct-mode parity: same validation messages and error shape as ChatService._validate
-        # (ValueError -> HTTPException(400, detail={"error": ...})).
-        if not body.session_id:
-            raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
-        if not body.prompt and body.resume is None:
-            raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
-        self._reject_unprocessable(body)
-        self._reject_unroutable(body)
-        self._reject_unqueueable_attachments(body)
-        # The last refusal, and the first that may read a store: after it files are saved and the request is enqueued.
-        await self._reject_unavailable(body)
-        await self._offload_attachments(body)
+        from ..identity.credential.manager import CredentialManager
+
+        # A refusal here answers a request no runner will see, so it releases the credential (#603).
+        async with CredentialManager.released_on_error(body.principal):
+            # Direct-mode parity: same validation messages and error shape as ChatService._validate
+            # (ValueError -> HTTPException(400, detail={"error": ...})).
+            if not body.session_id:
+                raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
+            if not body.prompt and body.resume is None:
+                raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
+            self._reject_unprocessable(body)
+            self._reject_unroutable(body)
+            self._reject_unqueueable_attachments(body)
+            # The last refusal, and the first that may read a store: after it files are saved and the request is enqueued.
+            await self._reject_unavailable(body)
+            await self._offload_attachments(body)
         if self._config.execution.is_sse:
             return await self._run_chat_stream(body, request_id)
         return await self._enqueue_and_wait(body, request_id, admitted=True)
@@ -679,9 +693,12 @@ class RequestHandler(RestHandler):
 
     async def _run_chat_stream(self, body: BaseRunRequest, request_id: str) -> StreamingResponse:
         """Enqueue and serve the chunks over SSE; _reject_unroutable has vouched for the store."""
+        from ..identity.credential.manager import CredentialManager
+
         self._log.info(f"Stream request: session_id={body.session_id}, request_id={request_id}")
         self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
-        await asyncio.to_thread(self._enqueue_request, body, request_id)
+        async with CredentialManager.released_on_error(body.principal):
+            await asyncio.to_thread(self._enqueue_request, body, request_id)
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: str | None) -> AsyncGenerator[str, None]:

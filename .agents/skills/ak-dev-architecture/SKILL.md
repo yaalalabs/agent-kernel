@@ -31,7 +31,7 @@ metadata:
 2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and Claude Agent SDK) implements `Agent`, `Runner`, and `Module` subclasses that wrap native framework objects, plus a `*ToolBuilder` that binds plain Python functions to the framework's native tool type (for Claude, `ClaudeToolBuilder` produces SDK MCP tools). The Claude Agent SDK has no named agent object, so its adapter wraps a thin `ClaudeAgentSpec` (name, description, native `ClaudeAgentOptions`, tools) instead.
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
 4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore). Session stores also provide the WebSocket gateway's `WSConnectionStore` on their backend via `SessionStore.get_connection_store()` (spec #495 §9): the ABC lives beside `SessionStore` in `core/session/base.py`, and each store file carries (or explicitly declines) its implementation, encapsulating its database operations over the shared drivers: `InMemoryWSConnectionStore` (`in_memory.py`, process-wide class-level state), `RedisLikeWSConnectionStore` (`core/session/redis_like.py`, client-library-agnostic; constructed by the redis/valkey stores with their own drivers), `DynamoDBWSConnectionStore` (`dynamodb.py`, over an existing table named by `session.connection_store.table_name`, same schema as the AWS adapters' connections table); cosmosdb/firestore raise actionably, as does the base default (so pre-method BYO stores keep working until a WS mode is enabled). The Kafka and Pub/Sub transports' retry/dedup bookkeeping keeps its own factory in `pipeline/transport/bookkeeping.py`: a Redis/Valkey session store (Q5), else a Redis/Valkey `execution.response_store` (#886, since GCP sessions usually live in Firestore), else process-local with a warning. It also remembers acknowledged messages (`mark_acked`/`was_acked`), which Pub/Sub can redeliver.
-5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, identity providers and role mappers, authorizers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider, identity provider and role mapper, authorizer, integration outbound adapter) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
+5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, identity providers and role mappers, authorizers, credential stores, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider, identity provider and role mapper, authorizer, integration outbound adapter) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core`, `api` and the core-only `secret` package; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
 7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, `nats`, `pubsub`, `servicebus`) and process topology selected by configuration.
 
@@ -325,7 +325,7 @@ Pydantic-based configuration:
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
 
-- **`ToolContext`**: Execution context available inside tool functions via `ToolContext.get()`. Provides access to `runtime`, `agent`, `session`, `requests`, and `principal` (the run's principal as `Runtime` published it, read through `session.get_principal()`: the authenticated caller with the agent as `actor`, or the anonymous principal when the surface authenticated nobody).
+- **`ToolContext`**: Execution context available inside tool functions via `ToolContext.get()`. Provides access to `runtime`, `agent`, `session`, `requests`, and `principal` (the run's principal as `Runtime` published it, read through `session.get_principal()`: the authenticated caller with the agent as `actor`, or the anonymous principal when the surface authenticated nobody), and `credentials` (#603: the run's `CredentialBroker`; `await ToolContext.get().credentials.token_for(audience)`, `CredentialError` as the tool's result).
 - **`ToolGate`** (#603, iteration 21): what a framework adapter asks before it offers or runs a tool. It decides nothing: with an `authorization` block `Runtime` publishes one `ToolFilter` per run, and the gate reads it. `current(session=None)` returns the run's filter (the session handed in, else the one of the current `ToolContext`; `None` when the run is not gated or no run is in progress), `deny_result(name, filter)` the reason string, and `refusal(name, session=None)` is the one question every hook asks: the reason, or `None` when the run is not gated or the tool is allowed. `refusal` never raises (a native hook has no place for an exception) and fails closed: a filter that cannot be read or asked refuses the tool with `tool gate failed: <type>`. An adapter adds its hook, or lets it act, only when `current()` returns a filter, which is what keeps the native call keyword-for-keyword unchanged without the block. The filter is over `Agent.get_tool_names()` and `allows(name)` is false for a name it never listed, so **what an adapter declares must be what its gate matches**: the name the model calls, and every tool the gate can see.
 - **`ToolBuilder`**: Base class for framework-specific tool builders. Each framework implements `bind(funcs)` to wrap plain Python functions into framework-native tool objects. An adapter may accept more than `funcs`: OpenAI, Google ADK, Pydantic AI and MAF each take `**options` and forward them to the native wrapper (`function_tool`, `FunctionTool`, `Tool`, `tool()`), which is how a gated tool is declared without the native decorator — `needs_approval`, `require_confirmation` and `requires_approval` are each that framework's human-in-the-loop flag. Options apply to every function in the call, so tools wanting different ones are bound separately. LangGraph's `bind` takes `agent_name` instead; smolagents' native wrapper takes nothing but the function, so it has nothing to forward.
 - Write plain Python functions → bind via the framework's ToolBuilder → tools work across frameworks
@@ -888,7 +888,7 @@ authorization: the authorizer contract, the static backend, its factory and the
 a scheduled occurrence at fire time, the REST catalog (iteration 19) and the MCP, A2A, AG-UI and
 realtime surfaces (iteration 20, the Protocol surfaces bullet below). Phase E gates tools from the published tool filter (the Tool gates bullet below): the OpenAI,
 Pydantic AI, MAF and Claude adapters since iteration 21, ADK and CrewAI since iteration 22,
-LangGraph, smolagents and realtime calls since iteration 23. The credentials capability is a later phase: `Principal.credential_ref` is inert. Authentication is
+LangGraph, smolagents and realtime calls since iteration 23. Phase F adds credentials (the Credentials bullet below): iteration 24 the encrypted credential store, iteration 25 retention, release, exchange and the broker, so `Principal.credential_ref` names the request's retained credential; iteration 25b the AWS adapters and per-frame renewal. Authentication is
 configuration: one identity provider per deployment, named by the `identity` block, and no
 handler or entry point takes a validator or authoriser argument any more (`agentkernel.auth` is
 deleted).
@@ -898,7 +898,8 @@ deleted).
   channels, `Principal.SHARED_CHANNEL_PREFIXES`), `namespace` (the scope the subject is unique
   within: an OIDC issuer, `static`, a Slack team id), `groups`, `roles`, `claims`, `actor` (the
   agent principal `Runtime` attaches: `kind="agent"`, `subject=agent.name`,
-  `provider=AGENT_PRINCIPAL_PROVIDER`, that is `"agentkernel"`) and `credential_ref` (inert).
+  `provider=AGENT_PRINCIPAL_PROVIDER`, that is `"agentkernel"`) and `credential_ref` (the reference of the
+  request's retained credential, never the token; see Credentials).
   Frozen; `Principal.anonymous()`, `is_anonymous`, `is_shared_channel`, `with_actor(actor)`,
   `Principal.subject_of(principal)`. `SessionOwner` (`subject`, `provider`, `namespace`) is the
   principal a session was first used by. Every `BaseChatRequest` carries `principal`, set by the
@@ -1000,8 +1001,17 @@ deleted).
   (`BEARER_CHALLENGE`, RFC 6750 section 3), on a WebSocket a `WebSocketException` closing with 1008
   (`WS_POLICY_VIOLATION`). FastAPI is imported inside
   `dependency()`: the Lambda authorizer and the WebSocket connection handler authenticate through
-  this class too and their packages carry no FastAPI. `release()` is a no-op until the
-  credentials capability.
+  this class too and their packages carry no FastAPI. Authenticating keeps nothing; with
+  `identity.credentials` the dependency then retains the credential of an HTTP request that can start a
+  run (`CredentialManager.retain`, the constructor's `credentials` argument, which `from_config` fills
+  with `CredentialManager.get()`), so `state.principal` carries a `credential_ref`. It retains nothing
+  for `READ_ONLY_METHODS` (`GET`, `HEAD`, `OPTIONS`: a listing or a poll, which no run would release)
+  and nothing on a WebSocket handshake (a run's reference would die with the first frame's run).
+  `from_config(retains=False)` builds no manager, for a surface that never starts a run (the Lambda
+  authorizer). `bearer_token(header)` is the one bearer parser (public, never raises), which the Lambda
+  REST router uses too, and `authorization_header(headers)` the one rule for finding the header in an
+  event that keeps the client's name case (the authorizer and the router; two names that disagree are
+  None, so the authorizer denies). `release(principal)` deletes it through the manager, off the loop.
 - **Which routes refuse the anonymous principal** is the handlers' decision, not the
   authenticator's. `AuthorisedRESTRequestHandler` (`api/handler.py`) reads
   `request.state.principal` back in `_resolve_user` and answers 401 `Authentication required`
@@ -1294,19 +1304,101 @@ deleted).
   names no other. Every sandbox tool and all five schedule tools are `write`, as are `write_kb` and
   `update_agui_state`; everything else keeps the `read` default. A new system tool that changes
   anything outside the conversation declares `tier=AccessLevel.WRITE`.
+- **Credentials** (`identity/credential/`, #603 phase F, iteration 24; spec section 5 and
+  refinement 23). `CredentialStore` (`store.py`) keeps one value per key until it expires, and the
+  **store encrypts**: `put(key, value, expires_at)` refuses an `expires_at` that has passed
+  (`ValueError`) and seals the value with its `CredentialCipher` (AES-GCM, a fresh 12-byte nonce
+  prefixed, the store key as associated data), `get` opens it (`CredentialError`,
+  `identity/errors.py`, for a value under another key or reference, or changed), and `delete` /
+  `clear` remove; `touch(key, expires_at)` extends a live entry without reading it and never revives
+  one that expired or was deleted. A backend implements only `_write` / `_read` (None for missing or
+  expired) / `_touch` (one step: a class-level lock in memory, `EXPIRE` on Redis and Valkey, a
+  conditional `update_item` on DynamoDB) / `_remove` / `_clear` over ciphertext, so no caller handles
+  ciphertext. `shared` (class attribute,
+  default `True`) makes the base constructor refuse a store without a cipher (`AKConfigError` naming
+  `identity.credentials.encryption_key`), a bring-your-own one included; `InMemoryCredentialStore`
+  (`shared = False`, a class-level dict, expiry checked on read) is the one that may run keyless,
+  keeping plaintext in memory with one warning. `RedisCredentialStore` / `ValkeyCredentialStore`
+  over `_RedisLikeCredentialStore` write value and expiry in one `SET ... PX`
+  (`_RedisLikeDriver.set_with_expiry`, new beside `rpush_with_expiry`), under `ak:cred:`;
+  `DynamoDBCredentialStore` keeps `credential_key`, `value`, `expires_at` (checked on read, since
+  DynamoDB's TTL removes items late) and `expiry_time` (rounded up, for that TTL), and reads with
+  `DynamoDBDriver.get(..., consistent=True)`, since another process wrote it a moment earlier. Neither driver has
+  a store-wide TTL, and the config blocks refuse one. `CredentialCipher.from_config` reads the key
+  named by `encryption_key` through `SecretManager`, decodes base64url strictly and requires 32
+  bytes, never quoting the value; None without a key. `CredentialStoreFactory.create(credentials)`
+  builds the cipher, then `in_memory` / `redis` / `valkey` / `dynamodb` from explicit settings (a
+  shared type without its block is an `AKConfigError`, the registry's rule), else a dotted path
+  through `CredentialStore.from_config(store_config, cipher)`. `CredentialStoreFactory.is_shared(store)`
+  answers without building: False for `in_memory` (short name or dotted path), a dotted class's `shared`.
+  **Retention, exchange and the broker** (iteration 25, refinement 24). `CredentialManager`
+  (`manager.py`) is the process's store and exchangers, built once (`get()` None without the block,
+  `reset()`), and owns the lifecycle. `retain(principal, credential, connection=False)` keeps the token
+  under a fresh `uuid4().hex` reference until `min(exp, now + inbound_ttl)` (a connection's under
+  `conn:<hex>` until `exp`, else `now + inbound_ttl`, not renewed), returns the principal with
+  `credential_ref`, keeps nothing for the anonymous principal or an expired token, and on a store failure
+  logs (no token) and returns the principal unchanged. `release` deletes a run's reference, `forget` a
+  `conn:` one (a failed delete logs the error's type only), `release_for` is the never-raising
+  classmethod, and `release_unclaimed` (async) and `released_on_error` (an async context manager) are
+  what a surface uses for a request it answers without a run: the pipeline router wraps everything
+  before the send to the queue, the direct REST and thread routes release once the in-process reply is
+  in (`AgentRESTRequestHandler._reply`) or the stream never starts (`_stream_reply`), and AG-UI's
+  `_run` (direct and queued) before its hand-off. Only a `422` (FastAPI refuses the body after the
+  dependency ran) or a request that changes a record without a run leaves an entry to its TTL. **Retention is explicit at each surface**, never inside authentication: the identity
+  dependency (HTTP requests that can start a run: REST, A2A, AG-UI, threads), the MCP
+  executor (each tool call, from the verified access token's token, deleted once the reply is in and
+  left to the runner on a timeout; never `AKTokenVerifier`, which FastMCP asks on every HTTP request of
+  a session), the pipeline WebSocket gateway and the CLI (both for the connection, forgotten
+  when it ends). On AWS (iteration 25b, refinement 25): the Lambda REST router retains where a run
+  starts (`_send_to_queue`, `_handle_agent_chat`) from the event's own `Authorization` header, never in
+  `_parse_body` (a poll) and never in the authorizer, whose result is cached per token, and the direct
+  route releases in a `finally` (a request refused before its run keeps nothing); the Lambda and ECS
+  `$connect` handlers retain for the connection (forgetting it again when the connection row cannot be
+  written), and `AWSWebSocketHandler.on_disconnect` forgets for both. `renew(principal)` keeps a `conn:` credential whose principal has no `exp` another `inbound_ttl`
+  through `CredentialStore.touch` (so an expired or forgotten one stays gone, even when a disconnect in
+  another process races the frame; never raising), so any process renews it: the pipeline gateway's
+  `_dispatch`, the Lambda frame's `_connection_principal` and the ECS `build_route_context` (via
+  `renew_for`) call it on every frame, and the CLI before each prompt's run. `forget_for` and
+  `renew_for` are the never-raising classmethods. The serverless runners release in `process_message`'s
+  `finally`. `CredentialManager.require_shared_store(config, where)` refuses a store that is not shared
+  (`CredentialStoreFactory.is_shared`) wherever one process keeps and another reads: a broker transport,
+  the queued Lambda router, the Lambda connection routes, the ECS WebSocket API.
+  **Release**: `Runtime.run` / `Runtime.stream` call `release_for` off the loop in their `finally`
+  (after a gate refusal too); `AgentRunner.process` in its `finally`, reading the body principal only
+  when it names a `credential_ref`, so a redelivered message finds none. `AgentRunner._validate_credential_store`
+  (from `AgentRunner.run` and `IOHandler._validate_topology`) refuses an `in_memory` store on a broker,
+  through `require_shared_store`.
+  `TokenExchanger(config)` (`exchange.py`) keeps `audience` and `scopes`, and `cacheable` (class
+  attribute, True) says whether the broker may cache what it issues; `PassthroughTokenExchanger` (warns
+  at construction, `cacheable = False`) forwards the inbound token, expiring at `min(exp, now + inbound_ttl)`;
+  `TokenExchangerFactory.create(config, inbound_ttl)` refuses the reserved `rfc8693`, `entra_obo`,
+  `id_jag`, builds a dotted path with its entry, and `create_all` keys by audience (duplicates refused);
+  `IssuedToken` hides its token from `repr`. `CredentialBroker` (`broker.py`, no cipher):
+  `token_for(audience, scopes=None)` raises `CredentialError` for no store ("not configured", or
+  "unavailable" when `for_run` could not build the manager), a run without `credential_ref`, no
+  exchanger, an inbound entry that is gone (read before the cache, so a released or expired run is
+  served nothing), a failed exchange (type only, never the token) or an unreachable store; when the
+  exchanger is `cacheable` it caches issued tokens under `cred:issued:<sha256 of [subject, provider,
+  namespace, agent_id, audience, sorted scopes, sha256 of the inbound credential]>` until 30 s before
+  expiry. `ToolContext.credentials`
+  is `CredentialBroker.for_run(principal, agent.descriptor.id)` and never raises.
 - **Contract suites** (imported from test code only): `identity/provider/testing.py` has
   `IdentityProviderContract` (fixtures `provider`, `valid_credential` as `(credential, expected
   fields)`, `invalid_credentials`) and `RoleMapperContract` (`mapper`, `cases`);
   `identity/authz/testing.py` has `AuthorizerContract`, which states one policy (`GRANTS`, `TOOLS`,
   over `DESCRIPTORS`) and a set of principals and asserts what each may do, so a new backend
-  overrides the `authorizer` fixture with one holding that policy. The `static_identity` fixture
+  overrides the `authorizer` fixture with one holding that policy; `identity/credential/testing.py`
+  has `CredentialStoreContract` (override `make_store`, a function from a cipher to a store over one
+  shared backend). The `static_identity` fixture
   in `tests/conftest.py` installs a recording static provider on `IdentityProviderFactory.get`.
 - **Exports**: `agentkernel.identity` resolves lazily (PEP 562): `IdentityProvider`,
   `RequestContext`, `AuthenticationError`, `IdentityProviderFactory`, `RequestAuthenticator`,
   `StaticIdentityProvider`, `OIDCIdentityProvider`, `JWKSCache`, `CognitoIdentityProvider`,
   `EntraIdentityProvider`, `FirebaseIdentityProvider`, `RoleMapper`, `MappingRoleMapper`,
   `MappedIdentityProvider`, `RoleMapperFactory`, `Authorizer`, `AuthorizerCapabilities`,
-  `Decision`, `AuthorizerFactory`, `StaticAuthorizer`.
+  `Decision`, `AuthorizerFactory`, `StaticAuthorizer`, `CredentialError`, `CredentialCipher`,
+  `CredentialStore`, `CredentialStoreFactory`, `InMemoryCredentialStore`, `CredentialManager`, `CredentialBroker`,
+  `TokenExchanger`, `IssuedToken`, `PassthroughTokenExchanger`, `TokenExchangerFactory`.
 
 ### Configuration (`_IdentityConfig` in `config.py`)
 
@@ -1803,6 +1895,8 @@ ak-py/src/agentkernel/
 │   ├── authz/               # Authorizer ABC + Decision (base.py), AuthorizerFactory, StaticAuthorizer with
 │   │                        #   GrantTable/ToolPolicyTable/SubjectMatcher (static.py), AccessGate (gate.py),
 │   │                        #   testing.py (AuthorizerContract)
+│   ├── credential/          # Credentials: store.py (CredentialStore, CredentialCipher, CredentialStoreFactory),
+│   │                        #   in_memory.py, redis_like.py, redis.py, valkey.py, dynamodb.py, testing.py (CredentialStoreContract)
 │   ├── registry/            # Store-backed agent registries: base.py (StoreBackedAgentRegistry), redis_like.py,
 │   │                        #   redis.py, valkey.py, dynamodb.py, testing.py (AgentRegistryContract)
 │   └── provider/            # IdentityProvider ABC + RequestContext (base.py), RequestAuthenticator (request.py),

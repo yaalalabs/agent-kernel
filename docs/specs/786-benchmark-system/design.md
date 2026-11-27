@@ -901,7 +901,9 @@ flowchart TD
     `[AGENT DONE] request_id=...` → `Agent done: request_id=...`), so normal logs still show them.
   - The trace call for the matching stage goes where the stage is (which may differ from where the INFO line sits).
   - At `TRACE` both show. No metric filters or dashboards match on the old tags; the one example README that quoted one is updated.
-  - Per-chunk debug lines, `[OUTPUT STORE]` and off-path lines without a `request_id` are left as they are.
+  - Request-path lines on paths the benchmark doesn't run (A2A/MCP protocol, AG-UI, output error/pause) and the
+    per-chunk debug lines also drop their tag, with no trace line added.
+  - Off-path lines without a `request_id` (Gmail polling, realtime voice call start/end) keep their tag.
 - Trace lines carry no worker id. Worker counts come only from the fetchers.
 
 ### Results

@@ -54,7 +54,36 @@ class CLI:
             self._principal = await provider.authenticate(self._token, RequestContext(path="cli"))
         except AuthenticationError as e:
             raise SystemExit(f"Authentication failed: {e}") from e
+        from ..identity.credential.manager import CredentialManager
+
+        credentials = CredentialManager.get()
+        if credentials is not None:
+            # Kept for the session (a conn: reference) that every prompt's run reads and leaves; forgotten at exit.
+            self._principal = await credentials.retain(self._principal, self._token, connection=True)
         ak_cli_logger.info(f"Authenticated as {self._principal.subject}")
+
+    async def _renew_credential(self) -> None:
+        """
+        Keeps the session's credential another ``inbound_ttl`` before a prompt's run, as each frame of a WebSocket
+        connection does, so a token with no expiry lasts the session. One that has expired is not brought back.
+        """
+        if self._principal is None or not self._principal.credential_ref:
+            return
+        from ..identity.credential.manager import CredentialManager
+
+        credentials = CredentialManager.get()
+        if credentials is not None:
+            await asyncio.to_thread(credentials.renew, self._principal)
+
+    def _forget_credential(self) -> None:
+        """Forget the credential the session was opened with, if one was kept."""
+        if self._principal is None or not self._principal.credential_ref:
+            return
+        from ..identity.credential.manager import CredentialManager
+
+        credentials = CredentialManager.get()
+        if credentials is not None:
+            credentials.forget(self._principal)
 
     @staticmethod
     def _print(message: str = "", **kwargs):
@@ -108,8 +137,14 @@ class CLI:
         threading.Thread(target=read, daemon=True, name="ak-cli-input").start()
         return await future
 
-    async def run(self):
+    async def run(self) -> None:
         await self._authenticate()
+        try:
+            await self._repl()
+        finally:
+            self._forget_credential()
+
+    async def _repl(self) -> None:
         self._print("AgentKernel CLI (type !help for commands or !quit to exit):")
         self._service.select()
 
@@ -152,6 +187,7 @@ class CLI:
                     continue
 
                 if self._service.agent:
+                    await self._renew_credential()
                     reply = await self._service.run_multi([AgentRequestText(prompt=prompt)], principal=self._principal)
                     self._print(f"\033[35m{reply}\033[0m")
                     self._print()

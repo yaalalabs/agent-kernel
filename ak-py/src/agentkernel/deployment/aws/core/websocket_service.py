@@ -186,6 +186,25 @@ class AWSWebSocketHandler(WebSocketHandlerABC):
         self._connection_store.add_connection(principal.subject, connection_id, principal)
         self._log.info(f"Connected: subject={principal.subject}, connection_id={connection_id}")
 
+    def on_disconnect(self, connection_id: str) -> None:
+        """
+        Remove a closed connection and forget the credential it was opened with (#603), for the Lambda and the
+        ECS deployments alike. The principal is read before the row goes; a failed read only leaves the credential
+        to expire with its TTL.
+
+        :param connection_id: WebSocket connection identifier
+        """
+        try:
+            principal = self.get_principal(connection_id)
+        except Exception as error:
+            self._log.warning(f"The principal of connection {connection_id} could not be read at disconnect: {type(error).__name__}")
+            principal = None
+        super().on_disconnect(connection_id)
+        if principal is not None and principal.credential_ref:
+            from ....identity.credential.manager import CredentialManager
+
+            CredentialManager.forget_for(principal)
+
     def get_principal(self, connection_id: str) -> Principal | None:
         """
         Retrieve the principal stored for a connection.

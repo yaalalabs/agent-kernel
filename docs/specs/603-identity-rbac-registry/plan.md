@@ -1393,7 +1393,7 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
 - **Left open:** whether a participant who joins a call opened by someone else may speak to the
   agent at all. Today their presence only narrows the room's tools.
 
-## Phase F: Credentials (iterations 24 to 25)
+## Phase F: Credentials (iterations 24 to 25b)
 
 ### Iteration 24: Credential store
 
@@ -1411,6 +1411,20 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
 - **Verify:** the store and cipher cases of new `tests/test_identity_credentials.py` (contract
   over in-memory and the redis-like and DynamoDB backends through fake drivers, cipher round
   trip, TTL).
+- **As built** (2026-11-26, branch `feature/603-credentials`; spec section 5 "As built" and
+  refinement 23):
+  - The store encrypts and decrypts itself (`put` / `get` concrete on `CredentialStore`, backends
+    implement `_write` / `_read` / `_remove` / `_clear` over ciphertext), so iteration 25's broker
+    takes no cipher. `CredentialStore.shared` makes a shared store refuse to be built without a key.
+  - `CredentialError` lands here, for a value that does not decrypt; `put` of an expired credential
+    is a `ValueError`.
+  - New on the shared driver: `_RedisLikeDriver.set_with_expiry` (one `SET ... PX`), with its cases
+    in `test_shared_drivers.py`. DynamoDB items carry `expires_at`, checked on read, and
+    `expiry_time` for DynamoDB's TTL.
+  - Config: the store blocks refuse a `ttl`, `_CredentialsConfig` refuses unknown keys,
+    `inbound_ttl` must be positive; cases in `test_config.py` (`TestCredentialsConfig`).
+  - Exports added to `agentkernel.identity`. No user docs or changelog fragment yet: nothing reads
+    the store until iteration 25, which documents the capability as a whole.
 
 ### Iteration 25: Exchange, broker and retention
 
@@ -1428,6 +1442,91 @@ What phase E delivered, and what it settled beyond the iteration plans, before i
      `ToolContext.credentials` returns the live broker (spec 3, 4, 8.3).
 - **Verify:** the remaining `test_identity_credentials` cases (broker, no token in a queue body
   or log line, deletion on both paths, reserved exchanger names).
+- **As built** (2026-11-26; spec sections 4 and 5 "As built", refinement 24):
+  - Retention is explicit: `CredentialManager.retain` (new `credential/manager.py`, which also holds
+    the store, the exchangers, `release`, `forget` and the broker) is called by the identity
+    dependency, the MCP executor (each tool call), the pipeline WebSocket gateway and the CLI (the last two for the
+    connection); authentication keeps nothing. Released by `Runtime` and `AgentRunner.process`;
+    forgotten by the gateway and the CLI when the connection or session ends.
+  - `deployment/aws/containerized/akagentrunner.py` no longer exists (#870): the ECS containers run the
+    pipeline `AgentRunner`, so its release covers them, and ECS REST modes retain through the
+    dependency. Not done here, so moved to **iteration 25b**: the Lambda authorizer, the Lambda REST
+    router and WebSocket handler, the ECS WebSocket handler and the serverless runner's release. Those
+    deployments keep no credential until then, and the docs say so.
+  - Added: the startup refusal of an `in_memory` credential store on a broker transport
+    (`AgentRunner._validate_credential_store`, also from `IOHandler`).
+  - Docs: an identity page section ("Credentials for downstream calls"), the configuration reference,
+    the `ak-py` README, the bundled `ak-add-capabilities` skill, and `changelog.d/603.added.1.md`.
+- **Iteration 25b (added): AWS adapters.** The Lambda REST router retains from the request's
+  `Authorization` header when it rebuilds the principal (never the authorizer, whose result is
+  cached); the Lambda and ECS WebSocket handlers retain for the connection at `$connect` and forget at
+  `$disconnect`; the serverless runner releases; per-frame renewal of a connection credential whose
+  token has no `exp` (pipeline and ECS gateways).
+  - **As built** (2026-11-26; spec section 4 "As built" and refinement 25): the router retains where a
+    run starts (`_send_to_queue`, `_handle_agent_chat`), not when it parses a request, so a poll keeps
+    nothing. `AWSWebSocketHandler.on_disconnect` forgets for both WebSocket deployments. Renewal goes
+    through the store (`CredentialManager.renew`), so Lambda frames renew as well as the pipeline and ECS
+    gateways. `CredentialManager.require_shared_store` refuses an `in_memory` store on the queued Lambda
+    router and the Lambda connection routes, and backs the broker-transport check. Tests in
+    `test_deployment_identity.py` (the router, both WebSocket APIs, the serverless runners),
+    `test_identity_credentials.py` (renewal, the shared-store rule) and `test_pipeline_ws.py`.
+
+### Phase F as shipped
+
+What phase F delivered, and what it settled beyond the iteration plans, before it merged
+(2026-11-26). Each point is recorded in the spec section it changes.
+
+- **Code.** Iterations 24, 25 and 25b (added): the encrypted credential store (`CredentialCipher`,
+  in-memory, Redis, Valkey and DynamoDB backends, `CredentialStoreFactory`,
+  `CredentialStoreContract`), the process-wide `CredentialManager`, exchange (`passthrough` only,
+  `TokenExchangerContract`), `CredentialBroker` and `ToolContext.credentials`. A request's credential is
+  retained by the identity dependency (REST, A2A, AG-UI, threads), the MCP executor (each tool
+  call, not the verifier FastMCP asks on every request) and the Lambda
+  REST router, and a connection's by the pipeline, ECS and Lambda WebSocket handlers and the CLI; it is
+  released by `Runtime`, the pipeline `AgentRunner` and the serverless runners, renewed by every frame
+  when its token has no `exp`, and forgotten when the connection ends. Spec refinements 23 to 25 hold
+  what building it settled: the store encrypts, so no caller handles ciphertext; retention is each
+  surface's explicit call through one manager, never a side effect of authentication (the Lambda
+  authorizer's cached result made that necessary); renewal goes through the store, so Lambda renews
+  too. An `in_memory` store is refused wherever one process keeps a credential and another reads it.
+- **Review of PR #1023** (2026-11-26), each change in the spec section it touches:
+  - the broker reads the run's own inbound credential before its cache, keys the cache on a digest of
+    it, and never caches `passthrough`, so no copy of the inbound token outlives the run;
+  - renewal is `CredentialStore.touch`, which extends only a live entry in one step, so a disconnect
+    between two frames is final; DynamoDB reads are strongly consistent;
+  - the identity dependency keeps nothing for `GET`, `HEAD` or `OPTIONS` or on a WebSocket handshake,
+    and the Lambda authorizer builds no manager;
+  - `require_shared_store` decides by `CredentialStoreFactory.is_shared`, and the ECS WebSocket API
+    calls it too;
+  - the CLI renews before each prompt, one bearer parser serves the dependency and the Lambda router,
+    and a failed delete is logged by type alone;
+  - a second CodeRabbit round: one `Authorization` header rule for the authorizer and the Lambda
+    router (two that disagree count as none), the Lambda direct route releasing in a `finally`, both
+    AWS `$connect`s forgetting a credential whose connection row failed, and the in-memory read never
+    deleting an entry renewed since its lookup;
+  - the re-review: a request every HTTP surface answers without a run (a refusal, a failed send)
+    releases its credential (`CredentialManager.release_unclaimed` and `released_on_error`), on the
+    pipeline, direct REST, thread and AG-UI routes and A2A's shared `request()`.
+- **Docs.** Written iteration by iteration, then checked at the end of the phase: the identity page's
+  "Credentials for downstream calls" section and its deployment notes, `core-concepts/configuration.md`,
+  `ak-py/README.md`, the bundled `ak-add-capabilities` skill; and in the end-of-phase pass, a seventh
+  step and a credential store node in both diagrams of *How it fits together* (the Mermaid one and
+  `AccessFlowDiagram` on the features page), the features page's Identity and access capability, What's
+  New and the intro tip, the root `README.md` Guard row, the Redis, Valkey and DynamoDB items of the
+  landing page's integrations ("credential stores"), the AWS serverless README and the bundled
+  `ak-cloud-deploy` skill.
+- **Changelog.** `603.added.1.md`, corrected in place as iteration 25b closed the AWS gap it named.
+- **Dev skills.** `ak-dev-architecture` and `ak-dev-testing-conventions` in step with each iteration;
+  `ak-dev-new-identity-provider` asks a provider to keep `exp` in `claims`, and
+  `ak-dev-sync-docs-from-branch` counts credential stores among the store backends whose integration
+  items list what they back.
+- **Known limits, each in the spec or the docs:** only `passthrough` ships, so a downstream API that
+  checks its audience refuses the forwarded token; a queued message delivered again after its run
+  started finds its credential gone; an authenticated request that runs no agent leaves its encrypted
+  entry to expire within `inbound_ttl`; the Terraform modules and the chart provision no credential
+  table, cache access or key.
+- **Left open:** an exchange flow (RFC 8693, Entra on-behalf-of, ID-JAG; design Q19), and wiring the
+  frameworks' own MCP clients to the broker (spec 5: a tool calls `token_for` itself).
 
 ## Phase G: Tests, docs and skills (iterations 26 to 28)
 
@@ -1435,9 +1534,10 @@ The docs and skills for phases A and B landed with phase B itself (PR #937: the 
 the docs-site and README updates, the landing-page tiles, `ak-dev-new-identity-provider` and the
 user-skill updates), those for phase C with phase C (see "Phase C as shipped"), and the docs for
 phase D with phase D (see "Phase D as shipped", decided 2026-11-25: a phase is not merged with
-its user documentation behind it), and the docs and dev skills for phase E with phase E (see
-"Phase E as shipped"), so iterations 27 and 28 cover what phase F adds, the one dev skill
-phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
+its user documentation behind it), the docs and dev skills for phase E with phase E (see
+"Phase E as shipped"), and those for phase F with phase F (see "Phase F as shipped"), so
+iterations 27 and 28 cover the one dev skill phase D still owes (`ak-dev-new-authorizer`) and
+re-verify the rest.
 
 ### Iteration 26: Test walk
 
@@ -1471,9 +1571,8 @@ phase D still owes (`ak-dev-new-authorizer`), and re-verify the rest.
      routes is served there after a restart (spec 6, A2A card); `api/mcp-server.md` says the same
      of an agent's MCP tool (spec 8.6). What the access gate changes on each of these pages
      (caller filtering, the 403 and 404) landed with phase D, with the Authorization section of
-     the identity page, the What's New entry and the features-page capability. Still to write:
-     the call-time tool gates of phase E (the pages say today that a tool policy narrows what is
-     listed and does not stop a call, which phase E reverses) and the credentials of phase F.
+     the identity page, the What's New entry and the features-page capability. The call-time tool
+     gates landed with phase E and the credentials with phase F; re-verify both here.
 - **Verify:** `grep -rnF -e AuthValidator -e Authoriser -e acting_user_id -e mcp.agents
   -e a2a.agents -e agui.agents -e userId -e get_a2a_card docs/docs ak-py/README.md README.md
   ak-deployment` (fixed strings, one `-e` per term, so no term is lost to a line break in the

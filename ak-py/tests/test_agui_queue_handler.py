@@ -600,6 +600,20 @@ class TestTheEdgeAnswersForTheCaller:
         assert handler._producer.requests == []
 
     @pytest.mark.asyncio
+    async def test_a_run_refused_at_the_edge_keeps_no_credential(self, registry, credential_manager):
+        # Nothing was enqueued, so no runner will release what the identity dependency kept (#603).
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        request = self._as("u1")
+        request.state.principal = await credential_manager.retain(request.state.principal, "u1-token")
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException):
+                await handler._run("ghost", request)
+
+        assert credential_manager.store._entries == {}
+
+    @pytest.mark.asyncio
     async def test_an_agent_the_caller_sees_and_may_not_use_is_a_403_and_nothing_is_enqueued(self, registry, authorization):
         handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
         handler._producer = _RecordingProducer()

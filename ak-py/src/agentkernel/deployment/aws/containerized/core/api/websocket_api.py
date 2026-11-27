@@ -120,13 +120,20 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
         """Build the handler over the configured identity provider.
 
         :raises AKConfigError: If no identity provider is configured: the connection is keyed by the
-            authenticated subject, so a handshake nobody can authenticate cannot be served.
+            authenticated subject, so a handshake nobody can authenticate cannot be served. Also if
+            ``identity.credentials`` names a store that is not shared between processes.
         """
         super().__init__()
         self._log = logging.getLogger("ak.ecs.ws_system_handler")
         self._authenticator = RequestAuthenticator.from_config()
         if self._authenticator.provider is None:
             raise AKConfigError("the ECS WebSocket routes require an identity block: the connection is keyed by the authenticated subject")
+        if self._authenticator.credentials is not None:
+            from ......identity.credential.manager import CredentialManager
+
+            # $connect keeps the credential in one task; API Gateway can route a later frame to another, and does
+            # under every rolling deploy, so even a one-task service needs a store the tasks share.
+            CredentialManager.require_shared_store(AKConfig.get(), "on the ECS WebSocket API")
 
     def get_router(self) -> APIRouter:
         """Return an APIRouter with one POST endpoint per protocol route."""
@@ -159,8 +166,18 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
             if principal.is_anonymous:
                 # Unreachable with the provider the constructor demanded; refused rather than keyed on "anonymous".
                 return self.build_error_http_response(401, "Authentication failed")
+            credentials = self._authenticator.credentials
+            if credentials is not None:
+                # Kept for the connection (a conn: reference), renewed by each frame and forgotten at $disconnect.
+                principal = await credentials.retain(principal, token, connection=True)
 
-            await self._offload(self.get_websocket_handler().on_connect, connection_id=connection_id, principal=principal)
+            try:
+                await self._offload(self.get_websocket_handler().on_connect, connection_id=connection_id, principal=principal)
+            except Exception:
+                # No connection row names the reference, so no $disconnect would forget it.
+                if credentials is not None:
+                    await self._offload(credentials.forget, principal)
+                raise
             return self.build_success_http_response("WebSocket connection established", user_id=principal.subject)
         except Exception as e:
             self._log.exception(f"WebSocket $connect failed: {e}")
@@ -339,6 +356,10 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         principal = await self._offload(self.get_websocket_handler().get_principal, connection_id)
         if principal is None:
             raise self.WSRouteError(401, f"No principal found for connection_id: {connection_id}")
+        # Each frame keeps the connection's credential alive, when its token has no expiry of its own (#603).
+        from ......identity.credential.manager import CredentialManager
+
+        await self._offload(CredentialManager.renew_for, principal)
 
         endpoint_url = self._construct_endpoint_url(request)
         if not endpoint_url:

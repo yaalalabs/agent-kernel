@@ -17,6 +17,7 @@ from .config import AKConfig
 from .model import AccessLevel, Principal, SystemTool, ToolFilter
 
 if TYPE_CHECKING:
+    from ..identity.credential.broker import CredentialBroker
     from .runtime import Runtime
 
 
@@ -125,6 +126,20 @@ class ToolContext:
         """
         tool_filter = self._session.get_tool_filter()
         return tool_filter.level if tool_filter is not None else None
+
+    @property
+    def credentials(self) -> "CredentialBroker":
+        """
+        What a tool asks for a token for a downstream service: ``await ToolContext.get().credentials.token_for(audience)``.
+
+        The broker of this run, over the inbound credential the run was started with. Reading it never raises, so a
+        tool that does not ask for a token pays nothing; ``token_for`` raises ``CredentialError`` when
+        ``identity.credentials`` is not configured, the run has no credential, or no exchanger serves the audience.
+        :return: The run's CredentialBroker.
+        """
+        from ..identity.credential.broker import CredentialBroker
+
+        return CredentialBroker.for_run(self.principal, self._agent.descriptor.id)
 
     @classmethod
     def get(cls) -> Self:
