@@ -260,8 +260,11 @@ const STAGES: StageGroup[] = [
           'Any OpenID Connect issuer, such as Auth0, Keycloak or Okta',
           'Amazon Cognito, Microsoft Entra ID and Firebase',
           'REST, WebSocket, AG-UI, MCP, A2A, the CLI and messaging',
+          "The caller's token kept, encrypted, for the run, so a tool can call another service as the caller",
         ],
         guide: { label: 'Identity and access', to: '/docs/advanced/identity-and-access' },
+        // Drop `next` from the path once a release carries the Credentials section.
+        more: [{ label: 'Credentials for downstream calls', to: '/docs/next/advanced/identity-and-access#credentials-for-downstream-calls' }],
       },
       {
         title: 'Authorization',

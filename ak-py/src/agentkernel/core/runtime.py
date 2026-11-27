@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
 from collections.abc import AsyncGenerator
@@ -502,6 +503,21 @@ class Runtime:
         tool_filter = await gate.tool_filter_async(acting, agent, level=level)
         return self._publish(agent, session, principal, tool_filter)
 
+    @staticmethod
+    async def _release_credential(principal: Principal | None) -> None:
+        """
+        Deletes the inbound credential the run was started with, when it ends however it ends (#603, spec section 4).
+        A connection's credential (a ``conn:`` reference) is the connection's to forget. Reaches the identity package
+        only when there is a credential to release, and never raises.
+
+        :param principal: The principal the surface authenticated.
+        """
+        if principal is None or not principal.credential_ref:
+            return
+        from ..identity.credential.manager import CredentialManager
+
+        await asyncio.to_thread(CredentialManager.release_for, principal)
+
     def _publish(self, agent: Agent, session: Session, principal: Principal | None, tool_filter: ToolFilter | None = None) -> Principal:
         """
         Resolves the run's principal, publishes it with the run's tool filter and records the session's owner.
@@ -626,6 +642,7 @@ class Runtime:
             finally:
                 session._unpublish_run()
                 session.get_volatile_cache()._clear_all()
+                await self._release_credential(principal)
 
     async def stream(
         self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None
@@ -725,6 +742,7 @@ class Runtime:
             finally:
                 session._unpublish_run()
                 session.get_volatile_cache()._clear_all()
+                await self._release_credential(principal)
 
     def sessions(self) -> SessionStore:
         """

@@ -102,6 +102,10 @@ class LambdaWSHandler(AWSWebSocketHandler):
         principal = self.get_principal(connection_id)
         if principal is None:
             raise ValueError(f"No principal found for connection_id: {connection_id}")
+        # Each frame keeps the connection's credential alive, when its token has no expiry of its own (#603).
+        from ......identity.credential.manager import CredentialManager
+
+        CredentialManager.renew_for(principal)
         return principal
 
     def _handle_msg_and_brdcst(
@@ -177,6 +181,11 @@ class ConnectionRoutesHandler(LambdaWSHandler):
         self._authenticator = RequestAuthenticator.from_config()
         if self._authenticator.provider is None:
             raise AKConfigError("the WebSocket connection routes require an identity block: the connection is keyed by the authenticated subject")
+        if self._authenticator.credentials is not None:
+            from ......identity.credential.manager import CredentialManager
+
+            # $connect keeps the credential in one Lambda; the frames that use it run in others.
+            CredentialManager.require_shared_store(AKConfig.get(), "on the AWS Lambda WebSocket routes")
 
     def _extract_auth_token(self, event: dict[str, Any]) -> str | None:
         """
@@ -228,8 +237,18 @@ class ConnectionRoutesHandler(LambdaWSHandler):
             if principal.is_anonymous:
                 # Unreachable with the provider the constructor demanded; refused rather than keyed on "anonymous".
                 return 401, self._build_lambda_response(msg="Authentication failed", success=False)
+            credentials = self._authenticator.credentials
+            if credentials is not None:
+                # Kept for the connection (a conn: reference), renewed by each frame and forgotten at $disconnect.
+                principal = run_async_sync(credentials.retain(principal, token, connection=True))
 
-            self.on_connect(connection_id=connection_id, principal=principal)
+            try:
+                self.on_connect(connection_id=connection_id, principal=principal)
+            except Exception:
+                # No connection row names the reference, so no $disconnect would forget it.
+                if credentials is not None:
+                    credentials.forget(principal)
+                raise
 
             return 200, self._build_lambda_response(user_id=principal.subject, msg="WebSocket connection established", success=True)
 

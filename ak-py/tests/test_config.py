@@ -9,6 +9,12 @@ from agentkernel.core.config import (
     _A2AConfig,
     _AGUIConfig,
     _AuthorizationConfig,
+    _CredentialDynamoDBConfig,
+    _CredentialRedisConfig,
+    _CredentialsConfig,
+    _CredentialStoreConfig,
+    _CredentialValkeyConfig,
+    _ExchangerConfig,
     _ExecutionConfig,
     _GrantConfig,
     _IdentityConfig,
@@ -814,6 +820,101 @@ class TestRegistryConfig:
         monkeypatch.setenv("AK_REGISTRY__TYPE", "valkey")
 
         assert AKConfig.get().registry.type == "valkey"
+
+
+class TestCredentialsConfig:
+    """`identity.credentials` (#603, iteration 24): where the inbound credential of a run is kept, encrypted, and
+    the exchangers that turn it into tokens for downstream services. Absent, nothing is kept."""
+
+    def test_absent_from_an_identity_block_by_default(self):
+        identity = _IdentityConfig.model_validate({"provider": {"type": "static", "static": {"principals": {"ALICE_TOKEN": {"subject": "alice"}}}}})
+
+        assert identity.credentials is None
+
+    def test_a_block_parses_from_yaml_with_its_store_key_and_exchangers(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "identity:\n"
+            "  provider:\n"
+            "    type: static\n"
+            "    static:\n"
+            "      principals:\n"
+            "        ALICE_TOKEN: {subject: alice}\n"
+            "  credentials:\n"
+            "    encryption_key: AK_CREDENTIAL_KEY\n"
+            "    inbound_ttl: 120\n"
+            "    store:\n"
+            "      type: redis\n"
+            "      redis:\n"
+            "        url: redis://cache:6379\n"
+            "    exchangers:\n"
+            "      - audience: https://api.billing.example\n"
+            "        scopes: [invoices.read]\n"
+        )
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+        credentials = AKConfig.get().identity.credentials
+
+        assert (credentials.encryption_key, credentials.inbound_ttl) == ("AK_CREDENTIAL_KEY", 120)
+        assert (credentials.store.type, credentials.store.redis.url) == ("redis", "redis://cache:6379")
+        exchanger = credentials.exchangers[0]
+        assert (exchanger.audience, exchanger.type, exchanger.scopes) == ("https://api.billing.example", "passthrough", ["invoices.read"])
+
+    def test_a_bare_block_is_an_in_memory_store_with_no_key_and_no_exchanger(self):
+        credentials = _CredentialsConfig()
+
+        assert credentials.store.type == "in_memory"
+        assert (credentials.store.redis, credentials.store.valkey, credentials.store.dynamodb) == (None, None, None)
+        assert (credentials.encryption_key, credentials.inbound_ttl, credentials.exchangers) == (None, 300, [])
+
+    def test_the_store_blocks_default_to_the_credential_prefix_and_table(self):
+        assert (_CredentialRedisConfig().prefix, _CredentialRedisConfig().ttl) == ("ak:cred:", 0)
+        assert (_CredentialValkeyConfig().prefix, _CredentialValkeyConfig().ttl) == ("ak:cred:", 0)
+        assert (_CredentialDynamoDBConfig().table_name, _CredentialDynamoDBConfig().ttl) == ("ak-credentials", 0)
+
+    @pytest.mark.parametrize(
+        "block, model", [("redis", _CredentialRedisConfig), ("valkey", _CredentialValkeyConfig), ("dynamodb", _CredentialDynamoDBConfig)]
+    )
+    def test_a_store_block_refuses_a_ttl(self, block, model):
+        # Each credential expires with the token it holds; a store-wide TTL would keep one past that, or drop it early.
+        with pytest.raises(AKConfigError, match=f"identity.credentials.store.{block}.ttl is not supported"):
+            model.model_validate({"ttl": 3600})
+
+        assert model.model_validate({"ttl": 0}).ttl == 0
+
+    def test_a_ttl_set_through_the_environment_fails_at_load(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_IDENTITY__PROVIDER__ISSUER", "https://issuer.example/")
+        monkeypatch.setenv("AK_IDENTITY__PROVIDER__AUDIENCE", "agents")
+        monkeypatch.setenv("AK_IDENTITY__CREDENTIALS__STORE__TYPE", "redis")
+        monkeypatch.setenv("AK_IDENTITY__CREDENTIALS__STORE__REDIS__TTL", "600")
+
+        with pytest.raises(AKConfigError, match="identity.credentials.store.redis.ttl is not supported"):
+            AKConfig.get()
+
+    def test_a_key_the_credentials_block_does_not_take_is_rejected(self):
+        # A misspelt `encryption_key` silently ignored would keep the credentials in plaintext.
+        with pytest.raises(ValueError, match="encryption-key"):
+            _CredentialsConfig.model_validate({"encryption-key": "AK_CREDENTIAL_KEY"})
+
+    def test_a_bring_your_own_store_keeps_its_own_settings(self):
+        store = _CredentialStoreConfig.model_validate({"type": "my_app.stores.VaultCredentialStore", "mount": "kv/ak"})
+
+        assert store.model_extra == {"mount": "kv/ak"}
+
+    def test_an_exchanger_names_its_audience(self):
+        with pytest.raises(ValueError, match="audience"):
+            _ExchangerConfig.model_validate({"type": "passthrough"})
+
+    def test_a_bring_your_own_exchanger_keeps_its_own_settings(self):
+        exchanger = _ExchangerConfig.model_validate({"audience": "https://api.example", "type": "my_app.Exchanger", "realm": "corp"})
+
+        assert exchanger.model_extra == {"realm": "corp"}
+
+    @pytest.mark.parametrize("ttl", [0, -5])
+    def test_the_inbound_ttl_is_a_positive_number_of_seconds(self, ttl):
+        with pytest.raises(ValueError, match="inbound_ttl"):
+            _CredentialsConfig.model_validate({"inbound_ttl": ttl})
 
 
 class TestAuthorizationConfig:

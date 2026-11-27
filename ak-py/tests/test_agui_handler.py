@@ -185,12 +185,13 @@ class _SharedRegistry(InMemoryAgentRegistry):
 
 
 @contextmanager
-def serving(monkeypatch, agents, agui_cfg=None, store=None, registry_cfg=None, registry=None, provider=None):
+def serving(monkeypatch, agents, agui_cfg=None, store=None, registry_cfg=None, registry=None, provider=None, credentials=None):
     """Mount the AG-UI router over a runtime holding the given agents, behind the identity dependency.
 
     ``registry_cfg`` is the `registry` configuration block (its overlay sets an agent's surfaces);
     ``registry`` replaces the runtime's registry outright, for agents this process does not host;
-    ``provider`` replaces the one-token identity provider, for a test with more than one caller.
+    ``provider`` replaces the one-token identity provider, for a test with more than one caller;
+    ``credentials`` is the ``CredentialManager`` the dependency keeps each request's credential in.
     """
     _install_cfg(monkeypatch, agui_cfg if agui_cfg is not None else _AGUIConfig(), registry_cfg)
     provider = _with_provider(monkeypatch, provider or _TestProvider())
@@ -202,7 +203,7 @@ def serving(monkeypatch, agents, agui_cfg=None, store=None, registry_cfg=None, r
     try:
         with runtime:
             app = FastAPI()
-            app.include_router(AGUIRequestHandler().get_router(), dependencies=[Depends(RequestAuthenticator(provider).dependency())])
+            app.include_router(AGUIRequestHandler().get_router(), dependencies=[Depends(RequestAuthenticator(provider, credentials).dependency())])
             yield TestClient(app), runtime
     finally:
         Runtime._system_pre_hooks = None
@@ -357,6 +358,13 @@ class TestAgentResolution:
     def test_an_unknown_agent_is_404(self, monkeypatch):
         with serving(monkeypatch, [ScriptedAgent()]) as (client, _):
             assert client.post("/agui/nobody", headers=AUTH, json=body()).status_code == 404
+
+    def test_a_run_for_an_unknown_agent_keeps_no_credential(self, monkeypatch, credential_manager):
+        """No stream started, so no run will release what the identity dependency kept (#603)."""
+        with serving(monkeypatch, [ScriptedAgent()], credentials=credential_manager) as (client, _):
+            assert client.post("/agui/nobody", headers=AUTH, json=body()).status_code == 404
+
+        assert credential_manager.store._entries == {}
 
     def test_an_unexposed_agent_is_404_indistinguishable_from_unknown(self, monkeypatch):
         """Identical status *and* detail, so the surface never confirms that a name exists."""

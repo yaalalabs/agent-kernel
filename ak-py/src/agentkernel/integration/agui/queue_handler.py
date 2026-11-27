@@ -125,31 +125,35 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         """
         from ag_ui.encoder import EventEncoder
 
-        principal, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
-        envelope = AGUIRunEnvelope.build(run_input)
-        envelope.reject_if_oversized()
-        self._warn_if_unreadable(agent, run_input)
+        from ...identity.credential.manager import CredentialManager
 
-        # Bytes must not ride the queue: brokers cap a message far below api.max_file_size.
-        requests, _ = AttachmentStorageManager.offload(
-            run_input.thread_id,
-            requests,
-            attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,
-            session_cache_error=SESSION_CACHE_ERROR,
-        )
+        # Until the message is on the queue no runner owns the request's credential, so a refusal releases it (#603).
+        async with CredentialManager.released_on_error(self._caller(request)):
+            principal, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
+            envelope = AGUIRunEnvelope.build(run_input)
+            envelope.reject_if_oversized()
+            self._warn_if_unreadable(agent, run_input)
 
-        request_id = uuid4().hex
-        # Offload the sync send so it doesn't block the event loop, as the REST handler does.
-        await asyncio.to_thread(
-            self._producer.enqueue,
-            # The caller's principal rides the body: the runner publishes it for the run (#603).
-            # The agent travels by its id: the edge resolved a descriptor, and need not host the agent.
-            # The surface travels too: the runner selects the agent as one served on `agui`.
-            AGUIRunRequest(session_id=run_input.thread_id, agent=agent.id, requests=requests, agui=envelope, principal=principal, surface="agui"),
-            request_id=request_id,
-            attributes={ATTR_AGUI: "1"},
-            group_id=run_input.thread_id,
-        )
+            # Bytes must not ride the queue: brokers cap a message far below api.max_file_size.
+            requests, _ = AttachmentStorageManager.offload(
+                run_input.thread_id,
+                requests,
+                attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,
+                session_cache_error=SESSION_CACHE_ERROR,
+            )
+
+            request_id = uuid4().hex
+            # Offload the sync send so it doesn't block the event loop, as the REST handler does.
+            await asyncio.to_thread(
+                self._producer.enqueue,
+                # The caller's principal rides the body: the runner publishes it for the run (#603).
+                # The agent travels by its id: the edge resolved a descriptor, and need not host the agent.
+                # The surface travels too: the runner selects the agent as one served on `agui`.
+                AGUIRunRequest(session_id=run_input.thread_id, agent=agent.id, requests=requests, agui=envelope, principal=principal, surface="agui"),
+                request_id=request_id,
+                attributes={ATTR_AGUI: "1"},
+                group_id=run_input.thread_id,
+            )
         self._log.info(f"AG-UI enqueued: request_id={request_id}, thread_id={run_input.thread_id}, agent={agent.id}")
 
         encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]

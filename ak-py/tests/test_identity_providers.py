@@ -10,7 +10,7 @@ bearer header. The OIDC family's cases are in `test_identity_oidc`, run through 
 """
 
 import pytest
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, WebSocket
 from fastapi.testclient import TestClient
 from test_secret_manager import _DictSecretProvider
 
@@ -18,6 +18,7 @@ from agentkernel.core.config import _IdentityConfig, _IdentityProviderConfig, _R
 from agentkernel.core.model import Principal
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator, RequestContext, RoleMapper
+from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
 from agentkernel.identity.provider.base import ClaimPath
 from agentkernel.identity.provider.roles import MappedIdentityProvider, MappingRoleMapper, RoleMapperFactory
 from agentkernel.identity.provider.static import StaticIdentityProvider
@@ -454,12 +455,115 @@ class TestRequestAuthenticator:
         assert (credential, context.path, context.http_method) == ("alice-secret", "/whoami", "GET")
         assert context.headers["authorization"] == "Bearer alice-secret"
 
+    @pytest.mark.parametrize(
+        ("header", "token"),
+        [
+            ("Bearer alice-secret", "alice-secret"),
+            ("bearer   alice-secret  ", "alice-secret"),
+            ("Basic abc", None),
+            ("Bearer ", None),
+            ("alice-secret", None),
+            (None, None),
+        ],
+    )
+    def test_bearer_token_reads_a_bearer_header_and_never_raises(self, header, token):
+        # The one parser: the dependency refuses what it returns None for, and the Lambda router keeps nothing for it.
+        assert RequestAuthenticator.bearer_token(header) == token
+
+    @pytest.mark.parametrize(
+        ("headers", "value"),
+        [
+            ({"Authorization": "Bearer a"}, "Bearer a"),
+            ({"authorization": "Bearer a", "Host": "x"}, "Bearer a"),
+            ({"Authorization": "Bearer a", "authorization": "Bearer a"}, "Bearer a"),
+            ({"Authorization": "Bearer a", "authorization": "Bearer b"}, None),
+            ({"Host": "x"}, None),
+            (None, None),
+        ],
+    )
+    def test_authorization_header_is_one_value_whatever_its_case_or_none(self, headers, value):
+        # Two names that disagree are ambiguous: whoever picked one could keep a token other than the one authenticated.
+        assert RequestAuthenticator.authorization_header(headers) == value
+
     def test_current_is_none_outside_a_request(self):
         assert RequestAuthenticator.current() is None
 
+    @staticmethod
+    def _seen_principal(authenticator: RequestAuthenticator, headers: dict, method: str = "POST") -> Principal:
+        seen: dict = {}
+        app = FastAPI()
+
+        async def capture(request: Request):
+            seen["principal"] = request.state.principal
+            return {}
+
+        app.add_api_route("/capture", capture, methods=[method], dependencies=[Depends(authenticator.dependency())])
+        TestClient(app).request(method, "/capture", headers=headers)
+        return seen["principal"]
+
+    @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+    def test_with_credentials_the_dependency_keeps_the_credential_of_a_request_that_may_start_a_run(self, provider, credentials, method):
+        manager = credentials()
+
+        principal = self._seen_principal(RequestAuthenticator(provider, manager), {"Authorization": "Bearer alice-secret"}, method)
+
+        assert principal.credential_ref
+        assert manager.store.get(principal.credential_ref) == b"alice-secret"
+
+    @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS"])
+    def test_a_request_that_only_reads_keeps_nothing(self, provider, credentials, method):
+        # A catalog listing or a REST_ASYNC poll starts no run, so nothing would release what it kept.
+        manager = credentials()
+
+        principal = self._seen_principal(RequestAuthenticator(provider, manager), {"Authorization": "Bearer alice-secret"}, method)
+
+        assert principal.subject == "alice" and principal.credential_ref is None
+        assert InMemoryCredentialStore._entries == {}
+
+    def test_a_websocket_handshake_on_a_guarded_router_keeps_nothing(self, provider, credentials):
+        # A run's reference would be deleted by the first frame's run, leaving every later frame without one.
+        manager = credentials()
+        app = FastAPI()
+
+        async def endpoint(websocket: WebSocket):
+            await websocket.accept()
+            await websocket.send_json({"subject": websocket.state.principal.subject, "ref": websocket.state.principal.credential_ref})
+            await websocket.close()
+
+        app.add_api_websocket_route("/ws", endpoint, dependencies=[Depends(RequestAuthenticator(provider, manager).dependency())])
+        with TestClient(app).websocket_connect("/ws", headers={"Authorization": "Bearer alice-secret"}) as socket:
+            seen = socket.receive_json()
+
+        assert seen == {"subject": "alice", "ref": None}
+        assert InMemoryCredentialStore._entries == {}
+
+    def test_without_credentials_the_dependency_keeps_nothing(self, authenticator):
+        assert self._seen_principal(authenticator, {"Authorization": "Bearer alice-secret"}).credential_ref is None
+
+    def test_an_anonymous_request_keeps_nothing(self, provider, credentials):
+        manager = credentials()
+
+        assert self._seen_principal(RequestAuthenticator(provider, manager), {}).credential_ref is None
+        assert InMemoryCredentialStore._entries == {}
+
     @pytest.mark.asyncio
-    async def test_release_is_a_no_op_until_credentials_land(self, authenticator):
-        await authenticator.release(Principal(subject="alice", provider="recording", namespace="recording"))
+    async def test_release_deletes_the_credential_a_run_was_started_with(self, provider, credentials):
+        manager = credentials()
+        retained = await manager.retain(Principal(subject="alice", provider="recording", namespace="recording"), "alice-secret")
+
+        await RequestAuthenticator(provider, manager).release(retained)
+
+        assert manager.store.get(retained.credential_ref) is None
+
+    @pytest.mark.asyncio
+    async def test_release_without_credentials_does_nothing(self, authenticator):
+        await authenticator.release(Principal(subject="alice", provider="recording", namespace="recording", credential_ref="ref-1"))
+
+    def test_from_config_keeps_credentials_in_the_process_manager(self, provider, credentials, monkeypatch):
+        manager = credentials()
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
+
+        assert RequestAuthenticator.from_config().credentials is manager
 
     @pytest.mark.asyncio
     async def test_from_config_without_an_identity_block_authenticates_nobody(self, monkeypatch, context):

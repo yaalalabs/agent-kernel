@@ -12,3 +12,10 @@ class AuthenticationError(Exception):
     def __init__(self, reason: str, *, public_detail: str = "Unauthorized"):
         super().__init__(reason)
         self.public_detail = public_detail
+
+
+class CredentialError(Exception):
+    """A credential a run needs cannot be had: it cannot be decrypted, or (later) found or exchanged.
+
+    The message never carries a credential or a key. A tool turns it into an error result for the model.
+    """

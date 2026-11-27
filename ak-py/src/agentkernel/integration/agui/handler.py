@@ -252,6 +252,11 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         return router
 
+    @staticmethod
+    def _caller(request: Request) -> Principal | None:
+        """The principal the identity dependency put on the request, or None before it ran (a bare mount)."""
+        return getattr(getattr(request, "state", None), "principal", None)
+
     async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[Principal, AgentDescriptor, Any, list]:
         """Everything that can still be reported as an HTTP status, before any state is written.
 
@@ -296,18 +301,22 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         """
         from ag_ui.encoder import EventEncoder
 
-        principal, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
+        from ...identity.credential.manager import CredentialManager
 
-        handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name, surface="agui", principal=principal)
-        session = handler.service.session if handler.service is not None else None
-        if session is None:
-            self._log.error(f"Agent '{agent_name}' was resolved but AgentService could not select it, so no session was created.")
-            raise HTTPException(status_code=500, detail=f"Agent '{agent_name}' could not be selected for this run")
-        AGUIRunInput.set_agui_session_keys(session, run_input)
-        self._warn_if_unreadable(agent, run_input)
+        # Until the stream starts no run owns the request's credential, so a refusal releases it (#603).
+        async with CredentialManager.released_on_error(self._caller(request)):
+            principal, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
 
-        state_before = AGUIState.snapshot_state(session)
-        encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
+            handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name, surface="agui", principal=principal)
+            session = handler.service.session if handler.service is not None else None
+            if session is None:
+                self._log.error(f"Agent '{agent_name}' was resolved but AgentService could not select it, so no session was created.")
+                raise HTTPException(status_code=500, detail=f"Agent '{agent_name}' could not be selected for this run")
+            AGUIRunInput.set_agui_session_keys(session, run_input)
+            self._warn_if_unreadable(agent, run_input)
+
+            state_before = AGUIState.snapshot_state(session)
+            encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
         stream = self._events(encoder, handler, requests, run_input, state_before, principal)
         return StreamingResponse(stream, media_type=encoder.get_content_type())
 

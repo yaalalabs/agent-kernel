@@ -62,10 +62,53 @@ class AgentRunner:
         message must take the AG-UI branch either way. A subclass that needs different run
         behaviour overrides :meth:`_process_run`; overriding this method would silently drop
         every marker branch for that mode.
+
+        When the runner is done with the message, however it went, the inbound credential its
+        principal carries is deleted (#603): the queued path's counterpart of ``Runtime``'s release,
+        covering a request refused before any run starts. A redelivered message therefore finds no
+        credential, which a tool reports as ``CredentialError``.
         """
-        if message.attributes.get(ATTR_AGUI):
-            return self._process_agui(message)
-        return self._process_run(message)
+        try:
+            if message.attributes.get(ATTR_AGUI):
+                return self._process_agui(message)
+            return self._process_run(message)
+        finally:
+            self._release_credential(message)
+
+    @classmethod
+    def _release_credential(cls, message: QueueMessage) -> None:
+        """
+        Deletes the run's inbound credential, named by the body principal's ``credential_ref``. A connection's
+        reference is left alone. Never raises; the identity package is reached only when the body carries a reference.
+
+        :param message: The input message.
+        """
+        if '"credential_ref"' not in message.body:
+            return
+        try:
+            principal = BaseRunRequest.model_validate(json.loads(message.body)).principal
+        except Exception:
+            return
+        from ..identity.credential.manager import CredentialManager
+
+        CredentialManager.release_for(principal)
+
+    @staticmethod
+    def _validate_credential_store(transport_type: str, config: Any) -> None:
+        """
+        Refuses an ``identity.credentials`` store that lives in one process's memory on a broker transport: the
+        process that keeps a request's credential (the one that accepts requests, or a WebSocket gateway) is not
+        the one that runs the agent and reads it.
+
+        :param transport_type: The resolved transport.
+        :param config: The configuration.
+        :raises AKConfigError: If the store is in-memory and the transport is a broker.
+        """
+        if transport_type == "in_memory" or getattr(getattr(config, "identity", None), "credentials", None) is None:
+            return
+        from ..identity.credential.manager import CredentialManager
+
+        CredentialManager.require_shared_store(config, f"on the {transport_type} transport")
 
     def _process_run(self, message: QueueMessage) -> None:
         """Run one unmarked request and forward the reply to the output queue with its status."""
@@ -197,8 +240,10 @@ class AgentRunner:
     @classmethod
     def run(cls) -> None:
         """Two-process container entry point. Dispatches to StreamAgentRunner for delta replies."""
-        if QueueTransportFactory.resolve_type() == "in_memory":
+        transport_type = QueueTransportFactory.resolve_type()
+        if transport_type == "in_memory":
             raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
+        cls._validate_credential_store(transport_type, AKConfig.get())
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
         if cls is AgentRunner:
             execution = AKConfig.get().execution

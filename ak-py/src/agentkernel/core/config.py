@@ -1545,12 +1545,114 @@ class _RoleMapperConfig(BaseModel):
     )
 
 
+class _CredentialStoreBackendConfig(BaseModel):
+    """What the credential store's backend blocks share: an entry expires with the token it holds.
+
+    The connection models these blocks reuse carry a ``ttl``. A store-wide expiry would keep a credential past
+    its token's own expiry, or drop it while the run that needs it is still going, so a value is refused at
+    load. How long an inbound credential is kept is ``identity.credentials.inbound_ttl``.
+    """
+
+    STORE: ClassVar[str]
+
+    @field_validator("ttl", check_fields=False)
+    @classmethod
+    def _reject_ttl(cls, value: int) -> int:
+        """Fail a configured TTL with why the credential store takes none."""
+        if value:
+            raise AKConfigError(
+                f"identity.credentials.store.{cls.STORE}.ttl is not supported: each credential expires with the token it "
+                "holds. Remove the setting; identity.credentials.inbound_ttl caps how long an inbound credential is kept"
+            )
+        return value
+
+
+class _CredentialRedisConfig(_CredentialStoreBackendConfig, _RedisConfig):
+    STORE: ClassVar[str] = "redis"
+    ttl: int = Field(default=0, description="Not supported for the credential store: each entry expires with its token. Must stay 0")
+    prefix: str = Field(default="ak:cred:", description="Key prefix for Redis credential storage")
+
+
+class _CredentialValkeyConfig(_CredentialStoreBackendConfig, _ValkeyConfig):
+    STORE: ClassVar[str] = "valkey"
+    ttl: int = Field(default=0, description="Not supported for the credential store: each entry expires with its token. Must stay 0")
+    prefix: str = Field(default="ak:cred:", description="Key prefix for Valkey credential storage")
+
+
+class _CredentialDynamoDBConfig(_CredentialStoreBackendConfig, _DynamoDBConfig):
+    STORE: ClassVar[str] = "dynamodb"
+    table_name: str = Field(
+        default="ak-credentials",
+        description=(
+            "DynamoDB table name for the credential store. Table should have a partition key named 'credential_key' (S), "
+            "no sort key, and TTL enabled on the 'expiry_time' attribute"
+        ),
+    )
+    ttl: int = Field(default=0, description="Not supported for the credential store: each entry expires with its token. Must stay 0")
+
+
+class _CredentialStoreConfig(BaseModel):
+    """Where credentials are kept between the surface that receives them and the run that uses them."""
+
+    # A bring-your-own store (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(
+        default="in_memory",
+        description="Credential store backend: a built-in short name (in_memory, redis, valkey, dynamodb) or a dotted path to a CredentialStore subclass",
+    )
+    redis: _CredentialRedisConfig | None = None
+    valkey: _CredentialValkeyConfig | None = None
+    dynamodb: _CredentialDynamoDBConfig | None = None
+
+
+class _ExchangerConfig(BaseModel):
+    """One token exchanger: how the inbound credential becomes a token for one downstream audience."""
+
+    # A bring-your-own exchanger (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
+    audience: str = Field(description="The downstream audience this exchanger issues tokens for, matched exactly")
+    type: str = Field(
+        default="passthrough",
+        description="Exchanger: passthrough (forwards the inbound token unchanged; development only), or a dotted path to a TokenExchanger subclass",
+    )
+    scopes: list[str] = Field(default_factory=list, description="Scopes requested for the audience when a tool names none")
+
+
+class _CredentialsConfig(BaseModel):
+    """Credentials capability: the inbound credential of a run, kept encrypted for the run's tools. Presence enables it.
+
+    Unknown keys are refused: a misspelt ``encryption_key`` silently ignored would keep credentials in plaintext.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    store: _CredentialStoreConfig = Field(default_factory=_CredentialStoreConfig, description="Where credentials are kept")
+    encryption_key: str | None = Field(
+        default=None,
+        description=(
+            "Secret key name (resolved through the secret capability) of the base64url-encoded 32-byte AES-GCM key credentials "
+            "are encrypted with. Required by every store but in_memory"
+        ),
+    )
+    inbound_ttl: int = Field(
+        default=300,
+        gt=0,
+        description="Seconds an inbound credential is kept for its run, at most; one that expires sooner is kept until it expires",
+    )
+    exchangers: list[_ExchangerConfig] = Field(default_factory=list, description="Token exchangers, one per downstream audience")
+
+
 class _IdentityConfig(BaseModel):
     """Identity capability: the provider that authenticates callers and the role mapper. Presence enables it."""
 
     provider: _IdentityProviderConfig = Field(default_factory=_IdentityProviderConfig, description="The identity provider and its settings")
     role_mapper: _RoleMapperConfig | None = Field(
         default=None, description="Derives Principal.roles from the provider's facts; absent means no roles"
+    )
+    credentials: _CredentialsConfig | None = Field(
+        default=None, description="Keeps the inbound credential of a run, encrypted, for the run's tools; absent keeps none"
     )
 
 

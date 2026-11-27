@@ -1,5 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
@@ -166,18 +167,54 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         # And where the request came in: only an agent whose descriptor is on `rest` is served to it.
         body.surface = "rest"
         if Config.get().execution.is_sse:
-            try:
-                gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
-                return StreamingResponse(gen, media_type="text/event-stream")
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-            except PermissionError as e:
-                raise HTTPException(status_code=403, detail=str(e))
-            except AgentNotFoundError as e:
-                raise HTTPException(status_code=404, detail=str(e))
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
-        return await self.chat_service.process_async_chat_request(req=body)
+            return await self._stream_reply(body, lambda: self.chat_service.process_stream_chat_async(req=body, sse_format=True))
+        return await self._reply(body, lambda: self.chat_service.process_async_chat_request(req=body))
+
+    @staticmethod
+    async def _stream_reply(req: BaseChatRequest, start: Callable[[], Awaitable[AsyncGenerator[str, None]]]) -> StreamingResponse:
+        """
+        Start a run's SSE stream and answer with it, mapping a refusal raised before the stream starts to its status.
+
+        A refused request's credential is released (#603): no run took it over. Once the stream starts, the run owns it
+        and ``Runtime.stream`` releases it.
+
+        :param req: The chat request.
+        :param start: Starts the stream; raises what the chat service refuses with.
+        :return: The streaming response.
+        :raises HTTPException: 400, 403, 404 or 500 for a request refused before the stream starts.
+        """
+        from ..identity.credential.manager import CredentialManager
+
+        try:
+            async with CredentialManager.released_on_error(req.principal):
+                gen = await start()
+            return StreamingResponse(gen, media_type="text/event-stream")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except PermissionError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+        except AgentNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
+
+    @staticmethod
+    async def _reply(req: BaseChatRequest, answer: Callable[[], Awaitable[Any]]) -> Any:
+        """
+        Answer a chat request in this process. The run, if one started, is over when this returns, so the credential
+        is released however it ended (#603): a request refused before its run is not left for ``Runtime`` to release,
+        and for one that ran the second delete is a no-op.
+
+        :param req: The chat request.
+        :param answer: Produces the reply.
+        :return: The reply.
+        """
+        from ..identity.credential.manager import CredentialManager
+
+        try:
+            return await answer()
+        finally:
+            await CredentialManager.release_unclaimed(req.principal)
 
     @staticmethod
     async def _reject_user_id_form(request: Request) -> None:
@@ -207,6 +244,9 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         try:
             await self._reject_user_id_form(request)
         except ValueError as e:
+            from ..identity.credential.manager import CredentialManager
+
+            await CredentialManager.release_unclaimed(getattr(request.state, "principal", None))
             raise HTTPException(status_code=400, detail=str(e))
         req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
             prompt=prompt,
@@ -220,18 +260,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             surface="rest",
         )
         if Config.get().execution.is_sse:
-            try:
-                gen = await self.chat_service.process_stream_chat_async(req=req, sse_format=True)
-                return StreamingResponse(gen, media_type="text/event-stream")
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-            except PermissionError as e:
-                raise HTTPException(status_code=403, detail=str(e))
-            except AgentNotFoundError as e:
-                raise HTTPException(status_code=404, detail=str(e))
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
-        return await self.chat_service.process_async_chat_request(req=req)
+            return await self._stream_reply(req, lambda: self.chat_service.process_stream_chat_async(req=req, sse_format=True))
+        return await self._reply(req, lambda: self.chat_service.process_async_chat_request(req=req))
 
     def get_router(self) -> APIRouter:
         """
