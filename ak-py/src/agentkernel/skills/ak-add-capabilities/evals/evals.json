@@ -445,6 +445,42 @@
       ]
     },
     {
+      "id": "cap-authorization-grants",
+      "name": "Grant callers access to agents and tier a tool",
+      "input": "Only the support group may use my support-triage agent, and its refund_order tool is for admins only",
+      "expected_outputs": [
+        "authorization:",
+        "type: static",
+        "grants:",
+        "group:support",
+        "level:",
+        "tiers:",
+        "admin"
+      ],
+      "must_not_contain": [
+        "agentkernel.auth",
+        "Authoriser",
+        "agui.agents"
+      ]
+    },
+    {
+      "id": "cap-credentials-downstream",
+      "name": "Call another service as the caller from a tool",
+      "input": "A tool of my agent must call our orders API with the token of the user who sent the request",
+      "expected_outputs": [
+        "credentials:",
+        "encryption_key",
+        "exchangers:",
+        "audience:",
+        "token_for(",
+        "CredentialError"
+      ],
+      "must_not_contain": [
+        "agentkernel.auth",
+        "user_id"
+      ]
+    },
+    {
       "id": "cap-thread-redis",
       "name": "Enable conversation threads with Redis storage",
       "input": "Add conversation thread support with Redis storage backend",

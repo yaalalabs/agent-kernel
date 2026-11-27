@@ -402,8 +402,6 @@ the `static` provider fails at startup when its key resolves to nothing):
   the frames that follow. See section C.
 - **AWS ECS**: the `rest_service` container; REST routes authenticate bearer tokens, and WebSocket
   mode validates `?token=` on `$connect` (it refuses to start without the block).
-- **Azure Functions**: `AzureFunctions.handler` authenticates the bearer token before parsing the
-  request (401 JSON on a refused one); the credential is an app setting.
 - **GCP Cloud Run**: the examples validate Google identity tokens at the API Gateway, and the app runs
   as the anonymous principal. The gateway replaces `Authorization` with its own backend token and
   forwards the caller's as `X-Forwarded-Authorization`, which the built-in providers do not read, so
@@ -432,6 +430,15 @@ runs each agent in the process that kept its token, however many replicas it has
 secret holding a base64url-encoded 32-byte key. The Terraform modules and the chart provision none of
 this: create the table or reach the cache, grant the request, connection and agent-runner processes
 access, and deliver the key like any other secret.
+
+When the project restricts which agents and tools each caller may use (an `authorization` block, see
+`ak-add-capabilities`), put the same block in the configuration of every process that accepts requests
+or runs agents: the request-handler and agent-runner Lambdas, the ECS REST service and its agent runner,
+the Cloud Run edge and runner services, and the chart's io handler, WebSocket gateway and agent
+runner. The process that runs the agents enforces it on every run whatever route the
+request took; the one that accepts requests filters listings and refuses a request before queueing it
+from the same policy, when its agent registry knows the agents. The API Gateway authorizer and the
+WebSocket connection handler only authenticate, so they need the `identity` block and not this one.
 
 ## AWS Serverless (Lambda + API Gateway)
 

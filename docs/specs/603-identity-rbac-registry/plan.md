@@ -1650,6 +1650,52 @@ re-verify the rest.
 - **Verify:** the iteration 27 grep extended to `.agents/skills` and
   `ak-py/src/agentkernel/skills` returns nothing new; the `ak-dev-testing-conventions` table
   names every file the spec's Testing section adds, changes or deletes.
+- **As built (2026-11-27):** `ak-dev-new-authorizer` is new, written from section 7, the code in
+  `identity/authz/` and `AuthorizerContract`: it rules out a dotted-path `Authorizer` first, then
+  covers the contract (a missing level is `None`, which the access gate turns into a 404 or a 403 by
+  visibility; a refusal's reason is what the model reads; the list forms equal the walk;
+  `capabilities.lists_resources` is declared and read by nothing yet; `validate` raises only for a
+  hosted agent), one instance on more than one event loop, the config section, replacing a
+  reserved name with a factory branch, the tests and the docs. `docs/docs/agent-skills.md` lists it
+  (twenty-one developer skills) and `ak-dev-architecture` points to it. Re-verified with no change:
+  `ak-dev-new-framework-integration` (no `get_a2a_card`; `get_tool_names`, `_tool_descriptions`,
+  `ungated_tool_names`, `provider_tool_names` and the tool gate step), the testing skill's stub
+  agent, `ak-dev-new-messaging-integration` (`namespace`, the authorizer bypass), the other
+  `ak-dev-new-*` skills, `ak-dev-write-spec`, `ak-dev-review-pr`, `ak-init`, `ak-build`, `ak-test`
+  and `ak-add-integration`; Auth0 is named with its `oidc` block wherever the bundled skills list
+  providers, and `ak-dev-new-identity-provider` puts the configuration before the subclass. Changed:
+  `ak-dev-architecture` still said a messaging button press reaches the run as `acting_user_id`
+  (it is the run's principal); `ak-dev-new-identity-provider` gave Azure's functions as its sync
+  host; the testing skill's table gained rows for the six files the spec names that it lacked
+  (`test_agui_state`, `test_api_multipart_fields`, `test_ecs_websocket_routes`,
+  `test_livekit_edge_adapter`, `test_model`, `test_thread_manager`). The bundled skills: the
+  phase D evals were owed, so `ak-add-capabilities` gains `cap-authorization-grants` and
+  `cap-credentials-downstream` (with the credentials block and a `token_for` tool in the skill to
+  ground the second), its description names access control and downstream credentials, and
+  `ak-cloud-deploy` says to put the same `authorization` block in every process that accepts
+  requests or runs agents (with `deploy-authorization-every-process` and
+  `deploy-credentials-shared-store`) and drops its Azure Functions identity bullet. The verify grep
+  finds only the sentences that say the names were removed and the evals' `must_not_contain`
+  entries. No changelog fragment: the skill changes complete features whose fragments are pending
+  (`603.added.md`, `603.added.1.md`).
+
+### Phase G as shipped
+
+What phase G delivered (2026-11-27), on `feature/603-tests-docs-skills`:
+
+- **Tests (iteration 26).** The spec's Testing section walked claim by claim: eighteen cases added
+  or strengthened, two stale leftovers removed, each new case checked by a mutation; the section's
+  "As built (iteration 26)" notes record where cases moved and what the build settled differently.
+- **Docs (iteration 27).** A re-verification, the phases' docs having landed with them: one change,
+  the identity page's Azure Functions bullet, gone with #984.
+- **Skills (iteration 28).** `ak-dev-new-authorizer`, the evals phase D owed, and four corrections.
+- **Changelog.** None: nothing a user sees changed beyond features whose fragments are pending. A
+  `docs:` or `test:` PR title needs no fragment; a `feat:` or `chore:` one needs the `no-changelog`
+  label with that reason.
+- **Left open, outside this issue:** #957's iterations 3 and 4 (the Azure Functions docs page and
+  mentions, the bundled skills' Azure Functions sections and the `deploy-azure-serverless` eval, the
+  `ak-azure/serverless` Terraform module). Raised with the user, not yet decided: the session owner
+  record is a plain `owner` key that `Session.set` and `Session.delete` change unguarded.
 
 ## Phase H: Identity examples (iteration 29)
 

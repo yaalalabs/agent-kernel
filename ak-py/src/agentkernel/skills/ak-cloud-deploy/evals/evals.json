@@ -193,6 +193,39 @@
       ]
     },
     {
+      "id": "deploy-credentials-shared-store",
+      "name": "Deploy credentials for downstream calls over the ECS WebSocket API",
+      "input": "Deploy my agent to AWS ECS Fargate with a WebSocket API; its tools call our billing API with the caller's own token",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "identity:",
+        "credentials:",
+        "encryption_key",
+        "store:"
+      ],
+      "must_not_contain": [
+        "AuthValidator",
+        "type: in_memory"
+      ]
+    },
+    {
+      "id": "deploy-authorization-every-process",
+      "name": "Deploy an authorization policy to every process of a queued Lambda deployment",
+      "input": "Deploy my agents to AWS Lambda in rest_async queue mode, and only the ops group may use the deploy agent",
+      "expected_outputs": [
+        "yaalalabs/ak-serverless/aws",
+        "queue_mode = true",
+        "identity:",
+        "authorization:",
+        "grants:",
+        "group:ops"
+      ],
+      "must_not_contain": [
+        "agentkernel.auth",
+        "AuthValidator"
+      ]
+    },
+    {
       "id": "deploy-azure-serverless",
       "name": "Deploy to Azure Functions",
       "input": "Deploy my agent to Azure Functions",

@@ -221,8 +221,8 @@ pins every dependency with.
   JWT would let anyone holding the secret mint any subject. A provider for HMAC-signed credentials
   is not an OIDC subclass.
 - **JWKS fetching is loop-agnostic and injectable.** One provider serves every caller in the
-  process, and a sync host (Azure's thread-pooled functions) runs each call on a fresh event loop,
-  so nothing in `JWKSCache` is bound to a loop. A cached key is selected with no lock (the key set
+  process, and a synchronous caller (the API Gateway authorizer Lambda, through `run_async_sync`)
+  drives each call on a loop of its own, so nothing in `JWKSCache` is bound to a loop. A cached key is selected with no lock (the key set
   is a dict swapped whole), so it never waits behind a refresh. A load runs on a worker thread
   (`asyncio.to_thread`) through a short-lived `httpx.Client`, serialized by a `threading.Lock`; a
   failed first load is retried only after `failure_cooldown` (5 s by default), an unknown `kid`

@@ -7,7 +7,9 @@ description: >
   scheduled tasks (deferred and recurring chat execution), the sandbox capability
   (isolated code execution), identity and authentication (who may call: an identity
   provider such as Auth0, Keycloak or Okta through oidc, Amazon Cognito, Microsoft Entra ID,
-  Firebase, static credentials or your own, plus role mapping), the agent registry (describing agents
+  Firebase, static credentials or your own, plus role mapping), access control (an authorization
+  block granting callers a level on agents, with a per-agent tool policy), credentials for
+  downstream calls (a tool calling another service as the caller), the agent registry (describing agents
   for the catalog, A2A cards and MCP tools, choosing the surfaces each agent is served on, and sharing
   the registry between processes), and secret resolution (environment first, then AWS SSM
   Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider). Session
@@ -1781,6 +1783,33 @@ Tell the user what changes once the block exists:
   (`redis`, `valkey`, `dynamodb`) whenever requests and agents run in different processes, and one
   `exchangers` entry per audience. Only `passthrough` ships (development only: it forwards the
   user's token unchanged); a real exchange is a `TokenExchanger` subclass named by dotted path.
+
+```yaml
+identity:
+  # provider: the block above
+  credentials:
+    encryption_key: AK_CREDENTIAL_KEY  # names a secret: a base64url 32-byte key; required by every store but in_memory
+    store:
+      type: redis                      # in_memory (default, one process only) | redis | valkey | dynamodb
+      redis:
+        url: redis://cache:6379
+    exchangers:
+      - audience: https://api.orders.example
+        type: passthrough              # forwards the inbound token unchanged: development only
+```
+
+```python
+from agentkernel.core.tool import ToolContext
+from agentkernel.identity import CredentialError
+
+async def list_orders(customer_id: str) -> str:
+    """List a customer's orders."""
+    try:
+        token = await ToolContext.get().credentials.token_for("https://api.orders.example")
+    except CredentialError as error:
+        return f"Cannot reach the orders API: {error}"   # anonymous caller, no exchanger, store down, ...
+    ...  # call the API with Authorization: Bearer <token>
+```
 
 ---
 
