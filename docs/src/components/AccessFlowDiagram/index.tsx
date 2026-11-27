@@ -4,8 +4,9 @@ import styles from "./styles.module.css";
 /*
  * How a request is authenticated and then authorized, top to bottom: the caller and the surface it uses,
  * the identity provider that turns a credential into a principal, the access gate that decides from the
- * agent registry and the authorizer, the two places the gate answers, and the framework tool gate that
- * applies the run's tool filter. The same flow as the diagram on the Identity and Access docs page.
+ * agent registry and the authorizer, the two places the gate answers, the run (beside it the credential
+ * store that keeps the caller's token for the run's tools), and the framework tool gate that applies the
+ * run's tool filter. The same flow as the diagram on the Identity and Access docs page.
  */
 
 const CALLERS = "people and services · messaging senders · voice callers · the CLI";
@@ -185,10 +186,17 @@ export default function AccessFlowDiagram() {
 
           <div className={styles.stem} aria-hidden="true" />
 
-          <div className={`${styles.stack} ${styles.runStack}`}>
-            <div className={`${styles.stackFront} ${styles.runNode}`}>
-              <p className={styles.nodeTitle}>Agent run</p>
-              <p className={styles.nodeSub}>the principal and the tool filter published for the run</p>
+          <div className={styles.sideRow}>
+            <div className={`${styles.side} ${styles.spacer}`} aria-hidden="true" />
+            <div className={`${styles.stack} ${styles.runStack}`}>
+              <div className={`${styles.stackFront} ${styles.runNode}`}>
+                <p className={styles.nodeTitle}>Agent run</p>
+                <p className={styles.nodeSub}>the principal and the tool filter published for the run</p>
+              </div>
+            </div>
+            <div className={`${styles.side} ${styles.sideRight} ${styles.helperNode}`}>
+              <p className={styles.nodeTitle}>Credential store</p>
+              <p className={styles.nodeSub}>the caller's token, encrypted, for the run's tools</p>
             </div>
           </div>
 

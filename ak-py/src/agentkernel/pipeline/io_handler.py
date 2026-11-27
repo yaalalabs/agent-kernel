@@ -206,6 +206,7 @@ class IOHandler:
         :param pod_push: False when the caller supplies its own WebSocket delivery, which needs no
             push token.
         """
+        AgentRunner._validate_credential_store(transport_type, config)
         execution = config.execution
         if execution.is_websocket and transport_type == "in_memory" and getattr(config, "identity", None) is None:
             raise AKConfigError(

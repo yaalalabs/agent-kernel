@@ -83,18 +83,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         body.principal = self._read_handler._resolve_user(request)
         body.surface = "rest"
         if Config.get().execution.is_sse:
-            try:
-                gen = await self._stream_with_recording(body)
-                return StreamingResponse(gen, media_type="text/event-stream")
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-            except PermissionError as e:
-                raise HTTPException(status_code=403, detail=str(e))
-            except AgentNotFoundError as e:
-                raise HTTPException(status_code=404, detail=str(e))
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
-        return await self._run_with_recording(body)
+            return await self._stream_reply(body, lambda: self._stream_with_recording(body))
+        return await self._reply(body, lambda: self._run_with_recording(body))
 
     async def run_multipart(
         self,
@@ -111,6 +101,9 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         try:
             await self._reject_user_id_form(request)
         except ValueError as e:
+            from ...identity.credential.manager import CredentialManager
+
+            await CredentialManager.release_unclaimed(principal)
             raise HTTPException(status_code=400, detail=str(e))
         req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
             prompt=prompt,
@@ -124,18 +117,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             surface="rest",
         )
         if Config.get().execution.is_sse:
-            try:
-                gen = await self._stream_with_recording(req)
-                return StreamingResponse(gen, media_type="text/event-stream")
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-            except PermissionError as e:
-                raise HTTPException(status_code=403, detail=str(e))
-            except AgentNotFoundError as e:
-                raise HTTPException(status_code=404, detail=str(e))
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
-        return await self._run_with_recording(req)
+            return await self._stream_reply(req, lambda: self._stream_with_recording(req))
+        return await self._reply(req, lambda: self._run_with_recording(req))
 
     async def _run_with_recording(self, req: BaseChatRequest):
         """Non-stream chat with thread recording around the ChatService core.
@@ -340,15 +323,19 @@ class ThreadRequestHandler(RequestHandler):
         body.principal = self._read_handler._resolve_user(request)
         # Before the availability check reads it: the request entered by the REST API.
         body.surface = "rest"
-        if not body.session_id:
-            raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
-        if not body.prompt and body.resume is None:
-            raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
-        self._reject_unprocessable(body)
-        self._reject_unroutable(body)
-        self._reject_unqueueable_attachments(body)
-        if body.schedule is None:
-            await self._record_user_message(body)
+        from ...identity.credential.manager import CredentialManager
+
+        # A refusal before the inherited route answers a request no runner will see, so it releases the credential (#603).
+        async with CredentialManager.released_on_error(body.principal):
+            if not body.session_id:
+                raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
+            if not body.prompt and body.resume is None:
+                raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
+            self._reject_unprocessable(body)
+            self._reject_unroutable(body)
+            self._reject_unqueueable_attachments(body)
+            if body.schedule is None:
+                await self._record_user_message(body)
         return await super().run_chat(body, request)
 
     async def _reject_unavailable(self, body: BaseRunRequest) -> None:

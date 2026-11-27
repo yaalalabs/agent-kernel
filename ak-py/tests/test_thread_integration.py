@@ -60,10 +60,11 @@ def identity(monkeypatch):
     return provider
 
 
-def _client(handler: AgentThreadRequestHandler) -> TestClient:
-    """The handler's routes behind the identity dependency, as ``RESTAPI`` mounts them."""
+def _client(handler: AgentThreadRequestHandler, credentials=None) -> TestClient:
+    """The handler's routes behind the identity dependency, as ``RESTAPI`` mounts them, keeping each request's credential
+    in ``credentials`` (a ``CredentialManager``) when one is given."""
     app = FastAPI()
-    app.include_router(handler.get_router(), dependencies=[Depends(RequestAuthenticator(_Provider()).dependency())])
+    app.include_router(handler.get_router(), dependencies=[Depends(RequestAuthenticator(_Provider(), credentials).dependency())])
     return TestClient(app)
 
 
@@ -472,6 +473,19 @@ class TestEndToEnd:
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Agent 'ghost' not found"
         assert client.get("/api/v1/threads/s-ghost", headers=AUTH).status_code == 404
+
+    @pytest.mark.parametrize("message_type", ["complete", "delta"])
+    def test_an_unknown_agent_keeps_no_credential(self, thread_enabled, monkeypatch, credential_manager, message_type):
+        """The agent never ran, so nothing but the route would release what the identity dependency kept (#603)."""
+        from agentkernel.core.config import _ExecutionConfig
+
+        monkeypatch.setattr(AKConfig.get(), "execution", _ExecutionConfig(message_type=message_type))
+        client = _client(AgentThreadRequestHandler(), credentials=credential_manager)
+
+        resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-ghost", "agent": "ghost"}, headers=AUTH)
+
+        assert resp.status_code == 404
+        assert credential_manager.store._entries == {}
 
     def test_an_agent_kept_off_rest_is_404_with_no_thread_written(self, thread_enabled, kept_off_rest):
         """`surfaces` governs the thread chat route too (#603, design refinement 13): the unknown agent's answer,

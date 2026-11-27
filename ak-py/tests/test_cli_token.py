@@ -113,6 +113,61 @@ class TestToken:
         assert any("identity block" in record.getMessage() for record in caplog.records if record.name == "ak.cli")
 
 
+class TestTheSessionsCredential:
+    """With credentials, the CLI keeps its token for the session (a ``conn:`` reference) that every run's principal
+    carries and a run's release leaves, and forgets it when the session ends (#603, iteration 25)."""
+
+    @pytest.fixture
+    def manager(self, monkeypatch):
+        from agentkernel.identity.credential.in_memory import InMemoryCredentialStore
+        from agentkernel.identity.credential.manager import CredentialManager
+
+        store = InMemoryCredentialStore(None)
+        store.clear()
+        instance = CredentialManager(store, {}, 300)
+        monkeypatch.setattr(CredentialManager, "get", classmethod(lambda cls: instance))
+        yield instance
+        store.clear()
+
+    @pytest.mark.asyncio
+    async def test_every_run_carries_the_sessions_reference_until_it_ends(self, stub_service, provider, manager, monkeypatch):
+        monkeypatch.setattr(builtins, "input", ScriptedInput(["hello", "again", "!q"]))
+
+        await CLI(token="alice-secret").run()
+
+        refs = {principal.credential_ref for _, _, principal in _runs(stub_service)}
+        [ref] = refs
+        assert ref.startswith("conn:")
+        assert manager.store.get(ref) is None  # forgotten when the session ended
+
+    @pytest.mark.asyncio
+    async def test_the_sessions_credential_is_renewed_before_each_prompts_run(self, stub_service, provider, manager, monkeypatch):
+        # As a connection's frame does: a token with no expiry would otherwise lapse inbound_ttl into the session.
+        renewed: list[tuple] = []
+        renew = manager.renew
+        monkeypatch.setattr(
+            manager, "renew", lambda principal: renewed.append((len(_runs(stub_service)), principal.credential_ref)) or renew(principal)
+        )
+        monkeypatch.setattr(builtins, "input", ScriptedInput(["hello", "!h", "again", "!q"]))
+
+        await CLI(token="alice-secret").run()
+
+        [(_, _, principal), _] = _runs(stub_service)
+        assert renewed == [(0, principal.credential_ref), (1, principal.credential_ref)]  # one per run, before it
+
+    @pytest.mark.asyncio
+    async def test_the_credential_is_forgotten_when_the_session_is_interrupted(self, stub_service, provider, manager, monkeypatch):
+        def interrupted(prompt=""):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(builtins, "input", interrupted)
+
+        with pytest.raises(KeyboardInterrupt):
+            await CLI(token="alice-secret").run()
+
+        assert type(manager.store)._entries == {}
+
+
 class TestMain:
     def test_main_passes_the_token_flag(self, monkeypatch, stub_service):
         seen = {}

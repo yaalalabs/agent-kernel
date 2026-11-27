@@ -82,6 +82,8 @@ flowchart TD
     Run --> ToolGate["Framework tool gate<br/>every adapter, voice calls included"]
     ToolGate -->|"allowed"| Tool["Tool runs"]
     ToolGate -->|"denied"| Reason["Hidden, or answered with the reason"]
+    Surface -.->|"identity.credentials: the caller's token, encrypted"| Creds[("Credential store<br/>by reference, until the run ends")]
+    Tool -.->|"token_for(audience)"| Creds
 ```
 
 1. **A caller presents a credential** to the surface it uses: a bearer token on HTTP, a token on the
@@ -105,6 +107,10 @@ flowchart TD
    call to it is answered with the reason instead of running ([where a denied tool is
    stopped](#where-a-denied-tool-is-stopped)). [Scheduled tasks](#scheduled-tasks) are decided again
    when they fire, and a paused tool call when its approval arrives.
+7. **With `identity.credentials`**, the surface also keeps the caller's token, encrypted, under a
+   reference the principal carries, and a tool that calls another service asks for a token for it; the
+   token is deleted when the run ends ([credentials for downstream
+   calls](#credentials-for-downstream-calls)).
 
 ## Configuration
 
@@ -406,6 +412,87 @@ class OpsOnly(PreHook):
 
 A `principal` a client puts in a request body is never trusted: the surface that authenticated the
 request overwrites it.
+
+## Credentials for downstream calls
+
+A tool that calls another service on the user's behalf needs a token for that service. With an
+`identity.credentials` block, Open Agent Kernel (OAK) keeps the credential a request was authenticated with and
+hands a tool a token for an audience you configure:
+
+```python
+from agentkernel.core.tool import ToolContext
+from agentkernel.identity import CredentialError
+
+async def list_invoices(customer_id: str) -> str:
+    """List a customer's invoices."""
+    try:
+        token = await ToolContext.get().credentials.token_for("https://api.billing.example")
+    except CredentialError as error:
+        return f"Cannot reach billing: {error}"
+    ...  # call the billing API with Authorization: Bearer <token>
+```
+
+```yaml
+identity:
+  provider:
+    type: oidc
+    ...
+  credentials:
+    encryption_key: AK_CREDENTIAL_KEY  # names a secret: a base64url-encoded 32-byte key; required by every store but in_memory
+    inbound_ttl: 300                   # seconds a request's credential is kept, at most
+    store:
+      type: redis                      # in_memory (default) | redis | valkey | dynamodb | a dotted path
+      redis:
+        url: redis://cache:6379
+    exchangers:
+      - audience: https://api.billing.example
+        type: passthrough              # forwards the inbound token unchanged: development only
+        scopes: [invoices.read]        # asked for when a tool names none
+```
+
+How it works:
+
+- **The token never travels.** The credential is kept, encrypted with AES-GCM under the key named by
+  `encryption_key`, in the credential store under a random reference. The principal carries the reference
+  (`credential_ref`), never the token, so the token is not in the session, a queue message or a log line.
+- **It ends with the run, or the connection.** OAK deletes a request's credential when the run it was kept
+  for ends, however it ends, or when the request is answered without a run (refused, say, for an unknown
+  agent), and at the latest when `inbound_ttl` has passed or the token itself expires. A WebSocket
+  connection's or CLI session's is deleted when the connection or session ends, and lasts as the next point
+  says. No copy outlives either: `passthrough` caches nothing.
+- **Where it is kept.** The REST, A2A and AG-UI routes keep the credential of each authenticated request that
+  can start a run (not of a `GET`, `HEAD` or `OPTIONS` request such as a catalog listing or a poll for a
+  reply), and MCP the credential of each tool call (not of the session's other requests); on AWS Lambda the
+  request-handler Lambda keeps it from the request's `Authorization` header when it starts a run (the
+  authorizer keeps nothing, since API Gateway caches its answer for every request with the same token). A
+  WebSocket connection (the `/ws` gateway, the ECS and the Lambda WebSocket APIs) and a CLI session keep
+  theirs for the connection and forget it when it ends. It lasts as long as the token's `exp`; a token
+  without one is kept for `inbound_ttl` from the latest frame (on the CLI, the latest prompt). A WebSocket
+  route you add to a router behind the identity dependency keeps none.
+- **Exchange.** A tool asks for an audience, and the exchanger configured for exactly that audience issues
+  the token. A token a real exchanger issues is a token of its own, for that audience: it is cached per user,
+  agent, audience, scopes and inbound credential until 30 seconds before it expires, so only a run that still
+  holds the same inbound credential is served it. Only `passthrough` ships, and it logs a warning at startup:
+  it forwards the inbound token as it came, which an MCP server or an API that checks its audience will
+  refuse. For a real exchange (RFC 8693, Entra on-behalf-of),
+  write a `TokenExchanger` subclass and name it by its dotted path; it receives its entry, with any settings of
+  its own in `model_extra`. The names `rfc8693`, `entra_obo` and `id_jag` are reserved for later releases.
+- **Errors.** `token_for` raises `CredentialError` when the block is not configured, the run has no credential
+  of its own (an anonymous caller, a scheduled task), no exchanger serves the audience, the exchange fails or
+  the store cannot be reached. Return it to the model as the tool's result.
+
+The stores: `in_memory` keeps credentials in the process, unencrypted unless you set a key, and refuses to start
+on a broker transport, on AWS Lambda (queued routes, WebSocket routes) and on the ECS WebSocket API, where the
+process that keeps a credential is not the one that runs the agent. A store of your own is refused in the same
+places when its class sets `shared = False`. `redis` and `valkey` keep each credential under `ak:cred:` with
+its own expiry; `dynamodb` needs a table keyed by `credential_key` (S) with TTL on `expiry_time`, and reads it
+with strongly consistent reads. Generate a key with
+`python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"` and store it as the
+secret `encryption_key` names.
+
+A queued request that is delivered again after its run started finds its credential gone. An authenticated request
+that changes a record without running an agent (amending or cancelling a schedule, an A2A `tasks/get`), or whose
+body the route cannot parse (a `422`), leaves its encrypted entry to expire within `inbound_ttl`.
 
 ## Authorization
 
@@ -736,17 +823,22 @@ credential of a static provider reaches that process as an environment variable 
   registered with `Lambda.register` reads that connection's principal with `Lambda.principal(event)`
   as well. The authorizer module keeps
   its `handler_path` contract and the connections table its `user_id` hash key: the Terraform modules
-  are unchanged.
+  are unchanged. With `identity.credentials`, use a shared store (`redis`, `valkey` or `dynamodb`) that
+  the request-handler, `$connect` and agent-runner Lambdas can all reach.
 - **AWS ECS** ([guide](../deployment/aws-containerized.md)): the REST service authenticates every
   request; in WebSocket mode the service authenticates the handshake's `?token=`, and custom WebSocket
-  routes receive `{"message": ..., "principal": ...}`.
+  routes receive `{"message": ..., "principal": ...}`. With `identity.credentials` in WebSocket mode,
+  use a shared store, which the service requires: a frame can reach a task other than the one that took
+  the handshake, as it does during every rolling deploy.
 - **Azure Functions** ([guide](../deployment/azure-serverless.md)): `AzureFunctions.handler`
   authenticates the bearer header before parsing the request and answers a refused credential with
   `401` and `{"error": ..., "session_id": null}`.
 - **Kubernetes** ([guide](../deployment/onprem-kubernetes.md)): the io handler and the WebSocket
   gateway build the provider, so a static credential reaches them through the chart's per-tier
   `ioHandler.extraEnv` and `wsGateway.extraEnv` from a Secret, which keeps it off the agent runner;
-  the `secretStore` mount reaches only the agent-executing tier.
+  the `secretStore` mount reaches only the agent-executing tier. With `identity.credentials`, the
+  `encryption_key` secret reaches every tier, since the io handler and the gateway keep tokens and the
+  agent runner reads them, and the store is a shared one.
 - **GCP** ([guides](../deployment/gcp-serverless.md)): the examples authenticate Google identity
   tokens at the API Gateway, and the application runs as the anonymous principal. The gateway calls
   Cloud Run with its own token in `Authorization` and forwards the caller's header as
