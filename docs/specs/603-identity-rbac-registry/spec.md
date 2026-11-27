@@ -2140,7 +2140,8 @@ Shared pieces (`core/`):
     call whose state names no Agent Kernel tool context is not gated; one whose context can
     no longer be fetched is refused (`tool gate failed: <type>`). `get_tool_names` reports a
     bare callable under the name of the `FunctionTool` ADK wraps it in (a callable object by
-    its class, a `functools.partial` as `partial`). ADK's live flow calls the same callbacks
+    its class, a `functools.partial` by the function it wraps, `partial` before google-adk
+    2.13). ADK's live flow calls the same callbacks
     (`flows/llm_flows/functions.py`), so the realtime runner needs no gate of its own once a
     filter is published for a call (iteration 23).
   - **CrewAI.** `CrewAIToolGate` registers two hooks, once for the process, from
