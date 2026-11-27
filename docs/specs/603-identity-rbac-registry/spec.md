@@ -2249,6 +2249,215 @@ Shared pieces (`core/`):
 - System-prompt text about system tools stays composed per agent at load time
   (`core/tool.py:256-276`); it is not filtered per run (documented limitation, design section 7).
 
+### 10. Phase H: the session owner record, three engines and token exchange (2026-11-27)
+
+Design section 13 (13.4, 13.1, 13.2) and Q21 to Q25; refinements 26 and 27 below. The examples
+of design 13.3 are Phase I, under "Documentation, skills and examples".
+
+#### 10.1 The session owner record
+
+- `Session.Keys.OWNER` becomes `"ak.owner"`. `Session.RESERVED_PREFIX` is
+  `KeyValueCache.RESERVED_PREFIX` (`"ak."`, `core/util/key_value_cache.py`), one constant for both.
+- `Session.set(key, value)` and `Session.delete(key)` raise `ValueError` for a key that starts with
+  `ak.` and for `v_cache` and `nv_cache`: `"'<key>' is reserved: the runtime owns it; read it through
+  the session's accessors"`. `Session.get` reads every key. Today both write `_data` unchecked
+  (`core/base.py:302-317`).
+- `Session._restore(key, value)` writes `_data` without the check. It is the one path a store
+  rebuilds a session through: `redis.py:51`, `valkey.py:51`, `dynamodb.py:69`, `cosmosdb.py:78` and
+  `firestore.py:74` (all `core/session/`) call it where they call `session.set` today. The in-memory
+  store keeps `Session` objects and rebuilds nothing.
+- The session's own writes go to `_data` directly: the constructor's two caches
+  (`core/base.py:96-97`, through `self.set` today), `_record_owner` (`core/base.py:300`, likewise)
+  and `clear()` (`core/base.py:327-332`, which keeps the owner, as today).
+  `set_framework_context` (`core/base.py:230`) keeps `self.set`: `framework_context` is not reserved.
+- `AccessGate.authorize_session` refuses a session whose `ak.owner` holds a value `get_owner()`
+  cannot read: `PermissionError("Session '<id>' has an owner record that cannot be read")`.
+  `get_owner()` still returns None for it, with its warning, so application code that reads it is
+  unaffected; only the gate's answer changes from admit to refuse.
+- Nothing outside `core/base.py` writes the cache keys through `Session.set` (checked: no match for
+  `set("v_cache"`, `set("nv_cache"` or `set("owner"` in `ak-py/src`). Framework adapters write under
+  their runner's name, never `ak.`.
+- Data: no release wrote `owner` (absent from v0.10.0 to v0.10.2). A session a `develop` build
+  stored under `owner` loads that key as ordinary data and reads as unowned; its next authenticated
+  run records `ak.owner`.
+
+#### 10.2 The shared tool policy (refinement 26)
+
+- `TieredAuthorizer(Authorizer)` (new, `identity/authz/tiered.py`): an authorizer whose tool
+  decisions are Open Agent Kernel's tool policy applied to the level its subclass answers.
+  - Owns the `ToolPolicyTable` (moved from `static.py`) and the declared system-tool tiers
+    (`system_tiers`, the static backend's `_system_tool_tiers` default).
+  - Implements `check_tool`, `filter_tools` and the tool half of `validate`, moved unchanged from
+    `StaticAuthorizer` (`static.py:387-408, 348-362, 452-485`: `_policy_refusal`, `_tier`,
+    `_tier_decision`, `_declared_tiers`, `_check_tool_policy`). Subclasses implement `agent_level`
+    and may override `visible_agents` and extend `validate`.
+- `AgentTags` (new, `identity/authz/tags.py`): an agent's tags for a `tag:` grant, the hosted
+  agent's own descriptor first and the registry read once, off the loop, only for an agent hosted
+  elsewhere. Moved from `StaticAuthorizer` (`_tags_of`, `_tags_by_agent`, `_hosted_agent_descriptor`,
+  `_registry_descriptors`, `static.py:283-297, 426-450`); every engine uses it.
+- `StaticAuthorizer(TieredAuthorizer)` keeps its grants and its constructor and `from_config`
+  signatures; `test_authorizer_static.py` passes unchanged, which is the check that the move changed
+  no behaviour.
+- `SubjectMatcher.forms(principal) -> list[str]` (new): the concrete subject forms a principal holds,
+  in the static grammar: `*`; `authenticated` unless anonymous; `user:<subject>` unless anonymous or a
+  shared-channel principal; `group:<g>` per group; `role:<r>` per role; `provider:<provider>`, and for
+  a provider containing colons each prefix that ends in one (`provider:messaging:` for
+  `messaging:slack`). `matches` is unchanged; a test asserts `matches(form, p)` for every `form` in
+  `forms(p)` and for no other valid form built from `p`.
+- An engine's level: ask `admin`, `write`, `read`, in that order, about the agent (`agent:<id>`) and
+  each of its tags (`tag:<name>`); the first level any of them allows is the answer, none is `None`.
+- Config: `_TieredAuthorizerConfig(BaseModel)` holds `tools: list[_ToolPolicyConfig]`;
+  `_StaticAuthorizerConfig` subclasses it (its YAML is unchanged), and so does each engine section.
+
+#### 10.3 `casbin`
+
+- `CasbinAuthorizer(TieredAuthorizer)` (`identity/authz/casbin.py`), built by `from_config` from
+  `authorization.casbin`: `model` (path; default the packaged `identity/authz/casbin_model.conf`),
+  `policy` (path, required), `tools`.
+- One `casbin.SyncedEnforcer(model, policy)` built at construction (the synchronized enforcer, safe
+  to share across threads); a missing or unparsable file is an `AKConfigError` naming the setting.
+- The packaged model: request `r = sub, obj, act`; policy `p = sub, obj, act`; roles `g = _, _` (an
+  operator maps one subject form to another, `g, group:sre, role:operator`) and `g2 = _, _` (the
+  level order, which the authorizer adds at construction: `g2, admin, write` and `g2, write, read`);
+  effect `some(where (p.eft == allow))`; matcher `g(r.sub, p.sub) && r.obj == p.obj && g2(p.act, r.act)`.
+  A policy row `p, group:support, agent:support-triage, write` grants `write` and therefore `read`.
+- `agent_level` asks `enforce(form, obj, level)` over the principal's forms and the agent's objects
+  (10.2), in process with no I/O, so on the calling loop.
+- `visible_agents` keeps the walk; `capabilities` the default (`lists_resources=False`).
+- Extra `casbin` (`casbin`, with develop's bounds); the import inside
+  `require_extra("casbin", "authorization.type: casbin")`.
+
+#### 10.4 `openfga`
+
+- `OpenFGAAuthorizer(TieredAuthorizer)` (`identity/authz/openfga.py`),
+  `capabilities = AuthorizerCapabilities(lists_resources=True)`, built from `authorization.openfga`:
+  `api_url` (required), `store_id` (required), `authorization_model_id` (optional; the store's latest
+  when unset), `api_token_key` (optional secret name), `timeout` (seconds, default 5), `tools`.
+- The SDK's synchronous client (`openfga_sdk.sync`), built at construction and called through
+  `asyncio.to_thread`: one authorizer serves more than one event loop
+  (`identity/authz/base.py:50-53`), and an async client binds to its first.
+- The model the operator writes is documented and packaged for reference
+  (`identity/authz/openfga_model.fga`): types `user`, `group`, `role`, `provider`, `access` (the
+  `authenticated` marker), `tag` and `agent`; on `agent` and `tag`, relations `admin`, `writer` and
+  `reader`, each assignable to `user`, `user:*` (everyone) and the `member` relation of `group`,
+  `role`, `provider` and `access`, with `admin` implying `writer` implying `reader`, and on `agent` a
+  `tagged` relation through which a tag's relations reach the agent.
+- A check names the principal as `user:<subject>` (the anonymous principal as `user:anonymous`, which
+  only `user:*` grants reach) and passes the principal's other forms as contextual tuples: one
+  `member` tuple per group, role, provider form and, unless anonymous, `access:authenticated`. They are
+  never written to the store. OpenFGA takes at most 100 contextual tuples on a request; a principal
+  with more forms is refused with `AuthorizerError` rather than decided on a partial set.
+- Identifiers outside OpenFGA's id rules are encoded so that a `:` or `#` in a subject, group or
+  provider cannot split a tuple; the encoding is fixed against OpenFGA's id rules in the
+  implementing iteration and pinned by a test.
+- `agent_level`: `check` for `admin`, `writer`, `reader` on `agent:<id>` (the tags reach it through
+  `tagged`). `visible_agents`: one `list_objects` for `reader` on type `agent`, intersected with the
+  candidates in their order.
+- Extra `openfga` (`openfga-sdk`, develop's bounds); `require_extra("openfga", "authorization.type: openfga")`.
+
+#### 10.5 `authzen`
+
+- `AuthZENAuthorizer(TieredAuthorizer)` (`identity/authz/authzen.py`), built from
+  `authorization.authzen`: `pdp_url` (required), `token_key` (optional secret name, sent as
+  `Authorization: Bearer`), `timeout` (seconds, default 5), `tools`.
+- The Authorization API 1.0 (OpenID Final Specification, January 2026). An evaluation is
+  `POST {pdp_url}/access/v1/evaluation` with `subject` (`type: "user"`, `id` the subject, `properties`:
+  `forms`, `groups`, `roles`, `provider`, `namespace`, `anonymous`), `resource` (`type: "agent"`, `id`
+  the agent id, `properties.tags`) and `action` (`name`: `admin`, `write` or `read`); the answer's
+  `decision` is the result.
+- `agent_level` sends the three levels as one batch (`POST {pdp_url}/access/v1/evaluations`, the
+  subject and resource as defaults) and takes the highest allowed; `visible_agents` one batch over every
+  candidate and level. A decision point that answers the batch endpoint with 404 is asked one
+  evaluation at a time from then on (logged once).
+- A short-lived `httpx.Client` per question, run through `asyncio.to_thread`, the `JWKSCache` pattern
+  (`identity/provider/oidc.py`), so nothing is bound to a loop.
+- Extra `auth` (holds `httpx`); `require_extra("auth", "authorization.type: authzen")`.
+
+#### 10.6 Engine errors
+
+- An engine that cannot answer (unreachable, a timeout, a non-2xx answer, an answer that does not
+  parse, too many contextual tuples) raises `AuthorizerError` (new, `identity/errors.py`, an
+  `Exception` beside `AuthenticationError` and `CredentialError`) naming the engine and the failure's
+  type, never a token or a policy. No engine
+  approves on failure: the gate does not catch it, so a run does not start (a 500 on the surface) and
+  a listing fails; a tool gate that cannot read the run's filter refuses the call, as today
+  (`core/tool.py:250-262`).
+
+#### 10.7 `rfc8693` (refinement 27)
+
+- `RFC8693TokenExchanger(TokenExchanger)` (`identity/credential/rfc8693.py`), `cacheable = True`,
+  built from an `exchangers[]` entry of `type: rfc8693` and its `rfc8693` sub-block
+  (`_RFC8693ExchangerConfig`): `token_endpoint` (required), `client_id` and `client_secret_key` (the
+  default client, for an agent that declares none), `client_auth` (`basic` or `post`, default
+  `basic`), `subject_token_type` (default `urn:ietf:params:oauth:token-type:access_token`),
+  `requested_token_type` (optional), `timeout` (seconds, default 10). The sub-block is required when
+  `type` is `rfc8693` (a model validator on `_ExchangerConfig`).
+- `TokenExchanger.exchange(inbound, audience, scopes, actor, agent)` gains `agent: AgentIdentitySpec`:
+  `ToolContext.credentials` builds the broker from the run's own agent (`core/tool.py:142`) and now
+  passes `agent.descriptor.identity` through `CredentialBroker.for_run` and `CredentialManager.broker`
+  to every exchange. `passthrough` and `TokenExchangerContract` take it; nothing released implements
+  the ABC.
+- An exchange: `POST token_endpoint` (form-encoded) with `grant_type`
+  `urn:ietf:params:oauth:grant-type:token-exchange`, `subject_token` (the inbound credential),
+  `subject_token_type`, `audience`, `scope` (space-joined, when any) and `requested_token_type` (when
+  set). The client is the agent's (`agent.client_id`, the secret named by `agent.client_secret_key`
+  read through `SecretManager.current().get`), else the entry's default; with neither, a
+  `CredentialError` naming the agent. `basic` sends HTTP Basic, `post` sends `client_id` and
+  `client_secret` in the form.
+- The answer: `access_token` and `token_type`; the expiry is `expires_in` from now, else the token's
+  `exp` claim when it is a JWT (the unverified read `passthrough` uses, moved to a shared helper),
+  else now, which the broker does not cache.
+- A refusal (4xx with an OAuth error body) is `CredentialError("the token exchange for audience
+  '<audience>' was refused: <error>")`, the `error` code alone and never `error_description`, which
+  may quote what was sent. A transport failure reaches the broker's existing wrapper, which reports
+  its type only (`broker.py:105-107`).
+- A short-lived `httpx.Client` per exchange, through `asyncio.to_thread`. Extra `auth`;
+  `require_extra("auth", "identity.credentials.exchangers[].type: rfc8693")`. `RESERVED` keeps
+  `entra_obo` and `id_jag`.
+
+#### 10.8 Phase H config changes
+
+- `_AuthorizationConfig` gains `casbin`, `openfga` and `authzen` sections
+  (`_CasbinAuthorizerConfig`, `_OpenFGAAuthorizerConfig`, `_AuthZENAuthorizerConfig`, each a
+  `_TieredAuthorizerConfig` with `extra="forbid"`); `_check_authorizer_settings` requires the section
+  `type` names and lists all four in its unknown-key message; the `type` description names the four
+  built-ins and `cedar` as reserved.
+- `_ExchangerConfig` gains `rfc8693: _RFC8693ExchangerConfig | None`; its `type` description names
+  `rfc8693`.
+- Every new field has a description; existing YAML and `AK_*` variables load unchanged.
+
+#### 10.9 Phase H behavioural changes
+
+1. `Session.set` and `Session.delete` refuse `ak.` keys and the two cache keys (released API, so a
+   `breaking` fragment; nothing in the package or its examples writes them).
+2. The owner record is `ak.owner`, and an unreadable one refuses every principal (unreleased; no
+   fragment).
+3. Three authorizers and `rfc8693` (`added` fragments; the pending `603.added.1.md`, which says only
+   `passthrough` ships, is corrected in place).
+4. `TokenExchanger.exchange` takes `agent` (unreleased; no fragment).
+- Non-changes: `StaticAuthorizer`'s decisions, its constructor, its config and its YAML; the broker's
+  cache key and its rules; `passthrough`'s behaviour.
+
+#### 10.10 Phase H tests
+
+- `test_session_identity.py`: the refusals (`set`, `delete` on `ak.owner`, `v_cache`, `nv_cache`),
+  `get` still reading them, `_restore` accepting them; `test_sessions_valkey.py` and
+  `test_sessions_dynamodb.py`: a stored owner round-trips through the restore path.
+- `test_access_gate.py` (`TestAuthorizeSession`): an unreadable owner refuses the owner's own subject.
+- `test_authorizer_tiered.py` (new): `TieredAuthorizer` over a stub `agent_level`; `SubjectMatcher.forms`
+  against `matches`; `AgentTags`.
+- `test_authorizer_casbin.py`, `test_authorizer_openfga.py`, `test_authorizer_authzen.py` (new): each
+  subclasses `AuthorizerContract` with the contract's policy loaded (casbin from files written by the
+  fixture; openfga through a fake of the synchronous client; authzen through an `httpx.MockTransport`
+  decision point), plus the engine's own cases: the level order, tags, the contextual-tuple limit and
+  encoding, the batch and its 404 fallback, each `AuthorizerError`, the factory branch and its extra.
+- `test_identity_credentials.py`: `RFC8693TokenExchanger` through `TokenExchangerContract` on an
+  `httpx.MockTransport` token endpoint (the form fields, both client auth modes, the agent's client
+  over the default, a refusal carrying only `error`, the expiry fallbacks), the broker passing the
+  agent's identity, `passthrough` ignoring it.
+- `test_config.py` (`TestAuthorizationConfig`): each engine section required by its type and its
+  unknown keys refused; the `rfc8693` sub-block required by its type.
+
 ### Consumer changes
 
 | Consumer | Deleted | Changed | Verified unchanged |
@@ -3270,7 +3479,47 @@ verify the whole before merge.
     (behind API Gateway a built-in `oidc` block sees only the gateway's own token). The local suites join the e2e tier, the cloud suites
     the weekly tier. Landing after the docs and skills iterations, it adds the new examples to the
     examples list and the supported-providers table of `advanced/identity-and-access.md` and to the
-    user skills that list them.
+    user skills that list them. Replanned 2026-11-27 as Phase I (next point): the two
+    `azure-serverless` items are gone with that target (#984).
+  - Phase I examples (design 13.3, replanned 2026-11-27). Every example has `app.py` (or its target's
+    entry points), `config.yaml`, a test, `README.md`, `pyproject.toml` and `build.sh`, the shape of
+    its siblings; a container suite starts its compose stack in a fixture and skips without docker
+    (the `examples/sandbox/broker-*` precedent).
+    - Identity providers. `api/identity/oidc-keycloak`, `api/identity/principal-in-tools` (`static`),
+      `api/identity/custom-provider` (bring-your-own), `api/identity/protocols`, `cli/openai-identity`
+      and `sandbox/identity-provider` as the previous point describes; `aws-serverless/openai-cognito`
+      and `gcp-containerized/openai-firebase` likewise; `azure-containerized/openai-entra` on Azure
+      Container Apps (the `ak-azure/containerized` module): `type: entra` with `tenant_id`, the
+      application id as `AK_IDENTITY__PROVIDER__AUDIENCE`, an `azuread_application` with
+      `api { requested_access_token_version = 2 }` (the provider accepts the v2.0 issuer only), and a
+      test that takes a client-credentials token for `api://<client id>/.default` and asserts the
+      subject and `tid` (skipped when its variables are unset); the two GCP `openai-auth` examples gain
+      the bring-your-own provider for `X-Forwarded-Authorization`.
+    - Authorizers. `api/authorization/static`, `api/authorization/casbin`, `api/authorization/openfga`
+      and `api/authorization/authzen` serve the same two agents (`triage` with tools `lookup_ticket`
+      and `refund`, `refund` tiered `admin`; `billing`, private) to the same two static-provider users
+      (`alice` in group `support`, `bob` in `finance`), each policy in its engine's own form: grants
+      in `config.yaml`; `model.conf` and `policy.csv`; an OpenFGA model and tuples the test writes to a
+      store it creates in an OpenFGA container; Cerbos resource policies in a Cerbos container. Each
+      test asserts the same table: alice runs `triage` and is offered `lookup_ticket` and not `refund`;
+      bob gets the unknown agent's 404 for `billing`, which he may not see; an anonymous caller is
+      refused; the catalog lists only what each caller may see.
+    - Downstream credentials (`api/identity/token-exchange`). A compose stack of Keycloak 26.2 or later
+      (realm `ak`: a public client `ak-api` that users sign in to, a confidential client
+      `ak-agent` with standard token exchange enabled, a client `orders-api` as the downstream
+      audience), Redis, and a small orders API that accepts only tokens whose `aud` is `orders-api`.
+      `config.yaml` is the `oidc` provider at the realm, `identity.credentials` with the `redis` store
+      and an `encryption_key` named `AK_CREDENTIAL_KEY`, and one exchanger: `audience: orders-api`,
+      `type: rfc8693` with the realm's token endpoint; the agent declares
+      `identity.client_id: ak-agent` and `client_secret_key: AK_AGENT_SECRET`. The agent's tool calls
+      `token_for("orders-api")` and then the orders API. The test asserts the orders API received a
+      token for `orders-api` signed by the realm and not the inbound token, that the inbound
+      credential is in the store encrypted under `ak:cred:` during the run and gone after it (the
+      exchanged token stays cached, encrypted, until 30 seconds before it expires), and that an
+      anonymous run's tool reports `CredentialError`.
+    - CI: the local suites join `.github/test-config.yaml`; the cloud suites the weekly tier of
+      `.github/integration-test-config.yaml`. The docs' examples list, the supported-providers
+      table, the authorization section and the bundled skills link each new example.
 - **Supported providers, wherever they are listed**: the docs site, the READMEs, the user skills
   and the examples name Auth0 as a supported identity provider served by the `oidc` type (decided
   2026-11-10), with its configuration spelled out rather than implied: `issuer:
@@ -3630,3 +3879,14 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    retains from the request's own header where a run starts, never the authorizer, and both AWS
    WebSocket APIs retain at `$connect` and forget at `$disconnect`; both refuse a store that is not
    shared (section 4, "As built").
+26. **The engines answer levels; the tool policy stays Open Agent Kernel's** (Phase H specification,
+   2026-11-27). Design 13.1 asked each engine `call` on `tool:<agent>/<tool>`. An engine cannot express
+   the tier defaults the contract asserts (a tool with no tier is `read`; a system tool declares its
+   tier), because a relationship store denies an object it holds no tuples for. The tool policy (the
+   `tools` list `static` takes) is therefore applied by a shared `TieredAuthorizer` to the level the
+   engine answers, and `static` becomes one of its subclasses with no change in behaviour (section 10.2).
+27. **The exchanger is handed the agent's identity** (Phase H specification, 2026-11-27). The client
+   credential of an exchange is the agent's own (design 3.1, Q24), but `exchange` received only the
+   actor principal, which carries the agent's subject and no credential. `ToolContext.credentials`
+   builds the broker from the run's own agent, so it passes `descriptor.identity` to each exchange;
+   `TokenExchanger.exchange` gains the argument (section 10.7). Nothing released implements the ABC.

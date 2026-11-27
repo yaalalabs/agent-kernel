@@ -1697,16 +1697,136 @@ What phase G delivered (2026-11-27), on `feature/603-tests-docs-skills`:
   `ak-azure/serverless` Terraform module). Raised with the user, not yet decided: the session owner
   record is a plain `owner` key that `Session.set` and `Session.delete` change unguarded.
 
-## Phase H: Identity examples (iteration 29)
+## Phase H: Session owner, engines and token exchange (iterations 29 to 35)
 
-> **Replanning (2026-11-27).** Phase H is being replanned to add the `casbin`, `openfga` and
-> `authzen` authorizers, the `rfc8693` exchanger, an example per identity provider and per
-> authorizer, and a token exchange example over the `redis` credential store, split into a code
-> phase and an examples phase (`design.md` section 13, open questions Q21 to Q25). The iteration
-> below is the 2026-11-10 plan and is superseded once the design is reviewed and `spec.md` and
-> this plan are rewritten; its `azure-serverless` steps no longer apply (#984).
+Replanned 2026-11-27: `design.md` section 13 and Q21 to Q25, `spec.md` section 10 and refinements 26
+and 27. One branch and one PR (`feature/603-engines-exchange`, from `develop` once phase G merges);
+the examples are Phase I.
 
-### Iteration 29: Identity examples
+### Iteration 29: The session owner record
+
+- **Goal:** the owner is `ak.owner`, unwritable through `Session.set` and `Session.delete`, and an
+  unreadable record refuses every principal.
+- **Files:** `core/base.py`, the five rebuilding stores under `core/session/`, `identity/authz/gate.py`.
+- **Steps:** spec 10.1.
+- **Verify:** `test_session_identity.py`, `test_sessions_valkey.py`, `test_sessions_dynamodb.py`,
+  `test_access_gate.py`, `test_runtime_principal.py`; then the full suite.
+
+### Iteration 30: The shared tool policy
+
+- **Goal:** `TieredAuthorizer`, `AgentTags` and `SubjectMatcher.forms` exist and `StaticAuthorizer` is
+  built on them, its behaviour unchanged.
+- **Files:** `identity/authz/tiered.py`, `identity/authz/tags.py` (new), `identity/authz/static.py`,
+  `core/config.py` (`_TieredAuthorizerConfig`).
+- **Steps:** spec 10.2.
+- **Verify:** `test_authorizer_static.py` passes unchanged; `test_authorizer_tiered.py` (new).
+
+### Iteration 31: `casbin`
+
+- **Goal:** `authorization.type: casbin` decides levels from a model and a policy file.
+- **Files:** `identity/authz/casbin.py`, `identity/authz/casbin_model.conf`, `identity/authz/factory.py`,
+  `identity/errors.py` (`AuthorizerError`), `identity/__init__.py`, `core/config.py`, `ak-py/pyproject.toml`
+  (the `casbin` extra), `uv.lock`.
+- **Steps:** spec 10.3, 10.6, 10.8.
+- **Verify:** `test_authorizer_casbin.py` (contract and own cases), `test_config.py`.
+
+### Iteration 32: `openfga`
+
+- **Goal:** `authorization.type: openfga` decides levels by check and lists agents by list-objects.
+- **Files:** `identity/authz/openfga.py`, `identity/authz/openfga_model.fga`, the factory, the exports,
+  config, the `openfga` extra.
+- **Steps:** spec 10.4, 10.6, 10.8; fix the identifier encoding against OpenFGA's id rules first.
+- **Verify:** `test_authorizer_openfga.py` (contract over a fake synchronous client, own cases).
+
+### Iteration 33: `authzen`
+
+- **Goal:** `authorization.type: authzen` asks an Authorization API 1.0 decision point.
+- **Files:** `identity/authz/authzen.py`, the factory, the exports, config.
+- **Steps:** spec 10.5, 10.6, 10.8.
+- **Verify:** `test_authorizer_authzen.py` (contract over an `httpx.MockTransport` decision point, the
+  batch and its 404 fallback).
+
+### Iteration 34: `rfc8693` and the agent's identity
+
+- **Goal:** an `exchangers[]` entry of `type: rfc8693` exchanges at a token endpoint as the run's agent.
+- **Files:** `identity/credential/rfc8693.py` (new), `identity/credential/exchange.py`,
+  `identity/credential/broker.py`, `identity/credential/manager.py`, `identity/credential/testing.py`,
+  `core/tool.py`, `core/config.py`.
+- **Steps:** spec 10.7, 10.8.
+- **Verify:** `test_identity_credentials.py`; the full suite.
+
+### Iteration 35: Phase H docs, skills and changelog
+
+- **Goal:** everything a user or contributor reads names the three engines and `rfc8693`.
+- **Files:** `docs/docs/advanced/identity-and-access.md` (a subsection per engine under *Authorization*,
+  *Startup checks*, *Bring your own authorizer*'s reserved list, `rfc8693` under *Credentials for
+  downstream calls*), `docs/docs/core-concepts/configuration.md`, `ak-py/README.md`, `docs/docs/whats-new.md`,
+  the features page's *Identity and access* points, `INTEGRATION_ROWS` items for Casbin, OpenFGA and AuthZEN
+  (role `Identity`); `ak-dev-architecture` (*Identity and Access*), `ak-dev-testing-conventions` (the new
+  test files), `ak-dev-new-authorizer` (engines extend `TieredAuthorizer`; only `cedar` stays reserved);
+  `ak-add-capabilities` and `ak-cloud-deploy` with their evals.
+- **Steps:** `ak-dev-sync-docs-from-branch`, `ak-dev-sync-skills-from-branch`,
+  `ak-dev-sync-changelog-from-branch`. Fragments: `603.added.2.md` (the three authorizers), `603.added.3.md`
+  (`rfc8693`), `603.breaking.4.md` (`Session.set` and `Session.delete` refuse reserved keys); correct
+  `603.added.1.md`, which says only `passthrough` ships. Write "Phase H as shipped".
+- **Verify:** the full suite; `make lint-check-all`'s checks (with `uv run --no-sync`); the docs build.
+
+## Phase I: Examples (iterations 36 to 40)
+
+Design 13.3; the spec's "Phase I examples" point under "Documentation, skills and examples". One branch
+and one PR (`feature/603-examples`), after Phase H merges. No framework change.
+
+### Iteration 36: Identity examples that run locally
+
+- **Goal:** `oidc` (Keycloak), `static`, bring-your-own, MCP and A2A, the CLI and the sandbox resolver
+  each have a suite that passes locally.
+- **Files:** `examples/api/identity/{oidc-keycloak,principal-in-tools,custom-provider,protocols}`,
+  `examples/cli/openai-identity`, `examples/sandbox/identity-provider`.
+- **Steps:** steps 1 to 6 of the reference below.
+- **Verify:** `uv run pytest -s` in each directory (the Keycloak one with docker running).
+
+### Iteration 37: Authorization examples
+
+- **Goal:** the same policy and the same assertions over `static`, `casbin`, `openfga` and `authzen`.
+- **Files:** `examples/api/authorization/{static,casbin,openfga,authzen}` (OpenFGA and Cerbos as compose
+  services).
+- **Steps:** the spec's "Authorizers" sub-point.
+- **Verify:** `uv run pytest -s` in each (the container ones with docker running).
+
+### Iteration 38: Token exchange and the credential store
+
+- **Goal:** a tool calls a downstream API with a token Keycloak exchanged for its audience, the inbound
+  credential kept in Redis.
+- **Files:** `examples/api/identity/token-exchange` (Keycloak realm, Redis, the orders API, the app).
+- **Steps:** the spec's "Downstream credentials" sub-point.
+- **Verify:** `uv run pytest -s` there, with docker running.
+
+### Iteration 39: Identity providers in their cloud deployments
+
+- **Goal:** `cognito`, `entra` and `firebase` run in the deployments they belong to, and the GCP
+  `openai-auth` examples recover the caller.
+- **Files:** `examples/aws-serverless/openai-cognito`, `examples/azure-containerized/openai-entra`,
+  `examples/gcp-containerized/openai-firebase`; changed: the two GCP `openai-auth` examples.
+- **Steps:** step 8 of the reference (Cognito, Firebase), the spec's Entra description in place of its
+  `azure-serverless/openai-entra`, and step 7's GCP half.
+- **Verify:** each suite in its weekly job; skipped where its cloud variables are unset.
+
+### Iteration 40: CI, docs and skills
+
+- **Goal:** CI runs every suite, and the docs and skills link every example.
+- **Files:** `.github/test-config.yaml`, `.github/integration-test-config.yaml`, the identity page's
+  examples list and supported-providers table, its *Authorization* section, `ak-add-capabilities`,
+  `ak-cloud-deploy`.
+- **Steps:** step 9 and 10 of the reference, extended to iterations 37 and 38; no changelog fragment
+  (examples change nothing in the package). Write "Phase I as shipped".
+- **Verify:** `make lint-check-all`'s checks; the docs build; the Phase I end, the last of the change: the
+  full `ak-py` suite.
+
+### Reference: the 2026-11-10 example plan
+
+Kept for the detail Phase I's iterations point to by step number. Superseded where they differ: its
+`azure-serverless` items are gone with that target (#984), Entra moves to `azure-containerized/openai-entra`
+(iteration 39), and its CI and docs steps (9 and 10) are iteration 40's.
 
 - **Goal:** every supported identity provider and every identity feature phases A and B shipped
   has an example of its own: the OIDC family against a real issuer, the three cloud providers in
