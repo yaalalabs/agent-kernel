@@ -17,16 +17,23 @@ class LambdaPaths:
     @classmethod
     def from_env(cls) -> "LambdaPaths | None":
         """Build from the environment; ``None`` when any of ``ENV`` is unset or empty."""
-        if cls.missing_env():
+        values = cls._read_env()
+        if not all(values.values()):
             return None
-        api_base_path, api_version, agent_endpoint = (os.getenv(name) for name in cls.ENV)
-        base_path = f"/{api_base_path}/{api_version}"
-        return cls(base_path, f"{base_path}/{agent_endpoint}")
+        base_path = f"/{values['API_BASE_PATH']}/{values['API_VERSION']}"
+        return cls(base_path, f"{base_path}/{values['AGENT_ENDPOINT']}")
 
     @classmethod
     def missing_env(cls) -> list[str]:
         """The names in ``ENV`` that are unset or empty, for a cold-start error."""
-        return [name for name in cls.ENV if not os.getenv(name)]
+        values = cls._read_env()
+        return [name for name in cls.ENV if not values[name]]
+
+    @staticmethod
+    def _read_env() -> dict[str, str | None]:
+        """Each name in ``ENV`` and its value. Literal names, never computed ones: tests/test_secret_consumers.py
+        rejects an environment read whose key it cannot see."""
+        return {"API_BASE_PATH": os.getenv("API_BASE_PATH"), "API_VERSION": os.getenv("API_VERSION"), "AGENT_ENDPOINT": os.getenv("AGENT_ENDPOINT")}
 
     @property
     def base_path(self) -> str:
