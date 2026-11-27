@@ -254,6 +254,18 @@ class TestAuthorizeAgent:
         with pytest.raises(AgentNotFoundError):
             gate.authorize_agent(BOB, "vault")
 
+    @pytest.mark.asyncio
+    async def test_every_other_sync_form_answers_inside_a_running_event_loop_as_its_async_twin(self, runtime):
+        # A sync form that ran its coroutine itself, rather than through the gate's worker thread, would raise here.
+        gate = _gate()
+        descriptors = runtime.registry.descriptors()
+        billing = runtime.registry.get("billing")
+
+        assert gate.visible_agents(ALICE) == await gate.visible_agents_async(ALICE)
+        assert gate.narrow(ALICE, descriptors) == await gate.narrow_async(ALICE, descriptors)
+        assert gate.tool_filter(ALICE, billing) == await gate.tool_filter_async(ALICE, billing)
+        assert gate.visible_agents(ALICE) != []  # the comparison is over real answers, not two empty ones
+
 
 class TestVisibility:
     """Which agents a principal may see: those it holds a level on, public ones, and internal ones once signed in."""

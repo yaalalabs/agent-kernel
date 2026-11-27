@@ -1415,6 +1415,27 @@ class TestThePrecheckBeforeTheQueue:
         assert response.json() == {"detail": {"error": "Principal 'bob' holds no level on agent 'status'", "session_id": "s1"}}
         assert _queued_bodies() == []
 
+    @pytest.mark.parametrize("route", ["sse", "multipart", "base"])
+    def test_the_403_is_answered_on_every_queue_route_with_nothing_enqueued(self, monkeypatch, edge, authorization, route):
+        if route == "sse":
+            _configure(monkeypatch, mode="rest_sync", message_type="delta")
+        else:
+            _configure(monkeypatch, mode="rest_async")
+        authorization(grants=GRANTS)
+        fields = {"prompt": "hello", "session_id": "s1", "agent": "status"}
+
+        if route == "multipart":
+            response = _edge_client(principal=BOB).post(RequestHandler.CHAT_MULTIPART_PATH, data=fields)
+        elif route == "base":
+            response = _edge_client(_QueuedRestHandler(), principal=BOB).post(CHAT, json=fields)
+        else:
+            response = _edge_client(principal=BOB).post(CHAT, json=fields)
+
+        assert response.status_code == 403
+        assert response.json() == {"detail": {"error": "Principal 'bob' holds no level on agent 'status'", "session_id": "s1"}}
+        assert not response.headers["content-type"].startswith("text/event-stream")
+        assert _queued_bodies() == []
+
     def test_with_authorization_a_caller_with_a_level_is_enqueued_as_itself(self, monkeypatch, edge, authorization):
         _configure(monkeypatch, mode="rest_async")
         authorization(grants=GRANTS)

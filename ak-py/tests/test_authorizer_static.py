@@ -463,6 +463,15 @@ class TestStaticToolDecisions:
         assert decision.reason == "Tool 'delete_ticket' is denied for agent 'support-triage'"
 
     @pytest.mark.asyncio
+    async def test_an_allow_list_refusal_is_reported_before_the_level_is_looked_at(self):
+        # Like a denial: a tool the allow-list leaves out is not something a higher level would unlock.
+        authorizer = _authorizer(self.GRANTS, tools=[{"agent": "support-triage", "allow": ["lookup_ticket"]}])
+
+        decision = await authorizer.check_tool(self.VIEWER, "support-triage", "create_ticket")
+
+        assert decision.reason == "Tool 'create_ticket' is not in the allow-list of agent 'support-triage'"
+
+    @pytest.mark.asyncio
     async def test_an_empty_allow_list_offers_no_tool(self):
         authorizer = _authorizer(self.GRANTS, tools=[{"agent": "support-triage", "allow": []}])
 

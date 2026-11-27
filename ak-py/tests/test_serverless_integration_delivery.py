@@ -39,7 +39,7 @@ def _input_record(routing: dict | None = None, endpoint_url: str | None = None, 
     if endpoint_url:
         attributes["endpoint_url"] = endpoint_url
     return {
-        "body": json.dumps(body or {"prompt": "hi", "session_id": "s1", "user_id": "u1", "requests": PREBUILT_REQUESTS}),
+        "body": json.dumps(body or {"prompt": "hi", "session_id": "s1", "requests": PREBUILT_REQUESTS}),
         "attributes": {"MessageGroupId": "s1", "MessageDeduplicationId": "req-1", "ApproximateReceiveCount": "1"},
         "messageAttributes": {name: _string(value) for name, value in attributes.items()},
     }

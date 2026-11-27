@@ -84,6 +84,17 @@ class TestToken:
         assert _runs(stub_service)[0][2].subject == "alice"
 
     @pytest.mark.asyncio
+    async def test_the_static_provider_authenticates_the_token(self, stub_service, static_identity, monkeypatch):
+        # The real `static` provider, where the cases above use a stub of the interface.
+        monkeypatch.setattr(builtins, "input", ScriptedInput(["hello", "!q"]))
+
+        await CLI(token="alice-secret").run()
+
+        principal = _runs(stub_service)[0][2]
+        assert (principal.subject, principal.provider, principal.namespace, principal.groups) == ("alice", "static", "static", ["ops"])
+        assert [credential for credential, _ in static_identity.calls] == ["alice-secret"]
+
+    @pytest.mark.asyncio
     async def test_a_refused_token_exits_with_the_reason(self, stub_service, provider, monkeypatch):
         monkeypatch.setattr(builtins, "input", ScriptedInput(["hello", "!q"]))
 

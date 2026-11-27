@@ -110,9 +110,16 @@ class TestScheduledTask:
         assert task.provider_ref is None
 
     def test_json_round_trip_preserves_every_field(self):
-        task = _task(agent="planner", provider_ref="arn:aws:scheduler:::schedule/g/ak-t1", trigger_count=3)
+        task = _task(
+            agent="planner",
+            provider_ref="arn:aws:scheduler:::schedule/g/ak-t1",
+            trigger_count=3,
+            surface="rest",
+            last_error="Agent 'planner' not found",
+        )
         restored = ScheduledTask.model_validate(json.loads(json.dumps(task.model_dump(mode="json"))))
         assert restored == task
+        assert (restored.surface, restored.last_error) == ("rest", "Agent 'planner' not found")
 
     def test_dumped_record_carries_only_json_primitives(self):
         # Store portability: every backend persists the dumped document as-is.

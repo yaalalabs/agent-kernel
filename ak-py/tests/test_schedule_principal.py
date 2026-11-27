@@ -147,13 +147,21 @@ class TestAuthentication:
         assert {response.json()["detail"] for response in responses} == {"Authentication required"}
         assert manager.get_task(task.task_id).status == ScheduleStatus.ACTIVE
 
-    def test_a_refused_credential_is_the_dependencys_401(self, served):
-        client, _ = served
+    def test_a_refused_credential_is_the_dependencys_401_on_every_route(self, served):
+        client, manager = served
+        task = _create(manager, ALICE)
+        refused = {"Authorization": "Bearer nobody"}
 
-        response = client.get(SCHEDULES, headers={"Authorization": "Bearer nobody"})
+        responses = [
+            client.get(SCHEDULES, headers=refused),
+            client.get(f"{SCHEDULES}/{task.task_id}", headers=refused),
+            client.put(f"{SCHEDULES}/{task.task_id}", json=AMENDMENT, headers=refused),
+            client.delete(f"{SCHEDULES}/{task.task_id}", headers=refused),
+        ]
 
-        assert response.status_code == 401
-        assert response.json()["detail"] == "Unauthorized"
+        assert [response.status_code for response in responses] == [401, 401, 401, 401]
+        assert {response.json()["detail"] for response in responses} == {"Unauthorized"}
+        assert manager.get_task(task.task_id).status == ScheduleStatus.ACTIVE
 
 
 class TestFireTimeAccess:

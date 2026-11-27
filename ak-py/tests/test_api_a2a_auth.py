@@ -261,6 +261,7 @@ class TestCardSecurity:
             "ak": {"openIdConnectSecurityScheme": {"openIdConnectUrl": "https://issuer.example/.well-known/openid-configuration"}}
         }
         assert served["securityRequirements"] == self.REQUIRES_AK
+        assert [skill["securityRequirements"] for skill in served["skills"]] == [self.REQUIRES_AK]
 
     def test_every_skill_repeats_the_cards_requirement(self, static_identity):
         [skill] = self._served()["skills"]
@@ -622,6 +623,7 @@ class TestAgentAccessOverA2A:
         unknown = await self._request(app, "POST", "/a2a/ghost/message:send/", BOB_AUTH)
 
         assert hidden.status_code == unknown.status_code == 404
+        assert hidden.content == unknown.content
         assert dict(hidden.headers) == dict(unknown.headers)
 
     @pytest.mark.asyncio

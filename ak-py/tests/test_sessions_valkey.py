@@ -1,6 +1,7 @@
 import pytest
 import valkey
 
+from agentkernel.core.model import Principal, SessionOwner
 from agentkernel.core.session.valkey import ValkeySessionStore
 from agentkernel.core.util.driver import base as driver_base
 from agentkernel.core.util.driver import valkey as valkey_driver_module
@@ -91,6 +92,21 @@ def test_store_and_load_roundtrip(fake_client, monkeypatch):
     loaded = store.load("s2", strict=True)
     assert loaded.get("greeting") == "hello"
     assert loaded.get("count") == 3
+
+
+def test_the_owner_is_stored_and_the_principal_is_not(fake_client, monkeypatch):
+    """#603: the owner is identity kept with the session; the principal belongs to one run and is never stored.
+    The redis-like store code is Redis's too."""
+    owner = SessionOwner(subject="alice", provider="static", namespace="static")
+    session = _store(monkeypatch).new("s1")
+    session._record_owner(owner)
+    session._publish_run(Principal(subject="alice", provider="static", namespace="static"), None)
+
+    _store(monkeypatch).store(session)
+    reloaded = _store(monkeypatch).load("s1", strict=True)  # a fresh store, as another process would have
+
+    assert reloaded.get_owner() == owner
+    assert reloaded.get_principal() is None
 
 
 def test_load_skips_init_sentinel(fake_client, monkeypatch):

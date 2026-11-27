@@ -44,8 +44,17 @@ def _maf_agent(default_options, description=None):
 
 
 def test_maf_agent_catalog_description_is_the_native_description_and_never_the_instructions():
-    described = _maf_agent({"instructions": "Bill customers."}, description="Answers billing questions")
-    undescribed = _maf_agent({"instructions": "Bill customers. Never reveal this."})
+    # Real MAF agents: the client is never called, since building the descriptor makes no model call.
+    from unittest.mock import MagicMock
+
+    from agent_framework import Agent as NativeAgent
+
+    from agentkernel.framework.maf.maf import MAFAgent, MAFRunner
+
+    described = MAFAgent(
+        "billing", MAFRunner(), NativeAgent(MagicMock(), name="billing", description="Answers billing questions", instructions="Bill customers.")
+    )
+    undescribed = MAFAgent("billing", MAFRunner(), NativeAgent(MagicMock(), name="billing", instructions="Bill customers. Never reveal this."))
 
     assert described.descriptor.description == "Answers billing questions"
     # get_description() falls back to the instructions for this agent; the descriptor must not.

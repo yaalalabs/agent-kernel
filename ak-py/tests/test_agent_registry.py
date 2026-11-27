@@ -1024,6 +1024,21 @@ class TestModuleDescribe:
         assert (descriptor.id, descriptor.runner, descriptor.tools) == ("billing", "stub", ["search"])
         assert module.get_agent("billing").descriptor == descriptor
 
+    def test_a_described_description_replaces_the_native_one(self, runtime):
+        class NativelyDescribedModule(StubModule):
+            def _wrap(self, agent: NativeAgent, agents: list[NativeAgent]) -> Agent:
+                return NativelyDescribedAgent(agent.name, "Answers invoice questions")
+
+        with runtime:
+            native = NativeAgent("billing")
+            module = NativelyDescribedModule([native])
+            assert runtime.registry.descriptor("billing").description == "Answers invoice questions"
+
+            module.describe(native, description="Refunds and invoices")
+
+        assert runtime.registry.descriptor("billing").description == "Refunds and invoices"
+        assert module.get_agent("billing").descriptor.description == "Refunds and invoices"
+
     def test_a_later_call_wins_per_field_and_keeps_the_fields_it_does_not_name(self, runtime):
         with runtime:
             native = NativeAgent("billing")

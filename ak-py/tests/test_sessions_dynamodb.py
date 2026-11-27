@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 from boto3.dynamodb.types import Binary
 
+from agentkernel.core.model import Principal, SessionOwner
 from agentkernel.core.session.dynamodb import DynamoDBSessionStore
 from agentkernel.core.session.serde import BinarySerde
 
@@ -62,6 +63,26 @@ def test_load_skips_missing_items(monkeypatch):
     assert loaded.get("kept") == 42
     keys = [k for k, _ in loaded.get_all(volatile=False)]
     assert "gone" not in keys
+
+
+def test_the_owner_is_stored_and_the_principal_is_not(monkeypatch):
+    """#603: the owner is identity kept with the session; the principal belongs to one run and is never stored."""
+    store = _store(monkeypatch)
+    items: dict[str, dict] = {}
+    store._driver.put.side_effect = lambda item: items.__setitem__(item["key"], item)
+    store._driver.query_sort_keys.side_effect = lambda session_id: list(items)
+    store._driver.get.side_effect = lambda session_id, key: items.get(key)
+    owner = SessionOwner(subject="alice", provider="static", namespace="static")
+    session = store.new("s1")
+    session._record_owner(owner)
+    session._publish_run(Principal(subject="alice", provider="static", namespace="static"), None)
+
+    store.store(session)
+    reloaded = store.load("s1", strict=True)
+
+    assert reloaded is not session
+    assert reloaded.get_owner() == owner
+    assert reloaded.get_principal() is None
 
 
 def test_load_missing_session_strict_raises(monkeypatch):

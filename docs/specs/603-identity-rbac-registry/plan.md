@@ -1547,6 +1547,33 @@ re-verify the rest.
   listed patch target resolves and every deleted file is gone; run the full suite and
   `make lint-check-all`.
 - **Verify:** `cd ak-py && uv run pytest` green; `make lint-check-all` clean.
+- **As built (2026-11-27, branch `feature/603-tests-docs-skills`):** the walk was a script over the
+  section (every named file, test class, contract suite and fixture present, the deleted files and
+  removed names gone) and a read of each bullet's claims against the tests, every gap checked
+  against the code before a change. Everything named exists except `test_ecs_io_handler.py` and
+  `test_ecs_agent_runner_schedule.py`, which #962 deleted when ECS moved onto the shared pipeline;
+  their cases live in the shared pipeline suites. Eighteen claims were short and are now tested:
+  `get_description()` answering with the prompt beside an empty catalog description (Pydantic AI,
+  smolagents, Claude) and MAF's case on a real `agent_framework.Agent`; `Module.describe`
+  replacing a native description; the OIDC card's per-skill requirement and the trailing-slash
+  body; `RoleMapperContract` over a dotted mapper; the CLI through the real `static` provider; the
+  owner kept and the principal never stored by the Valkey (redis-like) and DynamoDB session stores;
+  a session another principal owns answered 403 by the chat service; `ToolContext.principal` and
+  `access_level` having no setter; the refused-credential 401 on every schedule route; a `/chat`
+  body `user_id` answered 400 on the JSON and SSE paths; SSE parity in text and headers; a task's
+  `surface` kept by the model and each schedule store; the queue precheck's 403 on the SSE,
+  multipart and base routes; the allow-list decided before the level; every sync form of the gate
+  inside a running loop; and a hidden agent that cannot stream at the AG-UI queue edge. Two stale
+  test leftovers went (a body `user_id` in a delivery fixture, an unused helper parameter). Each new
+  case was checked by breaking what it guards (eight mutations, all caught). The spec's Testing
+  section now records where cases moved and what the build settled differently (its "As built
+  (iteration 26)" notes: MAF hides a denied tool; Claude's gate follows the application's hook,
+  since a deny wins in any order; an unnamed schedule is not prechecked; a bare token at the API
+  Gateway authorizer is a 401). `make lint-check-all`'s checks ran with `uv run --no-sync`, since
+  the target's `uv run --dev` re-syncs the virtual environment. Left open: the session owner record
+  is a plain `owner` key in `Session._data`, which `Session.set` and `Session.delete` change
+  unguarded, unlike the reserved `ak.` keys; and the Azure Functions passages outside the Testing
+  section (section 8.9's handler note, behavioural change 22) are for iteration 27.
 
 ### Iteration 27: Docs site and READMEs
 

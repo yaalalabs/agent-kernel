@@ -211,6 +211,15 @@ class TestToolContextIdentity:
         assert context.principal == _principal()
         assert context.access_level is None
 
+    @pytest.mark.parametrize("name, value", [("principal", Principal.anonymous()), ("access_level", AccessLevel.ADMIN)])
+    def test_a_tool_cannot_set_who_it_acts_as(self, session, context, name, value):
+        session._publish_run(_principal(), ToolFilter(level=AccessLevel.READ, allowed=[]))
+
+        with pytest.raises(AttributeError):
+            setattr(context, name, value)
+
+        assert (context.principal, context.access_level) == (_principal(), AccessLevel.READ)
+
 
 class TestPausedRunIdentity:
     def _pause(self, session: Session):

@@ -146,6 +146,13 @@ class TestInMemoryScheduleStore:
         assert (skipped.trigger_count, skipped.last_error) == (1, "Agent 'billing' not found")
         assert (store.get("t1").trigger_count, store.get("t1").last_error) == (2, None)
 
+    def test_a_task_keeps_the_surface_it_was_created_over(self, store):
+        # An occurrence of a task naming no agent is checked against this surface when it fires (#603).
+        store.create(_task("t1", surface="rest"))
+        store.create(_task("t2"))
+
+        assert (store.get("t1").surface, store.get("t2").surface) == ("rest", None)
+
     def test_record_trigger_for_an_unknown_task_is_ignored(self, store):
         # A trigger can outlive the record it came from; it must not raise into the run.
         store.record_trigger("missing", request_id="r1", occurred_at="2030-03-01T09:00:00+00:00", completed=False)
@@ -402,6 +409,13 @@ class TestRedisLikeScheduleStore:
         assert (skipped.trigger_count, skipped.last_error) == (1, "Agent 'billing' not found")
         assert (store.get("t1").trigger_count, store.get("t1").last_error) == (2, None)
 
+    def test_a_task_keeps_the_surface_it_was_created_over(self, store):
+        # An occurrence of a task naming no agent is checked against this surface when it fires (#603).
+        store.create(_task("t1", surface="rest"))
+        store.create(_task("t2"))
+
+        assert (store.get("t1").surface, store.get("t2").surface) == ("rest", None)
+
     def test_record_trigger_for_an_unknown_task_is_ignored(self, store):
         store.record_trigger("missing", request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False)
 
@@ -599,6 +613,13 @@ class TestDynamoDBScheduleStore:
 
         assert (skipped.trigger_count, skipped.last_error) == (1, "Agent 'billing' not found")
         assert (store.get("t1").trigger_count, store.get("t1").last_error) == (2, None)
+
+    def test_a_task_keeps_the_surface_it_was_created_over(self, store):
+        # An occurrence of a task naming no agent is checked against this surface when it fires (#603).
+        store.create(_task("t1", surface="rest"))
+        store.create(_task("t2"))
+
+        assert (store.get("t1").surface, store.get("t2").surface) == ("rest", None)
 
     def test_record_trigger_for_an_unknown_task_is_ignored(self, store):
         store.record_trigger("missing", request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False)

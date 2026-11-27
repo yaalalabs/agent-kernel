@@ -185,7 +185,9 @@ class TestSmolagentsAgentToolReporting:
 
         assert SmolagentsAgent("smol", SmolagentsRunner(), described).descriptor.description == "Looks things up on the web"
         # get_description() answers with the system prompt for this agent; the descriptor must not.
-        assert self._agent([]).descriptor.description == ""
+        undescribed = self._agent([])
+        assert undescribed.get_description() == undescribed.agent.system_prompt != ""
+        assert undescribed.descriptor.description == ""
 
     def test_tool_names_are_the_native_agents_tools_without_the_frameworks_own_final_answer(self):
         # `final_answer` is how a smolagents run ends, not a tool the application declared (#603, iteration 23).

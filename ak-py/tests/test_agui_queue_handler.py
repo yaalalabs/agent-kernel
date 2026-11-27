@@ -627,6 +627,25 @@ class TestTheEdgeAnswersForTheCaller:
         assert handler._producer.requests == []
 
     @pytest.mark.asyncio
+    async def test_a_hidden_agent_that_cannot_stream_is_still_the_unknown_agents_404(self, descriptor_only_registry, authorization):
+        # The 400 names the agent's framework: answered first, it would say the name exists. Decided here from
+        # the registry's descriptor, where the direct handler decides from the agent it hosts.
+        registry = descriptor_only_registry([AgentDescriptor(id="crew", name="crew", runner="crewai", supports_streaming=False)])
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        handler._producer = _RecordingProducer()
+        authorization(grants=[{"subjects": ["user:u1"], "agents": ["crew"], "level": "read"}])
+
+        with Runtime(InMemorySessionStore(), registry=registry):
+            with pytest.raises(HTTPException) as hidden:
+                await handler._run("crew", self._as("u2"))
+            with pytest.raises(HTTPException) as seen:
+                await handler._run("crew", self._as("u1"))
+
+        assert (hidden.value.status_code, hidden.value.detail) == (404, "Agent 'crew' not found")
+        assert (seen.value.status_code, "crewai" in str(seen.value.detail)) == (400, True)
+        assert handler._producer.requests == []
+
+    @pytest.mark.asyncio
     async def test_a_caller_with_a_level_is_enqueued_as_itself(self, registry, authorization):
         handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
         handler._producer = _RecordingProducer()

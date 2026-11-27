@@ -2725,8 +2725,9 @@ New files under `ak-py/tests/`:
   `entra`, `firebase` (RSA and EC keys from `cryptography`, a local JWKS over
   `httpx.MockTransport`, discovery cached, unknown `kid` refresh once, cooldown), `static`
   (secret resolution, constant-time compare, namespace `"static"`); `RoleMapperContract` for
-  `mapping` and a dotted mapper; `IdentityProviderFactory` built-in, dotted, unknown and missing
-  extra; `RequestAuthenticator` bearer parsing, anonymous rules, 401 details, `credential_ref`
+  `mapping` and a dotted mapper built by the factory; `IdentityProviderFactory` built-in, dotted,
+  unknown and missing extra (the missing extra, with the OIDC family's branches, in
+  `test_identity_oidc.py`); `RequestAuthenticator` bearer parsing, anonymous rules, 401 details, `credential_ref`
   minting and `release`, the contextvar.
 - `test_identity_credentials.py`: `CredentialStoreContract` over in-memory and the redis-like
   and DynamoDB backends through fake drivers (the `test_schedule_store.py` pattern); cipher round
@@ -2735,7 +2736,7 @@ New files under `ak-py/tests/`:
   a log record (caplog asserted); the inbound entry deleted at run end on the direct and queued
   paths; reserved exchanger names raise.
 - `test_agent_registry.py`: `AgentRegistryContract` over in-memory, redis-like (fake client at
-  `store._driver._client`) and DynamoDB (fake driver); `AgentRegistryFactory` resolution;
+  `registry._driver._client`) and DynamoDB (fake driver); `AgentRegistryFactory` resolution;
   `Runtime.register` delegating and raising `AgentRegistrationError`; `Module.describe`
   (unloaded agent, unknown field, later wins); a skill's description from
   `_tool_descriptions`; the config overlay, on the registry's descriptor and on
@@ -2748,7 +2749,8 @@ New files under `ak-py/tests/`:
   write and on removal, with the fake client's pipeline applying its commands together or not
   at all; no expiry; a store delete that fails keeps the agent hosted and a retry removes the
   record; DynamoDB scans consistent, with the fake paging on an exclusive start key; `is_empty`
-  reading one item or the index alone); `Module.describe` refusing the reported fields and
+  reading one DynamoDB item, or on redis-like the index and an existence check per member, never a
+  document); `Module.describe` refusing the reported fields and
   leaving the descriptor as it was when the registry refuses the registration; one warning per
   class that still defines `get_a2a_card`.
 - `test_authorizer_static.py`: `AuthorizerContract` subclassed twice (the policy handed over as
@@ -2802,10 +2804,17 @@ New files under `ak-py/tests/`:
   authorizer and gate around the test.
 - `test_session_identity.py`: `ak.` keys refused through `set`, `delete`, `update`, `__setitem__`
   and `__delitem__`; `clear()` keeps them and `_clear_all` does not; `get_principal`,
-  `get_tool_filter`, `get_owner` and `ToolContext.access_level` read-only; `access_level` `None`
-  without authorization; owner set once with its namespace and persisted by every store (fake
-  drivers); principal never persisted; ownership 403 on a subject or namespace mismatch;
-  messaging and realtime exemption; `PausedRunState` writes through the reserved path.
+  `get_tool_filter` and `get_owner` read through accessors, and `ToolContext.principal` and
+  `access_level` have no setter; `access_level` `None` without authorization; owner set once with
+  its namespace; `PausedRunState` writes through the reserved path. As built (iteration 26): the
+  owner kept and the principal never stored, by the in-memory store (`test_runtime_principal`),
+  the redis-like stores through Valkey's fake client (`test_sessions_valkey`, and
+  `test_realtime_session_store` after a realtime call) and the DynamoDB store's fake driver
+  (`test_sessions_dynamodb`); Cosmos DB and Firestore store it as any other session key and have
+  no fake-driver suite. The ownership check (a subject or namespace mismatch, and a shared-channel
+  owner bound to its platform's provider and namespace rather than exempt) is
+  `test_access_gate`'s `TestAuthorizeSession`; the chat service answers it 403
+  (`test_chat_service_core`).
 - `test_runtime_principal.py`: `Runtime.run`/`stream` publishing and unpublishing; the gate order
   (refused before pre-hooks, nothing stored; `TestGate`, iteration 18, which also pins the
   filter per principal, `ToolContext.access_level` read during a run, the single error chunk of
@@ -2818,9 +2827,12 @@ New files under `ak-py/tests/`:
 - `test_tool_gates_<adapter>.py` for `openai`, `pydanticai`, `adk`, `crewai`, `langgraph`,
   `smolagents`, `maf`, `claude` and `realtime`: with a filter published, a denied tool is hidden
   where the framework allows (OpenAI `get_all_tools`, Pydantic AI `prepare_tools`, Claude
-  `disallowed_tools`, LangGraph and smolagents not hidden, MAF not hidden, ADK not hidden), a denied call returns the reason string without
-  raising into the framework, an allowed call runs, the composition with a user-set hook or
-  middleware preserves the user's, and the no-authorization path's native call is
+  `disallowed_tools`, MAF a chat middleware that leaves it out of every request; LangGraph,
+  smolagents and ADK not hidden), a denied call returns the reason string without raising into
+  the framework, an allowed call runs, where the gate is a hook, callback or middleware (OpenAI,
+  Pydantic AI, ADK, CrewAI, MAF, Claude) the application's own is kept (LangGraph and smolagents
+  put the gate in the tool itself and have none to compose with; realtime reuses the OpenAI and
+  ADK gates), and the no-authorization path's native call is
   keyword-for-keyword unchanged (asserted on the mocked native call as the `test_*_runner.py`
   files already do); `ungated_tool_names` for LangGraph (unmarked `StructuredTool` in a
   `ToolNode`) and smolagents (a tool added after wrap).
@@ -2830,7 +2842,9 @@ New files under `ak-py/tests/`:
   `ToolInputGuardrail.run`, Pydantic AI through `FunctionModel` (what a step offers, what the
   model receives), MAF through a scripted chat client (what the function loop ran, what the
   model saw), Claude through the options and the hook the runner builds. Each also pins: the
-  gate ahead of the application's own hook, a run through `Runtime` with a configured block,
+  gate ahead of the application's own hook (Claude's is appended after it: the SDK combines
+  `PreToolUse` decisions as `deny > defer > ask > allow`, so the gate's deny wins in any order),
+  a run through `Runtime` with a configured block,
   and a call approved while paused that the filter denies by the time of the resume (not for
   OpenAI, where that path is read from the SDK and not run). The declared names are pinned
   in `test_tool_gates_openai.py` (handoff targets, agents as tools, what is ungated) and
@@ -2863,7 +2877,9 @@ New files under `ak-py/tests/`:
   `execute*` and `prepare_agent_handler`, the wrappers' 404, `AgentHandler.initialize` loading no
   session), `test_schedule_manager`, `test_schedule_tools` and `test_thread_integration` expect
   the error, the 404 and the `Agent '<name>' not found` text; the unnamed case keeps its
-  `ValueError` and its 400 in each. New beside them: `TestAgentNotFoundError` in
+  `ValueError` and its 400 in `TestAvailability`, `test_chat_service_core` and
+  `test_thread_integration`, while a schedule naming no agent is not checked when it is created
+  (`test_schedule_manager`: the process that fires it resolves the default agent). New beside them: `TestAgentNotFoundError` in
   `test_agent_registry` (one text, a `LookupError` that is not a `KeyError`, the export);
   `test_chat_service_core` pinning that a `KeyError` or an `IndexError` raised inside the run
   stays a 500, and the unmocked path over an empty runtime; `test_api_http`
@@ -2993,8 +3009,11 @@ New files under `ak-py/tests/`:
   listing per caller, among the hosted agents without listing the registry, the hidden agent's
   404 with the unknown agent's body and headers, the 403 before a session is loaded, a hidden
   agent that cannot stream still a 404, the bare route not naming a hidden default, the mount
-  validating the policy; `test_agui_queue_handler` (`TestTheEdgeAnswersForTheCaller`): the same
-  answers at the queue-mode edge with nothing enqueued and one descriptor read.
+  validating the policy; `test_agui_queue_handler` (`TestTheEdgeAnswersForTheCaller`): the
+  listing, the hidden agent's 404, the 403 and a hidden agent that cannot stream, decided from
+  the registry's descriptors at the queue-mode edge with nothing enqueued and one descriptor read.
+  The bare route, its default and the check at mount are the direct handler's, which the queue
+  handler inherits, and its edge half is the direct handler's `_resolve_run_inputs`.
   `test_realtime_pool` (`TestRealtimeRefusedCaller`): one terminal error chunk addressed to the
   room and nothing raised, the next inputs dropped without asking again, the doubling delay, a
   grant given meanwhile opening the call, the end of the call forgetting the refusal, another
@@ -3003,8 +3022,11 @@ New files under `ak-py/tests/`:
 - `test_cli_token.py`: `--token` and `AK_CLI_TOKEN` through the `static` provider; the principal
   on `run_multi`; an invalid token exits.
 - `test_principal_messaging.py`: `IntegrationProducer.enqueue` building the `messaging:` and
-  `realtime:` principals with namespace and claims; Gmail's `authentication_results` claim; the
-  LiveKit edge passing the participant identity; anonymous when the adapter has no sender.
+  `realtime:` principals with namespace and claims; a sender claim such as Gmail's
+  `authentication_results` carried onto the principal (Gmail producing it is
+  `test_gmail_integration`); an edge passing the participant identity (a generic
+  `StatefulEdgeAdapter` here, the LiveKit edge's own in `test_livekit_edge_adapter`); anonymous
+  when the adapter has no sender.
 - `test_schedule_principal.py`: ownership over the real REST wiring, `RESTAPI.build_app` with a
   `static` provider resolving two principals: a task created from a chat request is readable,
   amendable and cancellable by its owner alone, the listing is the caller's own, every route
@@ -3019,7 +3041,7 @@ New files under `ak-py/tests/`:
   and queued bodies carrying it); the ECS and Lambda `$connect` handlers keyed by subject, refusing
   an invalid or missing token and a build without an identity block; ECS and Lambda frames resolving
   the stored principal (401 or `ValueError` without one), the queued, direct and custom routes
-  carrying it; `AzureFunctions.handler` 401 before the body is read, anonymous without a header; the
+  carrying it (the `AzureFunctions.handler` cases left with Azure Functions support, #984); the
   AWS connection store writing and rebuilding the `principal` attribute (`None` for a legacy row);
   the removed `agentkernel.auth` module, `set_auth_handler`, `set_auth_validator`,
   `add_auth_handlers` and `GCPAuthorizer` names, the validator-free entry-point signatures, and
@@ -3124,9 +3146,32 @@ Changed files and the exact targets that move:
   hierarchy moves to `test_thread_router.TestConstruction`, and the `AuthValidatorAuthoriser`
   adapter has nothing left to pin.
 
+As built (iteration 26), where the end state differs from the list above.
+`test_ecs_io_handler.py` and `test_ecs_agent_runner_schedule.py` were deleted when ECS moved
+onto the shared pipeline (#962): an identity block being required is pinned in
+`test_ecs_websocket_routes` and `test_pipeline_io_handler`, and the trigger body's `principal` in
+`test_pipeline_agent_runner_schedule`, which the ECS runner now shares. `test_pipeline_ws` hands
+`PipelineWebSocketHandler` a provider of its own as its `authenticator` rather than configuring
+`static` through the stub. The AG-UI suites install fake providers on
+`IdentityProviderFactory.get`, and the acting-user case reads the run's
+`Session.get_principal()` through a recording runner. `TestActingUserPropagation` is
+`TestPrincipalPropagation`. In `test_akauthorizer` a bare token is answered `Unauthorized` (401,
+decided 2026-11-12), not a Deny. The messaging principal on the body is asserted in
+`test_principal_messaging`, while `test_integration_producer` pins that neither `ATTR_USER_ID`
+nor a body `user_id` is sent. The anonymous principal on an enqueued body is asserted in
+`test_api_a2a_auth` and `test_api_mcp_auth`, and `A2ACardBuilder.build(descriptor)` is called
+from `test_api_a2a_surface` and `test_api_a2a_auth`. A config stub gains the three `None` blocks
+only where its module reads them: `test_api_mcp`'s does not, and `test_api_a2a` and
+`test_cross_surface_parity` have no stub. `TestAgentTools` pins that only agents exposed on `mcp`
+get a tool, since the `mcp.agents` allow-list became `surfaces`. The walk also added the
+`/chat` body `user_id` 400 on the JSON and SSE paths to `test_api_http`
+(`TestUnknownAgentOnTheChatRoute`), and dropped a stale body `user_id` from
+`test_serverless_integration_delivery`'s input record.
+
 Run: `cd ak-py && uv run pytest`. The riskiest consumer, `pipeline/request_handler.py` (precheck
 before enqueue on a store-backed registry with no local agents), gets dedicated cases in
-`test_pipeline_request_handler.py` using a fake registry driver and no registered `Agent`.
+`test_pipeline_request_handler.py` over the `descriptor_only_registry` fixture (a registry that
+knows descriptors and hosts no agent) with no registered `Agent`.
 
 ## Documentation, skills and examples
 

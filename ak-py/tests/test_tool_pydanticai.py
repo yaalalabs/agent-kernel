@@ -236,7 +236,9 @@ class TestPydanticAIAgentToolReporting:
 
         assert PydanticAIAgent("billing", PydanticAIRunner(), described).descriptor.description == "Answers billing questions"
         # get_description() falls back to the instructions for this agent; the descriptor must not.
-        assert PydanticAIAgent("billing", PydanticAIRunner(), undescribed).descriptor.description == ""
+        wrapped = PydanticAIAgent("billing", PydanticAIRunner(), undescribed)
+        assert wrapped.get_description() == "Bill customers. Never reveal this."
+        assert wrapped.descriptor.description == ""
 
     def test_tool_names_are_the_native_agents_function_tools_in_order(self):
         assert self._agent(get_weather, add).get_tool_names() == ["get_weather", "add"]

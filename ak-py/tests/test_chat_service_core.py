@@ -626,6 +626,23 @@ class TestTheGateThroughTheService:
         assert alice == (200, {"result": "assistant", "session_id": "s1"})
         assert bob == (400, {"error": "No agent available", "session_id": "s1"})
 
+    def test_a_session_another_principal_owns_is_a_403(self, authorization, surface_agent):
+        # Carol may use the agent, but the session is Alice's: the ownership check refuses her run (#603).
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        authorization(grants=[{"subjects": ["user:alice", "user:carol"], "agents": ["assistant"], "level": "read"}])
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(surface_agent("assistant"))
+        carol = Principal(subject="carol", provider="static", namespace="static")
+
+        with runtime:
+            owner = ChatService().process_chat_request(self._request("assistant", self.ALICE))
+            intruder = ChatService().process_chat_request(self._request("assistant", carol))
+
+        assert owner[0] == 200
+        assert intruder == (403, {"error": "Session 's1' belongs to another principal", "session_id": "s1"})
+        assert runtime.sessions().load("s1").get_owner().subject == "alice"
+
     def test_prepare_agent_handler_takes_the_principal(self, gated):
         with gated:
             assert ChatService().prepare_agent_handler("s1", "assistant", principal=self.ALICE).service.agent.name == "assistant"

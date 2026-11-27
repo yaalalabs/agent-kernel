@@ -729,6 +729,15 @@ class TestUnknownAgentOnTheChatRoute:
         assert response.status_code == 400
         assert "No agent available" in response.text
 
+    @pytest.mark.parametrize("sse", [False, True], ids=["json", "sse"])
+    def test_a_body_carrying_user_id_is_a_400_before_the_agent_is_looked_up(self, sse):
+        # `user_id` left the request models (#603): who a request acts as is the identity dependency's to say.
+        response = self._post("json", {"prompt": "hello", "session_id": "s-1", "agent": "ghost", "user_id": "u-1"}, sse=sse)
+
+        assert response.status_code == 400
+        assert "user_id is not a request field" in response.text
+        assert not response.headers["content-type"].startswith("text/event-stream")
+
 
 class TestAnAgentKeptOffRestOnTheChatRoute:
     """`surfaces` governs the chat routes, not only the catalog (#603, design refinement 13): a request that enters
@@ -899,6 +908,9 @@ class TestTheAccessGateOnTheChatRoute:
         assert hidden.status_code == unknown.status_code == 404
         assert (hidden.json(), unknown.json()) == ({"detail": "Agent 'assistant' not found"}, {"detail": "Agent 'ghost' not found"})
         assert not hidden.headers["content-type"].startswith("text/event-stream")
+        # As on the JSON path, the two answers differ in nothing but the name the caller itself sent.
+        assert hidden.text.replace("assistant", "ghost") == unknown.text
+        assert dict(hidden.headers) == {**dict(unknown.headers), "content-length": hidden.headers["content-length"]}
 
     @pytest.mark.parametrize("route", ["json", "multipart"])
     def test_an_agent_the_caller_sees_and_may_not_use_is_a_403(self, route, post):

@@ -212,6 +212,21 @@ class TestMappingRoleMapperContract(RoleMapperContract):
         ]
 
 
+class TestDottedRoleMapperContract(RoleMapperContract):
+    """A bring-your-own mapper, built by the factory from its dotted path as a configuration would build it."""
+
+    @pytest.fixture
+    def mapper(self):
+        return RoleMapperFactory.create(_RoleMapperConfig(type="test_identity_providers.EverybodyIsReader"))
+
+    @pytest.fixture
+    def cases(self):
+        return [
+            (_principal(), ["reader", "subject:alice"]),
+            (_principal(subject="bob", groups=["ops"]), ["reader", "subject:bob"]),
+        ]
+
+
 class TestUserControlledClaimsGrantNothing:
     """Regression cases from the #603 phase B review: claims a user can set must not reach ``mapping``."""
 

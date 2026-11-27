@@ -8,7 +8,7 @@ from agentkernel.deployment.aws.serverless.core.router.ws_lambda import LambdaWS
 USER_1 = Principal(subject="user-1", provider="static", namespace="static")
 
 
-def _make_ws_event(user_id="user-1", session_id="s1", request_id="req-1"):
+def _make_ws_event(session_id="s1", request_id="req-1"):
     return {
         "requestContext": {
             "connectionId": "conn-1",
