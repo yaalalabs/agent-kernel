@@ -240,6 +240,18 @@ class TestChatRunRequest:
         with pytest.raises(ValidationError, match="fields not accepted from clients"):
             BaseRequest.from_payload(payload)
 
+    @pytest.mark.parametrize("request_id", ["abc\n2026-11-26T10:00:00.000Z - x - TRACE - [AGENT_DONE] request_id=other", "a\rb", "a\tb"])
+    def test_from_payload_rejects_a_request_id_that_would_split_a_trace_line(self, request_id):
+        from agentkernel.core.model import BaseRequest
+
+        with pytest.raises(ValidationError, match="request_id must not contain control characters"):
+            BaseRequest.from_payload({"request_id": request_id, "body": {"prompt": "hi", "session_id": "s1"}})
+
+    def test_from_payload_keeps_a_request_id_with_spaces(self):
+        from agentkernel.core.model import BaseRequest
+
+        assert BaseRequest.from_payload({"request_id": "my id 1", "body": {"prompt": "hi", "session_id": "s1"}}).request_id == "my id 1"
+
 
 class TestRequestSurface:
     """The surface a chat request entered by (#603, design refinement 13): the entry point's to set beside the

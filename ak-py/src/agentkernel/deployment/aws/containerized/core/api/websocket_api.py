@@ -16,6 +16,7 @@ from ......api.handler import RESTRequestHandler
 from ......api.http import RESTAPI
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
+from ......core.logger import TRACE, TraceStage
 from ......core.model import BaseRequest, BaseRunRequest, Principal, StreamChunk
 from ......core.util.factory import AKConfigError
 from ......identity.errors import AuthenticationError
@@ -348,6 +349,9 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         raw_body = await request.body()
         payload = json.loads(raw_body) if raw_body else {}
         message = BaseRequest.from_payload(payload) if is_chat_request else payload
+        if is_chat_request:
+            # As soon as the frame names its request_id: before the principal lookup and validation.
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, message.request_id)
 
         principal = await self._offload(self.get_websocket_handler().get_principal, connection_id)
         if principal is None:
@@ -372,6 +376,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         """Queue mode: send to the input queue; the shared ResponseHandler pushes the reply."""
         self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
 
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
         await self._offload(
             SQSHandler.send_message_to_input_queue,
             message_body=body.model_dump(),

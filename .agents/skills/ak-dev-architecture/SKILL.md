@@ -1595,6 +1595,8 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
 
 The #495 pipeline: every chat request on a server surface travels Request Handler → Input Queue →
 Agent Runner → Output Queue → Response Handler. Spec set: `docs/specs/495-onprem-kubernetes/`.
+Each stage emits a `TraceStage` line at the `TRACE` level with the request's `request_id` (#911, `core/logger.py`), so a
+new request handler, runner or response handler (pipeline, Lambda or ECS) adds the trace calls for the stages it owns.
 Phase A (shipped): the package, the `in_memory` transport, and the single-process topology.
 Phase B (shipped): the `sqs`, `kafka`, and `nats` transports, the two-process topology, and the
 public-interface cleanup that makes `pipeline.transport` the only public queue API.

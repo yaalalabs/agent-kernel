@@ -6,6 +6,7 @@ from typing import Any
 
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
+from ......core.logger import TRACE, TraceStage
 from ......core.model import BaseRequest, ExecutionMode, Principal
 from ......core.util.async_bridge import run_async_sync
 from ......core.util.factory import AKConfigError
@@ -210,6 +211,9 @@ class DefaultEndpointsHandler:
         :return: Queue submission status
         :raises ValueError: If body, request_id, or session_id is missing
         """
+        if payload.request_id:
+            # Here, not in _handle_request: that also serves the async status polls, which reuse the request_id.
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, payload.request_id)
         request_body = payload.body
         if request_body is None:
             raise ValueError("body is required")
@@ -221,6 +225,7 @@ class DefaultEndpointsHandler:
             raise ValueError("session_id is required")
 
         self._retain_credential(payload, event)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, payload.request_id)
         response = SQSHandler.send_message_to_input_queue(
             message_body=request_body.model_dump(exclude_none=True),
             attributes={"message_deduplication_id": payload.request_id},
@@ -275,6 +280,7 @@ class DefaultEndpointsHandler:
             queue_result = self._send_to_queue(payload, event)
             self._log.info(f"Message sent to input queue, response from send_message function: '{queue_result}'")
 
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_POLL_START, request_id)
             record = self._get_record(payload)
             self._log.info(f"Fetched record from database: {record}")
             if record is None:
@@ -288,6 +294,7 @@ class DefaultEndpointsHandler:
                     ),
                 )
 
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.RESPONSE_FOUND, request_id)
             status_code, body = self._record_response(record)
             self._log.info(f"Returning response for REST_SYNC operation with status_code {status_code}: '{body}'")
 

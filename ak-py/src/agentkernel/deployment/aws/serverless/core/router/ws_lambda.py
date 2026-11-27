@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
+from ......core.logger import TRACE, TraceStage
 from ......core.model import BaseRequest, Principal, StreamChunk
 from ......core.util.async_bridge import run_async_sync
 from ......core.util.factory import AKConfigError
@@ -70,7 +71,7 @@ class LambdaWSHandler(AWSWebSocketHandler):
             raise ValueError("WebSocket event missing requestContext.connectionId")
         return connection_id
 
-    def _parse_event_to_wsmessage(self, event: dict[str, Any]) -> "LambdaWSHandler.WSMessageInfo":
+    def _parse_event_to_wsmessage(self, event: dict[str, Any], request: BaseRequest | None = None) -> "LambdaWSHandler.WSMessageInfo":
         """
         Parse WebSocket event to WSMessageInfo object.
 
@@ -78,10 +79,11 @@ class LambdaWSHandler(AWSWebSocketHandler):
         dropped anything the frame named.
 
         :param event: WebSocket event dictionary
+        :param request: The event's body, when the caller has already parsed it
         :return: WSMessageInfo object with the principal, its subject as user_id, and the request
         :raises ValueError: If connection_id is missing or no principal is stored for it
         """
-        request = self._parse_body(event)
+        request = request or self._parse_body(event)
         principal = self._connection_principal(event)
         if request.body is not None:
             request.body.principal = principal
@@ -416,9 +418,12 @@ class SystemRoutesHandler(LambdaWSHandler):
         """
         user_id = None
         try:
-            ws_message_info = self._parse_event_to_wsmessage(event)
+            request = self._parse_body(event)
+            if request.request_id:
+                # Before the principal lookup, so that read is inside the traced request.
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, request.request_id)
+            ws_message_info = self._parse_event_to_wsmessage(event, request)
             user_id = ws_message_info.user_id
-            request = ws_message_info.request
             request_body = request.body
             if request_body is None:
                 raise ValueError("body is required")
@@ -433,6 +438,7 @@ class SystemRoutesHandler(LambdaWSHandler):
 
             endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
 
+            self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request.request_id)
             response = SQSHandler.send_message_to_input_queue(
                 message_body=request_body.model_dump(exclude_none=True),
                 attributes={"message_deduplication_id": request.request_id},

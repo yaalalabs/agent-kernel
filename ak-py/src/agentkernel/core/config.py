@@ -877,8 +877,8 @@ class _QueuesConfig(BaseModel):
 class _LogLevelConfig(BaseModel):
     level: str | None = Field(
         default=None,
-        pattern="^(INFO|DEBUG|ERROR|WARNING|CRITICAL)$",
-        description="Log level. Options: INFO, DEBUG, ERROR, WARNING, CRITICAL",
+        pattern="^(TRACE|INFO|DEBUG|ERROR|WARNING|CRITICAL)$",
+        description="Log level. Options: TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL",
     )
 
 

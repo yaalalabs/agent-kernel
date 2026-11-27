@@ -5,6 +5,7 @@ from typing import Any
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
 from ..core.event import PausedInterruption
+from ..core.logger import TRACE, TraceStage
 from ..core.model import AgentPausedReplyAny, BaseRunRequest, ExecutionMode, Principal, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
@@ -113,18 +114,22 @@ class AgentRunner:
         """Run one unmarked request and forward the reply to the output queue with its status."""
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_RECEIVED, request_id)
 
-        self._log.info(f"[AGENT START] request_id={request_id}, session_id={body.session_id}, agent={body.agent}")
+        self._log.info(f"Agent start: request_id={request_id}, session_id={body.session_id}, agent={body.agent}")
 
         # ChatService(rest_api_mode=False) returns (status_code, response_dict); unlike ECS,
         # the status travels to the output message as the STATUS_CODE attribute (spec §12.6).
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, request_id)
         status_code, agent_response = self._chat_service.process_chat_request(req=body, requests=body.requests)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_ENQUEUED, request_id)
         self._send_to_output(message, agent_response, status_code)
 
         media_type = agent_response.get("media_type") if isinstance(agent_response, dict) else None
         self._record_thread_reply(message, body, status_code, self._reply_to_record(agent_response, body.session_id), media_type)
 
-        self._log.info(f"[AGENT DONE] request_id={request_id}, status_code={status_code}")
+        self._log.info(f"Agent done: request_id={request_id}, status_code={status_code}")
 
     def _process_agui(self, message: QueueMessage) -> None:
         """Run one AG-UI request, fanning each event out as its own output message.
@@ -150,7 +155,7 @@ class AgentRunner:
 
         body = AGUIRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
-        self._log.info(f"[AGUI AGENT START] request_id={request_id}, session_id={body.session_id} (receive_count={message.receive_count})")
+        self._log.info(f"AG-UI agent start: request_id={request_id}, session_id={body.session_id} (receive_count={message.receive_count})")
 
         handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent, surface=body.surface, principal=body.principal)
         session = handler.service.session if handler.service is not None else None
@@ -184,7 +189,7 @@ class AgentRunner:
             self._send_to_output(message, terminal, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
             chunk_count += 1
 
-        self._log.info(f"[AGUI AGENT DONE] request_id={request_id}, chunks={chunk_count}")
+        self._log.info(f"AG-UI agent done: request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
         """Surface an input message that exhausted its retries as an error reply. Catches own exceptions.
@@ -408,16 +413,20 @@ class StreamAgentRunner(AgentRunner):
         body = BaseRunRequest.model_validate(json.loads(message.body))
 
         request_id = self._resolve_request_metadata(message, body)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_RECEIVED, request_id)
         if not message.attributes.get(ATTR_USER_ID) and AKConfig.get().execution.is_websocket and QueueTransportFactory.resolve_type() != "in_memory":
             raise ValueError("user_id is required in queue message attributes for async + delta over a broker transport")
 
-        self._log.info(f"[STREAM AGENT START] request_id={request_id} (receive_count={message.receive_count})")
+        self._log.info(f"Stream agent start: request_id={request_id} (receive_count={message.receive_count})")
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_START, request_id)
 
         chunk_count = 0
         deltas: list[str] = []
         error_seen = False
         paused: AgentPausedReplyAny | None = None
         for raw_chunk in self._chat_service.process_stream_chat_sync(req=body, requests=body.requests):
+            if chunk_count == 0:
+                self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_FIRST_CHUNK, request_id)
             chunk = json.loads(raw_chunk)
             if chunk.get("error"):
                 error_seen = True
@@ -429,6 +438,9 @@ class StreamAgentRunner(AgentRunner):
             # Retry attempts get distinct chunk dedup ids so a redelivery's chunks never collide.
             self._send_to_output(message, chunk, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
             chunk_count += 1
+        # Each chunk is sent inside the loop, so the last send is already done here (#911 Q2).
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.AGENT_DONE, request_id)
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.OUTPUT_ENQUEUED, request_id)
 
         if not error_seen:
             if paused is not None:
@@ -437,7 +449,7 @@ class StreamAgentRunner(AgentRunner):
             elif deltas:
                 self._record_thread_reply(message, body, 200, "".join(deltas))
 
-        self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
+        self._log.info(f"Stream agent done: request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
         if self._wants_single_reply(message) or message.attributes.get(ATTR_AGUI):
@@ -486,7 +498,7 @@ class RealtimeAgentRunner(AgentRunner):
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
         RealtimeConnectionPool.initialize().dispatch(body, request_id, message.attributes.get(ATTR_USER_ID), message.attributes, self._chat_service)
-        self._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={message.receive_count})")
+        self._log.debug(f"Realtime chunk: request_id={request_id} (receive_count={message.receive_count})")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
         """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions.

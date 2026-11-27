@@ -27,6 +27,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ...api.handler import RESTRequestHandler
 from ...core.config import AKConfig
+from ...core.logger import TRACE, TraceStage
 from ...core.model import BaseRequest, Principal
 from ...core.session.base import WSConnectionStore
 from ...core.util.factory import AKConfigError
@@ -252,6 +253,8 @@ class PipelineWebSocketHandler(RESTRequestHandler):
 
     async def _handle_chat(self, websocket: WebSocket, principal: Principal, request: BaseRequest) -> None:
         """Enqueue a chat frame; the Response Handler pushes the reply back to this pod."""
+        request_id = request.request_id or str(uuid.uuid4())
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.REQUEST_HANDLER_START, request_id)
         body = request.body
         if body is None:
             await self._send_system(websocket, "body is required")
@@ -268,7 +271,6 @@ class PipelineWebSocketHandler(RESTRequestHandler):
         # A chat frame is a REST-family request: the runner serves it only the agents on `rest`.
         body.surface = "rest"
         user_id = principal.subject
-        request_id = request.request_id or str(uuid.uuid4())
         # USER_ID doubles as the WS-entered marker (spec §2 invariant): the Response Handler
         # resolves delivery from the connection store, so no return address is stamped.
         message = QueueMessage(
@@ -277,6 +279,7 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             group_id=body.session_id,
             dedup_id=request_id,
         )
+        self._log.log(TRACE, "[%s] request_id=%s", TraceStage.INPUT_ENQUEUED, request_id)
         try:
             # Offload the sync send so a slow broker doesn't block the event loop for
             # every other connection.
@@ -286,7 +289,7 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             await self._send_system(websocket, "Request processing failed")
             return
 
-        self._log.info(f"[ENQUEUED] request_id={request_id}, session_id={body.session_id}, subject={user_id}")
+        self._log.info(f"Enqueued: request_id={request_id}, session_id={body.session_id}, subject={user_id}")
         await websocket.send_json(
             {
                 "status": "SUCCESS",

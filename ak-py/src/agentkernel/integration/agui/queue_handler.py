@@ -154,7 +154,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
                 attributes={ATTR_AGUI: "1"},
                 group_id=run_input.thread_id,
             )
-        self._log.info(f"[AGUI ENQUEUED] request_id={request_id}, thread_id={run_input.thread_id}, agent={agent.id}")
+        self._log.info(f"AG-UI enqueued: request_id={request_id}, thread_id={run_input.thread_id}, agent={agent.id}")
 
         encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
         return StreamingResponse(self._events_from_store(encoder, request_id, run_input), media_type=encoder.get_content_type())
