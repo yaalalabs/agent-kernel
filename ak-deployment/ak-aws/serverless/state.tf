@@ -40,6 +40,9 @@ locals {
   websocket_api_enabled = var.enable_api_gateway && local.is_websocket_mode
   rest_api_enabled      = var.enable_api_gateway && !local.is_websocket_mode
 
+  # rest_sync + delta: the request handler streams SSE through the Lambda Web Adapter (#894)
+  is_sse_mode = var.execution_mode == "rest_sync" && var.message_type == "delta"
+
   create_authorizer = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null) : false
   # Authorizer status message for logging
   authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path"]))
@@ -246,6 +249,8 @@ module "api_gateway" {
 
   lambda_function_invoke_arn = local.request_handler_lambda_invoke_arn
   lambda_function_name       = local.request_handler_lambda_function_name
+  lambda_function_arn        = local.request_handler_enabled ? module.request_handler[0].lambda_function_arn : null
+  response_streaming         = local.is_sse_mode
   endpoints                  = local.complete_gateway_endpoints
 
   authorizer                            = var.authorizer
@@ -583,6 +588,7 @@ module "request_handler" {
   handler_path                      = var.request_handler.handler_path
   package_type                      = var.request_handler.package_type
   layers                            = var.request_handler.layers
+  response_streaming                = local.is_sse_mode
   source_bucket                     = local.shared_source_bucket
   source_key                        = try(module.request_handler_source_package[0].s3_key, null)
   source_version_id                 = try(module.request_handler_source_package[0].s3_object_version, null)

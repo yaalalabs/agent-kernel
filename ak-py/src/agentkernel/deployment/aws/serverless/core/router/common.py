@@ -1,10 +1,10 @@
 import logging
-import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
 from ......core.config import AKConfig
+from ..paths import LambdaPaths
 
 
 class BaseLambdaRouter(ABC):
@@ -52,13 +52,10 @@ class BaseLambdaRouter(ABC):
         :param: None
         :return: Tuple of (base_path, agent_endpoint_path) or (None, None) if not found
         """
-        api_base_path = os.getenv("API_BASE_PATH")
-        api_version = os.getenv("API_VERSION")
-        agent_endpoint = os.getenv("AGENT_ENDPOINT")
-        base_path = f"/{api_base_path}/{api_version}"
-        if api_base_path and api_version and agent_endpoint:
-            return base_path, f"{base_path}/{agent_endpoint}"
-        return None, None
+        paths = LambdaPaths.from_env()
+        if paths is None:
+            return None, None
+        return paths.base_path, paths.chat_path
 
     @abstractmethod
     def register(self, route: str, method: str | None = None) -> Callable[[Callable], Callable]:

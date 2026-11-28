@@ -1,0 +1,123 @@
+#!/bin/bash
+set -eo pipefail # exit if any command in this script fails
+
+function read_tfvar() {
+	awk -F'=' -v k="$1" '$1 ~ "^[[:space:]]*"k"[[:space:]]*$" {gsub(/[" ]/, "", $2); print $2; exit}' terraform.tfvars
+}
+
+# Region comes from terraform.tfvars; the Lambda package bucket must live in the same region.
+AWS_REGION=$(read_tfvar region)
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+S3_BUCKET="lambda-s3-packages-${AWS_ACCOUNT_ID}-${AWS_REGION}-an"
+# Every function runs python3.12 on x86_64: install wheels for that target, not for the build machine.
+LAMBDA_TARGET=(--python-platform x86_64-manylinux_2_34 --python-version 3.12 --only-binary :all:)
+
+upload_to_s3() {
+	# $1 = local file, $2 = bucket, $3 = object key
+	aws s3api put-object --region "$AWS_REGION" --bucket "$2" --key "$3" --body "$1" --query VersionId --output text
+}
+
+has_version() { [[ -n "$1" && "$1" != "null" && "$1" != "None" ]]; }
+
+pkg_var() {
+	# $1 = object key, $2 = version id
+	local v="bucket=\"$S3_BUCKET\",key=\"$1\""
+	has_version "$2" && v="$v,version_id=\"$2\""
+	echo "{$v}"
+}
+
+push_to_ecr() {
+	local image_name="$1"
+	local dockerfile="$2"
+	local ecr_uri="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${image_name}:latest"
+
+	# ECR does not auto-create repositories on push, so ensure it exists first.
+	aws ecr describe-repositories --region "$AWS_REGION" --repository-names "$image_name" >/dev/null 2>&1 ||
+		aws ecr create-repository --region "$AWS_REGION" --repository-name "$image_name" >/dev/null
+
+	aws ecr get-login-password --region "$AWS_REGION" |
+		docker login --username AWS --password-stdin \
+			"${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+	docker buildx build \
+		--platform linux/amd64 \
+		--provenance=false \
+		--tag "$ecr_uri" \
+		--push \
+		-f "$dockerfile" \
+		.
+}
+
+create_request_handler_deployment_package() {
+	echo "Creating request handler deployment package..."
+	pushd ../
+	rm -rf dist_request_handler dist_request_handler.zip
+	mkdir -p dist_request_handler
+	uv export --extra request_handler --no-hashes >requirements.txt
+	if [[ ${1-} != "local" ]]; then
+		uv pip install -r requirements.txt --target=dist_request_handler "${LAMBDA_TARGET[@]}"
+	else
+		uv pip install --target=dist_request_handler --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[api,aws,redis] "${LAMBDA_TARGET[@]}"
+	fi
+	cp -r app_stream_server.py run.sh config.yaml dist_request_handler/
+	chmod +x dist_request_handler/run.sh
+	cd dist_request_handler && zip -rq ../dist_request_handler.zip .
+	popd || exit 1
+}
+
+# Create agent runner lambda deployment package
+create_agent_runner_deployment_package() {
+	echo "Creating agent runner deployment package..."
+	pushd ../
+	rm -rf dist_agent_runner
+	mkdir -p dist_agent_runner/data
+	uv export --extra agent_runner --no-hashes >requirements.txt
+	if [[ ${1-} != "local" ]]; then
+		uv pip install -r requirements.txt --target=dist_agent_runner/data "${LAMBDA_TARGET[@]}"
+	else
+		uv pip install --target=dist_agent_runner/data --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[aws,openai,redis] "${LAMBDA_TARGET[@]}"
+	fi
+	cp -r lambda_agent_runner.py config.yaml dist_agent_runner/data
+	popd || exit 1
+	cp Dockerfile.agent_runner ../dist_agent_runner/Dockerfile
+}
+
+create_response_handler_deployment_package() {
+	echo "Creating response handler deployment package..."
+	pushd ../
+	rm -rf dist_response_handler dist_response_handler.zip
+	mkdir -p dist_response_handler
+	uv export --extra response_handler --no-hashes >requirements.txt
+	if [[ ${1-} != "local" ]]; then
+		uv pip install -r requirements.txt --target=dist_response_handler "${LAMBDA_TARGET[@]}"
+	else
+		uv pip install --target=dist_response_handler --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[aws,redis] "${LAMBDA_TARGET[@]}"
+	fi
+	cp -r lambda_response_handler.py config.yaml dist_response_handler/
+	cd dist_response_handler && zip -rq ../dist_response_handler.zip .
+	popd || exit 1
+}
+
+create_request_handler_deployment_package $1
+create_agent_runner_deployment_package $1
+create_response_handler_deployment_package $1
+
+pushd ../ || exit 1
+REQUEST_HANDLER_VERSION_ID=$(upload_to_s3 dist_request_handler.zip "$S3_BUCKET" dist_request_handler.zip)
+RESPONSE_HANDLER_VERSION_ID=$(upload_to_s3 dist_response_handler.zip "$S3_BUCKET" dist_response_handler.zip)
+
+if ! has_version "$REQUEST_HANDLER_VERSION_ID" || ! has_version "$RESPONSE_HANDLER_VERSION_ID"; then
+	echo "WARNING: bucket '$S3_BUCKET' is not versioned — code changes will NOT redeploy the Lambdas. Enable S3 versioning. See issue #548." >&2
+fi
+
+# Push to ECR
+cd dist_agent_runner || exit 1
+push_to_ecr "agent-runner-ext" Dockerfile
+popd || exit 1
+AGENT_RUNNER_ECR_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/agent-runner-ext:latest"
+
+terraform init
+terraform apply \
+	-var "request_handler_lambda_package_s3=$(pkg_var dist_request_handler.zip "$REQUEST_HANDLER_VERSION_ID")" \
+	-var "response_handler_lambda_package_s3=$(pkg_var dist_response_handler.zip "$RESPONSE_HANDLER_VERSION_ID")" \
+	-var "agent_runner_ecr_image_uri=$AGENT_RUNNER_ECR_IMAGE_URI"

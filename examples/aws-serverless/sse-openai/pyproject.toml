@@ -1,0 +1,47 @@
+[project]
+name = "aws-serverless-sse-openai"
+version = "0.1.0"
+description = "Demo of SSE streaming (rest_sync + delta) from OpenAI Agents SDK agents running in Agent Kernel on AWS Lambda"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+# Per-Lambda dependency sets. The request handler serves the SSE app (FastAPI, uvicorn) and needs no agent
+# framework; only the agent runner needs the OpenAI Agents SDK. deploy.sh installs each package with
+# `uv export --extra <name>`.
+request_handler = [
+    "agentkernel[api,aws,redis]>=0.10.2",
+]
+response_handler = [
+    "agentkernel[aws,redis]>=0.10.2",
+]
+agent_runner = [
+    "agentkernel[aws,openai,redis]>=0.10.2",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.10.2",
+    "black==26.10.1",
+    "isort>=5.0.0,<8.0.0",
+    "mypy>=1.0.0,<2.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

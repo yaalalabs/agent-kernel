@@ -4,6 +4,7 @@ from typing import Any
 
 from ....core.config import AKConfig
 from ....core.model import StreamChunk
+from ....core.util.factory import AKConfigError
 from ....pipeline.envelope import ATTR_STATUS_CODE
 from ....pipeline.integration_delivery import IntegrationDelivery
 from ..core.response_store import ResponseStoreFactory
@@ -125,12 +126,33 @@ class ResponseHandler(LambdaSQSConsumer):
         cls._log.info(f"Successfully broadcasted message for user_id: {user_id}")
 
     @classmethod
+    def _store_chunk(cls, record: dict[str, Any]) -> None:
+        """
+        Write one SSE chunk to the response store, as the pipeline ResponseHandler does.
+
+        :param record: SQS record carrying a StreamChunk body
+        :raises ValueError: When request_id is missing, so the record is retried
+        :raises AKConfigError: When the response store cannot stream chunks
+        """
+        request_id = SQSHandler.get_message_custom_attributes(record).get("request_id")
+        if not request_id:
+            raise ValueError("request_id is required in queue message attributes")
+        store = cls._get_response_store()
+        if not store.supports_chunk_streaming():
+            raise AKConfigError(
+                "rest_sync + delta (SSE) and AG-UI delivery require a chunk-streaming response store (in_memory, redis, valkey, "
+                "or a BYO store with the capability)"
+            )
+        store.add_chunk(request_id, cls._decode_body(record.get("body")))
+
+    @classmethod
     def process_message(cls, record: dict[str, Any]) -> None:
         """
         Process a single SQS record: deliver it to its messaging platform, or per the execution mode.
 
         - Integration traffic (an ``integration`` attribute): deliver to the platform, in every mode
         - async mode: Broadcast via WebSocket (STREAM_CHUNK for delta replies, CHAT_RESPONSE otherwise)
+        - rest_sync + delta (SSE): Write the chunk to the response store
         - Other modes: Store in response store
 
         :param record: SQS record containing the response payload
@@ -155,6 +177,8 @@ class ResponseHandler(LambdaSQSConsumer):
         if execution.is_websocket:
             message_type = LambdaWSHandler.MessageType.STREAM_CHUNK if execution.is_delta else LambdaWSHandler.MessageType.CHAT_RESPONSE
             cls._broadcast_via_websocket(record, message_type=message_type)
+        elif execution.is_sse:
+            cls._store_chunk(record)
         else:
             message = cls._construct_message_for_store(record)
             cls._get_response_store().add_message(message)
@@ -232,6 +256,16 @@ class ResponseHandler(LambdaSQSConsumer):
                     cls._log.info(f"Successfully broadcasted permanent failure stream chunk for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure stream chunk: endpoint_url or user_id missing in message attributes")
+            elif execution.is_sse:
+                # Write one error chunk so the caller's SSE stream ends instead of waiting out its timeout
+                request_id = message_attributes.get("request_id")
+                if request_id:
+                    error_chunk = StreamChunk(error=error_message["error"], done=True).model_dump(exclude_none=True)
+                    error_chunk["session_id"] = session_id
+                    cls._get_response_store().add_chunk(request_id, error_chunk)
+                    cls._log.info(f"Stored permanent failure chunk for request_id: {request_id}")
+                else:
+                    cls._log.warning("Cannot store permanent failure chunk: request_id missing in message attributes")
             else:
                 # Store error message in response store for REST modes
                 message = cls._construct_message_for_store(record, body=error_message, status_code=cls._PERMANENT_FAILURE_STATUS_CODE)

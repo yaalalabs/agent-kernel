@@ -8,6 +8,7 @@ the client library via ``_from_url``, ``_error_class``, and ``_backend_name``.
 from __future__ import annotations
 
 import math
+import time
 from abc import abstractmethod
 from typing import Any
 from urllib.parse import urlsplit
@@ -26,6 +27,8 @@ class _RedisLikeDriver(BaseDriver):
     part of the driver contract for consumers whose data operations exceed the
     generic surface.
     """
+
+    _SOCKET_TIMEOUT = 5.0
 
     _UNPARSEABLE_LOCATION = "<unparseable connection URL>"
 
@@ -97,7 +100,13 @@ class _RedisLikeDriver(BaseDriver):
 
         def connect():
             self._log.debug("Connecting to %s at %s", self._backend_name, self._location(self._url))
-            client = self._from_url(self._url, decode_responses=self._decode_responses, socket_connect_timeout=5)
+            client = self._from_url(
+                self._url,
+                decode_responses=self._decode_responses,
+                socket_connect_timeout=5,
+                # Explicit so blpop can stay under it (see _blocking_slice); a URL query value still wins
+                socket_timeout=self._SOCKET_TIMEOUT,
+            )
             client.ping()
             return client
 
@@ -330,11 +339,33 @@ class _RedisLikeDriver(BaseDriver):
         :return: The popped element, or None if the timeout expired first.
         """
         self._log.debug(f"BLPOP {key}")
-        item = self.client.blpop([key], timeout=max(timeout, 0.001))
-        if item is None:
-            return None
-        value = item[1]
-        return value.decode() if isinstance(value, (bytes, bytearray)) else value
+        deadline = time.monotonic() + max(timeout, 0.001)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            item = self.client.blpop([key], timeout=self._blocking_slice(remaining))
+            if item is not None:
+                value = item[1]
+                return value.decode() if isinstance(value, (bytes, bytearray)) else value
+
+    def _blocking_slice(self, remaining: float) -> float:
+        """
+        Seconds one blocking call may wait so the client's socket read cannot time out first.
+
+        A blocking command holds the socket silent for its whole wait, so a wait at or past the
+        client's ``socket_timeout`` dies as a socket timeout instead of returning empty. redis-py 8
+        made that a 5-second default (7.x had none), and ``_connect`` sets it explicitly, so ``blpop``
+        waits in slices shorter than it.
+
+        :param remaining: Seconds left in the caller's wait budget.
+        :return: The wait for the next call, above zero.
+        """
+        pool = getattr(self.client, "connection_pool", None)
+        socket_timeout = (getattr(pool, "connection_kwargs", None) or {}).get("socket_timeout")
+        if isinstance(socket_timeout, (int, float)) and socket_timeout > 0:
+            remaining = min(remaining, socket_timeout * 0.8)
+        return max(remaining, 0.001)
 
     def llen(self, key: str) -> int:
         """

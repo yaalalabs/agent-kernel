@@ -229,10 +229,11 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
 
 class ServerlessStreamAgentRunner(LambdaSQSConsumer):
     """
-    Lambda SQS consumer that processes chat requests for async + delta (message_type delta).
+    Lambda SQS consumer that processes chat requests for message_type delta (async over WebSocket, rest_sync over SSE).
 
     Each streaming chunk from the agent is sent as a separate message to the output SQS queue.
-    The ResponseHandler then broadcasts each chunk via WebSocket to the connected client.
+    The ResponseHandler then broadcasts each chunk via WebSocket to the connected client (async), or
+    writes it to the response store for the request handler to stream as SSE (rest_sync).
     """
 
     _log = logging.getLogger("ak.aws.streamagentrunner")
@@ -271,13 +272,14 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         Extract attributes from the raw SQS message record.
 
         request_id and user_id fall back to the message body (see the non-streaming runner);
-        endpoint_url has no body fallback because it is an infrastructure detail of the sender.
+        endpoint_url has no body fallback because it is an infrastructure detail of the sender,
+        and it is required only in WebSocket mode (SSE output messages carry none).
 
         :param raw_queue_message: Original SQS message (``dict``) received by the Lambda function
         :param body: Already-validated body to use for the fallback; when omitted it is parsed
             best-effort from the record
         :return: Dictionary (``dict``) containing extracted attributes
-        :raises ValueError: If request_id or endpoint_url is missing
+        :raises ValueError: If request_id is missing, or endpoint_url is missing in WebSocket mode
         """
         attributes = SQSHandler.get_message_system_attributes(raw_queue_message)
         message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
@@ -293,7 +295,7 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
 
         if not request_id:
             raise ValueError("request_id is required")
-        if not endpoint_url:
+        if not endpoint_url and AKConfig.get().execution.is_websocket:
             raise ValueError("endpoint_url is required for async + delta")
 
         record_attributes = {
@@ -301,8 +303,9 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
             "message_deduplication_id": attributes.get("MessageDeduplicationId"),
             "request_id": request_id,
             "user_id": user_id,
-            "endpoint_url": endpoint_url,
         }
+        if endpoint_url:
+            record_attributes["endpoint_url"] = endpoint_url
 
         cls._log.info(f"Extracted record attributes: {record_attributes}")
         return record_attributes
@@ -332,9 +335,11 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         dedup_id = record_attributes.get("message_deduplication_id")
         chunk_dedup_id = f"{dedup_id}-{chunk_dedup_suffix}" if dedup_id else None
 
-        custom_attributes = [
-            SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], datatype=SQSHandler.AttributeDataType.STRING)
-        ]
+        custom_attributes = []
+        if "endpoint_url" in record_attributes:
+            custom_attributes.append(
+                SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], datatype=SQSHandler.AttributeDataType.STRING)
+            )
 
         SQSHandler.send_message_to_output_queue(
             message_body=chunk_body,

@@ -205,6 +205,7 @@ must therefore test for the key rather than assume every non-terminal frame has 
 - `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) carries `event` alone, with no `delta` key in the wire frame.
 - **Framework support**: OpenAI Agents SDK, LangGraph, and Google ADK stream natively. CrewAI and Smolagents declare `supports_streaming = False` and raise `NotImplementedError` with `message_type: delta`.
 - With `execution.mode: async` and `message_type: delta` (on AWS serverless and AWS ECS containerized), the same `StreamChunk`s are delivered as WebSocket `STREAM_CHUNK` messages instead of SSE; see below.
+- On AWS Lambda, `rest_sync` with `message_type: delta` streams SSE through `LambdaStreamServer` (the same app behind the Lambda Web Adapter, queue mode with a Redis or Valkey response store); see [AWS Serverless](../deployment/aws-serverless#sse-streaming-rest_sync--delta).
 - `execution.mode: stream` was removed: use `rest_sync` with `message_type: delta` for SSE, or `async` with `message_type: delta` for WebSocket chunks.
 
 ## The Queue Pipeline Abstraction
@@ -426,7 +427,7 @@ shared session backend. See [Human in the Loop](../advanced/human-in-the-loop.md
 | `execution.mode` | `execution.message_type` | Transport | Reply delivery | Queues | Response store | Available on |
 |------------------|-------------------------|-----------|----------------|--------|----------------|--------------|
 | *(unset)* / default | `complete` (default) | HTTP | JSON on the same connection | - | - | Everywhere `RESTAPI`/CLI runs |
-| *(unset)* / `rest_sync` | `delta` | SSE (REST) | Event-level `StreamChunk`s — every frame carries `event`, `delta` only on `text_delta` | - | - | REST API surfaces (not AWS Lambda or AWS ECS) |
+| *(unset)* / `rest_sync` | `delta` | SSE (REST) | Event-level `StreamChunk`s — every frame carries `event`, `delta` only on `text_delta` | - | - | REST API surfaces, and AWS Lambda through `LambdaStreamServer` (queue mode) |
 | `rest_sync` | `complete` | HTTP | JSON on the same connection (server polls store) | Required | Required | AWS Lambda, AWS ECS |
 | `rest_async` | `complete` only | HTTP | Client polls with `request_id` | Required | Required | AWS Lambda, AWS ECS |
 | `async` | `complete` | WebSocket | Single `CHAT_RESPONSE` push | Optional | Not used | AWS Lambda, AWS ECS |

@@ -91,3 +91,16 @@ def test_touching_the_webhook_host_through_aws_resolves_it():
     loaded = _isolated_import("agentkernel.aws", touch=(("agentkernel.aws", "LambdaWebhookHost"),))
 
     assert "agentkernel.deployment.aws.serverless.core.webhook_host" in loaded
+
+
+def test_touching_the_stream_server_through_aws_resolves_it():
+    loaded = _isolated_import("agentkernel.aws", touch=(("agentkernel.aws", "LambdaStreamServer"),))
+
+    assert "agentkernel.deployment.aws.serverless.core.stream_server" in loaded
+
+
+def test_touching_lambda_does_not_load_the_stream_server_or_uvicorn():
+    loaded = _isolated_import("agentkernel.aws", drop_prefixes=("uvicorn",), touch=(("agentkernel.aws", "Lambda"),))
+
+    assert "agentkernel.deployment.aws.serverless.core.stream_server" not in loaded
+    assert "uvicorn" not in loaded

@@ -17,12 +17,126 @@ The serverless stack supports three execution modes (`execution.mode` / Terrafor
 | `rest_async` | `complete` | REST | `202 ACCEPTED` + `request_id`; client polls `GET` | Request handler, agent runner, response handler |
 | `async` | `complete` (default) | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Request handler, agent runner, response handler, WS connection handler |
 | `async` | `delta` | WebSocket | One `STREAM_CHUNK` push per token (`ServerlessStreamAgentRunner`) | Request handler, agent runner (stream), response handler, WS connection handler |
+| `rest_sync` | `delta` | REST (SSE) | `data:` frames on the same connection, served by `LambdaStreamServer` behind the Lambda Web Adapter | Request handler (streaming), agent runner (stream), response handler |
 
 `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"` (in `config.yaml`: `execution.mode: async`, `execution.message_type: delta`).
 
-:::info No SSE on Lambda
-Token streaming on AWS serverless is delivered over **WebSocket**, not SSE; API Gateway REST endpoints can't stream SSE from standard Lambda integrations, so `rest_sync` with `message_type: delta` is refused when the REST router starts. For SSE streaming use the self-hosted/containerized REST server instead. See [Execution Flow](../architecture/execution-flow) for end-to-end sequence diagrams of each mode.
+See [Execution Flow](../architecture/execution-flow) for end-to-end sequence diagrams of each mode.
+
+## SSE Streaming (`rest_sync` + `delta`)
+
+The request-handler Lambda can stream a reply as Server-Sent Events. It runs the same app the ECS deployment runs
+(`RESTAPI` with the pipeline `RequestHandler`), served by uvicorn behind the
+[AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter) (LWA), and API Gateway forwards each frame
+as it is written.
+
+```mermaid
+graph LR
+    C[Client] -->|POST chat| GW[API Gateway REST<br/>STREAM integration]
+    GW --> RH["Request-handler Lambda<br/>LWA + LambdaStreamServer"]
+    RH -->|enqueue| IQ[(SQS input FIFO)]
+    IQ --> AR[Agent runner<br/>ServerlessStreamAgentRunner]
+    AR -->|one message per chunk| OQ[(SQS output FIFO)]
+    OQ --> RS[Response handler]
+    RS -->|add_chunk| ST[(Redis / Valkey)]
+    ST -->|stream| RH
+    RH -->|SSE frames| GW
+```
+
+**Turn it on** with the existing Terraform pair. No new variable:
+
+```hcl
+queue_mode                  = true
+execution_mode              = "rest_sync"
+message_type                = "delta"
+create_redis_response_store = true # or the Valkey store
+
+request_handler = {
+  handler_path = "run.sh"                    # the start script, for a zip package
+  package_type = "S3Zip"
+  layers       = ["arn:aws:lambda:<region>:753240598075:layer:LambdaAdapterLayerX86:<version>"]
+  timeout      = 300                         # bounds the stream; the default is 45 s
+  # ...
+}
+```
+
+`terraform plan` refuses this mode with `queue_mode = false`, with a standard (non-FIFO) queue, with the DynamoDB
+response store (it cannot stream chunks), or with an `authorizer`. In this mode the module:
+
+- sets `response_transfer_mode = "STREAM"` and the `/response-streaming-invocations` URI on every request-handler
+  integration, with a 15-minute integration timeout
+- sets the adapter's environment on the request handler: `AWS_LWA_INVOKE_MODE=response_stream`,
+  `AWS_LWA_PORT` and `AK_API__PORT` (8000), `AWS_LWA_READINESS_CHECK_PATH=/health`, and
+  `AWS_LAMBDA_EXEC_WRAPPER=/opt/bootstrap` for a zip package.
+
+**The adapter comes from your packaging.** For a zip package, pass the adapter layer ARN, with its version, in
+`request_handler.layers`. For an image, copy the extension from a pinned
+`public.ecr.aws/awsguru/aws-lambda-adapter:<version>` tag in your Dockerfile. The module references no layer itself.
+
+**The app** is one call. The start script (`run.sh`) runs it, and LWA forwards every request to it:
+
+```python
+# app_stream_server.py
+from agentkernel.aws import LambdaStreamServer
+
+if __name__ == "__main__":
+    LambdaStreamServer.run()  # optionally run(handlers=[...]) for extra RESTRequestHandler routes
+```
+
+```sh
+#!/bin/sh
+# run.sh
+cd /var/task
+export PYTHONPATH="/var/task:${PYTHONPATH}"
+exec python3 app_stream_server.py
+```
+
+The request handler only enqueues and streams, so its package needs `agentkernel[api,aws,redis]` (or `valkey`) and no
+agent framework. At cold start `LambdaStreamServer` checks the mode, the `sqs` transport, the base-path environment and
+a response store that can stream chunks. A failed check is logged in full before the process exits; LWA itself only
+reports a readiness timeout.
+
+**Requests** carry a `session_id`; the reply stream is keyed on it:
+
+```bash
+curl -N -X POST "https://<api-id>.execute-api.<region>.amazonaws.com/<stage>/api/v1/chat" \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"prompt": "Hello", "agent": "triage", "session_id": "<any client id>"}'
+```
+
+**Which paths reach the app.** The configured chat path (`/<api_base_path>/<api_version>/<agent_endpoint>`) is mapped
+to the app's `/api/v1/chat`, so a non-default `agent_endpoint` works. Every other gateway path reaches the app
+unchanged, so it works only when the app serves that full path: `gateway_endpoints = [{ path = "agents", method = "GET"
+}]` reaches `/api/v1/agents`. The A2A (`/a2a/...`) and MCP (`/mcp`) mounts sit outside the gateway prefix and are not
+reachable in this mode.
+
+### Authentication in SSE mode
+
+There is no API Gateway authorizer on the request handler in this mode (`authorization = "NONE"`), as on ECS. The app
+authenticates every request through the `identity` block in `config.yaml`. Without an `identity` block every caller is
+anonymous.
+
+**Moving from `authorizer`:** a deployment that uses the Lambda authorizer must move its token check into the
+`identity` block (see [Identity and access](../advanced/identity-and-access)), then remove `authorizer` from the module
+call, before it can turn SSE on. `terraform plan` refuses the two together.
+
+### Limits
+
+:::warning
+- A stream lasts up to **15 minutes**. It closes after **5 minutes with no data** on a Regional endpoint, and after
+  **30 seconds** on an edge-optimized one.
+- The **request-handler Lambda timeout** bounds the stream. The default is 45 s, so raise it.
+- **Each open stream holds one request-handler instance** for the whole agent run, and counts against the function's
+  concurrency (reserved or account-wide).
+- A client that disconnects does **not** stop the function or the agent run, and the function is still billed.
+- **A runner retry can repeat text.** When the agent runner fails mid-run, SQS retries the whole run, and the caller
+  sees the reply start again. WebSocket delta mode behaves the same way.
+- SQS delivers chunks to the response handler in batches, so frames can arrive in short bursts rather than one token
+  at a time.
 :::
+
+See the [sse-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/sse-openai) example
+for a complete deployment.
 
 ## Architecture
 
@@ -1020,7 +1134,7 @@ The AWS serverless runtime supports these execution modes:
 When you use queue-backed execution, configure the `execution` block:
 
 - `execution.mode` - selects the runtime mode (rest_sync, rest_async, or async)
-- `execution.message_type` - `complete` (default) or `delta`; on Lambda `delta` works only with `async` (the REST router refuses `rest_sync` with `delta`, and `LambdaWebhookHost` refuses `delta`)
+- `execution.message_type` - `complete` (default) or `delta`; on Lambda `delta` works with `async` (WebSocket) and with `rest_sync` (SSE, served by `LambdaStreamServer`; see [SSE Streaming](#sse-streaming-rest_sync--delta)). `Lambda.handler`'s REST router and `LambdaWebhookHost` still refuse `delta`
 - `execution.queues.input.url` - input SQS queue for agent requests (required for rest_sync, rest_async, and optional for async/WebSocket)
 - `execution.queues.output.url` - output SQS queue for agent responses (required for rest_sync, rest_async, and optional for async/WebSocket)
 - `execution.queues.input.max_receive_count` - input queue receive retry threshold (default: 3)
@@ -1749,6 +1863,7 @@ CloudWatch metrics automatically available:
 | [scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) | `rest_sync` / `rest_async` | Yes | REST API with SQS-backed queue processing |
 | [websocket-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai) | `async` | Yes | Full-response WebSocket delivery |
 | [streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) | `async` + `message_type: delta` | Yes | Event streaming over WebSocket with `ServerlessStreamAgentRunner` |
+| [sse-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/sse-openai) | `rest_sync` + `message_type: delta` | Yes | SSE streaming from Lambda with `LambdaStreamServer` behind the Lambda Web Adapter, Redis response store and `identity` auth |
 | [openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai) | `rest_sync` | Yes | REST API with SQS-backed queue processing, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`); also the base deployment the weekly integration test pipeline's other `aws-serverless` examples reuse the VPC/subnets/security groups of |
 | [schedule-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) | `rest_sync` | Yes | Deferred and recurring chats on EventBridge Scheduler with a DynamoDB schedule store |
 | [openai-langfuse-trace-evaluation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-langfuse-trace-evaluation) | `rest_sync` | Yes | Grades the agent's Langfuse traces with Opik LLM judges behind custom `/eval` and `/check` routes (an asynchronous self-invocation runs the judges) and stores the results in DynamoDB |

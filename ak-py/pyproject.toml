@@ -155,7 +155,9 @@ api = [
     "fastapi>=0.118.0,<0.142.0",
     "uvicorn>=0.37.0,<0.53.0",
     "gunicorn>=23.0.0,<27.0.0",
-    "httpx>=0.27.0,<0.29.0"
+    "httpx>=0.27.0,<0.29.0",
+    # RESTAPI always registers the multipart chat route, and FastAPI needs this to build it
+    "python-multipart>=0.0.12,<0.1.0",
 ]
 slack = [
     "slack-bolt==1.22.0",

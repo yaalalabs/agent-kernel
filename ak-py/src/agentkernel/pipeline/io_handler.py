@@ -75,8 +75,7 @@ class IOHandler:
         execution = config.execution
         mode = execution.mode
         transport_type = QueueTransportFactory.resolve_type()
-        cls._validate_topology(transport_type, config, pod_push=ws_handler is None)
-        cls._warn_if_no_agents(config)
+        cls.check_deployment(transport_type, config, pod_push=ws_handler is None)
 
         single_process = transport_type == "in_memory"
         # REALTIME is deliberately absent: its replies go through the integration gateway adapter,
@@ -198,6 +197,13 @@ class IOHandler:
             "RequestHandler subclass as request_handler, or mount this one with handlers=[...] if it "
             "serves a different route"
         )
+
+    @classmethod
+    def check_deployment(cls, transport_type: str, config, pod_push: bool = True) -> None:
+        """The startup checks every entry point that serves the pipeline runs: topology fail-fasts, then the
+        no-agents warning. Public so a host with its own server process runs the same checks as ``run``."""
+        cls._validate_topology(transport_type, config, pod_push=pod_push)
+        cls._warn_if_no_agents(config)
 
     @classmethod
     def _validate_topology(cls, transport_type: str, config, pod_push: bool = True) -> None:

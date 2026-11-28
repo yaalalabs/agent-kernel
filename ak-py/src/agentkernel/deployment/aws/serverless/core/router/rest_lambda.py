@@ -50,8 +50,9 @@ class DefaultEndpointsHandler:
         """
         if self._config.execution.is_sse:
             raise AKConfigError(
-                "execution.mode rest_sync with message_type delta (SSE) is not supported on AWS Lambda: the Lambda "
-                "REST router does not stream responses. Use execution.mode async with message_type delta (WebSocket)"
+                "execution.mode rest_sync with message_type delta (SSE) is not served by Lambda.handler: it returns one "
+                "finished response. Serve it with LambdaStreamServer behind the Lambda Web Adapter (see the AWS serverless "
+                "deployment docs), or use execution.mode async with message_type delta (WebSocket)"
             )
 
         input_queue_url = SQSHandler.get_input_queue_url()

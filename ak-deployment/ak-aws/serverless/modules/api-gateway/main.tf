@@ -38,7 +38,7 @@ resource "aws_api_gateway_rest_api" "rest_api" {
   name        = "${var.prefix}-rest-api-${var.region}"
   description = "[${var.prefix}] ${var.product_display_name} REST API"
   endpoint_configuration { types = ["REGIONAL"] }
-  tags        = var.tags
+  tags = var.tags
 }
 
 # API Gateway Resources
@@ -77,18 +77,18 @@ resource "aws_api_gateway_resource" "child" {
 
 # API Gateway Methods
 resource "aws_api_gateway_method" "endpoint" {
-  for_each = local.all_endpoints
+  for_each    = local.all_endpoints
   rest_api_id = aws_api_gateway_rest_api.rest_api.id
   resource_id = (
     each.value.childpath != "" ?
-      aws_api_gateway_resource.child[
-        "${each.value.mainpath}/${each.value.subpath}/${each.value.childpath}"
-      ].id :
+    aws_api_gateway_resource.child[
+      "${each.value.mainpath}/${each.value.subpath}/${each.value.childpath}"
+    ].id :
     each.value.subpath != "" ?
-      aws_api_gateway_resource.sub[
-        "${each.value.mainpath}/${each.value.subpath}"
-      ].id :
-      aws_api_gateway_resource.main[each.value.mainpath].id
+    aws_api_gateway_resource.sub[
+      "${each.value.mainpath}/${each.value.subpath}"
+    ].id :
+    aws_api_gateway_resource.main[each.value.mainpath].id
   )
   http_method   = each.value.method
   authorization = var.create_authorizer ? "CUSTOM" : "NONE"
@@ -97,23 +97,30 @@ resource "aws_api_gateway_method" "endpoint" {
 
 # API Gateway Integrations
 resource "aws_api_gateway_integration" "endpoint" {
-  for_each                = local.all_endpoints
-  rest_api_id             = aws_api_gateway_rest_api.rest_api.id
+  for_each    = local.all_endpoints
+  rest_api_id = aws_api_gateway_rest_api.rest_api.id
   resource_id = (
     each.value.childpath != "" ?
-      aws_api_gateway_resource.child[
-        "${each.value.mainpath}/${each.value.subpath}/${each.value.childpath}"
-      ].id :
+    aws_api_gateway_resource.child[
+      "${each.value.mainpath}/${each.value.subpath}/${each.value.childpath}"
+    ].id :
     each.value.subpath != "" ?
-      aws_api_gateway_resource.sub[
-        "${each.value.mainpath}/${each.value.subpath}"
-      ].id :
-      aws_api_gateway_resource.main[each.value.mainpath].id
+    aws_api_gateway_resource.sub[
+      "${each.value.mainpath}/${each.value.subpath}"
+    ].id :
+    aws_api_gateway_resource.main[each.value.mainpath].id
   )
   http_method             = aws_api_gateway_method.endpoint[each.key].http_method
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
-  uri                     = var.lambda_function_invoke_arn
+  uri = var.response_streaming ? (
+    "arn:aws:apigateway:${var.region}:lambda:path/2021-11-15/functions/${var.lambda_function_arn}/response-streaming-invocations"
+  ) : var.lambda_function_invoke_arn
+  # null keeps the provider's default, so a stack that does not stream plans no change.
+  response_transfer_mode = var.response_streaming ? "STREAM" : null
+  # Unset, API Gateway's 29 s default cuts every stream at 29 s. 900000 ms is the 15 minute stream limit;
+  # null keeps the provider default for every other mode.
+  timeout_milliseconds = var.response_streaming ? 900000 : null
 }
 
 # Lambda permission for API Gateway
@@ -134,6 +141,9 @@ resource "aws_api_gateway_deployment" "deployment" {
       values(aws_api_gateway_resource.child)[*].id,
       values(aws_api_gateway_method.endpoint)[*].id,
       values(aws_api_gateway_integration.endpoint)[*].id,
+      # An in-place integration change keeps its id, so hash the fields streaming changes: without them the
+      # stage keeps the old uri, transfer mode and timeout until something else forces a deployment.
+      [for i in values(aws_api_gateway_integration.endpoint) : [i.uri, i.response_transfer_mode, i.timeout_milliseconds]],
       [for a in aws_api_gateway_authorizer.lambda_authorizer : [a.identity_source, a.authorizer_result_ttl_in_seconds, a.authorizer_uri]]
     ]))
   }
@@ -215,11 +225,11 @@ resource "aws_api_gateway_gateway_response" "access_denied" {
 
 # Lambda permission for authorizer (conditional)
 resource "aws_lambda_permission" "allow_apigw_authorizer" {
-  count       = var.create_authorizer ? 1 : 0
-  statement_id = "AllowAPIGatewayInvokeAuthorizer"
-  action      = "lambda:InvokeFunction"
+  count         = var.create_authorizer ? 1 : 0
+  statement_id  = "AllowAPIGatewayInvokeAuthorizer"
+  action        = "lambda:InvokeFunction"
   function_name = var.authorizer_lambda_function_name
-  principal   = "apigateway.amazonaws.com"
+  principal     = "apigateway.amazonaws.com"
 
   # REST API
   source_arn = "${aws_api_gateway_rest_api.rest_api.execution_arn}/authorizers/*"
@@ -227,15 +237,15 @@ resource "aws_lambda_permission" "allow_apigw_authorizer" {
 
 # API Gateway Authorizer (conditional)
 resource "aws_api_gateway_authorizer" "lambda_authorizer" {
-  count         = var.create_authorizer ? 1 : 0
-  name          = "${var.prefix}-${var.authorizer.function_name}"
-  rest_api_id   = aws_api_gateway_rest_api.rest_api.id
+  count          = var.create_authorizer ? 1 : 0
+  name           = "${var.prefix}-${var.authorizer.function_name}"
+  rest_api_id    = aws_api_gateway_rest_api.rest_api.id
   authorizer_uri = var.authorizer_lambda_function_invoke_arn
 
-  type                           = "REQUEST"
+  type = "REQUEST"
   # REST API answers 401 without calling the authorizer when a listed identity source is missing,
   # whatever the TTL. With caching off, list only context values so header-less webhook deliveries
   # (Slack, ...) reach the authorizer's bypass; the authorizer reads Authorization from the event itself.
-  identity_source                = var.authorizer.result_ttl_in_seconds == 0 ? "context.resourcePath,context.httpMethod" : "method.request.header.Authorization,context.resourcePath,context.httpMethod"
+  identity_source                  = var.authorizer.result_ttl_in_seconds == 0 ? "context.resourcePath,context.httpMethod" : "method.request.header.Authorization,context.resourcePath,context.httpMethod"
   authorizer_result_ttl_in_seconds = var.authorizer.result_ttl_in_seconds
 }

@@ -1,5 +1,4 @@
 import asyncio
-import os
 from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Any, ClassVar
 
@@ -12,6 +11,7 @@ from .....integration.adapter.webhook import WebhookRESTRequestHandler
 from .....pipeline.transport.base import QueueTransportFactory
 from .....secret import SecretManager
 from .event_translator import LambdaEventTranslator
+from .paths import LambdaPaths
 
 
 class LambdaWebhookHost:
@@ -92,7 +92,7 @@ class LambdaWebhookGuard:
     """The cold-start checks LambdaWebhookHost runs (#760): fail at import, not on the first delivery."""
 
     REST_MODES = (ExecutionMode.REST_SYNC, ExecutionMode.REST_ASYNC)
-    BASE_PATH_ENV = ("API_BASE_PATH", "API_VERSION", "AGENT_ENDPOINT")
+    BASE_PATH_ENV = LambdaPaths.ENV
 
     def check(self, handler: Any) -> WebhookRESTRequestHandler:
         """Run every check, in this order; return the handler, typed.
@@ -143,7 +143,7 @@ class LambdaWebhookGuard:
             )
 
     def _check_base_path_env(self) -> None:
-        missing = [name for name in self.BASE_PATH_ENV if not os.getenv(name)]
+        missing = LambdaPaths.missing_env()
         if missing:
             raise AKConfigError(
                 f"LambdaWebhookHost needs {', '.join(missing)} in the environment: without them the router sends every "

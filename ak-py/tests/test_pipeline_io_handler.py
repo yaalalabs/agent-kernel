@@ -577,3 +577,14 @@ class TestExternalWebSocketHandler:
         IOHandler._validate_topology("sqs", config, pod_push=False)
         with pytest.raises(AKConfigError, match="push_auth_token"):
             IOHandler._validate_topology("sqs", config)
+
+
+class TestCheckDeployment:
+    def test_runs_the_topology_checks_then_the_no_agents_warning(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(IOHandler, "_validate_topology", classmethod(lambda cls, t, c, pod_push=True: calls.append(("topology", t, pod_push))))
+        monkeypatch.setattr(IOHandler, "_warn_if_no_agents", classmethod(lambda cls, c: calls.append(("agents",))))
+
+        IOHandler.check_deployment("sqs", object(), pod_push=False)
+
+        assert calls == [("topology", "sqs", False), ("agents",)]

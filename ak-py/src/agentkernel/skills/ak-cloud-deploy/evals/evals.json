@@ -53,6 +53,20 @@
       ]
     },
     {
+      "id": "deploy-aws-serverless-sse-rest-sync-delta",
+      "name": "Deploy SSE streaming on AWS Lambda",
+      "input": "Deploy my agent to AWS Lambda with SSE streaming over plain HTTP",
+      "expected_outputs": [
+        "queue_mode = true",
+        "execution_mode = \"rest_sync\"",
+        "message_type = \"delta\"",
+        "create_redis_response_store",
+        "LambdaAdapterLayerX86",
+        "LambdaStreamServer",
+        "identity"
+      ]
+    },
+    {
       "id": "deploy-aws-serverless-websocket-async",
       "name": "Deploy to AWS Lambda async websocket mode",
       "input": "Deploy to AWS Lambda async websocket mode",
